@@ -1,0 +1,22 @@
+[
+  {
+    "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "set_issue_classification",
+    "donor_ast_equal": true
+  },
+  {
+    "path": "src/kodezart/domain/tracker_writes.py",
+    "symbol": "classification_surface",
+    "donor_ast_equal": true
+  },
+  {
+    "path": "src/kodezart/services/lane_escalation.py",
+    "symbol": "LaneEscalationWriter",
+    "donor_ast_equal": true
+  },
+  {
+    "path": "src/kodezart/types/domain/run_state.py",
+    "symbol": "LaneEscalation",
+    "donor_ast_equal": true
+  }
+]

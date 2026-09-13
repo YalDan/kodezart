@@ -1,0 +1,195 @@
+........................................................................ [  5%]
+........................................................................ [ 10%]
+........................................................................ [ 15%]
+........................................................................ [ 20%]
+........................................................................ [ 25%]
+........................................................................ [ 30%]
+........................................................................ [ 35%]
+........................................................................ [ 40%]
+.................................F..F................................... [ 45%]
+.................................................................FF..... [ 51%]
+.........................................................
+=================================== FAILURES ===================================
+_ test_contradictory_or_failed_port_evidence_is_not_a_classified_red[fake-port-reader-error] _
+
+setup = <function setup.<locals>.build at 0x10bc22020>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10bb9dac0>
+damage = 'reader-error'
+
+    @pytest.mark.parametrize("damage", ["status", "failed-names", "reader-error"])
+    async def test_contradictory_or_failed_port_evidence_is_not_a_classified_red(
+        setup, monkeypatch, damage
+    ):
+        async with forge("fake", "work") as (ci, _):
+            original = ci.wait_for_checks
+    
+            async def changed(**kwargs):
+                if damage == "reader-error":
+                    raise OSError("forge read failed")
+                row = await original(**kwargs)
+                values = row.model_dump()
+                if damage == "failed-names":
+                    values["failed_check_names"] = frozenset({"foreign"})
+                else:
+                    values["checks_passed"] = True
+                return type(row).model_validate(values)
+    
+            monkeypatch.setattr(ci, "wait_for_checks", changed)
+>           result = await setup(ci).observe(REQUEST)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/tracker/test_audit_forge.py:413: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/chains/audit_forge.py:75: in observe
+    observed = await asyncio.create_task(
+src/kodezart/chains/audit_forge.py:123: in _forge
+    watched = await self._ci.wait_for_checks(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+kwargs = {'ref': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'repo_url': 'https://github.com/example/project'}
+
+    async def changed(**kwargs):
+        if damage == "reader-error":
+>           raise OSError("forge read failed")
+E           OSError: forge read failed
+
+tests/tracker/test_audit_forge.py:403: OSError
+_ test_contradictory_or_failed_port_evidence_is_not_a_classified_red[linear-mcp-reader-error] _
+
+setup = <function setup.<locals>.build at 0x10bc78860>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10bbb02c0>
+damage = 'reader-error'
+
+    @pytest.mark.parametrize("damage", ["status", "failed-names", "reader-error"])
+    async def test_contradictory_or_failed_port_evidence_is_not_a_classified_red(
+        setup, monkeypatch, damage
+    ):
+        async with forge("fake", "work") as (ci, _):
+            original = ci.wait_for_checks
+    
+            async def changed(**kwargs):
+                if damage == "reader-error":
+                    raise OSError("forge read failed")
+                row = await original(**kwargs)
+                values = row.model_dump()
+                if damage == "failed-names":
+                    values["failed_check_names"] = frozenset({"foreign"})
+                else:
+                    values["checks_passed"] = True
+                return type(row).model_validate(values)
+    
+            monkeypatch.setattr(ci, "wait_for_checks", changed)
+>           result = await setup(ci).observe(REQUEST)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/tracker/test_audit_forge.py:413: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/chains/audit_forge.py:75: in observe
+    observed = await asyncio.create_task(
+src/kodezart/chains/audit_forge.py:123: in _forge
+    watched = await self._ci.wait_for_checks(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+kwargs = {'ref': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'repo_url': 'https://github.com/example/project'}
+
+    async def changed(**kwargs):
+        if damage == "reader-error":
+>           raise OSError("forge read failed")
+E           OSError: forge read failed
+
+tests/tracker/test_audit_forge.py:403: OSError
+_ test_unreadable_surface_names_coverage_failure_before_session[fake-port-missing] _
+
+setup = (<function setup.<locals>.build at 0x10bcd44a0>, <tests.tracker.test_audit_claim.Runner object at 0x10bbb00b0>, <tests.fakes.FakeGitService object at 0x10bcab9e0>, <tests.fakes.FakeWorkspaceProvider object at 0x10bcaaba0>)
+damage = 'missing'
+
+    @pytest.mark.parametrize("damage", ["missing", "unsupported"])
+    async def test_unreadable_surface_names_coverage_failure_before_session(setup, damage):
+        build, runner, _, workspace = setup
+        ref = ScopeRef(kind=ScopeKind.ISSUE, key="unreadable")
+        surface = WritableSurface(
+            kind=SurfaceKind.ISSUE_DESCRIPTION
+            if damage == "missing"
+            else SurfaceKind.ISSUE_LABEL_SET,
+            ref=ref,
+        )
+        request = REQUEST.model_copy(update={"surfaces": (*SURFACES, surface)})
+>       report = await build().complete(request)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/tracker/test_audit_mandate.py:165: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/chains/audit_pass.py:228: in complete
+    mandate = await self.observe(
+src/kodezart/chains/audit_pass.py:244: in observe
+    covered, unreadable = await self._read_set(request.surfaces)
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/audit_pass.py:211: in _read_set
+    await read_tracker_artifact(tracker=self._tracker, surface=surface)
+src/kodezart/services/tracker_artifacts.py:87: in read_tracker_artifact
+    issue = await tracker.read_issue(issue_key=surface.ref.key)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <tests.fakes.FakeTrackerPort object at 0x10bbb02c0>
+
+    async def read_issue(self, *, issue_key: str) -> TrackerIssue:
+        await asyncio.sleep(0)
+        self.issue_reads.append(issue_key)
+>       return self.issues[issue_key]
+               ^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'unreadable'
+
+tests/fakes.py:3434: KeyError
+_ test_unreadable_surface_names_coverage_failure_before_session[fake-port-unsupported] _
+
+setup = (<function setup.<locals>.build at 0x10bcd4860>, <tests.tracker.test_audit_claim.Runner object at 0x10bcc6ff0>, <tests.fakes.FakeGitService object at 0x10bcc5ee0>, <tests.fakes.FakeWorkspaceProvider object at 0x10bcc5d30>)
+damage = 'unsupported'
+
+    @pytest.mark.parametrize("damage", ["missing", "unsupported"])
+    async def test_unreadable_surface_names_coverage_failure_before_session(setup, damage):
+        build, runner, _, workspace = setup
+        ref = ScopeRef(kind=ScopeKind.ISSUE, key="unreadable")
+        surface = WritableSurface(
+            kind=SurfaceKind.ISSUE_DESCRIPTION
+            if damage == "missing"
+            else SurfaceKind.ISSUE_LABEL_SET,
+            ref=ref,
+        )
+        request = REQUEST.model_copy(update={"surfaces": (*SURFACES, surface)})
+>       report = await build().complete(request)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/tracker/test_audit_mandate.py:165: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/chains/audit_pass.py:228: in complete
+    mandate = await self.observe(
+src/kodezart/chains/audit_pass.py:244: in observe
+    covered, unreadable = await self._read_set(request.surfaces)
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/audit_pass.py:211: in _read_set
+    await read_tracker_artifact(tracker=self._tracker, surface=surface)
+src/kodezart/services/tracker_artifacts.py:40: in read_tracker_artifact
+    issue = await tracker.read_issue(issue_key=surface.ref.key)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <tests.fakes.FakeTrackerPort object at 0x10bbb3b00>
+
+    async def read_issue(self, *, issue_key: str) -> TrackerIssue:
+        await asyncio.sleep(0)
+        self.issue_reads.append(issue_key)
+>       return self.issues[issue_key]
+               ^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'unreadable'
+
+tests/fakes.py:3434: KeyError
+=========================== short test summary info ============================
+FAILED tests/tracker/test_audit_forge.py::test_contradictory_or_failed_port_evidence_is_not_a_classified_red[fake-port-reader-error]
+FAILED tests/tracker/test_audit_forge.py::test_contradictory_or_failed_port_evidence_is_not_a_classified_red[linear-mcp-reader-error]
+FAILED tests/tracker/test_audit_mandate.py::test_unreadable_surface_names_coverage_failure_before_session[fake-port-missing]
+FAILED tests/tracker/test_audit_mandate.py::test_unreadable_surface_names_coverage_failure_before_session[fake-port-unsupported]
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! KeyboardInterrupt !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/runners.py:123: KeyboardInterrupt
+(to show a full traceback on KeyboardInterrupt use --full-trace)
+4 failed, 773 passed in 553.31s (0:09:13)

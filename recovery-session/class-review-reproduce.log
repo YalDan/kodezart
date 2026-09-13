@@ -1,0 +1,8 @@
+Fresh exact-two reproduction at b714b984112efd8471f73985300864d66a3eb814
+2026-09-12T14:00:41.500181
+14:00  up 18 days, 21:03, 5 users, load averages: 20.80 20.12 20.17
+..                                                                       [100%]
+2 passed in 37.63s
+14:01  up 18 days, 21:04, 5 users, load averages: 14.70 18.47 19.54
+
+exit_code=0

@@ -1,0 +1,6 @@
+Independent correctness/concurrency ACCEPT bounded a51d7779f13aeb775294e802c1b737bb8cb529e3 (parent5ef89e2).
+Root source+original oracle review; source untouched. Isolated /private/tmp/kodezart-v03-recovery-classification-root-review.
+55 tests2.05s: uv run --locked pytest -q tests/tracker/test_classification_authority.py tests/tracker/test_issue_classification_reads.py tests/services/test_run_surface_lease.py tests/tracker/test_comment_expected_independent.py tests/tracker/test_protected_comment_retry.py
+62tests172.64s: uv run --locked pytest -q tests/tracker/test_lane_escalation.py tests/chains/test_organize_native_independent.py tests/chains/test_organize_graph_independent.py tests/services/test_native_amendments.py
+uv run --locked mypy src:317source pass. Logs classification-root-independent-a51d777.log, classification-root-consumers-a51d777.log, classification-root-independent-mypy.log.
+Same actual holder and canonical configured retry loop; successful receipt separates post-write validation, no completed mutation resend. Optional holder retains legacy unprotected callers, actual escalation always supplies job id. Finite native reads do not establish backend CAS. Public neutral/internal enforcement improvement, no second policy or vendor leakage. Separate architecture/type review pending; no full KOD97/675/Audit acceptance.

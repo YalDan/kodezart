@@ -1,0 +1,18 @@
+{
+  "source": "47b72c7736b46d17491e613f32502b8f51262aa9",
+  "tree": "f77fc2ccc26da93fdd4c25b2d36841d869c19b81",
+  "parent": "783edbfa4ebcb6c6dfa7ad8209ccf69fa095e477",
+  "source_diff_empty": true,
+  "protocols": {
+    "GitSourceReader": true,
+    "TrackerCommentReader": true
+  },
+  "original_donor_function_ast_equal": true,
+  "external_original_function_ast_equal": true,
+  "external_original_sha256": "7d526688f48923cc394a6ed7fa6c98676be7be2c4d623157772949a6fd8c4652",
+  "changed_files": [
+    "src/kodezart/core/protocols.py",
+    "tests/services/test_git_source_lookup.py",
+    "tests/tracker/test_ruling_protocol_boundary.py"
+  ]
+}

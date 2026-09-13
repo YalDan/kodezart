@@ -1,0 +1,32 @@
+{
+  "source": "6f431bbaa8ad88d21c0527f4bee95853c573925b",
+  "reviewer_head": "0e30d784f981889379c2ef48083b700f6f2326bb",
+  "tree": "a1d5534d3603e5713b004fc8b5601b845e1eebf9",
+  "authored_source_sha": null,
+  "files": [
+    {
+      "path": "src/kodezart/services/tracker_artifacts.py",
+      "sha256": "e4a8c402d82bec3320097518eed9f006c76bfe247012186ccc38e9348eccaa0d"
+    },
+    {
+      "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+      "sha256": "0128d16fa203cac45809f7b2f05145b569fca0b39a6028440eda2a928ad3a590"
+    },
+    {
+      "path": "tests/tracker/test_artifact_native_fields.py",
+      "sha256": "f75459b7fd83dda1a729a86e62b5f1a624b109ee7d6b39e44cb9ee51cb08b288"
+    },
+    {
+      "path": "tests/tracker/test_artifact_split_identity_independent.py",
+      "sha256": "f7f15e266a4d364db4f2ff2af84af6e6969bd89be38c202ec2ee4cddae85e470"
+    },
+    {
+      "path": "tests/tracker/test_artifact_failure_boundary_independent.py",
+      "sha256": "387ab3bc7ba5a6b67ebd2fe245fea5a2fa05f849f9acdd8016dce217292f217f"
+    },
+    {
+      "path": "tests/tracker/test_artifact_identity_alias_independent.py",
+      "sha256": "af160d6c0ee6ac4dce354ff464a9c4fa977af041f2ed005bf10ece0fd8f6faa7"
+    }
+  ]
+}

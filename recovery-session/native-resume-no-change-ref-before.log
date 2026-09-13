@@ -1,0 +1,164 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_ test_completed_loop_replay_uses_actual_evaluation_and_current_ref[True-head] _
+
+repository = (PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1940/test_completed_loop_replay_use0/repo'), 'e11b6169b07bb4446a6681a1e27eb5226e5f5cb0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10cf8a810>
+change = 'head', no_change = True
+
+    @pytest.mark.parametrize("change", ["unchanged", "check", "state", "outage", "head"])
+    @pytest.mark.parametrize("no_change", [False, True])
+    async def test_completed_loop_replay_uses_actual_evaluation_and_current_ref(
+        repository,
+        monkeypatch,
+        change,
+        no_change,
+    ):
+        from pathlib import Path
+    
+        from kodezart.domain.amendment import NativeWriteRefusalError
+        from kodezart.domain.errors import FireSpecEntryError
+        from kodezart.types.domain.agent import WorkflowIterationEvent
+        from kodezart.types.domain.tracker import TrackerIssue, WorkflowStateKind
+        from tests.chains.test_native_fire import DIRECT_OWED
+    
+        port, saver = tracker(), InMemorySaver()
+        failure = RuntimeError("after actual loop completion before parent receipt")
+    
+        async def answers(title, payload, kwargs):
+            if no_change and title == "NativeWriterOutput":
+                Path(kwargs["cwd"], "change.py").unlink()
+            if title == "AcceptanceCriteriaOutput":
+                source = TrackerCriteria(tracker=port)
+                spec = await source.read_spec(issue_key=SUBJECT)
+                current = await source.read_current(spec=spec)
+                payload.update(
+                    criteria_results=[
+                        {
+                            "criterion_id": c.id,
+                            "criterion": c.text,
+                            "passed": True,
+                            "reasoning": "Observed exact current behavior.",
+                        }
+                        for c in current.criteria
+                    ],
+                    sherlock_flags=[],
+                )
+    
+        if no_change:
+            await git(repository[0], "push", "origin", "HEAD:refs/heads/native-loop")
+        executor = Executor(claim=False, mutate=answers)
+        fire, workspace, spec, config = await prepared_parent(
+            repository, executor, port, saver
+        )
+        actual = fire.implementation.run_quality_gate
+        observed = []
+    
+        async def cut_after_loop(**kwargs):
+            event = await actual(**kwargs)
+            observed.append(event)
+            raise failure
+    
+        monkeypatch.setattr(fire.implementation, "run_quality_gate", cut_after_loop)
+        with pytest.raises(RuntimeError) as caught:
+            await fire.native_graph.ainvoke(None, config=config)
+        assert caught.value is failure
+        assert len(observed) == 1 and isinstance(observed[0], WorkflowIterationEvent)
+        assert (observed[0].commit_sha is None) is no_change
+        assert not workspace._workspaces
+        saved = await fire.native_graph.aget_state(config)
+        assert saved.values["total_iterations"] == 0
+        monkeypatch.undo()
+        resumed_executor = Executor(claim=False, mutate=answers)
+        fresh, fresh_workspace = await actual_fire(
+            repository, resumed_executor, port, saver
+        )
+        before_remote = await git(
+            repository[0], "ls-remote", "origin", "refs/heads/native-loop"
+        )
+        if change == "check":
+            prior = port.issues[DIRECT_OWED]
+            port.issues[DIRECT_OWED] = TrackerIssue.model_validate(
+                {
+                    **prior.model_dump(),
+                    "body": "**Check:** changed after grading\n**Do:** current",
+                }
+            )
+        elif change == "state":
+            prior = port.issues[DIRECT_OWED]
+            port.issues[DIRECT_OWED] = TrackerIssue.model_validate(
+                {
+                    **prior.model_dump(),
+                    "state_name": "Done",
+                    "state_kind": WorkflowStateKind.COMPLETED,
+                }
+            )
+        elif change == "outage":
+    
+            async def unavailable(**kwargs):
+                raise ConnectionError("tracker unavailable on completed replay")
+    
+            monkeypatch.setattr(port, "scope_issues", unavailable)
+        elif change == "head":
+            await git(repository[0], "update-ref", "refs/heads/native-loop", repository[1])
+        if change == "unchanged":
+            await fresh.native_graph.ainvoke(
+                None, config=config, interrupt_after=["run_ralph_loop"]
+            )
+            final = await fresh.native_graph.aget_state(config)
+            assert final.values["total_iterations"] == observed[0].iteration
+            assert final.values["trajectory"] == observed[0].trajectory
+        else:
+>           with pytest.raises((NativeWriteRefusalError, FireSpecEntryError)):
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           Failed: DID NOT RAISE any of (<class 'kodezart.domain.amendment.NativeWriteRefusalError'>, <class 'kodezart.domain.errors.FireSpecEntryError'>)
+
+tests/chains/test_native_parent_resume.py:400: Failed
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 22:16:29 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:16:30 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:16:31 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:16:31 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:16:31 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-7c1c174b9c5142d39f9e785f8cd66723 workspace_id=7c1c174b9c5142d39f9e785f8cd66723
+2026-09-12 22:16:32 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:16:36 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:16:37 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:16:42 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:16:43 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:16:44 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:16:49 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:16:50 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:16:52 [info     ] persist_no_changes             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-7c1c174b9c5142d39f9e785f8cd66723
+2026-09-12 22:16:56 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:16:57 [info     ] workspace_released             workspace_id=7c1c174b9c5142d39f9e785f8cd66723
+2026-09-12 22:16:58 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:16:58 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 22:16:58 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-b294e34e58464207885a1e0c589d0329 workspace_id=b294e34e58464207885a1e0c589d0329
+2026-09-12 22:16:58 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:16:59 [info     ] workspace_released             workspace_id=b294e34e58464207885a1e0c589d0329
+2026-09-12 22:16:59 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=ralph_evaluator stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 22:16:59 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:16:59 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:17:01 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:17:01 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+------------------------------ Captured log call -------------------------------
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.fire_spec.TrackerSpec from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.fire_spec', 'TrackerSpec')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.criteria.TrackerCriterionSet from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.criteria', 'TrackerCriterionSet')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.gating.RepoVisibility from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.gating', 'RepoVisibility')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.fire_spec.TrackerSpec from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.fire_spec', 'TrackerSpec')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.criteria.TrackerCriterionSet from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.criteria', 'TrackerCriterionSet')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.gating.RepoVisibility from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.gating', 'RepoVisibility')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.fire_spec.TrackerSpec from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.fire_spec', 'TrackerSpec')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.criteria.TrackerCriterionSet from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.criteria', 'TrackerCriterionSet')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.gating.RepoVisibility from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.gating', 'RepoVisibility')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.trajectory.IterationRecord from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.trajectory', 'IterationRecord')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.ralph_outcome.EvaluatedRalphOutcome from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.ralph_outcome', 'EvaluatedRalphOutcome')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.amendment.AmendmentReport from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.amendment', 'AmendmentReport')]
+=========================== short test summary info ============================
+FAILED tests/chains/test_native_parent_resume.py::test_completed_loop_replay_uses_actual_evaluation_and_current_ref[True-head]
+1 failed in 38.17s

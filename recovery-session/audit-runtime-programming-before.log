@@ -1,0 +1,61 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+__________ test_executor_programming_failure_escapes_the_native_owner __________
+
+native_audit = (<kodezart.services.audit_runtime.AuditScheduledPass object at 0x10ebc9130>, <tests.integration.test_audit_runtime_nat...rvice object at 0x10ebc98b0>, <kodezart.adapters.git_worktree_provider.GitWorktreeProvider object at 0x10ebc9370>, ...)
+
+    async def test_executor_programming_failure_escapes_the_native_owner(native_audit):
+        audit, executor, server, tracker, git, workspace, repository = native_audit
+        error = RuntimeError("executor implementation defect")
+    
+        async def during(kwargs):
+            if kwargs["output_format"]["schema"] != WRITE_BACK_SCHEMA:
+                raise error
+    
+        executor.during = during
+        with pytest.raises(RuntimeError) as raised:
+>           await audit.run(FIXTURE_NOW)
+
+tests/integration/test_audit_runtime_native.py:318: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.services.audit_runtime.AuditScheduledPass object at 0x10ebc9130>
+started_at = datetime.datetime(2026, 3, 1, 12, 0, tzinfo=datetime.timezone.utc)
+
+    async def run(self, started_at: datetime) -> PassRun:
+        identity = RunIdentity(kind=RunKind.AUDIT, name="audit", started_at=started_at)
+        self._last_report = None
+        scopes = tuple(
+            [await self._scope(target, identity) for target in self._targets]
+        )
+        report = AuditRunReport(identity=identity, scopes=scopes)
+        self._last_report = report
+        await self._log.ainfo(
+            "audit_run_finished",
+            run_identity=identity.title(),
+            report=report.model_dump(mode="json"),
+        )
+        if any(isinstance(scope, AuditScopeIncomplete) for scope in scopes):
+>           raise AuditRunIncompleteError(report=report)
+E           kodezart.domain.errors.AuditRunIncompleteError: audit run 'audit — audit @ 2026-03-01T12:00:00Z' is incomplete
+
+src/kodezart/services/audit_runtime.py:584: AuditRunIncompleteError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 20:17:06 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-eda50ac4a4204277bd006cf97faba88c workspace_id=eda50ac4a4204277bd006cf97faba88c
+2026-09-12 20:17:07 [info     ] workspace_released             workspace_id=eda50ac4a4204277bd006cf97faba88c
+2026-09-12 20:17:08 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-09f0af414799483fa60e717ca94dd043 workspace_id=09f0af414799483fa60e717ca94dd043
+2026-09-12 20:17:08 [info     ] workspace_released             workspace_id=09f0af414799483fa60e717ca94dd043
+2026-09-12 20:17:09 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-4c28a881e1894fad832299bc078bf3f2 workspace_id=4c28a881e1894fad832299bc078bf3f2
+2026-09-12 20:17:09 [info     ] workspace_released             workspace_id=4c28a881e1894fad832299bc078bf3f2
+2026-09-12 20:17:11 [info     ] outbound_content_gated         categories=[] content_digest=eb359c98f76ca750403e653853d97eb6b9e2f813edbe73c87a46f6ee3cb5be64 failure=None hits=[] surface=tracker verdict=clean visibility=public writer=tracker_comment
+2026-09-12 20:17:12 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-198414d6e8bd4943a3bd37c6e6247c7b workspace_id=198414d6e8bd4943a3bd37c6e6247c7b
+2026-09-12 20:17:12 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 20:17:12 [info     ] workspace_released             workspace_id=198414d6e8bd4943a3bd37c6e6247c7b
+2026-09-12 20:17:13 [info     ] outbound_content_gated         categories=[] content_digest=71717986f7d0e8ffb1db7231bdd700cd2de7cd3f661445434441805d65be38b6 failure=None hits=[] surface=tracker verdict=clean visibility=public writer=tracker_comment
+2026-09-12 20:17:14 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-7239d2175b2b4617aee15e73f7671d50 workspace_id=7239d2175b2b4617aee15e73f7671d50
+2026-09-12 20:17:14 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 20:17:15 [info     ] workspace_released             workspace_id=7239d2175b2b4617aee15e73f7671d50
+2026-09-12 20:17:15 [info     ] audit_run_finished             report={'identity': {'kind': 'audit', 'name': 'audit', 'started_at': '2026-03-01T12:00:00Z'}, 'scopes': [{'scope': {'kind': 'issue', 'key': 'audit/root'}, 'writes': [{'verdict': 'holds', 'artifact': {'surface': {'kind': 'marker_comment', 'ref': {'kind': 'issue', 'key': 'audit/criterion'}, 'marker': '[native-audit:opaque%3Alane%20%CE%BB:audit%20%E2%80%94%20audit%20%40%202026-03-01T12%3A00%3A00Z%3Aaudit%2Fcriterion%3Aforge]'}, 'native_ref': 'comment-0003', 'content': '[native-audit:opaque%3Alane%20%CE%BB:audit%20%E2%80%94%20audit%20%40%202026-03-01T12%3A00%3A00Z%3Aaudit%2Fcriterion%3Aforge]\n{"publication":{"kind":"claim","detector":"forge","report":{"claim":{"judgment":{"criterion_key":"audit/criterion","verdict":"holds","evidence":"audit/criterion at 7a961905dd32669e73ee1814c066c1bac797ffdb: the recorded SHA has green checks"},"head_sha":"7a961905dd32669e73ee1814c066c1bac797ffdb","record_ref":"comment-0001","check":"The current check.txt contains the committed contents."},"mandate":null}},"escalation_refs":[]}'}, 'rounds': [{'verdict': 'holds', 'evidence': 'Read actual native artifact against check.txt.', 'cited_refs': []}]}, {'verdict': 'holds', 'artifact': {'surface': {'kind': 'marker_comment', 'ref': {'kind': 'issue', 'key': 'audit/root'}, 'marker': '[native-audit:opaque%3Alane%20%CE%BB:audit%20%E2%80%94%20audit%20%40%202026-03-01T12%3A00%3A00Z%3Aaudit%2Froot%3Aterminal]'}, 'native_ref': 'comment-0005', 'content': '[native-audit:opaque%3Alane%20%CE%BB:audit%20%E2%80%94%20audit%20%40%202026-03-01T12%3A00%3A00Z%3Aaudit%2Froot%3Aterminal]\n{"publication":{"kind":"terminal","report":{"observation":{"issue_key":"audit/root","record_ref":"comment-0001","verdict":"holds","discrepancies":[],"branch_head":"7a961905dd32669e73ee1814c066c1bac797ffdb","pr":{"url":"file:///private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1847/test_executor_programming_fail0/remote/pull/7","number":7,"head_repo_url":"file:///private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1847/test_executor_programming_fail0/remote","head_branch":"ordinary-name","head_sha":"7a961905dd32669e73ee1814c066c1bac797ffdb","base_repo_url":"file:///private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1847/test_executor_programming_fail0/remote","base_branch":"ordinary-name","lifecycle":"open"}},"mandate":null}},"escalation_refs":[]}'}, 'rounds': [{'verdict': 'holds', 'evidence': 'Read actual native artifact against check.txt.', 'cited_refs': []}]}], 'observations': [{'kind': 'claim', 'detector': 'forge', 'report': {'claim': {'judgment': {'criterion_key': 'audit/criterion', 'verdict': 'holds', 'evidence': 'audit/criterion at 7a961905dd32669e73ee1814c066c1bac797ffdb: the recorded SHA has green checks'}, 'head_sha': '7a961905dd32669e73ee1814c066c1bac797ffdb', 'record_ref': 'comment-0001', 'check': 'The current check.txt contains the committed contents.'}, 'mandate': None}}, {'kind': 'terminal', 'report': {'observation': {'issue_key': 'audit/root', 'record_ref': 'comment-0001', 'verdict': 'holds', 'discrepancies': [], 'branch_head': '7a961905dd32669e73ee1814c066c1bac797ffdb', 'pr': {'url': 'file:///private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1847/test_executor_programming_fail0/remote/pull/7', 'number': 7, 'head_repo_url': 'file:///private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1847/test_executor_programming_fail0/remote', 'head_branch': 'ordinary-name', 'head_sha': '7a961905dd32669e73ee1814c066c1bac797ffdb', 'base_repo_url': 'file:///private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1847/test_executor_programming_fail0/remote', 'base_branch': 'ordinary-name', 'lifecycle': 'open'}}, 'mandate': None}}], 'raw_observations': [{'criterion': {'issue_key': 'audit/criterion', 'title': 'fixture issue', 'body': '**Check:** The current check.txt contains the committed contents.\n**Do:** AUTHOR REASONING\n**Evidence:**\n```json\n{\n  "gradedSha": "7a961905dd32669e73ee1814c066c1bac797ffdb",\n  "test": "historical author reasoning"\n}\n```', 'priority': 'none', 'state_name': 'Done', 'state_kind': 'completed', 'queue_states': [], 'issue_labels': ['criterion'], 'team_key': 'engineering', 'project': None, 'project_id': None, 'milestone_key': None, 'relations': [], 'parent_key': 'audit/root', 'assignee_key': None, 'created_at': '2026-01-01T00:00:00Z', 'updated_at': '2026-01-01T00:01:40Z', 'url': 'https://tracker.invalid/issue/audit/criterion'}, 'recorded_evidence': {'graded_sha': '7a961905dd32669e73ee1814c066c1bac797ffdb', 'test': 'historical author reasoning'}, 'required_check_names': ['test'], 'checks': {'kind': 'completed', 'commit_sha': '7a961905dd32669e73ee1814c066c1bac797ffdb', 'checks_passed': True, 'check_names': ['test'], 'failed_check_names': [], 'summary': 'All CI checks passed.'}, 'red': None, 'verdict': 'holds', 'reason': 'audit/criterion at 7a961905dd32669e73ee1814c066c1bac797ffdb: the recorded SHA has green checks'}, {'issue_key': 'audit/root', 'record_ref': 'comment-0001', 'verdict': 'holds', 'discrepancies': [], 'branch_head': '7a961905dd32669e73ee1814c066c1bac797ffdb', 'pr': {'url': 'file:///private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1847/test_executor_programming_fail0/remote/pull/7', 'number': 7, 'head_repo_url': 'file:///private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1847/test_executor_programming_fail0/remote', 'head_branch': 'ordinary-name', 'head_sha': '7a961905dd32669e73ee1814c066c1bac797ffdb', 'base_repo_url': 'file:///private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1847/test_executor_programming_fail0/remote', 'base_branch': 'ordinary-name', 'lifecycle': 'open'}}], 'status': 'incomplete', 'unavailable': [{'subject': {'kind': 'issue', 'key': 'audit/criterion'}, 'reason': "AuditEvidenceReadError: Evidence for 'audit/criterion' could not be read: executor implementation defect"}, {'subject': {'kind': 'issue', 'key': 'audit/criterion'}, 'reason': 'RuntimeError: executor implementation defect'}, {'subject': {'kind': 'issue', 'key': 'audit/criterion'}, 'reason': "AuditEvidenceReadError: Evidence for 'audit/criterion' could not be read: executor implementation defect"}]}]} run_identity='audit — audit @ 2026-03-01T12:00:00Z'
+=========================== short test summary info ============================
+FAILED tests/integration/test_audit_runtime_native.py::test_executor_programming_failure_escapes_the_native_owner
+1 failed in 11.58s

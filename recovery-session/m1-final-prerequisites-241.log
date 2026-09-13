@@ -1,0 +1,8 @@
+   Building kodezart @ file:///private/tmp/kodezart-v03-m1-scope-ports
+warning: `build_system.requires = ["uv-build>=0.10.9,<0.11.0"]` does not contain the current uv version 0.11.6
+      Built kodezart @ file:///private/tmp/kodezart-v03-m1-scope-ports
+Uninstalled 1 package in 2ms
+Installed 1 package in 16ms
+........................................................................ [ 63%]
+.........................................                                [100%]
+113 passed in 56.37s

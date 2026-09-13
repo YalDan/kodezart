@@ -1,0 +1,3 @@
+Locked observed versions: Python 3.12.13; pydantic2.12.5; fastapi0.135.1; langgraph1.0.10.
+Official versioned Pydantic UUID validation source: https://raw.githubusercontent.com/pydantic/pydantic/v2.12.5/docs/api/standard_library_types.md
+Live Linear get_issue(UUID) observed 2026-09-12: requested65211d3b-bb35-46f7-9ab4-a86577604bb7; returned idKOD-73 plus same uuid. No other vendor alias field inferred.

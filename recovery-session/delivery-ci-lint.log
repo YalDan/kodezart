@@ -1,0 +1,106 @@
+E501 Line too long (90 > 88)
+  --> src/kodezart/services/check_classification.py:53:89
+   |
+51 |                 repo_url=repo_url, ref=initial.commit_sha, reason=result.summary
+52 |             )
+53 |         if isinstance(result, ObservedChecks) and result.commit_sha != initial.commit_sha:
+   |                                                                                         ^^
+54 |             raise CheckObservationError(
+55 |                 repo_url=repo_url,
+   |
+
+E501 Line too long (108 > 88)
+   --> tests/adapters/test_ci_observation.py:107:89
+    |
+105 |             return httpx.Response(404)
+106 |         runs = [
+107 |             {"head_sha": "a" * 40, "id": 1, "name": "first", "status": "completed", "conclusion": "failure"}
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^
+108 |         ]
+109 |         if kind != "short":
+    |
+
+E501 Line too long (89 > 88)
+   --> tests/adapters/test_ci_rerun.py:580:89
+    |
+578 |         await second_requested.wait()
+579 |         observed = await client.wait_for_checks(repo_url=REPO, ref=SHA)
+580 |         passed = observed.checks_passed if isinstance(observed, ObservedChecks) else None
+    |                                                                                         ^
+581 |         _ = observed.summary
+582 |         names = observed.failed_check_names
+    |
+
+E501 Line too long (89 > 88)
+   --> tests/adapters/test_ci_rerun.py:590:89
+    |
+588 |         second_requested.set()
+589 |         observed = await client.wait_for_checks(repo_url=REPO, ref=SHA)
+590 |         passed = observed.checks_passed if isinstance(observed, ObservedChecks) else None
+    |                                                                                         ^
+591 |         _ = observed.summary
+592 |         names = observed.failed_check_names
+    |
+
+E501 Line too long (92 > 88)
+  --> tests/adapters/test_ci_watch_evidence.py:65:89
+   |
+65 | async def test_original_watch_returns_its_complete_evidence_without_another_query(boundary):
+   |                                                                                         ^^^^
+66 |     monitor, requests = boundary
+67 |     observed = await monitor.wait_for_checks(repo_url=REPO, ref=BRANCH)
+   |
+
+E501 Line too long (93 > 88)
+   --> tests/adapters/test_github_api.py:558:89
+    |
+556 |                 repo_url=self.REPO_URL, ref="abc123"
+557 |             )
+558 |             passed = observed.checks_passed if isinstance(observed, ObservedChecks) else None
+    |                                                                                         ^^^^^
+559 |             summary = observed.summary
+    |
+
+E501 Line too long (89 > 88)
+    --> tests/adapters/test_github_api.py:1219:89
+     |
+1217 |             repo_url="https://github.com/owner/repo", ref="abc123"
+1218 |         )
+1219 |         passed = observed.checks_passed if isinstance(observed, ObservedChecks) else None
+     |                                                                                         ^
+1220 |         summary = observed.summary
+1221 |     assert passed is True
+     |
+
+E501 Line too long (90 > 88)
+    --> tests/fakes.py:1849:89
+     |
+1847 |         if sha is None:
+1848 |             raise CheckObservationError(
+1849 |                 repo_url=repo_url, ref=ref, reason="the fake watch has no commit identity"
+     |                                                                                         ^^
+1850 |             )
+1851 |         try:
+     |
+
+E501 Line too long (93 > 88)
+    --> tests/fakes.py:1860:89
+     |
+1858 |             )
+1859 |         except ValueError as exc:
+1860 |             raise CheckObservationError(repo_url=repo_url, ref=ref, reason=str(exc)) from exc
+     |                                                                                         ^^^^^
+     |
+
+E501 Line too long (91 > 88)
+   --> tests/tracker/test_audit_forge.py:293:89
+    |
+291 |         try:
+292 |             await ci.rerun_checks(repo_url=REPO, ref=SHA)
+293 |             assert (await ci.wait_for_checks(repo_url=REPO, ref=SHA)).checks_passed is True
+    |                                                                                         ^^^
+294 |             api.attempts[101] = 3
+295 |             result = await setup(ci, bound=0).observe(REQUEST)
+    |
+
+Found 30 errors (20 fixed, 10 remaining).

@@ -1,0 +1,1043 @@
+[
+  {
+    "path": "src/kodezart/chains/organize.py",
+    "whole": true
+  },
+  {
+    "path": "src/kodezart/chains/organize_author.py",
+    "whole": true
+  },
+  {
+    "path": "src/kodezart/composition/organize.py",
+    "whole": true
+  },
+  {
+    "path": "src/kodezart/core/organize_settings.py",
+    "whole": true
+  },
+  {
+    "path": "src/kodezart/domain/criterion_creation.py",
+    "whole": true
+  },
+  {
+    "path": "src/kodezart/domain/organize.py",
+    "whole": true
+  },
+  {
+    "path": "src/kodezart/domain/organize_graph.py",
+    "whole": true
+  },
+  {
+    "path": "src/kodezart/domain/topology.py",
+    "whole": true
+  },
+  {
+    "path": "src/kodezart/services/organize_context.py",
+    "whole": true
+  },
+  {
+    "path": "src/kodezart/services/organize_owner.py",
+    "whole": true
+  },
+  {
+    "path": "src/kodezart/services/organize_tick.py",
+    "whole": true
+  },
+  {
+    "path": "src/kodezart/types/domain/organize.py",
+    "whole": true
+  },
+  {
+    "path": "src/kodezart/types/domain/organize_graph.py",
+    "whole": true
+  },
+  {
+    "path": "src/kodezart/types/domain/organize_owner.py",
+    "whole": true
+  },
+  {
+    "path": "src/kodezart/types/domain/topology.py",
+    "whole": true
+  },
+  {
+    "path": "src/kodezart/adapters/linear_issue_identity.py",
+    "whole": true
+  },
+  {
+    "path": "src/kodezart/types/domain/issue_identity.py",
+    "whole": true
+  },
+  {
+    "path": "src/kodezart/domain/errors.py",
+    "symbol": "OrganizeAdmissionIdentityError",
+    "parent": null,
+    "donor_lines": [
+      708,
+      716
+    ]
+  },
+  {
+    "path": "src/kodezart/domain/errors.py",
+    "symbol": "OrganizeDecisionRequiredError",
+    "parent": null,
+    "donor_lines": [
+      796,
+      803
+    ]
+  },
+  {
+    "path": "src/kodezart/domain/errors.py",
+    "symbol": "OrganizeHaltError",
+    "parent": null,
+    "donor_lines": [
+      782,
+      793
+    ]
+  },
+  {
+    "path": "src/kodezart/domain/errors.py",
+    "symbol": "OrganizeWriteRefusalError",
+    "parent": null,
+    "donor_lines": [
+      773,
+      779
+    ]
+  },
+  {
+    "path": "src/kodezart/domain/errors.py",
+    "symbol": "ScopeCycleError",
+    "parent": null,
+    "donor_lines": [
+      302,
+      312
+    ]
+  },
+  {
+    "path": "src/kodezart/domain/errors.py",
+    "symbol": "DuplicateIssueIdentityError",
+    "parent": null,
+    "donor_lines": [
+      287,
+      299
+    ]
+  },
+  {
+    "path": "src/kodezart/domain/prompt_variables.py",
+    "symbol": "organize_variables",
+    "parent": null,
+    "donor_lines": [
+      35,
+      64
+    ]
+  },
+  {
+    "path": "src/kodezart/types/domain/tracker.py",
+    "symbol": "TrackerIssueRevision",
+    "parent": null,
+    "donor_lines": [
+      235,
+      251
+    ]
+  },
+  {
+    "path": "src/kodezart/types/domain/operation.py",
+    "symbol": "ScopeLabel",
+    "parent": null,
+    "donor_lines": [
+      155,
+      164
+    ]
+  },
+  {
+    "path": "src/kodezart/types/domain/operation.py",
+    "symbol": "OrganizeScopeBinding",
+    "parent": null,
+    "donor_lines": [
+      535,
+      540
+    ]
+  },
+  {
+    "path": "src/kodezart/services/git_observations.py",
+    "symbol": "read_remote_head",
+    "parent": null,
+    "donor_lines": [
+      13,
+      18
+    ]
+  },
+  {
+    "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_SplitCreation",
+    "parent": null,
+    "donor_lines": [
+      386,
+      392
+    ]
+  },
+  {
+    "path": "src/kodezart/core/protocols.py",
+    "symbol": "read_issue_revision",
+    "parent": "TrackerPort",
+    "donor_lines": [
+      874,
+      882
+    ]
+  },
+  {
+    "path": "src/kodezart/core/protocols.py",
+    "symbol": "read_scope_labels",
+    "parent": "TrackerPort",
+    "donor_lines": [
+      893,
+      895
+    ]
+  },
+  {
+    "path": "src/kodezart/core/protocols.py",
+    "symbol": "execution_approved",
+    "parent": "TrackerPort",
+    "donor_lines": [
+      897,
+      905
+    ]
+  },
+  {
+    "path": "src/kodezart/core/protocols.py",
+    "symbol": "project_milestones",
+    "parent": "TrackerPort",
+    "donor_lines": [
+      907,
+      911
+    ]
+  },
+  {
+    "path": "src/kodezart/core/protocols.py",
+    "symbol": "update_issue_graph",
+    "parent": "TrackerPort",
+    "donor_lines": [
+      922,
+      935
+    ]
+  },
+  {
+    "path": "src/kodezart/core/protocols.py",
+    "symbol": "read_split_children",
+    "parent": "TrackerPort",
+    "donor_lines": [
+      937,
+      939
+    ]
+  },
+  {
+    "path": "src/kodezart/core/protocols.py",
+    "symbol": "create_split_if_absent",
+    "parent": "TrackerPort",
+    "donor_lines": [
+      941,
+      956
+    ]
+  },
+  {
+    "path": "src/kodezart/core/protocols.py",
+    "symbol": "create_criterion_if_absent",
+    "parent": "TrackerPort",
+    "donor_lines": [
+      958,
+      975
+    ]
+  },
+  {
+    "path": "src/kodezart/core/protocols.py",
+    "symbol": "read_issue_identity",
+    "parent": "TrackerPort",
+    "donor_lines": [
+      1040,
+      1042
+    ]
+  },
+  {
+    "path": "src/kodezart/core/protocols.py",
+    "symbol": "edit_description",
+    "parent": "TrackerPort",
+    "donor_lines": [
+      1058,
+      1087
+    ]
+  },
+  {
+    "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "read_issue_revision",
+    "parent": "LinearMcpTracker",
+    "donor_lines": [
+      1137,
+      1143
+    ]
+  },
+  {
+    "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "read_scope_labels",
+    "parent": "LinearMcpTracker",
+    "donor_lines": [
+      1179,
+      1188
+    ]
+  },
+  {
+    "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "execution_approved",
+    "parent": "LinearMcpTracker",
+    "donor_lines": [
+      1152,
+      1155
+    ]
+  },
+  {
+    "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_read_execution_approval",
+    "parent": "LinearMcpTracker",
+    "donor_lines": [
+      1190,
+      1219
+    ]
+  },
+  {
+    "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "project_milestones",
+    "parent": "LinearMcpTracker",
+    "donor_lines": [
+      1221,
+      1226
+    ]
+  },
+  {
+    "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_read_unchanged_graph",
+    "parent": "LinearMcpTracker",
+    "donor_lines": [
+      1402,
+      1417
+    ]
+  },
+  {
+    "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "update_issue_graph",
+    "parent": "LinearMcpTracker",
+    "donor_lines": [
+      1419,
+      1444
+    ]
+  },
+  {
+    "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_update_issue_graph_once",
+    "parent": "LinearMcpTracker",
+    "donor_lines": [
+      1446,
+      1540
+    ]
+  },
+  {
+    "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "read_split_children",
+    "parent": "LinearMcpTracker",
+    "donor_lines": [
+      1542,
+      1570
+    ]
+  },
+  {
+    "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "create_split_if_absent",
+    "parent": "LinearMcpTracker",
+    "donor_lines": [
+      1572,
+      1624
+    ]
+  },
+  {
+    "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_create_split_once",
+    "parent": "LinearMcpTracker",
+    "donor_lines": [
+      1626,
+      1698
+    ]
+  },
+  {
+    "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_unstarted_state_id",
+    "parent": "LinearMcpTracker",
+    "donor_lines": [
+      1700,
+      1720
+    ]
+  },
+  {
+    "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "create_criterion_if_absent",
+    "parent": "LinearMcpTracker",
+    "donor_lines": [
+      1722,
+      1784
+    ]
+  },
+  {
+    "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "read_issue_identity",
+    "parent": "LinearMcpTracker",
+    "donor_lines": [
+      1984,
+      1998
+    ]
+  },
+  {
+    "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_identity_issues",
+    "parent": "LinearMcpTracker",
+    "donor_lines": [
+      2028,
+      2071
+    ]
+  },
+  {
+    "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_find_issue_identity",
+    "parent": "LinearMcpTracker",
+    "donor_lines": [
+      2073,
+      2085
+    ]
+  },
+  {
+    "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "edit_description",
+    "parent": "LinearMcpTracker",
+    "donor_lines": [
+      2087,
+      2168
+    ]
+  },
+  {
+    "path": "src/kodezart/types/domain/operation.py",
+    "symbol": "scope_labels",
+    "parent": "OperationConfig",
+    "donor_lines": [
+      578,
+      578
+    ]
+  },
+  {
+    "path": "src/kodezart/types/domain/operation.py",
+    "symbol": "organize_mandates",
+    "parent": "OperationConfig",
+    "donor_lines": [
+      580,
+      580
+    ]
+  },
+  {
+    "path": "src/kodezart/types/domain/operation.py",
+    "symbol": "organize_scopes",
+    "parent": "OperationConfig",
+    "donor_lines": [
+      581,
+      581
+    ]
+  },
+  {
+    "path": "src/kodezart/types/domain/operation.py",
+    "symbol": "resolve_organize_mandates",
+    "parent": "OperationConfig",
+    "donor_lines": [
+      960,
+      1015
+    ]
+  },
+  {
+    "path": "src/kodezart/types/domain/agent.py",
+    "symbol": "ORGANIZE_ADMISSION_SCHEMA",
+    "parent": null,
+    "donor_lines": [
+      1167,
+      1167
+    ]
+  },
+  {
+    "path": "src/kodezart/types/domain/agent.py",
+    "symbol": "ORGANIZE_PROPOSAL_SCHEMA",
+    "parent": null,
+    "donor_lines": [
+      1171,
+      1171
+    ]
+  },
+  {
+    "path": "src/kodezart/types/domain/prompts.py",
+    "symbol": "ORGANIZE_ASSESS",
+    "parent": "PromptKey",
+    "donor_lines": [
+      44,
+      44
+    ]
+  },
+  {
+    "path": "src/kodezart/types/domain/prompts.py",
+    "symbol": "ORGANIZE_AUTHOR",
+    "parent": "PromptKey",
+    "donor_lines": [
+      45,
+      45
+    ]
+  },
+  {
+    "path": "src/kodezart/types/domain/prompts.py",
+    "symbol": "ORGANIZE_CRITERIA_AUTHOR",
+    "parent": "PromptKey",
+    "donor_lines": [
+      52,
+      52
+    ]
+  },
+  {
+    "path": "src/kodezart/types/domain/prompts.py",
+    "symbol": "ORGANIZE_VERIFY",
+    "parent": "PromptKey",
+    "donor_lines": [
+      46,
+      46
+    ]
+  },
+  {
+    "path": "src/kodezart/types/domain/surface.py",
+    "symbol": "ISSUE_GRAPH",
+    "parent": "SurfaceKind",
+    "donor_lines": [
+      34,
+      34
+    ]
+  },
+  {
+    "path": "src/kodezart/types/domain/surface.py",
+    "symbol": "ISSUE_SPLIT_SET",
+    "parent": "SurfaceKind",
+    "donor_lines": [
+      35,
+      35
+    ]
+  },
+  {
+    "path": "src/kodezart/types/domain/session.py",
+    "symbol": "ORGANIZE_PASS",
+    "parent": "SessionType",
+    "donor_lines": [
+      79,
+      79
+    ]
+  },
+  {
+    "path": "src/kodezart/core/config.py",
+    "symbol": "organize",
+    "parent": "AppConfig",
+    "donor_lines": [
+      147,
+      147
+    ]
+  },
+  {
+    "path": "src/kodezart/types/domain/tracker_writes.py",
+    "whole": true
+  },
+  {
+    "path": "src/kodezart/domain/scope_approval.py",
+    "whole": true
+  },
+  {
+    "path": "src/kodezart/domain/tracker_writes.py",
+    "symbol": "description_replacement",
+    "parent": null,
+    "donor_lines": [
+      62,
+      74
+    ]
+  },
+  {
+    "path": "src/kodezart/domain/errors.py",
+    "symbol": "StaleWriteError",
+    "parent": null,
+    "donor_lines": [
+      161,
+      167
+    ]
+  },
+  {
+    "path": "src/kodezart/adapters/linear_scope_types.py",
+    "symbol": "LinearApprovalIssueWire",
+    "parent": null,
+    "donor_lines": [
+      69,
+      73
+    ]
+  },
+  {
+    "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_scope_label_members",
+    "parent": "LinearMcpTracker",
+    "donor_lines": [
+      1157,
+      1162
+    ]
+  },
+  {
+    "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_read_scope_issue",
+    "parent": "LinearMcpTracker",
+    "donor_lines": [
+      1164,
+      1177
+    ]
+  },
+  {
+    "path": "src/kodezart/services/tracker_artifacts.py",
+    "symbol": "_SUPPORTED",
+    "parent": null,
+    "donor_lines": [
+      12,
+      23
+    ]
+  },
+  {
+    "path": "src/kodezart/services/tracker_artifacts.py",
+    "symbol": "read_tracker_artifact",
+    "parent": null,
+    "donor_lines": [
+      34,
+      168
+    ]
+  },
+  {
+    "path": "src/kodezart/domain/criterion_amendment.py",
+    "whole": true
+  },
+  {
+    "path": "src/kodezart/core/write_back_settings.py",
+    "whole": true
+  },
+  {
+    "path": "src/kodezart/types/domain/surface.py",
+    "symbol": "DescriptionWriteAuthority",
+    "parent": null,
+    "donor_lines": [
+      72,
+      88
+    ]
+  },
+  {
+    "path": "src/kodezart/adapters/linear_mcp_types.py",
+    "symbol": "LinearWorkflowStateWire",
+    "parent": null,
+    "donor_lines": [
+      369,
+      373
+    ]
+  },
+  {
+    "path": "src/kodezart/adapters/linear_mcp_types.py",
+    "symbol": "LINEAR_WORKFLOW_STATES",
+    "parent": null,
+    "donor_lines": [
+      376,
+      376
+    ]
+  },
+  {
+    "path": "src/kodezart/core/config.py",
+    "symbol": "write_back",
+    "parent": "AppConfig",
+    "donor_lines": [
+      148,
+      148
+    ]
+  },
+  {
+    "path": "src/kodezart/types/domain/gating.py",
+    "symbol": "TRACKER_TITLE",
+    "parent": "OutboundDestination",
+    "donor_lines": [
+      149,
+      149
+    ]
+  },
+  {
+    "path": "src/kodezart/types/domain/gating.py",
+    "symbol": "TRACKER_DESCRIPTION",
+    "parent": "OutboundDestination",
+    "donor_lines": [
+      148,
+      148
+    ]
+  },
+  {
+    "path": "src/kodezart/adapters/linear_scope_reader.py",
+    "symbol": "project_milestones",
+    "parent": "LinearScopeReader",
+    "donor_lines": [
+      123,
+      166
+    ]
+  },
+  {
+    "path": "src/kodezart/domain/fire_spec.py",
+    "symbol": "_CRITERION_ROW",
+    "parent": null,
+    "donor_lines": [
+      16,
+      16
+    ]
+  },
+  {
+    "path": "src/kodezart/domain/fire_spec.py",
+    "symbol": "_FENCE",
+    "parent": null,
+    "donor_lines": [
+      17,
+      17
+    ]
+  },
+  {
+    "path": "src/kodezart/domain/fire_spec.py",
+    "symbol": "CriterionField",
+    "parent": null,
+    "donor_lines": [
+      18,
+      18
+    ]
+  },
+  {
+    "path": "src/kodezart/domain/fire_spec.py",
+    "symbol": "_without_comments",
+    "parent": null,
+    "donor_lines": [
+      21,
+      40
+    ]
+  },
+  {
+    "path": "src/kodezart/domain/fire_spec.py",
+    "symbol": "criterion_field_bodies",
+    "parent": null,
+    "donor_lines": [
+      43,
+      80
+    ]
+  },
+  {
+    "path": "src/kodezart/domain/fire_spec.py",
+    "symbol": "criterion_check",
+    "parent": null,
+    "donor_lines": [
+      153,
+      162
+    ]
+  },
+  {
+    "path": "src/kodezart/domain/errors.py",
+    "symbol": "InvalidFireCriterionError",
+    "parent": null,
+    "donor_lines": [
+      274,
+      284
+    ]
+  },
+  {
+    "path": "src/kodezart/composition/passes.py",
+    "symbol": "build_prompt_passes",
+    "parent": null,
+    "donor_lines": [
+      265,
+      352
+    ]
+  },
+  {
+    "path": "src/kodezart/prompts/sets/claude-opus/organize_assess.md",
+    "whole": true
+  },
+  {
+    "path": "src/kodezart/prompts/sets/claude-opus/organize_author.md",
+    "whole": true
+  },
+  {
+    "path": "src/kodezart/prompts/sets/claude-opus/organize_verify.md",
+    "whole": true
+  },
+  {
+    "path": "src/kodezart/prompts/sets/claude-opus/organize_criteria_author.md",
+    "whole": true
+  },
+  {
+    "path": "src/kodezart/prompts/sets/anthropic_v5/organize_assess.md",
+    "whole": true
+  },
+  {
+    "path": "src/kodezart/prompts/sets/anthropic_v5/organize_author.md",
+    "whole": true
+  },
+  {
+    "path": "src/kodezart/prompts/sets/anthropic_v5/organize_verify.md",
+    "whole": true
+  },
+  {
+    "path": "src/kodezart/prompts/sets/anthropic_v5/organize_criteria_author.md",
+    "whole": true
+  },
+  {
+    "path": "tests/chains/test_organize.py",
+    "whole": true
+  },
+  {
+    "path": "tests/chains/test_organize_correction.py",
+    "whole": true
+  },
+  {
+    "path": "tests/chains/test_organize_delivery_independent.py",
+    "whole": true
+  },
+  {
+    "path": "tests/chains/test_organize_graph_independent.py",
+    "whole": true
+  },
+  {
+    "path": "tests/chains/test_organize_graph_owner.py",
+    "whole": true
+  },
+  {
+    "path": "tests/chains/test_organize_native_independent.py",
+    "whole": true
+  },
+  {
+    "path": "tests/chains/test_organize_owner.py",
+    "whole": true
+  },
+  {
+    "path": "tests/chains/test_organize_ownership.py",
+    "whole": true
+  },
+  {
+    "path": "tests/core/test_organize_settings.py",
+    "whole": true
+  },
+  {
+    "path": "tests/domain/test_organize.py",
+    "whole": true
+  },
+  {
+    "path": "tests/domain/test_organize_routing.py",
+    "whole": true
+  },
+  {
+    "path": "tests/integration/test_organize_scheduler.py",
+    "whole": true
+  },
+  {
+    "path": "tests/integration/test_organize_tick_halt.py",
+    "whole": true
+  },
+  {
+    "path": "tests/prompts/test_organize_call_bindings.py",
+    "whole": true
+  },
+  {
+    "path": "tests/prompts/test_organize_mandate_bindings.py",
+    "whole": true
+  },
+  {
+    "path": "tests/prompts/test_organize_roles.py",
+    "whole": true
+  },
+  {
+    "path": "tests/test_organize_portability.py",
+    "whole": true
+  },
+  {
+    "path": "tests/tracker/test_organize_graph_final_boundary.py",
+    "whole": true
+  },
+  {
+    "path": "tests/tracker/test_organize_graph_independent.py",
+    "whole": true
+  },
+  {
+    "path": "tests/tracker/test_organize_graph_receipt_boundary.py",
+    "whole": true
+  },
+  {
+    "path": "tests/tracker/test_organize_graph_retry_boundary.py",
+    "whole": true
+  },
+  {
+    "path": "tests/tracker/test_organize_graph_writes.py",
+    "whole": true
+  },
+  {
+    "path": "tests/types/test_organize_halt.py",
+    "whole": true
+  },
+  {
+    "path": "tests/tracker/test_criterion_creation.py",
+    "whole": true
+  },
+  {
+    "path": "tests/tracker/test_body_revisions.py",
+    "whole": true
+  },
+  {
+    "path": "tests/tracker/test_issue_identity_boundary.py",
+    "whole": true
+  },
+  {
+    "path": "tests/tracker/test_scope_approval.py",
+    "whole": true
+  },
+  {
+    "path": "tests/tracker/test_milestone_approval.py",
+    "whole": true
+  },
+  {
+    "path": "tests/tracker/test_native_approval_aliases.py",
+    "whole": true
+  },
+  {
+    "path": "tests/domain/test_topology.py",
+    "whole": true
+  },
+  {
+    "path": "tests/domain/test_topology_cycles.py",
+    "whole": true
+  },
+  {
+    "path": "tests/fakes.py",
+    "symbol": "read_issue_revision",
+    "parent": "FakeTrackerPort",
+    "donor_lines": [
+      3538,
+      3543
+    ]
+  },
+  {
+    "path": "tests/fakes.py",
+    "symbol": "project_milestones",
+    "parent": "FakeTrackerPort",
+    "donor_lines": [
+      3579,
+      3595
+    ]
+  },
+  {
+    "path": "tests/fakes.py",
+    "symbol": "execution_approved",
+    "parent": "FakeTrackerPort",
+    "donor_lines": [
+      3620,
+      3622
+    ]
+  },
+  {
+    "path": "tests/fakes.py",
+    "symbol": "_read_execution_approval",
+    "parent": "FakeTrackerPort",
+    "donor_lines": [
+      3624,
+      3658
+    ]
+  },
+  {
+    "path": "tests/fakes.py",
+    "symbol": "read_scope_labels",
+    "parent": "FakeTrackerPort",
+    "donor_lines": [
+      3660,
+      3667
+    ]
+  },
+  {
+    "path": "tests/fakes.py",
+    "symbol": "update_issue_graph",
+    "parent": "FakeTrackerPort",
+    "donor_lines": [
+      3669,
+      3697
+    ]
+  },
+  {
+    "path": "tests/fakes.py",
+    "symbol": "_require_graph_holder",
+    "parent": "FakeTrackerPort",
+    "donor_lines": [
+      3699,
+      3716
+    ]
+  },
+  {
+    "path": "tests/fakes.py",
+    "symbol": "read_split_children",
+    "parent": "FakeTrackerPort",
+    "donor_lines": [
+      3718,
+      3742
+    ]
+  },
+  {
+    "path": "tests/fakes.py",
+    "symbol": "create_split_if_absent",
+    "parent": "FakeTrackerPort",
+    "donor_lines": [
+      3744,
+      3800
+    ]
+  },
+  {
+    "path": "tests/fakes.py",
+    "symbol": "create_criterion_if_absent",
+    "parent": "FakeTrackerPort",
+    "donor_lines": [
+      3802,
+      3849
+    ]
+  },
+  {
+    "path": "tests/fakes.py",
+    "symbol": "read_issue_identity",
+    "parent": "FakeTrackerPort",
+    "donor_lines": [
+      3966,
+      3968
+    ]
+  },
+  {
+    "path": "tests/fakes.py",
+    "symbol": "upsert_issue",
+    "parent": "FakeTrackerPort",
+    "donor_lines": [
+      3970,
+      4001
+    ]
+  },
+  {
+    "path": "tests/fakes.py",
+    "symbol": "edit_description",
+    "parent": "FakeTrackerPort",
+    "donor_lines": [
+      4022,
+      4060
+    ]
+  },
+  {
+    "path": "tests/fakes.py",
+    "symbol": "_tool_save_issue",
+    "parent": "FakeLinearMcpServer",
+    "donor_lines": [
+      2732,
+      2819
+    ]
+  }
+]

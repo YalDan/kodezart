@@ -1,0 +1,4 @@
+Would reformat: src/kodezart/domain/errors.py
+Would reformat: tests/tracker/test_lane_records.py
+Would reformat: tests/tracker/test_ruling_records.py
+3 files would be reformatted, 665 files already formatted

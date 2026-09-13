@@ -1,0 +1,62 @@
+src/kodezart/core/config.py:387:    tracker_mcp_server_name: str = Field(
+src/kodezart/core/config.py:397:    tracker_mcp_server_url: str = Field(
+src/kodezart/core/config.py:401:    tracker_mcp_auth_header: str = Field(
+src/kodezart/core/config.py:406:    tracker_mcp_auth_scheme: str = Field(
+src/kodezart/core/config.py:411:    tracker_token: SecretStr | None = Field(
+src/kodezart/core/config.py:420:    tracker_timeout_seconds: float = Field(
+src/kodezart/core/config.py:432:    tracker_mcp_call_timeout_seconds: float = Field(
+src/kodezart/core/config.py:448:    tracker_mcp_sse_read_timeout_seconds: float = Field(
+src/kodezart/core/config.py:464:    tracker_mcp_error_detail_limit: int = Field(
+src/kodezart/core/config.py:474:    tracker_max_retries: int = Field(
+src/kodezart/core/config.py:480:    tracker_retry_backoff_factor: float = Field(
+src/kodezart/composition/records.py:121:                server_name=config.tracker_mcp_server_name,
+src/kodezart/composition/tracker.py:34:def make_mcp_tool_caller(*, config: AppConfig, token: str) -> ManagedMcpToolCaller:
+src/kodezart/composition/tracker.py:42:        url=config.tracker_mcp_server_url,
+src/kodezart/composition/tracker.py:43:        server_name=config.tracker_mcp_server_name,
+src/kodezart/composition/tracker.py:45:        timeout_seconds=config.tracker_timeout_seconds,
+src/kodezart/composition/tracker.py:46:        call_timeout_seconds=config.tracker_mcp_call_timeout_seconds,
+src/kodezart/composition/tracker.py:47:        sse_read_timeout_seconds=config.tracker_mcp_sse_read_timeout_seconds,
+src/kodezart/composition/tracker.py:48:        auth_header_name=config.tracker_mcp_auth_header,
+src/kodezart/composition/tracker.py:49:        auth_scheme=config.tracker_mcp_auth_scheme,
+src/kodezart/composition/tracker.py:50:        error_detail_limit=config.tracker_mcp_error_detail_limit,
+src/kodezart/composition/tracker.py:83:def build_tracker(
+src/kodezart/composition/tracker.py:110:                max_retries=config.tracker_max_retries,
+src/kodezart/composition/tracker.py:111:                retry_backoff_factor=config.tracker_retry_backoff_factor,
+src/kodezart/composition/tracker.py:136:async def boot_tracker(
+src/kodezart/composition/tracker.py:158:    if operation is None or config.tracker_token is None:
+src/kodezart/composition/tracker.py:162:            tracker_token_present=config.tracker_token is not None,
+src/kodezart/composition/tracker.py:165:    token = config.tracker_token.get_secret_value()
+src/kodezart/composition/tracker.py:167:    caller = make_mcp_tool_caller(config=config, token=token)
+src/kodezart/composition/tracker.py:171:        tracker, ledger = build_tracker(
+src/kodezart/adapters/linear_mcp_tracker.py:561:        ``tracker_mcp_retry`` warning per attempt — before the marker is
+src/kodezart/adapters/linear_mcp_tracker.py:2455:                    "tracker_mcp_retry",
+src/kodezart/main.py:60:    dialled = await boot_tracker(config=config, operation=declared, log=log)
+tests/test_composition_root.py:591:            tracker_mcp_sse_read_timeout_seconds=self.TRACKER_BOUND,
+tests/test_composition_root.py:598:        caller = make_mcp_tool_caller(config=self._config(), token=self.FIXTURE_TOKEN)
+tests/core/test_bare_mode.py:139:    assert tracker_absent[0]["tracker_token_present"] is False
+tests/core/test_credential_shapes.py:49:    ("tracker_token", f"tracker call rejected: {_TRACKER_TOKEN}"),
+tests/core/test_credential_shapes.py:114:    "tracker_token": _TRACKER_TOKEN,
+tests/core/test_config.py:219:    "tracker_mcp_sse_read_timeout_seconds",
+tests/core/test_tracker_credential.py:38:    token = AppConfig().tracker_token
+tests/core/test_tracker_credential.py:49:    assert AppConfig().tracker_token is None
+tests/core/test_tracker_credential.py:84:    assert _FIXTURE_BODY not in repr(config.tracker_token)
+tests/core/test_tracker_credential.py:85:    assert _FIXTURE_BODY not in str(config.tracker_token)
+tests/core/test_tracker_credential.py:98:    token = AppConfig().tracker_token
+tests/tracker/test_tracker_boot_wiring.py:644:    assert unconfigured[0]["tracker_token_present"] is False
+tests/tracker/test_tracker_boot.py:894:            tracker_token=OAUTH_TOKEN,
+tests/tracker/test_tracker_boot.py:895:            tracker_mcp_server_url="https://tracker.invalid/mcp",
+tests/tracker/test_tracker_boot.py:899:            await boot_tracker(
+tests/tracker/test_tracker_boot.py:1033:            tracker_token=LONG_LIVED_KEY,
+tests/tracker/test_tracker_boot.py:1034:            tracker_mcp_server_url="https://tracker.invalid/mcp",
+tests/tracker/test_tracker_boot.py:1038:            await boot_tracker(
+tests/tracker/test_tracker_boot.py:1068:            tracker_token=LONG_LIVED_KEY,
+tests/tracker/test_tracker_boot.py:1069:            tracker_mcp_server_url="https://tracker.invalid/mcp",
+tests/tracker/test_tracker_boot.py:1072:        dialled = await boot_tracker(
+tests/tracker/test_linear_mcp_tracker.py:555:        assert not [entry for entry in logs if entry["event"] == "tracker_mcp_retry"]
+tests/tracker/test_linear_mcp_tracker.py:600:        retries = [entry for entry in logs if entry["event"] == "tracker_mcp_retry"]
+tests/tracker/test_linear_mcp_tracker.py:1420:        assert "tracker_mcp_retry" not in events, "the budget was spent"
+tests/tracker/test_linear_mcp_tracker.py:1437:        assert events.count("tracker_mcp_retry") == 1
+tests/tracker/test_linear_mcp_tracker.py:1462:        assert "tracker_mcp_retry" not in [entry["event"] for entry in logs]
+tests/docs/test_documented_surface.py:292:    assert _attribute_reads_of("tracker_mcp_server_name") == [
+tests/prompts/test_operation_config.py:430:    raw["tracker_token"] = "secret-value"
+tests/prompts/test_operation_config.py:433:    assert any("tracker_token" in failure for failure in excinfo.value.failures)

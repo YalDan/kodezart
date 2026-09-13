@@ -1,0 +1,54 @@
+--- a/tests/tracker/test_lane_records.py
++++ b/tests/tracker/test_lane_records.py
+@@ -1,4 +1,6 @@
+ """Cold lane reconstruction uses the actual tracker comment read boundary."""
++
++from tests.tracker.lease_fixtures import leased_comment
+ 
+ import asyncio
+ import json
+@@ -39,7 +41,7 @@
+             marker_prefixes=PREFIXES,
+         )
+     marker, content = body.split("\n", 1)
+-    return await tracker.upsert_comment(
++    return await leased_comment(tracker, 
+         target=APPROVED_ISSUE, marker=marker, body=content
+     )
+ 
+@@ -235,7 +237,7 @@
+ 
+ 
+ async def test_legacy_manual_prose_requires_a_deliberate_migration(tracker):
+-    await tracker.upsert_comment(
++    await leased_comment(tracker, 
+         target=APPROVED_ISSUE,
+         marker=MARKER,
+         body="Branch: old-branch. Head: 123. Everything pushed.",
+--- a/tests/tracker/test_ruling_records.py
++++ b/tests/tracker/test_ruling_records.py
+@@ -1,4 +1,6 @@
+ """Ruling occurrences survive replay and cold reads through both tracker ports."""
++
++from tests.tracker.lease_fixtures import leased_comment
+ 
+ import asyncio
+ from unittest.mock import AsyncMock
+@@ -27,7 +29,7 @@
+     ruling = Ruling.model_validate(ruling_data(issue_ref=APPROVED_ISSUE, **changes))
+     body = render_ruling(ruling=ruling, lane_key=LANE, marker_prefixes=PREFIXES)
+     marker, content = body.split("\n", 1)
+-    stored = await tracker.upsert_comment(
++    stored = await leased_comment(tracker, 
+         target=APPROVED_ISSUE, marker=marker, body=content
+     )
+     return stored, ruling
+@@ -148,7 +150,7 @@
+     else:
+         body = first.body.split("\n")[0] + "\nmalformed"
+     marker, content = body.split("\n", 1)
+-    await tracker.upsert_comment(target=APPROVED_ISSUE, marker=marker, body=content)
++    await leased_comment(tracker, target=APPROVED_ISSUE, marker=marker, body=content)
+     with pytest.raises(RulingRecordReadError, match="malformed") as raised:
+         await reader(tracker).read_all(**ADDRESS)
+     assert raised.value.__cause__ is not None

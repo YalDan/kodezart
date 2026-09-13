@@ -1,0 +1,73 @@
+F....                                                                    [100%]
+=================================== FAILURES ===================================
+____ test_closed_blocker_subtree_without_pr_uses_trunk_despite_parent_state ____
+
+    async def test_closed_blocker_subtree_without_pr_uses_trunk_despite_parent_state():
+        port = board(lanes=("A", "B"), blocked={"B": ("A",)})
+        port.issues["A/check"] = port.issues["A/check"].model_copy(
+            update={"state_kind": WorkflowStateKind.COMPLETED}
+        )
+        harness = runtime(port=port, lanes=("B",))
+>       events = [event async for event in drive(harness)]
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/integration/test_scope_runtime_independent_review.py:26: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/composition/engine.py:129: in run
+    async for event in arm.run(
+src/kodezart/services/scope_runtime.py:159: in run
+    spec = await self._resolver.resolve(
+src/kodezart/services/base_resolver.py:69: in resolve
+    item := await self._input_for(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.services.base_resolver.BaseResolver object at 0x10a5d7890>
+
+    async def _input_for(
+        self,
+        *,
+        issue_key: str,
+        blocker_key: str,
+    ) -> BaseInput | None:
+        """The blocker's deliverable ref, the nearest ancestor's, or ``None``.
+    
+        A blocker is frequently not the issue whose branch delivers it —
+        work riding another issue's pull request records no ref of its own.
+        A resolution assuming otherwise would refuse to dispatch a lane
+        whose premise is in fact present.
+    
+        ``None`` is the ASSUMED-LANDED arm: a blocker that is
+        TERMINAL and carries no deliverable ref anywhere on its ancestor
+        chain finished outside kodezart's own delivery loop — the
+        founder's boards merge pull requests by hand — so its work is on
+        the trunk and it contributes no input.  The assumption is logged
+        by name, never silent.  A LIVE ref-less blocker keeps the refusal:
+        eligibility excludes live blockers before resolution, so reaching
+        one here means the graph moved under the pass, and dispatching
+        over it would build on a premise that does not exist yet.
+        """
+        ref = await self._nearest_deliverable_ref(blocker_key, issue_key=issue_key)
+        if ref is None:
+            blocker = await self._tracker.read_issue(issue_key=blocker_key)
+            if not is_open(blocker.state_kind):
+                await self._log.ainfo(
+                    "base_input_assumed_landed",
+                    issue_key=issue_key,
+                    blocker_key=blocker_key,
+                    state_name=blocker.state_name,
+                )
+                return None
+>           raise BaseResolutionError(
+                "no deliverable ref on the blocker or any of its ancestors",
+                issue_id=issue_key,
+                blocker_issue_ids=(blocker_key,),
+            )
+E           kodezart.domain.errors.BaseResolutionError: no deliverable ref on the blocker or any of its ancestors
+
+src/kodezart/services/base_resolver.py:140: BaseResolutionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 16:09:49 [info     ] forge_capabilities_selected    forge_less_origin=False repo_url=file:///scope-repository.git
+2026-09-12 16:09:49 [debug    ] no_forge_delivery_probe_answered issue_key=B repo_url=file:///scope-repository.git
+=========================== short test summary info ============================
+FAILED tests/integration/test_scope_runtime_independent_review.py::test_closed_blocker_subtree_without_pr_uses_trunk_despite_parent_state
+1 failed, 4 passed in 3.95s

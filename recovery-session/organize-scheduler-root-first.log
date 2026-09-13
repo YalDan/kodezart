@@ -1,0 +1,96 @@
+FF.F.................................................................... [ 90%]
+........                                                                 [100%]
+=================================== FAILURES ===================================
+___ test_scheduled_owner_prepares_native_children_and_reentry_is_idempotent ____
+
+tmp_path = PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1738/test_scheduled_owner_prepares_0')
+
+    async def test_scheduled_owner_prepares_native_children_and_reentry_is_idempotent(
+        tmp_path,
+    ):
+        config, operation, board, tracker, prompts = dependencies(tmp_path)
+        executor = BoardExecutor(board)
+        workspace = RecordingWorkspace()
+        queue = FakeJobQueue()
+        runtime = await build_dispatch_runtime(
+            config=config,
+            operation=operation,
+            dialled=DialledTracker(
+                tracker=tracker,
+                caller=board,
+                operation=operation,
+>               ledger=tracker.self_writes,
+                       ^^^^^^^^^^^^^^^^^^^
+            ),
+            github_api=None,
+            queue=queue,
+            registry=queue,
+            gate=PassThroughGate(),
+            git=FakeGitService(
+                remote_branch_shas={repo.trunk: "a" * 40 for repo in operation.repos}
+            ),
+            cache=FakeRepoCache(),
+            workspace=workspace,
+            prompts=prompts,
+            runner=AgentService(
+                executor=executor,
+                workspace=workspace,
+                git_base_url="https://example.invalid",
+            ),
+            skills=SUPPRESS_ALL_SKILLS,
+            recorder=RunRecorder(records={}, sinks={}),
+            log=get_logger(__name__),
+        )
+E       AttributeError: 'LinearMcpTracker' object has no attribute 'self_writes'. Did you mean: '_self_writes'?
+
+tests/integration/test_organize_scheduler.py:83: AttributeError
+_____ test_partial_owner_configuration_refuses_during_preflight[organize] ______
+
+tmp_path = PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1738/test_partial_owner_configurati0')
+missing = 'organize'
+
+    @pytest.mark.parametrize(
+        "missing",
+        ["organize", "organize_scopes", "organize_mandates", "tracker", "operation"],
+    )
+    async def test_partial_owner_configuration_refuses_during_preflight(tmp_path, missing):
+        config, operation, _board, tracker, prompts = dependencies(tmp_path)
+        if missing == "organize":
+            from kodezart.core.config import AppConfig
+    
+>           config = AppConfig.model_validate({**config.model_dump(), "organize": None})
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 1 validation error for AppConfig
+E           knowledge
+E             Value error, session_grants requires connection with credential (or HTTP gateway_credential) [type=value_error]
+E               For further information visit https://errors.pydantic.dev/2.12/v/value_error
+
+tests/integration/test_organize_scheduler.py:146: ValidationError
+_ test_partial_owner_configuration_refuses_during_preflight[organize_mandates] _
+
+tmp_path = PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1738/test_partial_owner_configurati2')
+missing = 'organize_mandates'
+
+    @pytest.mark.parametrize(
+        "missing",
+        ["organize", "organize_scopes", "organize_mandates", "tracker", "operation"],
+    )
+    async def test_partial_owner_configuration_refuses_during_preflight(tmp_path, missing):
+        config, operation, _board, tracker, prompts = dependencies(tmp_path)
+        if missing == "organize":
+            from kodezart.core.config import AppConfig
+    
+            config = AppConfig.model_validate({**config.model_dump(), "organize": None})
+        elif missing in {"organize_scopes", "organize_mandates"}:
+>           operation = OperationConfig.model_validate(
+                {**operation.model_dump(), missing: []}
+E               pydantic_core._pydantic_core.ValidationError: 1 validation error for OperationConfig
+E                 Value error, organize_scopes requires configured organize_mandates [type=value_error]
+E                   For further information visit https://errors.pydantic.dev/2.12/v/value_error
+
+tests/integration/test_organize_scheduler.py:148: ValidationError
+=========================== short test summary info ============================
+FAILED tests/integration/test_organize_scheduler.py::test_scheduled_owner_prepares_native_children_and_reentry_is_idempotent
+FAILED tests/integration/test_organize_scheduler.py::test_partial_owner_configuration_refuses_during_preflight[organize]
+FAILED tests/integration/test_organize_scheduler.py::test_partial_owner_configuration_refuses_during_preflight[organize_mandates]
+3 failed, 77 passed in 17.96s

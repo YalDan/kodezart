@@ -1,0 +1,220 @@
+[
+  {
+    "path": "src/kodezart/adapters/langgraph_run_state_reader.py",
+    "sha256": "aa7d133c932adcb292ceaaeb071505bb3b8bff9c8f4f0a392b9ed0257b627573",
+    "donor_identical": true
+  },
+  {
+    "path": "src/kodezart/handlers/agent_handler.py",
+    "sha256": "fa0a01031bee920e1701b9d63eb43f7d73f9ee19c8cc11276e4a39127e5125cd",
+    "donor_identical": false
+  },
+  {
+    "path": "tests/adapters/test_git_artifact_persister.py",
+    "sha256": "deb04bcde0183894a38134f353b599a3a2d9b50ecb8eafcbe0fb299738c4f89d",
+    "donor_identical": true,
+    "test_functions": 6,
+    "changed_oracles": [],
+    "missing_original_tests": []
+  },
+  {
+    "path": "tests/adapters/test_git_branch_merger.py",
+    "sha256": "1b18970957f9e221efaecfd6c8db679634a6f52a7f3144ea1b23995b4d2650f5",
+    "donor_identical": true,
+    "test_functions": 14,
+    "changed_oracles": [],
+    "missing_original_tests": []
+  },
+  {
+    "path": "tests/adapters/test_permission_boundary.py",
+    "sha256": "0c74829f5a381546321e7c7cc7541620fb1df6eb2c50515425622c3df3d5e499",
+    "donor_identical": false,
+    "test_functions": 9,
+    "changed_oracles": [],
+    "missing_original_tests": []
+  },
+  {
+    "path": "tests/adapters/test_tool_selection.py",
+    "sha256": "528bdc4216aeed275076ba3d0a40a5d7547520cd026393ad43a39150c1e1a329",
+    "donor_identical": false,
+    "test_functions": 8,
+    "changed_oracles": [],
+    "missing_original_tests": []
+  },
+  {
+    "path": "tests/api/v1/test_agent.py",
+    "sha256": "ad4c7239d7a65ac0d1ed007298b9f18b2575380d2d8bc2f7711b3b0171a33533",
+    "donor_identical": true,
+    "test_functions": 20,
+    "changed_oracles": [],
+    "missing_original_tests": []
+  },
+  {
+    "path": "tests/api/v1/test_jobs.py",
+    "sha256": "11498aeb8f49c37e604af8cedfd39583a1c78e3ab0a98b9948aa6903037dc4b4",
+    "donor_identical": false,
+    "test_functions": 53,
+    "changed_oracles": [],
+    "missing_original_tests": []
+  },
+  {
+    "path": "tests/chains/test_dispatch_definitions.py",
+    "sha256": "bb8103c585d261af6107a0a9eff36cb704798ef7b535b5faeff129c39089b25d",
+    "donor_identical": true,
+    "test_functions": 11,
+    "changed_oracles": [],
+    "missing_original_tests": []
+  },
+  {
+    "path": "tests/chains/test_m4_local_sdk_independent.py",
+    "sha256": "0012db39ff8c4465eed013dee9ab4436ffd70836f24f8ca95a2ae2aea9bac33e",
+    "donor_identical": false,
+    "test_functions": 1,
+    "changed_oracles": [],
+    "missing_original_tests": []
+  },
+  {
+    "path": "tests/chains/test_organize_ownership.py",
+    "sha256": "c8a26956910a18548b7a0365b82aa698ef61a3ca583f3f602a413dc38a93990e",
+    "donor_identical": true,
+    "test_functions": 1,
+    "changed_oracles": [],
+    "missing_original_tests": []
+  },
+  {
+    "path": "tests/chains/test_outbound_gating.py",
+    "sha256": "3525b48d6b031d1adf1a70ec5dc76041ef36bc6cd97789f13f09829f400367c8",
+    "donor_identical": false,
+    "test_functions": 10,
+    "changed_oracles": [],
+    "missing_original_tests": []
+  },
+  {
+    "path": "tests/chains/test_shorthand_url_resolution.py",
+    "sha256": "a51c4fc754eabd41ea3f2f52cc9cc161e43b230ba4137a0c93eb0592adf2cca2",
+    "donor_identical": true,
+    "test_functions": 3,
+    "changed_oracles": [],
+    "missing_original_tests": []
+  },
+  {
+    "path": "tests/core/test_logging_chain.py",
+    "sha256": "18914506215029b4680a1728ff1f127fcc07765afdac51d7dfcef992e9181345",
+    "donor_identical": false,
+    "test_functions": 5,
+    "changed_oracles": [],
+    "missing_original_tests": []
+  },
+  {
+    "path": "tests/fakes.py",
+    "sha256": "b7104b5549b79709d4e0c5ce7805f17d431879fafff8a7578e398dd7ed9ad298",
+    "donor_identical": false,
+    "test_functions": 0,
+    "changed_oracles": [],
+    "missing_original_tests": []
+  },
+  {
+    "path": "tests/integration/test_live_criteria_probes.py",
+    "sha256": "b27d564339ec5915618d828358850cd4346a145744aa09790d59c0ae53310def",
+    "donor_identical": false,
+    "test_functions": 2,
+    "changed_oracles": [],
+    "missing_original_tests": []
+  },
+  {
+    "path": "tests/integration/test_stacked_scope.py",
+    "sha256": "767517f0146e7cb01f78368acc6ac0055a5bdcda6e925b21976d3abcd32f9f14",
+    "donor_identical": true,
+    "test_functions": 5,
+    "changed_oracles": [],
+    "missing_original_tests": []
+  },
+  {
+    "path": "tests/integration/test_workflow_e2e.py",
+    "sha256": "a7ff2c6536658df85793972b7b6a80f660b43f1c08ef639c0ef8f516c0b99661",
+    "donor_identical": true,
+    "test_functions": 13,
+    "changed_oracles": [],
+    "missing_original_tests": []
+  },
+  {
+    "path": "tests/probes/test_ab_smoke.py",
+    "sha256": "e14c08b7d27169cdf5b980ca9338e29cc2e34829acf39f8d1493b8237848811a",
+    "donor_identical": false,
+    "test_functions": 1,
+    "changed_oracles": [],
+    "missing_original_tests": []
+  },
+  {
+    "path": "tests/prompt_census.py",
+    "sha256": "20d5bd118e6a2219ffbb030669b5e2626e662e9160cd77da10bc55a57a1522f5",
+    "donor_identical": false,
+    "test_functions": 0,
+    "changed_oracles": [],
+    "missing_original_tests": []
+  },
+  {
+    "path": "tests/prompts/sets.py",
+    "sha256": "5e4f864a193ff5252372e7cc65c9add508925183d808145d67c8347835ff957c",
+    "donor_identical": false,
+    "test_functions": 1,
+    "changed_oracles": [],
+    "missing_original_tests": []
+  },
+  {
+    "path": "tests/prompts/test_skills_loadouts.py",
+    "sha256": "a7982c1b76cc9f2222cdef21dbf1cb038a7d8c539140647c6f24714a4c8f5f3a",
+    "donor_identical": false,
+    "test_functions": 18,
+    "changed_oracles": [],
+    "missing_original_tests": []
+  },
+  {
+    "path": "tests/prompts/test_v5_fragments.py",
+    "sha256": "dc1a7684f9e54be24fbddf38cd655f73edfc20f634073913af8cbaf065052228",
+    "donor_identical": false,
+    "test_functions": 12,
+    "changed_oracles": [],
+    "missing_original_tests": []
+  },
+  {
+    "path": "tests/prompts/test_v5_wiring.py",
+    "sha256": "3e88929d2fc5e357778e6dee71d30cce4c9575cced44c70054db3022685ecb12",
+    "donor_identical": false,
+    "test_functions": 12,
+    "changed_oracles": [],
+    "missing_original_tests": []
+  },
+  {
+    "path": "tests/services/test_lifecycle_watcher.py",
+    "sha256": "59a678463f8b65f727e091bfa1187608900e37490fd05ae9e50c3c001414cf5b",
+    "donor_identical": false,
+    "test_functions": 40,
+    "changed_oracles": [],
+    "missing_original_tests": []
+  },
+  {
+    "path": "tests/services/test_run_surface_lease.py",
+    "sha256": "816c197cef13e34ef7bc9c19f480c281d507d62028ea0975e91efcf270289f83",
+    "donor_identical": false,
+    "test_functions": 14,
+    "changed_oracles": [],
+    "missing_original_tests": []
+  },
+  {
+    "path": "tests/test_composition_root.py",
+    "sha256": "98fac5b896aef10372b67590174bd26631ad7a4d27662350cb61e50ac7d4fed1",
+    "donor_identical": false,
+    "test_functions": 16,
+    "changed_oracles": [],
+    "missing_original_tests": []
+  },
+  {
+    "path": "tests/types/test_wire_schemas.py",
+    "sha256": "26983f0e19f538ae8f155e18a4cb2315dd0d78daa6f464b3f3cfcafc4a2bae29",
+    "donor_identical": false,
+    "test_functions": 14,
+    "changed_oracles": [],
+    "missing_original_tests": []
+  }
+]

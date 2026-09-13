@@ -1,0 +1,49 @@
+
+==================================== ERRORS ====================================
+________ ERROR collecting tests/tracker/test_issue_identity_boundary.py ________
+ImportError while importing test module '/private/tmp/kodezart-v03-m2-organize/tests/tracker/test_issue_identity_boundary.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/tracker/test_issue_identity_boundary.py:18: in <module>
+    from tests.tracker.test_issue_upsert import BODY, DELIVERABLE, SCOPE, upsert
+E   ModuleNotFoundError: No module named 'tests.tracker.test_issue_upsert'
+____________ ERROR collecting tests/tracker/test_scope_approval.py _____________
+ImportError while importing test module '/private/tmp/kodezart-v03-m2-organize/tests/tracker/test_scope_approval.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/tracker/test_scope_approval.py:34: in <module>
+    from tests.tracker.test_scope_tool_arguments import SCOPE_INPUT_SCHEMAS
+E   ModuleNotFoundError: No module named 'tests.tracker.test_scope_tool_arguments'
+__________ ERROR collecting tests/tracker/test_milestone_approval.py ___________
+ImportError while importing test module '/private/tmp/kodezart-v03-m2-organize/tests/tracker/test_milestone_approval.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/tracker/test_milestone_approval.py:6: in <module>
+    from kodezart.services.scope_resolution import resolve_scope
+E   ModuleNotFoundError: No module named 'kodezart.services.scope_resolution'
+________ ERROR collecting tests/tracker/test_native_approval_aliases.py ________
+ImportError while importing test module '/private/tmp/kodezart-v03-m2-organize/tests/tracker/test_native_approval_aliases.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/tracker/test_native_approval_aliases.py:7: in <module>
+    from tests.tracker.conftest import FIRE_ENTRY_LABELS
+E   ImportError: cannot import name 'FIRE_ENTRY_LABELS' from 'tests.tracker.conftest' (/private/tmp/kodezart-v03-m2-organize/tests/tracker/conftest.py)
+=========================== short test summary info ============================
+ERROR tests/tracker/test_issue_identity_boundary.py
+ERROR tests/tracker/test_scope_approval.py
+ERROR tests/tracker/test_milestone_approval.py
+ERROR tests/tracker/test_native_approval_aliases.py
+!!!!!!!!!!!!!!!!!!! Interrupted: 4 errors during collection !!!!!!!!!!!!!!!!!!!!
+4 errors in 4.86s

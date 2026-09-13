@@ -1,0 +1,64 @@
+.............FF....F..                                                   [100%]
+=================================== FAILURES ===================================
+_ test_every_field_on_every_output_model_has_a_description[ORGANIZE_ADMISSION_SCHEMA] _
+
+name = 'ORGANIZE_ADMISSION_SCHEMA'
+
+    @pytest.mark.parametrize("name", sorted(WIRE_SCHEMAS))
+    def test_every_field_on_every_output_model_has_a_description(name: str) -> None:
+        """Including nested models: the session reads the whole schema, not the root."""
+        undescribed = [
+            path
+            for path, described in described_fields(WIRE_SCHEMAS[name], name)
+            if not described
+        ]
+>       assert undescribed == []
+E       AssertionError: assert ['ORGANIZE_AD...issueId', ...] == []
+E         
+E         Left contains 16 more items, first extra item: 'ORGANIZE_ADMISSION_SCHEMA.$defs.BuildableAdmission.verdict'
+E         Use -v to get more diff
+
+tests/types/test_output_descriptions.py:37: AssertionError
+_ test_every_field_on_every_output_model_has_a_description[ORGANIZE_PROPOSAL_SCHEMA] _
+
+name = 'ORGANIZE_PROPOSAL_SCHEMA'
+
+    @pytest.mark.parametrize("name", sorted(WIRE_SCHEMAS))
+    def test_every_field_on_every_output_model_has_a_description(name: str) -> None:
+        """Including nested models: the session reads the whole schema, not the root."""
+        undescribed = [
+            path
+            for path, described in described_fields(WIRE_SCHEMAS[name], name)
+            if not described
+        ]
+>       assert undescribed == []
+E       AssertionError: assert ['ORGANIZE_PR...riteria', ...] == []
+E         
+E         Left contains 17 more items, first extra item: 'ORGANIZE_PROPOSAL_SCHEMA.$defs.BodyProposal.kind'
+E         Use -v to get more diff
+
+tests/types/test_output_descriptions.py:37: AssertionError
+_ test_every_field_on_every_output_model_has_a_description[WRITE_BACK_SCHEMA] __
+
+name = 'WRITE_BACK_SCHEMA'
+
+    @pytest.mark.parametrize("name", sorted(WIRE_SCHEMAS))
+    def test_every_field_on_every_output_model_has_a_description(name: str) -> None:
+        """Including nested models: the session reads the whole schema, not the root."""
+        undescribed = [
+            path
+            for path, described in described_fields(WIRE_SCHEMAS[name], name)
+            if not described
+        ]
+>       assert undescribed == []
+E       AssertionError: assert ['WRITE_BACK_...MA.citedRefs'] == []
+E         
+E         Left contains 3 more items, first extra item: 'WRITE_BACK_SCHEMA.verdict'
+E         Use -v to get more diff
+
+tests/types/test_output_descriptions.py:37: AssertionError
+=========================== short test summary info ============================
+FAILED tests/types/test_output_descriptions.py::test_every_field_on_every_output_model_has_a_description[ORGANIZE_ADMISSION_SCHEMA]
+FAILED tests/types/test_output_descriptions.py::test_every_field_on_every_output_model_has_a_description[ORGANIZE_PROPOSAL_SCHEMA]
+FAILED tests/types/test_output_descriptions.py::test_every_field_on_every_output_model_has_a_description[WRITE_BACK_SCHEMA]
+3 failed, 19 passed in 0.24s

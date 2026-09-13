@@ -1,0 +1,117 @@
+.................................................................F...FF. [ 87%]
+..........                                                               [100%]
+=================================== FAILURES ===================================
+__ test_shared_judgment_callers_keep_their_exact_schema_and_forwarding_chain ___
+
+    def test_shared_judgment_callers_keep_their_exact_schema_and_forwarding_chain():
+        bindings = [
+            binding
+            for path, source in source_files().items()
+            for binding in audit_schema_bindings(source, relative_path=path)
+        ]
+>       assert Counter(bindings) == Counter(AUDIT_SCHEMA_BINDINGS)
+E       AssertionError: assert Counter({('ch..._SCHEMA'): 1}) == Counter({('ch..._schema'): 1})
+E         
+E         Omitting 8 identical items, use -vv to show
+E         Left contains 1 more item:
+E         {('services/native_amendments.py', ('_NativeWriterGuard', '_judge_claim'), 'judge_in_workspace', 'AMENDMENT_JUDGMENT_SCHEMA'): 1}
+E         Use -v to get more diff
+
+tests/types/test_wire_schemas.py:438: AssertionError
+_ test_actual_schema_census_rejects_damaged_source[caller_schema-test_shared_judgment_callers_keep_their_exact_schema_and_forwarding_chain] _
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10ec24aa0>
+damage = 'caller_schema'
+guard = <function test_shared_judgment_callers_keep_their_exact_schema_and_forwarding_chain at 0x10ebe71a0>
+
+    @pytest.mark.parametrize(
+        "damage, guard",
+        [
+            (
+                "caller_schema",
+                test_shared_judgment_callers_keep_their_exact_schema_and_forwarding_chain,
+            ),
+            (
+                "bridge_schema",
+                test_shared_judgment_callers_keep_their_exact_schema_and_forwarding_chain,
+            ),
+            ("unrelated_forwarder", test_every_dispatch_site_sends_the_models_own_schema),
+            ("filter", test_every_dispatch_site_sends_the_models_own_schema),
+            ("missing_schema", test_every_dispatch_site_is_accounted_for),
+            ("empty_tree", test_every_dispatch_site_is_accounted_for),
+        ],
+    )
+    def test_actual_schema_census_rejects_damaged_source(monkeypatch, damage, guard):
+        sources = source_files()
+>       guard()  # The complete current source passes the same guard first.
+        ^^^^^^^
+
+tests/types/test_wire_schemas.py:487: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def test_shared_judgment_callers_keep_their_exact_schema_and_forwarding_chain():
+        bindings = [
+            binding
+            for path, source in source_files().items()
+            for binding in audit_schema_bindings(source, relative_path=path)
+        ]
+>       assert Counter(bindings) == Counter(AUDIT_SCHEMA_BINDINGS)
+E       AssertionError: assert Counter({('ch..._SCHEMA'): 1}) == Counter({('ch..._schema'): 1})
+E         
+E         Omitting 8 identical items, use -vv to show
+E         Left contains 1 more item:
+E         {('services/native_amendments.py', ('_NativeWriterGuard', '_judge_claim'), 'judge_in_workspace', 'AMENDMENT_JUDGMENT_SCHEMA'): 1}
+E         Use -v to get more diff
+
+tests/types/test_wire_schemas.py:438: AssertionError
+_ test_actual_schema_census_rejects_damaged_source[bridge_schema-test_shared_judgment_callers_keep_their_exact_schema_and_forwarding_chain] _
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10ec47620>
+damage = 'bridge_schema'
+guard = <function test_shared_judgment_callers_keep_their_exact_schema_and_forwarding_chain at 0x10ebe71a0>
+
+    @pytest.mark.parametrize(
+        "damage, guard",
+        [
+            (
+                "caller_schema",
+                test_shared_judgment_callers_keep_their_exact_schema_and_forwarding_chain,
+            ),
+            (
+                "bridge_schema",
+                test_shared_judgment_callers_keep_their_exact_schema_and_forwarding_chain,
+            ),
+            ("unrelated_forwarder", test_every_dispatch_site_sends_the_models_own_schema),
+            ("filter", test_every_dispatch_site_sends_the_models_own_schema),
+            ("missing_schema", test_every_dispatch_site_is_accounted_for),
+            ("empty_tree", test_every_dispatch_site_is_accounted_for),
+        ],
+    )
+    def test_actual_schema_census_rejects_damaged_source(monkeypatch, damage, guard):
+        sources = source_files()
+>       guard()  # The complete current source passes the same guard first.
+        ^^^^^^^
+
+tests/types/test_wire_schemas.py:487: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def test_shared_judgment_callers_keep_their_exact_schema_and_forwarding_chain():
+        bindings = [
+            binding
+            for path, source in source_files().items()
+            for binding in audit_schema_bindings(source, relative_path=path)
+        ]
+>       assert Counter(bindings) == Counter(AUDIT_SCHEMA_BINDINGS)
+E       AssertionError: assert Counter({('ch..._SCHEMA'): 1}) == Counter({('ch..._schema'): 1})
+E         
+E         Omitting 8 identical items, use -vv to show
+E         Left contains 1 more item:
+E         {('services/native_amendments.py', ('_NativeWriterGuard', '_judge_claim'), 'judge_in_workspace', 'AMENDMENT_JUDGMENT_SCHEMA'): 1}
+E         Use -v to get more diff
+
+tests/types/test_wire_schemas.py:438: AssertionError
+=========================== short test summary info ============================
+FAILED tests/types/test_wire_schemas.py::test_shared_judgment_callers_keep_their_exact_schema_and_forwarding_chain
+FAILED tests/types/test_wire_schemas.py::test_actual_schema_census_rejects_damaged_source[caller_schema-test_shared_judgment_callers_keep_their_exact_schema_and_forwarding_chain]
+FAILED tests/types/test_wire_schemas.py::test_actual_schema_census_rejects_damaged_source[bridge_schema-test_shared_judgment_callers_keep_their_exact_schema_and_forwarding_chain]
+3 failed, 79 passed in 21.42s

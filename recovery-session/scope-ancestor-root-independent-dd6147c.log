@@ -1,0 +1,12 @@
+Using CPython 3.12.13
+Creating virtual environment at: .venv
+   Building kodezart @ file:///private/tmp/kodezart-v03-recovery-scope-ancestor-root-review
+warning: `build_system.requires = ["uv-build>=0.10.9,<0.11.0"]` does not contain the current uv version 0.11.6
+      Built kodezart @ file:///private/tmp/kodezart-v03-recovery-scope-ancestor-root-review
+Installed 174 packages in 1.74s
+........................................................................ [ 24%]
+........................................................................ [ 49%]
+........................................................................ [ 73%]
+........................................................................ [ 98%]
+....                                                                     [100%]
+292 passed in 9.25s

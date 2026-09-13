@@ -1,0 +1,199 @@
+Using CPython 3.12.13
+Creating virtual environment at: .venv
+   Building kodezart @ file:///private/tmp/kodezart-v03-recovery-write-back-settings
+warning: `build_system.requires = ["uv-build>=0.10.9,<0.11.0"]` does not contain the current uv version 0.11.6
+      Built kodezart @ file:///private/tmp/kodezart-v03-recovery-write-back-settings
+Installed 174 packages in 1.53s
+F....FFF                                                                 [100%]
+=================================== FAILURES ===================================
+_________________ test_undeclared_write_back_budget_is_absent __________________
+
+    def test_undeclared_write_back_budget_is_absent():
+>       assert AppConfig(_env_file=None).write_back is None
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/core/test_write_back_settings.py:15: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = AppConfig(organize=None, http=HttpSettings(project_name='kodezart', debug=False, api_v1_prefix='/api/v1'), logging=Log...epth_per_lane=64, terminal_retention_seconds=86400.0, event_buffer_retention_seconds=900.0, event_buffer_capacity=512))
+item = 'write_back'
+
+    def __getattr__(self, item: str) -> Any:
+        private_attributes = object.__getattribute__(self, '__private_attributes__')
+        if item in private_attributes:
+            attribute = private_attributes[item]
+            if hasattr(attribute, '__get__'):
+                return attribute.__get__(self, type(self))  # type: ignore
+    
+            try:
+                # Note: self.__pydantic_private__ cannot be None if self.__private_attributes__ has items
+                return self.__pydantic_private__[item]  # type: ignore
+            except KeyError as exc:
+                raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}') from exc
+        else:
+            # `__pydantic_extra__` can fail to be set if the model is not yet fully initialized.
+            # See `BaseModel.__repr_args__` for more details
+            try:
+                pydantic_extra = object.__getattribute__(self, '__pydantic_extra__')
+            except AttributeError:
+                pydantic_extra = None
+    
+            if pydantic_extra and item in pydantic_extra:
+                return pydantic_extra[item]
+            else:
+                if hasattr(self.__class__, item):
+                    return super().__getattribute__(item)  # Raises AttributeError if appropriate
+                else:
+                    # this is the current error
+>                   raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}')
+E                   AttributeError: 'AppConfig' object has no attribute 'write_back'
+
+.venv/lib/python3.12/site-packages/pydantic/main.py:1026: AttributeError
+___________ test_configured_organize_requires_the_write_back_budget ____________
+
+    def test_configured_organize_requires_the_write_back_budget():
+>       with pytest.raises(OperationMemberAbsentError, match="write_back"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'kodezart.types.domain.operation.OperationMemberAbsentError'>
+
+tests/core/test_write_back_settings.py:30: Failed
+_______ test_environment_budget_drives_actual_fresh_write_back_rounds[1] _______
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10e409d00>
+rounds = 1
+
+    @pytest.mark.parametrize("rounds", [1, 3])
+    async def test_environment_budget_drives_actual_fresh_write_back_rounds(monkeypatch, rounds):
+        monkeypatch.setenv("KODEZART_WRITE_BACK__MAX_VERIFY_ROUNDS", str(rounds))
+        config = AppConfig(_env_file=None, organize={
+            "max_admission_rounds": 7, "max_convergence_rounds": 7,
+        })
+        owner, board, executor = factory(settings=config)
+        original = executor.stream
+        seen = []
+    
+        async def refute_body(**kwargs):
+            async for event in original(**kwargs):
+                if kwargs["output_format"]["schema"].get("title") == "WriteBackFinding":
+                    artifact = json.loads(re.search(
+                        r"<written_artifact>\s*(.*?)\s*</written_artifact>",
+                        kwargs["prompt"], re.S,
+                    )[1])
+                    if artifact["surface"]["kind"] == "issue_description":
+                        seen.append(kwargs["session_id"])
+                        event = result(structured_output={
+                            "verdict": "refuted", "evidence": "The landed body does not demonstrate the cited source.",
+                            "cited_refs": ["src/missing.py:1"],
+                        })
+                yield event
+    
+        monkeypatch.setattr(executor, "stream", refute_body)
+        report = await run_owner(owner)
+        assert report.halt is not None
+>       assert report.halt.cause == "write_back_refused"
+E       AssertionError: assert <StageHaltCau...on_exhausted'> == 'write_back_refused'
+E         
+E         - write_back_refused
+E         + admission_exhausted
+
+tests/core/test_write_back_settings.py:64: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 19:12:47 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-12 19:12:47 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:12:47 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:12:47 [info     ] outbound_content_gated         categories=[] content_digest=f89d1825e4481064a8b5a1ea1946290f442ebe4ad9e7445547d1046d6df1fd1c failure=None hits=[] surface=tracker verdict=clean visibility=private writer=tracker_description
+2026-09-12 19:12:47 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:12:47 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:12:47 [info     ] outbound_content_gated         categories=[] content_digest=f89d1825e4481064a8b5a1ea1946290f442ebe4ad9e7445547d1046d6df1fd1c failure=None hits=[] surface=tracker verdict=clean visibility=private writer=tracker_description
+2026-09-12 19:12:47 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:12:47 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:12:47 [info     ] outbound_content_gated         categories=[] content_digest=f89d1825e4481064a8b5a1ea1946290f442ebe4ad9e7445547d1046d6df1fd1c failure=None hits=[] surface=tracker verdict=clean visibility=private writer=tracker_description
+2026-09-12 19:12:47 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:12:47 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:12:47 [info     ] outbound_content_gated         categories=[] content_digest=f89d1825e4481064a8b5a1ea1946290f442ebe4ad9e7445547d1046d6df1fd1c failure=None hits=[] surface=tracker verdict=clean visibility=private writer=tracker_description
+2026-09-12 19:12:47 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:12:47 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:12:47 [info     ] outbound_content_gated         categories=[] content_digest=f89d1825e4481064a8b5a1ea1946290f442ebe4ad9e7445547d1046d6df1fd1c failure=None hits=[] surface=tracker verdict=clean visibility=private writer=tracker_description
+2026-09-12 19:12:47 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:12:47 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:12:47 [info     ] outbound_content_gated         categories=[] content_digest=f89d1825e4481064a8b5a1ea1946290f442ebe4ad9e7445547d1046d6df1fd1c failure=None hits=[] surface=tracker verdict=clean visibility=private writer=tracker_description
+2026-09-12 19:12:47 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:12:47 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:12:47 [info     ] outbound_content_gated         categories=[] content_digest=f89d1825e4481064a8b5a1ea1946290f442ebe4ad9e7445547d1046d6df1fd1c failure=None hits=[] surface=tracker verdict=clean visibility=private writer=tracker_description
+2026-09-12 19:12:47 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:12:47 [info     ] outbound_content_gated         categories=[] content_digest=03790f09007fd0b7b4ae3f9468ac039862b570d803dceb3bd763ed2b5d2470d5 failure=None hits=[] surface=tracker verdict=clean visibility=private writer=tracker_comment
+2026-09-12 19:12:47 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:12:47 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+_______ test_environment_budget_drives_actual_fresh_write_back_rounds[3] _______
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10e40ab10>
+rounds = 3
+
+    @pytest.mark.parametrize("rounds", [1, 3])
+    async def test_environment_budget_drives_actual_fresh_write_back_rounds(monkeypatch, rounds):
+        monkeypatch.setenv("KODEZART_WRITE_BACK__MAX_VERIFY_ROUNDS", str(rounds))
+        config = AppConfig(_env_file=None, organize={
+            "max_admission_rounds": 7, "max_convergence_rounds": 7,
+        })
+        owner, board, executor = factory(settings=config)
+        original = executor.stream
+        seen = []
+    
+        async def refute_body(**kwargs):
+            async for event in original(**kwargs):
+                if kwargs["output_format"]["schema"].get("title") == "WriteBackFinding":
+                    artifact = json.loads(re.search(
+                        r"<written_artifact>\s*(.*?)\s*</written_artifact>",
+                        kwargs["prompt"], re.S,
+                    )[1])
+                    if artifact["surface"]["kind"] == "issue_description":
+                        seen.append(kwargs["session_id"])
+                        event = result(structured_output={
+                            "verdict": "refuted", "evidence": "The landed body does not demonstrate the cited source.",
+                            "cited_refs": ["src/missing.py:1"],
+                        })
+                yield event
+    
+        monkeypatch.setattr(executor, "stream", refute_body)
+        report = await run_owner(owner)
+        assert report.halt is not None
+>       assert report.halt.cause == "write_back_refused"
+E       AssertionError: assert <StageHaltCau...on_exhausted'> == 'write_back_refused'
+E         
+E         - write_back_refused
+E         + admission_exhausted
+
+tests/core/test_write_back_settings.py:64: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 19:12:47 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-12 19:12:47 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:12:47 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:12:47 [info     ] outbound_content_gated         categories=[] content_digest=f89d1825e4481064a8b5a1ea1946290f442ebe4ad9e7445547d1046d6df1fd1c failure=None hits=[] surface=tracker verdict=clean visibility=private writer=tracker_description
+2026-09-12 19:12:47 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:12:47 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:12:47 [info     ] outbound_content_gated         categories=[] content_digest=f89d1825e4481064a8b5a1ea1946290f442ebe4ad9e7445547d1046d6df1fd1c failure=None hits=[] surface=tracker verdict=clean visibility=private writer=tracker_description
+2026-09-12 19:12:47 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:12:47 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:12:47 [info     ] outbound_content_gated         categories=[] content_digest=f89d1825e4481064a8b5a1ea1946290f442ebe4ad9e7445547d1046d6df1fd1c failure=None hits=[] surface=tracker verdict=clean visibility=private writer=tracker_description
+2026-09-12 19:12:47 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:12:47 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:12:47 [info     ] outbound_content_gated         categories=[] content_digest=f89d1825e4481064a8b5a1ea1946290f442ebe4ad9e7445547d1046d6df1fd1c failure=None hits=[] surface=tracker verdict=clean visibility=private writer=tracker_description
+2026-09-12 19:12:47 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:12:47 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:12:47 [info     ] outbound_content_gated         categories=[] content_digest=f89d1825e4481064a8b5a1ea1946290f442ebe4ad9e7445547d1046d6df1fd1c failure=None hits=[] surface=tracker verdict=clean visibility=private writer=tracker_description
+2026-09-12 19:12:47 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:12:47 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:12:47 [info     ] outbound_content_gated         categories=[] content_digest=f89d1825e4481064a8b5a1ea1946290f442ebe4ad9e7445547d1046d6df1fd1c failure=None hits=[] surface=tracker verdict=clean visibility=private writer=tracker_description
+2026-09-12 19:12:47 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:12:47 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:12:47 [info     ] outbound_content_gated         categories=[] content_digest=f89d1825e4481064a8b5a1ea1946290f442ebe4ad9e7445547d1046d6df1fd1c failure=None hits=[] surface=tracker verdict=clean visibility=private writer=tracker_description
+2026-09-12 19:12:47 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:12:47 [info     ] outbound_content_gated         categories=[] content_digest=03790f09007fd0b7b4ae3f9468ac039862b570d803dceb3bd763ed2b5d2470d5 failure=None hits=[] surface=tracker verdict=clean visibility=private writer=tracker_comment
+2026-09-12 19:12:47 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:12:47 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+=========================== short test summary info ============================
+FAILED tests/core/test_write_back_settings.py::test_undeclared_write_back_budget_is_absent
+FAILED tests/core/test_write_back_settings.py::test_configured_organize_requires_the_write_back_budget
+FAILED tests/core/test_write_back_settings.py::test_environment_budget_drives_actual_fresh_write_back_rounds[1]
+FAILED tests/core/test_write_back_settings.py::test_environment_budget_drives_actual_fresh_write_back_rounds[3]
+4 failed, 4 passed in 3.28s

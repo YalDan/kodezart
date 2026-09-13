@@ -1,0 +1,21 @@
+{
+  "base": "873855ecbf70aeb4ff7fc8a3fe69adcfb8468290",
+  "source_donor": "5b4ae925b5d7543d64dd25c3f1d9ffd7a003a7ef",
+  "versions_unchanged": true,
+  "locked_versions": {
+    "structlog": "25.5.0",
+    "rich": "14.3.3",
+    "mcp": "1.26.0",
+    "anyio": "4.12.1",
+    "httpx": "0.28.1"
+  },
+  "file_sha256": {
+    "src/kodezart/core/logging.py": "81a861d6fdc454d29dad2694db87a7a4e1147ec2fedf66e714ae0d9b6f6f1296",
+    "pyproject.toml": "374ef4e4aecf1e6833ba2341e7f254276d52113b1363720939e8d53ae6eb3cb8",
+    "uv.lock": "40da0cbf60ef9304f67f38477810c840a4ae584b3bdd8aa6b11a0544acc2da45",
+    "tests/core/test_logging_chain.py": "ee2c07c0b5ab18b0df968a379c863ae1f399921077db3efa5cc9281f9769ea84",
+    "tests/adapters/test_http_mcp_tool_caller.py": "34f2b47578c7a1c15b755b19481ff478734bdaf3d6a9dc2b984b27da1b382ae3",
+    "tests/adapters/test_mcp_reopen_logging_independent.py": "314df6c4f8ddcf873f2ab215746dcb3aaef4510c9f6dd254246459c31b4c696f"
+  },
+  "original_red_probe_sha256": "9cbc5bf828ddb74b9f06c82de61f333533181a548166d8643de104b244dba9a9"
+}

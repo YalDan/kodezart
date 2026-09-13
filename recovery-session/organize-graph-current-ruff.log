@@ -1,0 +1,209 @@
+E501 Line too long (103 > 88)
+    --> src/kodezart/adapters/linear_mcp_tracker.py:1412:89
+     |
+1410 |                     raise OrganizeWriteRefusalError(
+1411 |                         issue_key=issue_key,
+1412 |                         reason="the backend cannot clear a milestone through its declared save schema",
+     |                                                                                         ^^^^^^^^^^^^^^^
+1413 |                     )
+1414 |                 milestone = await self.container_metadata(
+     |
+
+E501 Line too long (89 > 88)
+    --> src/kodezart/adapters/linear_mcp_tracker.py:1424:89
+     |
+1422 |                     raise OrganizeWriteRefusalError(
+1423 |                         issue_key=issue_key,
+1424 |                         reason="milestone does not belong to the current native project",
+     |                                                                                         ^
+1425 |                     )
+1426 |                 arguments["milestone"] = change.milestone_id
+     |
+
+E501 Line too long (96 > 88)
+    --> src/kodezart/adapters/linear_mcp_tracker.py:1464:89
+     |
+1462 |                 raise OrganizeWriteRefusalError(
+1463 |                     issue_key=issue_key,
+1464 |                     reason="the backend did not retain the exact graph delta and inverse edges",
+     |                                                                                         ^^^^^^^^
+1465 |                 )
+1466 |         return await self.read_issue(issue_key=issue_key)
+     |
+
+E501 Line too long (94 > 88)
+    --> src/kodezart/adapters/linear_mcp_tracker.py:1490:89
+     |
+1488 |                 raise OrganizeWriteRefusalError(
+1489 |                     issue_key=source_key,
+1490 |                     reason="split identity is misplaced or no longer an ordinary deliverable",
+     |                                                                                         ^^^^^^
+1491 |                 )
+1492 |             children[identity.deliverable_key] = issue
+     |
+
+E501 Line too long (90 > 88)
+   --> src/kodezart/core/protocols.py:914:89
+    |
+913 |     async def read_split_children(self, *, source_key: str) -> tuple[TrackerIssue, ...]:
+914 |         """Read unique ordinary children carrying the source's stable split identities."""
+    |                                                                                         ^^
+915 |         ...
+    |
+
+E501 Line too long (90 > 88)
+  --> src/kodezart/services/organize_context.py:90:89
+   |
+88 |             raise OrganizeWriteRefusalError(
+89 |                 issue_key=key,
+90 |                 reason="the requested revision is not the current admitted graph subject",
+   |                                                                                         ^^
+91 |             )
+   |
+
+ARG001 Unused function argument: `finding`
+   --> src/kodezart/services/organize_owner.py:652:32
+    |
+650 |         # Removed peers remain addressed from the original actual closure. This
+651 |         # confirmation step has no write or repair capability on those peers.
+652 |         async def confirm_peer(finding: WriteBackFinding | None) -> None:
+    |                                ^^^^^^^
+653 |             return None
+    |
+
+E501 Line too long (105 > 88)
+  --> src/kodezart/types/domain/organize_graph.py:34:89
+   |
+32 |     add: tuple[NativeKey, ...] = Field(
+33 |         default=(),
+34 |         description="Current native issue keys whose relation must be added; other edges are preserved.",
+   |                                                                                         ^^^^^^^^^^^^^^^^^
+35 |     )
+36 |     remove: tuple[NativeKey, ...] = Field(
+   |
+
+E501 Line too long (115 > 88)
+  --> src/kodezart/types/domain/organize_graph.py:38:89
+   |
+36 |     remove: tuple[NativeKey, ...] = Field(
+37 |         default=(),
+38 |         description="Current native issue keys whose relation must be removed; never an implicit replacement set.",
+   |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+39 |     )
+   |
+
+E501 Line too long (96 > 88)
+  --> src/kodezart/types/domain/organize_graph.py:58:89
+   |
+56 | class BlockedByChange(_RelationChange):
+57 |     kind: Literal["blocked_by"] = Field(
+58 |         description="Add or remove prerequisite edges, without altering unrelated dependencies."
+   |                                                                                         ^^^^^^^^
+59 |     )
+   |
+
+E501 Line too long (89 > 88)
+  --> src/kodezart/types/domain/organize_graph.py:64:89
+   |
+62 | class RelatedToChange(_RelationChange):
+63 |     kind: Literal["related_to"] = Field(
+64 |         description="Add or remove related issue edges; these do not imply dependencies."
+   |                                                                                         ^
+65 |     )
+   |
+
+E501 Line too long (90 > 88)
+  --> src/kodezart/types/domain/organize_graph.py:71:89
+   |
+69 |     model_config = ConfigDict(frozen=True)
+70 |     kind: Literal["priority"] = Field(
+71 |         description="Set the issue's native priority according to the configured mandate."
+   |                                                                                         ^^
+72 |     )
+73 |     priority: IssuePriority = Field(
+   |
+
+E501 Line too long (96 > 88)
+  --> src/kodezart/types/domain/organize_graph.py:74:89
+   |
+72 |     )
+73 |     priority: IssuePriority = Field(
+74 |         description="Exact desired domain priority; the tracker adapter maps its backend value."
+   |                                                                                         ^^^^^^^^
+75 |     )
+   |
+
+E501 Line too long (123 > 88)
+  --> src/kodezart/types/domain/organize_graph.py:84:89
+   |
+82 |     )
+83 |     milestone_id: NativeKey | None = Field(
+84 |         description="Exact native milestone key, or explicit null requesting removal; unsupported backend removal refuses."
+   |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+85 |     )
+   |
+
+E501 Line too long (111 > 88)
+   --> src/kodezart/types/domain/organize_graph.py:104:89
+    |
+102 |     changes: tuple[GraphChange, ...] = Field(
+103 |         min_length=1,
+104 |         description="Explicit field changes, at most one per field; unrequested graph facts remain unchanged.",
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^
+105 |     )
+    |
+
+E501 Line too long (122 > 88)
+   --> src/kodezart/types/domain/organize_graph.py:117:89
+    |
+115 |     model_config = ConfigDict(frozen=True)
+116 |     deliverable_key: NativeKey = Field(
+117 |         description="Stable logical deliverable identity within this source issue; reuse its recorded identity on replay."
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+118 |     )
+119 |     title: NativeKey = Field(description="Title of the new ordinary deliverable child.")
+    |
+
+E501 Line too long (130 > 88)
+   --> src/kodezart/types/domain/organize_graph.py:121:89
+    |
+119 |     title: NativeKey = Field(description="Title of the new ordinary deliverable child.")
+120 |     body: NativeKey = Field(
+121 |         description="Complete evidence-grounded specification of the new child; this does not execute work or mark criteria Done."
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+122 |     )
+    |
+
+E501 Line too long (101 > 88)
+   --> src/kodezart/types/domain/organize_graph.py:128:89
+    |
+126 |     model_config = ConfigDict(frozen=True)
+127 |     kind: Literal["split"] = Field(
+128 |         description="Prepare missing ordinary deliverable children under the addressed source issue."
+    |                                                                                         ^^^^^^^^^^^^^
+129 |     )
+130 |     issue_id: NativeKey = Field(
+    |
+
+E501 Line too long (105 > 88)
+   --> src/kodezart/types/domain/organize_graph.py:131:89
+    |
+129 |     )
+130 |     issue_id: NativeKey = Field(
+131 |         description="Exact current native source issue key; it remains the parent of the split children."
+    |                                                                                         ^^^^^^^^^^^^^^^^^
+132 |     )
+133 |     children: tuple[SplitChildProposal, ...] = Field(
+    |
+
+E501 Line too long (123 > 88)
+   --> src/kodezart/types/domain/organize_graph.py:135:89
+    |
+133 |     children: tuple[SplitChildProposal, ...] = Field(
+134 |         min_length=1,
+135 |         description="Missing deliverables to create by stable identity; existing matching children are never overwritten.",
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+136 |     )
+    |
+
+Found 20 errors.

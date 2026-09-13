@@ -1,0 +1,740 @@
+Using CPython 3.12.13
+Creating virtual environment at: .venv
+   Building kodezart @ file:///private/tmp/kodezart-v03-recovery-organize-halt-types
+warning: `build_system.requires = ["uv-build>=0.10.9,<0.11.0"]` does not contain the current uv version 0.11.6
+      Built kodezart @ file:///private/tmp/kodezart-v03-recovery-organize-halt-types
+Installed 174 packages in 1.20s
+FFFFF..FFFF.F........                                                    [100%]
+=================================== FAILURES ===================================
+____________ test_wrong_cause_or_missing_evidence_refuses[payload0] ____________
+
+payload = {'cause': 'human_decision'}
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            {"cause": "human_decision"},
+            {"cause": "human_decision", "admission_results": [admission("spec_gap")]},
+            {
+                "cause": "human_decision",
+                "admission_results": [
+                    {
+                        "issue_id": "native-child",
+                        "admitted_body_digest": "actual-body-digest",
+                        "verdict": "buildable",
+                        "evidence": "The source is buildable.",
+                    }
+                ],
+            },
+            {
+                "cause": "human_decision",
+                "surviving_findings": [
+                    {
+                        "issue_id": "native-child",
+                        "defect_class": "missing_source",
+                        "evidence": "The source is absent.",
+                        "role": "instance",
+                    }
+                ],
+            },
+            {"cause": "human_decision", "write_back_results": [write_back()]},
+            {"cause": "human_decision", "questions": [question()], "bound": bound()},
+            {"cause": "admission_exhausted"},
+            {
+                "cause": "admission_exhausted",
+                "bound": bound(),
+                "questions": [question()],
+            },
+            {
+                "cause": "admission_exhausted",
+                "bound": bound(),
+                "write_back_results": [write_back()],
+            },
+            {
+                "cause": "convergence_exhausted",
+                "bound": bound("convergence"),
+                "questions": [question()],
+            },
+            {
+                "cause": "convergence_exhausted",
+                "bound": bound("convergence"),
+                "write_back_results": [write_back()],
+            },
+            {
+                "cause": "admission_exhausted",
+                "bound": bound("convergence"),
+            },
+            {"cause": "escalation_unrecorded", "unrecorded_escalation_issue_ids": [" "]},
+            {
+                "cause": "escalation_unrecorded",
+                "unrecorded_escalation_issue_ids": ["native-child"],
+                "bound": bound(),
+            },
+        ],
+    )
+    def test_wrong_cause_or_missing_evidence_refuses(payload):
+>       with pytest.raises(ValidationError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'pydantic_core._pydantic_core.ValidationError'>
+
+tests/types/test_organize_halt.py:127: Failed
+____________ test_wrong_cause_or_missing_evidence_refuses[payload1] ____________
+
+payload = {'admission_results': [{'admitted_body_digest': 'actual-body-digest', 'evidence': 'The current sources require mutuall..._decision': 'Which of the two sources is authoritative?', 'issue_id': 'native-child', ...}], 'cause': 'human_decision'}
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            {"cause": "human_decision"},
+            {"cause": "human_decision", "admission_results": [admission("spec_gap")]},
+            {
+                "cause": "human_decision",
+                "admission_results": [
+                    {
+                        "issue_id": "native-child",
+                        "admitted_body_digest": "actual-body-digest",
+                        "verdict": "buildable",
+                        "evidence": "The source is buildable.",
+                    }
+                ],
+            },
+            {
+                "cause": "human_decision",
+                "surviving_findings": [
+                    {
+                        "issue_id": "native-child",
+                        "defect_class": "missing_source",
+                        "evidence": "The source is absent.",
+                        "role": "instance",
+                    }
+                ],
+            },
+            {"cause": "human_decision", "write_back_results": [write_back()]},
+            {"cause": "human_decision", "questions": [question()], "bound": bound()},
+            {"cause": "admission_exhausted"},
+            {
+                "cause": "admission_exhausted",
+                "bound": bound(),
+                "questions": [question()],
+            },
+            {
+                "cause": "admission_exhausted",
+                "bound": bound(),
+                "write_back_results": [write_back()],
+            },
+            {
+                "cause": "convergence_exhausted",
+                "bound": bound("convergence"),
+                "questions": [question()],
+            },
+            {
+                "cause": "convergence_exhausted",
+                "bound": bound("convergence"),
+                "write_back_results": [write_back()],
+            },
+            {
+                "cause": "admission_exhausted",
+                "bound": bound("convergence"),
+            },
+            {"cause": "escalation_unrecorded", "unrecorded_escalation_issue_ids": [" "]},
+            {
+                "cause": "escalation_unrecorded",
+                "unrecorded_escalation_issue_ids": ["native-child"],
+                "bound": bound(),
+            },
+        ],
+    )
+    def test_wrong_cause_or_missing_evidence_refuses(payload):
+>       with pytest.raises(ValidationError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'pydantic_core._pydantic_core.ValidationError'>
+
+tests/types/test_organize_halt.py:127: Failed
+____________ test_wrong_cause_or_missing_evidence_refuses[payload2] ____________
+
+payload = {'admission_results': [{'admitted_body_digest': 'actual-body-digest', 'evidence': 'The source is buildable.', 'issue_id': 'native-child', 'verdict': 'buildable'}], 'cause': 'human_decision'}
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            {"cause": "human_decision"},
+            {"cause": "human_decision", "admission_results": [admission("spec_gap")]},
+            {
+                "cause": "human_decision",
+                "admission_results": [
+                    {
+                        "issue_id": "native-child",
+                        "admitted_body_digest": "actual-body-digest",
+                        "verdict": "buildable",
+                        "evidence": "The source is buildable.",
+                    }
+                ],
+            },
+            {
+                "cause": "human_decision",
+                "surviving_findings": [
+                    {
+                        "issue_id": "native-child",
+                        "defect_class": "missing_source",
+                        "evidence": "The source is absent.",
+                        "role": "instance",
+                    }
+                ],
+            },
+            {"cause": "human_decision", "write_back_results": [write_back()]},
+            {"cause": "human_decision", "questions": [question()], "bound": bound()},
+            {"cause": "admission_exhausted"},
+            {
+                "cause": "admission_exhausted",
+                "bound": bound(),
+                "questions": [question()],
+            },
+            {
+                "cause": "admission_exhausted",
+                "bound": bound(),
+                "write_back_results": [write_back()],
+            },
+            {
+                "cause": "convergence_exhausted",
+                "bound": bound("convergence"),
+                "questions": [question()],
+            },
+            {
+                "cause": "convergence_exhausted",
+                "bound": bound("convergence"),
+                "write_back_results": [write_back()],
+            },
+            {
+                "cause": "admission_exhausted",
+                "bound": bound("convergence"),
+            },
+            {"cause": "escalation_unrecorded", "unrecorded_escalation_issue_ids": [" "]},
+            {
+                "cause": "escalation_unrecorded",
+                "unrecorded_escalation_issue_ids": ["native-child"],
+                "bound": bound(),
+            },
+        ],
+    )
+    def test_wrong_cause_or_missing_evidence_refuses(payload):
+>       with pytest.raises(ValidationError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'pydantic_core._pydantic_core.ValidationError'>
+
+tests/types/test_organize_halt.py:127: Failed
+____________ test_wrong_cause_or_missing_evidence_refuses[payload3] ____________
+
+payload = {'cause': 'human_decision', 'surviving_findings': [{'defect_class': 'missing_source', 'evidence': 'The source is absent.', 'issue_id': 'native-child', 'role': 'instance'}]}
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            {"cause": "human_decision"},
+            {"cause": "human_decision", "admission_results": [admission("spec_gap")]},
+            {
+                "cause": "human_decision",
+                "admission_results": [
+                    {
+                        "issue_id": "native-child",
+                        "admitted_body_digest": "actual-body-digest",
+                        "verdict": "buildable",
+                        "evidence": "The source is buildable.",
+                    }
+                ],
+            },
+            {
+                "cause": "human_decision",
+                "surviving_findings": [
+                    {
+                        "issue_id": "native-child",
+                        "defect_class": "missing_source",
+                        "evidence": "The source is absent.",
+                        "role": "instance",
+                    }
+                ],
+            },
+            {"cause": "human_decision", "write_back_results": [write_back()]},
+            {"cause": "human_decision", "questions": [question()], "bound": bound()},
+            {"cause": "admission_exhausted"},
+            {
+                "cause": "admission_exhausted",
+                "bound": bound(),
+                "questions": [question()],
+            },
+            {
+                "cause": "admission_exhausted",
+                "bound": bound(),
+                "write_back_results": [write_back()],
+            },
+            {
+                "cause": "convergence_exhausted",
+                "bound": bound("convergence"),
+                "questions": [question()],
+            },
+            {
+                "cause": "convergence_exhausted",
+                "bound": bound("convergence"),
+                "write_back_results": [write_back()],
+            },
+            {
+                "cause": "admission_exhausted",
+                "bound": bound("convergence"),
+            },
+            {"cause": "escalation_unrecorded", "unrecorded_escalation_issue_ids": [" "]},
+            {
+                "cause": "escalation_unrecorded",
+                "unrecorded_escalation_issue_ids": ["native-child"],
+                "bound": bound(),
+            },
+        ],
+    )
+    def test_wrong_cause_or_missing_evidence_refuses(payload):
+>       with pytest.raises(ValidationError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'pydantic_core._pydantic_core.ValidationError'>
+
+tests/types/test_organize_halt.py:127: Failed
+____________ test_wrong_cause_or_missing_evidence_refuses[payload4] ____________
+
+payload = {'cause': 'human_decision', 'write_back_results': [{'artifact': {'content': 'An unsupported landed claim.', 'native_re...vidence': 'tests/absent.py does not exist at the checked commit.', 'verdict': 'refuted'}], 'verdict': 'unverifiable'}]}
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            {"cause": "human_decision"},
+            {"cause": "human_decision", "admission_results": [admission("spec_gap")]},
+            {
+                "cause": "human_decision",
+                "admission_results": [
+                    {
+                        "issue_id": "native-child",
+                        "admitted_body_digest": "actual-body-digest",
+                        "verdict": "buildable",
+                        "evidence": "The source is buildable.",
+                    }
+                ],
+            },
+            {
+                "cause": "human_decision",
+                "surviving_findings": [
+                    {
+                        "issue_id": "native-child",
+                        "defect_class": "missing_source",
+                        "evidence": "The source is absent.",
+                        "role": "instance",
+                    }
+                ],
+            },
+            {"cause": "human_decision", "write_back_results": [write_back()]},
+            {"cause": "human_decision", "questions": [question()], "bound": bound()},
+            {"cause": "admission_exhausted"},
+            {
+                "cause": "admission_exhausted",
+                "bound": bound(),
+                "questions": [question()],
+            },
+            {
+                "cause": "admission_exhausted",
+                "bound": bound(),
+                "write_back_results": [write_back()],
+            },
+            {
+                "cause": "convergence_exhausted",
+                "bound": bound("convergence"),
+                "questions": [question()],
+            },
+            {
+                "cause": "convergence_exhausted",
+                "bound": bound("convergence"),
+                "write_back_results": [write_back()],
+            },
+            {
+                "cause": "admission_exhausted",
+                "bound": bound("convergence"),
+            },
+            {"cause": "escalation_unrecorded", "unrecorded_escalation_issue_ids": [" "]},
+            {
+                "cause": "escalation_unrecorded",
+                "unrecorded_escalation_issue_ids": ["native-child"],
+                "bound": bound(),
+            },
+        ],
+    )
+    def test_wrong_cause_or_missing_evidence_refuses(payload):
+>       with pytest.raises(ValidationError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'pydantic_core._pydantic_core.ValidationError'>
+
+tests/types/test_organize_halt.py:127: Failed
+____________ test_wrong_cause_or_missing_evidence_refuses[payload7] ____________
+
+payload = {'bound': {'loop': 'admission', 'rounds_used': 2, 'setting': 'organize.max_admission_rounds', 'value': 2}, 'cause': 'a...t sources conflict.', 'issue_id': 'native-child', 'kind': 'unresolved', 'question': 'Which source is authoritative?'}]}
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            {"cause": "human_decision"},
+            {"cause": "human_decision", "admission_results": [admission("spec_gap")]},
+            {
+                "cause": "human_decision",
+                "admission_results": [
+                    {
+                        "issue_id": "native-child",
+                        "admitted_body_digest": "actual-body-digest",
+                        "verdict": "buildable",
+                        "evidence": "The source is buildable.",
+                    }
+                ],
+            },
+            {
+                "cause": "human_decision",
+                "surviving_findings": [
+                    {
+                        "issue_id": "native-child",
+                        "defect_class": "missing_source",
+                        "evidence": "The source is absent.",
+                        "role": "instance",
+                    }
+                ],
+            },
+            {"cause": "human_decision", "write_back_results": [write_back()]},
+            {"cause": "human_decision", "questions": [question()], "bound": bound()},
+            {"cause": "admission_exhausted"},
+            {
+                "cause": "admission_exhausted",
+                "bound": bound(),
+                "questions": [question()],
+            },
+            {
+                "cause": "admission_exhausted",
+                "bound": bound(),
+                "write_back_results": [write_back()],
+            },
+            {
+                "cause": "convergence_exhausted",
+                "bound": bound("convergence"),
+                "questions": [question()],
+            },
+            {
+                "cause": "convergence_exhausted",
+                "bound": bound("convergence"),
+                "write_back_results": [write_back()],
+            },
+            {
+                "cause": "admission_exhausted",
+                "bound": bound("convergence"),
+            },
+            {"cause": "escalation_unrecorded", "unrecorded_escalation_issue_ids": [" "]},
+            {
+                "cause": "escalation_unrecorded",
+                "unrecorded_escalation_issue_ids": ["native-child"],
+                "bound": bound(),
+            },
+        ],
+    )
+    def test_wrong_cause_or_missing_evidence_refuses(payload):
+>       with pytest.raises(ValidationError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'pydantic_core._pydantic_core.ValidationError'>
+
+tests/types/test_organize_halt.py:127: Failed
+____________ test_wrong_cause_or_missing_evidence_refuses[payload8] ____________
+
+payload = {'bound': {'loop': 'admission', 'rounds_used': 2, 'setting': 'organize.max_admission_rounds', 'value': 2}, 'cause': 'a...vidence': 'tests/absent.py does not exist at the checked commit.', 'verdict': 'refuted'}], 'verdict': 'unverifiable'}]}
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            {"cause": "human_decision"},
+            {"cause": "human_decision", "admission_results": [admission("spec_gap")]},
+            {
+                "cause": "human_decision",
+                "admission_results": [
+                    {
+                        "issue_id": "native-child",
+                        "admitted_body_digest": "actual-body-digest",
+                        "verdict": "buildable",
+                        "evidence": "The source is buildable.",
+                    }
+                ],
+            },
+            {
+                "cause": "human_decision",
+                "surviving_findings": [
+                    {
+                        "issue_id": "native-child",
+                        "defect_class": "missing_source",
+                        "evidence": "The source is absent.",
+                        "role": "instance",
+                    }
+                ],
+            },
+            {"cause": "human_decision", "write_back_results": [write_back()]},
+            {"cause": "human_decision", "questions": [question()], "bound": bound()},
+            {"cause": "admission_exhausted"},
+            {
+                "cause": "admission_exhausted",
+                "bound": bound(),
+                "questions": [question()],
+            },
+            {
+                "cause": "admission_exhausted",
+                "bound": bound(),
+                "write_back_results": [write_back()],
+            },
+            {
+                "cause": "convergence_exhausted",
+                "bound": bound("convergence"),
+                "questions": [question()],
+            },
+            {
+                "cause": "convergence_exhausted",
+                "bound": bound("convergence"),
+                "write_back_results": [write_back()],
+            },
+            {
+                "cause": "admission_exhausted",
+                "bound": bound("convergence"),
+            },
+            {"cause": "escalation_unrecorded", "unrecorded_escalation_issue_ids": [" "]},
+            {
+                "cause": "escalation_unrecorded",
+                "unrecorded_escalation_issue_ids": ["native-child"],
+                "bound": bound(),
+            },
+        ],
+    )
+    def test_wrong_cause_or_missing_evidence_refuses(payload):
+>       with pytest.raises(ValidationError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'pydantic_core._pydantic_core.ValidationError'>
+
+tests/types/test_organize_halt.py:127: Failed
+____________ test_wrong_cause_or_missing_evidence_refuses[payload9] ____________
+
+payload = {'bound': {'loop': 'convergence', 'rounds_used': 2, 'setting': 'organize.max_convergence_rounds', 'value': 2}, 'cause'...t sources conflict.', 'issue_id': 'native-child', 'kind': 'unresolved', 'question': 'Which source is authoritative?'}]}
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            {"cause": "human_decision"},
+            {"cause": "human_decision", "admission_results": [admission("spec_gap")]},
+            {
+                "cause": "human_decision",
+                "admission_results": [
+                    {
+                        "issue_id": "native-child",
+                        "admitted_body_digest": "actual-body-digest",
+                        "verdict": "buildable",
+                        "evidence": "The source is buildable.",
+                    }
+                ],
+            },
+            {
+                "cause": "human_decision",
+                "surviving_findings": [
+                    {
+                        "issue_id": "native-child",
+                        "defect_class": "missing_source",
+                        "evidence": "The source is absent.",
+                        "role": "instance",
+                    }
+                ],
+            },
+            {"cause": "human_decision", "write_back_results": [write_back()]},
+            {"cause": "human_decision", "questions": [question()], "bound": bound()},
+            {"cause": "admission_exhausted"},
+            {
+                "cause": "admission_exhausted",
+                "bound": bound(),
+                "questions": [question()],
+            },
+            {
+                "cause": "admission_exhausted",
+                "bound": bound(),
+                "write_back_results": [write_back()],
+            },
+            {
+                "cause": "convergence_exhausted",
+                "bound": bound("convergence"),
+                "questions": [question()],
+            },
+            {
+                "cause": "convergence_exhausted",
+                "bound": bound("convergence"),
+                "write_back_results": [write_back()],
+            },
+            {
+                "cause": "admission_exhausted",
+                "bound": bound("convergence"),
+            },
+            {"cause": "escalation_unrecorded", "unrecorded_escalation_issue_ids": [" "]},
+            {
+                "cause": "escalation_unrecorded",
+                "unrecorded_escalation_issue_ids": ["native-child"],
+                "bound": bound(),
+            },
+        ],
+    )
+    def test_wrong_cause_or_missing_evidence_refuses(payload):
+>       with pytest.raises(ValidationError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'pydantic_core._pydantic_core.ValidationError'>
+
+tests/types/test_organize_halt.py:127: Failed
+___________ test_wrong_cause_or_missing_evidence_refuses[payload10] ____________
+
+payload = {'bound': {'loop': 'convergence', 'rounds_used': 2, 'setting': 'organize.max_convergence_rounds', 'value': 2}, 'cause'...vidence': 'tests/absent.py does not exist at the checked commit.', 'verdict': 'refuted'}], 'verdict': 'unverifiable'}]}
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            {"cause": "human_decision"},
+            {"cause": "human_decision", "admission_results": [admission("spec_gap")]},
+            {
+                "cause": "human_decision",
+                "admission_results": [
+                    {
+                        "issue_id": "native-child",
+                        "admitted_body_digest": "actual-body-digest",
+                        "verdict": "buildable",
+                        "evidence": "The source is buildable.",
+                    }
+                ],
+            },
+            {
+                "cause": "human_decision",
+                "surviving_findings": [
+                    {
+                        "issue_id": "native-child",
+                        "defect_class": "missing_source",
+                        "evidence": "The source is absent.",
+                        "role": "instance",
+                    }
+                ],
+            },
+            {"cause": "human_decision", "write_back_results": [write_back()]},
+            {"cause": "human_decision", "questions": [question()], "bound": bound()},
+            {"cause": "admission_exhausted"},
+            {
+                "cause": "admission_exhausted",
+                "bound": bound(),
+                "questions": [question()],
+            },
+            {
+                "cause": "admission_exhausted",
+                "bound": bound(),
+                "write_back_results": [write_back()],
+            },
+            {
+                "cause": "convergence_exhausted",
+                "bound": bound("convergence"),
+                "questions": [question()],
+            },
+            {
+                "cause": "convergence_exhausted",
+                "bound": bound("convergence"),
+                "write_back_results": [write_back()],
+            },
+            {
+                "cause": "admission_exhausted",
+                "bound": bound("convergence"),
+            },
+            {"cause": "escalation_unrecorded", "unrecorded_escalation_issue_ids": [" "]},
+            {
+                "cause": "escalation_unrecorded",
+                "unrecorded_escalation_issue_ids": ["native-child"],
+                "bound": bound(),
+            },
+        ],
+    )
+    def test_wrong_cause_or_missing_evidence_refuses(payload):
+>       with pytest.raises(ValidationError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'pydantic_core._pydantic_core.ValidationError'>
+
+tests/types/test_organize_halt.py:127: Failed
+___________ test_wrong_cause_or_missing_evidence_refuses[payload12] ____________
+
+payload = {'cause': 'escalation_unrecorded', 'unrecorded_escalation_issue_ids': [' ']}
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            {"cause": "human_decision"},
+            {"cause": "human_decision", "admission_results": [admission("spec_gap")]},
+            {
+                "cause": "human_decision",
+                "admission_results": [
+                    {
+                        "issue_id": "native-child",
+                        "admitted_body_digest": "actual-body-digest",
+                        "verdict": "buildable",
+                        "evidence": "The source is buildable.",
+                    }
+                ],
+            },
+            {
+                "cause": "human_decision",
+                "surviving_findings": [
+                    {
+                        "issue_id": "native-child",
+                        "defect_class": "missing_source",
+                        "evidence": "The source is absent.",
+                        "role": "instance",
+                    }
+                ],
+            },
+            {"cause": "human_decision", "write_back_results": [write_back()]},
+            {"cause": "human_decision", "questions": [question()], "bound": bound()},
+            {"cause": "admission_exhausted"},
+            {
+                "cause": "admission_exhausted",
+                "bound": bound(),
+                "questions": [question()],
+            },
+            {
+                "cause": "admission_exhausted",
+                "bound": bound(),
+                "write_back_results": [write_back()],
+            },
+            {
+                "cause": "convergence_exhausted",
+                "bound": bound("convergence"),
+                "questions": [question()],
+            },
+            {
+                "cause": "convergence_exhausted",
+                "bound": bound("convergence"),
+                "write_back_results": [write_back()],
+            },
+            {
+                "cause": "admission_exhausted",
+                "bound": bound("convergence"),
+            },
+            {"cause": "escalation_unrecorded", "unrecorded_escalation_issue_ids": [" "]},
+            {
+                "cause": "escalation_unrecorded",
+                "unrecorded_escalation_issue_ids": ["native-child"],
+                "bound": bound(),
+            },
+        ],
+    )
+    def test_wrong_cause_or_missing_evidence_refuses(payload):
+>       with pytest.raises(ValidationError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'pydantic_core._pydantic_core.ValidationError'>
+
+tests/types/test_organize_halt.py:127: Failed
+=========================== short test summary info ============================
+FAILED tests/types/test_organize_halt.py::test_wrong_cause_or_missing_evidence_refuses[payload0]
+FAILED tests/types/test_organize_halt.py::test_wrong_cause_or_missing_evidence_refuses[payload1]
+FAILED tests/types/test_organize_halt.py::test_wrong_cause_or_missing_evidence_refuses[payload2]
+FAILED tests/types/test_organize_halt.py::test_wrong_cause_or_missing_evidence_refuses[payload3]
+FAILED tests/types/test_organize_halt.py::test_wrong_cause_or_missing_evidence_refuses[payload4]
+FAILED tests/types/test_organize_halt.py::test_wrong_cause_or_missing_evidence_refuses[payload7]
+FAILED tests/types/test_organize_halt.py::test_wrong_cause_or_missing_evidence_refuses[payload8]
+FAILED tests/types/test_organize_halt.py::test_wrong_cause_or_missing_evidence_refuses[payload9]
+FAILED tests/types/test_organize_halt.py::test_wrong_cause_or_missing_evidence_refuses[payload10]
+FAILED tests/types/test_organize_halt.py::test_wrong_cause_or_missing_evidence_refuses[payload12]
+10 failed, 11 passed in 0.39s

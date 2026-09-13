@@ -1,0 +1,814 @@
+FFFFFFFFFFFF..FF...F                                                     [100%]
+=================================== FAILURES ===================================
+______ test_external_change_during_authority_wait_refuses[body-identity] _______
+
+boundary = 'identity', change = 'body'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10aadcce0>
+
+    @pytest.mark.parametrize("boundary", ["identity", "lease"])
+    @pytest.mark.parametrize(
+        "change", ["body", "missing", "key", "author", "reply", "created"]
+    )
+    async def test_external_change_during_authority_wait_refuses(
+        boundary, change, monkeypatch
+    ):
+        server = fixture_server()
+        tracker = linear_over_fake_mcp(server)
+        original = await leased_comment(
+            tracker, target=APPROVED_ISSUE, marker=MARKER, body="private original answer"
+        )
+        async with lease_for_comment(
+            tracker, target=APPROVED_ISSUE, marker=MARKER
+        ) as holder:
+            actual_call = server.call_tool
+            reads = 0
+            mutated = False
+    
+            async def call(*, name, arguments):
+                nonlocal reads, mutated
+                if name == "list_comments":
+                    reads += 1
+                due = (
+                    name == "get_user"
+                    if boundary == "identity"
+                    else (name == "list_comments" and reads == 2)
+                )
+                if due and not mutated:
+                    mutated = True
+                    row = next(c for c in server.comments if c.id == original.comment_key)
+                    if change == "body":
+                        row.body = f"{MARKER}\nconcurrent answer"
+                    elif change == "missing":
+                        server.comments.remove(row)
+                    elif change == "key":
+                        row.id = "replacement-native-key"
+                    elif change == "author":
+                        row.author = "another-principal"
+                    elif change == "reply":
+                        row.parent_id = "another-thread"
+                    else:
+                        row.created_at += timedelta(seconds=1)
+                return await actual_call(name=name, arguments=arguments)
+    
+            monkeypatch.setattr(server, "call_tool", call)
+            writes = len(server.tool_calls("save_comment"))
+>           with pytest.raises(Exception) as caught:
+                 ^^^^^^^^^^^^^^^^^^^^^^^^
+E           Failed: DID NOT RAISE <class 'Exception'>
+
+tests/tracker/test_comment_expected.py:76: Failed
+________ test_external_change_during_authority_wait_refuses[body-lease] ________
+
+boundary = 'lease', change = 'body'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10aadd070>
+
+    @pytest.mark.parametrize("boundary", ["identity", "lease"])
+    @pytest.mark.parametrize(
+        "change", ["body", "missing", "key", "author", "reply", "created"]
+    )
+    async def test_external_change_during_authority_wait_refuses(
+        boundary, change, monkeypatch
+    ):
+        server = fixture_server()
+        tracker = linear_over_fake_mcp(server)
+        original = await leased_comment(
+            tracker, target=APPROVED_ISSUE, marker=MARKER, body="private original answer"
+        )
+        async with lease_for_comment(
+            tracker, target=APPROVED_ISSUE, marker=MARKER
+        ) as holder:
+            actual_call = server.call_tool
+            reads = 0
+            mutated = False
+    
+            async def call(*, name, arguments):
+                nonlocal reads, mutated
+                if name == "list_comments":
+                    reads += 1
+                due = (
+                    name == "get_user"
+                    if boundary == "identity"
+                    else (name == "list_comments" and reads == 2)
+                )
+                if due and not mutated:
+                    mutated = True
+                    row = next(c for c in server.comments if c.id == original.comment_key)
+                    if change == "body":
+                        row.body = f"{MARKER}\nconcurrent answer"
+                    elif change == "missing":
+                        server.comments.remove(row)
+                    elif change == "key":
+                        row.id = "replacement-native-key"
+                    elif change == "author":
+                        row.author = "another-principal"
+                    elif change == "reply":
+                        row.parent_id = "another-thread"
+                    else:
+                        row.created_at += timedelta(seconds=1)
+                return await actual_call(name=name, arguments=arguments)
+    
+            monkeypatch.setattr(server, "call_tool", call)
+            writes = len(server.tool_calls("save_comment"))
+>           with pytest.raises(Exception) as caught:
+                 ^^^^^^^^^^^^^^^^^^^^^^^^
+E           Failed: DID NOT RAISE <class 'Exception'>
+
+tests/tracker/test_comment_expected.py:76: Failed
+_____ test_external_change_during_authority_wait_refuses[missing-identity] _____
+
+boundary = 'identity', change = 'missing'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10aafca70>
+
+    @pytest.mark.parametrize("boundary", ["identity", "lease"])
+    @pytest.mark.parametrize(
+        "change", ["body", "missing", "key", "author", "reply", "created"]
+    )
+    async def test_external_change_during_authority_wait_refuses(
+        boundary, change, monkeypatch
+    ):
+        server = fixture_server()
+        tracker = linear_over_fake_mcp(server)
+        original = await leased_comment(
+            tracker, target=APPROVED_ISSUE, marker=MARKER, body="private original answer"
+        )
+        async with lease_for_comment(
+            tracker, target=APPROVED_ISSUE, marker=MARKER
+        ) as holder:
+            actual_call = server.call_tool
+            reads = 0
+            mutated = False
+    
+            async def call(*, name, arguments):
+                nonlocal reads, mutated
+                if name == "list_comments":
+                    reads += 1
+                due = (
+                    name == "get_user"
+                    if boundary == "identity"
+                    else (name == "list_comments" and reads == 2)
+                )
+                if due and not mutated:
+                    mutated = True
+                    row = next(c for c in server.comments if c.id == original.comment_key)
+                    if change == "body":
+                        row.body = f"{MARKER}\nconcurrent answer"
+                    elif change == "missing":
+                        server.comments.remove(row)
+                    elif change == "key":
+                        row.id = "replacement-native-key"
+                    elif change == "author":
+                        row.author = "another-principal"
+                    elif change == "reply":
+                        row.parent_id = "another-thread"
+                    else:
+                        row.created_at += timedelta(seconds=1)
+                return await actual_call(name=name, arguments=arguments)
+    
+            monkeypatch.setattr(server, "call_tool", call)
+            writes = len(server.tool_calls("save_comment"))
+            with pytest.raises(Exception) as caught:
+                await amend(tracker, original, holder)
+            assert mutated
+>           assert type(caught.value).__name__ == "StaleCommentWriteError"
+E           AssertionError: assert 'TrackerUnavailableError' == 'StaleCommentWriteError'
+E             
+E             - StaleCommentWriteError
+E             + TrackerUnavailableError
+
+tests/tracker/test_comment_expected.py:79: AssertionError
+______ test_external_change_during_authority_wait_refuses[missing-lease] _______
+
+boundary = 'lease', change = 'missing'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10aafff80>
+
+    @pytest.mark.parametrize("boundary", ["identity", "lease"])
+    @pytest.mark.parametrize(
+        "change", ["body", "missing", "key", "author", "reply", "created"]
+    )
+    async def test_external_change_during_authority_wait_refuses(
+        boundary, change, monkeypatch
+    ):
+        server = fixture_server()
+        tracker = linear_over_fake_mcp(server)
+        original = await leased_comment(
+            tracker, target=APPROVED_ISSUE, marker=MARKER, body="private original answer"
+        )
+        async with lease_for_comment(
+            tracker, target=APPROVED_ISSUE, marker=MARKER
+        ) as holder:
+            actual_call = server.call_tool
+            reads = 0
+            mutated = False
+    
+            async def call(*, name, arguments):
+                nonlocal reads, mutated
+                if name == "list_comments":
+                    reads += 1
+                due = (
+                    name == "get_user"
+                    if boundary == "identity"
+                    else (name == "list_comments" and reads == 2)
+                )
+                if due and not mutated:
+                    mutated = True
+                    row = next(c for c in server.comments if c.id == original.comment_key)
+                    if change == "body":
+                        row.body = f"{MARKER}\nconcurrent answer"
+                    elif change == "missing":
+                        server.comments.remove(row)
+                    elif change == "key":
+                        row.id = "replacement-native-key"
+                    elif change == "author":
+                        row.author = "another-principal"
+                    elif change == "reply":
+                        row.parent_id = "another-thread"
+                    else:
+                        row.created_at += timedelta(seconds=1)
+                return await actual_call(name=name, arguments=arguments)
+    
+            monkeypatch.setattr(server, "call_tool", call)
+            writes = len(server.tool_calls("save_comment"))
+            with pytest.raises(Exception) as caught:
+                await amend(tracker, original, holder)
+            assert mutated
+>           assert type(caught.value).__name__ == "StaleCommentWriteError"
+E           AssertionError: assert 'TrackerUnavailableError' == 'StaleCommentWriteError'
+E             
+E             - StaleCommentWriteError
+E             + TrackerUnavailableError
+
+tests/tracker/test_comment_expected.py:79: AssertionError
+_______ test_external_change_during_authority_wait_refuses[key-identity] _______
+
+boundary = 'identity', change = 'key'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10aaff110>
+
+    @pytest.mark.parametrize("boundary", ["identity", "lease"])
+    @pytest.mark.parametrize(
+        "change", ["body", "missing", "key", "author", "reply", "created"]
+    )
+    async def test_external_change_during_authority_wait_refuses(
+        boundary, change, monkeypatch
+    ):
+        server = fixture_server()
+        tracker = linear_over_fake_mcp(server)
+        original = await leased_comment(
+            tracker, target=APPROVED_ISSUE, marker=MARKER, body="private original answer"
+        )
+        async with lease_for_comment(
+            tracker, target=APPROVED_ISSUE, marker=MARKER
+        ) as holder:
+            actual_call = server.call_tool
+            reads = 0
+            mutated = False
+    
+            async def call(*, name, arguments):
+                nonlocal reads, mutated
+                if name == "list_comments":
+                    reads += 1
+                due = (
+                    name == "get_user"
+                    if boundary == "identity"
+                    else (name == "list_comments" and reads == 2)
+                )
+                if due and not mutated:
+                    mutated = True
+                    row = next(c for c in server.comments if c.id == original.comment_key)
+                    if change == "body":
+                        row.body = f"{MARKER}\nconcurrent answer"
+                    elif change == "missing":
+                        server.comments.remove(row)
+                    elif change == "key":
+                        row.id = "replacement-native-key"
+                    elif change == "author":
+                        row.author = "another-principal"
+                    elif change == "reply":
+                        row.parent_id = "another-thread"
+                    else:
+                        row.created_at += timedelta(seconds=1)
+                return await actual_call(name=name, arguments=arguments)
+    
+            monkeypatch.setattr(server, "call_tool", call)
+            writes = len(server.tool_calls("save_comment"))
+            with pytest.raises(Exception) as caught:
+                await amend(tracker, original, holder)
+            assert mutated
+>           assert type(caught.value).__name__ == "StaleCommentWriteError"
+E           AssertionError: assert 'TrackerUnavailableError' == 'StaleCommentWriteError'
+E             
+E             - StaleCommentWriteError
+E             + TrackerUnavailableError
+
+tests/tracker/test_comment_expected.py:79: AssertionError
+________ test_external_change_during_authority_wait_refuses[key-lease] _________
+
+boundary = 'lease', change = 'key'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10abd5e50>
+
+    @pytest.mark.parametrize("boundary", ["identity", "lease"])
+    @pytest.mark.parametrize(
+        "change", ["body", "missing", "key", "author", "reply", "created"]
+    )
+    async def test_external_change_during_authority_wait_refuses(
+        boundary, change, monkeypatch
+    ):
+        server = fixture_server()
+        tracker = linear_over_fake_mcp(server)
+        original = await leased_comment(
+            tracker, target=APPROVED_ISSUE, marker=MARKER, body="private original answer"
+        )
+        async with lease_for_comment(
+            tracker, target=APPROVED_ISSUE, marker=MARKER
+        ) as holder:
+            actual_call = server.call_tool
+            reads = 0
+            mutated = False
+    
+            async def call(*, name, arguments):
+                nonlocal reads, mutated
+                if name == "list_comments":
+                    reads += 1
+                due = (
+                    name == "get_user"
+                    if boundary == "identity"
+                    else (name == "list_comments" and reads == 2)
+                )
+                if due and not mutated:
+                    mutated = True
+                    row = next(c for c in server.comments if c.id == original.comment_key)
+                    if change == "body":
+                        row.body = f"{MARKER}\nconcurrent answer"
+                    elif change == "missing":
+                        server.comments.remove(row)
+                    elif change == "key":
+                        row.id = "replacement-native-key"
+                    elif change == "author":
+                        row.author = "another-principal"
+                    elif change == "reply":
+                        row.parent_id = "another-thread"
+                    else:
+                        row.created_at += timedelta(seconds=1)
+                return await actual_call(name=name, arguments=arguments)
+    
+            monkeypatch.setattr(server, "call_tool", call)
+            writes = len(server.tool_calls("save_comment"))
+            with pytest.raises(Exception) as caught:
+                await amend(tracker, original, holder)
+            assert mutated
+>           assert type(caught.value).__name__ == "StaleCommentWriteError"
+E           AssertionError: assert 'TrackerUnavailableError' == 'StaleCommentWriteError'
+E             
+E             - StaleCommentWriteError
+E             + TrackerUnavailableError
+
+tests/tracker/test_comment_expected.py:79: AssertionError
+_____ test_external_change_during_authority_wait_refuses[author-identity] ______
+
+boundary = 'identity', change = 'author'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10abd78f0>
+
+    @pytest.mark.parametrize("boundary", ["identity", "lease"])
+    @pytest.mark.parametrize(
+        "change", ["body", "missing", "key", "author", "reply", "created"]
+    )
+    async def test_external_change_during_authority_wait_refuses(
+        boundary, change, monkeypatch
+    ):
+        server = fixture_server()
+        tracker = linear_over_fake_mcp(server)
+        original = await leased_comment(
+            tracker, target=APPROVED_ISSUE, marker=MARKER, body="private original answer"
+        )
+        async with lease_for_comment(
+            tracker, target=APPROVED_ISSUE, marker=MARKER
+        ) as holder:
+            actual_call = server.call_tool
+            reads = 0
+            mutated = False
+    
+            async def call(*, name, arguments):
+                nonlocal reads, mutated
+                if name == "list_comments":
+                    reads += 1
+                due = (
+                    name == "get_user"
+                    if boundary == "identity"
+                    else (name == "list_comments" and reads == 2)
+                )
+                if due and not mutated:
+                    mutated = True
+                    row = next(c for c in server.comments if c.id == original.comment_key)
+                    if change == "body":
+                        row.body = f"{MARKER}\nconcurrent answer"
+                    elif change == "missing":
+                        server.comments.remove(row)
+                    elif change == "key":
+                        row.id = "replacement-native-key"
+                    elif change == "author":
+                        row.author = "another-principal"
+                    elif change == "reply":
+                        row.parent_id = "another-thread"
+                    else:
+                        row.created_at += timedelta(seconds=1)
+                return await actual_call(name=name, arguments=arguments)
+    
+            monkeypatch.setattr(server, "call_tool", call)
+            writes = len(server.tool_calls("save_comment"))
+>           with pytest.raises(Exception) as caught:
+                 ^^^^^^^^^^^^^^^^^^^^^^^^
+E           Failed: DID NOT RAISE <class 'Exception'>
+
+tests/tracker/test_comment_expected.py:76: Failed
+_______ test_external_change_during_authority_wait_refuses[author-lease] _______
+
+boundary = 'lease', change = 'author'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10abf6930>
+
+    @pytest.mark.parametrize("boundary", ["identity", "lease"])
+    @pytest.mark.parametrize(
+        "change", ["body", "missing", "key", "author", "reply", "created"]
+    )
+    async def test_external_change_during_authority_wait_refuses(
+        boundary, change, monkeypatch
+    ):
+        server = fixture_server()
+        tracker = linear_over_fake_mcp(server)
+        original = await leased_comment(
+            tracker, target=APPROVED_ISSUE, marker=MARKER, body="private original answer"
+        )
+        async with lease_for_comment(
+            tracker, target=APPROVED_ISSUE, marker=MARKER
+        ) as holder:
+            actual_call = server.call_tool
+            reads = 0
+            mutated = False
+    
+            async def call(*, name, arguments):
+                nonlocal reads, mutated
+                if name == "list_comments":
+                    reads += 1
+                due = (
+                    name == "get_user"
+                    if boundary == "identity"
+                    else (name == "list_comments" and reads == 2)
+                )
+                if due and not mutated:
+                    mutated = True
+                    row = next(c for c in server.comments if c.id == original.comment_key)
+                    if change == "body":
+                        row.body = f"{MARKER}\nconcurrent answer"
+                    elif change == "missing":
+                        server.comments.remove(row)
+                    elif change == "key":
+                        row.id = "replacement-native-key"
+                    elif change == "author":
+                        row.author = "another-principal"
+                    elif change == "reply":
+                        row.parent_id = "another-thread"
+                    else:
+                        row.created_at += timedelta(seconds=1)
+                return await actual_call(name=name, arguments=arguments)
+    
+            monkeypatch.setattr(server, "call_tool", call)
+            writes = len(server.tool_calls("save_comment"))
+>           with pytest.raises(Exception) as caught:
+                 ^^^^^^^^^^^^^^^^^^^^^^^^
+E           Failed: DID NOT RAISE <class 'Exception'>
+
+tests/tracker/test_comment_expected.py:76: Failed
+______ test_external_change_during_authority_wait_refuses[reply-identity] ______
+
+boundary = 'identity', change = 'reply'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10abf6cf0>
+
+    @pytest.mark.parametrize("boundary", ["identity", "lease"])
+    @pytest.mark.parametrize(
+        "change", ["body", "missing", "key", "author", "reply", "created"]
+    )
+    async def test_external_change_during_authority_wait_refuses(
+        boundary, change, monkeypatch
+    ):
+        server = fixture_server()
+        tracker = linear_over_fake_mcp(server)
+        original = await leased_comment(
+            tracker, target=APPROVED_ISSUE, marker=MARKER, body="private original answer"
+        )
+        async with lease_for_comment(
+            tracker, target=APPROVED_ISSUE, marker=MARKER
+        ) as holder:
+            actual_call = server.call_tool
+            reads = 0
+            mutated = False
+    
+            async def call(*, name, arguments):
+                nonlocal reads, mutated
+                if name == "list_comments":
+                    reads += 1
+                due = (
+                    name == "get_user"
+                    if boundary == "identity"
+                    else (name == "list_comments" and reads == 2)
+                )
+                if due and not mutated:
+                    mutated = True
+                    row = next(c for c in server.comments if c.id == original.comment_key)
+                    if change == "body":
+                        row.body = f"{MARKER}\nconcurrent answer"
+                    elif change == "missing":
+                        server.comments.remove(row)
+                    elif change == "key":
+                        row.id = "replacement-native-key"
+                    elif change == "author":
+                        row.author = "another-principal"
+                    elif change == "reply":
+                        row.parent_id = "another-thread"
+                    else:
+                        row.created_at += timedelta(seconds=1)
+                return await actual_call(name=name, arguments=arguments)
+    
+            monkeypatch.setattr(server, "call_tool", call)
+            writes = len(server.tool_calls("save_comment"))
+>           with pytest.raises(Exception) as caught:
+                 ^^^^^^^^^^^^^^^^^^^^^^^^
+E           Failed: DID NOT RAISE <class 'Exception'>
+
+tests/tracker/test_comment_expected.py:76: Failed
+_______ test_external_change_during_authority_wait_refuses[reply-lease] ________
+
+boundary = 'lease', change = 'reply'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10abf7380>
+
+    @pytest.mark.parametrize("boundary", ["identity", "lease"])
+    @pytest.mark.parametrize(
+        "change", ["body", "missing", "key", "author", "reply", "created"]
+    )
+    async def test_external_change_during_authority_wait_refuses(
+        boundary, change, monkeypatch
+    ):
+        server = fixture_server()
+        tracker = linear_over_fake_mcp(server)
+        original = await leased_comment(
+            tracker, target=APPROVED_ISSUE, marker=MARKER, body="private original answer"
+        )
+        async with lease_for_comment(
+            tracker, target=APPROVED_ISSUE, marker=MARKER
+        ) as holder:
+            actual_call = server.call_tool
+            reads = 0
+            mutated = False
+    
+            async def call(*, name, arguments):
+                nonlocal reads, mutated
+                if name == "list_comments":
+                    reads += 1
+                due = (
+                    name == "get_user"
+                    if boundary == "identity"
+                    else (name == "list_comments" and reads == 2)
+                )
+                if due and not mutated:
+                    mutated = True
+                    row = next(c for c in server.comments if c.id == original.comment_key)
+                    if change == "body":
+                        row.body = f"{MARKER}\nconcurrent answer"
+                    elif change == "missing":
+                        server.comments.remove(row)
+                    elif change == "key":
+                        row.id = "replacement-native-key"
+                    elif change == "author":
+                        row.author = "another-principal"
+                    elif change == "reply":
+                        row.parent_id = "another-thread"
+                    else:
+                        row.created_at += timedelta(seconds=1)
+                return await actual_call(name=name, arguments=arguments)
+    
+            monkeypatch.setattr(server, "call_tool", call)
+            writes = len(server.tool_calls("save_comment"))
+>           with pytest.raises(Exception) as caught:
+                 ^^^^^^^^^^^^^^^^^^^^^^^^
+E           Failed: DID NOT RAISE <class 'Exception'>
+
+tests/tracker/test_comment_expected.py:76: Failed
+_____ test_external_change_during_authority_wait_refuses[created-identity] _____
+
+boundary = 'identity', change = 'created'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10ac13620>
+
+    @pytest.mark.parametrize("boundary", ["identity", "lease"])
+    @pytest.mark.parametrize(
+        "change", ["body", "missing", "key", "author", "reply", "created"]
+    )
+    async def test_external_change_during_authority_wait_refuses(
+        boundary, change, monkeypatch
+    ):
+        server = fixture_server()
+        tracker = linear_over_fake_mcp(server)
+        original = await leased_comment(
+            tracker, target=APPROVED_ISSUE, marker=MARKER, body="private original answer"
+        )
+        async with lease_for_comment(
+            tracker, target=APPROVED_ISSUE, marker=MARKER
+        ) as holder:
+            actual_call = server.call_tool
+            reads = 0
+            mutated = False
+    
+            async def call(*, name, arguments):
+                nonlocal reads, mutated
+                if name == "list_comments":
+                    reads += 1
+                due = (
+                    name == "get_user"
+                    if boundary == "identity"
+                    else (name == "list_comments" and reads == 2)
+                )
+                if due and not mutated:
+                    mutated = True
+                    row = next(c for c in server.comments if c.id == original.comment_key)
+                    if change == "body":
+                        row.body = f"{MARKER}\nconcurrent answer"
+                    elif change == "missing":
+                        server.comments.remove(row)
+                    elif change == "key":
+                        row.id = "replacement-native-key"
+                    elif change == "author":
+                        row.author = "another-principal"
+                    elif change == "reply":
+                        row.parent_id = "another-thread"
+                    else:
+                        row.created_at += timedelta(seconds=1)
+                return await actual_call(name=name, arguments=arguments)
+    
+            monkeypatch.setattr(server, "call_tool", call)
+            writes = len(server.tool_calls("save_comment"))
+>           with pytest.raises(Exception) as caught:
+                 ^^^^^^^^^^^^^^^^^^^^^^^^
+E           Failed: DID NOT RAISE <class 'Exception'>
+
+tests/tracker/test_comment_expected.py:76: Failed
+______ test_external_change_during_authority_wait_refuses[created-lease] _______
+
+boundary = 'lease', change = 'created'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10ac12750>
+
+    @pytest.mark.parametrize("boundary", ["identity", "lease"])
+    @pytest.mark.parametrize(
+        "change", ["body", "missing", "key", "author", "reply", "created"]
+    )
+    async def test_external_change_during_authority_wait_refuses(
+        boundary, change, monkeypatch
+    ):
+        server = fixture_server()
+        tracker = linear_over_fake_mcp(server)
+        original = await leased_comment(
+            tracker, target=APPROVED_ISSUE, marker=MARKER, body="private original answer"
+        )
+        async with lease_for_comment(
+            tracker, target=APPROVED_ISSUE, marker=MARKER
+        ) as holder:
+            actual_call = server.call_tool
+            reads = 0
+            mutated = False
+    
+            async def call(*, name, arguments):
+                nonlocal reads, mutated
+                if name == "list_comments":
+                    reads += 1
+                due = (
+                    name == "get_user"
+                    if boundary == "identity"
+                    else (name == "list_comments" and reads == 2)
+                )
+                if due and not mutated:
+                    mutated = True
+                    row = next(c for c in server.comments if c.id == original.comment_key)
+                    if change == "body":
+                        row.body = f"{MARKER}\nconcurrent answer"
+                    elif change == "missing":
+                        server.comments.remove(row)
+                    elif change == "key":
+                        row.id = "replacement-native-key"
+                    elif change == "author":
+                        row.author = "another-principal"
+                    elif change == "reply":
+                        row.parent_id = "another-thread"
+                    else:
+                        row.created_at += timedelta(seconds=1)
+                return await actual_call(name=name, arguments=arguments)
+    
+            monkeypatch.setattr(server, "call_tool", call)
+            writes = len(server.tool_calls("save_comment"))
+>           with pytest.raises(Exception) as caught:
+                 ^^^^^^^^^^^^^^^^^^^^^^^^
+E           Failed: DID NOT RAISE <class 'Exception'>
+
+tests/tracker/test_comment_expected.py:76: Failed
+_ test_matching_desired_body_does_not_authorize_a_replacement_identity[fake-port] _
+
+tracker = <tests.fakes.FakeTrackerPort object at 0x10ac11310>
+tracker_writes = <function tracker_writes.<locals>.<lambda> at 0x10ab9efc0>
+
+    async def test_matching_desired_body_does_not_authorize_a_replacement_identity(
+        tracker, tracker_writes
+    ):
+        original = await leased_comment(
+            tracker, target=APPROVED_ISSUE, marker=MARKER, body="authorized answer"
+        )
+        expected = original.model_copy(update={"comment_key": "previous-native-key"})
+        async with lease_for_comment(
+            tracker, target=APPROVED_ISSUE, marker=MARKER
+        ) as holder:
+            writes = tracker_writes()
+>           with pytest.raises(Exception) as caught:
+                 ^^^^^^^^^^^^^^^^^^^^^^^^
+E           Failed: DID NOT RAISE <class 'Exception'>
+
+tests/tracker/test_comment_expected.py:114: Failed
+_ test_matching_desired_body_does_not_authorize_a_replacement_identity[linear-mcp] _
+
+tracker = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10abf7f80>
+tracker_writes = <function tracker_writes.<locals>.<lambda> at 0x10ab9f060>
+
+    async def test_matching_desired_body_does_not_authorize_a_replacement_identity(
+        tracker, tracker_writes
+    ):
+        original = await leased_comment(
+            tracker, target=APPROVED_ISSUE, marker=MARKER, body="authorized answer"
+        )
+        expected = original.model_copy(update={"comment_key": "previous-native-key"})
+        async with lease_for_comment(
+            tracker, target=APPROVED_ISSUE, marker=MARKER
+        ) as holder:
+            writes = tracker_writes()
+>           with pytest.raises(Exception) as caught:
+                 ^^^^^^^^^^^^^^^^^^^^^^^^
+E           Failed: DID NOT RAISE <class 'Exception'>
+
+tests/tracker/test_comment_expected.py:114: Failed
+_________ test_alarm_parser_reads_the_same_final_snapshot_as_the_lease _________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10abf52b0>
+
+    async def test_alarm_parser_reads_the_same_final_snapshot_as_the_lease(monkeypatch):
+        from kodezart.core.errors import TrackerProtocolError
+        from kodezart.services.run_surface_lease import RunSurfaceLease
+        from tests.tracker.test_run_alarm_records import (
+            DURATION,
+            JOB,
+            Boundary,
+            address,
+            alarm,
+            store,
+        )
+    
+        boundary = Boundary()
+        tracker = boundary.adapter()
+        value = alarm()
+        await store(tracker, value)
+        original = next(
+            c for c in boundary.server.comments if c.body.startswith(address(value).marker)
+        )
+        async with RunSurfaceLease(
+            tracker=tracker,
+            job_id=JOB,
+            surfaces=frozenset({address(value)}),
+            lease_seconds=DURATION,
+        ):
+            actual_call = boundary.call_tool
+            reads = 0
+    
+            async def call(*, name, arguments):
+                nonlocal reads
+                if name == "list_comments":
+                    reads += 1
+                    if reads == 3:
+                        # Initial alarm parse and writer discovery succeeded; the
+                        # final native response now carries the changed record.
+                        original.body += "\nexternal damage"
+                return await actual_call(name=name, arguments=arguments)
+    
+            monkeypatch.setattr(boundary, "call_tool", call)
+            writes = len(boundary.server.tool_calls("save_comment"))
+>           with pytest.raises(TrackerProtocolError):
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           Failed: DID NOT RAISE <class 'kodezart.core.errors.TrackerProtocolError'>
+
+tests/tracker/test_comment_expected.py:242: Failed
+=========================== short test summary info ============================
+FAILED tests/tracker/test_comment_expected.py::test_external_change_during_authority_wait_refuses[body-identity]
+FAILED tests/tracker/test_comment_expected.py::test_external_change_during_authority_wait_refuses[body-lease]
+FAILED tests/tracker/test_comment_expected.py::test_external_change_during_authority_wait_refuses[missing-identity]
+FAILED tests/tracker/test_comment_expected.py::test_external_change_during_authority_wait_refuses[missing-lease]
+FAILED tests/tracker/test_comment_expected.py::test_external_change_during_authority_wait_refuses[key-identity]
+FAILED tests/tracker/test_comment_expected.py::test_external_change_during_authority_wait_refuses[key-lease]
+FAILED tests/tracker/test_comment_expected.py::test_external_change_during_authority_wait_refuses[author-identity]
+FAILED tests/tracker/test_comment_expected.py::test_external_change_during_authority_wait_refuses[author-lease]
+FAILED tests/tracker/test_comment_expected.py::test_external_change_during_authority_wait_refuses[reply-identity]
+FAILED tests/tracker/test_comment_expected.py::test_external_change_during_authority_wait_refuses[reply-lease]
+FAILED tests/tracker/test_comment_expected.py::test_external_change_during_authority_wait_refuses[created-identity]
+FAILED tests/tracker/test_comment_expected.py::test_external_change_during_authority_wait_refuses[created-lease]
+FAILED tests/tracker/test_comment_expected.py::test_matching_desired_body_does_not_authorize_a_replacement_identity[fake-port]
+FAILED tests/tracker/test_comment_expected.py::test_matching_desired_body_does_not_authorize_a_replacement_identity[linear-mcp]
+FAILED tests/tracker/test_comment_expected.py::test_alarm_parser_reads_the_same_final_snapshot_as_the_lease
+15 failed, 5 passed in 1.38s

@@ -1,0 +1,457 @@
+......................................................FFFFFFF........... [ 33%]
+..............................................................FFF....... [ 67%]
+..................................F..................................    [100%]
+=================================== FAILURES ===================================
+_____ test_not_buildable_requires_an_explicit_refusal_kind[extra_fields0] ______
+
+extra_fields = {}
+
+    @pytest.mark.parametrize("extra_fields", [{}, {"refusal_kind": None}])
+    def test_not_buildable_requires_an_explicit_refusal_kind(extra_fields):
+        from pydantic import ValidationError
+    
+        from kodezart.types.domain.organize import AdmissionResult
+    
+        with pytest.raises(ValidationError, match="NOT_BUILDABLE requires refusal_kind"):
+>           AdmissionResult.model_validate(
+                {
+                    "issue_id": "ISSUE-1",
+                    "verdict": "not_buildable",
+                    "admitted_body_digest": "revision:one",
+                    "invented_decision": "Choose the storage model.",
+                    "evidence": "The specification leaves that choice open.",
+                    **extra_fields,
+                }
+            )
+E           pydantic_core._pydantic_core.ValidationError: 1 validation error for AdmissionResult
+E           not_buildable.refusalKind
+E             Field required [type=missing, input_value={'issue_id': 'ISSUE-1', '...aves that choice open.'}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.12/v/missing
+
+tests/domain/test_organize.py:361: ValidationError
+
+During handling of the above exception, another exception occurred:
+
+extra_fields = {}
+
+    @pytest.mark.parametrize("extra_fields", [{}, {"refusal_kind": None}])
+    def test_not_buildable_requires_an_explicit_refusal_kind(extra_fields):
+        from pydantic import ValidationError
+    
+        from kodezart.types.domain.organize import AdmissionResult
+    
+>       with pytest.raises(ValidationError, match="NOT_BUILDABLE requires refusal_kind"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: Regex pattern did not match.
+E         Expected regex: 'NOT_BUILDABLE requires refusal_kind'
+E         Actual message: "1 validation error for AdmissionResult\nnot_buildable.refusalKind\n  Field required [type=missing, input_value={'issue_id': 'ISSUE-1', '...aves that choice open.'}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.12/v/missing"
+
+tests/domain/test_organize.py:360: AssertionError
+_____ test_not_buildable_requires_an_explicit_refusal_kind[extra_fields1] ______
+
+extra_fields = {'refusal_kind': None}
+
+    @pytest.mark.parametrize("extra_fields", [{}, {"refusal_kind": None}])
+    def test_not_buildable_requires_an_explicit_refusal_kind(extra_fields):
+        from pydantic import ValidationError
+    
+        from kodezart.types.domain.organize import AdmissionResult
+    
+        with pytest.raises(ValidationError, match="NOT_BUILDABLE requires refusal_kind"):
+>           AdmissionResult.model_validate(
+                {
+                    "issue_id": "ISSUE-1",
+                    "verdict": "not_buildable",
+                    "admitted_body_digest": "revision:one",
+                    "invented_decision": "Choose the storage model.",
+                    "evidence": "The specification leaves that choice open.",
+                    **extra_fields,
+                }
+            )
+E           pydantic_core._pydantic_core.ValidationError: 1 validation error for AdmissionResult
+E           not_buildable.refusal_kind
+E             Input should be 'spec_gap' or 'human_decision' [type=enum, input_value=None, input_type=NoneType]
+E               For further information visit https://errors.pydantic.dev/2.12/v/enum
+
+tests/domain/test_organize.py:361: ValidationError
+
+During handling of the above exception, another exception occurred:
+
+extra_fields = {'refusal_kind': None}
+
+    @pytest.mark.parametrize("extra_fields", [{}, {"refusal_kind": None}])
+    def test_not_buildable_requires_an_explicit_refusal_kind(extra_fields):
+        from pydantic import ValidationError
+    
+        from kodezart.types.domain.organize import AdmissionResult
+    
+>       with pytest.raises(ValidationError, match="NOT_BUILDABLE requires refusal_kind"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: Regex pattern did not match.
+E         Expected regex: 'NOT_BUILDABLE requires refusal_kind'
+E         Actual message: "1 validation error for AdmissionResult\nnot_buildable.refusal_kind\n  Input should be 'spec_gap' or 'human_decision' [type=enum, input_value=None, input_type=NoneType]\n    For further information visit https://errors.pydantic.dev/2.12/v/enum"
+
+tests/domain/test_organize.py:360: AssertionError
+_____ test_only_not_buildable_can_carry_a_refusal_kind[spec_gap-buildable] _____
+
+verdict = 'buildable', refusal_kind = 'spec_gap'
+
+    @pytest.mark.parametrize("verdict", ["buildable", "unverifiable"])
+    @pytest.mark.parametrize("refusal_kind", ["spec_gap", "human_decision"])
+    def test_only_not_buildable_can_carry_a_refusal_kind(verdict, refusal_kind):
+        from pydantic import ValidationError
+    
+        from kodezart.types.domain.organize import AdmissionResult
+    
+        with pytest.raises(ValidationError, match="refusal_kind must be None"):
+>           AdmissionResult.model_validate(
+                {
+                    "issue_id": "ISSUE-1",
+                    "verdict": verdict,
+                    "admitted_body_digest": "revision:one",
+                    "missing_artifact": "schema",
+                    "pending_blocker_id": "ISSUE-9",
+                    "evidence": "Observed on the issue body.",
+                    "refusal_kind": refusal_kind,
+                }
+            )
+E           pydantic_core._pydantic_core.ValidationError: 3 validation errors for AdmissionResult
+E           buildable.missing_artifact
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='schema', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.12/v/extra_forbidden
+E           buildable.pending_blocker_id
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='ISSUE-9', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.12/v/extra_forbidden
+E           buildable.refusal_kind
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='spec_gap', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.12/v/extra_forbidden
+
+tests/domain/test_organize.py:381: ValidationError
+
+During handling of the above exception, another exception occurred:
+
+verdict = 'buildable', refusal_kind = 'spec_gap'
+
+    @pytest.mark.parametrize("verdict", ["buildable", "unverifiable"])
+    @pytest.mark.parametrize("refusal_kind", ["spec_gap", "human_decision"])
+    def test_only_not_buildable_can_carry_a_refusal_kind(verdict, refusal_kind):
+        from pydantic import ValidationError
+    
+        from kodezart.types.domain.organize import AdmissionResult
+    
+>       with pytest.raises(ValidationError, match="refusal_kind must be None"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: Regex pattern did not match.
+E         Expected regex: 'refusal_kind must be None'
+E         Actual message: "3 validation errors for AdmissionResult\nbuildable.missing_artifact\n  Extra inputs are not permitted [type=extra_forbidden, input_value='schema', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/extra_forbidden\nbuildable.pending_blocker_id\n  Extra inputs are not permitted [type=extra_forbidden, input_value='ISSUE-9', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/extra_forbidden\nbuildable.refusal_kind\n  Extra inputs are not permitted [type=extra_forbidden, input_value='spec_gap', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/extra_forbidden"
+
+tests/domain/test_organize.py:380: AssertionError
+___ test_only_not_buildable_can_carry_a_refusal_kind[spec_gap-unverifiable] ____
+
+verdict = 'unverifiable', refusal_kind = 'spec_gap'
+
+    @pytest.mark.parametrize("verdict", ["buildable", "unverifiable"])
+    @pytest.mark.parametrize("refusal_kind", ["spec_gap", "human_decision"])
+    def test_only_not_buildable_can_carry_a_refusal_kind(verdict, refusal_kind):
+        from pydantic import ValidationError
+    
+        from kodezart.types.domain.organize import AdmissionResult
+    
+        with pytest.raises(ValidationError, match="refusal_kind must be None"):
+>           AdmissionResult.model_validate(
+                {
+                    "issue_id": "ISSUE-1",
+                    "verdict": verdict,
+                    "admitted_body_digest": "revision:one",
+                    "missing_artifact": "schema",
+                    "pending_blocker_id": "ISSUE-9",
+                    "evidence": "Observed on the issue body.",
+                    "refusal_kind": refusal_kind,
+                }
+            )
+E           pydantic_core._pydantic_core.ValidationError: 1 validation error for AdmissionResult
+E           unverifiable.refusal_kind
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='spec_gap', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.12/v/extra_forbidden
+
+tests/domain/test_organize.py:381: ValidationError
+
+During handling of the above exception, another exception occurred:
+
+verdict = 'unverifiable', refusal_kind = 'spec_gap'
+
+    @pytest.mark.parametrize("verdict", ["buildable", "unverifiable"])
+    @pytest.mark.parametrize("refusal_kind", ["spec_gap", "human_decision"])
+    def test_only_not_buildable_can_carry_a_refusal_kind(verdict, refusal_kind):
+        from pydantic import ValidationError
+    
+        from kodezart.types.domain.organize import AdmissionResult
+    
+>       with pytest.raises(ValidationError, match="refusal_kind must be None"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: Regex pattern did not match.
+E         Expected regex: 'refusal_kind must be None'
+E         Actual message: "1 validation error for AdmissionResult\nunverifiable.refusal_kind\n  Extra inputs are not permitted [type=extra_forbidden, input_value='spec_gap', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/extra_forbidden"
+
+tests/domain/test_organize.py:380: AssertionError
+__ test_only_not_buildable_can_carry_a_refusal_kind[human_decision-buildable] __
+
+verdict = 'buildable', refusal_kind = 'human_decision'
+
+    @pytest.mark.parametrize("verdict", ["buildable", "unverifiable"])
+    @pytest.mark.parametrize("refusal_kind", ["spec_gap", "human_decision"])
+    def test_only_not_buildable_can_carry_a_refusal_kind(verdict, refusal_kind):
+        from pydantic import ValidationError
+    
+        from kodezart.types.domain.organize import AdmissionResult
+    
+        with pytest.raises(ValidationError, match="refusal_kind must be None"):
+>           AdmissionResult.model_validate(
+                {
+                    "issue_id": "ISSUE-1",
+                    "verdict": verdict,
+                    "admitted_body_digest": "revision:one",
+                    "missing_artifact": "schema",
+                    "pending_blocker_id": "ISSUE-9",
+                    "evidence": "Observed on the issue body.",
+                    "refusal_kind": refusal_kind,
+                }
+            )
+E           pydantic_core._pydantic_core.ValidationError: 3 validation errors for AdmissionResult
+E           buildable.missing_artifact
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='schema', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.12/v/extra_forbidden
+E           buildable.pending_blocker_id
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='ISSUE-9', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.12/v/extra_forbidden
+E           buildable.refusal_kind
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='human_decision', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.12/v/extra_forbidden
+
+tests/domain/test_organize.py:381: ValidationError
+
+During handling of the above exception, another exception occurred:
+
+verdict = 'buildable', refusal_kind = 'human_decision'
+
+    @pytest.mark.parametrize("verdict", ["buildable", "unverifiable"])
+    @pytest.mark.parametrize("refusal_kind", ["spec_gap", "human_decision"])
+    def test_only_not_buildable_can_carry_a_refusal_kind(verdict, refusal_kind):
+        from pydantic import ValidationError
+    
+        from kodezart.types.domain.organize import AdmissionResult
+    
+>       with pytest.raises(ValidationError, match="refusal_kind must be None"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: Regex pattern did not match.
+E         Expected regex: 'refusal_kind must be None'
+E         Actual message: "3 validation errors for AdmissionResult\nbuildable.missing_artifact\n  Extra inputs are not permitted [type=extra_forbidden, input_value='schema', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/extra_forbidden\nbuildable.pending_blocker_id\n  Extra inputs are not permitted [type=extra_forbidden, input_value='ISSUE-9', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/extra_forbidden\nbuildable.refusal_kind\n  Extra inputs are not permitted [type=extra_forbidden, input_value='human_decision', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/extra_forbidden"
+
+tests/domain/test_organize.py:380: AssertionError
+_ test_only_not_buildable_can_carry_a_refusal_kind[human_decision-unverifiable] _
+
+verdict = 'unverifiable', refusal_kind = 'human_decision'
+
+    @pytest.mark.parametrize("verdict", ["buildable", "unverifiable"])
+    @pytest.mark.parametrize("refusal_kind", ["spec_gap", "human_decision"])
+    def test_only_not_buildable_can_carry_a_refusal_kind(verdict, refusal_kind):
+        from pydantic import ValidationError
+    
+        from kodezart.types.domain.organize import AdmissionResult
+    
+        with pytest.raises(ValidationError, match="refusal_kind must be None"):
+>           AdmissionResult.model_validate(
+                {
+                    "issue_id": "ISSUE-1",
+                    "verdict": verdict,
+                    "admitted_body_digest": "revision:one",
+                    "missing_artifact": "schema",
+                    "pending_blocker_id": "ISSUE-9",
+                    "evidence": "Observed on the issue body.",
+                    "refusal_kind": refusal_kind,
+                }
+            )
+E           pydantic_core._pydantic_core.ValidationError: 1 validation error for AdmissionResult
+E           unverifiable.refusal_kind
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='human_decision', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.12/v/extra_forbidden
+
+tests/domain/test_organize.py:381: ValidationError
+
+During handling of the above exception, another exception occurred:
+
+verdict = 'unverifiable', refusal_kind = 'human_decision'
+
+    @pytest.mark.parametrize("verdict", ["buildable", "unverifiable"])
+    @pytest.mark.parametrize("refusal_kind", ["spec_gap", "human_decision"])
+    def test_only_not_buildable_can_carry_a_refusal_kind(verdict, refusal_kind):
+        from pydantic import ValidationError
+    
+        from kodezart.types.domain.organize import AdmissionResult
+    
+>       with pytest.raises(ValidationError, match="refusal_kind must be None"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: Regex pattern did not match.
+E         Expected regex: 'refusal_kind must be None'
+E         Actual message: "1 validation error for AdmissionResult\nunverifiable.refusal_kind\n  Extra inputs are not permitted [type=extra_forbidden, input_value='human_decision', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/extra_forbidden"
+
+tests/domain/test_organize.py:380: AssertionError
+_________ test_non_refusals_round_trip_with_no_refusal_kind[buildable] _________
+
+verdict = 'buildable'
+
+    @pytest.mark.parametrize("verdict", ["buildable", "unverifiable"])
+    def test_non_refusals_round_trip_with_no_refusal_kind(verdict):
+        from kodezart.types.domain.organize import AdmissionResult
+    
+>       result = AdmissionResult.model_validate(
+            {
+                "issue_id": "ISSUE-1",
+                "verdict": verdict,
+                "admitted_body_digest": "revision:one",
+                "missing_artifact": "schema",
+                "pending_blocker_id": "ISSUE-9",
+                "evidence": "Observed on the issue body.",
+            }
+        )
+E       pydantic_core._pydantic_core.ValidationError: 2 validation errors for AdmissionResult
+E       buildable.missing_artifact
+E         Extra inputs are not permitted [type=extra_forbidden, input_value='schema', input_type=str]
+E           For further information visit https://errors.pydantic.dev/2.12/v/extra_forbidden
+E       buildable.pending_blocker_id
+E         Extra inputs are not permitted [type=extra_forbidden, input_value='ISSUE-9', input_type=str]
+E           For further information visit https://errors.pydantic.dev/2.12/v/extra_forbidden
+
+tests/domain/test_organize.py:398: ValidationError
+______ test_result_cannot_be_routed_using_another_issues_edges[buildable] ______
+
+verdict = <AdmissionVerdict.BUILDABLE: 'buildable'>
+
+    @pytest.mark.parametrize("verdict", list(AdmissionVerdict))
+    def test_result_cannot_be_routed_using_another_issues_edges(verdict):
+>       result = AdmissionResult(
+            admitted_body_digest="revision:one",
+            issue_id=ISSUE,
+            verdict=verdict,
+            invented_decision="Choose a storage model.",
+            refusal_kind=(
+                RefusalKind.SPEC_GAP if verdict is AdmissionVerdict.NOT_BUILDABLE else None
+            ),
+            missing_artifact="schema",
+            pending_blocker_id=BLOCKER,
+            evidence="Observed on the issue body.",
+        )
+E       pydantic_core._pydantic_core.ValidationError: 4 validation errors for AdmissionResult
+E       buildable.invented_decision
+E         Extra inputs are not permitted [type=extra_forbidden, input_value='Choose a storage model.', input_type=str]
+E           For further information visit https://errors.pydantic.dev/2.12/v/extra_forbidden
+E       buildable.refusal_kind
+E         Extra inputs are not permitted [type=extra_forbidden, input_value=None, input_type=NoneType]
+E           For further information visit https://errors.pydantic.dev/2.12/v/extra_forbidden
+E       buildable.missing_artifact
+E         Extra inputs are not permitted [type=extra_forbidden, input_value='schema', input_type=str]
+E           For further information visit https://errors.pydantic.dev/2.12/v/extra_forbidden
+E       buildable.pending_blocker_id
+E         Extra inputs are not permitted [type=extra_forbidden, input_value='EXTERNAL/42', input_type=str]
+E           For further information visit https://errors.pydantic.dev/2.12/v/extra_forbidden
+
+tests/domain/test_organize_routing.py:94: ValidationError
+____ test_result_cannot_be_routed_using_another_issues_edges[not_buildable] ____
+
+verdict = <AdmissionVerdict.NOT_BUILDABLE: 'not_buildable'>
+
+    @pytest.mark.parametrize("verdict", list(AdmissionVerdict))
+    def test_result_cannot_be_routed_using_another_issues_edges(verdict):
+>       result = AdmissionResult(
+            admitted_body_digest="revision:one",
+            issue_id=ISSUE,
+            verdict=verdict,
+            invented_decision="Choose a storage model.",
+            refusal_kind=(
+                RefusalKind.SPEC_GAP if verdict is AdmissionVerdict.NOT_BUILDABLE else None
+            ),
+            missing_artifact="schema",
+            pending_blocker_id=BLOCKER,
+            evidence="Observed on the issue body.",
+        )
+E       pydantic_core._pydantic_core.ValidationError: 2 validation errors for AdmissionResult
+E       not_buildable.missing_artifact
+E         Extra inputs are not permitted [type=extra_forbidden, input_value='schema', input_type=str]
+E           For further information visit https://errors.pydantic.dev/2.12/v/extra_forbidden
+E       not_buildable.pending_blocker_id
+E         Extra inputs are not permitted [type=extra_forbidden, input_value='EXTERNAL/42', input_type=str]
+E           For further information visit https://errors.pydantic.dev/2.12/v/extra_forbidden
+
+tests/domain/test_organize_routing.py:94: ValidationError
+____ test_result_cannot_be_routed_using_another_issues_edges[unverifiable] _____
+
+verdict = <AdmissionVerdict.UNVERIFIABLE: 'unverifiable'>
+
+    @pytest.mark.parametrize("verdict", list(AdmissionVerdict))
+    def test_result_cannot_be_routed_using_another_issues_edges(verdict):
+>       result = AdmissionResult(
+            admitted_body_digest="revision:one",
+            issue_id=ISSUE,
+            verdict=verdict,
+            invented_decision="Choose a storage model.",
+            refusal_kind=(
+                RefusalKind.SPEC_GAP if verdict is AdmissionVerdict.NOT_BUILDABLE else None
+            ),
+            missing_artifact="schema",
+            pending_blocker_id=BLOCKER,
+            evidence="Observed on the issue body.",
+        )
+E       pydantic_core._pydantic_core.ValidationError: 2 validation errors for AdmissionResult
+E       unverifiable.invented_decision
+E         Extra inputs are not permitted [type=extra_forbidden, input_value='Choose a storage model.', input_type=str]
+E           For further information visit https://errors.pydantic.dev/2.12/v/extra_forbidden
+E       unverifiable.refusal_kind
+E         Extra inputs are not permitted [type=extra_forbidden, input_value=None, input_type=NoneType]
+E           For further information visit https://errors.pydantic.dev/2.12/v/extra_forbidden
+
+tests/domain/test_organize_routing.py:94: ValidationError
+_____ test_each_missing_organize_fact_puts_only_its_issue_in_gap[liveness] _____
+
+missing = 'liveness'
+
+    @pytest.mark.parametrize("missing", ["marker", "verdict", "criterion", "liveness"])
+    def test_each_missing_organize_fact_puts_only_its_issue_in_gap(missing):
+        parent, child = organized_family()
+        sibling = organized_family("other/17")
+        if missing == "marker":
+            parent = parent.model_copy(
+                update={
+                    "issue": parent.issue.model_copy(update={"issue_labels": frozenset()})
+                }
+            )
+        revisions = (parent, *((child,) if missing != "criterion" else ()), *sibling)
+        admissions = tuple(gap_admission(revision) for revision in revisions)
+        if missing == "verdict":
+            admissions = tuple(a for a in admissions if a.issue_id != SUBJECT)
+        elif missing == "liveness":
+            admissions = tuple(
+                a.model_copy(update={"admitted_body_digest": "old body"})
+                if a.issue_id == SUBJECT
+                else a
+                for a in admissions
+            )
+>       assert gap_of(revisions, admissions=admissions) == (parent.issue,)
+E       AssertionError: assert () == (TrackerIssue...subject/42'),)
+E         
+E         Right contains one more item: TrackerIssue(issue_key='subject/42', title='Title for subject/42', body='Body for subject/42', priority=<IssuePriority...updated_at=datetime.datetime(2026, 1, 1, 0, 0, tzinfo=datetime.timezone.utc), url='https://tracker.invalid/subject/42')
+E         Use -v to get more diff
+
+tests/chains/test_organize.py:753: AssertionError
+=========================== short test summary info ============================
+FAILED tests/domain/test_organize.py::test_not_buildable_requires_an_explicit_refusal_kind[extra_fields0]
+FAILED tests/domain/test_organize.py::test_not_buildable_requires_an_explicit_refusal_kind[extra_fields1]
+FAILED tests/domain/test_organize.py::test_only_not_buildable_can_carry_a_refusal_kind[spec_gap-buildable]
+FAILED tests/domain/test_organize.py::test_only_not_buildable_can_carry_a_refusal_kind[spec_gap-unverifiable]
+FAILED tests/domain/test_organize.py::test_only_not_buildable_can_carry_a_refusal_kind[human_decision-buildable]
+FAILED tests/domain/test_organize.py::test_only_not_buildable_can_carry_a_refusal_kind[human_decision-unverifiable]
+FAILED tests/domain/test_organize.py::test_non_refusals_round_trip_with_no_refusal_kind[buildable]
+FAILED tests/domain/test_organize_routing.py::test_result_cannot_be_routed_using_another_issues_edges[buildable]
+FAILED tests/domain/test_organize_routing.py::test_result_cannot_be_routed_using_another_issues_edges[not_buildable]
+FAILED tests/domain/test_organize_routing.py::test_result_cannot_be_routed_using_another_issues_edges[unverifiable]
+FAILED tests/chains/test_organize.py::test_each_missing_organize_fact_puts_only_its_issue_in_gap[liveness]
+11 failed, 202 passed in 4.26s

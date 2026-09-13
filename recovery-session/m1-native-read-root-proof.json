@@ -1,0 +1,148 @@
+{
+  "head": "fec7f28292975f0b4635a06ba84e4e35fdc3c2e8",
+  "tree": "8b76e5df013c41ebf8741d292a1cb1034f2d5f87",
+  "files": [
+    {
+      "path": "docs/architecture.md",
+      "verified_hash": "4b735f3a100bb4101829d11689078bd115710466e2016c50d2071a6cfd2d5b07",
+      "verified_donor_symbols": 0
+    },
+    {
+      "path": "docs/cutover_mapping.md",
+      "verified_hash": "c39f59144f5e9ad232ec5fe80a00fbba975d2666d5040cb5ceadebf1c301dc67",
+      "verified_donor_symbols": 0
+    },
+    {
+      "path": "docs/operation.example.toml",
+      "verified_hash": "cdfff7c682d8732b7a28dd5d5d3127d205adfdff50e21a4d7d3d8d7a9b6a6560",
+      "verified_donor_symbols": 0
+    },
+    {
+      "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+      "verified_hash": "11197ee8d8b248cb714a108fad3b4681dcd135ab7d0734f513bf129aedeee939",
+      "verified_donor_symbols": 110
+    },
+    {
+      "path": "src/kodezart/adapters/linear_mcp_types.py",
+      "verified_hash": "d68ae4cb49a2ce7099fb763eca3eeed6330e79c5dd089b30fa9fe829b43d857b",
+      "verified_donor_symbols": 22
+    },
+    {
+      "path": "src/kodezart/composition/tracker.py",
+      "verified_hash": "7622b5956c5715139b49c4aa3956914acdf736e8151112b6efb4f8f672215e26",
+      "verified_donor_symbols": 3
+    },
+    {
+      "path": "src/kodezart/core/prompt_namespaces.py",
+      "verified_hash": "00caed3f08463a66f9206bb5b750f19175ff077448e368b7538b6f083415b758",
+      "verified_donor_symbols": 3
+    },
+    {
+      "path": "src/kodezart/core/protocols.py",
+      "verified_hash": "baad72c8f60d9b498bbbde42c0f0da6682fea9f7140cbe922a999d82314925c7",
+      "verified_donor_symbols": 104
+    },
+    {
+      "path": "src/kodezart/domain/errors.py",
+      "verified_hash": "580416742d892ceb0a45f5922f9e2324f872007638fc23f1e126c89216768f3b",
+      "verified_donor_symbols": 40
+    },
+    {
+      "path": "src/kodezart/services/tracker_boot.py",
+      "verified_hash": "3dffad865f1c8a3556f7c783397bb21d56f7a3acf86e3bf9b9df463e16733024",
+      "verified_donor_symbols": 7
+    },
+    {
+      "path": "src/kodezart/types/domain/operation.py",
+      "verified_hash": "0802d1b46bde655eac66cab02ea344ce8497d4e27a4bc6fbecc567be737fd2bd",
+      "verified_donor_symbols": 20
+    },
+    {
+      "path": "src/kodezart/types/domain/tracker.py",
+      "verified_hash": "e3f5c35310a00effc0c57ef1abea7d83b1a177965283a4ea8459db65bad9afc0",
+      "verified_donor_symbols": 20
+    },
+    {
+      "path": "tests/adapters/test_tracker_self_writes.py",
+      "verified_hash": "dd698008c57758a437055687c4ec1729e298bf118e24175397ee985586493264",
+      "verified_donor_symbols": 17
+    },
+    {
+      "path": "tests/fakes.py",
+      "verified_hash": "96613fda4755c831a450449f79ac26ad4f0269a8fd1ce730c47b8f69e5b2ffef",
+      "verified_donor_symbols": 200
+    },
+    {
+      "path": "tests/prompts/test_operation_config.py",
+      "verified_hash": "51f778b029c597190562316db98686209560d1fac972cb8de14094089d3b69ec",
+      "verified_donor_symbols": 42
+    },
+    {
+      "path": "tests/tracker/conftest.py",
+      "verified_hash": "9c8c061a188aebcc9817fb63bdedd5b4fd5784452f4f4e0459e9cdba164acefa",
+      "verified_donor_symbols": 10
+    },
+    {
+      "path": "tests/tracker/native_read_fixtures.py",
+      "verified_hash": "745564f703d0c3847617e8037787a03b566819decb42c3f3662efc946d06af05",
+      "verified_donor_symbols": 0
+    },
+    {
+      "path": "tests/tracker/test_comment_expected_independent.py",
+      "verified_hash": "29a5b38ef57374153a36fafdcb893e96866e981323a8723ce257c7a9fafee323",
+      "verified_donor_symbols": 1
+    },
+    {
+      "path": "tests/tracker/test_criterion_family_aliases.py",
+      "verified_hash": "18d0edfa97a4c0fc263b2fce01cdd3a5bd3c58979722b49393e0a026289f5b5a",
+      "verified_donor_symbols": 0
+    },
+    {
+      "path": "tests/tracker/test_criterion_family_identity.py",
+      "verified_hash": "ca2061dcfe8edf918bc9decb2e0f97c3d13f12c4d53cb51556ff2b22f9a9d928",
+      "verified_donor_symbols": 0
+    },
+    {
+      "path": "tests/tracker/test_criterion_reader.py",
+      "verified_hash": "a8c80e3c493f412d1bc4d26a8ffc88c1669ca78a8b9fc3d3276691b995182587",
+      "verified_donor_symbols": 5
+    },
+    {
+      "path": "tests/tracker/test_criterion_reader_boundary.py",
+      "verified_hash": "e0940e109b9c8375c92fa9e14d78870cbbea94cf1c39cae319f6ca42260a28a4",
+      "verified_donor_symbols": 15
+    },
+    {
+      "path": "tests/tracker/test_issue_classification_reads.py",
+      "verified_hash": "c434b66615d261fa94db624671cbd6b091165e412e2e332bb827a366231cfd35",
+      "verified_donor_symbols": 3
+    },
+    {
+      "path": "tests/tracker/test_linear_mcp_tracker.py",
+      "verified_hash": "8b44894a02ccc21af9c3842c160672f97ee433fc03a39922cfe120f94c7647fe",
+      "verified_donor_symbols": 86
+    },
+    {
+      "path": "tests/tracker/test_linear_wire_shapes.py",
+      "verified_hash": "81ccf4573fd91fd44dc69953d02bf43040a34cfb5ea95a781aa214c4ae29a65b",
+      "verified_donor_symbols": 42
+    },
+    {
+      "path": "tests/tracker/test_native_read_configuration.py",
+      "verified_hash": "86d1f876c8912ba61be71748c44d6fe9e38c729c6682003bc93300213ba8e576",
+      "verified_donor_symbols": 0
+    },
+    {
+      "path": "tests/tracker/test_native_read_constructor.py",
+      "verified_hash": "2756285dbc196c27439c88713aae0823bdb1a30a606bf32cafa5254cc99e07c1",
+      "verified_donor_symbols": 0
+    },
+    {
+      "path": "tests/tracker/test_tracker_boot.py",
+      "verified_hash": "2cc5e3e2269afec5f495b59987ae977747e3746b4e188c74f5295314360878c7",
+      "verified_donor_symbols": 61
+    }
+  ],
+  "file_count": 28,
+  "donor_symbol_claim_count": 811
+}

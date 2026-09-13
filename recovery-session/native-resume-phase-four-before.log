@@ -1,0 +1,682 @@
+FFFF                                                                     [100%]
+=================================== FAILURES ===================================
+________ test_fresh_parent_resumes_original_native_phase[after_archive] ________
+
+repository = (PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1935/test_fresh_parent_resumes_orig0/repo'), '9ba1838cb5d453dff8df7c15f4792c3acb13691c')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10b2b48c0>
+position = 'after_archive'
+
+    @pytest.mark.parametrize("position", ["after_archive", "after_reset", "after_applied_holds", "before_commit"])
+    async def test_fresh_parent_resumes_original_native_phase(repository, monkeypatch, position):
+        from pathlib import Path
+        from kodezart.domain.amendment import NativeWriteRefusalError
+        port, saver = tracker(), InMemorySaver()
+        failure = RuntimeError(position)
+        verifies = 0
+        async def first_answers(title, payload, kwargs):
+            nonlocal verifies
+            if title == "WriteBackFinding":
+                verifies += 1
+                if position == "after_archive" and verifies == 1:
+                    raise failure
+            if title == "CommitMessageOutput" and position == "before_commit":
+                raise failure
+        executor = Executor(reproduced=True, subject={"kind": "criterion", "id": DIRECT_DONE}, mutate=first_answers)
+        fire, workspace = await actual_fire(repository, executor, port, saver)
+        spec = await fire.criteria.read_spec(issue_key=SUBJECT)
+        criteria = await fire.criteria.read_current(spec=spec)
+        await git(repository[0], "branch", "native-feature", "main")
+        state, config = fire.prepare(prompt="Implement exact native subject", repo_path=str(repository[0]), repo_url=None, base_spec=trunk_base(repository[1]), scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT), permission_mode=PermissionMode.UNATTENDED, allowed_tools=ToolPreset.IMPLEMENTATION, cache_key="actual-parent-job", surface_holder="actual-parent-job")
+        state.update(fire_spec=spec, criterion_set=criteria, feature_branch="native-feature", ralph_branch="native-loop", work_base_ref="native-feature", repo_visibility=RepoVisibility.PUBLIC)
+        await fire.native_graph.aupdate_state(config, state, as_node="revalidate_criteria")
+        reset, verifier = port.reset_criterion_pending, WriteBackVerifier.write_back
+        async def reset_cut(**kwargs):
+            await reset(**kwargs)
+            raise failure
+        async def holds_cut(self, **kwargs):
+            receipt = await verifier(self, **kwargs)
+            if receipt.artifact.surface.kind is SurfaceKind.CRITERION_SUB_ISSUE:
+                raise failure
+            return receipt
+        if position == "after_reset":
+            monkeypatch.setattr(port, "reset_criterion_pending", reset_cut)
+        if position == "after_applied_holds":
+            monkeypatch.setattr(WriteBackVerifier, "write_back", holds_cut)
+        fresh_workspace = None
+        try:
+            with pytest.raises(RuntimeError) as caught:
+                await fire.native_graph.ainvoke(None, config=config)
+            assert caught.value is failure
+            saved = await fire.native_graph.aget_state(config, subgraphs=True)
+            assert saved.next == ("run_ralph_loop",)
+            assert saved.values["total_iterations"] == 0
+            assert saved.values["trajectory"] is None
+            native_calls = [call for call in executor.calls if call.get("output_format", {}).get("schema", {}).get("title") == "NativeWriterOutput"]
+            assert len(native_calls) == 1
+            original_workspace = native_calls[0]["cwd"]
+>           assert Path(original_workspace).exists()
+E           AssertionError: assert False
+E            +  where False = exists()
+E            +    where exists = PosixPath('/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-9fc8f100919748dfa8f0578782a6f42a').exists
+E            +      where PosixPath('/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-9fc8f100919748dfa8f0578782a6f42a') = <class 'pathlib.Path'>('/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-9fc8f100919748dfa8f0578782a6f42a')
+
+../kodezart-recovery-session/test_native_resume_phase_acceptance.py:104: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 22:04:18 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:04:18 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:04:18 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:04:18 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:04:19 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-9fc8f100919748dfa8f0578782a6f42a workspace_id=9fc8f100919748dfa8f0578782a6f42a
+2026-09-12 22:04:19 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:04:19 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:04:20 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:04:20 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:04:21 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-23e262dbc44644dcb24f3f30ad7aaddc workspace_id=23e262dbc44644dcb24f3f30ad7aaddc
+2026-09-12 22:04:21 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=amendment_judge stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 22:04:22 [info     ] workspace_released             workspace_id=23e262dbc44644dcb24f3f30ad7aaddc
+2026-09-12 22:04:22 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:04:22 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:04:23 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:04:23 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:04:24 [info     ] outbound_content_gated         categories=[] content_digest=09db17bfe310e372afec5e31be871ff7dc12fd12355662c9cbdab3f77499eec2 failure=None hits=[] surface=tracker verdict=clean visibility=public writer=tracker_comment
+2026-09-12 22:04:24 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:04:24 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-c46bc738943442078fd73e6cf65faf51 workspace_id=c46bc738943442078fd73e6cf65faf51
+2026-09-12 22:04:25 [info     ] workspace_released             workspace_id=c46bc738943442078fd73e6cf65faf51
+2026-09-12 22:04:25 [warning  ] workspace_release_unclean      branch_name=native-loop path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-9fc8f100919748dfa8f0578782a6f42a workspace_id=9fc8f100919748dfa8f0578782a6f42a
+2026-09-12 22:04:25 [info     ] workspace_released             workspace_id=9fc8f100919748dfa8f0578782a6f42a
+------------------------------ Captured log call -------------------------------
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.fire_spec.TrackerSpec from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.fire_spec', 'TrackerSpec')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.criteria.TrackerCriterionSet from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.criteria', 'TrackerCriterionSet')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.gating.RepoVisibility from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.gating', 'RepoVisibility')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.fire_spec.TrackerSpec from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.fire_spec', 'TrackerSpec')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.criteria.TrackerCriterionSet from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.criteria', 'TrackerCriterionSet')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.gating.RepoVisibility from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.gating', 'RepoVisibility')]
+_________ test_fresh_parent_resumes_original_native_phase[after_reset] _________
+
+repository = (PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1935/test_fresh_parent_resumes_orig1/repo'), 'c9abf01d1df0e920de7e353219bc676586e2638b')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10b444320>
+position = 'after_reset'
+
+    @pytest.mark.parametrize("position", ["after_archive", "after_reset", "after_applied_holds", "before_commit"])
+    async def test_fresh_parent_resumes_original_native_phase(repository, monkeypatch, position):
+        from pathlib import Path
+        from kodezart.domain.amendment import NativeWriteRefusalError
+        port, saver = tracker(), InMemorySaver()
+        failure = RuntimeError(position)
+        verifies = 0
+        async def first_answers(title, payload, kwargs):
+            nonlocal verifies
+            if title == "WriteBackFinding":
+                verifies += 1
+                if position == "after_archive" and verifies == 1:
+                    raise failure
+            if title == "CommitMessageOutput" and position == "before_commit":
+                raise failure
+        executor = Executor(reproduced=True, subject={"kind": "criterion", "id": DIRECT_DONE}, mutate=first_answers)
+        fire, workspace = await actual_fire(repository, executor, port, saver)
+        spec = await fire.criteria.read_spec(issue_key=SUBJECT)
+        criteria = await fire.criteria.read_current(spec=spec)
+        await git(repository[0], "branch", "native-feature", "main")
+        state, config = fire.prepare(prompt="Implement exact native subject", repo_path=str(repository[0]), repo_url=None, base_spec=trunk_base(repository[1]), scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT), permission_mode=PermissionMode.UNATTENDED, allowed_tools=ToolPreset.IMPLEMENTATION, cache_key="actual-parent-job", surface_holder="actual-parent-job")
+        state.update(fire_spec=spec, criterion_set=criteria, feature_branch="native-feature", ralph_branch="native-loop", work_base_ref="native-feature", repo_visibility=RepoVisibility.PUBLIC)
+        await fire.native_graph.aupdate_state(config, state, as_node="revalidate_criteria")
+        reset, verifier = port.reset_criterion_pending, WriteBackVerifier.write_back
+        async def reset_cut(**kwargs):
+            await reset(**kwargs)
+            raise failure
+        async def holds_cut(self, **kwargs):
+            receipt = await verifier(self, **kwargs)
+            if receipt.artifact.surface.kind is SurfaceKind.CRITERION_SUB_ISSUE:
+                raise failure
+            return receipt
+        if position == "after_reset":
+            monkeypatch.setattr(port, "reset_criterion_pending", reset_cut)
+        if position == "after_applied_holds":
+            monkeypatch.setattr(WriteBackVerifier, "write_back", holds_cut)
+        fresh_workspace = None
+        try:
+            with pytest.raises(RuntimeError) as caught:
+                await fire.native_graph.ainvoke(None, config=config)
+            assert caught.value is failure
+            saved = await fire.native_graph.aget_state(config, subgraphs=True)
+            assert saved.next == ("run_ralph_loop",)
+            assert saved.values["total_iterations"] == 0
+            assert saved.values["trajectory"] is None
+            native_calls = [call for call in executor.calls if call.get("output_format", {}).get("schema", {}).get("title") == "NativeWriterOutput"]
+            assert len(native_calls) == 1
+            original_workspace = native_calls[0]["cwd"]
+>           assert Path(original_workspace).exists()
+E           AssertionError: assert False
+E            +  where False = exists()
+E            +    where exists = PosixPath('/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-7670da064ae1472199d1584a46ebd430').exists
+E            +      where PosixPath('/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-7670da064ae1472199d1584a46ebd430') = <class 'pathlib.Path'>('/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-7670da064ae1472199d1584a46ebd430')
+
+../kodezart-recovery-session/test_native_resume_phase_acceptance.py:104: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 22:04:28 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:04:28 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:04:28 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:04:28 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:04:29 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-7670da064ae1472199d1584a46ebd430 workspace_id=7670da064ae1472199d1584a46ebd430
+2026-09-12 22:04:29 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:04:30 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:04:30 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:04:31 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:04:32 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-44adc69072284d8b9501e05c46772a8f workspace_id=44adc69072284d8b9501e05c46772a8f
+2026-09-12 22:04:32 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=amendment_judge stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 22:04:33 [info     ] workspace_released             workspace_id=44adc69072284d8b9501e05c46772a8f
+2026-09-12 22:04:33 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:04:34 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:04:34 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:04:35 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:04:35 [info     ] outbound_content_gated         categories=[] content_digest=6fe917a9938464a264c4d7f0dd7d8d6ab8f42065e20733bdcc55dc42bf711bb0 failure=None hits=[] surface=tracker verdict=clean visibility=public writer=tracker_comment
+2026-09-12 22:04:35 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:04:36 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-93d41b6b94fb4c3198e20cee57c11562 workspace_id=93d41b6b94fb4c3198e20cee57c11562
+2026-09-12 22:04:36 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 22:04:37 [info     ] workspace_released             workspace_id=93d41b6b94fb4c3198e20cee57c11562
+2026-09-12 22:04:37 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:04:38 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:04:38 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:04:39 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-0f9021023a92408692c914a90bf50ea0 workspace_id=0f9021023a92408692c914a90bf50ea0
+2026-09-12 22:04:39 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=amendment_author stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 22:04:40 [info     ] workspace_released             workspace_id=0f9021023a92408692c914a90bf50ea0
+2026-09-12 22:04:40 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:04:40 [info     ] outbound_content_gated         categories=[] content_digest=4426b548240f71d651c3d3e21b64933c3a2703ceeee0f64680bc9b0f3c3be57f failure=None hits=[] surface=tracker verdict=clean visibility=public writer=tracker_description
+2026-09-12 22:04:41 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:04:41 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:04:41 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:04:42 [warning  ] workspace_release_unclean      branch_name=native-loop path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-7670da064ae1472199d1584a46ebd430 workspace_id=7670da064ae1472199d1584a46ebd430
+2026-09-12 22:04:42 [info     ] workspace_released             workspace_id=7670da064ae1472199d1584a46ebd430
+------------------------------ Captured log call -------------------------------
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.fire_spec.TrackerSpec from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.fire_spec', 'TrackerSpec')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.criteria.TrackerCriterionSet from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.criteria', 'TrackerCriterionSet')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.gating.RepoVisibility from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.gating', 'RepoVisibility')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.fire_spec.TrackerSpec from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.fire_spec', 'TrackerSpec')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.criteria.TrackerCriterionSet from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.criteria', 'TrackerCriterionSet')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.gating.RepoVisibility from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.gating', 'RepoVisibility')]
+_____ test_fresh_parent_resumes_original_native_phase[after_applied_holds] _____
+
+repository = (PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1935/test_fresh_parent_resumes_orig2/repo'), '0e2f72c32baadd4cafb73466dbd84056c460a96e')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10b445400>
+position = 'after_applied_holds'
+
+    @pytest.mark.parametrize("position", ["after_archive", "after_reset", "after_applied_holds", "before_commit"])
+    async def test_fresh_parent_resumes_original_native_phase(repository, monkeypatch, position):
+        from pathlib import Path
+        from kodezart.domain.amendment import NativeWriteRefusalError
+        port, saver = tracker(), InMemorySaver()
+        failure = RuntimeError(position)
+        verifies = 0
+        async def first_answers(title, payload, kwargs):
+            nonlocal verifies
+            if title == "WriteBackFinding":
+                verifies += 1
+                if position == "after_archive" and verifies == 1:
+                    raise failure
+            if title == "CommitMessageOutput" and position == "before_commit":
+                raise failure
+        executor = Executor(reproduced=True, subject={"kind": "criterion", "id": DIRECT_DONE}, mutate=first_answers)
+        fire, workspace = await actual_fire(repository, executor, port, saver)
+        spec = await fire.criteria.read_spec(issue_key=SUBJECT)
+        criteria = await fire.criteria.read_current(spec=spec)
+        await git(repository[0], "branch", "native-feature", "main")
+        state, config = fire.prepare(prompt="Implement exact native subject", repo_path=str(repository[0]), repo_url=None, base_spec=trunk_base(repository[1]), scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT), permission_mode=PermissionMode.UNATTENDED, allowed_tools=ToolPreset.IMPLEMENTATION, cache_key="actual-parent-job", surface_holder="actual-parent-job")
+        state.update(fire_spec=spec, criterion_set=criteria, feature_branch="native-feature", ralph_branch="native-loop", work_base_ref="native-feature", repo_visibility=RepoVisibility.PUBLIC)
+        await fire.native_graph.aupdate_state(config, state, as_node="revalidate_criteria")
+        reset, verifier = port.reset_criterion_pending, WriteBackVerifier.write_back
+        async def reset_cut(**kwargs):
+            await reset(**kwargs)
+            raise failure
+        async def holds_cut(self, **kwargs):
+            receipt = await verifier(self, **kwargs)
+            if receipt.artifact.surface.kind is SurfaceKind.CRITERION_SUB_ISSUE:
+                raise failure
+            return receipt
+        if position == "after_reset":
+            monkeypatch.setattr(port, "reset_criterion_pending", reset_cut)
+        if position == "after_applied_holds":
+            monkeypatch.setattr(WriteBackVerifier, "write_back", holds_cut)
+        fresh_workspace = None
+        try:
+            with pytest.raises(RuntimeError) as caught:
+                await fire.native_graph.ainvoke(None, config=config)
+            assert caught.value is failure
+            saved = await fire.native_graph.aget_state(config, subgraphs=True)
+            assert saved.next == ("run_ralph_loop",)
+            assert saved.values["total_iterations"] == 0
+            assert saved.values["trajectory"] is None
+            native_calls = [call for call in executor.calls if call.get("output_format", {}).get("schema", {}).get("title") == "NativeWriterOutput"]
+            assert len(native_calls) == 1
+            original_workspace = native_calls[0]["cwd"]
+>           assert Path(original_workspace).exists()
+E           AssertionError: assert False
+E            +  where False = exists()
+E            +    where exists = PosixPath('/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-2d20a666be1f41afaa92c5bc45d6eadf').exists
+E            +      where PosixPath('/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-2d20a666be1f41afaa92c5bc45d6eadf') = <class 'pathlib.Path'>('/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-2d20a666be1f41afaa92c5bc45d6eadf')
+
+../kodezart-recovery-session/test_native_resume_phase_acceptance.py:104: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 22:04:43 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:04:44 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:04:44 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:04:44 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:04:44 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-2d20a666be1f41afaa92c5bc45d6eadf workspace_id=2d20a666be1f41afaa92c5bc45d6eadf
+2026-09-12 22:04:44 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:04:45 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:04:45 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:04:46 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:04:46 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-1c45ca98e3ae4c15961f723410a13e3f workspace_id=1c45ca98e3ae4c15961f723410a13e3f
+2026-09-12 22:04:46 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=amendment_judge stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 22:04:47 [info     ] workspace_released             workspace_id=1c45ca98e3ae4c15961f723410a13e3f
+2026-09-12 22:04:47 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:04:48 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:04:48 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:04:48 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:04:49 [info     ] outbound_content_gated         categories=[] content_digest=5bea3badafe0b0e9955c40878e019efe87727143bed5e2f23a3b684a008270ec failure=None hits=[] surface=tracker verdict=clean visibility=public writer=tracker_comment
+2026-09-12 22:04:49 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:04:49 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-024779ed87cf4bdcb0ca8726d462f4a4 workspace_id=024779ed87cf4bdcb0ca8726d462f4a4
+2026-09-12 22:04:49 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 22:04:50 [info     ] workspace_released             workspace_id=024779ed87cf4bdcb0ca8726d462f4a4
+2026-09-12 22:04:50 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:04:50 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:04:51 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:04:51 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-f17a052631304214888d00643752540c workspace_id=f17a052631304214888d00643752540c
+2026-09-12 22:04:51 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=amendment_author stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 22:04:52 [info     ] workspace_released             workspace_id=f17a052631304214888d00643752540c
+2026-09-12 22:04:52 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:04:52 [info     ] outbound_content_gated         categories=[] content_digest=4426b548240f71d651c3d3e21b64933c3a2703ceeee0f64680bc9b0f3c3be57f failure=None hits=[] surface=tracker verdict=clean visibility=public writer=tracker_description
+2026-09-12 22:04:52 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:04:53 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:04:53 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:04:53 [info     ] fire_criteria_read             named=3 owed=['fire/done-direct', 'fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:04:54 [info     ] outbound_content_gated         categories=[] content_digest=bcb6e622acca9bb3337f4a95be49a77a4e4e251e65feec3b009894d5c9cc9c1d failure=None hits=[] surface=tracker verdict=clean visibility=public writer=tracker_description
+2026-09-12 22:04:54 [info     ] fire_criteria_read             named=3 owed=['fire/done-direct', 'fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:04:54 [info     ] fire_criteria_read             named=3 owed=['fire/done-direct', 'fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:04:54 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-be6025dc14b647cf9b023903a0d05c37 workspace_id=be6025dc14b647cf9b023903a0d05c37
+2026-09-12 22:04:55 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 22:04:55 [info     ] workspace_released             workspace_id=be6025dc14b647cf9b023903a0d05c37
+2026-09-12 22:04:55 [warning  ] workspace_release_unclean      branch_name=native-loop path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-2d20a666be1f41afaa92c5bc45d6eadf workspace_id=2d20a666be1f41afaa92c5bc45d6eadf
+2026-09-12 22:04:55 [info     ] workspace_released             workspace_id=2d20a666be1f41afaa92c5bc45d6eadf
+------------------------------ Captured log call -------------------------------
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.fire_spec.TrackerSpec from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.fire_spec', 'TrackerSpec')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.criteria.TrackerCriterionSet from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.criteria', 'TrackerCriterionSet')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.gating.RepoVisibility from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.gating', 'RepoVisibility')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.fire_spec.TrackerSpec from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.fire_spec', 'TrackerSpec')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.criteria.TrackerCriterionSet from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.criteria', 'TrackerCriterionSet')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.gating.RepoVisibility from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.gating', 'RepoVisibility')]
+________ test_fresh_parent_resumes_original_native_phase[before_commit] ________
+
+repository = (PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1935/test_fresh_parent_resumes_orig3/repo'), 'e6f9be6c50dc14bede619d567186a50c632bd399')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10b54a660>
+position = 'before_commit'
+
+    @pytest.mark.parametrize("position", ["after_archive", "after_reset", "after_applied_holds", "before_commit"])
+    async def test_fresh_parent_resumes_original_native_phase(repository, monkeypatch, position):
+        from pathlib import Path
+        from kodezart.domain.amendment import NativeWriteRefusalError
+        port, saver = tracker(), InMemorySaver()
+        failure = RuntimeError(position)
+        verifies = 0
+        async def first_answers(title, payload, kwargs):
+            nonlocal verifies
+            if title == "WriteBackFinding":
+                verifies += 1
+                if position == "after_archive" and verifies == 1:
+                    raise failure
+            if title == "CommitMessageOutput" and position == "before_commit":
+                raise failure
+        executor = Executor(reproduced=True, subject={"kind": "criterion", "id": DIRECT_DONE}, mutate=first_answers)
+        fire, workspace = await actual_fire(repository, executor, port, saver)
+        spec = await fire.criteria.read_spec(issue_key=SUBJECT)
+        criteria = await fire.criteria.read_current(spec=spec)
+        await git(repository[0], "branch", "native-feature", "main")
+        state, config = fire.prepare(prompt="Implement exact native subject", repo_path=str(repository[0]), repo_url=None, base_spec=trunk_base(repository[1]), scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT), permission_mode=PermissionMode.UNATTENDED, allowed_tools=ToolPreset.IMPLEMENTATION, cache_key="actual-parent-job", surface_holder="actual-parent-job")
+        state.update(fire_spec=spec, criterion_set=criteria, feature_branch="native-feature", ralph_branch="native-loop", work_base_ref="native-feature", repo_visibility=RepoVisibility.PUBLIC)
+        await fire.native_graph.aupdate_state(config, state, as_node="revalidate_criteria")
+        reset, verifier = port.reset_criterion_pending, WriteBackVerifier.write_back
+        async def reset_cut(**kwargs):
+            await reset(**kwargs)
+            raise failure
+        async def holds_cut(self, **kwargs):
+            receipt = await verifier(self, **kwargs)
+            if receipt.artifact.surface.kind is SurfaceKind.CRITERION_SUB_ISSUE:
+                raise failure
+            return receipt
+        if position == "after_reset":
+            monkeypatch.setattr(port, "reset_criterion_pending", reset_cut)
+        if position == "after_applied_holds":
+            monkeypatch.setattr(WriteBackVerifier, "write_back", holds_cut)
+        fresh_workspace = None
+        try:
+            with pytest.raises(RuntimeError) as caught:
+                await fire.native_graph.ainvoke(None, config=config)
+            assert caught.value is failure
+            saved = await fire.native_graph.aget_state(config, subgraphs=True)
+            assert saved.next == ("run_ralph_loop",)
+            assert saved.values["total_iterations"] == 0
+            assert saved.values["trajectory"] is None
+            native_calls = [call for call in executor.calls if call.get("output_format", {}).get("schema", {}).get("title") == "NativeWriterOutput"]
+            assert len(native_calls) == 1
+            original_workspace = native_calls[0]["cwd"]
+            assert Path(original_workspace).exists()
+            assert original_workspace not in workspace.released
+            assert not await git(repository[0], "ls-remote", "origin", "refs/heads/native-loop")
+            assert len([c for c in port.comments if c.body.startswith("[fixture-amendment:")]) == 1
+            monkeypatch.undo()
+            async def second_answers(title, payload, kwargs):
+                if title == "AcceptanceCriteriaOutput":
+                    current = await TrackerCriteria(tracker=port).read_current(spec=spec)
+                    payload.update(criteria_results=[{"criterion_id": c.id, "criterion": c.text, "passed": True, "reasoning": "Actual evaluator output against the current Check."} for c in current.criteria], sherlock_flags=[])
+            second_executor = Executor(reproduced=True, subject={"kind": "criterion", "id": DIRECT_DONE}, mutate=second_answers)
+            fresh, fresh_workspace = await actual_fire(repository, second_executor, port, saver)
+            if position in {"after_reset", "after_applied_holds"}:
+                with pytest.raises(NativeWriteRefusalError):
+                    await fresh.native_graph.ainvoke(None, config=config)
+                assert not second_executor.calls
+                assert Path(original_workspace).exists()
+                assert not await git(repository[0], "ls-remote", "origin", "refs/heads/native-loop")
+            else:
+                await fresh.native_graph.ainvoke(None, config=config, interrupt_after=["run_ralph_loop"])
+                final = await fresh.native_graph.aget_state(config)
+                assert final.values["total_iterations"] == 1
+                assert final.values["trajectory"] is not None
+>               assert not Path(original_workspace).exists()
+E               AssertionError: assert not True
+E                +  where True = exists()
+E                +    where exists = PosixPath('/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-50fe000993084a839f44a6a996208bd8').exists
+E                +      where PosixPath('/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-50fe000993084a839f44a6a996208bd8') = <class 'pathlib.Path'>('/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-50fe000993084a839f44a6a996208bd8')
+
+../kodezart-recovery-session/test_native_resume_phase_acceptance.py:126: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 22:04:57 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:04:57 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:04:57 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:04:57 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:04:58 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-50fe000993084a839f44a6a996208bd8 workspace_id=50fe000993084a839f44a6a996208bd8
+2026-09-12 22:04:58 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:04:58 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:04:59 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:04:59 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:05:00 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-b9b08e81f6a34eec8c6d88efa56bc82f workspace_id=b9b08e81f6a34eec8c6d88efa56bc82f
+2026-09-12 22:05:00 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=amendment_judge stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 22:05:01 [info     ] workspace_released             workspace_id=b9b08e81f6a34eec8c6d88efa56bc82f
+2026-09-12 22:05:01 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:05:02 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:05:02 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:05:02 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:05:02 [info     ] outbound_content_gated         categories=[] content_digest=7f9b3e6375cb0e1e620f49e659cc1a9b8268c4d50543b83949528d535fcbab9d failure=None hits=[] surface=tracker verdict=clean visibility=public writer=tracker_comment
+2026-09-12 22:05:03 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:05:03 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-3117b51432854e0885f808340de73bf1 workspace_id=3117b51432854e0885f808340de73bf1
+2026-09-12 22:05:03 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 22:05:04 [info     ] workspace_released             workspace_id=3117b51432854e0885f808340de73bf1
+2026-09-12 22:05:04 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:05:04 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:05:05 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:05:05 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-3b801edf49a0480ebf77528fb0ad0e60 workspace_id=3b801edf49a0480ebf77528fb0ad0e60
+2026-09-12 22:05:05 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=amendment_author stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 22:05:06 [info     ] workspace_released             workspace_id=3b801edf49a0480ebf77528fb0ad0e60
+2026-09-12 22:05:06 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:05:06 [info     ] outbound_content_gated         categories=[] content_digest=4426b548240f71d651c3d3e21b64933c3a2703ceeee0f64680bc9b0f3c3be57f failure=None hits=[] surface=tracker verdict=clean visibility=public writer=tracker_description
+2026-09-12 22:05:06 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:05:07 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:05:07 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:05:07 [info     ] fire_criteria_read             named=3 owed=['fire/done-direct', 'fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:05:08 [info     ] outbound_content_gated         categories=[] content_digest=bcb6e622acca9bb3337f4a95be49a77a4e4e251e65feec3b009894d5c9cc9c1d failure=None hits=[] surface=tracker verdict=clean visibility=public writer=tracker_description
+2026-09-12 22:05:08 [info     ] fire_criteria_read             named=3 owed=['fire/done-direct', 'fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:05:08 [info     ] fire_criteria_read             named=3 owed=['fire/done-direct', 'fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:05:08 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-bdf79419fd414beabdc4a3206757f39e workspace_id=bdf79419fd414beabdc4a3206757f39e
+2026-09-12 22:05:09 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 22:05:09 [info     ] workspace_released             workspace_id=bdf79419fd414beabdc4a3206757f39e
+2026-09-12 22:05:09 [info     ] fire_criteria_read             named=3 owed=['fire/done-direct', 'fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:05:10 [info     ] fire_criteria_read             named=3 owed=['fire/done-direct', 'fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:05:10 [info     ] fire_criteria_read             named=3 owed=['fire/done-direct', 'fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:05:11 [info     ] fire_criteria_read             named=3 owed=['fire/done-direct', 'fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:05:11 [warning  ] native_writer_workspace_retained workspace_path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-50fe000993084a839f44a6a996208bd8
+2026-09-12 22:05:11 [info     ] fire_criteria_read             named=3 owed=['fire/done-direct', 'fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:05:12 [info     ] fire_criteria_read             named=3 owed=['fire/done-direct', 'fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:05:12 [info     ] fire_criteria_read             named=3 owed=['fire/done-direct', 'fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:05:12 [error    ] agent_service_workspace_acquire_failed error="git worktree add failed: Preparing worktree (checking out 'native-loop')\nfatal: 'native-loop' is already used by worktree at '/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-50fe000993084a839f44a6a996208bd8'" error_kind=WorkspaceError
+╭───────────────────── [1mTraceback [0m[1;2m(most recent call last)[0m ──────────────────────╮
+│ [2m/private/tmp/kodezart-v03-recovery-amendment-archive-guard/src/kodezart/adap[0m │
+│ [2mters/[0m[1mgit_worktree_provider.py[0m:72 in acquire                                  │
+│                                                                              │
+│   [2m 69 [0m[2m│   │   │   [0m                                                           │
+│   [2m 70 [0m[2m│   │   │   [0mworkspace_id = generate_workspace_id()                     │
+│   [2m 71 [0m[2m│   │   │   [0mwt_path = _worktree_path(workspace_id)                     │
+│ ❱  72 [2m│   │   │   [0mawait self._git.create_worktree(                           │
+│   [2m 73 [0m[2m│   │   │   │   [0mresolved,                                              │
+│   [2m 74 [0m[2m│   │   │   │   [0mref,                                                   │
+│   [2m 75 [0m[2m│   │   │   │   [0mwt_path,                                               │
+│                                                                              │
+│ ╭───────────────────────────────── locals ─────────────────────────────────╮ │
+│ │   [3mbranch_name[0m = 'native-loop'                                            │ │
+│ │     [3mcache_key[0m = 'actual-parent-job'                                      │ │
+│ │ [3mcreate_branch[0m = [3mTrue[0m                                                     │ │
+│ │           [3mref[0m = 'native-feature'                                         │ │
+│ │     [3mrepo_path[0m = '/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq… │ │
+│ │      [3mrepo_url[0m = [3mNone[0m                                                     │ │
+│ │      [3mresolved[0m = '/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq… │ │
+│ │          [3mself[0m = [1m<[0m[1mtests.services.test_native_amendments.Workspaces[0m object │ │
+│ │                 at [1m0x10b60d070[0m[1m>[0m                                          │ │
+│ │  [3mworkspace_id[0m = 'ec69d9ecf92e4fe088fe668541f07974'                       │ │
+│ │       [3mwt_path[0m = '/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodez… │ │
+│ ╰──────────────────────────────────────────────────────────────────────────╯ │
+│                                                                              │
+│ [2m/private/tmp/kodezart-v03-recovery-amendment-archive-guard/src/kodezart/adap[0m │
+│ [2mters/[0m[1msubprocess_git_service.py[0m:124 in create_worktree                        │
+│                                                                              │
+│   [2m121 [0m[2m│   │   │   │   [0mworktree_path,                                         │
+│   [2m122 [0m[2m│   │   │   │   [0mbase_ref,                                              │
+│   [2m123 [0m[2m│   │   │   [0m]                                                          │
+│ ❱ 124 [2m│   │   [0m[1;4mawait[0m[1;4m [0m[1;4mself[0m[1;4m._run(cmd, cwd=repo_path)[0m                            │
+│   [2m125 [0m[2m│   [0m                                                                   │
+│   [2m126 [0m[2m│   [0masync def remove_worktree(                                         │
+│   [2m127 [0m[2m│   │   [0mself,                                                          │
+│                                                                              │
+│ ╭───────────────────────────────── locals ─────────────────────────────────╮ │
+│ │      [3mbase_ref[0m = 'native-feature'                                         │ │
+│ │   [3mbranch_name[0m = 'native-loop'                                            │ │
+│ │           [3mcmd[0m = [1m[[0m                                                        │ │
+│ │                 [2m│   [0m'git',                                               │ │
+│ │                 [2m│   [0m'worktree',                                          │ │
+│ │                 [2m│   [0m'add',                                               │ │
+│ │                 [2m│   [0m                                                     │ │
+│ │                 '/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodez… │ │
+│ │                 [2m│   [0m'native-loop'                                        │ │
+│ │                 [1m][0m                                                        │ │
+│ │ [3mcreate_branch[0m = [3mTrue[0m                                                     │ │
+│ │     [3mrepo_path[0m = '/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq… │ │
+│ │          [3mself[0m = [1m<[0m[1mkodezart.adapters.subprocess_git_service.SubprocessGit…[0m │ │
+│ │                 object at [1m0x10b60cbc0[0m[1m>[0m                                   │ │
+│ │ [3mworktree_path[0m = '/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodez… │ │
+│ ╰──────────────────────────────────────────────────────────────────────────╯ │
+│                                                                              │
+│ [2m/private/tmp/kodezart-v03-recovery-amendment-archive-guard/src/kodezart/adap[0m │
+│ [2mters/[0m[1msubprocess_git_service.py[0m:498 in _run                                   │
+│                                                                              │
+│   [2m495 [0m[2m│   │   [0mif proc.returncode != 0:                                       │
+│   [2m496 [0m[2m│   │   │   [0mdetail = self._failure_detail(stdout, stderr, proc.returnc │
+│   [2m497 [0m[2m│   │   │   [0mmsg = f"{' '.join(cmd[:3])} failed: {detail}"              │
+│ ❱ 498 [2m│   │   │   [0m[1;4mraise[0m[1;4m [0m[1;4mRuntimeError[0m[1;4m(msg)[0m                                    │
+│   [2m499 [0m[2m│   [0m                                                                   │
+│   [2m500 [0m[2m│   [0masync def _run_with_exit_codes(                                    │
+│   [2m501 [0m[2m│   │   [0mself,                                                          │
+│                                                                              │
+│ ╭───────────────────────────────── locals ─────────────────────────────────╮ │
+│ │         [3mcmd[0m = [1m[[0m                                                          │ │
+│ │               [2m│   [0m'git',                                                 │ │
+│ │               [2m│   [0m'worktree',                                            │ │
+│ │               [2m│   [0m'add',                                                 │ │
+│ │               [2m│   [0m                                                       │ │
+│ │               '/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezar… │ │
+│ │               [2m│   [0m'native-loop'                                          │ │
+│ │               [1m][0m                                                          │ │
+│ │         [3mcwd[0m = '/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T… │ │
+│ │      [3mdetail[0m = "Preparing worktree (checking out 'native-loop')\nfatal:   │ │
+│ │               'native-loop' is already "+[1m120[0m                             │ │
+│ │         [3menv[0m = [3mNone[0m                                                       │ │
+│ │         [3mmsg[0m = "git worktree add failed: Preparing worktree (checking out │ │
+│ │               'native-loop')\nfatal: "+[1m145[0m                               │ │
+│ │        [3mproc[0m = [1m<[0m[1mProcess[0m [1m51762[0m[1m>[0m                                            │ │
+│ │ [3mprocess_env[0m = [3mNone[0m                                                       │ │
+│ │        [3mself[0m = [1m<[0m[1mkodezart.adapters.subprocess_git_service.SubprocessGitSe…[0m │ │
+│ │               object at [1m0x10b60cbc0[0m[1m>[0m                                     │ │
+│ │      [3mstderr[0m = b"Preparing worktree (checking out 'native-loop')\nfatal:  │ │
+│ │               'native-loop' is already "+[1m121[0m                             │ │
+│ │      [3mstdout[0m = b''                                                        │ │
+│ ╰──────────────────────────────────────────────────────────────────────────╯ │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[1mRuntimeError: [0mgit worktree add failed: Preparing worktree [1m([0mchecking out 
+'native-loop'[1m)[0m
+fatal: 'native-loop' is already used by worktree at 
+'/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-50fe000993084
+a839f44a6a996208bd8'
+
+[3mThe above exception was the direct cause of the following exception:[0m
+
+╭───────────────────── [1mTraceback [0m[1;2m(most recent call last)[0m ──────────────────────╮
+│ [2m/private/tmp/kodezart-v03-recovery-amendment-archive-guard/src/kodezart/serv[0m │
+│ [2mices/[0m[1magent_service.py[0m:208 in _run_in_workspace                               │
+│                                                                              │
+│   [2m205 [0m[2m│   │   │   [0mrepo_url = resolve_repo_url(repo_url, self._git_base_url)  │
+│   [2m206 [0m[2m│   │   [0m                                                               │
+│   [2m207 [0m[2m│   │   [0mtry:                                                           │
+│ ❱ 208 [2m│   │   │   [0mworkspace_path = await self._workspace.acquire(            │
+│   [2m209 [0m[2m│   │   │   │   [0mrepo_path=repo_path,                                   │
+│   [2m210 [0m[2m│   │   │   │   [0mrepo_url=repo_url,                                     │
+│   [2m211 [0m[2m│   │   │   │   [0mref=ref,                                               │
+│                                                                              │
+│ ╭───────────────────────────────── locals ─────────────────────────────────╮ │
+│ │          [3magents[0m = [1m([0m[1m)[0m                                                     │ │
+│ │   [3mallowed_tools[0m = [1m<[0m[1mToolPreset.IMPLEMENTATION:[0m 'implementation'[1m>[0m          │ │
+│ │     [3mbranch_name[0m = 'native-loop'                                          │ │
+│ │       [3mcache_key[0m = 'actual-parent-job'                                    │ │
+│ │   [3mcreate_branch[0m = [3mTrue[0m                                                   │ │
+│ │             [3mexc[0m = [1mWorkspaceError[0m[1m([0m"git worktree add failed: Preparing     │ │
+│ │                   worktree (checking out 'native-loop')\nfatal:          │ │
+│ │                   'native-loop' is already used by worktree at           │ │
+│ │                   '/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000… │ │
+│ │    [3mnative_guard[0m = [1m<[0m[1mkodezart.services.native_amendments._NativeWriterGua…[0m │ │
+│ │                   object at [1m0x10b5afb30[0m[1m>[0m                                 │ │
+│ │   [3moutput_format[0m = [3mNone[0m                                                   │ │
+│ │ [3mpermission_mode[0m = [1m<[0m[1mPermissionMode.UNATTENDED:[0m 'unattended'[1m>[0m              │ │
+│ │  [3mpersist_branch[0m = 'native-loop'                                          │ │
+│ │          [3mprompt[0m = '── SKILLS AVAILABLE FOR THIS ROLE ──\nLoad each skill │ │
+│ │                   below when its subject matt'+[1m336[0m                       │ │
+│ │             [3mref[0m = 'native-feature'                                       │ │
+│ │       [3mrepo_path[0m = '/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000… │ │
+│ │        [3mrepo_url[0m = [3mNone[0m                                                   │ │
+│ │    [3mrun_identity[0m = [3mNone[0m                                                   │ │
+│ │            [3mself[0m = [1m<[0m[1mkodezart.services.agent_service.AgentService[0m object   │ │
+│ │                   at [1m0x10b66b800[0m[1m>[0m                                        │ │
+│ │      [3msession_id[0m = [3mNone[0m                                                   │ │
+│ │  [3msession_policy[0m = [1mSessionPolicy[0m[1m([0m                                         │ │
+│ │                   [2m│   [0msystem_prompt_append=[3mNone[0m,                         │ │
+│ │                   [2m│   [0meffort=[3mNone[0m,                                       │ │
+│ │                   [2m│   [0mmodel=[3mNone[0m,                                        │ │
+│ │                   [2m│   [0mfallback_model=[3mNone[0m,                               │ │
+│ │                   [2m│   [0mworkflow_access=[3mNone[0m                               │ │
+│ │                   [1m)[0m                                                      │ │
+│ │    [3msession_type[0m = [1m<[0m[1mSessionType.TICKET_FIRE:[0m 'ticket_fire'[1m>[0m               │ │
+│ │          [3mskills[0m = [1mSkillsSelection[0m[1m([0m                                       │ │
+│ │                   [2m│   [0mmode=[1m<[0m[1mSkillsMode.NONE:[0m 'none'[1m>[0m,                    │ │
+│ │                   [2m│   [0mallowlist=[1m([0m[1m)[0m                                       │ │
+│ │                   [1m)[0m                                                      │ │
+│ │      [3mvisibility[0m = [1m<[0m[1mRepoVisibility.PUBLIC:[0m 'public'[1m>[0m                      │ │
+│ ╰──────────────────────────────────────────────────────────────────────────╯ │
+│                                                                              │
+│ [2m/private/tmp/kodezart-v03-recovery-amendment-archive-guard/tests/services/[0m[1mte[0m │
+│ [1mst_native_amendments.py[0m:159 in acquire                                       │
+│                                                                              │
+│   [2m156 [0m[2m│   │   [0mself.released = []                                             │
+│   [2m157 [0m[2m│   [0m                                                                   │
+│   [2m158 [0m[2m│   [0masync def acquire(self, **kwargs):                                 │
+│ ❱ 159 [2m│   │   [0mpath = [1;4mawait[0m[1;4m [0m[1;4msuper[0m[1;4m().acquire(**kwargs)[0m                         │
+│   [2m160 [0m[2m│   │   [0mself.acquired.append((path, kwargs))                           │
+│   [2m161 [0m[2m│   │   [0mreturn path                                                    │
+│   [2m162 [0m                                                                       │
+│                                                                              │
+│ ╭───────────────────────────────── locals ─────────────────────────────────╮ │
+│ │ [3mkwargs[0m = [1m{[0m                                                               │ │
+│ │          [2m│   [0m'repo_path':                                                │ │
+│ │          '/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pyte… │ │
+│ │          [2m│   [0m'repo_url': [3mNone[0m,                                           │ │
+│ │          [2m│   [0m'ref': 'native-feature',                                    │ │
+│ │          [2m│   [0m'branch_name': 'native-loop',                               │ │
+│ │          [2m│   [0m'create_branch': [3mTrue[0m,                                      │ │
+│ │          [2m│   [0m'cache_key': 'actual-parent-job'                            │ │
+│ │          [1m}[0m                                                               │ │
+│ │   [3mself[0m = [1m<[0m[1mtests.services.test_native_amendments.Workspaces[0m object at     │ │
+│ │          [1m0x10b60d070[0m[1m>[0m                                                    │ │
+│ ╰──────────────────────────────────────────────────────────────────────────╯ │
+│                                                                              │
+│ [2m/private/tmp/kodezart-v03-recovery-amendment-archive-guard/src/kodezart/adap[0m │
+│ [2mters/[0m[1mgit_worktree_provider.py[0m:94 in acquire                                  │
+│                                                                              │
+│   [2m 91 [0m[2m│   │   [0mexcept WorkspaceError:                                         │
+│   [2m 92 [0m[2m│   │   │   [0mraise                                                      │
+│   [2m 93 [0m[2m│   │   [0mexcept (ValueError, RuntimeError) as exc:                      │
+│ ❱  94 [2m│   │   │   [0m[1;4mraise[0m[1;4m WorkspaceError([0m[1;4mstr[0m[1;4m(exc)) [0m[1;4mfrom[0m[1;4m [0m[1;4mexc[0m                    │
+│   [2m 95 [0m[2m│   [0m                                                                   │
+│   [2m 96 [0m[2m│   [0masync def release(self, workspace_path: str) -> None:              │
+│   [2m 97 [0m[2m│   │   [0m"""Remove a tracked worktree and clean up its directory.       │
+│                                                                              │
+│ ╭───────────────────────────────── locals ─────────────────────────────────╮ │
+│ │   [3mbranch_name[0m = 'native-loop'                                            │ │
+│ │     [3mcache_key[0m = 'actual-parent-job'                                      │ │
+│ │ [3mcreate_branch[0m = [3mTrue[0m                                                     │ │
+│ │           [3mref[0m = 'native-feature'                                         │ │
+│ │     [3mrepo_path[0m = '/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq… │ │
+│ │      [3mrepo_url[0m = [3mNone[0m                                                     │ │
+│ │      [3mresolved[0m = '/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq… │ │
+│ │          [3mself[0m = [1m<[0m[1mtests.services.test_native_amendments.Workspaces[0m object │ │
+│ │                 at [1m0x10b60d070[0m[1m>[0m                                          │ │
+│ │  [3mworkspace_id[0m = 'ec69d9ecf92e4fe088fe668541f07974'                       │ │
+│ │       [3mwt_path[0m = '/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodez… │ │
+│ ╰──────────────────────────────────────────────────────────────────────────╯ │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[1mWorkspaceError: [0mgit worktree add failed: Preparing worktree [1m([0mchecking out 
+'native-loop'[1m)[0m
+fatal: 'native-loop' is already used by worktree at 
+'/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-50fe000993084
+a839f44a6a996208bd8'
+
+2026-09-12 22:05:13 [info     ] fire_criteria_read             named=3 owed=['fire/done-direct', 'fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:05:13 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 22:05:13 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-f94b2f874fd241b0b9393082fe397495 workspace_id=f94b2f874fd241b0b9393082fe397495
+2026-09-12 22:05:13 [info     ] fire_criteria_read             named=3 owed=['fire/done-direct', 'fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:05:13 [info     ] workspace_released             workspace_id=f94b2f874fd241b0b9393082fe397495
+2026-09-12 22:05:13 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=ralph_evaluator stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 22:05:13 [warning  ] workspace_release_unclean      branch_name=native-loop path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-50fe000993084a839f44a6a996208bd8 workspace_id=50fe000993084a839f44a6a996208bd8
+2026-09-12 22:05:14 [info     ] workspace_released             workspace_id=50fe000993084a839f44a6a996208bd8
+------------------------------ Captured log call -------------------------------
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.fire_spec.TrackerSpec from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.fire_spec', 'TrackerSpec')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.criteria.TrackerCriterionSet from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.criteria', 'TrackerCriterionSet')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.gating.RepoVisibility from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.gating', 'RepoVisibility')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.fire_spec.TrackerSpec from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.fire_spec', 'TrackerSpec')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.criteria.TrackerCriterionSet from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.criteria', 'TrackerCriterionSet')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.gating.RepoVisibility from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.gating', 'RepoVisibility')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.fire_spec.TrackerSpec from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.fire_spec', 'TrackerSpec')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.criteria.TrackerCriterionSet from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.criteria', 'TrackerCriterionSet')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.gating.RepoVisibility from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.gating', 'RepoVisibility')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.fire_spec.TrackerSpec from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.fire_spec', 'TrackerSpec')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.criteria.TrackerCriterionSet from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.criteria', 'TrackerCriterionSet')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.gating.RepoVisibility from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.gating', 'RepoVisibility')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.trajectory.LoopTrajectory from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.trajectory', 'LoopTrajectory')]
+=========================== short test summary info ============================
+FAILED ::test_fresh_parent_resumes_original_native_phase[after_archive] - Ass...
+FAILED ::test_fresh_parent_resumes_original_native_phase[after_reset] - Asser...
+FAILED ::test_fresh_parent_resumes_original_native_phase[after_applied_holds]
+FAILED ::test_fresh_parent_resumes_original_native_phase[before_commit] - Ass...
+4 failed in 62.69s (0:01:02)

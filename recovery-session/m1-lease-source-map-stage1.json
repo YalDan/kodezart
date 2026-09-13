@@ -1,0 +1,1025 @@
+[
+  {
+    "file": "src/kodezart/core/backoff.py",
+    "symbol": "*",
+    "source": "d2c6fceab762191d4e40b23c8cd349ef476e4b12"
+  },
+  {
+    "file": "src/kodezart/core/owned_tasks.py",
+    "symbol": "*",
+    "source": "d2c6fceab762191d4e40b23c8cd349ef476e4b12"
+  },
+  {
+    "file": "src/kodezart/core/tracker_settings.py",
+    "symbol": "*",
+    "source": "d2c6fceab762191d4e40b23c8cd349ef476e4b12"
+  },
+  {
+    "file": "src/kodezart/domain/comment_markers.py",
+    "symbol": "*",
+    "source": "d2c6fceab762191d4e40b23c8cd349ef476e4b12"
+  },
+  {
+    "file": "src/kodezart/domain/self_writes.py",
+    "symbol": "*",
+    "source": "d2c6fceab762191d4e40b23c8cd349ef476e4b12"
+  },
+  {
+    "file": "src/kodezart/types/domain/self_writes.py",
+    "symbol": "*",
+    "source": "d2c6fceab762191d4e40b23c8cd349ef476e4b12"
+  },
+  {
+    "file": "src/kodezart/services/run_surface_lease.py",
+    "symbol": "*",
+    "source": "d2c6fceab762191d4e40b23c8cd349ef476e4b12"
+  },
+  {
+    "file": "src/kodezart/services/pass_gate.py",
+    "symbol": "*",
+    "source": "d2c6fceab762191d4e40b23c8cd349ef476e4b12"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_markers.py",
+    "symbol": "*",
+    "source": "d2c6fceab762191d4e40b23c8cd349ef476e4b12"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_markers.py",
+    "symbol": "exclude M4 landing reader",
+    "source": "pinned donor hunk normalization",
+    "old": "            r'(?:\\s+landing=\"(?P<landing>[^\"]*)\")?\\s*-->',",
+    "new": "            r'\\s*-->',"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_markers.py",
+    "symbol": "exclude M4 landing writer",
+    "source": "pinned donor hunk normalization",
+    "old": "f'branch=\"{ref.branch}\"{sha} landing=\"{ref.landing.value}\" -->'",
+    "new": "f'branch=\"{ref.branch}\"{sha} -->'"
+  },
+  {
+    "file": "src/kodezart/domain/errors.py",
+    "symbol": "SurfaceLeaseError",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      83,
+      109
+    ]
+  },
+  {
+    "file": "src/kodezart/domain/errors.py",
+    "symbol": "SurfaceLeaseLostError",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      112,
+      123
+    ]
+  },
+  {
+    "file": "src/kodezart/domain/errors.py",
+    "symbol": "SurfaceWriteAttributionError",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      126,
+      135
+    ]
+  },
+  {
+    "file": "src/kodezart/domain/errors.py",
+    "symbol": "DuplicateCommentMarkerError",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      138,
+      150
+    ]
+  },
+  {
+    "file": "src/kodezart/domain/errors.py",
+    "symbol": "StaleCommentWriteError",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      162,
+      172
+    ]
+  },
+  {
+    "file": "src/kodezart/domain/tracker_writes.py",
+    "symbol": "marked_comment_body",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      13,
+      17
+    ]
+  },
+  {
+    "file": "src/kodezart/domain/tracker_writes.py",
+    "symbol": "comment_under_marker",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      20,
+      47
+    ]
+  },
+  {
+    "file": "src/kodezart/domain/tracker_writes.py",
+    "symbol": "require_expected_comment",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      65,
+      97
+    ]
+  },
+  {
+    "file": "src/kodezart/core/errors.py",
+    "symbol": "TrackerWriterAttributionError",
+    "source": "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+    "lines": [
+      429,
+      456
+    ]
+  },
+  {
+    "file": "src/kodezart/types/domain/tracker.py",
+    "symbol": "ClaimStatus",
+    "source": "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+    "lines": [
+      157,
+      169
+    ]
+  },
+  {
+    "file": "src/kodezart/types/domain/tracker.py",
+    "symbol": "ClaimResult",
+    "source": "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+    "lines": [
+      276,
+      292
+    ]
+  },
+  {
+    "file": "src/kodezart/types/domain/tracker.py",
+    "symbol": "TrackerComment",
+    "source": "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+    "lines": [
+      254,
+      273
+    ]
+  },
+  {
+    "file": "src/kodezart/types/domain/dispatch.py",
+    "symbol": "_SELF_WRITE_RECEIPT_LIMIT",
+    "source": "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+    "lines": [
+      289,
+      289
+    ]
+  },
+  {
+    "file": "src/kodezart/types/domain/dispatch.py",
+    "symbol": "SelfWriteLedger",
+    "source": "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+    "lines": [
+      292,
+      343
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_types.py",
+    "symbol": "LinearCommentWire",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      280,
+      302
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_types.py",
+    "symbol": "LinearCommentEntryWire",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      305,
+      317
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_types.py",
+    "symbol": "LinearCommentListWire",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      320,
+      325
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_types.py",
+    "symbol": "LinearPlanningIssueWire",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      187,
+      191
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_GrantKind",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      455,
+      464
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_GRANT_KIND_BY_VALUE",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      467,
+      469
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_GrantState",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      472,
+      490
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_GRANT_STATE_BY_VALUE",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      493,
+      495
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_COMMENT_PARENT_BY_SCOPE_KIND",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      500,
+      505
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_Target",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      509,
+      513
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_WrittenMarker",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      517,
+      530
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_GrantMarker",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      534,
+      589
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_Granted",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      593,
+      596
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_OwnGrant",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      600,
+      611
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_own_grants",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      614,
+      643
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_Conflict",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      647,
+      659
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_Refused",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      663,
+      669
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_Addressing",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      673,
+      697
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_surface_line",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      700,
+      703
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_surface_target",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      706,
+      710
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_CLAIM_ADDRESSING",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      713,
+      718
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_LEASE_ADDRESSING",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      720,
+      725
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_retraction",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      728,
+      732
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_may_resend",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      735,
+      746
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_TOOL_GET_USER",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      183,
+      183
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_CURRENT_USER_QUERY",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      234,
+      234
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_BODY_SAVE_ARGUMENTS",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      197,
+      197
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_STATE_SAVE_ARGUMENT",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      198,
+      198
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "refuse_combined_issue_write",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      749,
+      792
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker.claim_issue",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      2462,
+      2489
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker.renew_claim",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      2491,
+      2512
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker.release_claim",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      2514,
+      2520
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker.active_claim",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      2522,
+      2566
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker.acquire_surfaces",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      2568,
+      2596
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker.renew_surfaces",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      2598,
+      2618
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker.release_surfaces",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      2620,
+      2631
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._grant",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      2633,
+      2772
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._withdraw_into",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      2774,
+      2813
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._refuse_bid",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      2815,
+      2862
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._own",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      2865,
+      2879
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._extend",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      2881,
+      2991
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._withdraw",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      2993,
+      3018
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._conflict",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      3020,
+      3078
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._grant_body",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      3080,
+      3117
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._void_body",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      3119,
+      3129
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._markers_on",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      3131,
+      3141
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._markers_from_wires",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      3143,
+      3160
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._parsed_marker",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      3162,
+      3228
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._parse_seconds",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      3230,
+      3235
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._malformed_marker",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      3237,
+      3244
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._write_marker",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      3246,
+      3257
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._edit_marker",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      3259,
+      3283
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._delete_markers",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      3285,
+      3308
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._stand_down",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      3310,
+      3352
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._comment_wires",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      4089,
+      4125
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._call",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      4127,
+      4135
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._send",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      4137,
+      4143
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._retry_call",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      4145,
+      4180
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker.upsert_comment",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      2297,
+      2309
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._upsert_comment",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      2311,
+      2333
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._upsert_comment_once",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      2335,
+      2411
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._require_surface_holder",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      2413,
+      2425
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._assert_surface_holder",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      2427,
+      2460
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._comment_written",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      1281,
+      1301
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._delete_own_comment",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      1303,
+      1307
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker.writer_identity",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      1309,
+      1313
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker.read_issue_movement",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      1315,
+      1357
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._movement_comments",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      1359,
+      1390
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker.post_comment",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      2164,
+      2170
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker.list_comments",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      2172,
+      2177
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._to_comment",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      4297,
+      4324
+    ]
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "constructor parameters",
+    "source": "pinned donor hunk normalization",
+    "old": "        max_retries: int,\n        retry_backoff_factor: float,",
+    "new": "        marker_prefixes: Mapping[str, str],\n        retry: RetryPolicy,"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "constructor owned dependencies",
+    "source": "pinned donor hunk normalization",
+    "old": "        self._max_retries: int = max_retries\n        self._retry_backoff_factor: float = retry_backoff_factor",
+    "new": "        self._markers = LinearMarkers(marker_prefixes)\n        self._retry = retry"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "read-only attribution tool",
+    "source": "pinned donor hunk normalization",
+    "old": "        _TOOL_LIST_USERS,",
+    "new": "        _TOOL_LIST_USERS,\n        _TOOL_GET_USER,"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "configured existing marker carrier",
+    "source": "pinned donor hunk normalization",
+    "old": "_work_ref_marker(ref)",
+    "new": "self._markers.work_ref_body(ref)"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "configured existing marker carrier",
+    "source": "pinned donor hunk normalization",
+    "old": "_WORK_REF_MARKER.search",
+    "new": "self._markers.work_ref_pattern.search"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "configured existing marker carrier",
+    "source": "pinned donor hunk normalization",
+    "old": "_base_spec_marker(spec)",
+    "new": "self._markers.base_spec_body(spec)"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "configured existing marker carrier",
+    "source": "pinned donor hunk normalization",
+    "old": "_BASE_SPEC_MARKER.search",
+    "new": "self._markers.base_spec_pattern.search"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "configured existing marker carrier",
+    "source": "pinned donor hunk normalization",
+    "old": "_REPO_MARKER.search",
+    "new": "self._markers.repository_pattern.search"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "work-ref explicit comment receipt",
+    "source": "pinned donor hunk normalization",
+    "old": "        self._validate(LinearCommentWire, payload, _TOOL_SAVE_COMMENT)\n        await self._wrote_by_reading(ref.issue_id)",
+    "new": "        self._comment_written(issue_key=ref.issue_id, payload=payload, created=True)"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "base-spec explicit comment receipt",
+    "source": "pinned donor hunk normalization",
+    "old": "        self._validate(LinearCommentWire, payload, _TOOL_SAVE_COMMENT)\n        await self._wrote_by_reading(issue_key)",
+    "new": "        self._comment_written(issue_key=issue_key, payload=payload, created=True)"
+  },
+  {
+    "file": "src/kodezart/core/protocols.py",
+    "symbol": "TrackerPort.acquire_surfaces",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      1245,
+      1264
+    ]
+  },
+  {
+    "file": "src/kodezart/core/protocols.py",
+    "symbol": "TrackerPort.renew_surfaces",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      1266,
+      1281
+    ]
+  },
+  {
+    "file": "src/kodezart/core/protocols.py",
+    "symbol": "TrackerPort.release_surfaces",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      1283,
+      1293
+    ]
+  },
+  {
+    "file": "src/kodezart/core/protocols.py",
+    "symbol": "TrackerPort.claim_issue",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      1185,
+      1209
+    ]
+  },
+  {
+    "file": "src/kodezart/core/protocols.py",
+    "symbol": "TrackerPort.renew_claim",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      1211,
+      1230
+    ]
+  },
+  {
+    "file": "src/kodezart/core/protocols.py",
+    "symbol": "TrackerPort.release_claim",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      1232,
+      1234
+    ]
+  },
+  {
+    "file": "src/kodezart/core/protocols.py",
+    "symbol": "TrackerPort.active_claim",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      1236,
+      1243
+    ]
+  },
+  {
+    "file": "src/kodezart/core/protocols.py",
+    "symbol": "TrackerPort.writer_identity",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      796,
+      808
+    ]
+  },
+  {
+    "file": "src/kodezart/core/protocols.py",
+    "symbol": "TrackerPort.read_issue_movement",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      810,
+      812
+    ]
+  },
+  {
+    "file": "src/kodezart/core/protocols.py",
+    "symbol": "TrackerPort.upsert_comment",
+    "source": "8fc655d2ddca93357f9fc9475b41839d62652037",
+    "lines": [
+      1100,
+      1123
+    ]
+  },
+  {
+    "file": "src/kodezart/types/domain/operation.py",
+    "symbol": "OperationConfig.marker_prefixes",
+    "source": "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+    "lines": [
+      576,
+      576
+    ]
+  },
+  {
+    "file": "src/kodezart/types/domain/operation.py",
+    "symbol": "marker_prefixes validation/ownership",
+    "source": "d2c6fceab762191d4e40b23c8cd349ef476e4b12"
+  },
+  {
+    "file": "src/kodezart/services/tracker_lifecycle.py",
+    "symbol": "TrackerLifecycleWriter.__init__",
+    "source": "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+    "lines": [
+      76,
+      91
+    ]
+  },
+  {
+    "file": "src/kodezart/services/tracker_lifecycle.py",
+    "symbol": "TrackerLifecycleWriter.on_terminal_outcome",
+    "source": "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+    "lines": [
+      217,
+      275
+    ]
+  },
+  {
+    "file": "src/kodezart/composition/passes.py",
+    "symbol": "production lease injection",
+    "source": "pinned donor hunk normalization",
+    "old": "writer=TrackerLifecycleWriter(tracker=tracker, gate=gate),",
+    "new": "writer=TrackerLifecycleWriter(\n            tracker=tracker, gate=gate, marker_prefixes=operation.marker_prefixes,\n            surface_lease_seconds=config.tracker.surface_lease_seconds,\n        ),"
+  }
+]

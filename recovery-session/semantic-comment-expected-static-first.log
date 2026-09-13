@@ -1,0 +1,85 @@
+E501 Line too long (89 > 88)
+   --> src/kodezart/domain/errors.py:172:89
+    |
+170 |         self.reason = reason
+171 |         super().__init__(
+172 |             f"comment {expected_comment_key!r} on {target!r} cannot be amended: {reason}"
+    |                                                                                         ^
+173 |         )
+    |
+
+E501 Line too long (92 > 88)
+  --> tests/tracker/test_comment_expected.py:28:89
+   |
+27 | @pytest.mark.parametrize("boundary", ["identity", "lease"])
+28 | @pytest.mark.parametrize("change", ["body", "missing", "key", "author", "reply", "created"])
+   |                                                                                         ^^^^
+29 | async def test_external_change_during_authority_wait_refuses(boundary, change, monkeypatch):
+30 |     server = fixture_server()
+   |
+
+E501 Line too long (92 > 88)
+  --> tests/tracker/test_comment_expected.py:29:89
+   |
+27 | @pytest.mark.parametrize("boundary", ["identity", "lease"])
+28 | @pytest.mark.parametrize("change", ["body", "missing", "key", "author", "reply", "created"])
+29 | async def test_external_change_during_authority_wait_refuses(boundary, change, monkeypatch):
+   |                                                                                         ^^^^
+30 |     server = fixture_server()
+31 |     tracker = linear_over_fake_mcp(server)
+   |
+
+E501 Line too long (90 > 88)
+  --> tests/tracker/test_comment_expected.py:35:89
+   |
+33 |         tracker, target=APPROVED_ISSUE, marker=MARKER, body="private original answer"
+34 |     )
+35 |     async with lease_for_comment(tracker, target=APPROVED_ISSUE, marker=MARKER) as holder:
+   |                                                                                         ^^
+36 |         actual_call = server.call_tool
+37 |         reads = 0
+   |
+
+E501 Line too long (90 > 88)
+  --> tests/tracker/test_comment_expected.py:81:89
+   |
+79 |         tracker, target=APPROVED_ISSUE, marker=MARKER, body="original"
+80 |     )
+81 |     async with lease_for_comment(tracker, target=APPROVED_ISSUE, marker=MARKER) as holder:
+   |                                                                                         ^^
+82 |         updated = await amend(tracker, original, holder)
+83 |         assert updated.comment_key == original.comment_key
+   |
+
+E501 Line too long (90 > 88)
+   --> tests/tracker/test_comment_expected.py:99:89
+    |
+ 97 |     )
+ 98 |     expected = original.model_copy(update={"comment_key": "previous-native-key"})
+ 99 |     async with lease_for_comment(tracker, target=APPROVED_ISSUE, marker=MARKER) as holder:
+    |                                                                                         ^^
+100 |         writes = tracker_writes()
+101 |         with pytest.raises(Exception) as caught:
+    |
+
+E501 Line too long (91 > 88)
+   --> tests/tracker/test_comment_expected.py:107:89
+    |
+107 | async def test_cancelled_final_read_preserves_cancellation_and_writes_nothing(monkeypatch):
+    |                                                                                         ^^^
+108 |     server = fixture_server()
+109 |     tracker = linear_over_fake_mcp(server)
+    |
+
+E501 Line too long (90 > 88)
+   --> tests/tracker/test_comment_expected.py:113:89
+    |
+111 |         tracker, target=APPROVED_ISSUE, marker=MARKER, body="original"
+112 |     )
+113 |     async with lease_for_comment(tracker, target=APPROVED_ISSUE, marker=MARKER) as holder:
+    |                                                                                         ^^
+114 |         actual_call = server.call_tool
+115 |         arrived = asyncio.Event()
+    |
+
+Found 8 errors.

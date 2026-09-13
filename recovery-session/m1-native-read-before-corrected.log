@@ -1,0 +1,22 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+______ test_actual_configured_constructor_reads_current_native_criterion _______
+async def functions are not natively supported.
+You need to install a suitable plugin for your async framework, for example:
+  - anyio
+  - pytest-asyncio
+  - pytest-tornasync
+  - pytest-trio
+  - pytest-twisted
+____________ test_actual_empty_current_family_is_a_successful_read _____________
+async def functions are not natively supported.
+You need to install a suitable plugin for your async framework, for example:
+  - anyio
+  - pytest-asyncio
+  - pytest-tornasync
+  - pytest-trio
+  - pytest-twisted
+=========================== short test summary info ============================
+FAILED ../kodezart-recovery-session/test_m1_native_read_before.py::test_actual_configured_constructor_reads_current_native_criterion
+FAILED ../kodezart-recovery-session/test_m1_native_read_before.py::test_actual_empty_current_family_is_a_successful_read
+2 failed in 4.78s

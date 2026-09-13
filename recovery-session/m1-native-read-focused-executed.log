@@ -1,0 +1,184 @@
+....................F........................FFFF....................... [ 53%]
+............F...........................................FF....           [100%]
+=================================== FAILURES ===================================
+_____ test_complete_native_and_fake_classifications_need_no_read_or_write ______
+
+    def test_complete_native_and_fake_classifications_need_no_read_or_write():
+        server = ScopeMcpServer()
+        native_tracker(server, LABELS).require_issue_classification_reads()
+        fake = FakeTrackerPort()
+        fake.require_issue_classification_reads()
+        assert server.calls == []
+        assert fake.issue_reads == []
+>       assert fake.issue_writes == []
+               ^^^^^^^^^^^^^^^^^
+E       AttributeError: 'FakeTrackerPort' object has no attribute 'issue_writes'. Did you mean: 'queue_writes'?
+
+tests/tracker/test_issue_classification_reads.py:28: AttributeError
+_____ test_family_cannot_treat_blank_classification_as_empty_membership[] ______
+
+label = ''
+
+    @pytest.mark.parametrize("label", ["", "  "])
+    async def test_family_cannot_treat_blank_classification_as_empty_membership(label):
+        server = FakeLinearMcpServer(issues=[FakeMcpIssue(id="root")])
+        tracker = tracker_over(server, issue_labels={"criterion": label})
+>       with pytest.raises(OperationMemberAbsentError, match="criterion"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'kodezart.types.domain.operation.OperationMemberAbsentError'>
+
+tests/tracker/test_native_read_configuration.py:153: Failed
+____ test_family_cannot_treat_blank_classification_as_empty_membership[  ] _____
+
+label = '  '
+
+    @pytest.mark.parametrize("label", ["", "  "])
+    async def test_family_cannot_treat_blank_classification_as_empty_membership(label):
+        server = FakeLinearMcpServer(issues=[FakeMcpIssue(id="root")])
+        tracker = tracker_over(server, issue_labels={"criterion": label})
+>       with pytest.raises(OperationMemberAbsentError, match="criterion"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'kodezart.types.domain.operation.OperationMemberAbsentError'>
+
+tests/tracker/test_native_read_configuration.py:153: Failed
+___________ test_family_cannot_follow_a_substituted_parent_identity ____________
+
+    async def test_family_cannot_follow_a_substituted_parent_identity():
+        class WrongParent(FakeLinearMcpServer):
+            def _tool_get_issue(self, arguments):
+                payload = dict(super()._tool_get_issue(arguments))
+                if arguments["id"] == "root":
+                    payload["id"] = "other-parent"
+                return payload
+    
+        server = WrongParent(issues=[FakeMcpIssue(id="root")])
+        tracker = tracker_over(server)
+>       with pytest.raises(CriterionReadError, match="parent"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'kodezart.domain.errors.CriterionReadError'>
+
+tests/tracker/test_native_read_configuration.py:168: Failed
+____________ TestConfiguredMappings.test_every_category_is_covered _____________
+
+self = <tests.tracker.test_tracker_boot.TestConfiguredMappings object at 0x10e3aa930>
+
+    def test_every_category_is_covered(self) -> None:
+        """Across both passes, because the two carry different categories.
+    
+        A ``documents`` entry is INSTATED and never resolved: the ensure
+        reports the identifier the workspace holds, so a resolution pass
+        over the same value would re-ask the tool that just answered.
+        Asserting over the union keeps the check derived from
+        ``MappingKind`` — a new member reddens this until some pass carries
+        it.
+    
+        This fixture's only record lives in the KNOWLEDGE system, which no
+        pass here can resolve, so the resolution pass carries no DOCUMENT
+        ref at all.  A tracker-side record would, and that is
+        ``TestRecordDestinationsResolveAtBoot`` below.
+        """
+        config = operation_config()
+        refs = (*configured_mappings(config), *owned_mappings(config))
+    
+>       assert {ref.kind for ref in refs} == set(MappingKind)
+E       AssertionError: assert {<MappingKind...kflow_state'>} == {<MappingKind...kflow_state'>}
+E         
+E         Extra items in the right set:
+E         <MappingKind.ISSUE_LABEL: 'issue_label'>
+E         Use -v to get more diff
+
+tests/tracker/test_tracker_boot.py:166: AssertionError
+______________ test_all_fields_are_present_with_the_stated_types _______________
+
+    def test_all_fields_are_present_with_the_stated_types() -> None:
+        """Field-by-field census: exact equality, never a subset check.
+    
+        Grew by ``records`` under KOD-112 R3 fix 6 (the write-side destination
+        registry) and by ``private_surface`` under KOD-106 R2 (the operator's
+        prose description of what this operation treats as private).  The
+        census stays total and stays ``==``; a census loosened to a containment
+        check stops being one.
+        """
+        fields = OperationConfig.model_fields
+>       assert set(fields) == {
+            "operation_name",
+            "workspace",
+            "principals",
+            "agent_identities",
+            "teams",
+            "queue_states",
+            "workflow_states",
+            "marker_prefixes",
+            "repos",
+            "documents",
+            "records",
+            "knowledge",
+            "endpoints",
+            "initiatives",
+            "private_surface",
+        }
+E       AssertionError: assert {'agent_ident...owledge', ...} == {'agent_ident...refixes', ...}
+E         
+E         Extra items in the left set:
+E         'issue_labels'
+E         Use -v to get more diff
+
+tests/prompts/test_operation_config.py:133: AssertionError
+_____________ test_placeholder_mapping_is_total_in_both_directions _____________
+
+    def test_placeholder_mapping_is_total_in_both_directions() -> None:
+        """Every placeholder maps to one path; every field is template-reachable."""
+        rows = markdown_rows("## Placeholder → OperationConfig field")
+        mapped = {row[0]: row[1] for row in rows}
+        assert len(mapped) == len(rows)
+    
+        # Direction 1 — no placeholder the templates reference is unmapped.
+        referenced = template_placeholders()
+        assert referenced == set(mapped), referenced ^ set(mapped)
+        for placeholder, path in mapped.items():
+            assert placeholder.split(".")[0] == path
+    
+        # Direction 2 — read off the MODEL, never off the table's own rows, so
+        # the mapping can no longer be checked against what it was derived from.
+        native = dict(markdown_rows("## Native OperationConfig consumers"))
+>       assert native == {"issue_labels": "composition/tracker.py::build_tracker"}
+E       AssertionError: assert {'`issue_labe...ild_tracker`'} == {'issue_label...uild_tracker'}
+E         
+E         Left contains 1 more item:
+E         {'`issue_labels`': '`composition/tracker.py::build_tracker`'}
+E         Right contains 1 more item:
+E         {'issue_labels': 'composition/tracker.py::build_tracker'}
+E         Use -v to get more diff
+
+tests/prompts/test_operation_config.py:636: AssertionError
+_____ test_every_operation_config_field_is_reachable_from_a_pass_template ______
+
+    def test_every_operation_config_field_is_reachable_from_a_pass_template() -> None:
+        """Direction 2 again, straight from the templates to the model.
+    
+        R2 added four fields — principals, agent_identities, repos, initiatives —
+        on the reasoning that the passes consume them.  A field no template can
+        reach is a field the port did not actually port.
+        """
+        reachable = {name.split(".")[0] for name in template_placeholders()}
+        native = dict(markdown_rows("## Native OperationConfig consumers"))
+        unreachable = set(OperationConfig.model_fields) - reachable - set(native)
+>       assert unreachable == set(), f"no pass template reaches {sorted(unreachable)}"
+E       AssertionError: no pass template reaches ['issue_labels']
+E       assert {'issue_labels'} == set()
+E         
+E         Extra items in the left set:
+E         'issue_labels'
+E         Use -v to get more diff
+
+tests/prompts/test_operation_config.py:651: AssertionError
+=========================== short test summary info ============================
+FAILED tests/tracker/test_issue_classification_reads.py::test_complete_native_and_fake_classifications_need_no_read_or_write
+FAILED tests/tracker/test_native_read_configuration.py::test_family_cannot_treat_blank_classification_as_empty_membership[]
+FAILED tests/tracker/test_native_read_configuration.py::test_family_cannot_treat_blank_classification_as_empty_membership[  ]
+FAILED tests/tracker/test_native_read_configuration.py::test_family_cannot_follow_a_substituted_parent_identity
+FAILED tests/tracker/test_tracker_boot.py::TestConfiguredMappings::test_every_category_is_covered
+FAILED tests/prompts/test_operation_config.py::test_all_fields_are_present_with_the_stated_types
+FAILED tests/prompts/test_operation_config.py::test_placeholder_mapping_is_total_in_both_directions
+FAILED tests/prompts/test_operation_config.py::test_every_operation_config_field_is_reachable_from_a_pass_template
+8 failed, 126 passed in 2.18s

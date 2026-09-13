@@ -1,0 +1,104 @@
+.....F.................................................................. [ 53%]
+...............................................................          [100%]
+=================================== FAILURES ===================================
+____ test_recorded_ruling_context_reaches_author_and_lapses_on_actual_edit _____
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10af39910>
+
+    async def test_recorded_ruling_context_reaches_author_and_lapses_on_actual_edit(
+        monkeypatch,
+    ):
+        from kodezart.domain.rulings import render_ruling
+        from kodezart.types.domain.agent import Ruling
+        from tests.domain.test_rulings import ruling_data
+    
+        owner, board, executor = factory()
+        ruling = Ruling.model_validate(
+            ruling_data(issue_ref=CLAIMED_ISSUE, question="Which graph is authorized?")
+        )
+        body = render_ruling(
+            ruling=ruling,
+            lane_key="historical:lane/café",
+            marker_prefixes=owner._operation.marker_prefixes,
+        )
+        comment = await owner._tracker.post_comment(issue_key=CLAIMED_ISSUE, body=body)
+        original = executor.stream
+        seen = []
+    
+        async def stream(**kwargs):
+            if kwargs["output_format"]["schema"].get("title") == "OrganizeProposal":
+                import json
+    
+                context = json.loads(
+                    re.findall(
+                        r"<organize_context>\s*(.*?)\s*</organize_context>",
+                        kwargs["prompt"], re.S,
+                    )[-1]
+                )
+                seen.extend(context["ruling_comments"])
+                native = board.server.comments[comment.comment_key]
+                # The native ruling record actually changes after the author read.
+                changed = Ruling.model_validate(
+                    {**ruling.model_dump(), "answer": "A different authorized graph."}
+                )
+                native.body = render_ruling(
+                    ruling=changed,
+                    lane_key="historical:lane/café",
+                    marker_prefixes=owner._operation.marker_prefixes,
+                )
+            async for event in original(**kwargs):
+                yield event
+    
+        import pytest
+    
+        from kodezart.domain.errors import OrganizeWriteRefusalError
+    
+        monkeypatch.setattr(executor, "stream", stream)
+        with pytest.raises(OrganizeWriteRefusalError, match="graph context changed"):
+>           await run_owner(owner)
+
+tests/chains/test_organize_graph_owner.py:342: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/chains/test_organize_owner.py:190: in run_owner
+    return await owner.run(
+src/kodezart/services/organize_owner.py:1036: in run
+    verified_write = await self._author_write(
+src/kodezart/services/organize_owner.py:360: in _author_write
+    initial = await self._author.propose(request, key=key, evidence=evidence)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/organize_author.py:86: in propose
+    structured = await judge_in_workspace(
+src/kodezart/services/audit_sessions.py:43: in judge_in_workspace
+    result, rate_limited = await drain(
+src/kodezart/core/stream_drain.py:57: in drain
+    async for event in stream:
+src/kodezart/services/agent_service.py:103: in stream_in_workspace
+    async for event in self._executor.stream(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+kwargs = {'agents': (), 'allowed_tools': <ToolPreset.EVALUATION: 'evaluation'>, 'cwd': '/tmp/fake-workspace', 'output_format': ...esolvedProposal'}, {'$ref': '#/$defs/UnavailableProposal'}], 'title': 'OrganizeProposal'}, 'type': 'json_schema'}, ...}
+json = <module 'json' from '/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/json/__init__.py'>
+context = {'issues': [{'assignee_key': None, 'body': 'Missing specification', 'created_at': '2026-02-26T12:00:00Z', 'issue_key':...uthoredBy": "machine"\n}\n```', 'comment_key': 'comment-0001', 'created_at': '2026-03-01T12:00:00.500000Z', ...}], ...}
+
+    async def stream(**kwargs):
+        if kwargs["output_format"]["schema"].get("title") == "OrganizeProposal":
+            import json
+    
+            context = json.loads(
+                re.findall(
+                    r"<organize_context>\s*(.*?)\s*</organize_context>",
+                    kwargs["prompt"], re.S,
+                )[-1]
+            )
+            seen.extend(context["ruling_comments"])
+>           native = board.server.comments[comment.comment_key]
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           TypeError: list indices must be integers or slices, not str
+
+tests/chains/test_organize_graph_owner.py:323: TypeError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 18:52:41 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-12 18:52:41 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+=========================== short test summary info ============================
+FAILED tests/chains/test_organize_graph_owner.py::test_recorded_ruling_context_reaches_author_and_lapses_on_actual_edit
+1 failed, 134 passed in 5.18s

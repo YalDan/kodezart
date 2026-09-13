@@ -1,0 +1,17 @@
+{
+  "base": "8fbde41754978a07c1e215826db0dcff48ad7418",
+  "donor": "da39c439898aec1233aa8b6157b35e961df1e453",
+  "exact_files": [
+    "tests/adapters/test_ci_observation.py",
+    "tests/adapters/test_ci_watch_evidence.py",
+    "tests/adapters/test_ci_watch_result.py",
+    "tests/chains/test_node_session_events.py",
+    "tests/domain/test_fire_spec_purity.py",
+    "tests/tracker/test_fire_spec_reader.py",
+    "tests/tracker/test_fire_spec_approval.py",
+    "tests/tracker/test_fire_spec_approval_ancestry.py"
+  ],
+  "census_only": {
+    "tests/chains/test_ralph_workflow.py": "lane_delivery.py:1 source census row deferred with actual M5 module; all assertions preserved"
+  }
+}

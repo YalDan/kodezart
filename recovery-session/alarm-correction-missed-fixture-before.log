@@ -1,0 +1,3113 @@
+.FFFFF.FFFFF.FF.FFFFF.FFFFF.FF..................FFFF....FFFFFFFF........ [ 67%]
+......................FF..........                                       [100%]
+=================================== FAILURES ===================================
+___ test_actual_record_count_and_rows_are_the_only_comparison[fake-port-0-1] ___
+
+tracker = <tests.fakes.FakeTrackerPort object at 0x10c437710>
+tracker_writes = <function tracker_writes.<locals>.<lambda> at 0x10c3a9940>
+count = 1, rows = 0
+
+    @pytest.mark.parametrize("count", [0, 1, 2, 3, 8])
+    @pytest.mark.parametrize("rows", [0, 1, 2])
+    async def test_actual_record_count_and_rows_are_the_only_comparison(
+        tracker, tracker_writes, count, rows
+    ):
+        data = record_data()
+        data["commitsAhead"] = count
+        data["commits"] = data["commits"][:rows]
+        stored = await seed(tracker, data=data)
+        before = tracker_writes()
+        alarm = await observe_commits_ahead_of_record(
+            tracker=tracker, record_ref=stored.comment_key, **arguments()
+        )
+        assert tracker_writes() == before
+        assert (alarm is not None) is (count != rows)
+        if alarm is None:
+            return
+        assert alarm.signal is AlarmSignal.COMMITS_AHEAD_OF_RECORD
+        assert alarm.bound is None
+        assert alarm.subject.lane_key == LANE
+        assert alarm.raised_at_sha == "supervisor/head"
+        assert alarm.raised_by == "supervisor/run"
+>       assert [json.loads(reading.value) for reading in alarm.readings] == [
+                ^^^^^^^^^^^^^^^^^^^^^^^^^
+            LANE,
+            data["headSha"],
+            count,
+            data["commits"],
+        ]
+
+tests/tracker/test_lane_record_signals.py:59: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = TextEvidence(value='lane:alpha', kind='text'), cls = None
+object_hook = None, parse_float = None, parse_int = None, parse_constant = None
+object_pairs_hook = None, kw = {}
+
+    def loads(s, *, cls=None, object_hook=None, parse_float=None,
+            parse_int=None, parse_constant=None, object_pairs_hook=None, **kw):
+        """Deserialize ``s`` (a ``str``, ``bytes`` or ``bytearray`` instance
+        containing a JSON document) to a Python object.
+    
+        ``object_hook`` is an optional function that will be called with the
+        result of any object literal decode (a ``dict``). The return value of
+        ``object_hook`` will be used instead of the ``dict``. This feature
+        can be used to implement custom decoders (e.g. JSON-RPC class hinting).
+    
+        ``object_pairs_hook`` is an optional function that will be called with the
+        result of any object literal decoded with an ordered list of pairs.  The
+        return value of ``object_pairs_hook`` will be used instead of the ``dict``.
+        This feature can be used to implement custom decoders.  If ``object_hook``
+        is also defined, the ``object_pairs_hook`` takes priority.
+    
+        ``parse_float``, if specified, will be called with the string
+        of every JSON float to be decoded. By default this is equivalent to
+        float(num_str). This can be used to use another datatype or parser
+        for JSON floats (e.g. decimal.Decimal).
+    
+        ``parse_int``, if specified, will be called with the string
+        of every JSON int to be decoded. By default this is equivalent to
+        int(num_str). This can be used to use another datatype or parser
+        for JSON integers (e.g. float).
+    
+        ``parse_constant``, if specified, will be called with one of the
+        following strings: -Infinity, Infinity, NaN.
+        This can be used to raise an exception if invalid JSON numbers
+        are encountered.
+    
+        To use a custom ``JSONDecoder`` subclass, specify it with the ``cls``
+        kwarg; otherwise ``JSONDecoder`` is used.
+        """
+        if isinstance(s, str):
+            if s.startswith('\ufeff'):
+                raise JSONDecodeError("Unexpected UTF-8 BOM (decode using utf-8-sig)",
+                                      s, 0)
+        else:
+            if not isinstance(s, (bytes, bytearray)):
+>               raise TypeError(f'the JSON object must be str, bytes or bytearray, '
+                                f'not {s.__class__.__name__}')
+E               TypeError: the JSON object must be str, bytes or bytearray, not TextEvidence
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/json/__init__.py:339: TypeError
+___ test_actual_record_count_and_rows_are_the_only_comparison[fake-port-0-2] ___
+
+tracker = <tests.fakes.FakeTrackerPort object at 0x10c3ad9d0>
+tracker_writes = <function tracker_writes.<locals>.<lambda> at 0x10c47c540>
+count = 2, rows = 0
+
+    @pytest.mark.parametrize("count", [0, 1, 2, 3, 8])
+    @pytest.mark.parametrize("rows", [0, 1, 2])
+    async def test_actual_record_count_and_rows_are_the_only_comparison(
+        tracker, tracker_writes, count, rows
+    ):
+        data = record_data()
+        data["commitsAhead"] = count
+        data["commits"] = data["commits"][:rows]
+        stored = await seed(tracker, data=data)
+        before = tracker_writes()
+        alarm = await observe_commits_ahead_of_record(
+            tracker=tracker, record_ref=stored.comment_key, **arguments()
+        )
+        assert tracker_writes() == before
+        assert (alarm is not None) is (count != rows)
+        if alarm is None:
+            return
+        assert alarm.signal is AlarmSignal.COMMITS_AHEAD_OF_RECORD
+        assert alarm.bound is None
+        assert alarm.subject.lane_key == LANE
+        assert alarm.raised_at_sha == "supervisor/head"
+        assert alarm.raised_by == "supervisor/run"
+>       assert [json.loads(reading.value) for reading in alarm.readings] == [
+                ^^^^^^^^^^^^^^^^^^^^^^^^^
+            LANE,
+            data["headSha"],
+            count,
+            data["commits"],
+        ]
+
+tests/tracker/test_lane_record_signals.py:59: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = TextEvidence(value='lane:alpha', kind='text'), cls = None
+object_hook = None, parse_float = None, parse_int = None, parse_constant = None
+object_pairs_hook = None, kw = {}
+
+    def loads(s, *, cls=None, object_hook=None, parse_float=None,
+            parse_int=None, parse_constant=None, object_pairs_hook=None, **kw):
+        """Deserialize ``s`` (a ``str``, ``bytes`` or ``bytearray`` instance
+        containing a JSON document) to a Python object.
+    
+        ``object_hook`` is an optional function that will be called with the
+        result of any object literal decode (a ``dict``). The return value of
+        ``object_hook`` will be used instead of the ``dict``. This feature
+        can be used to implement custom decoders (e.g. JSON-RPC class hinting).
+    
+        ``object_pairs_hook`` is an optional function that will be called with the
+        result of any object literal decoded with an ordered list of pairs.  The
+        return value of ``object_pairs_hook`` will be used instead of the ``dict``.
+        This feature can be used to implement custom decoders.  If ``object_hook``
+        is also defined, the ``object_pairs_hook`` takes priority.
+    
+        ``parse_float``, if specified, will be called with the string
+        of every JSON float to be decoded. By default this is equivalent to
+        float(num_str). This can be used to use another datatype or parser
+        for JSON floats (e.g. decimal.Decimal).
+    
+        ``parse_int``, if specified, will be called with the string
+        of every JSON int to be decoded. By default this is equivalent to
+        int(num_str). This can be used to use another datatype or parser
+        for JSON integers (e.g. float).
+    
+        ``parse_constant``, if specified, will be called with one of the
+        following strings: -Infinity, Infinity, NaN.
+        This can be used to raise an exception if invalid JSON numbers
+        are encountered.
+    
+        To use a custom ``JSONDecoder`` subclass, specify it with the ``cls``
+        kwarg; otherwise ``JSONDecoder`` is used.
+        """
+        if isinstance(s, str):
+            if s.startswith('\ufeff'):
+                raise JSONDecodeError("Unexpected UTF-8 BOM (decode using utf-8-sig)",
+                                      s, 0)
+        else:
+            if not isinstance(s, (bytes, bytearray)):
+>               raise TypeError(f'the JSON object must be str, bytes or bytearray, '
+                                f'not {s.__class__.__name__}')
+E               TypeError: the JSON object must be str, bytes or bytearray, not TextEvidence
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/json/__init__.py:339: TypeError
+___ test_actual_record_count_and_rows_are_the_only_comparison[fake-port-0-3] ___
+
+tracker = <tests.fakes.FakeTrackerPort object at 0x10c3aede0>
+tracker_writes = <function tracker_writes.<locals>.<lambda> at 0x10c3cf920>
+count = 3, rows = 0
+
+    @pytest.mark.parametrize("count", [0, 1, 2, 3, 8])
+    @pytest.mark.parametrize("rows", [0, 1, 2])
+    async def test_actual_record_count_and_rows_are_the_only_comparison(
+        tracker, tracker_writes, count, rows
+    ):
+        data = record_data()
+        data["commitsAhead"] = count
+        data["commits"] = data["commits"][:rows]
+        stored = await seed(tracker, data=data)
+        before = tracker_writes()
+        alarm = await observe_commits_ahead_of_record(
+            tracker=tracker, record_ref=stored.comment_key, **arguments()
+        )
+        assert tracker_writes() == before
+        assert (alarm is not None) is (count != rows)
+        if alarm is None:
+            return
+        assert alarm.signal is AlarmSignal.COMMITS_AHEAD_OF_RECORD
+        assert alarm.bound is None
+        assert alarm.subject.lane_key == LANE
+        assert alarm.raised_at_sha == "supervisor/head"
+        assert alarm.raised_by == "supervisor/run"
+>       assert [json.loads(reading.value) for reading in alarm.readings] == [
+                ^^^^^^^^^^^^^^^^^^^^^^^^^
+            LANE,
+            data["headSha"],
+            count,
+            data["commits"],
+        ]
+
+tests/tracker/test_lane_record_signals.py:59: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = TextEvidence(value='lane:alpha', kind='text'), cls = None
+object_hook = None, parse_float = None, parse_int = None, parse_constant = None
+object_pairs_hook = None, kw = {}
+
+    def loads(s, *, cls=None, object_hook=None, parse_float=None,
+            parse_int=None, parse_constant=None, object_pairs_hook=None, **kw):
+        """Deserialize ``s`` (a ``str``, ``bytes`` or ``bytearray`` instance
+        containing a JSON document) to a Python object.
+    
+        ``object_hook`` is an optional function that will be called with the
+        result of any object literal decode (a ``dict``). The return value of
+        ``object_hook`` will be used instead of the ``dict``. This feature
+        can be used to implement custom decoders (e.g. JSON-RPC class hinting).
+    
+        ``object_pairs_hook`` is an optional function that will be called with the
+        result of any object literal decoded with an ordered list of pairs.  The
+        return value of ``object_pairs_hook`` will be used instead of the ``dict``.
+        This feature can be used to implement custom decoders.  If ``object_hook``
+        is also defined, the ``object_pairs_hook`` takes priority.
+    
+        ``parse_float``, if specified, will be called with the string
+        of every JSON float to be decoded. By default this is equivalent to
+        float(num_str). This can be used to use another datatype or parser
+        for JSON floats (e.g. decimal.Decimal).
+    
+        ``parse_int``, if specified, will be called with the string
+        of every JSON int to be decoded. By default this is equivalent to
+        int(num_str). This can be used to use another datatype or parser
+        for JSON integers (e.g. float).
+    
+        ``parse_constant``, if specified, will be called with one of the
+        following strings: -Infinity, Infinity, NaN.
+        This can be used to raise an exception if invalid JSON numbers
+        are encountered.
+    
+        To use a custom ``JSONDecoder`` subclass, specify it with the ``cls``
+        kwarg; otherwise ``JSONDecoder`` is used.
+        """
+        if isinstance(s, str):
+            if s.startswith('\ufeff'):
+                raise JSONDecodeError("Unexpected UTF-8 BOM (decode using utf-8-sig)",
+                                      s, 0)
+        else:
+            if not isinstance(s, (bytes, bytearray)):
+>               raise TypeError(f'the JSON object must be str, bytes or bytearray, '
+                                f'not {s.__class__.__name__}')
+E               TypeError: the JSON object must be str, bytes or bytearray, not TextEvidence
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/json/__init__.py:339: TypeError
+___ test_actual_record_count_and_rows_are_the_only_comparison[fake-port-0-8] ___
+
+tracker = <tests.fakes.FakeTrackerPort object at 0x10c3afe30>
+tracker_writes = <function tracker_writes.<locals>.<lambda> at 0x10c47cb80>
+count = 8, rows = 0
+
+    @pytest.mark.parametrize("count", [0, 1, 2, 3, 8])
+    @pytest.mark.parametrize("rows", [0, 1, 2])
+    async def test_actual_record_count_and_rows_are_the_only_comparison(
+        tracker, tracker_writes, count, rows
+    ):
+        data = record_data()
+        data["commitsAhead"] = count
+        data["commits"] = data["commits"][:rows]
+        stored = await seed(tracker, data=data)
+        before = tracker_writes()
+        alarm = await observe_commits_ahead_of_record(
+            tracker=tracker, record_ref=stored.comment_key, **arguments()
+        )
+        assert tracker_writes() == before
+        assert (alarm is not None) is (count != rows)
+        if alarm is None:
+            return
+        assert alarm.signal is AlarmSignal.COMMITS_AHEAD_OF_RECORD
+        assert alarm.bound is None
+        assert alarm.subject.lane_key == LANE
+        assert alarm.raised_at_sha == "supervisor/head"
+        assert alarm.raised_by == "supervisor/run"
+>       assert [json.loads(reading.value) for reading in alarm.readings] == [
+                ^^^^^^^^^^^^^^^^^^^^^^^^^
+            LANE,
+            data["headSha"],
+            count,
+            data["commits"],
+        ]
+
+tests/tracker/test_lane_record_signals.py:59: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = TextEvidence(value='lane:alpha', kind='text'), cls = None
+object_hook = None, parse_float = None, parse_int = None, parse_constant = None
+object_pairs_hook = None, kw = {}
+
+    def loads(s, *, cls=None, object_hook=None, parse_float=None,
+            parse_int=None, parse_constant=None, object_pairs_hook=None, **kw):
+        """Deserialize ``s`` (a ``str``, ``bytes`` or ``bytearray`` instance
+        containing a JSON document) to a Python object.
+    
+        ``object_hook`` is an optional function that will be called with the
+        result of any object literal decode (a ``dict``). The return value of
+        ``object_hook`` will be used instead of the ``dict``. This feature
+        can be used to implement custom decoders (e.g. JSON-RPC class hinting).
+    
+        ``object_pairs_hook`` is an optional function that will be called with the
+        result of any object literal decoded with an ordered list of pairs.  The
+        return value of ``object_pairs_hook`` will be used instead of the ``dict``.
+        This feature can be used to implement custom decoders.  If ``object_hook``
+        is also defined, the ``object_pairs_hook`` takes priority.
+    
+        ``parse_float``, if specified, will be called with the string
+        of every JSON float to be decoded. By default this is equivalent to
+        float(num_str). This can be used to use another datatype or parser
+        for JSON floats (e.g. decimal.Decimal).
+    
+        ``parse_int``, if specified, will be called with the string
+        of every JSON int to be decoded. By default this is equivalent to
+        int(num_str). This can be used to use another datatype or parser
+        for JSON integers (e.g. float).
+    
+        ``parse_constant``, if specified, will be called with one of the
+        following strings: -Infinity, Infinity, NaN.
+        This can be used to raise an exception if invalid JSON numbers
+        are encountered.
+    
+        To use a custom ``JSONDecoder`` subclass, specify it with the ``cls``
+        kwarg; otherwise ``JSONDecoder`` is used.
+        """
+        if isinstance(s, str):
+            if s.startswith('\ufeff'):
+                raise JSONDecodeError("Unexpected UTF-8 BOM (decode using utf-8-sig)",
+                                      s, 0)
+        else:
+            if not isinstance(s, (bytes, bytearray)):
+>               raise TypeError(f'the JSON object must be str, bytes or bytearray, '
+                                f'not {s.__class__.__name__}')
+E               TypeError: the JSON object must be str, bytes or bytearray, not TextEvidence
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/json/__init__.py:339: TypeError
+___ test_actual_record_count_and_rows_are_the_only_comparison[fake-port-1-0] ___
+
+tracker = <tests.fakes.FakeTrackerPort object at 0x10c48d2b0>
+tracker_writes = <function tracker_writes.<locals>.<lambda> at 0x10c47c040>
+count = 0, rows = 1
+
+    @pytest.mark.parametrize("count", [0, 1, 2, 3, 8])
+    @pytest.mark.parametrize("rows", [0, 1, 2])
+    async def test_actual_record_count_and_rows_are_the_only_comparison(
+        tracker, tracker_writes, count, rows
+    ):
+        data = record_data()
+        data["commitsAhead"] = count
+        data["commits"] = data["commits"][:rows]
+        stored = await seed(tracker, data=data)
+        before = tracker_writes()
+        alarm = await observe_commits_ahead_of_record(
+            tracker=tracker, record_ref=stored.comment_key, **arguments()
+        )
+        assert tracker_writes() == before
+        assert (alarm is not None) is (count != rows)
+        if alarm is None:
+            return
+        assert alarm.signal is AlarmSignal.COMMITS_AHEAD_OF_RECORD
+        assert alarm.bound is None
+        assert alarm.subject.lane_key == LANE
+        assert alarm.raised_at_sha == "supervisor/head"
+        assert alarm.raised_by == "supervisor/run"
+>       assert [json.loads(reading.value) for reading in alarm.readings] == [
+                ^^^^^^^^^^^^^^^^^^^^^^^^^
+            LANE,
+            data["headSha"],
+            count,
+            data["commits"],
+        ]
+
+tests/tracker/test_lane_record_signals.py:59: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = TextEvidence(value='lane:alpha', kind='text'), cls = None
+object_hook = None, parse_float = None, parse_int = None, parse_constant = None
+object_pairs_hook = None, kw = {}
+
+    def loads(s, *, cls=None, object_hook=None, parse_float=None,
+            parse_int=None, parse_constant=None, object_pairs_hook=None, **kw):
+        """Deserialize ``s`` (a ``str``, ``bytes`` or ``bytearray`` instance
+        containing a JSON document) to a Python object.
+    
+        ``object_hook`` is an optional function that will be called with the
+        result of any object literal decode (a ``dict``). The return value of
+        ``object_hook`` will be used instead of the ``dict``. This feature
+        can be used to implement custom decoders (e.g. JSON-RPC class hinting).
+    
+        ``object_pairs_hook`` is an optional function that will be called with the
+        result of any object literal decoded with an ordered list of pairs.  The
+        return value of ``object_pairs_hook`` will be used instead of the ``dict``.
+        This feature can be used to implement custom decoders.  If ``object_hook``
+        is also defined, the ``object_pairs_hook`` takes priority.
+    
+        ``parse_float``, if specified, will be called with the string
+        of every JSON float to be decoded. By default this is equivalent to
+        float(num_str). This can be used to use another datatype or parser
+        for JSON floats (e.g. decimal.Decimal).
+    
+        ``parse_int``, if specified, will be called with the string
+        of every JSON int to be decoded. By default this is equivalent to
+        int(num_str). This can be used to use another datatype or parser
+        for JSON integers (e.g. float).
+    
+        ``parse_constant``, if specified, will be called with one of the
+        following strings: -Infinity, Infinity, NaN.
+        This can be used to raise an exception if invalid JSON numbers
+        are encountered.
+    
+        To use a custom ``JSONDecoder`` subclass, specify it with the ``cls``
+        kwarg; otherwise ``JSONDecoder`` is used.
+        """
+        if isinstance(s, str):
+            if s.startswith('\ufeff'):
+                raise JSONDecodeError("Unexpected UTF-8 BOM (decode using utf-8-sig)",
+                                      s, 0)
+        else:
+            if not isinstance(s, (bytes, bytearray)):
+>               raise TypeError(f'the JSON object must be str, bytes or bytearray, '
+                                f'not {s.__class__.__name__}')
+E               TypeError: the JSON object must be str, bytes or bytearray, not TextEvidence
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/json/__init__.py:339: TypeError
+___ test_actual_record_count_and_rows_are_the_only_comparison[fake-port-1-2] ___
+
+tracker = <tests.fakes.FakeTrackerPort object at 0x10c48e9f0>
+tracker_writes = <function tracker_writes.<locals>.<lambda> at 0x10c47df80>
+count = 2, rows = 1
+
+    @pytest.mark.parametrize("count", [0, 1, 2, 3, 8])
+    @pytest.mark.parametrize("rows", [0, 1, 2])
+    async def test_actual_record_count_and_rows_are_the_only_comparison(
+        tracker, tracker_writes, count, rows
+    ):
+        data = record_data()
+        data["commitsAhead"] = count
+        data["commits"] = data["commits"][:rows]
+        stored = await seed(tracker, data=data)
+        before = tracker_writes()
+        alarm = await observe_commits_ahead_of_record(
+            tracker=tracker, record_ref=stored.comment_key, **arguments()
+        )
+        assert tracker_writes() == before
+        assert (alarm is not None) is (count != rows)
+        if alarm is None:
+            return
+        assert alarm.signal is AlarmSignal.COMMITS_AHEAD_OF_RECORD
+        assert alarm.bound is None
+        assert alarm.subject.lane_key == LANE
+        assert alarm.raised_at_sha == "supervisor/head"
+        assert alarm.raised_by == "supervisor/run"
+>       assert [json.loads(reading.value) for reading in alarm.readings] == [
+                ^^^^^^^^^^^^^^^^^^^^^^^^^
+            LANE,
+            data["headSha"],
+            count,
+            data["commits"],
+        ]
+
+tests/tracker/test_lane_record_signals.py:59: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = TextEvidence(value='lane:alpha', kind='text'), cls = None
+object_hook = None, parse_float = None, parse_int = None, parse_constant = None
+object_pairs_hook = None, kw = {}
+
+    def loads(s, *, cls=None, object_hook=None, parse_float=None,
+            parse_int=None, parse_constant=None, object_pairs_hook=None, **kw):
+        """Deserialize ``s`` (a ``str``, ``bytes`` or ``bytearray`` instance
+        containing a JSON document) to a Python object.
+    
+        ``object_hook`` is an optional function that will be called with the
+        result of any object literal decode (a ``dict``). The return value of
+        ``object_hook`` will be used instead of the ``dict``. This feature
+        can be used to implement custom decoders (e.g. JSON-RPC class hinting).
+    
+        ``object_pairs_hook`` is an optional function that will be called with the
+        result of any object literal decoded with an ordered list of pairs.  The
+        return value of ``object_pairs_hook`` will be used instead of the ``dict``.
+        This feature can be used to implement custom decoders.  If ``object_hook``
+        is also defined, the ``object_pairs_hook`` takes priority.
+    
+        ``parse_float``, if specified, will be called with the string
+        of every JSON float to be decoded. By default this is equivalent to
+        float(num_str). This can be used to use another datatype or parser
+        for JSON floats (e.g. decimal.Decimal).
+    
+        ``parse_int``, if specified, will be called with the string
+        of every JSON int to be decoded. By default this is equivalent to
+        int(num_str). This can be used to use another datatype or parser
+        for JSON integers (e.g. float).
+    
+        ``parse_constant``, if specified, will be called with one of the
+        following strings: -Infinity, Infinity, NaN.
+        This can be used to raise an exception if invalid JSON numbers
+        are encountered.
+    
+        To use a custom ``JSONDecoder`` subclass, specify it with the ``cls``
+        kwarg; otherwise ``JSONDecoder`` is used.
+        """
+        if isinstance(s, str):
+            if s.startswith('\ufeff'):
+                raise JSONDecodeError("Unexpected UTF-8 BOM (decode using utf-8-sig)",
+                                      s, 0)
+        else:
+            if not isinstance(s, (bytes, bytearray)):
+>               raise TypeError(f'the JSON object must be str, bytes or bytearray, '
+                                f'not {s.__class__.__name__}')
+E               TypeError: the JSON object must be str, bytes or bytearray, not TextEvidence
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/json/__init__.py:339: TypeError
+___ test_actual_record_count_and_rows_are_the_only_comparison[fake-port-1-3] ___
+
+tracker = <tests.fakes.FakeTrackerPort object at 0x10c574410>
+tracker_writes = <function tracker_writes.<locals>.<lambda> at 0x10c47c900>
+count = 3, rows = 1
+
+    @pytest.mark.parametrize("count", [0, 1, 2, 3, 8])
+    @pytest.mark.parametrize("rows", [0, 1, 2])
+    async def test_actual_record_count_and_rows_are_the_only_comparison(
+        tracker, tracker_writes, count, rows
+    ):
+        data = record_data()
+        data["commitsAhead"] = count
+        data["commits"] = data["commits"][:rows]
+        stored = await seed(tracker, data=data)
+        before = tracker_writes()
+        alarm = await observe_commits_ahead_of_record(
+            tracker=tracker, record_ref=stored.comment_key, **arguments()
+        )
+        assert tracker_writes() == before
+        assert (alarm is not None) is (count != rows)
+        if alarm is None:
+            return
+        assert alarm.signal is AlarmSignal.COMMITS_AHEAD_OF_RECORD
+        assert alarm.bound is None
+        assert alarm.subject.lane_key == LANE
+        assert alarm.raised_at_sha == "supervisor/head"
+        assert alarm.raised_by == "supervisor/run"
+>       assert [json.loads(reading.value) for reading in alarm.readings] == [
+                ^^^^^^^^^^^^^^^^^^^^^^^^^
+            LANE,
+            data["headSha"],
+            count,
+            data["commits"],
+        ]
+
+tests/tracker/test_lane_record_signals.py:59: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = TextEvidence(value='lane:alpha', kind='text'), cls = None
+object_hook = None, parse_float = None, parse_int = None, parse_constant = None
+object_pairs_hook = None, kw = {}
+
+    def loads(s, *, cls=None, object_hook=None, parse_float=None,
+            parse_int=None, parse_constant=None, object_pairs_hook=None, **kw):
+        """Deserialize ``s`` (a ``str``, ``bytes`` or ``bytearray`` instance
+        containing a JSON document) to a Python object.
+    
+        ``object_hook`` is an optional function that will be called with the
+        result of any object literal decode (a ``dict``). The return value of
+        ``object_hook`` will be used instead of the ``dict``. This feature
+        can be used to implement custom decoders (e.g. JSON-RPC class hinting).
+    
+        ``object_pairs_hook`` is an optional function that will be called with the
+        result of any object literal decoded with an ordered list of pairs.  The
+        return value of ``object_pairs_hook`` will be used instead of the ``dict``.
+        This feature can be used to implement custom decoders.  If ``object_hook``
+        is also defined, the ``object_pairs_hook`` takes priority.
+    
+        ``parse_float``, if specified, will be called with the string
+        of every JSON float to be decoded. By default this is equivalent to
+        float(num_str). This can be used to use another datatype or parser
+        for JSON floats (e.g. decimal.Decimal).
+    
+        ``parse_int``, if specified, will be called with the string
+        of every JSON int to be decoded. By default this is equivalent to
+        int(num_str). This can be used to use another datatype or parser
+        for JSON integers (e.g. float).
+    
+        ``parse_constant``, if specified, will be called with one of the
+        following strings: -Infinity, Infinity, NaN.
+        This can be used to raise an exception if invalid JSON numbers
+        are encountered.
+    
+        To use a custom ``JSONDecoder`` subclass, specify it with the ``cls``
+        kwarg; otherwise ``JSONDecoder`` is used.
+        """
+        if isinstance(s, str):
+            if s.startswith('\ufeff'):
+                raise JSONDecodeError("Unexpected UTF-8 BOM (decode using utf-8-sig)",
+                                      s, 0)
+        else:
+            if not isinstance(s, (bytes, bytearray)):
+>               raise TypeError(f'the JSON object must be str, bytes or bytearray, '
+                                f'not {s.__class__.__name__}')
+E               TypeError: the JSON object must be str, bytes or bytearray, not TextEvidence
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/json/__init__.py:339: TypeError
+___ test_actual_record_count_and_rows_are_the_only_comparison[fake-port-1-8] ___
+
+tracker = <tests.fakes.FakeTrackerPort object at 0x10c575910>
+tracker_writes = <function tracker_writes.<locals>.<lambda> at 0x10c47e520>
+count = 8, rows = 1
+
+    @pytest.mark.parametrize("count", [0, 1, 2, 3, 8])
+    @pytest.mark.parametrize("rows", [0, 1, 2])
+    async def test_actual_record_count_and_rows_are_the_only_comparison(
+        tracker, tracker_writes, count, rows
+    ):
+        data = record_data()
+        data["commitsAhead"] = count
+        data["commits"] = data["commits"][:rows]
+        stored = await seed(tracker, data=data)
+        before = tracker_writes()
+        alarm = await observe_commits_ahead_of_record(
+            tracker=tracker, record_ref=stored.comment_key, **arguments()
+        )
+        assert tracker_writes() == before
+        assert (alarm is not None) is (count != rows)
+        if alarm is None:
+            return
+        assert alarm.signal is AlarmSignal.COMMITS_AHEAD_OF_RECORD
+        assert alarm.bound is None
+        assert alarm.subject.lane_key == LANE
+        assert alarm.raised_at_sha == "supervisor/head"
+        assert alarm.raised_by == "supervisor/run"
+>       assert [json.loads(reading.value) for reading in alarm.readings] == [
+                ^^^^^^^^^^^^^^^^^^^^^^^^^
+            LANE,
+            data["headSha"],
+            count,
+            data["commits"],
+        ]
+
+tests/tracker/test_lane_record_signals.py:59: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = TextEvidence(value='lane:alpha', kind='text'), cls = None
+object_hook = None, parse_float = None, parse_int = None, parse_constant = None
+object_pairs_hook = None, kw = {}
+
+    def loads(s, *, cls=None, object_hook=None, parse_float=None,
+            parse_int=None, parse_constant=None, object_pairs_hook=None, **kw):
+        """Deserialize ``s`` (a ``str``, ``bytes`` or ``bytearray`` instance
+        containing a JSON document) to a Python object.
+    
+        ``object_hook`` is an optional function that will be called with the
+        result of any object literal decode (a ``dict``). The return value of
+        ``object_hook`` will be used instead of the ``dict``. This feature
+        can be used to implement custom decoders (e.g. JSON-RPC class hinting).
+    
+        ``object_pairs_hook`` is an optional function that will be called with the
+        result of any object literal decoded with an ordered list of pairs.  The
+        return value of ``object_pairs_hook`` will be used instead of the ``dict``.
+        This feature can be used to implement custom decoders.  If ``object_hook``
+        is also defined, the ``object_pairs_hook`` takes priority.
+    
+        ``parse_float``, if specified, will be called with the string
+        of every JSON float to be decoded. By default this is equivalent to
+        float(num_str). This can be used to use another datatype or parser
+        for JSON floats (e.g. decimal.Decimal).
+    
+        ``parse_int``, if specified, will be called with the string
+        of every JSON int to be decoded. By default this is equivalent to
+        int(num_str). This can be used to use another datatype or parser
+        for JSON integers (e.g. float).
+    
+        ``parse_constant``, if specified, will be called with one of the
+        following strings: -Infinity, Infinity, NaN.
+        This can be used to raise an exception if invalid JSON numbers
+        are encountered.
+    
+        To use a custom ``JSONDecoder`` subclass, specify it with the ``cls``
+        kwarg; otherwise ``JSONDecoder`` is used.
+        """
+        if isinstance(s, str):
+            if s.startswith('\ufeff'):
+                raise JSONDecodeError("Unexpected UTF-8 BOM (decode using utf-8-sig)",
+                                      s, 0)
+        else:
+            if not isinstance(s, (bytes, bytearray)):
+>               raise TypeError(f'the JSON object must be str, bytes or bytearray, '
+                                f'not {s.__class__.__name__}')
+E               TypeError: the JSON object must be str, bytes or bytearray, not TextEvidence
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/json/__init__.py:339: TypeError
+___ test_actual_record_count_and_rows_are_the_only_comparison[fake-port-2-0] ___
+
+tracker = <tests.fakes.FakeTrackerPort object at 0x10c48f5c0>
+tracker_writes = <function tracker_writes.<locals>.<lambda> at 0x10c47e340>
+count = 0, rows = 2
+
+    @pytest.mark.parametrize("count", [0, 1, 2, 3, 8])
+    @pytest.mark.parametrize("rows", [0, 1, 2])
+    async def test_actual_record_count_and_rows_are_the_only_comparison(
+        tracker, tracker_writes, count, rows
+    ):
+        data = record_data()
+        data["commitsAhead"] = count
+        data["commits"] = data["commits"][:rows]
+        stored = await seed(tracker, data=data)
+        before = tracker_writes()
+        alarm = await observe_commits_ahead_of_record(
+            tracker=tracker, record_ref=stored.comment_key, **arguments()
+        )
+        assert tracker_writes() == before
+        assert (alarm is not None) is (count != rows)
+        if alarm is None:
+            return
+        assert alarm.signal is AlarmSignal.COMMITS_AHEAD_OF_RECORD
+        assert alarm.bound is None
+        assert alarm.subject.lane_key == LANE
+        assert alarm.raised_at_sha == "supervisor/head"
+        assert alarm.raised_by == "supervisor/run"
+>       assert [json.loads(reading.value) for reading in alarm.readings] == [
+                ^^^^^^^^^^^^^^^^^^^^^^^^^
+            LANE,
+            data["headSha"],
+            count,
+            data["commits"],
+        ]
+
+tests/tracker/test_lane_record_signals.py:59: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = TextEvidence(value='lane:alpha', kind='text'), cls = None
+object_hook = None, parse_float = None, parse_int = None, parse_constant = None
+object_pairs_hook = None, kw = {}
+
+    def loads(s, *, cls=None, object_hook=None, parse_float=None,
+            parse_int=None, parse_constant=None, object_pairs_hook=None, **kw):
+        """Deserialize ``s`` (a ``str``, ``bytes`` or ``bytearray`` instance
+        containing a JSON document) to a Python object.
+    
+        ``object_hook`` is an optional function that will be called with the
+        result of any object literal decode (a ``dict``). The return value of
+        ``object_hook`` will be used instead of the ``dict``. This feature
+        can be used to implement custom decoders (e.g. JSON-RPC class hinting).
+    
+        ``object_pairs_hook`` is an optional function that will be called with the
+        result of any object literal decoded with an ordered list of pairs.  The
+        return value of ``object_pairs_hook`` will be used instead of the ``dict``.
+        This feature can be used to implement custom decoders.  If ``object_hook``
+        is also defined, the ``object_pairs_hook`` takes priority.
+    
+        ``parse_float``, if specified, will be called with the string
+        of every JSON float to be decoded. By default this is equivalent to
+        float(num_str). This can be used to use another datatype or parser
+        for JSON floats (e.g. decimal.Decimal).
+    
+        ``parse_int``, if specified, will be called with the string
+        of every JSON int to be decoded. By default this is equivalent to
+        int(num_str). This can be used to use another datatype or parser
+        for JSON integers (e.g. float).
+    
+        ``parse_constant``, if specified, will be called with one of the
+        following strings: -Infinity, Infinity, NaN.
+        This can be used to raise an exception if invalid JSON numbers
+        are encountered.
+    
+        To use a custom ``JSONDecoder`` subclass, specify it with the ``cls``
+        kwarg; otherwise ``JSONDecoder`` is used.
+        """
+        if isinstance(s, str):
+            if s.startswith('\ufeff'):
+                raise JSONDecodeError("Unexpected UTF-8 BOM (decode using utf-8-sig)",
+                                      s, 0)
+        else:
+            if not isinstance(s, (bytes, bytearray)):
+>               raise TypeError(f'the JSON object must be str, bytes or bytearray, '
+                                f'not {s.__class__.__name__}')
+E               TypeError: the JSON object must be str, bytes or bytearray, not TextEvidence
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/json/__init__.py:339: TypeError
+___ test_actual_record_count_and_rows_are_the_only_comparison[fake-port-2-1] ___
+
+tracker = <tests.fakes.FakeTrackerPort object at 0x10c48c200>
+tracker_writes = <function tracker_writes.<locals>.<lambda> at 0x10c47eb60>
+count = 1, rows = 2
+
+    @pytest.mark.parametrize("count", [0, 1, 2, 3, 8])
+    @pytest.mark.parametrize("rows", [0, 1, 2])
+    async def test_actual_record_count_and_rows_are_the_only_comparison(
+        tracker, tracker_writes, count, rows
+    ):
+        data = record_data()
+        data["commitsAhead"] = count
+        data["commits"] = data["commits"][:rows]
+        stored = await seed(tracker, data=data)
+        before = tracker_writes()
+        alarm = await observe_commits_ahead_of_record(
+            tracker=tracker, record_ref=stored.comment_key, **arguments()
+        )
+        assert tracker_writes() == before
+        assert (alarm is not None) is (count != rows)
+        if alarm is None:
+            return
+        assert alarm.signal is AlarmSignal.COMMITS_AHEAD_OF_RECORD
+        assert alarm.bound is None
+        assert alarm.subject.lane_key == LANE
+        assert alarm.raised_at_sha == "supervisor/head"
+        assert alarm.raised_by == "supervisor/run"
+>       assert [json.loads(reading.value) for reading in alarm.readings] == [
+                ^^^^^^^^^^^^^^^^^^^^^^^^^
+            LANE,
+            data["headSha"],
+            count,
+            data["commits"],
+        ]
+
+tests/tracker/test_lane_record_signals.py:59: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = TextEvidence(value='lane:alpha', kind='text'), cls = None
+object_hook = None, parse_float = None, parse_int = None, parse_constant = None
+object_pairs_hook = None, kw = {}
+
+    def loads(s, *, cls=None, object_hook=None, parse_float=None,
+            parse_int=None, parse_constant=None, object_pairs_hook=None, **kw):
+        """Deserialize ``s`` (a ``str``, ``bytes`` or ``bytearray`` instance
+        containing a JSON document) to a Python object.
+    
+        ``object_hook`` is an optional function that will be called with the
+        result of any object literal decode (a ``dict``). The return value of
+        ``object_hook`` will be used instead of the ``dict``. This feature
+        can be used to implement custom decoders (e.g. JSON-RPC class hinting).
+    
+        ``object_pairs_hook`` is an optional function that will be called with the
+        result of any object literal decoded with an ordered list of pairs.  The
+        return value of ``object_pairs_hook`` will be used instead of the ``dict``.
+        This feature can be used to implement custom decoders.  If ``object_hook``
+        is also defined, the ``object_pairs_hook`` takes priority.
+    
+        ``parse_float``, if specified, will be called with the string
+        of every JSON float to be decoded. By default this is equivalent to
+        float(num_str). This can be used to use another datatype or parser
+        for JSON floats (e.g. decimal.Decimal).
+    
+        ``parse_int``, if specified, will be called with the string
+        of every JSON int to be decoded. By default this is equivalent to
+        int(num_str). This can be used to use another datatype or parser
+        for JSON integers (e.g. float).
+    
+        ``parse_constant``, if specified, will be called with one of the
+        following strings: -Infinity, Infinity, NaN.
+        This can be used to raise an exception if invalid JSON numbers
+        are encountered.
+    
+        To use a custom ``JSONDecoder`` subclass, specify it with the ``cls``
+        kwarg; otherwise ``JSONDecoder`` is used.
+        """
+        if isinstance(s, str):
+            if s.startswith('\ufeff'):
+                raise JSONDecodeError("Unexpected UTF-8 BOM (decode using utf-8-sig)",
+                                      s, 0)
+        else:
+            if not isinstance(s, (bytes, bytearray)):
+>               raise TypeError(f'the JSON object must be str, bytes or bytearray, '
+                                f'not {s.__class__.__name__}')
+E               TypeError: the JSON object must be str, bytes or bytearray, not TextEvidence
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/json/__init__.py:339: TypeError
+___ test_actual_record_count_and_rows_are_the_only_comparison[fake-port-2-3] ___
+
+tracker = <tests.fakes.FakeTrackerPort object at 0x10c3ae810>
+tracker_writes = <function tracker_writes.<locals>.<lambda> at 0x10c47dd00>
+count = 3, rows = 2
+
+    @pytest.mark.parametrize("count", [0, 1, 2, 3, 8])
+    @pytest.mark.parametrize("rows", [0, 1, 2])
+    async def test_actual_record_count_and_rows_are_the_only_comparison(
+        tracker, tracker_writes, count, rows
+    ):
+        data = record_data()
+        data["commitsAhead"] = count
+        data["commits"] = data["commits"][:rows]
+        stored = await seed(tracker, data=data)
+        before = tracker_writes()
+        alarm = await observe_commits_ahead_of_record(
+            tracker=tracker, record_ref=stored.comment_key, **arguments()
+        )
+        assert tracker_writes() == before
+        assert (alarm is not None) is (count != rows)
+        if alarm is None:
+            return
+        assert alarm.signal is AlarmSignal.COMMITS_AHEAD_OF_RECORD
+        assert alarm.bound is None
+        assert alarm.subject.lane_key == LANE
+        assert alarm.raised_at_sha == "supervisor/head"
+        assert alarm.raised_by == "supervisor/run"
+>       assert [json.loads(reading.value) for reading in alarm.readings] == [
+                ^^^^^^^^^^^^^^^^^^^^^^^^^
+            LANE,
+            data["headSha"],
+            count,
+            data["commits"],
+        ]
+
+tests/tracker/test_lane_record_signals.py:59: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = TextEvidence(value='lane:alpha', kind='text'), cls = None
+object_hook = None, parse_float = None, parse_int = None, parse_constant = None
+object_pairs_hook = None, kw = {}
+
+    def loads(s, *, cls=None, object_hook=None, parse_float=None,
+            parse_int=None, parse_constant=None, object_pairs_hook=None, **kw):
+        """Deserialize ``s`` (a ``str``, ``bytes`` or ``bytearray`` instance
+        containing a JSON document) to a Python object.
+    
+        ``object_hook`` is an optional function that will be called with the
+        result of any object literal decode (a ``dict``). The return value of
+        ``object_hook`` will be used instead of the ``dict``. This feature
+        can be used to implement custom decoders (e.g. JSON-RPC class hinting).
+    
+        ``object_pairs_hook`` is an optional function that will be called with the
+        result of any object literal decoded with an ordered list of pairs.  The
+        return value of ``object_pairs_hook`` will be used instead of the ``dict``.
+        This feature can be used to implement custom decoders.  If ``object_hook``
+        is also defined, the ``object_pairs_hook`` takes priority.
+    
+        ``parse_float``, if specified, will be called with the string
+        of every JSON float to be decoded. By default this is equivalent to
+        float(num_str). This can be used to use another datatype or parser
+        for JSON floats (e.g. decimal.Decimal).
+    
+        ``parse_int``, if specified, will be called with the string
+        of every JSON int to be decoded. By default this is equivalent to
+        int(num_str). This can be used to use another datatype or parser
+        for JSON integers (e.g. float).
+    
+        ``parse_constant``, if specified, will be called with one of the
+        following strings: -Infinity, Infinity, NaN.
+        This can be used to raise an exception if invalid JSON numbers
+        are encountered.
+    
+        To use a custom ``JSONDecoder`` subclass, specify it with the ``cls``
+        kwarg; otherwise ``JSONDecoder`` is used.
+        """
+        if isinstance(s, str):
+            if s.startswith('\ufeff'):
+                raise JSONDecodeError("Unexpected UTF-8 BOM (decode using utf-8-sig)",
+                                      s, 0)
+        else:
+            if not isinstance(s, (bytes, bytearray)):
+>               raise TypeError(f'the JSON object must be str, bytes or bytearray, '
+                                f'not {s.__class__.__name__}')
+E               TypeError: the JSON object must be str, bytes or bytearray, not TextEvidence
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/json/__init__.py:339: TypeError
+___ test_actual_record_count_and_rows_are_the_only_comparison[fake-port-2-8] ___
+
+tracker = <tests.fakes.FakeTrackerPort object at 0x10c574740>
+tracker_writes = <function tracker_writes.<locals>.<lambda> at 0x10c47e200>
+count = 8, rows = 2
+
+    @pytest.mark.parametrize("count", [0, 1, 2, 3, 8])
+    @pytest.mark.parametrize("rows", [0, 1, 2])
+    async def test_actual_record_count_and_rows_are_the_only_comparison(
+        tracker, tracker_writes, count, rows
+    ):
+        data = record_data()
+        data["commitsAhead"] = count
+        data["commits"] = data["commits"][:rows]
+        stored = await seed(tracker, data=data)
+        before = tracker_writes()
+        alarm = await observe_commits_ahead_of_record(
+            tracker=tracker, record_ref=stored.comment_key, **arguments()
+        )
+        assert tracker_writes() == before
+        assert (alarm is not None) is (count != rows)
+        if alarm is None:
+            return
+        assert alarm.signal is AlarmSignal.COMMITS_AHEAD_OF_RECORD
+        assert alarm.bound is None
+        assert alarm.subject.lane_key == LANE
+        assert alarm.raised_at_sha == "supervisor/head"
+        assert alarm.raised_by == "supervisor/run"
+>       assert [json.loads(reading.value) for reading in alarm.readings] == [
+                ^^^^^^^^^^^^^^^^^^^^^^^^^
+            LANE,
+            data["headSha"],
+            count,
+            data["commits"],
+        ]
+
+tests/tracker/test_lane_record_signals.py:59: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = TextEvidence(value='lane:alpha', kind='text'), cls = None
+object_hook = None, parse_float = None, parse_int = None, parse_constant = None
+object_pairs_hook = None, kw = {}
+
+    def loads(s, *, cls=None, object_hook=None, parse_float=None,
+            parse_int=None, parse_constant=None, object_pairs_hook=None, **kw):
+        """Deserialize ``s`` (a ``str``, ``bytes`` or ``bytearray`` instance
+        containing a JSON document) to a Python object.
+    
+        ``object_hook`` is an optional function that will be called with the
+        result of any object literal decode (a ``dict``). The return value of
+        ``object_hook`` will be used instead of the ``dict``. This feature
+        can be used to implement custom decoders (e.g. JSON-RPC class hinting).
+    
+        ``object_pairs_hook`` is an optional function that will be called with the
+        result of any object literal decoded with an ordered list of pairs.  The
+        return value of ``object_pairs_hook`` will be used instead of the ``dict``.
+        This feature can be used to implement custom decoders.  If ``object_hook``
+        is also defined, the ``object_pairs_hook`` takes priority.
+    
+        ``parse_float``, if specified, will be called with the string
+        of every JSON float to be decoded. By default this is equivalent to
+        float(num_str). This can be used to use another datatype or parser
+        for JSON floats (e.g. decimal.Decimal).
+    
+        ``parse_int``, if specified, will be called with the string
+        of every JSON int to be decoded. By default this is equivalent to
+        int(num_str). This can be used to use another datatype or parser
+        for JSON integers (e.g. float).
+    
+        ``parse_constant``, if specified, will be called with one of the
+        following strings: -Infinity, Infinity, NaN.
+        This can be used to raise an exception if invalid JSON numbers
+        are encountered.
+    
+        To use a custom ``JSONDecoder`` subclass, specify it with the ``cls``
+        kwarg; otherwise ``JSONDecoder`` is used.
+        """
+        if isinstance(s, str):
+            if s.startswith('\ufeff'):
+                raise JSONDecodeError("Unexpected UTF-8 BOM (decode using utf-8-sig)",
+                                      s, 0)
+        else:
+            if not isinstance(s, (bytes, bytearray)):
+>               raise TypeError(f'the JSON object must be str, bytes or bytearray, '
+                                f'not {s.__class__.__name__}')
+E               TypeError: the JSON object must be str, bytes or bytearray, not TextEvidence
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/json/__init__.py:339: TypeError
+__ test_actual_record_count_and_rows_are_the_only_comparison[linear-mcp-0-1] ___
+
+tracker = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10c577830>
+tracker_writes = <function tracker_writes.<locals>.<lambda> at 0x10c47e840>
+count = 1, rows = 0
+
+    @pytest.mark.parametrize("count", [0, 1, 2, 3, 8])
+    @pytest.mark.parametrize("rows", [0, 1, 2])
+    async def test_actual_record_count_and_rows_are_the_only_comparison(
+        tracker, tracker_writes, count, rows
+    ):
+        data = record_data()
+        data["commitsAhead"] = count
+        data["commits"] = data["commits"][:rows]
+        stored = await seed(tracker, data=data)
+        before = tracker_writes()
+        alarm = await observe_commits_ahead_of_record(
+            tracker=tracker, record_ref=stored.comment_key, **arguments()
+        )
+        assert tracker_writes() == before
+        assert (alarm is not None) is (count != rows)
+        if alarm is None:
+            return
+        assert alarm.signal is AlarmSignal.COMMITS_AHEAD_OF_RECORD
+        assert alarm.bound is None
+        assert alarm.subject.lane_key == LANE
+        assert alarm.raised_at_sha == "supervisor/head"
+        assert alarm.raised_by == "supervisor/run"
+>       assert [json.loads(reading.value) for reading in alarm.readings] == [
+                ^^^^^^^^^^^^^^^^^^^^^^^^^
+            LANE,
+            data["headSha"],
+            count,
+            data["commits"],
+        ]
+
+tests/tracker/test_lane_record_signals.py:59: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = TextEvidence(value='lane:alpha', kind='text'), cls = None
+object_hook = None, parse_float = None, parse_int = None, parse_constant = None
+object_pairs_hook = None, kw = {}
+
+    def loads(s, *, cls=None, object_hook=None, parse_float=None,
+            parse_int=None, parse_constant=None, object_pairs_hook=None, **kw):
+        """Deserialize ``s`` (a ``str``, ``bytes`` or ``bytearray`` instance
+        containing a JSON document) to a Python object.
+    
+        ``object_hook`` is an optional function that will be called with the
+        result of any object literal decode (a ``dict``). The return value of
+        ``object_hook`` will be used instead of the ``dict``. This feature
+        can be used to implement custom decoders (e.g. JSON-RPC class hinting).
+    
+        ``object_pairs_hook`` is an optional function that will be called with the
+        result of any object literal decoded with an ordered list of pairs.  The
+        return value of ``object_pairs_hook`` will be used instead of the ``dict``.
+        This feature can be used to implement custom decoders.  If ``object_hook``
+        is also defined, the ``object_pairs_hook`` takes priority.
+    
+        ``parse_float``, if specified, will be called with the string
+        of every JSON float to be decoded. By default this is equivalent to
+        float(num_str). This can be used to use another datatype or parser
+        for JSON floats (e.g. decimal.Decimal).
+    
+        ``parse_int``, if specified, will be called with the string
+        of every JSON int to be decoded. By default this is equivalent to
+        int(num_str). This can be used to use another datatype or parser
+        for JSON integers (e.g. float).
+    
+        ``parse_constant``, if specified, will be called with one of the
+        following strings: -Infinity, Infinity, NaN.
+        This can be used to raise an exception if invalid JSON numbers
+        are encountered.
+    
+        To use a custom ``JSONDecoder`` subclass, specify it with the ``cls``
+        kwarg; otherwise ``JSONDecoder`` is used.
+        """
+        if isinstance(s, str):
+            if s.startswith('\ufeff'):
+                raise JSONDecodeError("Unexpected UTF-8 BOM (decode using utf-8-sig)",
+                                      s, 0)
+        else:
+            if not isinstance(s, (bytes, bytearray)):
+>               raise TypeError(f'the JSON object must be str, bytes or bytearray, '
+                                f'not {s.__class__.__name__}')
+E               TypeError: the JSON object must be str, bytes or bytearray, not TextEvidence
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/json/__init__.py:339: TypeError
+__ test_actual_record_count_and_rows_are_the_only_comparison[linear-mcp-0-2] ___
+
+tracker = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10c5cd5b0>
+tracker_writes = <function tracker_writes.<locals>.<lambda> at 0x10c47f240>
+count = 2, rows = 0
+
+    @pytest.mark.parametrize("count", [0, 1, 2, 3, 8])
+    @pytest.mark.parametrize("rows", [0, 1, 2])
+    async def test_actual_record_count_and_rows_are_the_only_comparison(
+        tracker, tracker_writes, count, rows
+    ):
+        data = record_data()
+        data["commitsAhead"] = count
+        data["commits"] = data["commits"][:rows]
+        stored = await seed(tracker, data=data)
+        before = tracker_writes()
+        alarm = await observe_commits_ahead_of_record(
+            tracker=tracker, record_ref=stored.comment_key, **arguments()
+        )
+        assert tracker_writes() == before
+        assert (alarm is not None) is (count != rows)
+        if alarm is None:
+            return
+        assert alarm.signal is AlarmSignal.COMMITS_AHEAD_OF_RECORD
+        assert alarm.bound is None
+        assert alarm.subject.lane_key == LANE
+        assert alarm.raised_at_sha == "supervisor/head"
+        assert alarm.raised_by == "supervisor/run"
+>       assert [json.loads(reading.value) for reading in alarm.readings] == [
+                ^^^^^^^^^^^^^^^^^^^^^^^^^
+            LANE,
+            data["headSha"],
+            count,
+            data["commits"],
+        ]
+
+tests/tracker/test_lane_record_signals.py:59: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = TextEvidence(value='lane:alpha', kind='text'), cls = None
+object_hook = None, parse_float = None, parse_int = None, parse_constant = None
+object_pairs_hook = None, kw = {}
+
+    def loads(s, *, cls=None, object_hook=None, parse_float=None,
+            parse_int=None, parse_constant=None, object_pairs_hook=None, **kw):
+        """Deserialize ``s`` (a ``str``, ``bytes`` or ``bytearray`` instance
+        containing a JSON document) to a Python object.
+    
+        ``object_hook`` is an optional function that will be called with the
+        result of any object literal decode (a ``dict``). The return value of
+        ``object_hook`` will be used instead of the ``dict``. This feature
+        can be used to implement custom decoders (e.g. JSON-RPC class hinting).
+    
+        ``object_pairs_hook`` is an optional function that will be called with the
+        result of any object literal decoded with an ordered list of pairs.  The
+        return value of ``object_pairs_hook`` will be used instead of the ``dict``.
+        This feature can be used to implement custom decoders.  If ``object_hook``
+        is also defined, the ``object_pairs_hook`` takes priority.
+    
+        ``parse_float``, if specified, will be called with the string
+        of every JSON float to be decoded. By default this is equivalent to
+        float(num_str). This can be used to use another datatype or parser
+        for JSON floats (e.g. decimal.Decimal).
+    
+        ``parse_int``, if specified, will be called with the string
+        of every JSON int to be decoded. By default this is equivalent to
+        int(num_str). This can be used to use another datatype or parser
+        for JSON integers (e.g. float).
+    
+        ``parse_constant``, if specified, will be called with one of the
+        following strings: -Infinity, Infinity, NaN.
+        This can be used to raise an exception if invalid JSON numbers
+        are encountered.
+    
+        To use a custom ``JSONDecoder`` subclass, specify it with the ``cls``
+        kwarg; otherwise ``JSONDecoder`` is used.
+        """
+        if isinstance(s, str):
+            if s.startswith('\ufeff'):
+                raise JSONDecodeError("Unexpected UTF-8 BOM (decode using utf-8-sig)",
+                                      s, 0)
+        else:
+            if not isinstance(s, (bytes, bytearray)):
+>               raise TypeError(f'the JSON object must be str, bytes or bytearray, '
+                                f'not {s.__class__.__name__}')
+E               TypeError: the JSON object must be str, bytes or bytearray, not TextEvidence
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/json/__init__.py:339: TypeError
+__ test_actual_record_count_and_rows_are_the_only_comparison[linear-mcp-0-3] ___
+
+tracker = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10c577380>
+tracker_writes = <function tracker_writes.<locals>.<lambda> at 0x10c47f4c0>
+count = 3, rows = 0
+
+    @pytest.mark.parametrize("count", [0, 1, 2, 3, 8])
+    @pytest.mark.parametrize("rows", [0, 1, 2])
+    async def test_actual_record_count_and_rows_are_the_only_comparison(
+        tracker, tracker_writes, count, rows
+    ):
+        data = record_data()
+        data["commitsAhead"] = count
+        data["commits"] = data["commits"][:rows]
+        stored = await seed(tracker, data=data)
+        before = tracker_writes()
+        alarm = await observe_commits_ahead_of_record(
+            tracker=tracker, record_ref=stored.comment_key, **arguments()
+        )
+        assert tracker_writes() == before
+        assert (alarm is not None) is (count != rows)
+        if alarm is None:
+            return
+        assert alarm.signal is AlarmSignal.COMMITS_AHEAD_OF_RECORD
+        assert alarm.bound is None
+        assert alarm.subject.lane_key == LANE
+        assert alarm.raised_at_sha == "supervisor/head"
+        assert alarm.raised_by == "supervisor/run"
+>       assert [json.loads(reading.value) for reading in alarm.readings] == [
+                ^^^^^^^^^^^^^^^^^^^^^^^^^
+            LANE,
+            data["headSha"],
+            count,
+            data["commits"],
+        ]
+
+tests/tracker/test_lane_record_signals.py:59: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = TextEvidence(value='lane:alpha', kind='text'), cls = None
+object_hook = None, parse_float = None, parse_int = None, parse_constant = None
+object_pairs_hook = None, kw = {}
+
+    def loads(s, *, cls=None, object_hook=None, parse_float=None,
+            parse_int=None, parse_constant=None, object_pairs_hook=None, **kw):
+        """Deserialize ``s`` (a ``str``, ``bytes`` or ``bytearray`` instance
+        containing a JSON document) to a Python object.
+    
+        ``object_hook`` is an optional function that will be called with the
+        result of any object literal decode (a ``dict``). The return value of
+        ``object_hook`` will be used instead of the ``dict``. This feature
+        can be used to implement custom decoders (e.g. JSON-RPC class hinting).
+    
+        ``object_pairs_hook`` is an optional function that will be called with the
+        result of any object literal decoded with an ordered list of pairs.  The
+        return value of ``object_pairs_hook`` will be used instead of the ``dict``.
+        This feature can be used to implement custom decoders.  If ``object_hook``
+        is also defined, the ``object_pairs_hook`` takes priority.
+    
+        ``parse_float``, if specified, will be called with the string
+        of every JSON float to be decoded. By default this is equivalent to
+        float(num_str). This can be used to use another datatype or parser
+        for JSON floats (e.g. decimal.Decimal).
+    
+        ``parse_int``, if specified, will be called with the string
+        of every JSON int to be decoded. By default this is equivalent to
+        int(num_str). This can be used to use another datatype or parser
+        for JSON integers (e.g. float).
+    
+        ``parse_constant``, if specified, will be called with one of the
+        following strings: -Infinity, Infinity, NaN.
+        This can be used to raise an exception if invalid JSON numbers
+        are encountered.
+    
+        To use a custom ``JSONDecoder`` subclass, specify it with the ``cls``
+        kwarg; otherwise ``JSONDecoder`` is used.
+        """
+        if isinstance(s, str):
+            if s.startswith('\ufeff'):
+                raise JSONDecodeError("Unexpected UTF-8 BOM (decode using utf-8-sig)",
+                                      s, 0)
+        else:
+            if not isinstance(s, (bytes, bytearray)):
+>               raise TypeError(f'the JSON object must be str, bytes or bytearray, '
+                                f'not {s.__class__.__name__}')
+E               TypeError: the JSON object must be str, bytes or bytearray, not TextEvidence
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/json/__init__.py:339: TypeError
+__ test_actual_record_count_and_rows_are_the_only_comparison[linear-mcp-0-8] ___
+
+tracker = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10c3aea50>
+tracker_writes = <function tracker_writes.<locals>.<lambda> at 0x10c47fba0>
+count = 8, rows = 0
+
+    @pytest.mark.parametrize("count", [0, 1, 2, 3, 8])
+    @pytest.mark.parametrize("rows", [0, 1, 2])
+    async def test_actual_record_count_and_rows_are_the_only_comparison(
+        tracker, tracker_writes, count, rows
+    ):
+        data = record_data()
+        data["commitsAhead"] = count
+        data["commits"] = data["commits"][:rows]
+        stored = await seed(tracker, data=data)
+        before = tracker_writes()
+        alarm = await observe_commits_ahead_of_record(
+            tracker=tracker, record_ref=stored.comment_key, **arguments()
+        )
+        assert tracker_writes() == before
+        assert (alarm is not None) is (count != rows)
+        if alarm is None:
+            return
+        assert alarm.signal is AlarmSignal.COMMITS_AHEAD_OF_RECORD
+        assert alarm.bound is None
+        assert alarm.subject.lane_key == LANE
+        assert alarm.raised_at_sha == "supervisor/head"
+        assert alarm.raised_by == "supervisor/run"
+>       assert [json.loads(reading.value) for reading in alarm.readings] == [
+                ^^^^^^^^^^^^^^^^^^^^^^^^^
+            LANE,
+            data["headSha"],
+            count,
+            data["commits"],
+        ]
+
+tests/tracker/test_lane_record_signals.py:59: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = TextEvidence(value='lane:alpha', kind='text'), cls = None
+object_hook = None, parse_float = None, parse_int = None, parse_constant = None
+object_pairs_hook = None, kw = {}
+
+    def loads(s, *, cls=None, object_hook=None, parse_float=None,
+            parse_int=None, parse_constant=None, object_pairs_hook=None, **kw):
+        """Deserialize ``s`` (a ``str``, ``bytes`` or ``bytearray`` instance
+        containing a JSON document) to a Python object.
+    
+        ``object_hook`` is an optional function that will be called with the
+        result of any object literal decode (a ``dict``). The return value of
+        ``object_hook`` will be used instead of the ``dict``. This feature
+        can be used to implement custom decoders (e.g. JSON-RPC class hinting).
+    
+        ``object_pairs_hook`` is an optional function that will be called with the
+        result of any object literal decoded with an ordered list of pairs.  The
+        return value of ``object_pairs_hook`` will be used instead of the ``dict``.
+        This feature can be used to implement custom decoders.  If ``object_hook``
+        is also defined, the ``object_pairs_hook`` takes priority.
+    
+        ``parse_float``, if specified, will be called with the string
+        of every JSON float to be decoded. By default this is equivalent to
+        float(num_str). This can be used to use another datatype or parser
+        for JSON floats (e.g. decimal.Decimal).
+    
+        ``parse_int``, if specified, will be called with the string
+        of every JSON int to be decoded. By default this is equivalent to
+        int(num_str). This can be used to use another datatype or parser
+        for JSON integers (e.g. float).
+    
+        ``parse_constant``, if specified, will be called with one of the
+        following strings: -Infinity, Infinity, NaN.
+        This can be used to raise an exception if invalid JSON numbers
+        are encountered.
+    
+        To use a custom ``JSONDecoder`` subclass, specify it with the ``cls``
+        kwarg; otherwise ``JSONDecoder`` is used.
+        """
+        if isinstance(s, str):
+            if s.startswith('\ufeff'):
+                raise JSONDecodeError("Unexpected UTF-8 BOM (decode using utf-8-sig)",
+                                      s, 0)
+        else:
+            if not isinstance(s, (bytes, bytearray)):
+>               raise TypeError(f'the JSON object must be str, bytes or bytearray, '
+                                f'not {s.__class__.__name__}')
+E               TypeError: the JSON object must be str, bytes or bytearray, not TextEvidence
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/json/__init__.py:339: TypeError
+__ test_actual_record_count_and_rows_are_the_only_comparison[linear-mcp-1-0] ___
+
+tracker = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10c48d850>
+tracker_writes = <function tracker_writes.<locals>.<lambda> at 0x10c47cea0>
+count = 0, rows = 1
+
+    @pytest.mark.parametrize("count", [0, 1, 2, 3, 8])
+    @pytest.mark.parametrize("rows", [0, 1, 2])
+    async def test_actual_record_count_and_rows_are_the_only_comparison(
+        tracker, tracker_writes, count, rows
+    ):
+        data = record_data()
+        data["commitsAhead"] = count
+        data["commits"] = data["commits"][:rows]
+        stored = await seed(tracker, data=data)
+        before = tracker_writes()
+        alarm = await observe_commits_ahead_of_record(
+            tracker=tracker, record_ref=stored.comment_key, **arguments()
+        )
+        assert tracker_writes() == before
+        assert (alarm is not None) is (count != rows)
+        if alarm is None:
+            return
+        assert alarm.signal is AlarmSignal.COMMITS_AHEAD_OF_RECORD
+        assert alarm.bound is None
+        assert alarm.subject.lane_key == LANE
+        assert alarm.raised_at_sha == "supervisor/head"
+        assert alarm.raised_by == "supervisor/run"
+>       assert [json.loads(reading.value) for reading in alarm.readings] == [
+                ^^^^^^^^^^^^^^^^^^^^^^^^^
+            LANE,
+            data["headSha"],
+            count,
+            data["commits"],
+        ]
+
+tests/tracker/test_lane_record_signals.py:59: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = TextEvidence(value='lane:alpha', kind='text'), cls = None
+object_hook = None, parse_float = None, parse_int = None, parse_constant = None
+object_pairs_hook = None, kw = {}
+
+    def loads(s, *, cls=None, object_hook=None, parse_float=None,
+            parse_int=None, parse_constant=None, object_pairs_hook=None, **kw):
+        """Deserialize ``s`` (a ``str``, ``bytes`` or ``bytearray`` instance
+        containing a JSON document) to a Python object.
+    
+        ``object_hook`` is an optional function that will be called with the
+        result of any object literal decode (a ``dict``). The return value of
+        ``object_hook`` will be used instead of the ``dict``. This feature
+        can be used to implement custom decoders (e.g. JSON-RPC class hinting).
+    
+        ``object_pairs_hook`` is an optional function that will be called with the
+        result of any object literal decoded with an ordered list of pairs.  The
+        return value of ``object_pairs_hook`` will be used instead of the ``dict``.
+        This feature can be used to implement custom decoders.  If ``object_hook``
+        is also defined, the ``object_pairs_hook`` takes priority.
+    
+        ``parse_float``, if specified, will be called with the string
+        of every JSON float to be decoded. By default this is equivalent to
+        float(num_str). This can be used to use another datatype or parser
+        for JSON floats (e.g. decimal.Decimal).
+    
+        ``parse_int``, if specified, will be called with the string
+        of every JSON int to be decoded. By default this is equivalent to
+        int(num_str). This can be used to use another datatype or parser
+        for JSON integers (e.g. float).
+    
+        ``parse_constant``, if specified, will be called with one of the
+        following strings: -Infinity, Infinity, NaN.
+        This can be used to raise an exception if invalid JSON numbers
+        are encountered.
+    
+        To use a custom ``JSONDecoder`` subclass, specify it with the ``cls``
+        kwarg; otherwise ``JSONDecoder`` is used.
+        """
+        if isinstance(s, str):
+            if s.startswith('\ufeff'):
+                raise JSONDecodeError("Unexpected UTF-8 BOM (decode using utf-8-sig)",
+                                      s, 0)
+        else:
+            if not isinstance(s, (bytes, bytearray)):
+>               raise TypeError(f'the JSON object must be str, bytes or bytearray, '
+                                f'not {s.__class__.__name__}')
+E               TypeError: the JSON object must be str, bytes or bytearray, not TextEvidence
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/json/__init__.py:339: TypeError
+__ test_actual_record_count_and_rows_are_the_only_comparison[linear-mcp-1-2] ___
+
+tracker = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10c5ced80>
+tracker_writes = <function tracker_writes.<locals>.<lambda> at 0x10c47c900>
+count = 2, rows = 1
+
+    @pytest.mark.parametrize("count", [0, 1, 2, 3, 8])
+    @pytest.mark.parametrize("rows", [0, 1, 2])
+    async def test_actual_record_count_and_rows_are_the_only_comparison(
+        tracker, tracker_writes, count, rows
+    ):
+        data = record_data()
+        data["commitsAhead"] = count
+        data["commits"] = data["commits"][:rows]
+        stored = await seed(tracker, data=data)
+        before = tracker_writes()
+        alarm = await observe_commits_ahead_of_record(
+            tracker=tracker, record_ref=stored.comment_key, **arguments()
+        )
+        assert tracker_writes() == before
+        assert (alarm is not None) is (count != rows)
+        if alarm is None:
+            return
+        assert alarm.signal is AlarmSignal.COMMITS_AHEAD_OF_RECORD
+        assert alarm.bound is None
+        assert alarm.subject.lane_key == LANE
+        assert alarm.raised_at_sha == "supervisor/head"
+        assert alarm.raised_by == "supervisor/run"
+>       assert [json.loads(reading.value) for reading in alarm.readings] == [
+                ^^^^^^^^^^^^^^^^^^^^^^^^^
+            LANE,
+            data["headSha"],
+            count,
+            data["commits"],
+        ]
+
+tests/tracker/test_lane_record_signals.py:59: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = TextEvidence(value='lane:alpha', kind='text'), cls = None
+object_hook = None, parse_float = None, parse_int = None, parse_constant = None
+object_pairs_hook = None, kw = {}
+
+    def loads(s, *, cls=None, object_hook=None, parse_float=None,
+            parse_int=None, parse_constant=None, object_pairs_hook=None, **kw):
+        """Deserialize ``s`` (a ``str``, ``bytes`` or ``bytearray`` instance
+        containing a JSON document) to a Python object.
+    
+        ``object_hook`` is an optional function that will be called with the
+        result of any object literal decode (a ``dict``). The return value of
+        ``object_hook`` will be used instead of the ``dict``. This feature
+        can be used to implement custom decoders (e.g. JSON-RPC class hinting).
+    
+        ``object_pairs_hook`` is an optional function that will be called with the
+        result of any object literal decoded with an ordered list of pairs.  The
+        return value of ``object_pairs_hook`` will be used instead of the ``dict``.
+        This feature can be used to implement custom decoders.  If ``object_hook``
+        is also defined, the ``object_pairs_hook`` takes priority.
+    
+        ``parse_float``, if specified, will be called with the string
+        of every JSON float to be decoded. By default this is equivalent to
+        float(num_str). This can be used to use another datatype or parser
+        for JSON floats (e.g. decimal.Decimal).
+    
+        ``parse_int``, if specified, will be called with the string
+        of every JSON int to be decoded. By default this is equivalent to
+        int(num_str). This can be used to use another datatype or parser
+        for JSON integers (e.g. float).
+    
+        ``parse_constant``, if specified, will be called with one of the
+        following strings: -Infinity, Infinity, NaN.
+        This can be used to raise an exception if invalid JSON numbers
+        are encountered.
+    
+        To use a custom ``JSONDecoder`` subclass, specify it with the ``cls``
+        kwarg; otherwise ``JSONDecoder`` is used.
+        """
+        if isinstance(s, str):
+            if s.startswith('\ufeff'):
+                raise JSONDecodeError("Unexpected UTF-8 BOM (decode using utf-8-sig)",
+                                      s, 0)
+        else:
+            if not isinstance(s, (bytes, bytearray)):
+>               raise TypeError(f'the JSON object must be str, bytes or bytearray, '
+                                f'not {s.__class__.__name__}')
+E               TypeError: the JSON object must be str, bytes or bytearray, not TextEvidence
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/json/__init__.py:339: TypeError
+__ test_actual_record_count_and_rows_are_the_only_comparison[linear-mcp-1-3] ___
+
+tracker = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10c5cfce0>
+tracker_writes = <function tracker_writes.<locals>.<lambda> at 0x10c47fd80>
+count = 3, rows = 1
+
+    @pytest.mark.parametrize("count", [0, 1, 2, 3, 8])
+    @pytest.mark.parametrize("rows", [0, 1, 2])
+    async def test_actual_record_count_and_rows_are_the_only_comparison(
+        tracker, tracker_writes, count, rows
+    ):
+        data = record_data()
+        data["commitsAhead"] = count
+        data["commits"] = data["commits"][:rows]
+        stored = await seed(tracker, data=data)
+        before = tracker_writes()
+        alarm = await observe_commits_ahead_of_record(
+            tracker=tracker, record_ref=stored.comment_key, **arguments()
+        )
+        assert tracker_writes() == before
+        assert (alarm is not None) is (count != rows)
+        if alarm is None:
+            return
+        assert alarm.signal is AlarmSignal.COMMITS_AHEAD_OF_RECORD
+        assert alarm.bound is None
+        assert alarm.subject.lane_key == LANE
+        assert alarm.raised_at_sha == "supervisor/head"
+        assert alarm.raised_by == "supervisor/run"
+>       assert [json.loads(reading.value) for reading in alarm.readings] == [
+                ^^^^^^^^^^^^^^^^^^^^^^^^^
+            LANE,
+            data["headSha"],
+            count,
+            data["commits"],
+        ]
+
+tests/tracker/test_lane_record_signals.py:59: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = TextEvidence(value='lane:alpha', kind='text'), cls = None
+object_hook = None, parse_float = None, parse_int = None, parse_constant = None
+object_pairs_hook = None, kw = {}
+
+    def loads(s, *, cls=None, object_hook=None, parse_float=None,
+            parse_int=None, parse_constant=None, object_pairs_hook=None, **kw):
+        """Deserialize ``s`` (a ``str``, ``bytes`` or ``bytearray`` instance
+        containing a JSON document) to a Python object.
+    
+        ``object_hook`` is an optional function that will be called with the
+        result of any object literal decode (a ``dict``). The return value of
+        ``object_hook`` will be used instead of the ``dict``. This feature
+        can be used to implement custom decoders (e.g. JSON-RPC class hinting).
+    
+        ``object_pairs_hook`` is an optional function that will be called with the
+        result of any object literal decoded with an ordered list of pairs.  The
+        return value of ``object_pairs_hook`` will be used instead of the ``dict``.
+        This feature can be used to implement custom decoders.  If ``object_hook``
+        is also defined, the ``object_pairs_hook`` takes priority.
+    
+        ``parse_float``, if specified, will be called with the string
+        of every JSON float to be decoded. By default this is equivalent to
+        float(num_str). This can be used to use another datatype or parser
+        for JSON floats (e.g. decimal.Decimal).
+    
+        ``parse_int``, if specified, will be called with the string
+        of every JSON int to be decoded. By default this is equivalent to
+        int(num_str). This can be used to use another datatype or parser
+        for JSON integers (e.g. float).
+    
+        ``parse_constant``, if specified, will be called with one of the
+        following strings: -Infinity, Infinity, NaN.
+        This can be used to raise an exception if invalid JSON numbers
+        are encountered.
+    
+        To use a custom ``JSONDecoder`` subclass, specify it with the ``cls``
+        kwarg; otherwise ``JSONDecoder`` is used.
+        """
+        if isinstance(s, str):
+            if s.startswith('\ufeff'):
+                raise JSONDecodeError("Unexpected UTF-8 BOM (decode using utf-8-sig)",
+                                      s, 0)
+        else:
+            if not isinstance(s, (bytes, bytearray)):
+>               raise TypeError(f'the JSON object must be str, bytes or bytearray, '
+                                f'not {s.__class__.__name__}')
+E               TypeError: the JSON object must be str, bytes or bytearray, not TextEvidence
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/json/__init__.py:339: TypeError
+__ test_actual_record_count_and_rows_are_the_only_comparison[linear-mcp-1-8] ___
+
+tracker = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10c60d730>
+tracker_writes = <function tracker_writes.<locals>.<lambda> at 0x10c47fce0>
+count = 8, rows = 1
+
+    @pytest.mark.parametrize("count", [0, 1, 2, 3, 8])
+    @pytest.mark.parametrize("rows", [0, 1, 2])
+    async def test_actual_record_count_and_rows_are_the_only_comparison(
+        tracker, tracker_writes, count, rows
+    ):
+        data = record_data()
+        data["commitsAhead"] = count
+        data["commits"] = data["commits"][:rows]
+        stored = await seed(tracker, data=data)
+        before = tracker_writes()
+        alarm = await observe_commits_ahead_of_record(
+            tracker=tracker, record_ref=stored.comment_key, **arguments()
+        )
+        assert tracker_writes() == before
+        assert (alarm is not None) is (count != rows)
+        if alarm is None:
+            return
+        assert alarm.signal is AlarmSignal.COMMITS_AHEAD_OF_RECORD
+        assert alarm.bound is None
+        assert alarm.subject.lane_key == LANE
+        assert alarm.raised_at_sha == "supervisor/head"
+        assert alarm.raised_by == "supervisor/run"
+>       assert [json.loads(reading.value) for reading in alarm.readings] == [
+                ^^^^^^^^^^^^^^^^^^^^^^^^^
+            LANE,
+            data["headSha"],
+            count,
+            data["commits"],
+        ]
+
+tests/tracker/test_lane_record_signals.py:59: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = TextEvidence(value='lane:alpha', kind='text'), cls = None
+object_hook = None, parse_float = None, parse_int = None, parse_constant = None
+object_pairs_hook = None, kw = {}
+
+    def loads(s, *, cls=None, object_hook=None, parse_float=None,
+            parse_int=None, parse_constant=None, object_pairs_hook=None, **kw):
+        """Deserialize ``s`` (a ``str``, ``bytes`` or ``bytearray`` instance
+        containing a JSON document) to a Python object.
+    
+        ``object_hook`` is an optional function that will be called with the
+        result of any object literal decode (a ``dict``). The return value of
+        ``object_hook`` will be used instead of the ``dict``. This feature
+        can be used to implement custom decoders (e.g. JSON-RPC class hinting).
+    
+        ``object_pairs_hook`` is an optional function that will be called with the
+        result of any object literal decoded with an ordered list of pairs.  The
+        return value of ``object_pairs_hook`` will be used instead of the ``dict``.
+        This feature can be used to implement custom decoders.  If ``object_hook``
+        is also defined, the ``object_pairs_hook`` takes priority.
+    
+        ``parse_float``, if specified, will be called with the string
+        of every JSON float to be decoded. By default this is equivalent to
+        float(num_str). This can be used to use another datatype or parser
+        for JSON floats (e.g. decimal.Decimal).
+    
+        ``parse_int``, if specified, will be called with the string
+        of every JSON int to be decoded. By default this is equivalent to
+        int(num_str). This can be used to use another datatype or parser
+        for JSON integers (e.g. float).
+    
+        ``parse_constant``, if specified, will be called with one of the
+        following strings: -Infinity, Infinity, NaN.
+        This can be used to raise an exception if invalid JSON numbers
+        are encountered.
+    
+        To use a custom ``JSONDecoder`` subclass, specify it with the ``cls``
+        kwarg; otherwise ``JSONDecoder`` is used.
+        """
+        if isinstance(s, str):
+            if s.startswith('\ufeff'):
+                raise JSONDecodeError("Unexpected UTF-8 BOM (decode using utf-8-sig)",
+                                      s, 0)
+        else:
+            if not isinstance(s, (bytes, bytearray)):
+>               raise TypeError(f'the JSON object must be str, bytes or bytearray, '
+                                f'not {s.__class__.__name__}')
+E               TypeError: the JSON object must be str, bytes or bytearray, not TextEvidence
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/json/__init__.py:339: TypeError
+__ test_actual_record_count_and_rows_are_the_only_comparison[linear-mcp-2-0] ___
+
+tracker = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10c5cec00>
+tracker_writes = <function tracker_writes.<locals>.<lambda> at 0x10c47dbc0>
+count = 0, rows = 2
+
+    @pytest.mark.parametrize("count", [0, 1, 2, 3, 8])
+    @pytest.mark.parametrize("rows", [0, 1, 2])
+    async def test_actual_record_count_and_rows_are_the_only_comparison(
+        tracker, tracker_writes, count, rows
+    ):
+        data = record_data()
+        data["commitsAhead"] = count
+        data["commits"] = data["commits"][:rows]
+        stored = await seed(tracker, data=data)
+        before = tracker_writes()
+        alarm = await observe_commits_ahead_of_record(
+            tracker=tracker, record_ref=stored.comment_key, **arguments()
+        )
+        assert tracker_writes() == before
+        assert (alarm is not None) is (count != rows)
+        if alarm is None:
+            return
+        assert alarm.signal is AlarmSignal.COMMITS_AHEAD_OF_RECORD
+        assert alarm.bound is None
+        assert alarm.subject.lane_key == LANE
+        assert alarm.raised_at_sha == "supervisor/head"
+        assert alarm.raised_by == "supervisor/run"
+>       assert [json.loads(reading.value) for reading in alarm.readings] == [
+                ^^^^^^^^^^^^^^^^^^^^^^^^^
+            LANE,
+            data["headSha"],
+            count,
+            data["commits"],
+        ]
+
+tests/tracker/test_lane_record_signals.py:59: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = TextEvidence(value='lane:alpha', kind='text'), cls = None
+object_hook = None, parse_float = None, parse_int = None, parse_constant = None
+object_pairs_hook = None, kw = {}
+
+    def loads(s, *, cls=None, object_hook=None, parse_float=None,
+            parse_int=None, parse_constant=None, object_pairs_hook=None, **kw):
+        """Deserialize ``s`` (a ``str``, ``bytes`` or ``bytearray`` instance
+        containing a JSON document) to a Python object.
+    
+        ``object_hook`` is an optional function that will be called with the
+        result of any object literal decode (a ``dict``). The return value of
+        ``object_hook`` will be used instead of the ``dict``. This feature
+        can be used to implement custom decoders (e.g. JSON-RPC class hinting).
+    
+        ``object_pairs_hook`` is an optional function that will be called with the
+        result of any object literal decoded with an ordered list of pairs.  The
+        return value of ``object_pairs_hook`` will be used instead of the ``dict``.
+        This feature can be used to implement custom decoders.  If ``object_hook``
+        is also defined, the ``object_pairs_hook`` takes priority.
+    
+        ``parse_float``, if specified, will be called with the string
+        of every JSON float to be decoded. By default this is equivalent to
+        float(num_str). This can be used to use another datatype or parser
+        for JSON floats (e.g. decimal.Decimal).
+    
+        ``parse_int``, if specified, will be called with the string
+        of every JSON int to be decoded. By default this is equivalent to
+        int(num_str). This can be used to use another datatype or parser
+        for JSON integers (e.g. float).
+    
+        ``parse_constant``, if specified, will be called with one of the
+        following strings: -Infinity, Infinity, NaN.
+        This can be used to raise an exception if invalid JSON numbers
+        are encountered.
+    
+        To use a custom ``JSONDecoder`` subclass, specify it with the ``cls``
+        kwarg; otherwise ``JSONDecoder`` is used.
+        """
+        if isinstance(s, str):
+            if s.startswith('\ufeff'):
+                raise JSONDecodeError("Unexpected UTF-8 BOM (decode using utf-8-sig)",
+                                      s, 0)
+        else:
+            if not isinstance(s, (bytes, bytearray)):
+>               raise TypeError(f'the JSON object must be str, bytes or bytearray, '
+                                f'not {s.__class__.__name__}')
+E               TypeError: the JSON object must be str, bytes or bytearray, not TextEvidence
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/json/__init__.py:339: TypeError
+__ test_actual_record_count_and_rows_are_the_only_comparison[linear-mcp-2-1] ___
+
+tracker = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10c48eba0>
+tracker_writes = <function tracker_writes.<locals>.<lambda> at 0x10c47e660>
+count = 1, rows = 2
+
+    @pytest.mark.parametrize("count", [0, 1, 2, 3, 8])
+    @pytest.mark.parametrize("rows", [0, 1, 2])
+    async def test_actual_record_count_and_rows_are_the_only_comparison(
+        tracker, tracker_writes, count, rows
+    ):
+        data = record_data()
+        data["commitsAhead"] = count
+        data["commits"] = data["commits"][:rows]
+        stored = await seed(tracker, data=data)
+        before = tracker_writes()
+        alarm = await observe_commits_ahead_of_record(
+            tracker=tracker, record_ref=stored.comment_key, **arguments()
+        )
+        assert tracker_writes() == before
+        assert (alarm is not None) is (count != rows)
+        if alarm is None:
+            return
+        assert alarm.signal is AlarmSignal.COMMITS_AHEAD_OF_RECORD
+        assert alarm.bound is None
+        assert alarm.subject.lane_key == LANE
+        assert alarm.raised_at_sha == "supervisor/head"
+        assert alarm.raised_by == "supervisor/run"
+>       assert [json.loads(reading.value) for reading in alarm.readings] == [
+                ^^^^^^^^^^^^^^^^^^^^^^^^^
+            LANE,
+            data["headSha"],
+            count,
+            data["commits"],
+        ]
+
+tests/tracker/test_lane_record_signals.py:59: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = TextEvidence(value='lane:alpha', kind='text'), cls = None
+object_hook = None, parse_float = None, parse_int = None, parse_constant = None
+object_pairs_hook = None, kw = {}
+
+    def loads(s, *, cls=None, object_hook=None, parse_float=None,
+            parse_int=None, parse_constant=None, object_pairs_hook=None, **kw):
+        """Deserialize ``s`` (a ``str``, ``bytes`` or ``bytearray`` instance
+        containing a JSON document) to a Python object.
+    
+        ``object_hook`` is an optional function that will be called with the
+        result of any object literal decode (a ``dict``). The return value of
+        ``object_hook`` will be used instead of the ``dict``. This feature
+        can be used to implement custom decoders (e.g. JSON-RPC class hinting).
+    
+        ``object_pairs_hook`` is an optional function that will be called with the
+        result of any object literal decoded with an ordered list of pairs.  The
+        return value of ``object_pairs_hook`` will be used instead of the ``dict``.
+        This feature can be used to implement custom decoders.  If ``object_hook``
+        is also defined, the ``object_pairs_hook`` takes priority.
+    
+        ``parse_float``, if specified, will be called with the string
+        of every JSON float to be decoded. By default this is equivalent to
+        float(num_str). This can be used to use another datatype or parser
+        for JSON floats (e.g. decimal.Decimal).
+    
+        ``parse_int``, if specified, will be called with the string
+        of every JSON int to be decoded. By default this is equivalent to
+        int(num_str). This can be used to use another datatype or parser
+        for JSON integers (e.g. float).
+    
+        ``parse_constant``, if specified, will be called with one of the
+        following strings: -Infinity, Infinity, NaN.
+        This can be used to raise an exception if invalid JSON numbers
+        are encountered.
+    
+        To use a custom ``JSONDecoder`` subclass, specify it with the ``cls``
+        kwarg; otherwise ``JSONDecoder`` is used.
+        """
+        if isinstance(s, str):
+            if s.startswith('\ufeff'):
+                raise JSONDecodeError("Unexpected UTF-8 BOM (decode using utf-8-sig)",
+                                      s, 0)
+        else:
+            if not isinstance(s, (bytes, bytearray)):
+>               raise TypeError(f'the JSON object must be str, bytes or bytearray, '
+                                f'not {s.__class__.__name__}')
+E               TypeError: the JSON object must be str, bytes or bytearray, not TextEvidence
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/json/__init__.py:339: TypeError
+__ test_actual_record_count_and_rows_are_the_only_comparison[linear-mcp-2-3] ___
+
+tracker = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10c574590>
+tracker_writes = <function tracker_writes.<locals>.<lambda> at 0x10c47fd80>
+count = 3, rows = 2
+
+    @pytest.mark.parametrize("count", [0, 1, 2, 3, 8])
+    @pytest.mark.parametrize("rows", [0, 1, 2])
+    async def test_actual_record_count_and_rows_are_the_only_comparison(
+        tracker, tracker_writes, count, rows
+    ):
+        data = record_data()
+        data["commitsAhead"] = count
+        data["commits"] = data["commits"][:rows]
+        stored = await seed(tracker, data=data)
+        before = tracker_writes()
+        alarm = await observe_commits_ahead_of_record(
+            tracker=tracker, record_ref=stored.comment_key, **arguments()
+        )
+        assert tracker_writes() == before
+        assert (alarm is not None) is (count != rows)
+        if alarm is None:
+            return
+        assert alarm.signal is AlarmSignal.COMMITS_AHEAD_OF_RECORD
+        assert alarm.bound is None
+        assert alarm.subject.lane_key == LANE
+        assert alarm.raised_at_sha == "supervisor/head"
+        assert alarm.raised_by == "supervisor/run"
+>       assert [json.loads(reading.value) for reading in alarm.readings] == [
+                ^^^^^^^^^^^^^^^^^^^^^^^^^
+            LANE,
+            data["headSha"],
+            count,
+            data["commits"],
+        ]
+
+tests/tracker/test_lane_record_signals.py:59: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = TextEvidence(value='lane:alpha', kind='text'), cls = None
+object_hook = None, parse_float = None, parse_int = None, parse_constant = None
+object_pairs_hook = None, kw = {}
+
+    def loads(s, *, cls=None, object_hook=None, parse_float=None,
+            parse_int=None, parse_constant=None, object_pairs_hook=None, **kw):
+        """Deserialize ``s`` (a ``str``, ``bytes`` or ``bytearray`` instance
+        containing a JSON document) to a Python object.
+    
+        ``object_hook`` is an optional function that will be called with the
+        result of any object literal decode (a ``dict``). The return value of
+        ``object_hook`` will be used instead of the ``dict``. This feature
+        can be used to implement custom decoders (e.g. JSON-RPC class hinting).
+    
+        ``object_pairs_hook`` is an optional function that will be called with the
+        result of any object literal decoded with an ordered list of pairs.  The
+        return value of ``object_pairs_hook`` will be used instead of the ``dict``.
+        This feature can be used to implement custom decoders.  If ``object_hook``
+        is also defined, the ``object_pairs_hook`` takes priority.
+    
+        ``parse_float``, if specified, will be called with the string
+        of every JSON float to be decoded. By default this is equivalent to
+        float(num_str). This can be used to use another datatype or parser
+        for JSON floats (e.g. decimal.Decimal).
+    
+        ``parse_int``, if specified, will be called with the string
+        of every JSON int to be decoded. By default this is equivalent to
+        int(num_str). This can be used to use another datatype or parser
+        for JSON integers (e.g. float).
+    
+        ``parse_constant``, if specified, will be called with one of the
+        following strings: -Infinity, Infinity, NaN.
+        This can be used to raise an exception if invalid JSON numbers
+        are encountered.
+    
+        To use a custom ``JSONDecoder`` subclass, specify it with the ``cls``
+        kwarg; otherwise ``JSONDecoder`` is used.
+        """
+        if isinstance(s, str):
+            if s.startswith('\ufeff'):
+                raise JSONDecodeError("Unexpected UTF-8 BOM (decode using utf-8-sig)",
+                                      s, 0)
+        else:
+            if not isinstance(s, (bytes, bytearray)):
+>               raise TypeError(f'the JSON object must be str, bytes or bytearray, '
+                                f'not {s.__class__.__name__}')
+E               TypeError: the JSON object must be str, bytes or bytearray, not TextEvidence
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/json/__init__.py:339: TypeError
+__ test_actual_record_count_and_rows_are_the_only_comparison[linear-mcp-2-8] ___
+
+tracker = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10c60fb30>
+tracker_writes = <function tracker_writes.<locals>.<lambda> at 0x10c47f880>
+count = 8, rows = 2
+
+    @pytest.mark.parametrize("count", [0, 1, 2, 3, 8])
+    @pytest.mark.parametrize("rows", [0, 1, 2])
+    async def test_actual_record_count_and_rows_are_the_only_comparison(
+        tracker, tracker_writes, count, rows
+    ):
+        data = record_data()
+        data["commitsAhead"] = count
+        data["commits"] = data["commits"][:rows]
+        stored = await seed(tracker, data=data)
+        before = tracker_writes()
+        alarm = await observe_commits_ahead_of_record(
+            tracker=tracker, record_ref=stored.comment_key, **arguments()
+        )
+        assert tracker_writes() == before
+        assert (alarm is not None) is (count != rows)
+        if alarm is None:
+            return
+        assert alarm.signal is AlarmSignal.COMMITS_AHEAD_OF_RECORD
+        assert alarm.bound is None
+        assert alarm.subject.lane_key == LANE
+        assert alarm.raised_at_sha == "supervisor/head"
+        assert alarm.raised_by == "supervisor/run"
+>       assert [json.loads(reading.value) for reading in alarm.readings] == [
+                ^^^^^^^^^^^^^^^^^^^^^^^^^
+            LANE,
+            data["headSha"],
+            count,
+            data["commits"],
+        ]
+
+tests/tracker/test_lane_record_signals.py:59: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = TextEvidence(value='lane:alpha', kind='text'), cls = None
+object_hook = None, parse_float = None, parse_int = None, parse_constant = None
+object_pairs_hook = None, kw = {}
+
+    def loads(s, *, cls=None, object_hook=None, parse_float=None,
+            parse_int=None, parse_constant=None, object_pairs_hook=None, **kw):
+        """Deserialize ``s`` (a ``str``, ``bytes`` or ``bytearray`` instance
+        containing a JSON document) to a Python object.
+    
+        ``object_hook`` is an optional function that will be called with the
+        result of any object literal decode (a ``dict``). The return value of
+        ``object_hook`` will be used instead of the ``dict``. This feature
+        can be used to implement custom decoders (e.g. JSON-RPC class hinting).
+    
+        ``object_pairs_hook`` is an optional function that will be called with the
+        result of any object literal decoded with an ordered list of pairs.  The
+        return value of ``object_pairs_hook`` will be used instead of the ``dict``.
+        This feature can be used to implement custom decoders.  If ``object_hook``
+        is also defined, the ``object_pairs_hook`` takes priority.
+    
+        ``parse_float``, if specified, will be called with the string
+        of every JSON float to be decoded. By default this is equivalent to
+        float(num_str). This can be used to use another datatype or parser
+        for JSON floats (e.g. decimal.Decimal).
+    
+        ``parse_int``, if specified, will be called with the string
+        of every JSON int to be decoded. By default this is equivalent to
+        int(num_str). This can be used to use another datatype or parser
+        for JSON integers (e.g. float).
+    
+        ``parse_constant``, if specified, will be called with one of the
+        following strings: -Infinity, Infinity, NaN.
+        This can be used to raise an exception if invalid JSON numbers
+        are encountered.
+    
+        To use a custom ``JSONDecoder`` subclass, specify it with the ``cls``
+        kwarg; otherwise ``JSONDecoder`` is used.
+        """
+        if isinstance(s, str):
+            if s.startswith('\ufeff'):
+                raise JSONDecodeError("Unexpected UTF-8 BOM (decode using utf-8-sig)",
+                                      s, 0)
+        else:
+            if not isinstance(s, (bytes, bytearray)):
+>               raise TypeError(f'the JSON object must be str, bytes or bytearray, '
+                                f'not {s.__class__.__name__}')
+E               TypeError: the JSON object must be str, bytes or bytearray, not TextEvidence
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/json/__init__.py:339: TypeError
+_ test_actual_marker_barrier_zero_partial_and_complete_rosters[native-groom-groomed-body] _
+
+tally = Fixture(tracker=<kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10c61a060>, native=<kodezart.adapte...t_states={}, marker_prefixes={}, repos=[], documents={}, records={}, knowledge={}, endpoints={}, private_surface=None))
+phase = <MandateKind.GROOM: 'groom'>, current = 'groomed', next_key = 'body'
+
+    @pytest.mark.parametrize(
+        "phase,current,next_key",
+        [
+            (MandateKind.GROOM, "groomed", "body"),
+            (MandateKind.TICKET, "body", "criteria"),
+        ],
+    )
+    async def test_actual_marker_barrier_zero_partial_and_complete_rosters(
+        tally, phase, current, next_key
+    ):
+        tally.labels("one", next_key)
+        alarm = await tally.observe(phase=phase)
+        assert alarm is not None
+        assert alarm.subject.scope_key == PROJECT.key
+>       assert json.loads(alarm.readings[3].value) == ["one", "two"]
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/tracker/test_scope_tally.py:132: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = ReferencesEvidence(value=('one', 'two'), kind='references'), cls = None
+object_hook = None, parse_float = None, parse_int = None, parse_constant = None
+object_pairs_hook = None, kw = {}
+
+    def loads(s, *, cls=None, object_hook=None, parse_float=None,
+            parse_int=None, parse_constant=None, object_pairs_hook=None, **kw):
+        """Deserialize ``s`` (a ``str``, ``bytes`` or ``bytearray`` instance
+        containing a JSON document) to a Python object.
+    
+        ``object_hook`` is an optional function that will be called with the
+        result of any object literal decode (a ``dict``). The return value of
+        ``object_hook`` will be used instead of the ``dict``. This feature
+        can be used to implement custom decoders (e.g. JSON-RPC class hinting).
+    
+        ``object_pairs_hook`` is an optional function that will be called with the
+        result of any object literal decoded with an ordered list of pairs.  The
+        return value of ``object_pairs_hook`` will be used instead of the ``dict``.
+        This feature can be used to implement custom decoders.  If ``object_hook``
+        is also defined, the ``object_pairs_hook`` takes priority.
+    
+        ``parse_float``, if specified, will be called with the string
+        of every JSON float to be decoded. By default this is equivalent to
+        float(num_str). This can be used to use another datatype or parser
+        for JSON floats (e.g. decimal.Decimal).
+    
+        ``parse_int``, if specified, will be called with the string
+        of every JSON int to be decoded. By default this is equivalent to
+        int(num_str). This can be used to use another datatype or parser
+        for JSON integers (e.g. float).
+    
+        ``parse_constant``, if specified, will be called with one of the
+        following strings: -Infinity, Infinity, NaN.
+        This can be used to raise an exception if invalid JSON numbers
+        are encountered.
+    
+        To use a custom ``JSONDecoder`` subclass, specify it with the ``cls``
+        kwarg; otherwise ``JSONDecoder`` is used.
+        """
+        if isinstance(s, str):
+            if s.startswith('\ufeff'):
+                raise JSONDecodeError("Unexpected UTF-8 BOM (decode using utf-8-sig)",
+                                      s, 0)
+        else:
+            if not isinstance(s, (bytes, bytearray)):
+>               raise TypeError(f'the JSON object must be str, bytes or bytearray, '
+                                f'not {s.__class__.__name__}')
+E               TypeError: the JSON object must be str, bytes or bytearray, not ReferencesEvidence
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/json/__init__.py:339: TypeError
+_ test_actual_marker_barrier_zero_partial_and_complete_rosters[native-ticket-body-criteria] _
+
+tally = Fixture(tracker=<kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10c60c1a0>, native=<kodezart.adapte...t_states={}, marker_prefixes={}, repos=[], documents={}, records={}, knowledge={}, endpoints={}, private_surface=None))
+phase = <MandateKind.TICKET: 'ticket'>, current = 'body', next_key = 'criteria'
+
+    @pytest.mark.parametrize(
+        "phase,current,next_key",
+        [
+            (MandateKind.GROOM, "groomed", "body"),
+            (MandateKind.TICKET, "body", "criteria"),
+        ],
+    )
+    async def test_actual_marker_barrier_zero_partial_and_complete_rosters(
+        tally, phase, current, next_key
+    ):
+        tally.labels("one", next_key)
+        alarm = await tally.observe(phase=phase)
+        assert alarm is not None
+        assert alarm.subject.scope_key == PROJECT.key
+>       assert json.loads(alarm.readings[3].value) == ["one", "two"]
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/tracker/test_scope_tally.py:132: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = ReferencesEvidence(value=('one', 'two'), kind='references'), cls = None
+object_hook = None, parse_float = None, parse_int = None, parse_constant = None
+object_pairs_hook = None, kw = {}
+
+    def loads(s, *, cls=None, object_hook=None, parse_float=None,
+            parse_int=None, parse_constant=None, object_pairs_hook=None, **kw):
+        """Deserialize ``s`` (a ``str``, ``bytes`` or ``bytearray`` instance
+        containing a JSON document) to a Python object.
+    
+        ``object_hook`` is an optional function that will be called with the
+        result of any object literal decode (a ``dict``). The return value of
+        ``object_hook`` will be used instead of the ``dict``. This feature
+        can be used to implement custom decoders (e.g. JSON-RPC class hinting).
+    
+        ``object_pairs_hook`` is an optional function that will be called with the
+        result of any object literal decoded with an ordered list of pairs.  The
+        return value of ``object_pairs_hook`` will be used instead of the ``dict``.
+        This feature can be used to implement custom decoders.  If ``object_hook``
+        is also defined, the ``object_pairs_hook`` takes priority.
+    
+        ``parse_float``, if specified, will be called with the string
+        of every JSON float to be decoded. By default this is equivalent to
+        float(num_str). This can be used to use another datatype or parser
+        for JSON floats (e.g. decimal.Decimal).
+    
+        ``parse_int``, if specified, will be called with the string
+        of every JSON int to be decoded. By default this is equivalent to
+        int(num_str). This can be used to use another datatype or parser
+        for JSON integers (e.g. float).
+    
+        ``parse_constant``, if specified, will be called with one of the
+        following strings: -Infinity, Infinity, NaN.
+        This can be used to raise an exception if invalid JSON numbers
+        are encountered.
+    
+        To use a custom ``JSONDecoder`` subclass, specify it with the ``cls``
+        kwarg; otherwise ``JSONDecoder`` is used.
+        """
+        if isinstance(s, str):
+            if s.startswith('\ufeff'):
+                raise JSONDecodeError("Unexpected UTF-8 BOM (decode using utf-8-sig)",
+                                      s, 0)
+        else:
+            if not isinstance(s, (bytes, bytearray)):
+>               raise TypeError(f'the JSON object must be str, bytes or bytearray, '
+                                f'not {s.__class__.__name__}')
+E               TypeError: the JSON object must be str, bytes or bytearray, not ReferencesEvidence
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/json/__init__.py:339: TypeError
+_ test_actual_marker_barrier_zero_partial_and_complete_rosters[fake-groom-groomed-body] _
+
+tally = Fixture(tracker=<tests.fakes.FakeTrackerPort object at 0x10c3af1a0>, native=<kodezart.adapters.linear_mcp_tracker.Line...t_states={}, marker_prefixes={}, repos=[], documents={}, records={}, knowledge={}, endpoints={}, private_surface=None))
+phase = <MandateKind.GROOM: 'groom'>, current = 'groomed', next_key = 'body'
+
+    @pytest.mark.parametrize(
+        "phase,current,next_key",
+        [
+            (MandateKind.GROOM, "groomed", "body"),
+            (MandateKind.TICKET, "body", "criteria"),
+        ],
+    )
+    async def test_actual_marker_barrier_zero_partial_and_complete_rosters(
+        tally, phase, current, next_key
+    ):
+        tally.labels("one", next_key)
+        alarm = await tally.observe(phase=phase)
+        assert alarm is not None
+        assert alarm.subject.scope_key == PROJECT.key
+>       assert json.loads(alarm.readings[3].value) == ["one", "two"]
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/tracker/test_scope_tally.py:132: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = ReferencesEvidence(value=('one', 'two'), kind='references'), cls = None
+object_hook = None, parse_float = None, parse_int = None, parse_constant = None
+object_pairs_hook = None, kw = {}
+
+    def loads(s, *, cls=None, object_hook=None, parse_float=None,
+            parse_int=None, parse_constant=None, object_pairs_hook=None, **kw):
+        """Deserialize ``s`` (a ``str``, ``bytes`` or ``bytearray`` instance
+        containing a JSON document) to a Python object.
+    
+        ``object_hook`` is an optional function that will be called with the
+        result of any object literal decode (a ``dict``). The return value of
+        ``object_hook`` will be used instead of the ``dict``. This feature
+        can be used to implement custom decoders (e.g. JSON-RPC class hinting).
+    
+        ``object_pairs_hook`` is an optional function that will be called with the
+        result of any object literal decoded with an ordered list of pairs.  The
+        return value of ``object_pairs_hook`` will be used instead of the ``dict``.
+        This feature can be used to implement custom decoders.  If ``object_hook``
+        is also defined, the ``object_pairs_hook`` takes priority.
+    
+        ``parse_float``, if specified, will be called with the string
+        of every JSON float to be decoded. By default this is equivalent to
+        float(num_str). This can be used to use another datatype or parser
+        for JSON floats (e.g. decimal.Decimal).
+    
+        ``parse_int``, if specified, will be called with the string
+        of every JSON int to be decoded. By default this is equivalent to
+        int(num_str). This can be used to use another datatype or parser
+        for JSON integers (e.g. float).
+    
+        ``parse_constant``, if specified, will be called with one of the
+        following strings: -Infinity, Infinity, NaN.
+        This can be used to raise an exception if invalid JSON numbers
+        are encountered.
+    
+        To use a custom ``JSONDecoder`` subclass, specify it with the ``cls``
+        kwarg; otherwise ``JSONDecoder`` is used.
+        """
+        if isinstance(s, str):
+            if s.startswith('\ufeff'):
+                raise JSONDecodeError("Unexpected UTF-8 BOM (decode using utf-8-sig)",
+                                      s, 0)
+        else:
+            if not isinstance(s, (bytes, bytearray)):
+>               raise TypeError(f'the JSON object must be str, bytes or bytearray, '
+                                f'not {s.__class__.__name__}')
+E               TypeError: the JSON object must be str, bytes or bytearray, not ReferencesEvidence
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/json/__init__.py:339: TypeError
+_ test_actual_marker_barrier_zero_partial_and_complete_rosters[fake-ticket-body-criteria] _
+
+tally = Fixture(tracker=<tests.fakes.FakeTrackerPort object at 0x10c48c590>, native=<kodezart.adapters.linear_mcp_tracker.Line...t_states={}, marker_prefixes={}, repos=[], documents={}, records={}, knowledge={}, endpoints={}, private_surface=None))
+phase = <MandateKind.TICKET: 'ticket'>, current = 'body', next_key = 'criteria'
+
+    @pytest.mark.parametrize(
+        "phase,current,next_key",
+        [
+            (MandateKind.GROOM, "groomed", "body"),
+            (MandateKind.TICKET, "body", "criteria"),
+        ],
+    )
+    async def test_actual_marker_barrier_zero_partial_and_complete_rosters(
+        tally, phase, current, next_key
+    ):
+        tally.labels("one", next_key)
+        alarm = await tally.observe(phase=phase)
+        assert alarm is not None
+        assert alarm.subject.scope_key == PROJECT.key
+>       assert json.loads(alarm.readings[3].value) == ["one", "two"]
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/tracker/test_scope_tally.py:132: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = ReferencesEvidence(value=('one', 'two'), kind='references'), cls = None
+object_hook = None, parse_float = None, parse_int = None, parse_constant = None
+object_pairs_hook = None, kw = {}
+
+    def loads(s, *, cls=None, object_hook=None, parse_float=None,
+            parse_int=None, parse_constant=None, object_pairs_hook=None, **kw):
+        """Deserialize ``s`` (a ``str``, ``bytes`` or ``bytearray`` instance
+        containing a JSON document) to a Python object.
+    
+        ``object_hook`` is an optional function that will be called with the
+        result of any object literal decode (a ``dict``). The return value of
+        ``object_hook`` will be used instead of the ``dict``. This feature
+        can be used to implement custom decoders (e.g. JSON-RPC class hinting).
+    
+        ``object_pairs_hook`` is an optional function that will be called with the
+        result of any object literal decoded with an ordered list of pairs.  The
+        return value of ``object_pairs_hook`` will be used instead of the ``dict``.
+        This feature can be used to implement custom decoders.  If ``object_hook``
+        is also defined, the ``object_pairs_hook`` takes priority.
+    
+        ``parse_float``, if specified, will be called with the string
+        of every JSON float to be decoded. By default this is equivalent to
+        float(num_str). This can be used to use another datatype or parser
+        for JSON floats (e.g. decimal.Decimal).
+    
+        ``parse_int``, if specified, will be called with the string
+        of every JSON int to be decoded. By default this is equivalent to
+        int(num_str). This can be used to use another datatype or parser
+        for JSON integers (e.g. float).
+    
+        ``parse_constant``, if specified, will be called with one of the
+        following strings: -Infinity, Infinity, NaN.
+        This can be used to raise an exception if invalid JSON numbers
+        are encountered.
+    
+        To use a custom ``JSONDecoder`` subclass, specify it with the ``cls``
+        kwarg; otherwise ``JSONDecoder`` is used.
+        """
+        if isinstance(s, str):
+            if s.startswith('\ufeff'):
+                raise JSONDecodeError("Unexpected UTF-8 BOM (decode using utf-8-sig)",
+                                      s, 0)
+        else:
+            if not isinstance(s, (bytes, bytearray)):
+>               raise TypeError(f'the JSON object must be str, bytes or bytearray, '
+                                f'not {s.__class__.__name__}')
+E               TypeError: the JSON object must be str, bytes or bytearray, not ReferencesEvidence
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/json/__init__.py:339: TypeError
+__ test_record_classification_does_not_prune_deliverable_descendants[native] ___
+
+tally = Fixture(tracker=<kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10c5fe3f0>, native=<kodezart.adapte...t_states={}, marker_prefixes={}, repos=[], documents={}, records={}, knowledge={}, endpoints={}, private_surface=None))
+
+    async def test_record_classification_does_not_prune_deliverable_descendants(tally):
+        tally.server.issues["one"].parent_id = "record"
+        tally.fake.issues["one"] = tally.fake.issues["one"].model_copy(
+            update={"parent_key": "record"}
+        )
+        tally.labels("one", "criteria")
+        alarm = await tally.observe()
+        assert alarm is not None
+>       assert json.loads(alarm.readings[3].value) == ["one", "two"]
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/tracker/test_scope_tally.py:177: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = ReferencesEvidence(value=('one', 'two'), kind='references'), cls = None
+object_hook = None, parse_float = None, parse_int = None, parse_constant = None
+object_pairs_hook = None, kw = {}
+
+    def loads(s, *, cls=None, object_hook=None, parse_float=None,
+            parse_int=None, parse_constant=None, object_pairs_hook=None, **kw):
+        """Deserialize ``s`` (a ``str``, ``bytes`` or ``bytearray`` instance
+        containing a JSON document) to a Python object.
+    
+        ``object_hook`` is an optional function that will be called with the
+        result of any object literal decode (a ``dict``). The return value of
+        ``object_hook`` will be used instead of the ``dict``. This feature
+        can be used to implement custom decoders (e.g. JSON-RPC class hinting).
+    
+        ``object_pairs_hook`` is an optional function that will be called with the
+        result of any object literal decoded with an ordered list of pairs.  The
+        return value of ``object_pairs_hook`` will be used instead of the ``dict``.
+        This feature can be used to implement custom decoders.  If ``object_hook``
+        is also defined, the ``object_pairs_hook`` takes priority.
+    
+        ``parse_float``, if specified, will be called with the string
+        of every JSON float to be decoded. By default this is equivalent to
+        float(num_str). This can be used to use another datatype or parser
+        for JSON floats (e.g. decimal.Decimal).
+    
+        ``parse_int``, if specified, will be called with the string
+        of every JSON int to be decoded. By default this is equivalent to
+        int(num_str). This can be used to use another datatype or parser
+        for JSON integers (e.g. float).
+    
+        ``parse_constant``, if specified, will be called with one of the
+        following strings: -Infinity, Infinity, NaN.
+        This can be used to raise an exception if invalid JSON numbers
+        are encountered.
+    
+        To use a custom ``JSONDecoder`` subclass, specify it with the ``cls``
+        kwarg; otherwise ``JSONDecoder`` is used.
+        """
+        if isinstance(s, str):
+            if s.startswith('\ufeff'):
+                raise JSONDecodeError("Unexpected UTF-8 BOM (decode using utf-8-sig)",
+                                      s, 0)
+        else:
+            if not isinstance(s, (bytes, bytearray)):
+>               raise TypeError(f'the JSON object must be str, bytes or bytearray, '
+                                f'not {s.__class__.__name__}')
+E               TypeError: the JSON object must be str, bytes or bytearray, not ReferencesEvidence
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/json/__init__.py:339: TypeError
+___ test_record_classification_does_not_prune_deliverable_descendants[fake] ____
+
+tally = Fixture(tracker=<tests.fakes.FakeTrackerPort object at 0x10c5ff7a0>, native=<kodezart.adapters.linear_mcp_tracker.Line...t_states={}, marker_prefixes={}, repos=[], documents={}, records={}, knowledge={}, endpoints={}, private_surface=None))
+
+    async def test_record_classification_does_not_prune_deliverable_descendants(tally):
+        tally.server.issues["one"].parent_id = "record"
+        tally.fake.issues["one"] = tally.fake.issues["one"].model_copy(
+            update={"parent_key": "record"}
+        )
+        tally.labels("one", "criteria")
+        alarm = await tally.observe()
+        assert alarm is not None
+>       assert json.loads(alarm.readings[3].value) == ["one", "two"]
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/tracker/test_scope_tally.py:177: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = ReferencesEvidence(value=('one', 'two'), kind='references'), cls = None
+object_hook = None, parse_float = None, parse_int = None, parse_constant = None
+object_pairs_hook = None, kw = {}
+
+    def loads(s, *, cls=None, object_hook=None, parse_float=None,
+            parse_int=None, parse_constant=None, object_pairs_hook=None, **kw):
+        """Deserialize ``s`` (a ``str``, ``bytes`` or ``bytearray`` instance
+        containing a JSON document) to a Python object.
+    
+        ``object_hook`` is an optional function that will be called with the
+        result of any object literal decode (a ``dict``). The return value of
+        ``object_hook`` will be used instead of the ``dict``. This feature
+        can be used to implement custom decoders (e.g. JSON-RPC class hinting).
+    
+        ``object_pairs_hook`` is an optional function that will be called with the
+        result of any object literal decoded with an ordered list of pairs.  The
+        return value of ``object_pairs_hook`` will be used instead of the ``dict``.
+        This feature can be used to implement custom decoders.  If ``object_hook``
+        is also defined, the ``object_pairs_hook`` takes priority.
+    
+        ``parse_float``, if specified, will be called with the string
+        of every JSON float to be decoded. By default this is equivalent to
+        float(num_str). This can be used to use another datatype or parser
+        for JSON floats (e.g. decimal.Decimal).
+    
+        ``parse_int``, if specified, will be called with the string
+        of every JSON int to be decoded. By default this is equivalent to
+        int(num_str). This can be used to use another datatype or parser
+        for JSON integers (e.g. float).
+    
+        ``parse_constant``, if specified, will be called with one of the
+        following strings: -Infinity, Infinity, NaN.
+        This can be used to raise an exception if invalid JSON numbers
+        are encountered.
+    
+        To use a custom ``JSONDecoder`` subclass, specify it with the ``cls``
+        kwarg; otherwise ``JSONDecoder`` is used.
+        """
+        if isinstance(s, str):
+            if s.startswith('\ufeff'):
+                raise JSONDecodeError("Unexpected UTF-8 BOM (decode using utf-8-sig)",
+                                      s, 0)
+        else:
+            if not isinstance(s, (bytes, bytearray)):
+>               raise TypeError(f'the JSON object must be str, bytes or bytearray, '
+                                f'not {s.__class__.__name__}')
+E               TypeError: the JSON object must be str, bytes or bytearray, not ReferencesEvidence
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/json/__init__.py:339: TypeError
+_ test_native_scope_addresses_and_milestone_query_are_preserved[native-scope0] _
+
+tally = Fixture(tracker=<kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10c61bd40>, native=<kodezart.adapte...t_states={}, marker_prefixes={}, repos=[], documents={}, records={}, knowledge={}, endpoints={}, private_surface=None))
+scope = ScopeRef(kind=<ScopeKind.PROJECT: 'project'>, key='project-one')
+
+    @pytest.mark.parametrize("scope", [PROJECT, MILESTONE, INITIATIVE])
+    async def test_native_scope_addresses_and_milestone_query_are_preserved(tally, scope):
+        tally.labels("one", "criteria")
+        alarm = await tally.observe(scope=scope)
+        assert alarm is not None
+        assert alarm.subject.scope_key == scope.key
+>       assert json.loads(alarm.readings[2].value)["kind"] == scope.kind.value
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/tracker/test_scope_tally.py:187: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = ScopeEvidence(value=ScopeRef(kind=<ScopeKind.PROJECT: 'project'>, key='project-one'), kind='scope')
+cls = None, object_hook = None, parse_float = None, parse_int = None
+parse_constant = None, object_pairs_hook = None, kw = {}
+
+    def loads(s, *, cls=None, object_hook=None, parse_float=None,
+            parse_int=None, parse_constant=None, object_pairs_hook=None, **kw):
+        """Deserialize ``s`` (a ``str``, ``bytes`` or ``bytearray`` instance
+        containing a JSON document) to a Python object.
+    
+        ``object_hook`` is an optional function that will be called with the
+        result of any object literal decode (a ``dict``). The return value of
+        ``object_hook`` will be used instead of the ``dict``. This feature
+        can be used to implement custom decoders (e.g. JSON-RPC class hinting).
+    
+        ``object_pairs_hook`` is an optional function that will be called with the
+        result of any object literal decoded with an ordered list of pairs.  The
+        return value of ``object_pairs_hook`` will be used instead of the ``dict``.
+        This feature can be used to implement custom decoders.  If ``object_hook``
+        is also defined, the ``object_pairs_hook`` takes priority.
+    
+        ``parse_float``, if specified, will be called with the string
+        of every JSON float to be decoded. By default this is equivalent to
+        float(num_str). This can be used to use another datatype or parser
+        for JSON floats (e.g. decimal.Decimal).
+    
+        ``parse_int``, if specified, will be called with the string
+        of every JSON int to be decoded. By default this is equivalent to
+        int(num_str). This can be used to use another datatype or parser
+        for JSON integers (e.g. float).
+    
+        ``parse_constant``, if specified, will be called with one of the
+        following strings: -Infinity, Infinity, NaN.
+        This can be used to raise an exception if invalid JSON numbers
+        are encountered.
+    
+        To use a custom ``JSONDecoder`` subclass, specify it with the ``cls``
+        kwarg; otherwise ``JSONDecoder`` is used.
+        """
+        if isinstance(s, str):
+            if s.startswith('\ufeff'):
+                raise JSONDecodeError("Unexpected UTF-8 BOM (decode using utf-8-sig)",
+                                      s, 0)
+        else:
+            if not isinstance(s, (bytes, bytearray)):
+>               raise TypeError(f'the JSON object must be str, bytes or bytearray, '
+                                f'not {s.__class__.__name__}')
+E               TypeError: the JSON object must be str, bytes or bytearray, not ScopeEvidence
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/json/__init__.py:339: TypeError
+_ test_native_scope_addresses_and_milestone_query_are_preserved[native-scope1] _
+
+tally = Fixture(tracker=<kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10c42d220>, native=<kodezart.adapte...t_states={}, marker_prefixes={}, repos=[], documents={}, records={}, knowledge={}, endpoints={}, private_surface=None))
+scope = ScopeRef(kind=<ScopeKind.MILESTONE: 'milestone'>, key='milestone-one')
+
+    @pytest.mark.parametrize("scope", [PROJECT, MILESTONE, INITIATIVE])
+    async def test_native_scope_addresses_and_milestone_query_are_preserved(tally, scope):
+        tally.labels("one", "criteria")
+        alarm = await tally.observe(scope=scope)
+        assert alarm is not None
+        assert alarm.subject.scope_key == scope.key
+>       assert json.loads(alarm.readings[2].value)["kind"] == scope.kind.value
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/tracker/test_scope_tally.py:187: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = ScopeEvidence(value=ScopeRef(kind=<ScopeKind.MILESTONE: 'milestone'>, key='milestone-one'), kind='scope')
+cls = None, object_hook = None, parse_float = None, parse_int = None
+parse_constant = None, object_pairs_hook = None, kw = {}
+
+    def loads(s, *, cls=None, object_hook=None, parse_float=None,
+            parse_int=None, parse_constant=None, object_pairs_hook=None, **kw):
+        """Deserialize ``s`` (a ``str``, ``bytes`` or ``bytearray`` instance
+        containing a JSON document) to a Python object.
+    
+        ``object_hook`` is an optional function that will be called with the
+        result of any object literal decode (a ``dict``). The return value of
+        ``object_hook`` will be used instead of the ``dict``. This feature
+        can be used to implement custom decoders (e.g. JSON-RPC class hinting).
+    
+        ``object_pairs_hook`` is an optional function that will be called with the
+        result of any object literal decoded with an ordered list of pairs.  The
+        return value of ``object_pairs_hook`` will be used instead of the ``dict``.
+        This feature can be used to implement custom decoders.  If ``object_hook``
+        is also defined, the ``object_pairs_hook`` takes priority.
+    
+        ``parse_float``, if specified, will be called with the string
+        of every JSON float to be decoded. By default this is equivalent to
+        float(num_str). This can be used to use another datatype or parser
+        for JSON floats (e.g. decimal.Decimal).
+    
+        ``parse_int``, if specified, will be called with the string
+        of every JSON int to be decoded. By default this is equivalent to
+        int(num_str). This can be used to use another datatype or parser
+        for JSON integers (e.g. float).
+    
+        ``parse_constant``, if specified, will be called with one of the
+        following strings: -Infinity, Infinity, NaN.
+        This can be used to raise an exception if invalid JSON numbers
+        are encountered.
+    
+        To use a custom ``JSONDecoder`` subclass, specify it with the ``cls``
+        kwarg; otherwise ``JSONDecoder`` is used.
+        """
+        if isinstance(s, str):
+            if s.startswith('\ufeff'):
+                raise JSONDecodeError("Unexpected UTF-8 BOM (decode using utf-8-sig)",
+                                      s, 0)
+        else:
+            if not isinstance(s, (bytes, bytearray)):
+>               raise TypeError(f'the JSON object must be str, bytes or bytearray, '
+                                f'not {s.__class__.__name__}')
+E               TypeError: the JSON object must be str, bytes or bytearray, not ScopeEvidence
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/json/__init__.py:339: TypeError
+_ test_native_scope_addresses_and_milestone_query_are_preserved[native-scope2] _
+
+tally = Fixture(tracker=<kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10c361580>, native=<kodezart.adapte...t_states={}, marker_prefixes={}, repos=[], documents={}, records={}, knowledge={}, endpoints={}, private_surface=None))
+scope = ScopeRef(kind=<ScopeKind.INITIATIVE: 'initiative'>, key='initiative-one')
+
+    @pytest.mark.parametrize("scope", [PROJECT, MILESTONE, INITIATIVE])
+    async def test_native_scope_addresses_and_milestone_query_are_preserved(tally, scope):
+        tally.labels("one", "criteria")
+        alarm = await tally.observe(scope=scope)
+        assert alarm is not None
+        assert alarm.subject.scope_key == scope.key
+>       assert json.loads(alarm.readings[2].value)["kind"] == scope.kind.value
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/tracker/test_scope_tally.py:187: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = ScopeEvidence(value=ScopeRef(kind=<ScopeKind.INITIATIVE: 'initiative'>, key='initiative-one'), kind='scope')
+cls = None, object_hook = None, parse_float = None, parse_int = None
+parse_constant = None, object_pairs_hook = None, kw = {}
+
+    def loads(s, *, cls=None, object_hook=None, parse_float=None,
+            parse_int=None, parse_constant=None, object_pairs_hook=None, **kw):
+        """Deserialize ``s`` (a ``str``, ``bytes`` or ``bytearray`` instance
+        containing a JSON document) to a Python object.
+    
+        ``object_hook`` is an optional function that will be called with the
+        result of any object literal decode (a ``dict``). The return value of
+        ``object_hook`` will be used instead of the ``dict``. This feature
+        can be used to implement custom decoders (e.g. JSON-RPC class hinting).
+    
+        ``object_pairs_hook`` is an optional function that will be called with the
+        result of any object literal decoded with an ordered list of pairs.  The
+        return value of ``object_pairs_hook`` will be used instead of the ``dict``.
+        This feature can be used to implement custom decoders.  If ``object_hook``
+        is also defined, the ``object_pairs_hook`` takes priority.
+    
+        ``parse_float``, if specified, will be called with the string
+        of every JSON float to be decoded. By default this is equivalent to
+        float(num_str). This can be used to use another datatype or parser
+        for JSON floats (e.g. decimal.Decimal).
+    
+        ``parse_int``, if specified, will be called with the string
+        of every JSON int to be decoded. By default this is equivalent to
+        int(num_str). This can be used to use another datatype or parser
+        for JSON integers (e.g. float).
+    
+        ``parse_constant``, if specified, will be called with one of the
+        following strings: -Infinity, Infinity, NaN.
+        This can be used to raise an exception if invalid JSON numbers
+        are encountered.
+    
+        To use a custom ``JSONDecoder`` subclass, specify it with the ``cls``
+        kwarg; otherwise ``JSONDecoder`` is used.
+        """
+        if isinstance(s, str):
+            if s.startswith('\ufeff'):
+                raise JSONDecodeError("Unexpected UTF-8 BOM (decode using utf-8-sig)",
+                                      s, 0)
+        else:
+            if not isinstance(s, (bytes, bytearray)):
+>               raise TypeError(f'the JSON object must be str, bytes or bytearray, '
+                                f'not {s.__class__.__name__}')
+E               TypeError: the JSON object must be str, bytes or bytearray, not ScopeEvidence
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/json/__init__.py:339: TypeError
+__ test_native_scope_addresses_and_milestone_query_are_preserved[fake-scope0] __
+
+tally = Fixture(tracker=<tests.fakes.FakeTrackerPort object at 0x10c5fc530>, native=<kodezart.adapters.linear_mcp_tracker.Line...t_states={}, marker_prefixes={}, repos=[], documents={}, records={}, knowledge={}, endpoints={}, private_surface=None))
+scope = ScopeRef(kind=<ScopeKind.PROJECT: 'project'>, key='project-one')
+
+    @pytest.mark.parametrize("scope", [PROJECT, MILESTONE, INITIATIVE])
+    async def test_native_scope_addresses_and_milestone_query_are_preserved(tally, scope):
+        tally.labels("one", "criteria")
+        alarm = await tally.observe(scope=scope)
+        assert alarm is not None
+        assert alarm.subject.scope_key == scope.key
+>       assert json.loads(alarm.readings[2].value)["kind"] == scope.kind.value
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/tracker/test_scope_tally.py:187: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = ScopeEvidence(value=ScopeRef(kind=<ScopeKind.PROJECT: 'project'>, key='project-one'), kind='scope')
+cls = None, object_hook = None, parse_float = None, parse_int = None
+parse_constant = None, object_pairs_hook = None, kw = {}
+
+    def loads(s, *, cls=None, object_hook=None, parse_float=None,
+            parse_int=None, parse_constant=None, object_pairs_hook=None, **kw):
+        """Deserialize ``s`` (a ``str``, ``bytes`` or ``bytearray`` instance
+        containing a JSON document) to a Python object.
+    
+        ``object_hook`` is an optional function that will be called with the
+        result of any object literal decode (a ``dict``). The return value of
+        ``object_hook`` will be used instead of the ``dict``. This feature
+        can be used to implement custom decoders (e.g. JSON-RPC class hinting).
+    
+        ``object_pairs_hook`` is an optional function that will be called with the
+        result of any object literal decoded with an ordered list of pairs.  The
+        return value of ``object_pairs_hook`` will be used instead of the ``dict``.
+        This feature can be used to implement custom decoders.  If ``object_hook``
+        is also defined, the ``object_pairs_hook`` takes priority.
+    
+        ``parse_float``, if specified, will be called with the string
+        of every JSON float to be decoded. By default this is equivalent to
+        float(num_str). This can be used to use another datatype or parser
+        for JSON floats (e.g. decimal.Decimal).
+    
+        ``parse_int``, if specified, will be called with the string
+        of every JSON int to be decoded. By default this is equivalent to
+        int(num_str). This can be used to use another datatype or parser
+        for JSON integers (e.g. float).
+    
+        ``parse_constant``, if specified, will be called with one of the
+        following strings: -Infinity, Infinity, NaN.
+        This can be used to raise an exception if invalid JSON numbers
+        are encountered.
+    
+        To use a custom ``JSONDecoder`` subclass, specify it with the ``cls``
+        kwarg; otherwise ``JSONDecoder`` is used.
+        """
+        if isinstance(s, str):
+            if s.startswith('\ufeff'):
+                raise JSONDecodeError("Unexpected UTF-8 BOM (decode using utf-8-sig)",
+                                      s, 0)
+        else:
+            if not isinstance(s, (bytes, bytearray)):
+>               raise TypeError(f'the JSON object must be str, bytes or bytearray, '
+                                f'not {s.__class__.__name__}')
+E               TypeError: the JSON object must be str, bytes or bytearray, not ScopeEvidence
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/json/__init__.py:339: TypeError
+__ test_native_scope_addresses_and_milestone_query_are_preserved[fake-scope1] __
+
+tally = Fixture(tracker=<tests.fakes.FakeTrackerPort object at 0x10c5fc5c0>, native=<kodezart.adapters.linear_mcp_tracker.Line...t_states={}, marker_prefixes={}, repos=[], documents={}, records={}, knowledge={}, endpoints={}, private_surface=None))
+scope = ScopeRef(kind=<ScopeKind.MILESTONE: 'milestone'>, key='milestone-one')
+
+    @pytest.mark.parametrize("scope", [PROJECT, MILESTONE, INITIATIVE])
+    async def test_native_scope_addresses_and_milestone_query_are_preserved(tally, scope):
+        tally.labels("one", "criteria")
+        alarm = await tally.observe(scope=scope)
+        assert alarm is not None
+        assert alarm.subject.scope_key == scope.key
+>       assert json.loads(alarm.readings[2].value)["kind"] == scope.kind.value
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/tracker/test_scope_tally.py:187: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = ScopeEvidence(value=ScopeRef(kind=<ScopeKind.MILESTONE: 'milestone'>, key='milestone-one'), kind='scope')
+cls = None, object_hook = None, parse_float = None, parse_int = None
+parse_constant = None, object_pairs_hook = None, kw = {}
+
+    def loads(s, *, cls=None, object_hook=None, parse_float=None,
+            parse_int=None, parse_constant=None, object_pairs_hook=None, **kw):
+        """Deserialize ``s`` (a ``str``, ``bytes`` or ``bytearray`` instance
+        containing a JSON document) to a Python object.
+    
+        ``object_hook`` is an optional function that will be called with the
+        result of any object literal decode (a ``dict``). The return value of
+        ``object_hook`` will be used instead of the ``dict``. This feature
+        can be used to implement custom decoders (e.g. JSON-RPC class hinting).
+    
+        ``object_pairs_hook`` is an optional function that will be called with the
+        result of any object literal decoded with an ordered list of pairs.  The
+        return value of ``object_pairs_hook`` will be used instead of the ``dict``.
+        This feature can be used to implement custom decoders.  If ``object_hook``
+        is also defined, the ``object_pairs_hook`` takes priority.
+    
+        ``parse_float``, if specified, will be called with the string
+        of every JSON float to be decoded. By default this is equivalent to
+        float(num_str). This can be used to use another datatype or parser
+        for JSON floats (e.g. decimal.Decimal).
+    
+        ``parse_int``, if specified, will be called with the string
+        of every JSON int to be decoded. By default this is equivalent to
+        int(num_str). This can be used to use another datatype or parser
+        for JSON integers (e.g. float).
+    
+        ``parse_constant``, if specified, will be called with one of the
+        following strings: -Infinity, Infinity, NaN.
+        This can be used to raise an exception if invalid JSON numbers
+        are encountered.
+    
+        To use a custom ``JSONDecoder`` subclass, specify it with the ``cls``
+        kwarg; otherwise ``JSONDecoder`` is used.
+        """
+        if isinstance(s, str):
+            if s.startswith('\ufeff'):
+                raise JSONDecodeError("Unexpected UTF-8 BOM (decode using utf-8-sig)",
+                                      s, 0)
+        else:
+            if not isinstance(s, (bytes, bytearray)):
+>               raise TypeError(f'the JSON object must be str, bytes or bytearray, '
+                                f'not {s.__class__.__name__}')
+E               TypeError: the JSON object must be str, bytes or bytearray, not ScopeEvidence
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/json/__init__.py:339: TypeError
+__ test_native_scope_addresses_and_milestone_query_are_preserved[fake-scope2] __
+
+tally = Fixture(tracker=<tests.fakes.FakeTrackerPort object at 0x10c5cd880>, native=<kodezart.adapters.linear_mcp_tracker.Line...t_states={}, marker_prefixes={}, repos=[], documents={}, records={}, knowledge={}, endpoints={}, private_surface=None))
+scope = ScopeRef(kind=<ScopeKind.INITIATIVE: 'initiative'>, key='initiative-one')
+
+    @pytest.mark.parametrize("scope", [PROJECT, MILESTONE, INITIATIVE])
+    async def test_native_scope_addresses_and_milestone_query_are_preserved(tally, scope):
+        tally.labels("one", "criteria")
+        alarm = await tally.observe(scope=scope)
+        assert alarm is not None
+        assert alarm.subject.scope_key == scope.key
+>       assert json.loads(alarm.readings[2].value)["kind"] == scope.kind.value
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/tracker/test_scope_tally.py:187: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = ScopeEvidence(value=ScopeRef(kind=<ScopeKind.INITIATIVE: 'initiative'>, key='initiative-one'), kind='scope')
+cls = None, object_hook = None, parse_float = None, parse_int = None
+parse_constant = None, object_pairs_hook = None, kw = {}
+
+    def loads(s, *, cls=None, object_hook=None, parse_float=None,
+            parse_int=None, parse_constant=None, object_pairs_hook=None, **kw):
+        """Deserialize ``s`` (a ``str``, ``bytes`` or ``bytearray`` instance
+        containing a JSON document) to a Python object.
+    
+        ``object_hook`` is an optional function that will be called with the
+        result of any object literal decode (a ``dict``). The return value of
+        ``object_hook`` will be used instead of the ``dict``. This feature
+        can be used to implement custom decoders (e.g. JSON-RPC class hinting).
+    
+        ``object_pairs_hook`` is an optional function that will be called with the
+        result of any object literal decoded with an ordered list of pairs.  The
+        return value of ``object_pairs_hook`` will be used instead of the ``dict``.
+        This feature can be used to implement custom decoders.  If ``object_hook``
+        is also defined, the ``object_pairs_hook`` takes priority.
+    
+        ``parse_float``, if specified, will be called with the string
+        of every JSON float to be decoded. By default this is equivalent to
+        float(num_str). This can be used to use another datatype or parser
+        for JSON floats (e.g. decimal.Decimal).
+    
+        ``parse_int``, if specified, will be called with the string
+        of every JSON int to be decoded. By default this is equivalent to
+        int(num_str). This can be used to use another datatype or parser
+        for JSON integers (e.g. float).
+    
+        ``parse_constant``, if specified, will be called with one of the
+        following strings: -Infinity, Infinity, NaN.
+        This can be used to raise an exception if invalid JSON numbers
+        are encountered.
+    
+        To use a custom ``JSONDecoder`` subclass, specify it with the ``cls``
+        kwarg; otherwise ``JSONDecoder`` is used.
+        """
+        if isinstance(s, str):
+            if s.startswith('\ufeff'):
+                raise JSONDecodeError("Unexpected UTF-8 BOM (decode using utf-8-sig)",
+                                      s, 0)
+        else:
+            if not isinstance(s, (bytes, bytearray)):
+>               raise TypeError(f'the JSON object must be str, bytes or bytearray, '
+                                f'not {s.__class__.__name__}')
+E               TypeError: the JSON object must be str, bytes or bytearray, not ScopeEvidence
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/json/__init__.py:339: TypeError
+_________ test_issue_subtree_roster_retains_its_native_address[native] _________
+
+tally = Fixture(tracker=<kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10c5fd160>, native=<kodezart.adapte...t_states={}, marker_prefixes={}, repos=[], documents={}, records={}, knowledge={}, endpoints={}, private_surface=None))
+
+    async def test_issue_subtree_roster_retains_its_native_address(tally):
+        from kodezart.types.domain.scope import ScopeKind, ScopeRef
+    
+        scope = ScopeRef(kind=ScopeKind.ISSUE, key="one")
+        tally.labels("one", "criteria")
+        alarm = await tally.observe(scope=scope)
+        assert alarm is not None
+>       assert json.loads(alarm.readings[3].value) == ["one"]
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/tracker/test_scope_tally.py:339: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = ReferencesEvidence(value=('one',), kind='references'), cls = None
+object_hook = None, parse_float = None, parse_int = None, parse_constant = None
+object_pairs_hook = None, kw = {}
+
+    def loads(s, *, cls=None, object_hook=None, parse_float=None,
+            parse_int=None, parse_constant=None, object_pairs_hook=None, **kw):
+        """Deserialize ``s`` (a ``str``, ``bytes`` or ``bytearray`` instance
+        containing a JSON document) to a Python object.
+    
+        ``object_hook`` is an optional function that will be called with the
+        result of any object literal decode (a ``dict``). The return value of
+        ``object_hook`` will be used instead of the ``dict``. This feature
+        can be used to implement custom decoders (e.g. JSON-RPC class hinting).
+    
+        ``object_pairs_hook`` is an optional function that will be called with the
+        result of any object literal decoded with an ordered list of pairs.  The
+        return value of ``object_pairs_hook`` will be used instead of the ``dict``.
+        This feature can be used to implement custom decoders.  If ``object_hook``
+        is also defined, the ``object_pairs_hook`` takes priority.
+    
+        ``parse_float``, if specified, will be called with the string
+        of every JSON float to be decoded. By default this is equivalent to
+        float(num_str). This can be used to use another datatype or parser
+        for JSON floats (e.g. decimal.Decimal).
+    
+        ``parse_int``, if specified, will be called with the string
+        of every JSON int to be decoded. By default this is equivalent to
+        int(num_str). This can be used to use another datatype or parser
+        for JSON integers (e.g. float).
+    
+        ``parse_constant``, if specified, will be called with one of the
+        following strings: -Infinity, Infinity, NaN.
+        This can be used to raise an exception if invalid JSON numbers
+        are encountered.
+    
+        To use a custom ``JSONDecoder`` subclass, specify it with the ``cls``
+        kwarg; otherwise ``JSONDecoder`` is used.
+        """
+        if isinstance(s, str):
+            if s.startswith('\ufeff'):
+                raise JSONDecodeError("Unexpected UTF-8 BOM (decode using utf-8-sig)",
+                                      s, 0)
+        else:
+            if not isinstance(s, (bytes, bytearray)):
+>               raise TypeError(f'the JSON object must be str, bytes or bytearray, '
+                                f'not {s.__class__.__name__}')
+E               TypeError: the JSON object must be str, bytes or bytearray, not ReferencesEvidence
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/json/__init__.py:339: TypeError
+__________ test_issue_subtree_roster_retains_its_native_address[fake] __________
+
+tally = Fixture(tracker=<tests.fakes.FakeTrackerPort object at 0x10c361310>, native=<kodezart.adapters.linear_mcp_tracker.Line...t_states={}, marker_prefixes={}, repos=[], documents={}, records={}, knowledge={}, endpoints={}, private_surface=None))
+
+    async def test_issue_subtree_roster_retains_its_native_address(tally):
+        from kodezart.types.domain.scope import ScopeKind, ScopeRef
+    
+        scope = ScopeRef(kind=ScopeKind.ISSUE, key="one")
+        tally.labels("one", "criteria")
+        alarm = await tally.observe(scope=scope)
+        assert alarm is not None
+>       assert json.loads(alarm.readings[3].value) == ["one"]
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/tracker/test_scope_tally.py:339: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = ReferencesEvidence(value=('one',), kind='references'), cls = None
+object_hook = None, parse_float = None, parse_int = None, parse_constant = None
+object_pairs_hook = None, kw = {}
+
+    def loads(s, *, cls=None, object_hook=None, parse_float=None,
+            parse_int=None, parse_constant=None, object_pairs_hook=None, **kw):
+        """Deserialize ``s`` (a ``str``, ``bytes`` or ``bytearray`` instance
+        containing a JSON document) to a Python object.
+    
+        ``object_hook`` is an optional function that will be called with the
+        result of any object literal decode (a ``dict``). The return value of
+        ``object_hook`` will be used instead of the ``dict``. This feature
+        can be used to implement custom decoders (e.g. JSON-RPC class hinting).
+    
+        ``object_pairs_hook`` is an optional function that will be called with the
+        result of any object literal decoded with an ordered list of pairs.  The
+        return value of ``object_pairs_hook`` will be used instead of the ``dict``.
+        This feature can be used to implement custom decoders.  If ``object_hook``
+        is also defined, the ``object_pairs_hook`` takes priority.
+    
+        ``parse_float``, if specified, will be called with the string
+        of every JSON float to be decoded. By default this is equivalent to
+        float(num_str). This can be used to use another datatype or parser
+        for JSON floats (e.g. decimal.Decimal).
+    
+        ``parse_int``, if specified, will be called with the string
+        of every JSON int to be decoded. By default this is equivalent to
+        int(num_str). This can be used to use another datatype or parser
+        for JSON integers (e.g. float).
+    
+        ``parse_constant``, if specified, will be called with one of the
+        following strings: -Infinity, Infinity, NaN.
+        This can be used to raise an exception if invalid JSON numbers
+        are encountered.
+    
+        To use a custom ``JSONDecoder`` subclass, specify it with the ``cls``
+        kwarg; otherwise ``JSONDecoder`` is used.
+        """
+        if isinstance(s, str):
+            if s.startswith('\ufeff'):
+                raise JSONDecodeError("Unexpected UTF-8 BOM (decode using utf-8-sig)",
+                                      s, 0)
+        else:
+            if not isinstance(s, (bytes, bytearray)):
+>               raise TypeError(f'the JSON object must be str, bytes or bytearray, '
+                                f'not {s.__class__.__name__}')
+E               TypeError: the JSON object must be str, bytes or bytearray, not ReferencesEvidence
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/json/__init__.py:339: TypeError
+=========================== short test summary info ============================
+FAILED tests/tracker/test_lane_record_signals.py::test_actual_record_count_and_rows_are_the_only_comparison[fake-port-0-1]
+FAILED tests/tracker/test_lane_record_signals.py::test_actual_record_count_and_rows_are_the_only_comparison[fake-port-0-2]
+FAILED tests/tracker/test_lane_record_signals.py::test_actual_record_count_and_rows_are_the_only_comparison[fake-port-0-3]
+FAILED tests/tracker/test_lane_record_signals.py::test_actual_record_count_and_rows_are_the_only_comparison[fake-port-0-8]
+FAILED tests/tracker/test_lane_record_signals.py::test_actual_record_count_and_rows_are_the_only_comparison[fake-port-1-0]
+FAILED tests/tracker/test_lane_record_signals.py::test_actual_record_count_and_rows_are_the_only_comparison[fake-port-1-2]
+FAILED tests/tracker/test_lane_record_signals.py::test_actual_record_count_and_rows_are_the_only_comparison[fake-port-1-3]
+FAILED tests/tracker/test_lane_record_signals.py::test_actual_record_count_and_rows_are_the_only_comparison[fake-port-1-8]
+FAILED tests/tracker/test_lane_record_signals.py::test_actual_record_count_and_rows_are_the_only_comparison[fake-port-2-0]
+FAILED tests/tracker/test_lane_record_signals.py::test_actual_record_count_and_rows_are_the_only_comparison[fake-port-2-1]
+FAILED tests/tracker/test_lane_record_signals.py::test_actual_record_count_and_rows_are_the_only_comparison[fake-port-2-3]
+FAILED tests/tracker/test_lane_record_signals.py::test_actual_record_count_and_rows_are_the_only_comparison[fake-port-2-8]
+FAILED tests/tracker/test_lane_record_signals.py::test_actual_record_count_and_rows_are_the_only_comparison[linear-mcp-0-1]
+FAILED tests/tracker/test_lane_record_signals.py::test_actual_record_count_and_rows_are_the_only_comparison[linear-mcp-0-2]
+FAILED tests/tracker/test_lane_record_signals.py::test_actual_record_count_and_rows_are_the_only_comparison[linear-mcp-0-3]
+FAILED tests/tracker/test_lane_record_signals.py::test_actual_record_count_and_rows_are_the_only_comparison[linear-mcp-0-8]
+FAILED tests/tracker/test_lane_record_signals.py::test_actual_record_count_and_rows_are_the_only_comparison[linear-mcp-1-0]
+FAILED tests/tracker/test_lane_record_signals.py::test_actual_record_count_and_rows_are_the_only_comparison[linear-mcp-1-2]
+FAILED tests/tracker/test_lane_record_signals.py::test_actual_record_count_and_rows_are_the_only_comparison[linear-mcp-1-3]
+FAILED tests/tracker/test_lane_record_signals.py::test_actual_record_count_and_rows_are_the_only_comparison[linear-mcp-1-8]
+FAILED tests/tracker/test_lane_record_signals.py::test_actual_record_count_and_rows_are_the_only_comparison[linear-mcp-2-0]
+FAILED tests/tracker/test_lane_record_signals.py::test_actual_record_count_and_rows_are_the_only_comparison[linear-mcp-2-1]
+FAILED tests/tracker/test_lane_record_signals.py::test_actual_record_count_and_rows_are_the_only_comparison[linear-mcp-2-3]
+FAILED tests/tracker/test_lane_record_signals.py::test_actual_record_count_and_rows_are_the_only_comparison[linear-mcp-2-8]
+FAILED tests/tracker/test_scope_tally.py::test_actual_marker_barrier_zero_partial_and_complete_rosters[native-groom-groomed-body]
+FAILED tests/tracker/test_scope_tally.py::test_actual_marker_barrier_zero_partial_and_complete_rosters[native-ticket-body-criteria]
+FAILED tests/tracker/test_scope_tally.py::test_actual_marker_barrier_zero_partial_and_complete_rosters[fake-groom-groomed-body]
+FAILED tests/tracker/test_scope_tally.py::test_actual_marker_barrier_zero_partial_and_complete_rosters[fake-ticket-body-criteria]
+FAILED tests/tracker/test_scope_tally.py::test_record_classification_does_not_prune_deliverable_descendants[native]
+FAILED tests/tracker/test_scope_tally.py::test_record_classification_does_not_prune_deliverable_descendants[fake]
+FAILED tests/tracker/test_scope_tally.py::test_native_scope_addresses_and_milestone_query_are_preserved[native-scope0]
+FAILED tests/tracker/test_scope_tally.py::test_native_scope_addresses_and_milestone_query_are_preserved[native-scope1]
+FAILED tests/tracker/test_scope_tally.py::test_native_scope_addresses_and_milestone_query_are_preserved[native-scope2]
+FAILED tests/tracker/test_scope_tally.py::test_native_scope_addresses_and_milestone_query_are_preserved[fake-scope0]
+FAILED tests/tracker/test_scope_tally.py::test_native_scope_addresses_and_milestone_query_are_preserved[fake-scope1]
+FAILED tests/tracker/test_scope_tally.py::test_native_scope_addresses_and_milestone_query_are_preserved[fake-scope2]
+FAILED tests/tracker/test_scope_tally.py::test_issue_subtree_roster_retains_its_native_address[native]
+FAILED tests/tracker/test_scope_tally.py::test_issue_subtree_roster_retains_its_native_address[fake]
+38 failed, 68 passed in 9.37s

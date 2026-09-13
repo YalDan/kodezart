@@ -1,0 +1,11 @@
+{
+  "base": "55a87a5009e1816d1d87c130a7f46a2a83a9f37e",
+  "head": "b714b984112efd8471f73985300864d66a3eb814",
+  "added_line_matches": {
+    "suppressions": [
+      "+    assert \"AC-2 No new `# noqa` appears on changed lines.\" in rendered"
+    ],
+    "framework_bypasses": [],
+    "deadline_edits": []
+  }
+}

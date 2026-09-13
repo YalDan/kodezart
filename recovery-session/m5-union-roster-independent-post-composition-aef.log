@@ -1,0 +1,44 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_______ test_head_moved_after_actual_composition_is_never_returned_stale _______
+
+tmp_path = PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-2047/test_head_moved_after_actual_c0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10ceeacf0>
+
+    async def test_head_moved_after_actual_composition_is_never_returned_stale(
+        tmp_path, monkeypatch
+    ):
+        fixture = await build_delivery(tmp_path / "world")
+        original = fixture.tracker.work_refs
+        pushed_sha = None
+        completed_at_push = None
+    
+        async def read_refs(*, issue_key):
+            nonlocal pushed_sha, completed_at_push
+            answer = await original(issue_key=issue_key)
+            if fixture.git.removed and pushed_sha is None:
+                completed_at_push = tuple(fixture.git.removed)
+                await pinned.git(fixture.author, "checkout", "work/z")
+                (fixture.author / "after-measurement.txt").write_text("new head\n")
+                await pinned.git(fixture.author, "add", "after-measurement.txt")
+                await pinned.git(fixture.author, "commit", "-m", "move after real composition")
+                await pinned.git(fixture.author, "push", str(fixture.remote), "work/z")
+                pushed_sha = await pinned.git(fixture.author, "rev-parse", "HEAD")
+            return answer
+    
+        monkeypatch.setattr(fixture.tracker, "work_refs", read_refs)
+        try:
+            result = await fixture.coordinator().verify()
+        except (UnionHeadReadError, UnionUnstableError):
+            assert pushed_sha is not None
+        else:
+>           assert next(head.head_sha for head in result.lane_heads if head.lane_key == "z") == pushed_sha
+E           AssertionError: assert '19fb58560d62...dddf9cd4bf0f0' == '0dce486c2f92...25e4ebd857b0e'
+E             
+E             - 0dce486c2f92d39b149a87ef38725e4ebd857b0e
+E             + 19fb58560d628abfe640f6c3e46dddf9cd4bf0f0
+
+../kodezart-recovery-session/test_m5_union_post_composition_freshness.py:37: AssertionError
+=========================== short test summary info ============================
+FAILED ::test_head_moved_after_actual_composition_is_never_returned_stale - A...
+1 failed in 13.65s

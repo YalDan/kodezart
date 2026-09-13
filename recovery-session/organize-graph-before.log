@@ -1,0 +1,93 @@
+Using CPython 3.12.13
+Creating virtual environment at: .venv
+   Building kodezart @ file:///private/tmp/kodezart-v03-recovery-organize-graph
+warning: `build_system.requires = ["uv-build>=0.10.9,<0.11.0"]` does not contain the current uv version 0.11.6
+      Built kodezart @ file:///private/tmp/kodezart-v03-recovery-organize-graph
+Installed 174 packages in 1.34s
+F                                                                        [100%]
+=================================== FAILURES ===================================
+___ test_configured_owner_applies_graph_priority_then_reentry_writes_nothing ___
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10cc87ec0>
+
+    async def test_configured_owner_applies_graph_priority_then_reentry_writes_nothing(
+        monkeypatch,
+    ):
+        owner, board, executor = factory(convergence_bound=4, bound=3)
+        original = executor.stream
+    
+        async def stream(**kwargs):
+            schema = kwargs["output_format"]["schema"]
+            key = re.findall(r"<issue_key>(.*?)</issue_key>", kwargs["prompt"])
+            if (
+                key
+                and key[-1] == CLAIMED_ISSUE
+                and board.server.issues[CLAIMED_ISSUE].priority != 1
+            ):
+                executor.calls.append(kwargs)
+                if schema.get("title") == "OrganizeProposal":
+                    yield result(
+                        structured_output={
+                            "kind": "graph",
+                            "issue_id": CLAIMED_ISSUE,
+                            "changes": [{"kind": "priority", "priority": "urgent"}],
+                        }
+                    )
+                else:
+                    yield result(
+                        structured_output={
+                            "issue_id": CLAIMED_ISSUE,
+                            "verdict": "not_buildable",
+                            "evidence": "The configured mandate requires urgent priority.",
+                            "refusal_kind": "spec_gap",
+                            "invented_decision": "Apply the recorded urgent priority.",
+                        }
+                    )
+                return
+            async for event in original(**kwargs):
+                yield event
+    
+        monkeypatch.setattr(executor, "stream", stream)
+>       report = await run_owner(owner)
+                 ^^^^^^^^^^^^^^^^^^^^^^
+
+tests/chains/test_organize_graph_owner.py:48: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/chains/test_organize_owner.py:190: in run_owner
+    return await owner.run(
+src/kodezart/services/organize_owner.py:758: in run
+    result = await self._admission.assess(request)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/organize.py:52: in assess
+    return await self._judge(
+src/kodezart/chains/organize.py:123: in _judge
+    structured = await judge_in_workspace(
+src/kodezart/services/audit_sessions.py:43: in judge_in_workspace
+    result, rate_limited = await drain(
+src/kodezart/core/stream_drain.py:57: in drain
+    async for event in stream:
+src/kodezart/services/agent_service.py:103: in stream_in_workspace
+    async for event in self._executor.stream(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+kwargs = {'agents': (), 'allowed_tools': <ToolPreset.EVALUATION: 'evaluation'>, 'cwd': '/tmp/fake-workspace', 'output_format': ...}, {'$ref': '#/$defs/RefusedAdmission'}, {'$ref': '#/$defs/UnverifiableAdmission'}], ...}, 'type': 'json_schema'}, ...}
+schema = {'$defs': {'BuildableAdmission': {'additionalProperties': False, 'description': 'No invented decision or unavailable a...: '#/$defs/BuildableAdmission'}, {'$ref': '#/$defs/RefusedAdmission'}, {'$ref': '#/$defs/UnverifiableAdmission'}], ...}
+key = ['FIX-1', 'FIX-1']
+
+    async def stream(**kwargs):
+        schema = kwargs["output_format"]["schema"]
+        key = re.findall(r"<issue_key>(.*?)</issue_key>", kwargs["prompt"])
+        if (
+            key
+            and key[-1] == CLAIMED_ISSUE
+>           and board.server.issues[CLAIMED_ISSUE].priority != 1
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        ):
+E       AttributeError: 'FakeMcpIssue' object has no attribute 'priority'
+
+tests/chains/test_organize_graph_owner.py:22: AttributeError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 17:45:56 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+=========================== short test summary info ============================
+FAILED tests/chains/test_organize_graph_owner.py::test_configured_owner_applies_graph_priority_then_reentry_writes_nothing
+1 failed in 2.78s

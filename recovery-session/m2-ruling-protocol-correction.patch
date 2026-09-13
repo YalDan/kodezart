@@ -1,0 +1,75 @@
+diff --git a/src/kodezart/core/protocols.py b/src/kodezart/core/protocols.py
+index b104548..e39cfec 100644
+--- a/src/kodezart/core/protocols.py
++++ b/src/kodezart/core/protocols.py
+@@ -1381,6 +1381,7 @@ class OutboundContentGate(Protocol):
+         ...
+ 
+ 
++@runtime_checkable
+ class GitSourceReader(Protocol):
+     """Read pinned Git objects without checking out or running repository code."""
+ 
+@@ -1401,6 +1402,7 @@ class GitSourceReader(Protocol):
+         ...
+ 
+ 
++@runtime_checkable
+ class TrackerCommentReader(Protocol):
+     """Read complete native comments without granting a writer."""
+ 
+diff --git a/tests/services/test_git_source_lookup.py b/tests/services/test_git_source_lookup.py
+index 2dbb0b1..ead54c1 100644
+--- a/tests/services/test_git_source_lookup.py
++++ b/tests/services/test_git_source_lookup.py
+@@ -3,6 +3,7 @@
+ import pytest
+ 
+ from kodezart.adapters.subprocess_git_source_reader import SubprocessGitSourceReader
++from kodezart.core.protocols import GitSourceReader
+ from kodezart.domain.errors import GitSourceReadError
+ from tests.git_source_fixtures import PATH, commit, git, source
+ from tests.git_source_fixtures import repo as repo
+@@ -42,3 +43,27 @@ async def test_unreadable_or_unsupported_objects_are_never_missing(repo, damage)
+         path = "link"
+     with pytest.raises(GitSourceReadError):
+         await reader.find_source(cwd=str(repo), commit_sha=baseline, path=path)
++
++
++async def test_native_read_preserves_exact_bytes_and_refuses_symlink_or_tree(repo):
++    raw = b'\n# coding: latin-1\n\nvalue = "caf\xe9"\r\n\n'
++    (repo / PATH).write_bytes(raw)
++    git(repo, "add", "--all")
++    git(repo, "commit", "-qm", "raw source")
++    sha = git(repo, "rev-parse", "HEAD")
++    reader = SubprocessGitSourceReader()
++    assert isinstance(reader, GitSourceReader)
++    blob = await reader.read_source(cwd=str(repo), commit_sha=sha, path=PATH)
++    assert blob.content == raw
++    with pytest.raises(GitSourceReadError):
++        await reader.read_source(
++            cwd=str(repo), commit_sha=git(repo, "rev-parse", "HEAD^{tree}"), path=PATH
++        )
++    (repo / PATH).unlink()
++    (repo / PATH).symlink_to("../../outside.py")
++    git(repo, "add", "--all")
++    git(repo, "commit", "-qm", "symlink")
++    with pytest.raises(GitSourceReadError, match="regular file"):
++        await reader.read_source(
++            cwd=str(repo), commit_sha=git(repo, "rev-parse", "HEAD"), path=PATH
++        )
+diff --git a/tests/tracker/test_ruling_protocol_boundary.py b/tests/tracker/test_ruling_protocol_boundary.py
+new file mode 100644
+index 0000000..35ee2d7
+--- /dev/null
++++ b/tests/tracker/test_ruling_protocol_boundary.py
+@@ -0,0 +1,9 @@
++"""Published reader ports retain their actual runtime structural checks."""
++
++from kodezart.core.protocols import TrackerCommentReader
++from tests.fakes import FakeTrackerPort
++
++
++def test_comment_reader_runtime_contract_accepts_actual_adapter():
++    assert isinstance(FakeTrackerPort(), TrackerCommentReader)
++    assert not isinstance(object(), TrackerCommentReader)

@@ -1,0 +1,31 @@
+....................................................................F... [ 56%]
+........................................................                 [100%]
+=================================== FAILURES ===================================
+______ test_refutation_cannot_cross_completeness_boundary_without_mandate ______
+
+    def test_refutation_cannot_cross_completeness_boundary_without_mandate():
+        with pytest.raises(ValidationError, match="every refutation"):
+>           AuditClaimReport(claim=CLAIM, mandate=None)
+E           pydantic_core._pydantic_core.ValidationError: 2 validation errors for AuditClaimReport
+E           RefutedClaimReport.mandate
+E             Input should be a valid dictionary or object to extract fields from [type=model_attributes_type, input_value=None, input_type=NoneType]
+E               For further information visit https://errors.pydantic.dev/2.12/v/model_attributes_type
+E           UnrefutedClaimReport.claim.judgment.verdict
+E             Input should be <AuditVerdict.HOLDS: 'holds'> or <AuditVerdict.UNVERIFIABLE: 'unverifiable'> [type=literal_error, input_value=<AuditVerdict.REFUTED: 'refuted'>, input_type=AuditVerdict]
+E               For further information visit https://errors.pydantic.dev/2.12/v/literal_error
+
+tests/tracker/test_audit_mandate.py:246: ValidationError
+
+During handling of the above exception, another exception occurred:
+
+    def test_refutation_cannot_cross_completeness_boundary_without_mandate():
+>       with pytest.raises(ValidationError, match="every refutation"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: Regex pattern did not match.
+E         Expected regex: 'every refutation'
+E         Actual message: "2 validation errors for AuditClaimReport\nRefutedClaimReport.mandate\n  Input should be a valid dictionary or object to extract fields from [type=model_attributes_type, input_value=None, input_type=NoneType]\n    For further information visit https://errors.pydantic.dev/2.12/v/model_attributes_type\nUnrefutedClaimReport.claim.judgment.verdict\n  Input should be <AuditVerdict.HOLDS: 'holds'> or <AuditVerdict.UNVERIFIABLE: 'unverifiable'> [type=literal_error, input_value=<AuditVerdict.REFUTED: 'refuted'>, input_type=AuditVerdict]\n    For further information visit https://errors.pydantic.dev/2.12/v/literal_error"
+
+tests/tracker/test_audit_mandate.py:245: AssertionError
+=========================== short test summary info ============================
+FAILED tests/tracker/test_audit_mandate.py::test_refutation_cannot_cross_completeness_boundary_without_mandate
+1 failed, 127 passed in 5.68s

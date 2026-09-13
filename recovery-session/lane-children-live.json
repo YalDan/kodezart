@@ -1,0 +1,3671 @@
+{
+  "KOD-73": {
+    "issues": [
+      {
+        "id": "KOD-386",
+        "title": "KOD-73-AC-17 — writing a surface you do not hold raises a typed domain error carrying surface and current holder; no-lease and expired-lease both raise",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-73",
+        "updatedAt": "2026-09-12T12:37:03.503Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-788",
+        "title": "Ruling: which composed component holds a write lease under the run's job id, and where its duration comes from",
+        "status": "Todo",
+        "labels": [
+          "decision"
+        ],
+        "parentId": "KOD-73",
+        "updatedAt": "2026-09-12T11:16:57.059Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-751",
+        "title": "Ruling: who owns the approval barrier that refuses a scope holding an open decision or a Backlog criterion",
+        "status": "Todo",
+        "labels": [
+          "decision"
+        ],
+        "parentId": "KOD-73",
+        "updatedAt": "2026-09-12T11:16:56.277Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-381",
+        "title": "KOD-73-AC-12 — approver provenance is read through a scope-label provenance capability; a non-approver label resolves NOT approved",
+        "status": "Canceled",
+        "labels": [
+          "criterion"
+        ],
+        "parentId": "KOD-73",
+        "updatedAt": "2026-09-09T21:14:16.739Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-367",
+        "title": "KOD-73-AC-1 — `ScopeRef` is a frozen kind + non-empty-key domain value; `ScopeKind` has exactly initiative, project, milestone, issue",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-73",
+        "updatedAt": "2026-09-09T19:51:21.550Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-370",
+        "title": "KOD-73-AC-2 — `resolve_scope` returns the ref plus the scope's issues; planner edges come from the issues' own relation and parent fields",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-73",
+        "updatedAt": "2026-09-09T19:51:20.487Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-372",
+        "title": "KOD-73-AC-3 — an issue-kind ref resolves to that issue plus its sub-issue subtree; with no sub-issues that set is today's single-fire input",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-73",
+        "updatedAt": "2026-09-09T19:51:19.603Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-373",
+        "title": "KOD-73-AC-4 — container refs resolve by membership, issue refs by parent/child subtree; a fixture fails if a container ref walks parent edges",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-73",
+        "updatedAt": "2026-09-09T19:48:49.885Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-374",
+        "title": "KOD-73-AC-5 — container reads are two keyword-only async port capabilities; container metadata carries exactly ref, name, description, optional url, parent",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-73",
+        "updatedAt": "2026-09-09T19:48:49.456Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-375",
+        "title": "KOD-73-AC-6 — no vendor concept in any new port signature; each adapter owns its mapping and no vendor-specific read is added for testability",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-73",
+        "updatedAt": "2026-09-09T19:48:49.047Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-377",
+        "title": "KOD-73-AC-8 — the scope-label enum (triage, proposed, approved) sits beside the queue-state enum, which gains no meta member",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-73",
+        "updatedAt": "2026-09-09T19:48:48.543Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-378",
+        "title": "KOD-73-AC-9 — meta-label names resolve through the operation configuration's mapping; empty loads, populated-but-incomplete fails at load",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-73",
+        "updatedAt": "2026-09-09T19:48:47.526Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-379",
+        "title": "KOD-73-AC-10 — the scope-label mapping kind is emitted by configured-mappings and is instatable; instating the approval label sets it on nothing",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-73",
+        "updatedAt": "2026-09-09T19:48:47.087Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-380",
+        "title": "KOD-73-AC-11 — `execution_approved` is a read-time ancestor walk, never materialized; re-parenting and label removal change the next resolution",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-73",
+        "updatedAt": "2026-09-09T19:48:46.543Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-382",
+        "title": "KOD-73-AC-13 — no milestone-level label exists in the vocabulary, the configuration or any adapter; a milestone run is project approval plus a milestone ref",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-73",
+        "updatedAt": "2026-09-09T19:48:45.922Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-392",
+        "title": "KOD-73-AC-23 — A7's fork is resolved by an observable conformance signal or an inline unfalsifiable declaration naming the read that would falsify it",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-73",
+        "updatedAt": "2026-09-09T19:48:45.386Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-393",
+        "title": "KOD-73-AC-24 — layer placement holds: domain values in the domain types package, capabilities on the tracker port, no vendor import in domain or workflow",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-73",
+        "updatedAt": "2026-09-09T19:48:44.892Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-376",
+        "title": "KOD-73-AC-7 — container-read, meta-label and lease cases are port conformance cases run verbatim against every adapter over the fake tracker double",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-73",
+        "updatedAt": "2026-09-09T19:48:02.261Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-395",
+        "title": "KOD-73-AC-26 — test placement follows the base: conformance cases beside the claim cases, lease arithmetic beside the core unit tests",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-73",
+        "updatedAt": "2026-09-09T19:48:01.677Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-394",
+        "title": "KOD-73-AC-25 — no new type-checker or linter suppression, no weakened test surface on changed lines, no mock, fallback or compat shim in production code",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-73",
+        "updatedAt": "2026-09-09T19:48:01.209Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-391",
+        "title": "KOD-73-AC-22 — the attributable-writer capability is declared and checked at boot; a mismatch aborts with a typed error and no runtime flag branch",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-73",
+        "updatedAt": "2026-09-09T19:48:00.752Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-387",
+        "title": "KOD-73-AC-18 — The composed surface-lease policy honors overrides and permits expired-lease reacquisition",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-73",
+        "updatedAt": "2026-09-09T19:40:32.077Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-383",
+        "title": "KOD-73-AC-14 — a writable surface is an addressable frozen value over surface kinds including the criterion sub-issue; surfaces are independently held",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-73",
+        "updatedAt": "2026-09-09T19:40:31.042Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-385",
+        "title": "KOD-73-AC-16 — disjoint sets never contend: two holders acquiring disjoint surface sets both acquire and both write",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-73",
+        "updatedAt": "2026-09-09T19:40:29.939Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-390",
+        "title": "KOD-73-AC-21 — four port refusals as typed errors, not prompt text: parent-state write, unheld surface, approval label, principal-authored replace",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-73",
+        "updatedAt": "2026-09-09T19:39:08.757Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-389",
+        "title": "KOD-73-AC-20 — the widening adds no new HTTP route: the existing workflow request gains an optional scope ref validated at the handler boundary",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-73",
+        "updatedAt": "2026-09-09T19:37:42.613Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-384",
+        "title": "KOD-73-AC-15 — the port gains acquire, release and renew over a surface SET; acquisition is all-or-nothing, never blocks, holds nothing after a conflict",
+        "status": "Todo",
+        "labels": [
+          "criterion"
+        ],
+        "parentId": "KOD-73",
+        "updatedAt": "2026-09-09T19:35:41.382Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-388",
+        "title": "KOD-73-AC-19 — the two holder vocabularies stay distinct: a fire claim under the deployment's process identity, a write lease under the run's job id",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-73",
+        "updatedAt": "2026-09-09T19:35:18.356Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-808",
+        "title": "Triage: the manual fire endpoint starts a run with no ownership check, on a lane the scheduler does not share",
+        "status": "Todo",
+        "labels": [
+          "queue:triage"
+        ],
+        "parentId": "KOD-73",
+        "updatedAt": "2026-09-09T16:11:33.070Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-807",
+        "title": "Triage: the identity meant to distinguish two deployments ships with the same hardcoded default for everyone",
+        "status": "Todo",
+        "labels": [
+          "queue:triage"
+        ],
+        "parentId": "KOD-73",
+        "updatedAt": "2026-09-09T15:29:23.071Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-750",
+        "title": "Ruling: which holder makes the issue-level state moves, and whether the run-event → tracker-state table survives",
+        "status": "Done",
+        "labels": [
+          "decision"
+        ],
+        "parentId": "KOD-73",
+        "updatedAt": "2026-09-09T07:13:50.380Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-752",
+        "title": "Ruling: D5's stage markers — do queue:approved:ticket and queue:approved:criteria survive, and does a criterion cover them",
+        "status": "Done",
+        "labels": [
+          "decision"
+        ],
+        "parentId": "KOD-73",
+        "updatedAt": "2026-09-08T20:52:22.515Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-312",
+        "title": "The tracker MCP server is attached to engine sessions from configuration, the way the knowledge server is — proven LIVE on a host with no account connector for Linear or Notion",
+        "status": "Todo",
+        "labels": [
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-73",
+        "updatedAt": "2026-09-08T16:19:26.638Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-123",
+        "title": "The run authored the rulings that authorised its own code, under the approver's identity — self-commissioned machinery with no external check",
+        "status": "Canceled",
+        "labels": [
+          "decision",
+          "queue:triage"
+        ],
+        "parentId": "KOD-73",
+        "updatedAt": "2026-09-07T11:14:51.312Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      }
+    ],
+    "hasNextPage": false
+  },
+  "KOD-74": {
+    "issues": [
+      {
+        "id": "KOD-753",
+        "title": "Ruling: the Class row — does hard/soft survive the 2026-09-01 amendments, and the class of KOD-113-AC-3 and KOD-127-AC-6",
+        "status": "Done",
+        "labels": [
+          "decision"
+        ],
+        "parentId": "KOD-74",
+        "updatedAt": "2026-09-12T12:35:11.652Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-368",
+        "title": "KOD-74-AC-34 — ORGANIZE applies graph hygiene directly; an already-organized scope passes through with no writes",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-74",
+        "updatedAt": "2026-09-12T11:45:01.085Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-334",
+        "title": "KOD-74-AC-1 — AdmissionVerdict is three-state and never coerced to a boolean at any call site",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-74",
+        "updatedAt": "2026-09-09T19:52:04.097Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-335",
+        "title": "KOD-74-AC-2 — A refusal that cannot name what an implementer would invent fails at AdmissionResult construction",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-74",
+        "updatedAt": "2026-09-09T19:52:02.372Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-338",
+        "title": "KOD-74-AC-5 — The assess and verify prompts carry the issue's own text and run on fresh context",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-74",
+        "updatedAt": "2026-09-09T19:51:30.567Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-344",
+        "title": "KOD-74-AC-11 — The instance/mandate distinction is enforced at SpecFinding construction",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-74",
+        "updatedAt": "2026-09-09T19:51:28.909Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-355",
+        "title": "KOD-74-AC-22 — An amended criterion re-enters through the per-surface digest clause and no clause of its own",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-74",
+        "updatedAt": "2026-09-09T19:51:27.404Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-362",
+        "title": "KOD-74-AC-29 — One prompt key per role, named not counted, with the boot census failing on a missing data file",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-74",
+        "updatedAt": "2026-09-09T19:51:25.611Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-363",
+        "title": "KOD-74-AC-30 — The rubric enters through the per-call namespace, asserted disjoint by name",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-74",
+        "updatedAt": "2026-09-09T19:51:23.481Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-360",
+        "title": "KOD-74-AC-27 — No meta-label or stage-marker string literal appears outside the configuration model",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-74",
+        "updatedAt": "2026-09-09T19:48:00.255Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-336",
+        "title": "KOD-74-AC-3 — Each of the four measured refusal classes yields NOT_BUILDABLE with a non-empty invented_decision",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-74",
+        "updatedAt": "2026-09-09T19:47:20.023Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-337",
+        "title": "KOD-74-AC-4 — UNVERIFIABLE routes on blockedBy arithmetic, never on tone",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-74",
+        "updatedAt": "2026-09-09T19:46:58.753Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-339",
+        "title": "KOD-74-AC-6 — Exhausting the admission bound halts at ADMISSION_EXHAUSTED and never passes through",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-74",
+        "updatedAt": "2026-09-09T19:46:57.187Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-341",
+        "title": "KOD-74-AC-8 — The convergence loop terminates only on a dry fresh-context verification round",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-74",
+        "updatedAt": "2026-09-09T19:46:56.472Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-342",
+        "title": "KOD-74-AC-9 — A remediation round is scoped by defect class, never by the previous round's findings list",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-74",
+        "updatedAt": "2026-09-09T19:46:53.993Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-343",
+        "title": "KOD-74-AC-10 — Verification coverage is the scope's full issue set, never narrowed to the work set",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-74",
+        "updatedAt": "2026-09-09T19:46:52.620Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-345",
+        "title": "KOD-74-AC-12 — The mandate fixture that fails today passes: the mandating sentence is the only difference",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-74",
+        "updatedAt": "2026-09-09T19:46:50.750Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-346",
+        "title": "KOD-74-AC-13 — Regrowth is demonstrated on the scripted executor: the class reappears while the mandate lives",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-74",
+        "updatedAt": "2026-09-09T19:46:48.862Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-347",
+        "title": "KOD-74-AC-14 — A mandate on a surface the pass does not hold is a residual, never a silent pass",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-74",
+        "updatedAt": "2026-09-09T19:46:47.343Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-348",
+        "title": "KOD-74-AC-15 — Escalations are written inside the raising round, before any stage-report step",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-74",
+        "updatedAt": "2026-09-09T19:46:45.573Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-349",
+        "title": "KOD-74-AC-16 — A refusal surviving the admission bound exists as an escalation independently of the returned report",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-74",
+        "updatedAt": "2026-09-09T19:46:44.056Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-350",
+        "title": "KOD-74-AC-17 — The raise route is discriminated by data: refusal_kind required at NOT_BUILDABLE, None otherwise",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-74",
+        "updatedAt": "2026-09-09T19:46:42.799Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-351",
+        "title": "KOD-74-AC-18 — An unrecordable escalation halts at ESCALATION_UNRECORDED, never misreported as exhaustion",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-74",
+        "updatedAt": "2026-09-09T19:46:40.520Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-352",
+        "title": "KOD-74-AC-19 — An admission verdict is about one surface's revision and lapses when that surface moves",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-74",
+        "updatedAt": "2026-09-09T19:46:38.855Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-354",
+        "title": "KOD-74-AC-21 — The observed re-entry failure is reproduced and its UNCHANGED-replay converse held",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-74",
+        "updatedAt": "2026-09-09T19:46:37.177Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-356",
+        "title": "KOD-74-AC-23 — Three re-entries, one arithmetic: exactly one gap-computing call site exists",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-74",
+        "updatedAt": "2026-09-09T19:46:35.652Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-357",
+        "title": "KOD-74-AC-24 — The delta pre-query IS the gap's cardinality, read once per tick",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-74",
+        "updatedAt": "2026-09-09T19:46:33.532Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-361",
+        "title": "KOD-74-AC-28 — Exactly one MandateKind-dispatching site exists in the source tree",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-74",
+        "updatedAt": "2026-09-09T19:46:31.905Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-364",
+        "title": "KOD-74-AC-31 — Every organize dispatch carries the organize-pass session type and needs no elevated permissions",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-74",
+        "updatedAt": "2026-09-09T19:46:29.933Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-365",
+        "title": "KOD-74-AC-32 — The admission test asks gradability as well as buildability",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-74",
+        "updatedAt": "2026-09-09T19:46:28.383Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-366",
+        "title": "KOD-74-AC-33 — Parity is measured class-for-class against the close-out restructure's durable board products",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-74",
+        "updatedAt": "2026-09-09T19:46:26.950Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-369",
+        "title": "KOD-74-AC-35 — The sanitization gate runs on every outbound write this node makes",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-74",
+        "updatedAt": "2026-09-09T19:46:11.423Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-371",
+        "title": "KOD-74-AC-36 — Both named test modules exist and the changeset weakens no gate",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-74",
+        "updatedAt": "2026-09-09T19:46:10.763Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-359",
+        "title": "KOD-74-AC-26 — The mandate table is one configured value: frozen MandateSpec, five rows, resolved at boot",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-74",
+        "updatedAt": "2026-09-09T19:41:55.458Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-358",
+        "title": "KOD-74-AC-25 — Body-digest stability is a port-level conformance property required at boot",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-74",
+        "updatedAt": "2026-09-09T19:41:13.085Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-340",
+        "title": "KOD-74-AC-7 — ORGANIZE limits are configured only at active bounded-loop consumers",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-74",
+        "updatedAt": "2026-09-09T19:37:50.906Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-353",
+        "title": "KOD-74-AC-20 — Gap membership is total arithmetic with no judgment",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-74",
+        "updatedAt": "2026-09-09T19:37:33.393Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-800",
+        "title": "Triage: no sub-issue asks for the organize pass to be composed or scheduled",
+        "status": "Todo",
+        "labels": [
+          "queue:triage"
+        ],
+        "parentId": "KOD-74",
+        "updatedAt": "2026-09-09T06:53:45.457Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-127",
+        "title": "GROOM mandate rubric: the pre-approval pass's checklist, its trigger, its terminal act and its declared write-surface set",
+        "status": "Todo",
+        "labels": [
+          "queue:approved:ticket",
+          "queue:approved:criteria",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-74",
+        "updatedAt": "2026-09-09T06:53:45.457Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-758",
+        "title": "Ruling: where the supervision block's source of record lives, and how widely its byte-identity is scoped",
+        "status": "Todo",
+        "labels": [
+          "decision"
+        ],
+        "parentId": "KOD-74",
+        "updatedAt": "2026-09-08T23:14:11.808Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-113",
+        "title": "`updatedAt` is not a change signal: mention ripple roughly doubles a scan window",
+        "status": "Todo",
+        "labels": [
+          "queue:approved:ticket",
+          "queue:approved:criteria",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-74",
+        "updatedAt": "2026-09-08T23:01:23.647Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-769",
+        "title": "Ruling: post-snapshot deliverables with no criteria — restructure KOD-304 and KOD-308 in place, or file each as its own restructure item",
+        "status": "Todo",
+        "labels": [
+          "decision"
+        ],
+        "parentId": "KOD-74",
+        "updatedAt": "2026-09-08T23:01:23.647Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-114",
+        "title": "Land the supervision block in the grooming prompt — the routine first, the template second",
+        "status": "Todo",
+        "labels": [
+          "queue:approved:ticket",
+          "queue:approved:criteria",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-74",
+        "updatedAt": "2026-09-08T21:07:32.503Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-779",
+        "title": "Ruling: the pinned prompt test module and initiative-target clause KOD-572 names were deleted by the tracker-native initiative increment — restore them or restate under the plan of record",
+        "status": "Done",
+        "labels": [
+          "decision"
+        ],
+        "parentId": "KOD-74",
+        "updatedAt": "2026-09-08T20:52:31.132Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-771",
+        "title": "Ruling: the body-digest boot capability check KOD-74-AC-25 names was retired under KOD-744 — restore it or restate under the plan of record",
+        "status": "Todo",
+        "labels": [
+          "decision"
+        ],
+        "parentId": "KOD-74",
+        "updatedAt": "2026-09-08T20:50:04.434Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      }
+    ],
+    "hasNextPage": false
+  },
+  "KOD-75": {
+    "issues": [
+      {
+        "id": "KOD-105",
+        "title": "v0.3 L9 — Tracker-native fire composition: one node set, two compositions, the ticket and criteria read from the tracker",
+        "status": "Todo",
+        "labels": [
+          "queue:approved:ticket",
+          "queue:approved:criteria",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-75",
+        "updatedAt": "2026-09-12T11:30:32.847Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-763",
+        "title": "Ruling: the loop's criterion identity for a tracker-native fire — the sub-issue key, or AC-n with a key map",
+        "status": "Done",
+        "labels": [
+          "decision"
+        ],
+        "parentId": "KOD-75",
+        "updatedAt": "2026-09-12T11:17:53.836Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-782",
+        "title": "Ruling: is the walker's report snapshot part of the dispatch decision, or a record written beside it",
+        "status": "Todo",
+        "labels": [
+          "decision"
+        ],
+        "parentId": "KOD-75",
+        "updatedAt": "2026-09-12T11:17:18.222Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-783",
+        "title": "Ruling: does the stall exit still write In Review, and may a criterion delete a guard another criterion pins",
+        "status": "Todo",
+        "labels": [
+          "decision"
+        ],
+        "parentId": "KOD-75",
+        "updatedAt": "2026-09-12T11:16:58.602Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-787",
+        "title": "Ruling: where scope approval is established, and how an unapproved member is made legible",
+        "status": "Todo",
+        "labels": [
+          "decision"
+        ],
+        "parentId": "KOD-75",
+        "updatedAt": "2026-09-12T11:16:55.706Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-803",
+        "title": "Triage: a scope submitted over HTTP has no path to execution — ingress landed, refusal frozen, nothing bridges them",
+        "status": "Todo",
+        "labels": [
+          "queue:triage"
+        ],
+        "parentId": "KOD-75",
+        "updatedAt": "2026-09-12T09:16:06.462Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-821",
+        "title": "Triage: nothing resolves a declared scope name to a ScopeRef, so no walker pass can be composed",
+        "status": "Backlog",
+        "labels": [
+          "queue:triage"
+        ],
+        "parentId": "KOD-75",
+        "updatedAt": "2026-09-09T22:00:28.726Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-425",
+        "title": "KOD-75-AC-3 — A lane is READY iff it is approved and every in-scope blocker's subtree is Done; a blocked lane never dispatches",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-75",
+        "updatedAt": "2026-09-09T22:00:28.709Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-768",
+        "title": "Ruling: which scope a composed walker pass walks — a [[walks]] table or typed TeamEntry.scope entries",
+        "status": "Done",
+        "labels": [
+          "decision"
+        ],
+        "parentId": "KOD-75",
+        "updatedAt": "2026-09-09T22:00:14.086Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-819",
+        "title": "Triage: criteria are Canceled with no supersession comment, which the ruling says still blocks and the code raises on",
+        "status": "Todo",
+        "labels": [
+          "queue:triage"
+        ],
+        "parentId": "KOD-75",
+        "updatedAt": "2026-09-09T21:14:16.739Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-452",
+        "title": "KOD-75-AC-17 — ObligationKind, ObligationState, GapDisposition and ObligationOwner members and string values are asserted verbatim",
+        "status": "Canceled",
+        "labels": [
+          "criterion"
+        ],
+        "parentId": "KOD-75",
+        "updatedAt": "2026-09-09T21:14:16.739Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-445",
+        "title": "KOD-75-AC-10 — A diamond whose remaining blocker is not an ancestor of the chosen base raises UnstackableLaneError naming both branches",
+        "status": "Canceled",
+        "labels": [
+          "criterion"
+        ],
+        "parentId": "KOD-75",
+        "updatedAt": "2026-09-09T21:14:16.739Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-442",
+        "title": "KOD-75-AC-8 — A single-blocker lane bases on that blocker's recorded branch, never parsed from a branch name or derived from its PR",
+        "status": "Canceled",
+        "labels": [
+          "criterion"
+        ],
+        "parentId": "KOD-75",
+        "updatedAt": "2026-09-09T21:14:16.739Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-801",
+        "title": "Triage: KOD-794 is discharged by recording a comment, so no work item produces a supersession reader",
+        "status": "Todo",
+        "labels": [
+          "queue:triage"
+        ],
+        "parentId": "KOD-75",
+        "updatedAt": "2026-09-09T21:14:16.739Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-458",
+        "title": "KOD-75-AC-23 — An obligation declaring a capability absent from the provided set resolves WITHHELD, escalates once, and is not Done",
+        "status": "Canceled",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-75",
+        "updatedAt": "2026-09-09T21:14:16.739Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-447",
+        "title": "KOD-75-AC-12 — The resolved base and the blocker that produced it are readable on the dispatch record",
+        "status": "Canceled",
+        "labels": [
+          "criterion"
+        ],
+        "parentId": "KOD-75",
+        "updatedAt": "2026-09-09T21:14:16.739Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-453",
+        "title": "KOD-75-AC-18 — Gap membership is total over criterion sub-issue state with no default arm, and an ungraded criterion is never refuted",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-75",
+        "updatedAt": "2026-09-09T21:14:16.739Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-446",
+        "title": "KOD-75-AC-11 — A Done blocker whose recorded branch is absent from the remote raises the typed error with no trunk substitution",
+        "status": "Canceled",
+        "labels": [
+          "criterion"
+        ],
+        "parentId": "KOD-75",
+        "updatedAt": "2026-09-09T21:14:16.739Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-444",
+        "title": "KOD-75-AC-9 — A depth-3 chain resolves C's base to B's recorded branch, and A's lines survive in C's branch (containment)",
+        "status": "Canceled",
+        "labels": [
+          "criterion"
+        ],
+        "parentId": "KOD-75",
+        "updatedAt": "2026-09-09T21:14:16.739Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-754",
+        "title": "Ruling: the undemonstrable obligation's recording — which state is non-blocking under the rollup, and whether the withheld lifecycle is a criterion",
+        "status": "Done",
+        "labels": [
+          "decision"
+        ],
+        "parentId": "KOD-75",
+        "updatedAt": "2026-09-09T21:14:16.739Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-794",
+        "title": "Ruling: a criterion Canceled without a supersession — does the subtree read raise or skip it",
+        "status": "Todo",
+        "labels": [
+          "decision"
+        ],
+        "parentId": "KOD-75",
+        "updatedAt": "2026-09-09T21:14:16.739Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-438",
+        "title": "KOD-75-AC-7 — A lane with no in-scope blocker bases on the scope's configured trunk, with both \"main\" literal defaults asserted unused",
+        "status": "Canceled",
+        "labels": [
+          "criterion"
+        ],
+        "parentId": "KOD-75",
+        "updatedAt": "2026-09-09T21:14:16.739Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-459",
+        "title": "KOD-75-AC-24 — The withheld set is computed before the first dispatch, and the capability check runs zero times after the walk begins",
+        "status": "Canceled",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-75",
+        "updatedAt": "2026-09-09T21:14:16.739Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-450",
+        "title": "KOD-75-AC-15 — Plan-time refusal holds the walk, and every fire re-validates its Todo criterion sub-issues at head before the loop",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-75",
+        "updatedAt": "2026-09-09T20:49:06.438Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-816",
+        "title": "Triage: an all-graded board makes the two rollups indistinguishable, so several Checks state closed arms nothing can falsify",
+        "status": "Todo",
+        "labels": [
+          "queue:triage"
+        ],
+        "parentId": "KOD-75",
+        "updatedAt": "2026-09-09T20:39:50.905Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-790",
+        "title": "Ruling: is a lane's Done arithmetic one rollup or two — the candidate's gap and the blocker's closure are computed differently today",
+        "status": "Done",
+        "labels": [
+          "decision"
+        ],
+        "parentId": "KOD-75",
+        "updatedAt": "2026-09-09T20:39:37.506Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-422",
+        "title": "KOD-75-AC-2 — A cyclic scope graph raises the typed ScopeCycleError; no tiebreak is applied and no order is returned",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-75",
+        "updatedAt": "2026-09-09T19:54:02.716Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-454",
+        "title": "KOD-75-AC-19 — The gap domain module imports nothing from kodezart.adapters and performs no I/O (static assertion)",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-75",
+        "updatedAt": "2026-09-09T19:53:57.811Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-457",
+        "title": "KOD-75-AC-22 — A lapsed cheap criterion is in the next tick's gap and no other is; a carried-passing criterion at the same head is not",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-75",
+        "updatedAt": "2026-09-09T19:53:57.179Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-449",
+        "title": "KOD-75-AC-14 — Kill-and-re-enter dispatches exactly the remaining lanes, re-uses the recorded branch, and reads no merge state",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-75",
+        "updatedAt": "2026-09-09T19:47:56.006Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-464",
+        "title": "KOD-75-AC-29 — The criterion read acquires no write lease and records zero writes on the fake tracker",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-75",
+        "updatedAt": "2026-09-09T19:47:54.985Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-469",
+        "title": "KOD-75-AC-34 — The diff adds no type-checker or linter suppression and no weakened test surface; fixtures run on the in-process fake",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-75",
+        "updatedAt": "2026-09-09T19:47:54.255Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-465",
+        "title": "KOD-75-AC-30 — A configuration that declares no criterion mapping aborts startup with a typed error naming the missing member, and no walker path dispatches without that check",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-75",
+        "updatedAt": "2026-09-09T19:40:37.271Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-431",
+        "title": "KOD-75-AC-5 — Anti-deadlock: a scope of open unmerged PRs still walks to completion, and a blocker Done with no PR unlocks identically",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-75",
+        "updatedAt": "2026-09-09T19:40:36.625Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-448",
+        "title": "KOD-75-AC-13 — Degeneration: a single issue with no in-scope blockers runs identically to today's single fire",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-75",
+        "updatedAt": "2026-09-09T19:40:35.516Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-451",
+        "title": "KOD-75-AC-16 — The dispatch target is the issue itself; no marker is resolved and no description text is read to find it",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-75",
+        "updatedAt": "2026-09-09T19:40:33.544Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-434",
+        "title": "KOD-75-AC-6 — The ready-set computation makes zero reads of PR merge state; the fake forge's merge-state reader records no calls",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-75",
+        "updatedAt": "2026-09-09T19:40:32.719Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-461",
+        "title": "KOD-75-AC-26 — GapMeasurement is absent from every durable surface the run writes and present on the point-in-time surface",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-75",
+        "updatedAt": "2026-09-09T19:40:28.860Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-467",
+        "title": "KOD-75-AC-32 — machine-complete versus complete is derived from residual classes at the report surface, not a scope-level enum member",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-75",
+        "updatedAt": "2026-09-09T19:39:58.252Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-466",
+        "title": "KOD-75-AC-31 — A lane whose in-gap criteria are all owned elsewhere is not dispatched but reported converged with a declared residual",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-75",
+        "updatedAt": "2026-09-09T19:39:46.137Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-463",
+        "title": "KOD-75-AC-28 — Criteria round-trip as sub-issue key, label, state and Evidence; no parent description is parsed by any node or adapter",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-75",
+        "updatedAt": "2026-09-09T19:37:45.782Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-462",
+        "title": "KOD-75-AC-27 — Port round-trip fidelity holds for every criterion state, sha byte-identical, and an ungraded criterion is never refuted",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-75",
+        "updatedAt": "2026-09-09T19:37:44.645Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-468",
+        "title": "KOD-75-AC-33 — Walker settings express operator choices; stable constants stay in code",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-75",
+        "updatedAt": "2026-09-09T19:37:43.264Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-456",
+        "title": "KOD-75-AC-21 — A lane whose gap is empty is not dispatched whatever its state field says; the paired ungraded lane is dispatched",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-75",
+        "updatedAt": "2026-09-09T19:35:12.293Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-428",
+        "title": "KOD-75-AC-4 — Crashed-lane re-eligibility: an open-PR lane is excluded as delivered-in-review, a no-PR no-run lane stays eligible",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-75",
+        "updatedAt": "2026-09-09T19:35:11.667Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-460",
+        "title": "KOD-75-AC-25 — With the plateau bound at 1, a tick closing no open criterion ends the fire with a PR from its best iteration",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-75",
+        "updatedAt": "2026-09-09T19:35:10.544Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-455",
+        "title": "KOD-75-AC-20 — Over a table of lane fixtures a lane's gap is empty iff the fire-state arithmetic returns Done",
+        "status": "In Review",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-75",
+        "updatedAt": "2026-09-09T19:34:43.985Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-418",
+        "title": "KOD-75-AC-1 — The planner enumerates the ready set over a fixture blockedBy graph and ranks it by effective priority then age",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-75",
+        "updatedAt": "2026-09-09T19:34:42.554Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-804",
+        "title": "Triage: DispatchReport.criterion_keys is written by the walker and read by nothing",
+        "status": "Todo",
+        "labels": [
+          "queue:triage"
+        ],
+        "parentId": "KOD-75",
+        "updatedAt": "2026-09-09T06:54:36.432Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-802",
+        "title": "Triage: KOD-768's ruling is Done but no criterion carries the two things it says need building",
+        "status": "Todo",
+        "labels": [
+          "queue:triage"
+        ],
+        "parentId": "KOD-75",
+        "updatedAt": "2026-09-09T06:54:11.541Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-767",
+        "title": "Ruling: the carrier of a criterion's owner — parent key plus an operator label, or the assignee",
+        "status": "Todo",
+        "labels": [
+          "decision"
+        ],
+        "parentId": "KOD-75",
+        "updatedAt": "2026-09-09T06:52:59.376Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-785",
+        "title": "Ruling: does an open delivery hold a lane whose gap is still open, or must the walk fire it anyway",
+        "status": "Todo",
+        "labels": [
+          "decision"
+        ],
+        "parentId": "KOD-75",
+        "updatedAt": "2026-09-08T23:01:59.948Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-791",
+        "title": "A scope reports nothing ready and nothing blocked while an open criterion sits outside its container filter — the run reads as finished with work left in it",
+        "status": "Todo",
+        "labels": [],
+        "parentId": "KOD-75",
+        "updatedAt": "2026-09-08T23:01:32.056Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-786",
+        "title": "Ruling: a scoped issue with no criterion sub-issues — refuse, skip, or degenerate onto the authored fire path",
+        "status": "Todo",
+        "labels": [
+          "decision"
+        ],
+        "parentId": "KOD-75",
+        "updatedAt": "2026-09-08T23:01:23.452Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-116",
+        "title": "A lane closes when its gap empties, never when a fire ends — and no size estimate may gate dispatch",
+        "status": "Todo",
+        "labels": [
+          "queue:approved:ticket",
+          "queue:approved:criteria",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-75",
+        "updatedAt": "2026-09-08T22:59:54.306Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-789",
+        "title": "One member with no criterion sub-issues aborts the ready read for the whole scope, not just that member",
+        "status": "Todo",
+        "labels": [],
+        "parentId": "KOD-75",
+        "updatedAt": "2026-09-08T22:59:06.868Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-115",
+        "title": "A squashed blocker leaves its recorded branch stale, and landedness is undetectable by ancestry",
+        "status": "Todo",
+        "labels": [
+          "queue:approved:ticket",
+          "queue:approved:criteria",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-75",
+        "updatedAt": "2026-09-08T21:08:01.962Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-764",
+        "title": "Ruling: KOD-461's subject — GapMeasurement does not exist; restate on the tick report or retire to KOD-456",
+        "status": "Done",
+        "labels": [
+          "decision"
+        ],
+        "parentId": "KOD-75",
+        "updatedAt": "2026-09-08T20:52:25.372Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-766",
+        "title": "Ruling: the boot capability check KOD-465 names was deleted under KOD-744 — restore it or restate under the plan of record",
+        "status": "Todo",
+        "labels": [
+          "decision"
+        ],
+        "parentId": "KOD-75",
+        "updatedAt": "2026-09-08T20:51:40.240Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-765",
+        "title": "Ruling: \"no description is parsed anywhere\" versus a criterion sub-issue's own Check and Evidence rows",
+        "status": "Todo",
+        "labels": [
+          "decision"
+        ],
+        "parentId": "KOD-75",
+        "updatedAt": "2026-09-08T20:49:37.616Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-94",
+        "title": "Fire-time ruling node: rule every open question onto the tracker before the ralph loop starts",
+        "status": "Todo",
+        "labels": [
+          "queue:approved:ticket",
+          "queue:approved:criteria",
+          "model:criterion-lifecycle",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-75",
+        "updatedAt": "2026-09-08T17:25:46.421Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-309",
+        "title": "A re-fire resumes from the prior fire's branch when one is recorded and still ahead of trunk — a failed fire's work is carried over the finish line instead of started over",
+        "status": "Todo",
+        "labels": [
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-75",
+        "updatedAt": "2026-09-08T16:39:42.720Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-109",
+        "title": "Base-resolvability is a plan-time property: a lane with two mutually-unordered blockers can never satisfy D9d",
+        "status": "Canceled",
+        "labels": [
+          "queue:approved:ticket",
+          "queue:triage"
+        ],
+        "parentId": "KOD-75",
+        "updatedAt": "2026-09-07T11:40:26.225Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      }
+    ],
+    "hasNextPage": false
+  },
+  "KOD-76": {
+    "issues": [
+      {
+        "id": "KOD-398",
+        "title": "KOD-76-AC-2 — criteria validation reads the issue's spec from the tracker, never a side channel",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-76",
+        "updatedAt": "2026-09-12T12:24:01.835Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-401",
+        "title": "KOD-76-AC-5 — a backwards transition without an explicit permitting row raises a typed error",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-76",
+        "updatedAt": "2026-09-12T11:16:57.896Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-797",
+        "title": "Ruling: how the plateau and budget put-back is carried as a run-event row",
+        "status": "Todo",
+        "labels": [
+          "decision"
+        ],
+        "parentId": "KOD-76",
+        "updatedAt": "2026-09-12T11:16:57.748Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-97",
+        "title": "Criterion amendment reconciler: default UPHELD, amend only on a self-verified ground, tracker corrected before the code lands",
+        "status": "Todo",
+        "labels": [
+          "queue:approved:ticket",
+          "queue:approved:criteria",
+          "model:criterion-lifecycle",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-76",
+        "updatedAt": "2026-09-12T09:15:36.942Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-397",
+        "title": "KOD-76-AC-1 — the evaluator writes every criterion state move inside the loop, never a post-loop step",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-76",
+        "updatedAt": "2026-09-12T08:54:36.953Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-404",
+        "title": "KOD-76-AC-8 — drift reconciliation is a pure computation over a lane's live run state",
+        "status": "Canceled",
+        "labels": [
+          "criterion"
+        ],
+        "parentId": "KOD-76",
+        "updatedAt": "2026-09-09T21:14:16.739Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-399",
+        "title": "KOD-76-AC-3 — the deviation is written to the issue before the deviating commit reaches the branch",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-76",
+        "updatedAt": "2026-09-09T19:47:53.444Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-400",
+        "title": "KOD-76-AC-4 — a killed fire resumes from the remote branch and the criterion sub-issue states",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-76",
+        "updatedAt": "2026-09-09T19:47:42.939Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-406",
+        "title": "KOD-76-AC-10 — a cross-off graded at or after a failing mark's violating commit is laundered",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-76",
+        "updatedAt": "2026-09-09T19:47:42.490Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-408",
+        "title": "KOD-76-AC-12 — reopening is per-criterion: only the refuted sub-issues move, the rest are untouched",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-76",
+        "updatedAt": "2026-09-09T19:47:41.975Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-409",
+        "title": "KOD-76-AC-13 — a lapse is a state move back; a criterion graded behind head still counts",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-76",
+        "updatedAt": "2026-09-09T19:47:41.435Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-411",
+        "title": "KOD-76-AC-14 — every lane-gate record carrying a graded sha expresses its verdict with the state enum",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-76",
+        "updatedAt": "2026-09-09T19:47:38.216Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-413",
+        "title": "KOD-76-AC-15 — exactly one function in the source tree compares a graded sha to a head sha",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-76",
+        "updatedAt": "2026-09-09T19:47:35.167Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-417",
+        "title": "KOD-76-AC-17 — the state-arithmetic module imports nothing from adapters and performs no I/O",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-76",
+        "updatedAt": "2026-09-09T19:47:34.695Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-429",
+        "title": "KOD-76-AC-21 — a merely expensive demonstration is not undemonstrable",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-76",
+        "updatedAt": "2026-09-09T19:47:32.332Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-437",
+        "title": "KOD-76-AC-24 — the forge arm: exact head-sha run, a rostered check set, one red vocabulary",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-76",
+        "updatedAt": "2026-09-09T19:47:31.240Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-405",
+        "title": "KOD-76-AC-9 — two axes gated independently: satisfied cross-offs shown, ruling violations block",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-76",
+        "updatedAt": "2026-09-09T19:41:56.265Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-407",
+        "title": "KOD-76-AC-11 — a fire's Done is the rollup over all its criterion sub-issues, lane checks among them",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-76",
+        "updatedAt": "2026-09-09T19:40:29.360Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-426",
+        "title": "KOD-76-AC-20 — an undemonstrable criterion burns no iteration and leaves the budget unexhausted",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-76",
+        "updatedAt": "2026-09-09T19:39:11.275Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-435",
+        "title": "KOD-76-AC-23 — the undemonstrable reading raises exactly one escalation, and a replay writes nothing",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-76",
+        "updatedAt": "2026-09-09T19:39:10.579Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-432",
+        "title": "KOD-76-AC-22 — undemonstrability fails closed: no declared capability, no session-observed probe",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-76",
+        "updatedAt": "2026-09-09T19:39:09.998Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-423",
+        "title": "KOD-76-AC-19 — an undemonstrable obligation never blocks; a lapsed one does",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-76",
+        "updatedAt": "2026-09-09T19:39:08.049Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-440",
+        "title": "KOD-76-AC-25 — no session names a state; a recomputable write belongs to a node",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-76",
+        "updatedAt": "2026-09-09T19:39:07.206Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-415",
+        "title": "KOD-76-AC-16 — a DERIVED row re-runs the arithmetic and applies it through the total lookup",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-76",
+        "updatedAt": "2026-09-09T19:39:06.182Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-443",
+        "title": "KOD-76-AC-26 — the issue-state and fire-state results are applied at exactly one named seam",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-76",
+        "updatedAt": "2026-09-09T19:39:05.563Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-402",
+        "title": "KOD-76-AC-6 — a declared run event with no row fails at boot, and the lookup has no default arm",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-76",
+        "updatedAt": "2026-09-09T19:39:03.125Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-420",
+        "title": "KOD-76-AC-18 — every criterion state is classified counted or not-counted, with no default arm",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-76",
+        "updatedAt": "2026-09-09T19:37:45.290Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-403",
+        "title": "KOD-76-AC-7 — the table's key set equals the run-event vocabulary, compared in both directions",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-76",
+        "updatedAt": "2026-09-09T19:37:29.954Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-796",
+        "title": "KOD-76-AC-28 — exactly one seam applies a run-event row, and it sits behind the tracker port",
+        "status": "Todo",
+        "labels": [
+          "criterion"
+        ],
+        "parentId": "KOD-76",
+        "updatedAt": "2026-09-09T19:37:28.045Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-795",
+        "title": "KOD-76-AC-27 — the table carries no vendor state name; the vendor string is resolved at the port boundary",
+        "status": "Todo",
+        "labels": [
+          "criterion"
+        ],
+        "parentId": "KOD-76",
+        "updatedAt": "2026-09-09T19:37:27.260Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-809",
+        "title": "Triage: a killed run leaves a branch and half-written work, and the replacement fires on top of it — nobody has costed this",
+        "status": "Todo",
+        "labels": [
+          "queue:triage"
+        ],
+        "parentId": "KOD-76",
+        "updatedAt": "2026-09-09T16:11:34.905Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-798",
+        "title": "Triage: twelve of eighteen run-event kinds are raised by no code and asked for by no criterion",
+        "status": "Todo",
+        "labels": [
+          "queue:triage"
+        ],
+        "parentId": "KOD-76",
+        "updatedAt": "2026-09-09T07:18:24.241Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-755",
+        "title": "Ruling: the Done-setter seam — does the big-picture evaluation step survive the subtree rollup",
+        "status": "Done",
+        "labels": [
+          "decision"
+        ],
+        "parentId": "KOD-76",
+        "updatedAt": "2026-09-09T06:19:16.864Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-756",
+        "title": "Ruling: the ruling axis — a record read beside the rollup or criterion sub-issues, and the fate of the lane-gate partition and the laundering function",
+        "status": "Done",
+        "labels": [
+          "decision"
+        ],
+        "parentId": "KOD-76",
+        "updatedAt": "2026-09-08T23:13:57.650Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-759",
+        "title": "Ruling: the fifth undemonstrated way — mint KOD-119-AC-8/9/10 or declare it out of scope",
+        "status": "Todo",
+        "labels": [
+          "decision"
+        ],
+        "parentId": "KOD-76",
+        "updatedAt": "2026-09-08T23:02:12.743Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-760",
+        "title": "Ruling: who builds the undemonstrated cross-off member and the re-run count — KOD-119 or the owner issues",
+        "status": "Todo",
+        "labels": [
+          "decision"
+        ],
+        "parentId": "KOD-76",
+        "updatedAt": "2026-09-08T23:01:36.166Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-117",
+        "title": "The criteria stage writes the checklist onto the issue body, and the loop ticks it — without it, criterion ids resolve to nothing",
+        "status": "Todo",
+        "labels": [
+          "queue:approved:ticket",
+          "queue:approved:criteria",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-76",
+        "updatedAt": "2026-09-08T21:07:37.943Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-119",
+        "title": "A green gate is not evidence for a criterion — four ways a satisfied verdict was reached without a demonstration",
+        "status": "Todo",
+        "labels": [
+          "queue:approved:ticket",
+          "queue:approved:criteria",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-76",
+        "updatedAt": "2026-09-08T21:07:36.032Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-761",
+        "title": "Ruling: KOD-117's checklist-carriage criteria under the sub-issue model — the round trip, the silent tick and adoption",
+        "status": "Todo",
+        "labels": [
+          "decision"
+        ],
+        "parentId": "KOD-76",
+        "updatedAt": "2026-09-08T20:49:24.822Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-95",
+        "title": "Idempotent tracker writes: marker-keyed comments, assert-then-edit descriptions, check-before-create PRs and issues",
+        "status": "Todo",
+        "labels": [
+          "queue:approved:ticket",
+          "queue:approved:criteria",
+          "model:criterion-lifecycle",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-76",
+        "updatedAt": "2026-09-08T17:33:05.392Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-96",
+        "title": "Live lane run-state record: marker-keyed, edited at commit cadence, and the run's re-entry index",
+        "status": "Todo",
+        "labels": [
+          "queue:approved:ticket",
+          "queue:approved:criteria",
+          "model:criterion-lifecycle",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-76",
+        "updatedAt": "2026-09-08T17:33:00.413Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-310",
+        "title": "The Fire Log row is a title string — every structured column (Outcome, Repo, PR, Iterations, Duration, What happened, Handoff) is empty even on a completed run",
+        "status": "Todo",
+        "labels": [
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-76",
+        "updatedAt": "2026-09-08T13:45:42.008Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      }
+    ],
+    "hasNextPage": false
+  },
+  "KOD-77": {
+    "issues": [
+      {
+        "id": "KOD-78",
+        "title": "v0.3 L6 — Scope terminal: per-lane outcome vector + initiative progress report",
+        "status": "Todo",
+        "labels": [
+          "queue:approved:ticket",
+          "queue:approved:criteria",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-77",
+        "updatedAt": "2026-09-12T10:55:02.884Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-110",
+        "title": "Union verification: whether a scope's open PRs compose is unobservable to per-PR checks",
+        "status": "Todo",
+        "labels": [
+          "queue:approved:ticket",
+          "queue:approved:criteria",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-77",
+        "updatedAt": "2026-09-12T08:57:38.302Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-332",
+        "title": "KOD-77-AC-20 — The compiled fire graph carries no PR-opening, check-watching or PR-comment node or route, and the ralph workflow module mentions none of those node names",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-77",
+        "updatedAt": "2026-09-09T21:11:11.373Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-333",
+        "title": "KOD-77-AC-21 — Delivery bounds are enforced by the composed consumer",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-77",
+        "updatedAt": "2026-09-09T19:54:00.872Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-322",
+        "title": "KOD-77-AC-10 — An unclassified red never reaches remediation and the red-class vocabulary is defined once at the red-routing site, with no second classifier in the package",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-77",
+        "updatedAt": "2026-09-09T19:53:59.434Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-329",
+        "title": "KOD-77-AC-17 — Concurrency is bounded by configuration: with the watch bound at N, N+1 lanes never exceed N in-flight wait_for_checks calls and every one reaches a terminal",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-77",
+        "updatedAt": "2026-09-09T19:53:55.635Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-317",
+        "title": "KOD-77-AC-5 — Flake: a red whose re-observation at the same sha is not red classifies RUNNER_FLAKE; with the re-run bound at zero the same fixture classifies WORK_DEFECT",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-77",
+        "updatedAt": "2026-09-09T19:53:52.743Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-325",
+        "title": "KOD-77-AC-13 — Merging stays inexpressible: the PR-creating port is exactly create_pr and comment_on_pr, the forge double exposes no merge method, nothing reads merge state",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-77",
+        "updatedAt": "2026-09-09T19:51:35.641Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-324",
+        "title": "KOD-77-AC-12 — Appended outcome members are asserted by name with exact string values, every base member survives unchanged, and no test asserts a member count",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-77",
+        "updatedAt": "2026-09-09T19:51:35.137Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-321",
+        "title": "KOD-77-AC-9 — No class is established from failure text: the check-monitor double exposes exactly four methods and emptying every check summary changes no classification",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-77",
+        "updatedAt": "2026-09-09T19:51:33.472Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-319",
+        "title": "KOD-77-AC-7 — Both fail-closed misses of the prerequisite path fall through to re-observation and take the class observation establishes",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-77",
+        "updatedAt": "2026-09-09T19:51:32.678Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-315",
+        "title": "KOD-77-AC-3 — Checks absent because none are declared: the tri-state None with checks_declared false yields ci_not_configured and creates no remediation entry",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-77",
+        "updatedAt": "2026-09-09T19:51:31.686Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-313",
+        "title": "KOD-77-AC-1 — DeliveryCoordinator exposes exactly one entry point deliver(...) -> LaneDelivery and the hand-off adds no field to fire state or terminal event",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-77",
+        "updatedAt": "2026-09-09T19:47:33.918Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-314",
+        "title": "KOD-77-AC-2 — Green lane: create_pr once with head and the dispatch-resolved base, wait_for_checks once, outcome ci_passed, and the PR still open on return",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-77",
+        "updatedAt": "2026-09-09T19:47:33.273Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-316",
+        "title": "KOD-77-AC-4 — The third arm: None with checks_declared true yields ci_no_run_at_ref and blocks close-out; a forge-exempt repository terminates cleanly",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-77",
+        "updatedAt": "2026-09-09T19:47:32.866Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-318",
+        "title": "KOD-77-AC-6 — Prerequisite unmet, declaration against declaration, classifies ENVIRONMENT_PREREQUISITE_UNMET with a residual carrying act and owner, no fix round, no rerun_checks",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-77",
+        "updatedAt": "2026-09-09T19:47:31.776Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-320",
+        "title": "KOD-77-AC-8 — Unclassified: red across the whole re-run bound with a differing failing-step set classifies UNCLASSIFIED, yields a residual and reaches no remediation",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-77",
+        "updatedAt": "2026-09-09T19:47:30.740Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-323",
+        "title": "KOD-77-AC-11 — Both outcome classifiers are total with no default arm: an unclassifiable fire state raises, and so does an unclassifiable LaneDelivery",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-77",
+        "updatedAt": "2026-09-09T19:47:28.582Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-326",
+        "title": "KOD-77-AC-14 — Write set: across every coordinator fixture the only tracker write attributable to the coordinator is the failure-path pull-request comment",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-77",
+        "updatedAt": "2026-09-09T19:47:27.888Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-327",
+        "title": "KOD-77-AC-15 — A stalled lane's do-not-merge pull request is opened and watched like any other, its outcome is stalled_pr_opened, and no do-not-merge branch exists",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-77",
+        "updatedAt": "2026-09-09T19:47:26.386Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-328",
+        "title": "KOD-77-AC-16 — Ordering independence: a dependent lane opens its PR against its blocker's branch, and a resolved base absent from the remote raises the typed error",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-77",
+        "updatedAt": "2026-09-09T19:47:22.100Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-330",
+        "title": "KOD-77-AC-18 — LaneDelivery is a frozen camel-cased model reusing the existing lane-PR model, and every new type lands in the module that owns it",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-77",
+        "updatedAt": "2026-09-09T19:47:21.518Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-331",
+        "title": "KOD-77-AC-19 — The fire sheds delivery: a clean fire terminates handed_off_for_delivery, its terminal event carries no PR or check keys, and the clean runs in the coordinator",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-77",
+        "updatedAt": "2026-09-09T19:35:40.129Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-308",
+        "title": "A fire leaves its branch and every backup branch on the target repository forever — hundreds of orphan branches from prior fires, no PR behind any of them, nothing prunes on any terminal path",
+        "status": "Todo",
+        "labels": [
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-77",
+        "updatedAt": "2026-09-08T23:01:23.647Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-770",
+        "title": "Ruling: KOD-308's title and body name private repositories and quote an instruction verbatim on a public-mirrored board",
+        "status": "Done",
+        "labels": [
+          "decision"
+        ],
+        "parentId": "KOD-77",
+        "updatedAt": "2026-09-08T17:32:08.428Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-118",
+        "title": "A lane that reported nothing is indistinguishable from a lane with nothing left — silence must not render as success",
+        "status": "Todo",
+        "labels": [
+          "queue:approved:ticket",
+          "queue:approved:criteria",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-77",
+        "updatedAt": "2026-09-08T17:25:53.161Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      }
+    ],
+    "hasNextPage": false
+  },
+  "KOD-78": {
+    "issues": [
+      {
+        "id": "KOD-485",
+        "title": "KOD-78-AC-15 — Outbound admission classifies references and aggregate data before rendering",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-78",
+        "updatedAt": "2026-09-12T09:15:36.765Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-491",
+        "title": "KOD-78-AC-21 — Deployment privacy facts classify references without vendor regex in core",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-78",
+        "updatedAt": "2026-09-09T19:54:01.518Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-472",
+        "title": "KOD-78-AC-2 — Three scope_ convergence members are appended to the existing outcome enum, never a parallel enum",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-78",
+        "updatedAt": "2026-09-09T19:53:56.248Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-483",
+        "title": "KOD-78-AC-13 — SurfaceDurability lands beside the verdict enum with a total in-code mapping over the destination enum",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-78",
+        "updatedAt": "2026-09-09T19:51:57.809Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-473",
+        "title": "KOD-78-AC-3 — Validators raise on each inconsistent convergence, residual and stopping-rule combination",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-78",
+        "updatedAt": "2026-09-09T19:46:10.140Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-474",
+        "title": "KOD-78-AC-4 — A serialized scope_converged event still carries the residual-items and stopping-rule keys",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-78",
+        "updatedAt": "2026-09-09T19:46:09.594Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-475",
+        "title": "KOD-78-AC-5 — A declared stop is data: the stopping rule names the configured field, its value and the rounds used",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-78",
+        "updatedAt": "2026-09-09T19:46:08.998Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-476",
+        "title": "KOD-78-AC-6 — Each residual item carries issue, class, record reference, detail, act and owner; no enum member for machine-complete",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-78",
+        "updatedAt": "2026-09-09T19:46:08.342Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-477",
+        "title": "KOD-78-AC-7 — An undemonstrable obligation never blocks: such a lane reaches scope_converged_with_residual",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-78",
+        "updatedAt": "2026-09-09T19:46:07.405Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-478",
+        "title": "KOD-78-AC-8 — The terminal is never a first writer: an unreadable record becomes UNRECORDED_AT_TERMINAL and forbids convergence",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-78",
+        "updatedAt": "2026-09-09T19:46:06.061Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-479",
+        "title": "KOD-78-AC-9 — Write set closed: the terminal's only tracker write is the container status update",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-78",
+        "updatedAt": "2026-09-09T19:46:05.193Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-480",
+        "title": "KOD-78-AC-10 — No machine outcome is a function of a merge: lanes holding open unmerged PRs are scope_converged",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-78",
+        "updatedAt": "2026-09-09T19:46:04.589Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-481",
+        "title": "KOD-78-AC-11 — Silence cannot render as success: reported entries cover the lanes dispatched, an unreported lane forbids convergence",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-78",
+        "updatedAt": "2026-09-09T19:46:03.273Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-471",
+        "title": "KOD-78-AC-1 — The terminal emits a typed lane-vector event and derives the scope outcome arithmetically from it",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-78",
+        "updatedAt": "2026-09-09T19:46:02.732Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-482",
+        "title": "KOD-78-AC-12 — Resumability: a prior attempt that left no terminal event is reported scope_stopped_short from durable state",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-78",
+        "updatedAt": "2026-09-09T19:46:00.421Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-484",
+        "title": "KOD-78-AC-14 — One destination member per real writer: a point-in-time status-update destination, and none this lane never writes",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-78",
+        "updatedAt": "2026-09-09T19:45:54.591Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-486",
+        "title": "KOD-78-AC-16 — Tracker aggregates are refused on durable surfaces and allowed on point-in-time surfaces",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-78",
+        "updatedAt": "2026-09-09T19:45:52.775Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-487",
+        "title": "KOD-78-AC-17 — A refused durable write identifies the offending structured value or prose span",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-78",
+        "updatedAt": "2026-09-09T19:45:52.016Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-488",
+        "title": "KOD-78-AC-18 — Aggregate admission works without configurable patterns and preserves ordinary numeric prose",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-78",
+        "updatedAt": "2026-09-09T19:45:50.930Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-489",
+        "title": "KOD-78-AC-19 — Terminal and residual writers prove structured aggregate admission at their real call sites",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-78",
+        "updatedAt": "2026-09-09T19:45:49.188Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-490",
+        "title": "KOD-78-AC-20 — Durable count and roster policy uses domain rules and fixed defaults",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-78",
+        "updatedAt": "2026-09-09T19:45:47.952Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-492",
+        "title": "KOD-78-AC-22 — The cut scope dimension is not built: no new HTTP route, handler or response model for a scope run",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-78",
+        "updatedAt": "2026-09-09T19:37:41.925Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-772",
+        "title": "Ruling: the D3 job-status scope dimension — is the 2026-08-11 cut confirmed, or does D3 return as a deliverable",
+        "status": "Todo",
+        "labels": [
+          "decision"
+        ],
+        "parentId": "KOD-78",
+        "updatedAt": "2026-09-09T06:54:24.030Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      }
+    ],
+    "hasNextPage": false
+  },
+  "KOD-79": {
+    "issues": [
+      {
+        "id": "KOD-121",
+        "title": "Review lens: a heuristic standing in for judgment, judged against the mechanisms the codebase actually has",
+        "status": "Backlog",
+        "labels": [
+          "decision"
+        ],
+        "parentId": "KOD-79",
+        "updatedAt": "2026-09-12T09:02:04.687Z"
+      },
+      {
+        "id": "KOD-526",
+        "title": "KOD-79-AC-14 — the verifier refutes a bad write-back, the repair round rewrites it, and the consumer reads the repair",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-79",
+        "updatedAt": "2026-09-12T08:21:20.718Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-529",
+        "title": "KOD-79-AC-16 — both dispatch sites carry session_id=None and inherit no writing session's transcript",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-79",
+        "updatedAt": "2026-09-09T22:03:27.280Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-820",
+        "title": "Ruling: the write-back verifier's deleted dispatch site — which prompt role and output contract a fresh write-back judgment runs under",
+        "status": "Todo",
+        "labels": [
+          "decision"
+        ],
+        "parentId": "KOD-79",
+        "updatedAt": "2026-09-09T21:56:56.553Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-510",
+        "title": "KOD-79-AC-6 — a changed ruling-encoding assertion between graded sha and head is a deviation claim, green or not",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-79",
+        "updatedAt": "2026-09-09T19:53:53.577Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-508",
+        "title": "KOD-79-AC-5 — Done is checked against the forge run at the criterion's Evidence sha, matched exactly",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-79",
+        "updatedAt": "2026-09-09T19:53:29.857Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-523",
+        "title": "KOD-79-AC-13 — a recorded verdict is a claim to audit, never an input to the auditor's session",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-79",
+        "updatedAt": "2026-09-09T19:53:29.287Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-514",
+        "title": "KOD-79-AC-8 — a removal that deletes its own detection is reported; the silence is the finding",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-79",
+        "updatedAt": "2026-09-09T19:53:28.808Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-539",
+        "title": "KOD-79-AC-22 — AppConfig declares the sweep configuration fields with bounds and one .env.example row each",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-79",
+        "updatedAt": "2026-09-09T19:51:42.566Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-537",
+        "title": "KOD-79-AC-20 — Delta ticks and periodic full sweeps cover every eligible record; lost marks repeat rather than skip work",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-79",
+        "updatedAt": "2026-09-09T19:51:41.837Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-512",
+        "title": "KOD-79-AC-7 — the over-claim taxonomy asserted in four fixtures",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-79",
+        "updatedAt": "2026-09-09T19:51:38.272Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-504",
+        "title": "KOD-79-AC-3 — an open unmerged PR at the expected terminal is no discrepancy; closed-unmerged behind it is one",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-79",
+        "updatedAt": "2026-09-09T19:51:36.986Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-500",
+        "title": "KOD-79-AC-1 — one AuditVerdict StrEnum (holds, refuted, unverifiable) types every verdict field",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-79",
+        "updatedAt": "2026-09-09T19:51:36.227Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-502",
+        "title": "KOD-79-AC-2 — refuted is one Done → Todo write with evidence; unverifiable reports and transitions no issue",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-79",
+        "updatedAt": "2026-09-09T19:45:18.394Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-506",
+        "title": "KOD-79-AC-4 — restamp traceability as a pair: no grading record at the sha is refuted, one at it is holds",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-79",
+        "updatedAt": "2026-09-09T19:45:17.088Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-518",
+        "title": "KOD-79-AC-10 — escalations complete before the report step, and every report claim resolves to a record",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-79",
+        "updatedAt": "2026-09-09T19:45:15.396Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-520",
+        "title": "KOD-79-AC-11 — a Done criterion behind head is unverifiable and moves to In Review; one failing at head is refuted",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-79",
+        "updatedAt": "2026-09-09T19:45:14.527Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-522",
+        "title": "KOD-79-AC-12 — escalation identity is idempotent, keyed on the criterion sub-issue key",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-79",
+        "updatedAt": "2026-09-09T19:45:12.320Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-527",
+        "title": "KOD-79-AC-15 — an unfixed write-back stops at the configured round budget and reports unverifiable",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-79",
+        "updatedAt": "2026-09-09T19:45:10.644Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-531",
+        "title": "KOD-79-AC-17 — adoption enumerated from the tracker port's own write surface, ORGANIZE's writes included",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-79",
+        "updatedAt": "2026-09-09T19:44:49.977Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-533",
+        "title": "KOD-79-AC-18 — an inline holds does not exempt the sweep; a write path with no verifier fails at startup",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-79",
+        "updatedAt": "2026-09-09T19:44:49.183Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-538",
+        "title": "KOD-79-AC-21 — every outbound write passes the sanitization gate, asserted at the gate",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-79",
+        "updatedAt": "2026-09-09T19:44:46.703Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-540",
+        "title": "KOD-79-AC-23 — placement of protocol, verifier, sweep, types and pass builder; cross-lane symbols imported by name",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-79",
+        "updatedAt": "2026-09-09T19:44:45.828Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-541",
+        "title": "KOD-79-AC-24 — no new type: ignore, noqa or skip marker on changed lines, and no test or assert removed",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-79",
+        "updatedAt": "2026-09-09T19:44:44.254Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-516",
+        "title": "KOD-79-AC-9 — every refuted verdict carries a mandate verdict in the same three states",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-79",
+        "updatedAt": "2026-09-09T19:41:11.139Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-535",
+        "title": "KOD-79-AC-19 — exactly one audit ScheduledPass on the existing scheduler; no sleep, timer or second clock",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-79",
+        "updatedAt": "2026-09-09T19:38:37.258Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-757",
+        "title": "Ruling: KOD-121 and KOD-125 — in the project or out, and do they carry criteria",
+        "status": "Todo",
+        "labels": [
+          "decision"
+        ],
+        "parentId": "KOD-79",
+        "updatedAt": "2026-09-09T06:53:06.470Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-773",
+        "title": "Ruling: KOD-79-AC-9's \"every refuted verdict\" — raw sweep observations, or only emitted claim reports",
+        "status": "Todo",
+        "labels": [
+          "decision"
+        ],
+        "parentId": "KOD-79",
+        "updatedAt": "2026-09-08T20:50:21.244Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-125",
+        "title": "The supervisor lens: the review must ask why the code exists, not whether it is correct — and Sherlock/Watson's function has to survive de-prescription",
+        "status": "Backlog",
+        "labels": [
+          "decision"
+        ],
+        "parentId": "KOD-79",
+        "updatedAt": "2026-09-08T16:49:56.198Z"
+      }
+    ],
+    "hasNextPage": false
+  },
+  "KOD-103": {
+    "issues": [
+      {
+        "id": "KOD-799",
+        "title": "Triage: the run-shape supervisor's composition is named only in a lane body, so no sub-issue carries it",
+        "status": "Todo",
+        "labels": [
+          "queue:triage"
+        ],
+        "parentId": "KOD-103",
+        "updatedAt": "2026-09-12T08:56:00.950Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-495",
+        "title": "KOD-103-AC-3 — Run-event stream order and the edit/post split",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-103",
+        "updatedAt": "2026-09-12T08:47:24.112Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-497",
+        "title": "KOD-103-AC-5 — One subject per alarm, and no invalid subject is constructible",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-103",
+        "updatedAt": "2026-09-12T08:42:48.286Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-521",
+        "title": "KOD-103-AC-18 — Every bound is configuration, and every threshold alarm names its knob",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-103",
+        "updatedAt": "2026-09-09T19:53:50.964Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-534",
+        "title": "KOD-103-AC-24 — It reports the shape and never the cause",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-103",
+        "updatedAt": "2026-09-09T19:53:03.815Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-519",
+        "title": "KOD-103-AC-17 — Mandate growth and uncomputed graph consequence each fire and each stay clean",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-103",
+        "updatedAt": "2026-09-09T19:53:03.336Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-513",
+        "title": "KOD-103-AC-14 — A skipped write-back and a lagging record, both from tracker state alone",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-103",
+        "updatedAt": "2026-09-09T19:53:02.527Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-511",
+        "title": "KOD-103-AC-13 — Superseding is decided by the recorded commit order",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-103",
+        "updatedAt": "2026-09-09T19:52:44.166Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-515",
+        "title": "KOD-103-AC-15 — Barren growth is measured in the units the lane record carries",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-103",
+        "updatedAt": "2026-09-09T19:52:17.876Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-507",
+        "title": "KOD-103-AC-11 — Ageing is measured in the run's own clock, on two terms",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-103",
+        "updatedAt": "2026-09-09T19:52:05.876Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-509",
+        "title": "KOD-103-AC-12 — Contention is counted over a surface's whole recorded provenance",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-103",
+        "updatedAt": "2026-09-09T19:52:04.860Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-496",
+        "title": "KOD-103-AC-4 — Escalation resolution is two states plus a typed error",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-103",
+        "updatedAt": "2026-09-09T19:51:59.202Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-494",
+        "title": "KOD-103-AC-2 — Surface write provenance, never inferred from a timestamp",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-103",
+        "updatedAt": "2026-09-09T19:44:38.502Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-499",
+        "title": "KOD-103-AC-7 — Every folded signal is a member; every widening is an arm of its member",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-103",
+        "updatedAt": "2026-09-09T19:44:37.675Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-503",
+        "title": "KOD-103-AC-9 — The scope arm reads the roster and stage markers, never a scope-keyed event",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-103",
+        "updatedAt": "2026-09-09T19:44:36.871Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-517",
+        "title": "KOD-103-AC-16 — Composition substitution reads a per-node session event of the vocabulary",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-103",
+        "updatedAt": "2026-09-09T19:44:36.065Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-525",
+        "title": "KOD-103-AC-20 — Replay: a signal re-run over its alarm's readings yields an equal alarm",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-103",
+        "updatedAt": "2026-09-09T19:44:35.297Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-536",
+        "title": "KOD-103-AC-25 — No suppression and no weakened test surface",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-103",
+        "updatedAt": "2026-09-09T19:44:22.473Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-501",
+        "title": "KOD-103-AC-8 — Ungraded is not unmoved",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-103",
+        "updatedAt": "2026-09-09T19:40:01.581Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-505",
+        "title": "KOD-103-AC-10 — A lapse is not a regression; a lapse nothing will re-derive is an alarm",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-103",
+        "updatedAt": "2026-09-09T19:39:59.947Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-530",
+        "title": "KOD-103-AC-22 — Both events are NO_TRANSITION, and the supervisor moves nothing",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-103",
+        "updatedAt": "2026-09-09T19:39:00.936Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-528",
+        "title": "KOD-103-AC-21 — One record, transition-only events",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-103",
+        "updatedAt": "2026-09-09T19:38:55.579Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-524",
+        "title": "KOD-103-AC-19 — Purity, and the cost claim as a test",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-103",
+        "updatedAt": "2026-09-09T19:38:45.289Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-498",
+        "title": "KOD-103-AC-6 — Totality and capability checked at boot, never branched on at runtime",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-103",
+        "updatedAt": "2026-09-09T19:38:38.829Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-532",
+        "title": "KOD-103-AC-23 — It writes only the surface it holds",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-103",
+        "updatedAt": "2026-09-09T19:38:37.840Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-493",
+        "title": "KOD-103-AC-1 — Alarm round-trip and identity through the tracker port",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-103",
+        "updatedAt": "2026-09-09T19:34:46.528Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-775",
+        "title": "Ruling: the alarm record's address — D5's lane-keyed run-alarm marker versus the ruled (subject, signal) identity",
+        "status": "Done",
+        "labels": [
+          "decision"
+        ],
+        "parentId": "KOD-103",
+        "updatedAt": "2026-09-08T20:52:25.719Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-762",
+        "title": "Ruling: the reading KOD-103-AC-10 is defined over — cross-off states or criterion sub-issue states",
+        "status": "Done",
+        "labels": [
+          "decision"
+        ],
+        "parentId": "KOD-103",
+        "updatedAt": "2026-09-08T20:52:23.260Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      }
+    ],
+    "hasNextPage": false
+  },
+  "KOD-105": {
+    "issues": [
+      {
+        "id": "KOD-416",
+        "title": "KOD-105-AC-4 — Authored prompts stay byte-identical at implementation, fix and PR-description consumers",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-105",
+        "updatedAt": "2026-09-12T11:34:36.210Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-774",
+        "title": "Ruling: what \"vs the dispatch base\" covers on the lane's two no-touch criteria — the lane's own commits, or every inherited stack change",
+        "status": "Todo",
+        "labels": [
+          "decision"
+        ],
+        "parentId": "KOD-105",
+        "updatedAt": "2026-09-12T11:17:53.836Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-814",
+        "title": "Ruling: does the tracker arm's branch carry a criteria artifact — KOD-398's Do says none, KOD-436's Check requires one",
+        "status": "Todo",
+        "labels": [
+          "decision"
+        ],
+        "parentId": "KOD-105",
+        "updatedAt": "2026-09-12T11:17:17.125Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-430",
+        "title": "KOD-105-AC-9 — The spec read records tracker provenance and the on-branch criteria artifact carries it",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-105",
+        "updatedAt": "2026-09-12T08:39:29.149Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-436",
+        "title": "KOD-105-AC-11 — The tracker arm's branch carries the id-keyed criteria artifact and a subject reference, no ticket artifact",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-105",
+        "updatedAt": "2026-09-12T08:39:29.149Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-419",
+        "title": "KOD-105-AC-5 — No TicketDraftOutput is constructed anywhere on the tracker arm of the fire",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-105",
+        "updatedAt": "2026-09-09T20:31:57.552Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-412",
+        "title": "KOD-105-AC-2 — Formatter totality: the authored arm is byte-identical to today's ticket formatter",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-105",
+        "updatedAt": "2026-09-09T20:31:57.552Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-414",
+        "title": "KOD-105-AC-3 — The ticket-formatting domain module imports nothing from adapters and performs no I/O",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-105",
+        "updatedAt": "2026-09-09T20:31:57.552Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-421",
+        "title": "KOD-105-AC-6 — A subject carrying no criteria raises a typed error at the spec read and never deeper",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-105",
+        "updatedAt": "2026-09-09T19:48:37.118Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-424",
+        "title": "KOD-105-AC-7 — A subject without the criteria-stage marker or approval raises a typed error at the spec read",
+        "status": "Done",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-105",
+        "updatedAt": "2026-09-09T19:48:36.164Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-410",
+        "title": "KOD-105-AC-1 — FireSpec is a frozen typed partition AuthoredSpec | TrackerSpec reached through one total formatter",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-105",
+        "updatedAt": "2026-09-09T19:44:41.869Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-427",
+        "title": "KOD-105-AC-8 — A criterion with no Check body or in an illegal state raises a typed error at the spec read",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-105",
+        "updatedAt": "2026-09-09T19:44:40.197Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-439",
+        "title": "KOD-105-AC-12 — No change to the artifact-persister adapter or protocol, and clean() unchanged, vs the dispatch base",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-105",
+        "updatedAt": "2026-09-09T19:41:14.820Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-441",
+        "title": "KOD-105-AC-13 — No new suppression and no weakened test surface on changed lines, vs the dispatch base",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-105",
+        "updatedAt": "2026-09-09T19:41:13.975Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-433",
+        "title": "KOD-105-AC-10 — Ticket text is read once at fire entry; criterion states are re-queried every iteration",
+        "status": "Todo",
+        "labels": [
+          "criterion",
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-105",
+        "updatedAt": "2026-09-09T19:37:37.038Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-311",
+        "title": "The ralph loop delegates implementation to the workhorse engine through subagents wherever a step allows it, while the orchestrating judgment stays on the default engine",
+        "status": "Todo",
+        "labels": [
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-105",
+        "updatedAt": "2026-09-08T16:50:15.182Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      },
+      {
+        "id": "KOD-307",
+        "title": "The fire prompt carries no tracker issue key — the implementer cannot follow the repository's issue-keyed branch convention or reference the issue it is working",
+        "status": "Todo",
+        "labels": [
+          "code-verified 2026-09-08"
+        ],
+        "parentId": "KOD-105",
+        "updatedAt": "2026-09-08T16:50:13.887Z",
+        "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e"
+      }
+    ],
+    "hasNextPage": false
+  }
+}

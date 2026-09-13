@@ -1,0 +1,2074 @@
+........................................................................ [  2%]
+........................................................................ [  4%]
+........................................................................ [  7%]
+........................................................................ [  9%]
+........................................................................ [ 12%]
+........................................................................ [ 14%]
+........................................................................ [ 17%]
+........................................................................ [ 19%]
+........................................................................ [ 22%]
+........................................................................ [ 24%]
+........................................................................ [ 27%]
+........................................................................ [ 29%]
+..................F.F.....F.F........................................... [ 32%]
+..................................................F.F................... [ 34%]
+........................................................................ [ 37%]
+........................................................................ [ 39%]
+..............F......................................................... [ 42%]
+................................FF...................................... [ 44%]
+..............................................F......................... [ 47%]
+........................................................................ [ 49%]
+........................................................................ [ 51%]
+........................FF.............................................. [ 54%]
+...F.............................F...................................... [ 56%]
+...............................FF....................................... [ 59%]
+........................................................................ [ 61%]
+........................................................................ [ 64%]
+........................................................................ [ 66%]
+........................................................................ [ 69%]
+........................................................................ [ 71%]
+..........................................FFF........................... [ 74%]
+..............................F......................................... [ 76%]
+...........FF.F......................................................... [ 79%]
+..................................................F..................... [ 81%]
+........................................................................ [ 84%]
+........................................................................ [ 86%]
+........................................................................ [ 89%]
+........................................................................ [ 91%]
+........................................................................ [ 94%]
+........................................................................ [ 96%]
+........................................................................ [ 99%]
+...........................FF                                            [100%]
+=================================== FAILURES ===================================
+_ test_every_native_read_propagates_failure_or_cancellation[fake-port-False-1-list_comments] _
+
+tracker = <tests.fakes.FakeTrackerPort object at 0x10f6e9010>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10f794c80>
+method = 'list_comments', position = 1, cancel = False
+
+    @pytest.mark.parametrize("method", ["list_comments", "read_criteria"])
+    @pytest.mark.parametrize("position", [1, 2])
+    @pytest.mark.parametrize("cancel", [False, True])
+    async def test_every_native_read_propagates_failure_or_cancellation(
+        tracker, monkeypatch, method, position, cancel
+    ):
+        await seed(tracker, data={**record_data(), "filesChanged": 11})
+        original = getattr(tracker, method)
+        calls = 0
+    
+        async def read_or_fail(**kwargs):
+            nonlocal calls
+            calls += 1
+            if calls == position:
+                if cancel:
+                    raise asyncio.CancelledError
+                if method == "list_comments":
+                    raise McpTransportError("unreadable", server_name="fixture")
+                raise CriterionReadError(issue_key=APPROVED_ISSUE, reason="unreadable")
+            return await original(**kwargs)
+    
+        monkeypatch.setattr(tracker, method, read_or_fail)
+        error = (
+            asyncio.CancelledError
+            if cancel
+            else LaneRecordReadError
+            if method == "list_comments"
+            else CriterionReadError
+        )
+        with pytest.raises(error):
+>           await observe_recorded_barren_tick(tracker=tracker, **arguments())
+
+tests/tracker/test_barren_record_collector.py:275: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/services/barren_record_signals.py:39: in observe_recorded_barren_tick
+    comment, record = await reader.read(
+src/kodezart/services/lane_records.py:57: in read
+    comments = await self._tracker.list_comments(issue_key=issue_key)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+kwargs = {'issue_key': 'FIX-2'}
+
+    async def read_or_fail(**kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == position:
+            if cancel:
+                raise asyncio.CancelledError
+            if method == "list_comments":
+>               raise McpTransportError("unreadable", server_name="fixture")
+E               kodezart.core.errors.McpTransportError: unreadable (fixture)
+
+tests/tracker/test_barren_record_collector.py:262: McpTransportError
+_ test_every_native_read_propagates_failure_or_cancellation[fake-port-False-2-list_comments] _
+
+tracker = <tests.fakes.FakeTrackerPort object at 0x110244a70>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10ee474a0>
+method = 'list_comments', position = 2, cancel = False
+
+    @pytest.mark.parametrize("method", ["list_comments", "read_criteria"])
+    @pytest.mark.parametrize("position", [1, 2])
+    @pytest.mark.parametrize("cancel", [False, True])
+    async def test_every_native_read_propagates_failure_or_cancellation(
+        tracker, monkeypatch, method, position, cancel
+    ):
+        await seed(tracker, data={**record_data(), "filesChanged": 11})
+        original = getattr(tracker, method)
+        calls = 0
+    
+        async def read_or_fail(**kwargs):
+            nonlocal calls
+            calls += 1
+            if calls == position:
+                if cancel:
+                    raise asyncio.CancelledError
+                if method == "list_comments":
+                    raise McpTransportError("unreadable", server_name="fixture")
+                raise CriterionReadError(issue_key=APPROVED_ISSUE, reason="unreadable")
+            return await original(**kwargs)
+    
+        monkeypatch.setattr(tracker, method, read_or_fail)
+        error = (
+            asyncio.CancelledError
+            if cancel
+            else LaneRecordReadError
+            if method == "list_comments"
+            else CriterionReadError
+        )
+        with pytest.raises(error):
+>           await observe_recorded_barren_tick(tracker=tracker, **arguments())
+
+tests/tracker/test_barren_record_collector.py:275: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/services/barren_record_signals.py:63: in observe_recorded_barren_tick
+    current_comment, _ = await reader.read(
+src/kodezart/services/lane_records.py:57: in read
+    comments = await self._tracker.list_comments(issue_key=issue_key)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+kwargs = {'issue_key': 'FIX-2'}
+
+    async def read_or_fail(**kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == position:
+            if cancel:
+                raise asyncio.CancelledError
+            if method == "list_comments":
+>               raise McpTransportError("unreadable", server_name="fixture")
+E               kodezart.core.errors.McpTransportError: unreadable (fixture)
+
+tests/tracker/test_barren_record_collector.py:262: McpTransportError
+_ test_every_native_read_propagates_failure_or_cancellation[linear-mcp-False-1-list_comments] _
+
+tracker = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10f7f3470>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10f8c2c90>
+method = 'list_comments', position = 1, cancel = False
+
+    @pytest.mark.parametrize("method", ["list_comments", "read_criteria"])
+    @pytest.mark.parametrize("position", [1, 2])
+    @pytest.mark.parametrize("cancel", [False, True])
+    async def test_every_native_read_propagates_failure_or_cancellation(
+        tracker, monkeypatch, method, position, cancel
+    ):
+        await seed(tracker, data={**record_data(), "filesChanged": 11})
+        original = getattr(tracker, method)
+        calls = 0
+    
+        async def read_or_fail(**kwargs):
+            nonlocal calls
+            calls += 1
+            if calls == position:
+                if cancel:
+                    raise asyncio.CancelledError
+                if method == "list_comments":
+                    raise McpTransportError("unreadable", server_name="fixture")
+                raise CriterionReadError(issue_key=APPROVED_ISSUE, reason="unreadable")
+            return await original(**kwargs)
+    
+        monkeypatch.setattr(tracker, method, read_or_fail)
+        error = (
+            asyncio.CancelledError
+            if cancel
+            else LaneRecordReadError
+            if method == "list_comments"
+            else CriterionReadError
+        )
+        with pytest.raises(error):
+>           await observe_recorded_barren_tick(tracker=tracker, **arguments())
+
+tests/tracker/test_barren_record_collector.py:275: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/services/barren_record_signals.py:39: in observe_recorded_barren_tick
+    comment, record = await reader.read(
+src/kodezart/services/lane_records.py:57: in read
+    comments = await self._tracker.list_comments(issue_key=issue_key)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+kwargs = {'issue_key': 'FIX-2'}
+
+    async def read_or_fail(**kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == position:
+            if cancel:
+                raise asyncio.CancelledError
+            if method == "list_comments":
+>               raise McpTransportError("unreadable", server_name="fixture")
+E               kodezart.core.errors.McpTransportError: unreadable (fixture)
+
+tests/tracker/test_barren_record_collector.py:262: McpTransportError
+_ test_every_native_read_propagates_failure_or_cancellation[linear-mcp-False-2-list_comments] _
+
+tracker = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10f797590>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10f7947d0>
+method = 'list_comments', position = 2, cancel = False
+
+    @pytest.mark.parametrize("method", ["list_comments", "read_criteria"])
+    @pytest.mark.parametrize("position", [1, 2])
+    @pytest.mark.parametrize("cancel", [False, True])
+    async def test_every_native_read_propagates_failure_or_cancellation(
+        tracker, monkeypatch, method, position, cancel
+    ):
+        await seed(tracker, data={**record_data(), "filesChanged": 11})
+        original = getattr(tracker, method)
+        calls = 0
+    
+        async def read_or_fail(**kwargs):
+            nonlocal calls
+            calls += 1
+            if calls == position:
+                if cancel:
+                    raise asyncio.CancelledError
+                if method == "list_comments":
+                    raise McpTransportError("unreadable", server_name="fixture")
+                raise CriterionReadError(issue_key=APPROVED_ISSUE, reason="unreadable")
+            return await original(**kwargs)
+    
+        monkeypatch.setattr(tracker, method, read_or_fail)
+        error = (
+            asyncio.CancelledError
+            if cancel
+            else LaneRecordReadError
+            if method == "list_comments"
+            else CriterionReadError
+        )
+        with pytest.raises(error):
+>           await observe_recorded_barren_tick(tracker=tracker, **arguments())
+
+tests/tracker/test_barren_record_collector.py:275: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/services/barren_record_signals.py:63: in observe_recorded_barren_tick
+    current_comment, _ = await reader.read(
+src/kodezart/services/lane_records.py:57: in read
+    comments = await self._tracker.list_comments(issue_key=issue_key)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+kwargs = {'issue_key': 'FIX-2'}
+
+    async def read_or_fail(**kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == position:
+            if cancel:
+                raise asyncio.CancelledError
+            if method == "list_comments":
+>               raise McpTransportError("unreadable", server_name="fixture")
+E               kodezart.core.errors.McpTransportError: unreadable (fixture)
+
+tests/tracker/test_barren_record_collector.py:262: McpTransportError
+__ test_each_record_reader_preserves_failure_or_cancellation[fake-port-False] __
+
+tracker = <tests.fakes.FakeTrackerPort object at 0x1100365d0>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x110036fc0>
+cancelled = False
+
+    @pytest.mark.parametrize("cancelled", [False, True])
+    async def test_each_record_reader_preserves_failure_or_cancellation(
+        tracker, monkeypatch, cancelled
+    ):
+        failure = (
+            asyncio.CancelledError()
+            if cancelled
+            else McpTransportError("unreadable", server_name="fixture")
+        )
+    
+        async def fail(*, issue_key):
+            raise failure
+    
+        monkeypatch.setattr(tracker, "list_comments", fail)
+        comments = CommentsOnly(tracker)
+        calls = (
+            (
+                LaneRecordReader(tracker=comments, operation=lane.OPERATION).read,
+                lane.ADDRESS,
+                LaneRecordReadError,
+            ),
+            (
+                EscalationRecordReader(
+                    tracker=comments, operation=escalation.OPERATION
+                ).read,
+                escalation.ADDRESS,
+                EscalationReadError,
+            ),
+            (
+                RulingRecordReader(tracker=comments, operation=ruling.OPERATION).read_all,
+                ruling.ADDRESS,
+                RulingRecordReadError,
+            ),
+        )
+        for read, address, error in calls:
+            with pytest.raises(asyncio.CancelledError if cancelled else error) as caught:
+>               await read(**address)
+
+tests/tracker/test_consumer_read_ports.py:146: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/services/lane_records.py:57: in read
+    comments = await self._tracker.list_comments(issue_key=issue_key)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/tracker/test_consumer_read_ports.py:65: in list_comments
+    return await self.source.list_comments(issue_key=issue_key)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    async def fail(*, issue_key):
+>       raise failure
+E       kodezart.core.errors.McpTransportError: unreadable (fixture)
+
+tests/tracker/test_consumer_read_ports.py:121: McpTransportError
+_ test_each_record_reader_preserves_failure_or_cancellation[linear-mcp-False] __
+
+tracker = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x110246960>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x110246480>
+cancelled = False
+
+    @pytest.mark.parametrize("cancelled", [False, True])
+    async def test_each_record_reader_preserves_failure_or_cancellation(
+        tracker, monkeypatch, cancelled
+    ):
+        failure = (
+            asyncio.CancelledError()
+            if cancelled
+            else McpTransportError("unreadable", server_name="fixture")
+        )
+    
+        async def fail(*, issue_key):
+            raise failure
+    
+        monkeypatch.setattr(tracker, "list_comments", fail)
+        comments = CommentsOnly(tracker)
+        calls = (
+            (
+                LaneRecordReader(tracker=comments, operation=lane.OPERATION).read,
+                lane.ADDRESS,
+                LaneRecordReadError,
+            ),
+            (
+                EscalationRecordReader(
+                    tracker=comments, operation=escalation.OPERATION
+                ).read,
+                escalation.ADDRESS,
+                EscalationReadError,
+            ),
+            (
+                RulingRecordReader(tracker=comments, operation=ruling.OPERATION).read_all,
+                ruling.ADDRESS,
+                RulingRecordReadError,
+            ),
+        )
+        for read, address, error in calls:
+            with pytest.raises(asyncio.CancelledError if cancelled else error) as caught:
+>               await read(**address)
+
+tests/tracker/test_consumer_read_ports.py:146: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/services/lane_records.py:57: in read
+    comments = await self._tracker.list_comments(issue_key=issue_key)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/tracker/test_consumer_read_ports.py:65: in list_comments
+    return await self.source.list_comments(issue_key=issue_key)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    async def fail(*, issue_key):
+>       raise failure
+E       kodezart.core.errors.McpTransportError: unreadable (fixture)
+
+tests/tracker/test_consumer_read_ports.py:121: McpTransportError
+_________ test_document_read_failure_and_cancellation_propagate[False] _________
+
+    async def failed(*, name, arguments):
+        if name == "get_document":
+            if cancel:
+                raise asyncio.CancelledError
+>           raise McpTransportError(
+                "unavailable", server_name="fixture", tool_name=name
+            )
+E           kodezart.core.errors.McpTransportError: unavailable (fixture/get_document)
+
+tests/tracker/test_document_relation_assets.py:116: McpTransportError
+
+The above exception was the direct cause of the following exception:
+
+native_document = (ModelWorkspace(tracker=<kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x110125a30>, native=<kodezar...tracker.invalid/document/server-assigned-slug'}, 'relation': {'id': 'document/native', 'title': 'An attached design'}})
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x110124e00>
+cancel = False
+
+    @pytest.mark.parametrize("cancel", [False, True])
+    async def test_document_read_failure_and_cancellation_propagate(
+        native_document, monkeypatch, cancel
+    ):
+        workspace, _ = native_document
+        original = workspace.server.call_tool
+    
+        async def failed(*, name, arguments):
+            if name == "get_document":
+                if cancel:
+                    raise asyncio.CancelledError
+                raise McpTransportError(
+                    "unavailable", server_name="fixture", tool_name=name
+                )
+            return await original(name=name, arguments=arguments)
+    
+        monkeypatch.setattr(workspace.server, "call_tool", failed)
+        with pytest.raises(asyncio.CancelledError if cancel else McpTransportError):
+>           await workspace.native.list_issue_assets(issue_key="subject")
+
+tests/tracker/test_document_relation_assets.py:123: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/adapters/linear_mcp_tracker.py:2659: in list_issue_assets
+    payload = await self._call(_TOOL_GET_DOCUMENT, {"id": asset.id})
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x110125a30>
+tool = 'get_document', arguments = {'id': 'document/native'}
+
+    async def _call(
+        self,
+        tool: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        if tool == _TOOL_SAVE_ISSUE:
+            # Every issue write funnels through here, so the refusal is
+            # stated once and no future write path can route around it.
+            refuse_combined_issue_write(arguments)
+        attempt = 0
+        while True:
+            try:
+                return await self._caller.call_tool(name=tool, arguments=arguments)
+            except McpCredentialRefusedError as exc:
+                # Named once and raised, never retried: the refusal is the
+                # same on every attempt, so a budget spent on it buys the
+                # first answer again and delays the one event an operator
+                # can act on by the whole back-off.
+                await self._log.aerror(
+                    "tracker_credential_refused",
+                    tool=tool,
+                    server_name=exc.server_name,
+                )
+                raise TrackerAccessDeniedError(str(exc)) from exc
+            except (McpTransportError, TransientAPIError) as exc:
+                if attempt + 1 >= self._retry.attempts or not _may_resend(tool, exc):
+>                   raise TrackerUnavailableError(str(exc)) from exc
+E                   kodezart.core.errors.TrackerUnavailableError: unavailable (fixture/get_document)
+
+src/kodezart/adapters/linear_mcp_tracker.py:3460: TrackerUnavailableError
+______ test_transport_error_never_becomes_missing_or_resolved[fake-port] _______
+
+tracker = <tests.fakes.FakeTrackerPort object at 0x110142d20>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x110142690>
+
+    async def test_transport_error_never_becomes_missing_or_resolved(tracker, monkeypatch):
+        monkeypatch.setattr(
+            tracker,
+            "list_comments",
+            AsyncMock(side_effect=McpTransportError("offline", server_name="fixture")),
+        )
+        with pytest.raises(EscalationReadError, match="read failed"):
+>           await observe_recorded_escalation_ageing(tracker=tracker, **arguments())
+
+tests/tracker/test_escalation_record_collector.py:319: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/services/escalation_signals.py:44: in observe_recorded_escalation_ageing
+    escalation_comment, escalation = await escalation_reader.read(
+src/kodezart/services/escalation_records.py:61: in read
+    comments = await self._tracker.list_comments(issue_key=issue_key)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <AsyncMock id='4564725264'>, args = (), kwargs = {'issue_key': 'FIX-2'}
+_call = call(issue_key='FIX-2'), effect = McpTransportError('offline (fixture)')
+
+    async def _execute_mock_call(self, /, *args, **kwargs):
+        # This is nearly just like super(), except for special handling
+        # of coroutines
+    
+        _call = _Call((args, kwargs), two=True)
+        self.await_count += 1
+        self.await_args = _call
+        self.await_args_list.append(_call)
+    
+        effect = self.side_effect
+        if effect is not None:
+            if _is_exception(effect):
+>               raise effect
+E               kodezart.core.errors.McpTransportError: offline (fixture)
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/unittest/mock.py:2291: McpTransportError
+______ test_transport_error_never_becomes_missing_or_resolved[linear-mcp] ______
+
+tracker = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x110140a10>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x110140590>
+
+    async def test_transport_error_never_becomes_missing_or_resolved(tracker, monkeypatch):
+        monkeypatch.setattr(
+            tracker,
+            "list_comments",
+            AsyncMock(side_effect=McpTransportError("offline", server_name="fixture")),
+        )
+        with pytest.raises(EscalationReadError, match="read failed"):
+>           await observe_recorded_escalation_ageing(tracker=tracker, **arguments())
+
+tests/tracker/test_escalation_record_collector.py:319: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/services/escalation_signals.py:44: in observe_recorded_escalation_ageing
+    escalation_comment, escalation = await escalation_reader.read(
+src/kodezart/services/escalation_records.py:61: in read
+    comments = await self._tracker.list_comments(issue_key=issue_key)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <AsyncMock id='4564723008'>, args = (), kwargs = {'issue_key': 'FIX-2'}
+_call = call(issue_key='FIX-2'), effect = McpTransportError('offline (fixture)')
+
+    async def _execute_mock_call(self, /, *args, **kwargs):
+        # This is nearly just like super(), except for special handling
+        # of coroutines
+    
+        _call = _Call((args, kwargs), two=True)
+        self.await_count += 1
+        self.await_args = _call
+        self.await_args_list.append(_call)
+    
+        effect = self.side_effect
+        if effect is not None:
+            if _is_exception(effect):
+>               raise effect
+E               kodezart.core.errors.McpTransportError: offline (fixture)
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/unittest/mock.py:2291: McpTransportError
+___ test_failed_transport_remains_typed_with_its_original_cause[credential] ____
+
+failure = 'credential'
+
+    @pytest.mark.parametrize("failure", ["transport", "transient", "credential"])
+    async def test_failed_transport_remains_typed_with_its_original_cause(failure):
+        options = {
+            "transport": {"transport_failures": {"list_comments": 1}},
+            "transient": {"transient_failures": {"list_comments": 1}},
+            "credential": {"credential_refused_after": {"list_comments": 0}},
+        }
+        server = FakeLinearMcpServer(**options[failure])
+        with pytest.raises(EscalationReadError) as raised:
+            await linear_over_fake_mcp(server).read_escalation_resolution(**ADDRESS)
+        assert raised.value.__cause__ is not None
+        if failure == "credential":
+>           assert isinstance(raised.value.__cause__, McpCredentialRefusedError)
+E           assert False
+E            +  where False = isinstance(TrackerAccessDeniedError('the MCP server refused the configured credential (fake-linear/list_comments)'), McpCredentialRefusedError)
+E            +    where TrackerAccessDeniedError('the MCP server refused the configured credential (fake-linear/list_comments)') = EscalationReadError("escalation 'criterion:answer' on 'FIX-2' in lane 'lane:one' could not be read: the tracker read failed or was incomplete").__cause__
+E            +      where EscalationReadError("escalation 'criterion:answer' on 'FIX-2' in lane 'lane:one' could not be read: the tracker read failed or was incomplete") = <ExceptionInfo EscalationReadError("escalation 'criterion:answer' on 'FIX-2' in lane 'lane:one' could not be read: the tracker read failed or was incomplete") tblen=2>.value
+
+tests/tracker/test_escalation_resolution_boundary.py:161: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 14:43:12 [error    ] tracker_credential_refused     server_name=fake-linear tool=list_comments
+___________ test_new_adapter_recovers_a_create_whose_reply_was_lost ____________
+
+self = <tests.tracker.test_issue_identity_boundary.LostCreateReplyServer object at 0x110960cb0>
+arguments = {'description': '<!-- kodezart-issue {"scopeKey":{"kind":"project","key":"scope-one"},"deliverableKey":"deliverable-one"} -->\n\nThe user\'s description.', 'priority': 2, 'team': 'fixture-team', 'title': 'Deliverable'}
+
+    def _tool_save_issue(self, arguments: Mapping[str, object]):
+        result = super()._tool_save_issue(arguments)
+        if self.lose_reply:
+            self.lose_reply = False
+>           raise McpCallUnansweredError(
+                "reply lost after committed creation",
+                server_name="fixture",
+                tool_name="save_issue",
+            )
+E           kodezart.core.errors.McpCallUnansweredError: reply lost after committed creation (fixture/save_issue)
+
+tests/tracker/test_issue_identity_boundary.py:142: McpCallUnansweredError
+
+The above exception was the direct cause of the following exception:
+
+    async def test_new_adapter_recovers_a_create_whose_reply_was_lost():
+        server = LostCreateReplyServer()
+        with pytest.raises(McpCallUnansweredError):
+>           await upsert(linear_over_fake_mcp(server))
+
+tests/tracker/test_issue_identity_boundary.py:153: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/tracker/test_issue_upsert.py:32: in upsert
+    return await tracker.upsert_issue(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/adapters/linear_mcp_tracker.py:1461: in upsert_issue
+    return await self.create_issue(
+src/kodezart/adapters/linear_mcp_tracker.py:1309: in create_issue
+    payload = await self._call(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x110960290>
+tool = 'save_issue'
+arguments = {'description': '<!-- kodezart-issue {"scopeKey":{"kind":"project","key":"scope-one"},"deliverableKey":"deliverable-one"} -->\n\nThe user\'s description.', 'priority': 2, 'team': 'fixture-team', 'title': 'Deliverable'}
+
+    async def _call(
+        self,
+        tool: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        if tool == _TOOL_SAVE_ISSUE:
+            # Every issue write funnels through here, so the refusal is
+            # stated once and no future write path can route around it.
+            refuse_combined_issue_write(arguments)
+        attempt = 0
+        while True:
+            try:
+                return await self._caller.call_tool(name=tool, arguments=arguments)
+            except McpCredentialRefusedError as exc:
+                # Named once and raised, never retried: the refusal is the
+                # same on every attempt, so a budget spent on it buys the
+                # first answer again and delays the one event an operator
+                # can act on by the whole back-off.
+                await self._log.aerror(
+                    "tracker_credential_refused",
+                    tool=tool,
+                    server_name=exc.server_name,
+                )
+                raise TrackerAccessDeniedError(str(exc)) from exc
+            except (McpTransportError, TransientAPIError) as exc:
+                if attempt + 1 >= self._retry.attempts or not _may_resend(tool, exc):
+>                   raise TrackerUnavailableError(str(exc)) from exc
+E                   kodezart.core.errors.TrackerUnavailableError: reply lost after committed creation (fixture/save_issue)
+
+src/kodezart/adapters/linear_mcp_tracker.py:3460: TrackerUnavailableError
+_______________ test_a_failed_full_read_does_not_allow_creation ________________
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x110963380>
+tool = 'get_issue', arguments = {'id': 'UNREADABLE-1', 'includeRelations': True}
+
+    async def _call(
+        self,
+        tool: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        if tool == _TOOL_SAVE_ISSUE:
+            # Every issue write funnels through here, so the refusal is
+            # stated once and no future write path can route around it.
+            refuse_combined_issue_write(arguments)
+        attempt = 0
+        while True:
+            try:
+>               return await self._caller.call_tool(name=tool, arguments=arguments)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+src/kodezart/adapters/linear_mcp_tracker.py:3446: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <tests.fakes.FakeLinearMcpServer object at 0x110962720>
+
+>   ???
+E   kodezart.core.errors.McpTransportError: the MCP server reported a tool error: unavailable (fake-linear/get_issue)
+
+tests/fakes.py:2663: McpTransportError
+
+The above exception was the direct cause of the following exception:
+
+    async def test_a_failed_full_read_does_not_allow_creation():
+        server = FakeLinearMcpServer(
+            issues=[FakeMcpIssue(id="UNREADABLE-1")],
+            tool_errors={"get_issue": "unavailable"},
+        )
+        with pytest.raises(McpTransportError):
+>           await upsert(linear_over_fake_mcp(server))
+
+tests/tracker/test_issue_identity_boundary.py:169: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/tracker/test_issue_upsert.py:32: in upsert
+    return await tracker.upsert_issue(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/adapters/linear_mcp_tracker.py:1456: in upsert_issue
+    current = await self._find_issue_identity(identity)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/adapters/linear_mcp_tracker.py:1505: in _find_issue_identity
+    wire = await self._read_issue_wire(entry.id)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/adapters/linear_mcp_tracker.py:3381: in _read_issue_wire
+    payload = await self._call(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x110963380>
+tool = 'get_issue', arguments = {'id': 'UNREADABLE-1', 'includeRelations': True}
+
+    async def _call(
+        self,
+        tool: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        if tool == _TOOL_SAVE_ISSUE:
+            # Every issue write funnels through here, so the refusal is
+            # stated once and no future write path can route around it.
+            refuse_combined_issue_write(arguments)
+        attempt = 0
+        while True:
+            try:
+                return await self._caller.call_tool(name=tool, arguments=arguments)
+            except McpCredentialRefusedError as exc:
+                # Named once and raised, never retried: the refusal is the
+                # same on every attempt, so a budget spent on it buys the
+                # first answer again and delays the one event an operator
+                # can act on by the whole back-off.
+                await self._log.aerror(
+                    "tracker_credential_refused",
+                    tool=tool,
+                    server_name=exc.server_name,
+                )
+                raise TrackerAccessDeniedError(str(exc)) from exc
+            except (McpTransportError, TransientAPIError) as exc:
+                if attempt + 1 >= self._retry.attempts or not _may_resend(tool, exc):
+>                   raise TrackerUnavailableError(str(exc)) from exc
+E                   kodezart.core.errors.TrackerUnavailableError: the MCP server reported a tool error: unavailable (fake-linear/get_issue)
+
+src/kodezart/adapters/linear_mcp_tracker.py:3460: TrackerUnavailableError
+____________ test_failed_later_page_does_not_return_the_first_page _____________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1108d7500>
+
+    async def test_failed_later_page_does_not_return_the_first_page(monkeypatch):
+        workspace = await model_workspace("native")
+        for index in range(3):
+            await workspace.put(FakeMcpIssue(id=f"member/{index}", labels=[NATIVE_MARKER]))
+        original = workspace.server.call_tool
+    
+        async def unavailable(*, name, arguments):
+            if name == "list_issues" and arguments.get("cursor"):
+                raise McpTransportError("later page unavailable", server_name="fixture")
+            return await original(name=name, arguments=arguments)
+    
+        monkeypatch.setattr(workspace.server, "call_tool", unavailable)
+        with pytest.raises(IssueLabelReadError) as raised:
+            await workspace.tracker.read_labeled_issues(classification=CLASSIFICATION)
+>       assert isinstance(raised.value.__cause__, McpTransportError)
+E       assert False
+E        +  where False = isinstance(TrackerUnavailableError('later page unavailable (fixture)'), McpTransportError)
+E        +    where TrackerUnavailableError('later page unavailable (fixture)') = IssueLabelReadError("issue label 'criterion_lifecycle' could not be read: the tracker membership read failed or was incomplete").__cause__
+E        +      where IssueLabelReadError("issue label 'criterion_lifecycle' could not be read: the tracker membership read failed or was incomplete") = <ExceptionInfo IssueLabelReadError("issue label 'criterion_lifecycle' could not be read: the tracker membership read failed or was incomplete") tblen=2>.value
+
+tests/tracker/test_labeled_issues.py:173: AssertionError
+____ test_failed_decision_write_propagates_and_retry_completes_same_comment ____
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x110934740>
+tool = 'save_issue'
+arguments = {'addLabels': ['Owner decision needed'], 'id': 'work/42'}
+
+    async def _call(
+        self,
+        tool: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        if tool == _TOOL_SAVE_ISSUE:
+            # Every issue write funnels through here, so the refusal is
+            # stated once and no future write path can route around it.
+            refuse_combined_issue_write(arguments)
+        attempt = 0
+        while True:
+            try:
+>               return await self._caller.call_tool(name=tool, arguments=arguments)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+src/kodezart/adapters/linear_mcp_tracker.py:3446: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <tests.fakes.FakeLinearMcpServer object at 0x1109377d0>
+
+>   ???
+E   kodezart.core.errors.McpTransportError: the MCP server reported a tool error: temporarily refused (fake-linear/save_issue)
+
+tests/fakes.py:2663: McpTransportError
+
+The above exception was the direct cause of the following exception:
+
+    async def test_failed_decision_write_propagates_and_retry_completes_same_comment():
+        server = FakeLinearMcpServer(issues=[FakeMcpIssue(id=ISSUE)])
+        tracker = tracker_over(server, issue_labels=LABELS)
+        writer = LaneEscalationWriter(
+            tracker=tracker, gate=PassThroughGate(), operation=OPERATION
+        )
+        server._tool_errors["save_issue"] = "temporarily refused"
+        with pytest.raises(McpTransportError):
+>           await writer.raise_escalation(
+                lane_key="lane", escalation=question(), visibility=RepoVisibility.PUBLIC
+            )
+
+tests/tracker/test_lane_escalation.py:132: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/services/lane_escalation.py:100: in raise_escalation
+    await self._tracker.set_issue_classification(
+src/kodezart/adapters/linear_mcp_tracker.py:1665: in set_issue_classification
+    payload = await self._call(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x110934740>
+tool = 'save_issue'
+arguments = {'addLabels': ['Owner decision needed'], 'id': 'work/42'}
+
+    async def _call(
+        self,
+        tool: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        if tool == _TOOL_SAVE_ISSUE:
+            # Every issue write funnels through here, so the refusal is
+            # stated once and no future write path can route around it.
+            refuse_combined_issue_write(arguments)
+        attempt = 0
+        while True:
+            try:
+                return await self._caller.call_tool(name=tool, arguments=arguments)
+            except McpCredentialRefusedError as exc:
+                # Named once and raised, never retried: the refusal is the
+                # same on every attempt, so a budget spent on it buys the
+                # first answer again and delays the one event an operator
+                # can act on by the whole back-off.
+                await self._log.aerror(
+                    "tracker_credential_refused",
+                    tool=tool,
+                    server_name=exc.server_name,
+                )
+                raise TrackerAccessDeniedError(str(exc)) from exc
+            except (McpTransportError, TransientAPIError) as exc:
+                if attempt + 1 >= self._retry.attempts or not _may_resend(tool, exc):
+>                   raise TrackerUnavailableError(str(exc)) from exc
+E                   kodezart.core.errors.TrackerUnavailableError: the MCP server reported a tool error: temporarily refused (fake-linear/save_issue)
+
+src/kodezart/adapters/linear_mcp_tracker.py:3460: TrackerUnavailableError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 14:43:18 [info     ] outbound_content_gated         categories=[] content_digest=583c92cca50946a4f3e41a95f77047a38de291d5076c2df45826380b4b3d741c failure=None hits=[] surface=tracker verdict=clean visibility=public writer=tracker_comment
+__________ test_transport_error_and_cancellation_propagate[fake-port] __________
+
+tracker = <tests.fakes.FakeTrackerPort object at 0x10f908890>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1101433e0>
+
+    async def test_transport_error_and_cancellation_propagate(tracker, monkeypatch):
+        for error in [
+            McpTransportError("unreachable", server_name="fixture"),
+            asyncio.CancelledError(),
+        ]:
+            monkeypatch.setattr(tracker, "list_comments", AsyncMock(side_effect=error))
+            expected = (
+                asyncio.CancelledError
+                if isinstance(error, asyncio.CancelledError)
+                else LaneRecordReadError
+            )
+            with pytest.raises(expected):
+>               await observe_commits_ahead_of_record(tracker=tracker, **arguments())
+
+tests/tracker/test_lane_record_signals.py:133: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/services/lane_record_signals.py:44: in observe_commits_ahead_of_record
+    comment, record = await LaneRecordReader(tracker=tracker, operation=operation).read(
+src/kodezart/services/lane_records.py:57: in read
+    comments = await self._tracker.list_comments(issue_key=issue_key)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <AsyncMock id='4556107808'>, args = (), kwargs = {'issue_key': 'FIX-2'}
+_call = call(issue_key='FIX-2')
+effect = McpTransportError('unreachable (fixture)')
+
+    async def _execute_mock_call(self, /, *args, **kwargs):
+        # This is nearly just like super(), except for special handling
+        # of coroutines
+    
+        _call = _Call((args, kwargs), two=True)
+        self.await_count += 1
+        self.await_args = _call
+        self.await_args_list.append(_call)
+    
+        effect = self.side_effect
+        if effect is not None:
+            if _is_exception(effect):
+>               raise effect
+E               kodezart.core.errors.McpTransportError: unreachable (fixture)
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/unittest/mock.py:2291: McpTransportError
+_________ test_transport_error_and_cancellation_propagate[linear-mcp] __________
+
+tracker = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x110049fd0>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10ee694f0>
+
+    async def test_transport_error_and_cancellation_propagate(tracker, monkeypatch):
+        for error in [
+            McpTransportError("unreachable", server_name="fixture"),
+            asyncio.CancelledError(),
+        ]:
+            monkeypatch.setattr(tracker, "list_comments", AsyncMock(side_effect=error))
+            expected = (
+                asyncio.CancelledError
+                if isinstance(error, asyncio.CancelledError)
+                else LaneRecordReadError
+            )
+            with pytest.raises(expected):
+>               await observe_commits_ahead_of_record(tracker=tracker, **arguments())
+
+tests/tracker/test_lane_record_signals.py:133: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/services/lane_record_signals.py:44: in observe_commits_ahead_of_record
+    comment, record = await LaneRecordReader(tracker=tracker, operation=operation).read(
+src/kodezart/services/lane_records.py:57: in read
+    comments = await self._tracker.list_comments(issue_key=issue_key)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <AsyncMock id='4563706960'>, args = (), kwargs = {'issue_key': 'FIX-2'}
+_call = call(issue_key='FIX-2')
+effect = McpTransportError('unreachable (fixture)')
+
+    async def _execute_mock_call(self, /, *args, **kwargs):
+        # This is nearly just like super(), except for special handling
+        # of coroutines
+    
+        _call = _Call((args, kwargs), two=True)
+        self.await_count += 1
+        self.await_args = _call
+        self.await_args_list.append(_call)
+    
+        effect = self.side_effect
+        if effect is not None:
+            if _is_exception(effect):
+>               raise effect
+E               kodezart.core.errors.McpTransportError: unreachable (fixture)
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/unittest/mock.py:2291: McpTransportError
+____ test_missing_ancestry_refuses_instead_of_returning_false[linear-issue] ____
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x11084ade0>
+tool = 'get_issue', arguments = {'id': 'FIX-1', 'includeRelations': True}
+
+    async def _call(
+        self,
+        tool: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        if tool == _TOOL_SAVE_ISSUE:
+            # Every issue write funnels through here, so the refusal is
+            # stated once and no future write path can route around it.
+            refuse_combined_issue_write(arguments)
+        attempt = 0
+        while True:
+            try:
+>               return await self._caller.call_tool(name=tool, arguments=arguments)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+src/kodezart/adapters/linear_mcp_tracker.py:3446: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/fakes.py:2673: in call_tool
+    try:
+         
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <tests.tracker.test_scope_reads.ScopeMcpServer object at 0x11084b920>
+arguments = {'id': 'FIX-1', 'includeRelations': True}
+
+    def _tool_get_issue(self, arguments: Mapping[str, object]) -> Mapping[str, object]:
+        if arguments["id"] not in self.issues:
+>           raise McpTransportError(
+                "the vendor refused the requested issue",
+                server_name="fixture-linear",
+                tool_name="get_issue",
+            )
+E           kodezart.core.errors.McpTransportError: the vendor refused the requested issue (fixture-linear/get_issue)
+
+tests/tracker/test_scope_reads.py:233: McpTransportError
+
+The above exception was the direct cause of the following exception:
+
+approval = ApprovalFixture(tracker=<kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x11084ade0>, server=<tests.tracker.test_scope_reads.ScopeMcpServer object at 0x11084b920>, fake=<tests.fakes.FakeTrackerPort object at 0x11084b8f0>)
+layer = 'issue'
+
+    @pytest.mark.parametrize("layer", ["issue", "project", "initiative"])
+    async def test_missing_ancestry_refuses_instead_of_returning_false(
+        approval: ApprovalFixture, layer: str
+    ) -> None:
+        if layer == "issue":
+            del approval.server.issues[ROOT.key]
+            del approval.fake.issues[ROOT.key]
+        elif layer == "project":
+            del approval.server.projects[OTHER.key]
+            del approval.fake.scope_containers[OTHER]
+        else:
+            del approval.server.initiatives[INITIATIVE.key]
+            del approval.fake.scope_containers[INITIATIVE]
+        with pytest.raises((ScopeReadError, McpTransportError)):
+>           await approval.tracker.execution_approved(issue_key=CHILD.key)
+
+tests/tracker/test_scope_approval.py:250: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/adapters/linear_mcp_tracker.py:1090: in execution_approved
+    _, approved = await self._read_execution_approval(issue_key=issue_key)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/adapters/linear_mcp_tracker.py:1119: in _read_execution_approval
+    approved = await resolve_execution_approval(
+src/kodezart/domain/scope_approval.py:37: in resolve_execution_approval
+    issue, approved = await read_issue(key)
+                      ^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/adapters/linear_mcp_tracker.py:1114: in read_issue
+    return subject if key == issue_key else await hydrate(key)
+                                            ^^^^^^^^^^^^^^^^^^
+src/kodezart/adapters/linear_mcp_tracker.py:1105: in hydrate
+    payload = await self._call(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x11084ade0>
+tool = 'get_issue', arguments = {'id': 'FIX-1', 'includeRelations': True}
+
+    async def _call(
+        self,
+        tool: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        if tool == _TOOL_SAVE_ISSUE:
+            # Every issue write funnels through here, so the refusal is
+            # stated once and no future write path can route around it.
+            refuse_combined_issue_write(arguments)
+        attempt = 0
+        while True:
+            try:
+                return await self._caller.call_tool(name=tool, arguments=arguments)
+            except McpCredentialRefusedError as exc:
+                # Named once and raised, never retried: the refusal is the
+                # same on every attempt, so a budget spent on it buys the
+                # first answer again and delays the one event an operator
+                # can act on by the whole back-off.
+                await self._log.aerror(
+                    "tracker_credential_refused",
+                    tool=tool,
+                    server_name=exc.server_name,
+                )
+                raise TrackerAccessDeniedError(str(exc)) from exc
+            except (McpTransportError, TransientAPIError) as exc:
+                if attempt + 1 >= self._retry.attempts or not _may_resend(tool, exc):
+>                   raise TrackerUnavailableError(str(exc)) from exc
+E                   kodezart.core.errors.TrackerUnavailableError: the vendor refused the requested issue (fixture-linear/get_issue)
+
+src/kodezart/adapters/linear_mcp_tracker.py:3460: TrackerUnavailableError
+___ test_missing_ancestry_refuses_instead_of_returning_false[linear-project] ___
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x1101408c0>
+tool = 'get_project', arguments = {'query': 'project-two'}
+
+    async def _call(
+        self,
+        tool: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        if tool == _TOOL_SAVE_ISSUE:
+            # Every issue write funnels through here, so the refusal is
+            # stated once and no future write path can route around it.
+            refuse_combined_issue_write(arguments)
+        attempt = 0
+        while True:
+            try:
+>               return await self._caller.call_tool(name=tool, arguments=arguments)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+src/kodezart/adapters/linear_mcp_tracker.py:3446: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/fakes.py:2673: in call_tool
+    try:
+         
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <tests.tracker.test_scope_reads.ScopeMcpServer object at 0x1101426f0>
+arguments = {'query': 'project-two'}
+
+    def _tool_get_project(
+        self, arguments: Mapping[str, object]
+    ) -> Mapping[str, object]:
+        if arguments["query"] not in self.projects:
+>           raise McpTransportError(
+                "the vendor refused the requested project",
+                server_name="fixture-linear",
+                tool_name="get_project",
+            )
+E           kodezart.core.errors.McpTransportError: the vendor refused the requested project (fixture-linear/get_project)
+
+tests/tracker/test_scope_reads.py:224: McpTransportError
+
+The above exception was the direct cause of the following exception:
+
+approval = ApprovalFixture(tracker=<kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x1101408c0>, server=<tests.tracker.test_scope_reads.ScopeMcpServer object at 0x1101426f0>, fake=<tests.fakes.FakeTrackerPort object at 0x1101406e0>)
+layer = 'project'
+
+    @pytest.mark.parametrize("layer", ["issue", "project", "initiative"])
+    async def test_missing_ancestry_refuses_instead_of_returning_false(
+        approval: ApprovalFixture, layer: str
+    ) -> None:
+        if layer == "issue":
+            del approval.server.issues[ROOT.key]
+            del approval.fake.issues[ROOT.key]
+        elif layer == "project":
+            del approval.server.projects[OTHER.key]
+            del approval.fake.scope_containers[OTHER]
+        else:
+            del approval.server.initiatives[INITIATIVE.key]
+            del approval.fake.scope_containers[INITIATIVE]
+        with pytest.raises((ScopeReadError, McpTransportError)):
+>           await approval.tracker.execution_approved(issue_key=CHILD.key)
+
+tests/tracker/test_scope_approval.py:250: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/adapters/linear_mcp_tracker.py:1090: in execution_approved
+    _, approved = await self._read_execution_approval(issue_key=issue_key)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/adapters/linear_mcp_tracker.py:1119: in _read_execution_approval
+    approved = await resolve_execution_approval(
+src/kodezart/domain/scope_approval.py:61: in resolve_execution_approval
+    approved, parent = await read_container(ancestor)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/adapters/linear_mcp_tracker.py:1117: in read_container
+    return await reader.approval_parent(ref=ref, approved_label=label)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/adapters/linear_scope_reader.py:96: in approval_parent
+    project = await self._read(
+src/kodezart/adapters/linear_scope_reader.py:402: in _read
+    payload = await self._call(tool, arguments)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x1101408c0>
+tool = 'get_project', arguments = {'query': 'project-two'}
+
+    async def _call(
+        self,
+        tool: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        if tool == _TOOL_SAVE_ISSUE:
+            # Every issue write funnels through here, so the refusal is
+            # stated once and no future write path can route around it.
+            refuse_combined_issue_write(arguments)
+        attempt = 0
+        while True:
+            try:
+                return await self._caller.call_tool(name=tool, arguments=arguments)
+            except McpCredentialRefusedError as exc:
+                # Named once and raised, never retried: the refusal is the
+                # same on every attempt, so a budget spent on it buys the
+                # first answer again and delays the one event an operator
+                # can act on by the whole back-off.
+                await self._log.aerror(
+                    "tracker_credential_refused",
+                    tool=tool,
+                    server_name=exc.server_name,
+                )
+                raise TrackerAccessDeniedError(str(exc)) from exc
+            except (McpTransportError, TransientAPIError) as exc:
+                if attempt + 1 >= self._retry.attempts or not _may_resend(tool, exc):
+>                   raise TrackerUnavailableError(str(exc)) from exc
+E                   kodezart.core.errors.TrackerUnavailableError: the vendor refused the requested project (fixture-linear/get_project)
+
+src/kodezart/adapters/linear_mcp_tracker.py:3460: TrackerUnavailableError
+_ test_missing_ancestry_refuses_instead_of_returning_false[linear-initiative] __
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10f7c68d0>
+tool = 'get_initiative'
+arguments = {'includeSubInitiatives': True, 'query': 'initiative-one'}
+
+    async def _call(
+        self,
+        tool: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        if tool == _TOOL_SAVE_ISSUE:
+            # Every issue write funnels through here, so the refusal is
+            # stated once and no future write path can route around it.
+            refuse_combined_issue_write(arguments)
+        attempt = 0
+        while True:
+            try:
+>               return await self._caller.call_tool(name=tool, arguments=arguments)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+src/kodezart/adapters/linear_mcp_tracker.py:3446: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/fakes.py:2673: in call_tool
+    try:
+         
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <tests.tracker.test_scope_reads.ScopeMcpServer object at 0x10f7d9190>
+arguments = {'includeSubInitiatives': True, 'query': 'initiative-one'}
+
+    def _tool_get_initiative(
+        self, arguments: Mapping[str, object]
+    ) -> Mapping[str, object]:
+        query = str(arguments["query"])
+        if query not in self.initiatives:
+>           raise McpTransportError(
+                "the vendor refused the requested initiative",
+                server_name="fixture-linear",
+                tool_name="get_initiative",
+            )
+E           kodezart.core.errors.McpTransportError: the vendor refused the requested initiative (fixture-linear/get_initiative)
+
+tests/tracker/test_scope_reads.py:213: McpTransportError
+
+The above exception was the direct cause of the following exception:
+
+approval = ApprovalFixture(tracker=<kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10f7c68d0>, server=<tests.tracker.test_scope_reads.ScopeMcpServer object at 0x10f7d9190>, fake=<tests.fakes.FakeTrackerPort object at 0x10f7db5c0>)
+layer = 'initiative'
+
+    @pytest.mark.parametrize("layer", ["issue", "project", "initiative"])
+    async def test_missing_ancestry_refuses_instead_of_returning_false(
+        approval: ApprovalFixture, layer: str
+    ) -> None:
+        if layer == "issue":
+            del approval.server.issues[ROOT.key]
+            del approval.fake.issues[ROOT.key]
+        elif layer == "project":
+            del approval.server.projects[OTHER.key]
+            del approval.fake.scope_containers[OTHER]
+        else:
+            del approval.server.initiatives[INITIATIVE.key]
+            del approval.fake.scope_containers[INITIATIVE]
+        with pytest.raises((ScopeReadError, McpTransportError)):
+>           await approval.tracker.execution_approved(issue_key=CHILD.key)
+
+tests/tracker/test_scope_approval.py:250: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/adapters/linear_mcp_tracker.py:1090: in execution_approved
+    _, approved = await self._read_execution_approval(issue_key=issue_key)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/adapters/linear_mcp_tracker.py:1119: in _read_execution_approval
+    approved = await resolve_execution_approval(
+src/kodezart/domain/scope_approval.py:61: in resolve_execution_approval
+    approved, parent = await read_container(ancestor)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/adapters/linear_mcp_tracker.py:1117: in read_container
+    return await reader.approval_parent(ref=ref, approved_label=label)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/adapters/linear_scope_reader.py:102: in approval_parent
+    initiative = await self._read(
+src/kodezart/adapters/linear_scope_reader.py:402: in _read
+    payload = await self._call(tool, arguments)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10f7c68d0>
+tool = 'get_initiative'
+arguments = {'includeSubInitiatives': True, 'query': 'initiative-one'}
+
+    async def _call(
+        self,
+        tool: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        if tool == _TOOL_SAVE_ISSUE:
+            # Every issue write funnels through here, so the refusal is
+            # stated once and no future write path can route around it.
+            refuse_combined_issue_write(arguments)
+        attempt = 0
+        while True:
+            try:
+                return await self._caller.call_tool(name=tool, arguments=arguments)
+            except McpCredentialRefusedError as exc:
+                # Named once and raised, never retried: the refusal is the
+                # same on every attempt, so a budget spent on it buys the
+                # first answer again and delays the one event an operator
+                # can act on by the whole back-off.
+                await self._log.aerror(
+                    "tracker_credential_refused",
+                    tool=tool,
+                    server_name=exc.server_name,
+                )
+                raise TrackerAccessDeniedError(str(exc)) from exc
+            except (McpTransportError, TransientAPIError) as exc:
+                if attempt + 1 >= self._retry.attempts or not _may_resend(tool, exc):
+>                   raise TrackerUnavailableError(str(exc)) from exc
+E                   kodezart.core.errors.TrackerUnavailableError: the vendor refused the requested initiative (fixture-linear/get_initiative)
+
+src/kodezart/adapters/linear_mcp_tracker.py:3460: TrackerUnavailableError
+_____ test_unavailable_project_creator_is_a_typed_failure_without_fallback _____
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x1103529c0>
+tool = 'save_project_label', arguments = {'name': 'custom:scope-authorized'}
+
+    async def _call(
+        self,
+        tool: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        if tool == _TOOL_SAVE_ISSUE:
+            # Every issue write funnels through here, so the refusal is
+            # stated once and no future write path can route around it.
+            refuse_combined_issue_write(arguments)
+        attempt = 0
+        while True:
+            try:
+>               return await self._caller.call_tool(name=tool, arguments=arguments)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+src/kodezart/adapters/linear_mcp_tracker.py:3446: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <tests.fakes.FakeLinearMcpServer object at 0x110352900>
+
+>   ???
+E   kodezart.core.errors.McpTransportError: the MCP server reported a tool error: Unknown tool (fake-linear/save_project_label)
+
+tests/fakes.py:2663: McpTransportError
+
+The above exception was the direct cause of the following exception:
+
+    async def test_unavailable_project_creator_is_a_typed_failure_without_fallback() -> (
+        None
+    ):
+        server = fixture_server(scope_refusals={"save_project_label": "Unknown tool"})
+        tracker = linear_over_fake_mcp(server)
+        with pytest.raises(McpTransportError, match="save_project_label"):
+>           await tracker.ensure_mappings(refs=[APPROVAL])
+
+tests/tracker/test_scope_label_mappings.py:265: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/adapters/linear_mcp_tracker.py:2975: in ensure_mappings
+    await self._ensure_scope_label(ref, definitions, scope_definitions),
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/adapters/linear_mcp_tracker.py:3081: in _ensure_scope_label
+    await self._call(creator, {"name": identifier})
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x1103529c0>
+tool = 'save_project_label', arguments = {'name': 'custom:scope-authorized'}
+
+    async def _call(
+        self,
+        tool: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        if tool == _TOOL_SAVE_ISSUE:
+            # Every issue write funnels through here, so the refusal is
+            # stated once and no future write path can route around it.
+            refuse_combined_issue_write(arguments)
+        attempt = 0
+        while True:
+            try:
+                return await self._caller.call_tool(name=tool, arguments=arguments)
+            except McpCredentialRefusedError as exc:
+                # Named once and raised, never retried: the refusal is the
+                # same on every attempt, so a budget spent on it buys the
+                # first answer again and delays the one event an operator
+                # can act on by the whole back-off.
+                await self._log.aerror(
+                    "tracker_credential_refused",
+                    tool=tool,
+                    server_name=exc.server_name,
+                )
+                raise TrackerAccessDeniedError(str(exc)) from exc
+            except (McpTransportError, TransientAPIError) as exc:
+                if attempt + 1 >= self._retry.attempts or not _may_resend(tool, exc):
+>                   raise TrackerUnavailableError(str(exc)) from exc
+E                   kodezart.core.errors.TrackerUnavailableError: the MCP server reported a tool error: Unknown tool (fake-linear/save_project_label)
+
+src/kodezart/adapters/linear_mcp_tracker.py:3460: TrackerUnavailableError
+___ test_missing_scope_refuses_with_the_requested_address[linear-initiative] ___
+
+self = <tests.tracker.test_scope_reads.ScopeMcpServer object at 0x1108624e0>
+arguments = {'includeSubInitiatives': True, 'query': 'absent-scope'}
+
+    def _tool_get_initiative(
+        self, arguments: Mapping[str, object]
+    ) -> Mapping[str, object]:
+        query = str(arguments["query"])
+        if query not in self.initiatives:
+>           raise McpTransportError(
+                "the vendor refused the requested initiative",
+                server_name="fixture-linear",
+                tool_name="get_initiative",
+            )
+E           kodezart.core.errors.McpTransportError: the vendor refused the requested initiative (fixture-linear/get_initiative)
+
+tests/tracker/test_scope_reads.py:213: McpTransportError
+
+The above exception was the direct cause of the following exception:
+
+scope_fixture = ScopeFixture(tracker=<kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x110860bf0>, server=<tests.tracker.test_scope_reads.ScopeMcpServer object at 0x1108624e0>, fake=<tests.fakes.FakeTrackerPort object at 0x110862270>)
+kind = <ScopeKind.INITIATIVE: 'initiative'>
+
+    @pytest.mark.parametrize("kind", list(ScopeKind))
+    async def test_missing_scope_refuses_with_the_requested_address(
+        scope_fixture: ScopeFixture, kind: ScopeKind
+    ) -> None:
+        ref = ScopeRef(kind=kind, key="absent-scope")
+    
+        with pytest.raises((ScopeReadError, McpTransportError)) as caught:
+>           await scope_fixture.tracker.scope_issues(ref=ref)
+
+tests/tracker/test_scope_reads.py:361: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/adapters/linear_mcp_tracker.py:1083: in scope_issues
+    return await LinearScopeReader(
+src/kodezart/adapters/linear_scope_reader.py:80: in scope_issues
+    issues = await self._initiative_issues(ref)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/adapters/linear_scope_reader.py:280: in _initiative_issues
+    initiative = await self._initiative(key)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/adapters/linear_scope_reader.py:182: in _initiative
+    return await self._read(
+src/kodezart/adapters/linear_scope_reader.py:402: in _read
+    payload = await self._call(tool, arguments)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x110860bf0>
+tool = 'get_initiative'
+arguments = {'includeSubInitiatives': True, 'query': 'absent-scope'}
+
+    async def _call(
+        self,
+        tool: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        if tool == _TOOL_SAVE_ISSUE:
+            # Every issue write funnels through here, so the refusal is
+            # stated once and no future write path can route around it.
+            refuse_combined_issue_write(arguments)
+        attempt = 0
+        while True:
+            try:
+                return await self._caller.call_tool(name=tool, arguments=arguments)
+            except McpCredentialRefusedError as exc:
+                # Named once and raised, never retried: the refusal is the
+                # same on every attempt, so a budget spent on it buys the
+                # first answer again and delays the one event an operator
+                # can act on by the whole back-off.
+                await self._log.aerror(
+                    "tracker_credential_refused",
+                    tool=tool,
+                    server_name=exc.server_name,
+                )
+                raise TrackerAccessDeniedError(str(exc)) from exc
+            except (McpTransportError, TransientAPIError) as exc:
+                if attempt + 1 >= self._retry.attempts or not _may_resend(tool, exc):
+>                   raise TrackerUnavailableError(str(exc)) from exc
+E                   kodezart.core.errors.TrackerUnavailableError: the vendor refused the requested initiative (fixture-linear/get_initiative)
+
+src/kodezart/adapters/linear_mcp_tracker.py:3460: TrackerUnavailableError
+____ test_missing_scope_refuses_with_the_requested_address[linear-project] _____
+
+self = <tests.tracker.test_scope_reads.ScopeMcpServer object at 0x1103523c0>
+arguments = {'query': 'absent-scope'}
+
+    def _tool_get_project(
+        self, arguments: Mapping[str, object]
+    ) -> Mapping[str, object]:
+        if arguments["query"] not in self.projects:
+>           raise McpTransportError(
+                "the vendor refused the requested project",
+                server_name="fixture-linear",
+                tool_name="get_project",
+            )
+E           kodezart.core.errors.McpTransportError: the vendor refused the requested project (fixture-linear/get_project)
+
+tests/tracker/test_scope_reads.py:224: McpTransportError
+
+The above exception was the direct cause of the following exception:
+
+scope_fixture = ScopeFixture(tracker=<kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x1103507d0>, server=<tests.tracker.test_scope_reads.ScopeMcpServer object at 0x1103523c0>, fake=<tests.fakes.FakeTrackerPort object at 0x1103534a0>)
+kind = <ScopeKind.PROJECT: 'project'>
+
+    @pytest.mark.parametrize("kind", list(ScopeKind))
+    async def test_missing_scope_refuses_with_the_requested_address(
+        scope_fixture: ScopeFixture, kind: ScopeKind
+    ) -> None:
+        ref = ScopeRef(kind=kind, key="absent-scope")
+    
+        with pytest.raises((ScopeReadError, McpTransportError)) as caught:
+>           await scope_fixture.tracker.scope_issues(ref=ref)
+
+tests/tracker/test_scope_reads.py:361: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/adapters/linear_mcp_tracker.py:1083: in scope_issues
+    return await LinearScopeReader(
+src/kodezart/adapters/linear_scope_reader.py:70: in scope_issues
+    project = await self._project(ref.key)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/adapters/linear_scope_reader.py:177: in _project
+    return await self._read(
+src/kodezart/adapters/linear_scope_reader.py:402: in _read
+    payload = await self._call(tool, arguments)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x1103507d0>
+tool = 'get_project', arguments = {'query': 'absent-scope'}
+
+    async def _call(
+        self,
+        tool: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        if tool == _TOOL_SAVE_ISSUE:
+            # Every issue write funnels through here, so the refusal is
+            # stated once and no future write path can route around it.
+            refuse_combined_issue_write(arguments)
+        attempt = 0
+        while True:
+            try:
+                return await self._caller.call_tool(name=tool, arguments=arguments)
+            except McpCredentialRefusedError as exc:
+                # Named once and raised, never retried: the refusal is the
+                # same on every attempt, so a budget spent on it buys the
+                # first answer again and delays the one event an operator
+                # can act on by the whole back-off.
+                await self._log.aerror(
+                    "tracker_credential_refused",
+                    tool=tool,
+                    server_name=exc.server_name,
+                )
+                raise TrackerAccessDeniedError(str(exc)) from exc
+            except (McpTransportError, TransientAPIError) as exc:
+                if attempt + 1 >= self._retry.attempts or not _may_resend(tool, exc):
+>                   raise TrackerUnavailableError(str(exc)) from exc
+E                   kodezart.core.errors.TrackerUnavailableError: the vendor refused the requested project (fixture-linear/get_project)
+
+src/kodezart/adapters/linear_mcp_tracker.py:3460: TrackerUnavailableError
+_____ test_missing_scope_refuses_with_the_requested_address[linear-issue] ______
+
+self = <tests.tracker.test_scope_reads.ScopeMcpServer object at 0x10ee47bf0>
+arguments = {'id': 'absent-scope', 'includeRelations': True}
+
+    def _tool_get_issue(self, arguments: Mapping[str, object]) -> Mapping[str, object]:
+        if arguments["id"] not in self.issues:
+>           raise McpTransportError(
+                "the vendor refused the requested issue",
+                server_name="fixture-linear",
+                tool_name="get_issue",
+            )
+E           kodezart.core.errors.McpTransportError: the vendor refused the requested issue (fixture-linear/get_issue)
+
+tests/tracker/test_scope_reads.py:233: McpTransportError
+
+The above exception was the direct cause of the following exception:
+
+scope_fixture = ScopeFixture(tracker=<kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x110242a20>, server=<tests.tracker.test_scope_reads.ScopeMcpServer object at 0x10ee47bf0>, fake=<tests.fakes.FakeTrackerPort object at 0x1102438f0>)
+kind = <ScopeKind.ISSUE: 'issue'>
+
+    @pytest.mark.parametrize("kind", list(ScopeKind))
+    async def test_missing_scope_refuses_with_the_requested_address(
+        scope_fixture: ScopeFixture, kind: ScopeKind
+    ) -> None:
+        ref = ScopeRef(kind=kind, key="absent-scope")
+    
+        with pytest.raises((ScopeReadError, McpTransportError)) as caught:
+>           await scope_fixture.tracker.scope_issues(ref=ref)
+
+tests/tracker/test_scope_reads.py:361: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/adapters/linear_mcp_tracker.py:1083: in scope_issues
+    return await LinearScopeReader(
+src/kodezart/adapters/linear_scope_reader.py:68: in scope_issues
+    issues = await self._subtree(ref)
+             ^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/adapters/linear_scope_reader.py:189: in _subtree
+    root = await self._read_issue(issue_key=ref.key)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/adapters/linear_mcp_tracker.py:947: in read_issue
+    return self._to_issue(await self._read_issue_wire(issue_key))
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/adapters/linear_mcp_tracker.py:3381: in _read_issue_wire
+    payload = await self._call(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x110242a20>
+tool = 'get_issue', arguments = {'id': 'absent-scope', 'includeRelations': True}
+
+    async def _call(
+        self,
+        tool: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        if tool == _TOOL_SAVE_ISSUE:
+            # Every issue write funnels through here, so the refusal is
+            # stated once and no future write path can route around it.
+            refuse_combined_issue_write(arguments)
+        attempt = 0
+        while True:
+            try:
+                return await self._caller.call_tool(name=tool, arguments=arguments)
+            except McpCredentialRefusedError as exc:
+                # Named once and raised, never retried: the refusal is the
+                # same on every attempt, so a budget spent on it buys the
+                # first answer again and delays the one event an operator
+                # can act on by the whole back-off.
+                await self._log.aerror(
+                    "tracker_credential_refused",
+                    tool=tool,
+                    server_name=exc.server_name,
+                )
+                raise TrackerAccessDeniedError(str(exc)) from exc
+            except (McpTransportError, TransientAPIError) as exc:
+                if attempt + 1 >= self._retry.attempts or not _may_resend(tool, exc):
+>                   raise TrackerUnavailableError(str(exc)) from exc
+E                   kodezart.core.errors.TrackerUnavailableError: the vendor refused the requested issue (fixture-linear/get_issue)
+
+src/kodezart/adapters/linear_mcp_tracker.py:3460: TrackerUnavailableError
+_____ test_unreadable_roster_member_cannot_become_a_missing_marker[native] _____
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10f87a180>
+tool = 'get_issue', arguments = {'id': 'one', 'includeRelations': True}
+
+    async def _call(
+        self,
+        tool: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        if tool == _TOOL_SAVE_ISSUE:
+            # Every issue write funnels through here, so the refusal is
+            # stated once and no future write path can route around it.
+            refuse_combined_issue_write(arguments)
+        attempt = 0
+        while True:
+            try:
+>               return await self._caller.call_tool(name=tool, arguments=arguments)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+src/kodezart/adapters/linear_mcp_tracker.py:3446: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/fakes.py:2673: in call_tool
+    try:
+         
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <tests.tracker.test_scope_reads.ScopeMcpServer object at 0x10f879370>
+arguments = {'id': 'one', 'includeRelations': True}
+
+    def _tool_get_issue(self, arguments: Mapping[str, object]) -> Mapping[str, object]:
+        if arguments["id"] not in self.issues:
+>           raise McpTransportError(
+                "the vendor refused the requested issue",
+                server_name="fixture-linear",
+                tool_name="get_issue",
+            )
+E           kodezart.core.errors.McpTransportError: the vendor refused the requested issue (fixture-linear/get_issue)
+
+tests/tracker/test_scope_reads.py:233: McpTransportError
+
+The above exception was the direct cause of the following exception:
+
+tally = Fixture(tracker=<kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10f87a180>, native=<kodezart.adapte...t_states={}, marker_prefixes={}, repos=[], documents={}, records={}, knowledge={}, endpoints={}, private_surface=None))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10ffa9b50>
+
+    async def test_unreadable_roster_member_cannot_become_a_missing_marker(
+        tally, monkeypatch
+    ):
+        from kodezart.core.errors import McpTransportError
+    
+        original = tally.tracker.scope_issues
+    
+        async def disappearing(*, ref):
+            rows = await original(ref=ref)
+            tally.server.issues.pop("one", None)
+            tally.fake.issues.pop("one", None)
+            return rows
+    
+        monkeypatch.setattr(tally.tracker, "scope_issues", disappearing)
+        with pytest.raises((RunShapeReadError, McpTransportError)):
+>           await tally.observe()
+
+tests/tracker/test_scope_tally.py:328: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/tracker/test_scope_tally.py:63: in observe
+    return await observe_scope_tally(
+src/kodezart/services/scope_tally.py:115: in observe_scope_tally
+    facts = await _read_members(tracker=tracker, scope=scope)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/services/scope_tally.py:54: in _read_members
+    current = await tracker.read_planning_issue(issue_key=issue.issue_key)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/adapters/linear_mcp_tracker.py:950: in read_planning_issue
+    payload = await self._call(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10f87a180>
+tool = 'get_issue', arguments = {'id': 'one', 'includeRelations': True}
+
+    async def _call(
+        self,
+        tool: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        if tool == _TOOL_SAVE_ISSUE:
+            # Every issue write funnels through here, so the refusal is
+            # stated once and no future write path can route around it.
+            refuse_combined_issue_write(arguments)
+        attempt = 0
+        while True:
+            try:
+                return await self._caller.call_tool(name=tool, arguments=arguments)
+            except McpCredentialRefusedError as exc:
+                # Named once and raised, never retried: the refusal is the
+                # same on every attempt, so a budget spent on it buys the
+                # first answer again and delays the one event an operator
+                # can act on by the whole back-off.
+                await self._log.aerror(
+                    "tracker_credential_refused",
+                    tool=tool,
+                    server_name=exc.server_name,
+                )
+                raise TrackerAccessDeniedError(str(exc)) from exc
+            except (McpTransportError, TransientAPIError) as exc:
+                if attempt + 1 >= self._retry.attempts or not _may_resend(tool, exc):
+>                   raise TrackerUnavailableError(str(exc)) from exc
+E                   kodezart.core.errors.TrackerUnavailableError: the vendor refused the requested issue (fixture-linear/get_issue)
+
+src/kodezart/adapters/linear_mcp_tracker.py:3460: TrackerUnavailableError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 14:47:08 [warning  ] tracker_mcp_retry              attempt=0 delay_seconds=1.0 tool=get_issue
+2026-09-12 14:47:09 [warning  ] tracker_mcp_retry              attempt=1 delay_seconds=2.0 tool=get_issue
+2026-09-12 14:47:11 [warning  ] tracker_mcp_retry              attempt=2 delay_seconds=4.0 tool=get_issue
+_______ test_boot_constructs_shared_retry_for_native_answered_errors[0] ________
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x110963d70>
+tool = 'get_issue', arguments = {'id': 'FIX-1', 'includeRelations': True}
+
+    async def _call(
+        self,
+        tool: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        if tool == _TOOL_SAVE_ISSUE:
+            # Every issue write funnels through here, so the refusal is
+            # stated once and no future write path can route around it.
+            refuse_combined_issue_write(arguments)
+        attempt = 0
+        while True:
+            try:
+>               return await self._caller.call_tool(name=tool, arguments=arguments)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+src/kodezart/adapters/linear_mcp_tracker.py:3446: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/adapters/http_mcp_tool_caller.py:449: in call_tool
+    return await self._hosted.call_tool(name=name, arguments=arguments)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.hosted_mcp_session.HostedMcpSession object at 0x110c76d20>
+
+    async def call_tool(
+        self,
+        *,
+        name: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        """Hand the call to the host task and wait for its answer.
+    
+        A session that ENDS under a call in flight is answered rather than
+        abandoned: every call the host still owes is resolved with the
+        closed-session class on its way out, so a worker waiting here is
+        told rather than left.
+    
+        Handing the call over is SYNCHRONOUS up to the wait, so a host
+        that has already drained cannot be handed a call afterwards.
+    
+        A session that has ENDED is reopened and the call goes again —
+        once per call, never once per boot.
+        """
+        inbox = self._inbox
+        if inbox is None or self._phase is not _Phase.SERVING:
+            return await self._call_on_a_reopened_session(
+                name=name,
+                arguments=arguments,
+            )
+        try:
+>           return await self._post(inbox, name=name, arguments=arguments).reply
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           kodezart.core.errors.McpTransportError: the MCP server reported a tool error: try again (fixture-server/get_issue)
+
+src/kodezart/adapters/hosted_mcp_session.py:542: McpTransportError
+
+The above exception was the direct cause of the following exception:
+
+retries = 0
+tmp_path = PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1692/test_boot_constructs_shared_re0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x110bdfb90>
+
+    @pytest.mark.parametrize("retries", [0, 2])
+    async def test_boot_constructs_shared_retry_for_native_answered_errors(
+        retries, tmp_path, monkeypatch
+    ):
+        endpoint = NativeEndpoint(monkeypatch)
+        config = AppConfig(_env_file=None, tracker={**VALUES, "max_retries": retries})
+        dialled = await boot_tracker(
+            settings=config.tracker, operation=operation_config(), log=get_logger(__name__)
+        )
+        assert dialled is not None
+        waits = []
+        original_sleep = asyncio.sleep
+    
+        async def sleep(seconds):
+            if seconds:
+                waits.append(seconds)
+            await original_sleep(0)
+    
+        monkeypatch.setattr(asyncio, "sleep", sleep)
+        endpoint.fail_get_issue = 10
+        before = len(endpoint.wire)
+        try:
+            with pytest.raises(McpTransportError):
+>               await dialled.tracker.read_issue(issue_key=CLAIMED_ISSUE)
+
+tests/core/test_tracker_settings.py:342: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/adapters/linear_mcp_tracker.py:947: in read_issue
+    return self._to_issue(await self._read_issue_wire(issue_key))
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/adapters/linear_mcp_tracker.py:3381: in _read_issue_wire
+    payload = await self._call(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x110963d70>
+tool = 'get_issue', arguments = {'id': 'FIX-1', 'includeRelations': True}
+
+    async def _call(
+        self,
+        tool: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        if tool == _TOOL_SAVE_ISSUE:
+            # Every issue write funnels through here, so the refusal is
+            # stated once and no future write path can route around it.
+            refuse_combined_issue_write(arguments)
+        attempt = 0
+        while True:
+            try:
+                return await self._caller.call_tool(name=tool, arguments=arguments)
+            except McpCredentialRefusedError as exc:
+                # Named once and raised, never retried: the refusal is the
+                # same on every attempt, so a budget spent on it buys the
+                # first answer again and delays the one event an operator
+                # can act on by the whole back-off.
+                await self._log.aerror(
+                    "tracker_credential_refused",
+                    tool=tool,
+                    server_name=exc.server_name,
+                )
+                raise TrackerAccessDeniedError(str(exc)) from exc
+            except (McpTransportError, TransientAPIError) as exc:
+                if attempt + 1 >= self._retry.attempts or not _may_resend(tool, exc):
+>                   raise TrackerUnavailableError(str(exc)) from exc
+E                   kodezart.core.errors.TrackerUnavailableError: the MCP server reported a tool error: try again (fixture-server/get_issue)
+
+src/kodezart/adapters/linear_mcp_tracker.py:3460: TrackerUnavailableError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 14:47:42 [info     ] mcp_credential_accepted        server_name=fixture-server url=https://tracker.invalid/custom
+2026-09-12 14:47:42 [info     ] mcp_session_opened             address=https://tracker.invalid/custom server_name=fixture-server
+2026-09-12 14:47:42 [info     ] tracker_mappings_reconciled    adopted=["document 'checkpoint' -> 'doc-1'", "queue_state 'approved' -> 'queue:approved'", "queue_state 'decision' -> 'queue:decision'", "queue_state 'done' -> 'queue:done'", "queue_state 'proposed' -> 'queue:proposed'", "queue_state 'triage' -> 'queue:triage'"] backend=linear created=[]
+2026-09-12 14:47:42 [info     ] mcp_session_closed             server_name=fixture-server
+------------------------------ Captured log call -------------------------------
+WARNING  client:session.py:409 Tool get_user not listed by server, cannot validate any structured content
+WARNING  client:session.py:409 Tool list_issue_labels not listed by server, cannot validate any structured content
+WARNING  client:session.py:409 Tool list_issue_labels not listed by server, cannot validate any structured content
+WARNING  client:session.py:409 Tool list_documents not listed by server, cannot validate any structured content
+WARNING  client:session.py:409 Tool list_teams not listed by server, cannot validate any structured content
+WARNING  client:session.py:409 Tool list_users not listed by server, cannot validate any structured content
+WARNING  client:session.py:409 Tool list_teams not listed by server, cannot validate any structured content
+WARNING  client:session.py:409 Tool list_issue_labels not listed by server, cannot validate any structured content
+WARNING  client:session.py:409 Tool list_issue_labels not listed by server, cannot validate any structured content
+WARNING  client:session.py:409 Tool list_issue_statuses not listed by server, cannot validate any structured content
+_______ test_boot_constructs_shared_retry_for_native_answered_errors[2] ________
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x110ad0920>
+tool = 'get_issue', arguments = {'id': 'FIX-1', 'includeRelations': True}
+
+    async def _call(
+        self,
+        tool: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        if tool == _TOOL_SAVE_ISSUE:
+            # Every issue write funnels through here, so the refusal is
+            # stated once and no future write path can route around it.
+            refuse_combined_issue_write(arguments)
+        attempt = 0
+        while True:
+            try:
+>               return await self._caller.call_tool(name=tool, arguments=arguments)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+src/kodezart/adapters/linear_mcp_tracker.py:3446: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/adapters/http_mcp_tool_caller.py:449: in call_tool
+    return await self._hosted.call_tool(name=name, arguments=arguments)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.hosted_mcp_session.HostedMcpSession object at 0x110c254f0>
+
+    async def call_tool(
+        self,
+        *,
+        name: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        """Hand the call to the host task and wait for its answer.
+    
+        A session that ENDS under a call in flight is answered rather than
+        abandoned: every call the host still owes is resolved with the
+        closed-session class on its way out, so a worker waiting here is
+        told rather than left.
+    
+        Handing the call over is SYNCHRONOUS up to the wait, so a host
+        that has already drained cannot be handed a call afterwards.
+    
+        A session that has ENDED is reopened and the call goes again —
+        once per call, never once per boot.
+        """
+        inbox = self._inbox
+        if inbox is None or self._phase is not _Phase.SERVING:
+            return await self._call_on_a_reopened_session(
+                name=name,
+                arguments=arguments,
+            )
+        try:
+>           return await self._post(inbox, name=name, arguments=arguments).reply
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           kodezart.core.errors.McpTransportError: the MCP server reported a tool error: try again (fixture-server/get_issue)
+
+src/kodezart/adapters/hosted_mcp_session.py:542: McpTransportError
+
+The above exception was the direct cause of the following exception:
+
+retries = 2
+tmp_path = PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1692/test_boot_constructs_shared_re1')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1103ed370>
+
+    @pytest.mark.parametrize("retries", [0, 2])
+    async def test_boot_constructs_shared_retry_for_native_answered_errors(
+        retries, tmp_path, monkeypatch
+    ):
+        endpoint = NativeEndpoint(monkeypatch)
+        config = AppConfig(_env_file=None, tracker={**VALUES, "max_retries": retries})
+        dialled = await boot_tracker(
+            settings=config.tracker, operation=operation_config(), log=get_logger(__name__)
+        )
+        assert dialled is not None
+        waits = []
+        original_sleep = asyncio.sleep
+    
+        async def sleep(seconds):
+            if seconds:
+                waits.append(seconds)
+            await original_sleep(0)
+    
+        monkeypatch.setattr(asyncio, "sleep", sleep)
+        endpoint.fail_get_issue = 10
+        before = len(endpoint.wire)
+        try:
+            with pytest.raises(McpTransportError):
+>               await dialled.tracker.read_issue(issue_key=CLAIMED_ISSUE)
+
+tests/core/test_tracker_settings.py:342: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/adapters/linear_mcp_tracker.py:947: in read_issue
+    return self._to_issue(await self._read_issue_wire(issue_key))
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/adapters/linear_mcp_tracker.py:3381: in _read_issue_wire
+    payload = await self._call(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x110ad0920>
+tool = 'get_issue', arguments = {'id': 'FIX-1', 'includeRelations': True}
+
+    async def _call(
+        self,
+        tool: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        if tool == _TOOL_SAVE_ISSUE:
+            # Every issue write funnels through here, so the refusal is
+            # stated once and no future write path can route around it.
+            refuse_combined_issue_write(arguments)
+        attempt = 0
+        while True:
+            try:
+                return await self._caller.call_tool(name=tool, arguments=arguments)
+            except McpCredentialRefusedError as exc:
+                # Named once and raised, never retried: the refusal is the
+                # same on every attempt, so a budget spent on it buys the
+                # first answer again and delays the one event an operator
+                # can act on by the whole back-off.
+                await self._log.aerror(
+                    "tracker_credential_refused",
+                    tool=tool,
+                    server_name=exc.server_name,
+                )
+                raise TrackerAccessDeniedError(str(exc)) from exc
+            except (McpTransportError, TransientAPIError) as exc:
+                if attempt + 1 >= self._retry.attempts or not _may_resend(tool, exc):
+>                   raise TrackerUnavailableError(str(exc)) from exc
+E                   kodezart.core.errors.TrackerUnavailableError: the MCP server reported a tool error: try again (fixture-server/get_issue)
+
+src/kodezart/adapters/linear_mcp_tracker.py:3460: TrackerUnavailableError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 14:47:42 [info     ] mcp_credential_accepted        server_name=fixture-server url=https://tracker.invalid/custom
+2026-09-12 14:47:42 [info     ] mcp_session_opened             address=https://tracker.invalid/custom server_name=fixture-server
+2026-09-12 14:47:42 [info     ] tracker_mappings_reconciled    adopted=["document 'checkpoint' -> 'doc-1'", "queue_state 'approved' -> 'queue:approved'", "queue_state 'decision' -> 'queue:decision'", "queue_state 'done' -> 'queue:done'", "queue_state 'proposed' -> 'queue:proposed'", "queue_state 'triage' -> 'queue:triage'"] backend=linear created=[]
+2026-09-12 14:47:42 [warning  ] tracker_mcp_retry              attempt=0 delay_seconds=0.5 tool=get_issue
+2026-09-12 14:47:42 [warning  ] tracker_mcp_retry              attempt=1 delay_seconds=1.0 tool=get_issue
+2026-09-12 14:47:42 [info     ] mcp_session_closed             server_name=fixture-server
+------------------------------ Captured log call -------------------------------
+WARNING  client:session.py:409 Tool get_user not listed by server, cannot validate any structured content
+WARNING  client:session.py:409 Tool list_issue_labels not listed by server, cannot validate any structured content
+WARNING  client:session.py:409 Tool list_issue_labels not listed by server, cannot validate any structured content
+WARNING  client:session.py:409 Tool list_documents not listed by server, cannot validate any structured content
+WARNING  client:session.py:409 Tool list_teams not listed by server, cannot validate any structured content
+WARNING  client:session.py:409 Tool list_users not listed by server, cannot validate any structured content
+WARNING  client:session.py:409 Tool list_teams not listed by server, cannot validate any structured content
+WARNING  client:session.py:409 Tool list_issue_labels not listed by server, cannot validate any structured content
+WARNING  client:session.py:409 Tool list_issue_labels not listed by server, cannot validate any structured content
+WARNING  client:session.py:409 Tool list_issue_statuses not listed by server, cannot validate any structured content
+=========================== short test summary info ============================
+FAILED tests/tracker/test_barren_record_collector.py::test_every_native_read_propagates_failure_or_cancellation[fake-port-False-1-list_comments]
+FAILED tests/tracker/test_barren_record_collector.py::test_every_native_read_propagates_failure_or_cancellation[fake-port-False-2-list_comments]
+FAILED tests/tracker/test_barren_record_collector.py::test_every_native_read_propagates_failure_or_cancellation[linear-mcp-False-1-list_comments]
+FAILED tests/tracker/test_barren_record_collector.py::test_every_native_read_propagates_failure_or_cancellation[linear-mcp-False-2-list_comments]
+FAILED tests/tracker/test_consumer_read_ports.py::test_each_record_reader_preserves_failure_or_cancellation[fake-port-False]
+FAILED tests/tracker/test_consumer_read_ports.py::test_each_record_reader_preserves_failure_or_cancellation[linear-mcp-False]
+FAILED tests/tracker/test_document_relation_assets.py::test_document_read_failure_and_cancellation_propagate[False]
+FAILED tests/tracker/test_escalation_record_collector.py::test_transport_error_never_becomes_missing_or_resolved[fake-port]
+FAILED tests/tracker/test_escalation_record_collector.py::test_transport_error_never_becomes_missing_or_resolved[linear-mcp]
+FAILED tests/tracker/test_escalation_resolution_boundary.py::test_failed_transport_remains_typed_with_its_original_cause[credential]
+FAILED tests/tracker/test_issue_identity_boundary.py::test_new_adapter_recovers_a_create_whose_reply_was_lost
+FAILED tests/tracker/test_issue_identity_boundary.py::test_a_failed_full_read_does_not_allow_creation
+FAILED tests/tracker/test_labeled_issues.py::test_failed_later_page_does_not_return_the_first_page
+FAILED tests/tracker/test_lane_escalation.py::test_failed_decision_write_propagates_and_retry_completes_same_comment
+FAILED tests/tracker/test_lane_record_signals.py::test_transport_error_and_cancellation_propagate[fake-port]
+FAILED tests/tracker/test_lane_record_signals.py::test_transport_error_and_cancellation_propagate[linear-mcp]
+FAILED tests/tracker/test_scope_approval.py::test_missing_ancestry_refuses_instead_of_returning_false[linear-issue]
+FAILED tests/tracker/test_scope_approval.py::test_missing_ancestry_refuses_instead_of_returning_false[linear-project]
+FAILED tests/tracker/test_scope_approval.py::test_missing_ancestry_refuses_instead_of_returning_false[linear-initiative]
+FAILED tests/tracker/test_scope_label_mappings.py::test_unavailable_project_creator_is_a_typed_failure_without_fallback
+FAILED tests/tracker/test_scope_reads.py::test_missing_scope_refuses_with_the_requested_address[linear-initiative]
+FAILED tests/tracker/test_scope_reads.py::test_missing_scope_refuses_with_the_requested_address[linear-project]
+FAILED tests/tracker/test_scope_reads.py::test_missing_scope_refuses_with_the_requested_address[linear-issue]
+FAILED tests/tracker/test_scope_tally.py::test_unreadable_roster_member_cannot_become_a_missing_marker[native]
+FAILED tests/core/test_tracker_settings.py::test_boot_constructs_shared_retry_for_native_answered_errors[0]
+FAILED tests/core/test_tracker_settings.py::test_boot_constructs_shared_retry_for_native_answered_errors[2]
+26 failed, 2883 passed in 2218.11s (0:36:58)

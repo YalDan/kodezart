@@ -1,0 +1,175 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_____ test_real_commit_without_returned_receipt_retains_workspace[cancel] ______
+
+fut = <coroutine object Event.wait at 0x10cd5f300>, timeout = 15
+
+    async def wait_for(fut, timeout):
+        """Wait for the single Future or coroutine to complete, with timeout.
+    
+        Coroutine will be wrapped in Task.
+    
+        Returns result of the Future or coroutine.  When a timeout occurs,
+        it cancels the task and raises TimeoutError.  To avoid the task
+        cancellation, wrap it in shield().
+    
+        If the wait is cancelled, the task is also cancelled.
+    
+        If the task suppresses the cancellation and returns a value instead,
+        that value is returned.
+    
+        This function is a coroutine.
+        """
+        # The special case for timeout <= 0 is for the following case:
+        #
+        # async def test_waitfor():
+        #     func_started = False
+        #
+        #     async def func():
+        #         nonlocal func_started
+        #         func_started = True
+        #
+        #     try:
+        #         await asyncio.wait_for(func(), 0)
+        #     except asyncio.TimeoutError:
+        #         assert not func_started
+        #     else:
+        #         assert False
+        #
+        # asyncio.run(test_waitfor())
+    
+    
+        if timeout is not None and timeout <= 0:
+            fut = ensure_future(fut)
+    
+            if fut.done():
+                return fut.result()
+    
+            await _cancel_and_wait(fut)
+            try:
+                return fut.result()
+            except exceptions.CancelledError as exc:
+                raise TimeoutError from exc
+    
+        async with timeouts.timeout(timeout):
+>           return await fut
+                   ^^^^^^^^^
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/tasks.py:520: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <asyncio.locks.Event object at 0x10cd4e210 [unset]>
+
+    async def wait(self):
+        """Block until the internal flag is true.
+    
+        If the internal flag is true on entry, return True
+        immediately.  Otherwise, block until another coroutine calls
+        set() to set the flag to true, then return True.
+        """
+        if self._value:
+            return True
+    
+        fut = self._get_loop().create_future()
+        self._waiters.append(fut)
+        try:
+>           await fut
+E           asyncio.exceptions.CancelledError
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/locks.py:212: CancelledError
+
+The above exception was the direct cause of the following exception:
+
+repository = (PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1974/test_real_commit_without_retur0/repo'), '081bc798eac8bdbb9137c24e1ef3e73c70340ef4')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10cd4d0a0>
+failure = 'cancel'
+
+    @pytest.mark.parametrize("failure", ["none", "readout", "cancel"])
+    async def test_real_commit_without_returned_receipt_retains_workspace(
+        repository, monkeypatch, failure
+    ):
+        service, guard, workspace, _ = await build(repository, Executor(claim=False))
+        actual_run = workspace._git._run
+        actual_output = workspace._git._run_output
+        committed = False
+        intercepted = False
+        readout_started = asyncio.Event()
+        unavailable = RuntimeError("actual commit succeeded; SHA readout unavailable")
+    
+        async def run(cmd, **kwargs):
+            nonlocal committed
+            result = await actual_run(cmd, **kwargs)
+            if cmd[:2] == ["git", "commit"]:
+                committed = True
+            return result
+    
+        async def output(cmd, **kwargs):
+            nonlocal intercepted
+            if committed and not intercepted and cmd == ["git", "rev-parse", "HEAD"]:
+                intercepted = True
+                readout_started.set()
+                if failure == "readout":
+                    raise unavailable
+                if failure == "cancel":
+                    await asyncio.Event().wait()
+            return await actual_output(cmd, **kwargs)
+    
+        monkeypatch.setattr(workspace._git, "_run", run)
+        monkeypatch.setattr(workspace._git, "_run_output", output)
+        task = asyncio.create_task(drive(service, guard, repository))
+        try:
+            if failure == "cancel":
+>               await asyncio.wait_for(readout_started.wait(), timeout=15)
+
+tests/services/test_native_commit_receipt_independent.py:55: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/tasks.py:519: in wait_for
+    async with timeouts.timeout(timeout):
+               ^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <Timeout [expired]>
+exc_type = <class 'asyncio.exceptions.CancelledError'>
+exc_val = CancelledError(), exc_tb = <traceback object at 0x10cc0ad40>
+
+    async def __aexit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType],
+    ) -> Optional[bool]:
+        assert self._state in (_State.ENTERED, _State.EXPIRING)
+    
+        if self._timeout_handler is not None:
+            self._timeout_handler.cancel()
+            self._timeout_handler = None
+    
+        if self._state is _State.EXPIRING:
+            self._state = _State.EXPIRED
+    
+            if self._task.uncancel() <= self._cancelling and exc_type is exceptions.CancelledError:
+                # Since there are no new cancel requests, we're
+                # handling this.
+>               raise TimeoutError from exc_val
+E               TimeoutError
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/timeouts.py:115: TimeoutError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 23:05:14 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 23:05:14 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-343de8347a594f01ab4f2697ff14137f workspace_id=343de8347a594f01ab4f2697ff14137f
+2026-09-12 23:05:14 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 23:05:17 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 23:05:18 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 23:05:21 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 23:05:23 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 23:05:23 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 23:05:26 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 23:05:28 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 23:05:28 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=commit_message stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 23:05:28 [info     ] outbound_content_gated         categories=[] content_digest=1c2258ba30d6edc526796ea21c3fb5396230012aa5082ada3a09885c265fdb2a failure=None hits=[] surface=repository verdict=clean visibility=public writer=commit_message
+2026-09-12 23:05:29 [warning  ] native_writer_workspace_retained workspace_path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-343de8347a594f01ab4f2697ff14137f
+2026-09-12 23:05:29 [warning  ] workspace_release_unclean      branch_name=native-test path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-343de8347a594f01ab4f2697ff14137f workspace_id=343de8347a594f01ab4f2697ff14137f
+2026-09-12 23:05:29 [info     ] workspace_released             workspace_id=343de8347a594f01ab4f2697ff14137f
+=========================== short test summary info ============================
+FAILED tests/services/test_native_commit_receipt_independent.py::test_real_commit_without_returned_receipt_retains_workspace[cancel]
+1 failed in 17.64s

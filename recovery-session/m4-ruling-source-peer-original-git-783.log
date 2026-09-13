@@ -1,0 +1,13 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+______ test_native_read_preserves_exact_bytes_and_refuses_symlink_or_tree ______
+async def functions are not natively supported.
+You need to install a suitable plugin for your async framework, for example:
+  - anyio
+  - pytest-asyncio
+  - pytest-tornasync
+  - pytest-trio
+  - pytest-twisted
+=========================== short test summary info ============================
+FAILED ../kodezart-recovery-session/test_m4_git_source_original_peer.py::test_native_read_preserves_exact_bytes_and_refuses_symlink_or_tree
+1 failed in 2.25s

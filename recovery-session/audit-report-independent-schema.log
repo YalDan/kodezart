@@ -1,0 +1,3 @@
+AuditClaimJudgment parent schema exact structural equality: PASS
+AuditClaimObservation parent schema exact structural equality: PASS
+{'pydantic': '2.12.5', 'typing-extensions': '4.15.0', 'mypy': '1.19.1'}

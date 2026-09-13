@@ -1,0 +1,63 @@
+.FF.......                                                               [100%]
+=================================== FAILURES ===================================
+_______ test_actual_scheduled_audit_collects_and_verifies_native_summary _______
+
+    async def test_actual_scheduled_audit_collects_and_verifies_native_summary():
+        config, operation, server, tracker, forge = dependencies()
+        scheduled, executor = await runtime(config, operation, server, tracker, forge)
+        assert scheduled.interval_seconds == 60
+        assert scheduled.timeout_seconds == 17
+        assert scheduled.report is not None
+>       assert await scheduled.run(FIXTURE_NOW) is PassRun.RAN
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/integration/test_audit_scheduler.py:144: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.services.audit_runtime.AuditScheduledPass object at 0x10a9ad880>
+started_at = datetime.datetime(2026, 3, 1, 12, 0, tzinfo=datetime.timezone.utc)
+
+    async def run(self, started_at: datetime) -> PassRun:
+        identity = RunIdentity(kind=RunKind.AUDIT, name="audit", started_at=started_at)
+        self._last_report = None
+        scopes = tuple(
+            [await self._scope(target, identity) for target in self._targets]
+        )
+        report = AuditRunReport(identity=identity, scopes=scopes)
+        self._last_report = report
+        await self._log.ainfo(
+            "audit_run_finished",
+            run_identity=identity.title(),
+            report=report.model_dump(mode="json"),
+        )
+        if any(isinstance(scope, AuditScopeIncomplete) for scope in scopes):
+>           raise AuditRunIncompleteError(report=report)
+E           kodezart.domain.errors.AuditRunIncompleteError: audit run 'audit — audit @ 2026-03-01T12:00:00Z' is incomplete
+
+src/kodezart/services/audit_runtime.py:402: AuditRunIncompleteError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 19:42:40 [info     ] scheduled_passes_not_wired     delivery_probe_present=False operation_config_present=True tracker_present=True
+2026-09-12 19:42:40 [info     ] outbound_content_gated         categories=[] content_digest=622e380ccba718cc53822299a8660d7dcb4f784d1aec0504d161152486c5dd21 failure=None hits=[] surface=tracker verdict=clean visibility=public writer=tracker_comment
+2026-09-12 19:42:40 [info     ] audit_run_finished             report={'identity': {'kind': 'audit', 'name': 'audit', 'started_at': '2026-03-01T12:00:00Z'}, 'scopes': [{'scope': {'kind': 'project', 'key': 'empty-project'}, 'writes': [], 'observations': [], 'raw_observations': [], 'status': 'incomplete', 'unavailable': [{'subject': {'kind': 'project', 'key': 'empty-project'}, 'reason': 'SurfaceLeaseError: the writing job does not hold this live surface (surface: marker_comment:issue:FIX-1 (marker: [configured-audit-record:project%3Aempty-project:audit%20%E2%80%94%20audit%20%40%202026-03-01T12%3A00%3A00Z]); current holder: none)'}]}]} run_identity='audit — audit @ 2026-03-01T12:00:00Z'
+__ test_summary_exhaustion_retains_actual_rounds_and_repeats_uncovered_window __
+
+    async def test_summary_exhaustion_retains_actual_rounds_and_repeats_uncovered_window():
+        scheduled, executor = await runtime(*dependencies(), verdict="refuted")
+        for index in range(2):
+            with pytest.raises(AuditRunIncompleteError) as caught:
+                await scheduled.run(FIXTURE_NOW + timedelta(seconds=index * 60))
+            scope = caught.value.report.scopes[0]
+            assert scope.status == "incomplete"
+>           assert scope.writes[-1].verdict is AuditVerdict.UNVERIFIABLE
+                   ^^^^^^^^^^^^^^^^
+E           IndexError: tuple index out of range
+
+tests/integration/test_audit_scheduler.py:180: IndexError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 19:42:40 [info     ] scheduled_passes_not_wired     delivery_probe_present=False operation_config_present=True tracker_present=True
+2026-09-12 19:42:40 [info     ] outbound_content_gated         categories=[] content_digest=622e380ccba718cc53822299a8660d7dcb4f784d1aec0504d161152486c5dd21 failure=None hits=[] surface=tracker verdict=clean visibility=public writer=tracker_comment
+2026-09-12 19:42:40 [info     ] audit_run_finished             report={'identity': {'kind': 'audit', 'name': 'audit', 'started_at': '2026-03-01T12:00:00Z'}, 'scopes': [{'scope': {'kind': 'project', 'key': 'empty-project'}, 'writes': [], 'observations': [], 'raw_observations': [], 'status': 'incomplete', 'unavailable': [{'subject': {'kind': 'project', 'key': 'empty-project'}, 'reason': 'SurfaceLeaseError: the writing job does not hold this live surface (surface: marker_comment:issue:FIX-1 (marker: [configured-audit-record:project%3Aempty-project:audit%20%E2%80%94%20audit%20%40%202026-03-01T12%3A00%3A00Z]); current holder: none)'}]}]} run_identity='audit — audit @ 2026-03-01T12:00:00Z'
+=========================== short test summary info ============================
+FAILED tests/integration/test_audit_scheduler.py::test_actual_scheduled_audit_collects_and_verifies_native_summary
+FAILED tests/integration/test_audit_scheduler.py::test_summary_exhaustion_retains_actual_rounds_and_repeats_uncovered_window
+2 failed, 8 passed in 0.39s

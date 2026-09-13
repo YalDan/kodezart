@@ -1,0 +1,60 @@
+.F                                                                       [100%]
+=================================== FAILURES ===================================
+_________ test_criterion_unsent_retry_rechecks_surface_ownership[True] _________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10ab965d0>
+expire = True
+
+    @pytest.mark.parametrize("expire", [False, True])
+    async def test_criterion_unsent_retry_rechecks_surface_ownership(monkeypatch, expire):
+        board = _Board()
+        tracker = tracker_over(
+            board.server,
+            caller=board,
+            clock=lambda: board.now,
+            ledger=board.ledger,
+            max_retries=1,
+        )
+        attempts = 0
+        original = board.call_tool
+    
+        async def call_tool(*, name, arguments):
+            nonlocal attempts
+            if name == "save_issue" and "id" not in arguments:
+                attempts += 1
+                if attempts == 1:
+                    if expire:
+                        board.advance(400)
+                    raise McpTransportError(
+                        "Connection failed before sending",
+                        server_name="fixture",
+                        tool_name=name,
+                    )
+            return await original(name=name, arguments=arguments)
+    
+        async with RunSurfaceLease(
+            tracker=tracker,
+            job_id=JOB,
+            surfaces=frozenset({surface()}),
+            lease_seconds=300,
+        ):
+            monkeypatch.setattr(board, "call_tool", call_tool)
+            error = None
+            try:
+                await create(tracker)
+            except SurfaceLeaseError as exc:
+                error = exc
+            if expire:
+>               assert saves(board) == [], "known-unsent retry issued an expired create"
+E               AssertionError: known-unsent retry issued an expired create
+E               assert [{'descriptio...odo-id', ...}] == []
+E                 
+E                 Left contains one more item: {'description': '**Check:** The prepared artifact is byte-identical to the declared input.\n\n**Do:** Compare the comm...ut.\n\n**Evidence:**\n', 'labels': ['acceptance-condition'], 'parentId': 'FIX-1', 'state': 'fixture-team-Todo-id', ...}
+E                 Use -v to get more diff
+
+../kodezart-recovery-session/test_m2_criterion_retry_independent.py:53: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-13 00:57:58 [warning  ] tracker_mcp_retry              attempt=0 delay_seconds=0.0 tool=save_issue
+=========================== short test summary info ============================
+FAILED ::test_criterion_unsent_retry_rechecks_surface_ownership[True] - Asser...
+1 failed, 1 passed in 16.08s

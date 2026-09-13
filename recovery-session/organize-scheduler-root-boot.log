@@ -1,0 +1,177 @@
+.....FE                                                                  [100%]
+==================================== ERRORS ====================================
+__ ERROR at setup of test_halted_first_binding_does_not_starve_second_binding __
+file /private/tmp/kodezart-v03-recovery-organize-composition/tests/integration/test_organize_tick_halt.py, line 15
+  async def test_halted_first_binding_does_not_starve_second_binding(first_halts):
+      first, _, _ = factory(tick=True, refuse_forever=first_halts, bound=1)
+      second, board, executor = factory(tick=True)
+      key = "independent-second-scope"
+      issue = board.server.issues.pop(CLAIMED_ISSUE)
+      issue.id = key
+      board.server.issues[key] = issue
+      original = second._targets[0]
+      target = replace(
+          original,
+          binding=original.binding.model_copy(
+              update={"scope": ScopeRef(kind=ScopeKind.ISSUE, key=key)}
+          ),
+      )
+      tick = OrganizeTick(
+          targets=(first._targets[0], target),
+          git=FakeGitService(remote_branch_shas={target.repository.trunk: "a" * 40}),
+          workspace=RecordingWorkspace(),
+          remote="origin",
+      )
+      try:
+          await tick.run(datetime(2026, 9, 12, tzinfo=UTC))
+      except OrganizeWriteRefusalError:
+          pass  # A recorded first halt is allowed; starvation is the oracle.
+      assert executor.calls, "the second independent binding never reaches its owner"
+      assert "criteria complete" in board.server.issues[key].labels
+E       fixture 'first_halts' not found
+>       available fixtures: _class_scoped_runner, _function_scoped_runner, _git_test_identity, _module_scoped_runner, _package_scoped_runner, _restore_logging_configuration, _session_scoped_runner, agent_client, anyio_backend, anyio_backend_name, anyio_backend_options, cache, capfd, capfdbinary, capfire, caplog, capsys, capsysbinary, capteesys, client, doctest_namespace, event_loop_policy, free_tcp_port, free_tcp_port_factory, free_udp_port, free_udp_port_factory, git_branch_merger, logfire_pytest, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, subprocess_git_service, subtests, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, unused_tcp_port, unused_tcp_port_factory, unused_udp_port, unused_udp_port_factory
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+/private/tmp/kodezart-v03-recovery-organize-composition/tests/integration/test_organize_tick_halt.py:15
+=================================== FAILURES ===================================
+______________ test_actual_lifespan_registers_and_runs_the_owner _______________
+
+tmp_path = PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1741/test_actual_lifespan_registers0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10cafdfa0>
+
+    async def test_actual_lifespan_registers_and_runs_the_owner(tmp_path, monkeypatch):
+        from kodezart import main
+        from kodezart.composition.records import BuiltRecorder
+        from kodezart.composition.workspace import GitStack
+        from tests.fakes import (
+            FakeArtifactPersister,
+            FakeBranchMerger,
+            FakeChangePersister,
+            FakeRefPublisher,
+            ManagedFakeLinearMcpServer,
+        )
+    
+        config, operation, board, tracker, prompts = dependencies(tmp_path)
+        executor = BoardExecutor(board)
+        workspace = RecordingWorkspace()
+        stack = GitStack(
+            git=FakeGitService(
+                remote_branch_shas={repo.trunk: "a" * 40 for repo in operation.repos}
+            ),
+            cache=FakeRepoCache(),
+            workspace=workspace,
+            persister=FakeChangePersister(),
+            merger=FakeBranchMerger(),
+            artifact_persister=FakeArtifactPersister(),
+            ref_publisher=FakeRefPublisher(),
+        )
+    
+        async def tracker_boot(**_kwargs):
+            return DialledTracker(
+                tracker=tracker,
+                caller=ManagedFakeLinearMcpServer(),
+                operation=operation,
+                ledger=SelfWriteLedger(),
+            )
+    
+        async def prompt_boot(**_kwargs):
+            return prompts
+    
+        async def recorder_boot(**_kwargs):
+            return BuiltRecorder(RunRecorder(records={}, sinks={}), None)
+    
+        async def knowledge_boot(**_kwargs):
+            return None
+    
+        async def gate_boot(**_kwargs):
+            return PassThroughGate()
+    
+        monkeypatch.setattr(main, "boot_tracker", tracker_boot)
+        monkeypatch.setattr(main, "boot_prompts", prompt_boot)
+        monkeypatch.setattr(main, "build_run_recorder", recorder_boot)
+        monkeypatch.setattr(main, "boot_knowledge_grant", knowledge_boot)
+        monkeypatch.setattr(main, "build_outbound_gate", gate_boot)
+        monkeypatch.setattr(main, "ClaudeClientExecutor", lambda **_kwargs: executor)
+        monkeypatch.setattr(main, "build_git_stack", lambda **_kwargs: stack)
+        app = main.create_app()
+        app.state.config = config
+>       async with app.router.lifespan_context(app):
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/integration/test_organize_scheduler.py:219: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/contextlib.py:210: in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/fastapi/routing.py:212: in merged_lifespan
+    async with original_context(app) as maybe_original_state:
+               ^^^^^^^^^^^^^^^^^^^^^
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/contextlib.py:210: in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/main.py:254: in lifespan
+    raise cleanup_error from cleanup_error.__context__
+src/kodezart/main.py:243: in unwind
+    raise failure
+src/kodezart/main.py:164: in lifespan
+    workflow_engine = build_workflow_engine(
+src/kodezart/composition/engine.py:207: in build_workflow_engine
+    ticket_generator = TicketGenerationLoop(
+src/kodezart/chains/ticket_generation.py:142: in __init__
+    _refuse_an_unhonourable_mode(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _refuse_an_unhonourable_mode(
+        *,
+        review_mode: TicketReviewMode,
+        max_reviews: int | None,
+        definitions: Sequence[AgentDefinition],
+    ) -> None:
+        """Raise when the configured mode's guarantee cannot be delivered.
+    
+        Both refusals are one defect wearing two faces: a knob is configured
+        whose effect this composition cannot produce.  Under ``create_only`` a
+        review budget bounds nothing that gets compiled — silently accepting it
+        is how a deployment comes to believe it has two review rounds — and a
+        resolved set with no draft critic leaves the single creator session
+        with nothing checking it while the mode's contract says otherwise.
+        """
+        if review_mode is not TicketReviewMode.CREATE_ONLY:
+            return
+        if max_reviews is not None:
+            msg = (
+                "max_reviews is configured under a ticket review mode that "
+                "compiles no review node for it to bound"
+            )
+            raise TicketReviewModeError(
+                msg,
+                settings=(
+                    f"ticket_review_mode={review_mode.value}",
+                    f"max_reviews={max_reviews}",
+                ),
+            )
+        if not any(definition.name == DRAFT_CRITIC_LENS for definition in definitions):
+            msg = (
+                "the resolved prompt set declares no draft-critic lens, and it is "
+                "the only review a ticket receives under this mode"
+            )
+>           raise TicketReviewModeError(
+                msg,
+                settings=(
+                    f"ticket_review_mode={review_mode.value}",
+                    "prompt_set declares "
+                    + (
+                        ", ".join(definition.name for definition in definitions)
+                        or "no lens at all"
+                    ),
+                ),
+            )
+E           kodezart.core.errors.TicketReviewModeError: the resolved prompt set declares no draft-critic lens, and it is the only review a ticket receives under this mode (ticket_review_mode=create_only, prompt_set declares no lens at all)
+
+src/kodezart/chains/ticket_generation.py:80: TicketReviewModeError
+----------------------------- Captured stdout call -----------------------------
+{"mode": "none", "allowlist": [], "setting_sources": ["user", "project", "local"], "event": "skills_selection_resolved", "level": "info", "logger": "kodezart.main", "timestamp": "2026-09-12T14:57:41.922400Z"}
+=========================== short test summary info ============================
+FAILED tests/integration/test_organize_scheduler.py::test_actual_lifespan_registers_and_runs_the_owner
+ERROR tests/integration/test_organize_tick_halt.py::test_halted_first_binding_does_not_starve_second_binding
+1 failed, 5 passed, 1 error in 1.09s

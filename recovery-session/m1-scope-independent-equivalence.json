@@ -1,0 +1,83 @@
+{
+  "base": "3c477a3489bd0bf555ae7b3a08569c2c5bf049be",
+  "donor": "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+  "source": "18113978533fc1c0ed169bfc57ff3945084e48df",
+  "checks": [
+    {
+      "check": "exact donor blob src/kodezart/adapters/linear_scope_reader.py",
+      "passed": true
+    },
+    {
+      "check": "exact donor blob src/kodezart/adapters/linear_scope_types.py",
+      "passed": true
+    },
+    {
+      "check": "exact donor blob src/kodezart/adapters/pagination.py",
+      "passed": true
+    },
+    {
+      "check": "exact donor blob tests/tracker/test_scope_reads.py",
+      "passed": true
+    },
+    {
+      "check": "exact donor blob tests/domain/test_scope_container.py",
+      "passed": true
+    },
+    {
+      "check": "exact donor AST src/kodezart/core/protocols.py::scope_issues",
+      "passed": true
+    },
+    {
+      "check": "exact donor AST src/kodezart/core/protocols.py::container_metadata",
+      "passed": true
+    },
+    {
+      "check": "exact donor AST src/kodezart/adapters/linear_mcp_tracker.py::scope_issues",
+      "passed": true
+    },
+    {
+      "check": "exact donor AST src/kodezart/adapters/linear_mcp_tracker.py::container_metadata",
+      "passed": true
+    },
+    {
+      "check": "exact donor AST tests/fakes.py::scope_issues",
+      "passed": true
+    },
+    {
+      "check": "exact donor AST tests/fakes.py::container_metadata",
+      "passed": true
+    },
+    {
+      "check": "exact donor AST src/kodezart/domain/errors.py::ScopeReadError",
+      "passed": true
+    },
+    {
+      "check": "exact donor AST src/kodezart/core/errors.py::TrackerAccessDeniedError",
+      "passed": true
+    },
+    {
+      "check": "exact donor AST src/kodezart/core/errors.py::TrackerUnavailableError",
+      "passed": true
+    },
+    {
+      "check": "wire exactly main executable AST plus donor milestone class/field",
+      "passed": true
+    },
+    {
+      "check": "retry AST differs only by two neutral typed/cause-preserving raises",
+      "passed": true
+    },
+    {
+      "check": "TrackerIssue baseline plus exact donor milestone field",
+      "passed": true
+    }
+  ],
+  "scope": "actual frozen bytes; no root extraction scripts executed",
+  "whole_blob_sha256": {
+    "src/kodezart/adapters/linear_scope_reader.py": "79b0ed68ae35c35430f0bb3a628369895de49376bbfa59009d4c4716002c8cde",
+    "src/kodezart/adapters/linear_scope_types.py": "ef4525bea044552fb43fd1ffdffafc3aa010bf2cbdbc33acf402cc5ed48daf74",
+    "src/kodezart/adapters/pagination.py": "43d1c8625b309cb103429e0b5c24408aba3e0f109a729ddf697065aab0a6b57a",
+    "tests/tracker/test_scope_reads.py": "ef9949fdd35e8d6cf16de93a6064f35d3bc4e170a327760f2b8840d87bc8f934",
+    "tests/domain/test_scope_container.py": "b886ea0e069a41a4d5dbc61b026627c1ddd1037f43b2dd82dce77591e71b75ad"
+  }
+}

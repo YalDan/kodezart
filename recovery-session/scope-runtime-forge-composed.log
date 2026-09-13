@@ -1,0 +1,63 @@
+....................F                                                    [100%]
+=================================== FAILURES ===================================
+____ test_actual_scope_composition_retains_completed_native_delivery_record ____
+
+    async def test_actual_scope_composition_retains_completed_native_delivery_record():
+        from kodezart.types.domain.native_delivery import CompletedLaneDelivery
+        from tests.adapters.test_github_api import _make_client
+        from tests.chains.test_native_delivery import ForgeWire
+    
+        origin = "https://github.com/owner/repo"
+        wire = ForgeWire()
+        forge = _make_client(wire)
+        try:
+            harness = runtime(origin=origin, forge=forge, trunk="main")
+>           events = [event async for event in drive(harness, origin=origin)]
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/integration/test_scope_runtime.py:627: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/composition/engine.py:129: in run
+    async for event in arm.run(
+src/kodezart/services/scope_runtime.py:141: in run
+    if await probe.open_delivery_exists(
+src/kodezart/adapters/github_api.py:551: in open_delivery_exists
+    listing = await self._parsed_with_retry(
+src/kodezart/adapters/github_api.py:330: in _parsed_with_retry
+    response = await self._request_with_retry(
+src/kodezart/adapters/github_api.py:220: in _request_with_retry
+    response = await self._client.request(
+.venv/lib/python3.12/site-packages/httpx/_client.py:1540: in request
+    return await self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/httpx/_client.py:1629: in send
+    response = await self._send_handling_auth(
+.venv/lib/python3.12/site-packages/httpx/_client.py:1657: in _send_handling_auth
+    response = await self._send_handling_redirects(
+.venv/lib/python3.12/site-packages/httpx/_client.py:1694: in _send_handling_redirects
+    response = await self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/httpx/_client.py:1730: in _send_single_request
+    response = await transport.handle_async_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/httpx/_transports/mock.py:34: in handle_async_request
+    response = self.handler(request)
+               ^^^^^^^^^^^^^^^^^^^^^
+tests/chains/test_native_delivery.py:104: in __call__
+    self.head = request.url.params["head"].split(":", 1)[1]
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = QueryParams('state=open&per_page=100'), key = 'head'
+
+    def __getitem__(self, key: typing.Any) -> str:
+>       return self._dict[key][0]
+               ^^^^^^^^^^^^^^^
+E       KeyError: 'head'
+
+.venv/lib/python3.12/site-packages/httpx/_urls.py:601: KeyError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 15:56:44 [info     ] forge_capabilities_selected    forge_less_origin=False repo_url=https://github.com/owner/repo
+=========================== short test summary info ============================
+FAILED tests/integration/test_scope_runtime.py::test_actual_scope_composition_retains_completed_native_delivery_record
+1 failed, 20 passed in 14.91s

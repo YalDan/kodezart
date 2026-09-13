@@ -1,0 +1,633 @@
+E501 Line too long (91 > 88)
+  --> src/kodezart/composition/tracker.py:40:89
+   |
+40 | def make_mcp_tool_caller(*, settings: TrackerSettings, token: str) -> ManagedMcpToolCaller:
+   |                                                                                         ^^^
+41 |     """The vendor MCP transport this deployment dials.
+   |
+
+E501 Line too long (376 > 88)
+    --> src/kodezart/core/config.py:1232:89
+     |
+1230 | …
+1231 | …
+1232 | …tracker_mcp_server_url', 'tracker_mcp_call_timeout_seconds', 'tracker_max_retries', 'tracker_mcp_server_name', 'tracker_mcp_auth_scheme', 'tracker_mcp_sse_read_timeout_seconds', 'tracker_token', 'tracker_retry_backoff_factor', 'tracker_mcp_error_detail_limit', 'tracker_surface_lease_seconds'}
+     |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1233 | …
+1234 | …
+     |
+
+E501 Line too long (136 > 88)
+   --> tests/core/test_config.py:236:89
+    |
+234 | …
+235 | …number, not the number."""
+236 | ….split("__", 1)[1]) if "__" in field else getattr(AppConfig(), field)) == SSE_READ_DEFAULT
+    |                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+
+E501 Line too long (125 > 88)
+   --> tests/core/test_config.py:247:89
+    |
+245 |     monkeypatch.setenv(f"KODEZART_{field.upper()}", "450")
+246 |
+247 |     assert (getattr(AppConfig().tracker, field.split("__", 1)[1]) if "__" in field else getattr(AppConfig(), field)) == 450.0
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+
+E501 Line too long (114 > 88)
+   --> tests/domain/test_base_resolution.py:298:89
+    |
+296 | def lifecycle(tracker: FakeTrackerPort) -> TrackerLifecycleWriter:
+297 |     """The shipped lifecycle writer — the only producer of DELIVERABLE refs."""
+298 |     return TrackerLifecycleWriter(marker_prefixes={"run_outcome": "fixture-outcome"}, surface_lease_seconds=321.5,
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^
+299 |         tracker=tracker,
+300 |         gate=PassThroughGate(),
+    |
+
+E501 Line too long (160 > 88)
+   --> tests/services/test_claim_heartbeat.py:205:89
+    |
+203 | …
+204 | …
+205 | …n_outcome": "fixture-outcome"}, surface_lease_seconds=321.5, tracker=tracker, gate=PassThroughGate()),
+    |                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+206 | …
+207 | …
+    |
+
+E501 Line too long (164 > 88)
+   --> tests/services/test_claim_heartbeat.py:511:89
+    |
+509 | …
+510 | …
+511 | …run_outcome": "fixture-outcome"}, surface_lease_seconds=321.5, tracker=tracker, gate=PassThroughGate()),
+    |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+512 | …
+513 | …
+    |
+
+E501 Line too long (164 > 88)
+   --> tests/services/test_claim_heartbeat.py:585:89
+    |
+583 | …
+584 | …
+585 | …run_outcome": "fixture-outcome"}, surface_lease_seconds=321.5, tracker=tracker, gate=PassThroughGate()),
+    |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+586 | …
+587 | …
+    |
+
+E501 Line too long (164 > 88)
+   --> tests/services/test_claim_heartbeat.py:619:89
+    |
+617 | …
+618 | …
+619 | …run_outcome": "fixture-outcome"}, surface_lease_seconds=321.5, tracker=tracker, gate=PassThroughGate()),
+    |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+620 | …
+621 | …
+    |
+
+E501 Line too long (164 > 88)
+   --> tests/services/test_dispatch_pass.py:263:89
+    |
+261 | …
+262 | …
+263 | …run_outcome": "fixture-outcome"}, surface_lease_seconds=321.5, tracker=tracker, gate=PassThroughGate()),
+    |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+264 | …
+265 | …
+    |
+
+E501 Line too long (160 > 88)
+   --> tests/services/test_dispatch_pass.py:361:89
+    |
+359 | …
+360 | …
+361 | …n_outcome": "fixture-outcome"}, surface_lease_seconds=321.5, tracker=tracker, gate=PassThroughGate()),
+    |                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+362 | …
+363 | …
+    |
+
+E501 Line too long (126 > 88)
+   --> tests/services/test_dispatch_pass.py:444:89
+    |
+442 |                 queue=queue,
+443 |                 registry=queue,
+444 |                 writer=TrackerLifecycleWriter(marker_prefixes={"run_outcome": "fixture-outcome"}, surface_lease_seconds=321.5,
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+445 |                     tracker=tracker,
+446 |                     gate=PassThroughGate(),
+    |
+
+E501 Line too long (160 > 88)
+   --> tests/services/test_lifecycle_watcher.py:165:89
+    |
+163 | …
+164 | …
+165 | …n_outcome": "fixture-outcome"}, surface_lease_seconds=321.5, tracker=tracker, gate=PassThroughGate()),
+    |                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+166 | …
+167 | …
+    |
+
+E501 Line too long (164 > 88)
+   --> tests/services/test_lifecycle_watcher.py:182:89
+    |
+180 | …
+181 | …
+182 | …run_outcome": "fixture-outcome"}, surface_lease_seconds=321.5, tracker=tracker, gate=PassThroughGate()),
+    |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+183 | …
+184 | …
+    |
+
+E501 Line too long (126 > 88)
+   --> tests/services/test_lifecycle_watcher.py:486:89
+    |
+484 |                 queue=queue,
+485 |                 registry=queue,
+486 |                 writer=TrackerLifecycleWriter(marker_prefixes={"run_outcome": "fixture-outcome"}, surface_lease_seconds=321.5,
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+487 |                     tracker=tracker,
+488 |                     gate=PassThroughGate(),
+    |
+
+E501 Line too long (164 > 88)
+   --> tests/services/test_lifecycle_watcher.py:552:89
+    |
+550 | …
+551 | …
+552 | …run_outcome": "fixture-outcome"}, surface_lease_seconds=321.5, tracker=tracker, gate=PassThroughGate()),
+    |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+553 | …
+554 | …
+    |
+
+E501 Line too long (164 > 88)
+   --> tests/services/test_lifecycle_watcher.py:619:89
+    |
+617 | …
+618 | …
+619 | …run_outcome": "fixture-outcome"}, surface_lease_seconds=321.5, tracker=tracker, gate=PassThroughGate()),
+    |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+620 | …
+621 | …
+    |
+
+E501 Line too long (164 > 88)
+   --> tests/services/test_lifecycle_watcher.py:802:89
+    |
+800 | …
+801 | …
+802 | …run_outcome": "fixture-outcome"}, surface_lease_seconds=321.5, tracker=tracker, gate=PassThroughGate()),
+    |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+803 | …
+804 | …
+    |
+
+E501 Line too long (160 > 88)
+   --> tests/services/test_lifecycle_watcher.py:880:89
+    |
+878 | …
+879 | …
+880 | …n_outcome": "fixture-outcome"}, surface_lease_seconds=321.5, tracker=tracker, gate=PassThroughGate()),
+    |                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+881 | …
+882 | …
+    |
+
+E501 Line too long (164 > 88)
+    --> tests/services/test_lifecycle_watcher.py:1005:89
+     |
+1003 | …
+1004 | …
+1005 | …un_outcome": "fixture-outcome"}, surface_lease_seconds=321.5, tracker=tracker, gate=PassThroughGate()),
+     |                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1006 | …
+1007 | …
+     |
+
+E501 Line too long (164 > 88)
+    --> tests/services/test_lifecycle_watcher.py:1145:89
+     |
+1143 | …
+1144 | …
+1145 | …un_outcome": "fixture-outcome"}, surface_lease_seconds=321.5, tracker=tracker, gate=PassThroughGate()),
+     |                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1146 | …
+1147 | …
+     |
+
+E501 Line too long (164 > 88)
+    --> tests/services/test_lifecycle_watcher.py:1299:89
+     |
+1297 | …
+1298 | …
+1299 | …un_outcome": "fixture-outcome"}, surface_lease_seconds=321.5, tracker=tracker, gate=PassThroughGate()),
+     |                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1300 | …
+1301 | …
+     |
+
+E501 Line too long (164 > 88)
+    --> tests/services/test_lifecycle_watcher.py:1340:89
+     |
+1338 | …
+1339 | …
+1340 | …un_outcome": "fixture-outcome"}, surface_lease_seconds=321.5, tracker=tracker, gate=PassThroughGate()),
+     |                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1341 | …
+1342 | …
+     |
+
+E501 Line too long (111 > 88)
+  --> tests/services/test_tracker_lifecycle.py:40:89
+   |
+38 |     tracker = FakeTrackerPort(issues=[make_tracker_issue("K-1")])
+39 |     return (
+40 |         TrackerLifecycleWriter(marker_prefixes={"run_outcome": "fixture-outcome"}, surface_lease_seconds=321.5,
+   |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^
+41 |             tracker=tracker,
+42 |             gate=PassThroughGate(),
+   |
+
+E501 Line too long (111 > 88)
+  --> tests/services/test_tracker_lifecycle.py:62:89
+   |
+60 |     )
+61 |     return (
+62 |         TrackerLifecycleWriter(marker_prefixes={"run_outcome": "fixture-outcome"}, surface_lease_seconds=321.5,
+   |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^
+63 |             tracker=tracker,
+64 |             gate=PassThroughGate(),
+   |
+
+E501 Line too long (147 > 88)
+   --> tests/services/test_tracker_lifecycle.py:280:89
+    |
+278 | …er_issue("K-1")])
+279 | …
+280 | …es={"run_outcome": "fixture-outcome"}, surface_lease_seconds=321.5, tracker=tracker, gate=gate)
+    |                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+281 | …
+282 | …
+    |
+
+E501 Line too long (147 > 88)
+   --> tests/services/test_tracker_lifecycle.py:296:89
+    |
+294 | …er_issue("K-1")])
+295 | …
+296 | …es={"run_outcome": "fixture-outcome"}, surface_lease_seconds=321.5, tracker=tracker, gate=gate)
+    |                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+297 | …
+298 | …
+    |
+
+E501 Line too long (147 > 88)
+   --> tests/services/test_tracker_lifecycle.py:318:89
+    |
+316 | …er_issue("K-1")])
+317 | …
+318 | …es={"run_outcome": "fixture-outcome"}, surface_lease_seconds=321.5, tracker=tracker, gate=gate)
+    |                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+319 | …
+320 | …
+    |
+
+E501 Line too long (147 > 88)
+   --> tests/services/test_tracker_lifecycle.py:345:89
+    |
+343 | …er_issue("K-1")])
+344 | …
+345 | …es={"run_outcome": "fixture-outcome"}, surface_lease_seconds=321.5, tracker=tracker, gate=gate)
+    |                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+346 | …
+347 | …
+    |
+
+E501 Line too long (157 > 88)
+   --> tests/services/test_tracker_lifecycle.py:358:89
+    |
+356 | …) -> None:
+357 | …sue("K-1")])
+358 | …run_outcome": "fixture-outcome"}, surface_lease_seconds=321.5, tracker=tracker, gate=BlockingGate())
+    |                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+359 | …
+360 | …s excinfo:
+    |
+
+E501 Line too long (147 > 88)
+   --> tests/services/test_tracker_lifecycle.py:446:89
+    |
+444 | …er_issue("K-1")])
+445 | …
+446 | …es={"run_outcome": "fixture-outcome"}, surface_lease_seconds=321.5, tracker=tracker, gate=gate)
+    |                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+447 | …
+448 | …
+    |
+
+E501 Line too long (147 > 88)
+   --> tests/services/test_tracker_lifecycle.py:463:89
+    |
+461 | …er_issue("K-1")])
+462 | …
+463 | …es={"run_outcome": "fixture-outcome"}, surface_lease_seconds=321.5, tracker=tracker, gate=gate)
+    |                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+464 | …
+465 | …
+    |
+
+E501 Line too long (157 > 88)
+   --> tests/services/test_tracker_lifecycle.py:480:89
+    |
+478 | …e gate's to stop."""
+479 | …sue("K-1")])
+480 | …run_outcome": "fixture-outcome"}, surface_lease_seconds=321.5, tracker=tracker, gate=BlockingGate())
+    |                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+481 | …
+482 | …
+    |
+
+E501 Line too long (160 > 88)
+   --> tests/test_composition_root.py:419:89
+    |
+417 | …
+418 | …
+419 | …n_outcome": "fixture-outcome"}, surface_lease_seconds=321.5, tracker=tracker, gate=PassThroughGate()),
+    |                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+420 | …
+421 | …
+    |
+
+E501 Line too long (96 > 88)
+   --> tests/test_composition_root.py:598:89
+    |
+597 |     def test_the_tracker_composition_passes_its_field(self) -> None:
+598 |         caller = make_mcp_tool_caller(settings=self._config().tracker, token=self.FIXTURE_TOKEN)
+    |                                                                                         ^^^^^^^^
+599 |
+600 |         assert isinstance(caller, HttpMcpToolCaller)
+    |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_linear_wire_shapes.py:34:1
+   |
+32 | """
+33 |
+34 | from collections.abc import Mapping, Sequence
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+35 | from datetime import UTC, datetime
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_linear_wire_shapes.py:35:1
+   |
+34 | from collections.abc import Mapping, Sequence
+35 | from datetime import UTC, datetime
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+36 |
+37 | import pytest
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_linear_wire_shapes.py:37:1
+   |
+35 | from datetime import UTC, datetime
+36 |
+37 | import pytest
+   | ^^^^^^^^^^^^^
+38 | from pydantic import ValidationError
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_linear_wire_shapes.py:38:1
+   |
+37 | import pytest
+38 | from pydantic import ValidationError
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+39 |
+40 | from kodezart.adapters.linear_mcp_tracker import LinearMcpTracker
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_linear_wire_shapes.py:40:1
+   |
+38 | from pydantic import ValidationError
+39 |
+40 | from kodezart.adapters.linear_mcp_tracker import LinearMcpTracker
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+41 | from kodezart.adapters.linear_mcp_types import (
+42 |     LINEAR_NAMED_ARRAY,
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_linear_wire_shapes.py:41:1
+   |
+40 |   from kodezart.adapters.linear_mcp_tracker import LinearMcpTracker
+41 | / from kodezart.adapters.linear_mcp_types import (
+42 | |     LINEAR_NAMED_ARRAY,
+43 | |     LinearCommentListWire,
+44 | |     LinearCommentWire,
+45 | |     LinearDocumentListWire,
+46 | |     LinearDocumentWire,
+47 | |     LinearIssueDetailWire,
+48 | |     LinearIssueListWire,
+49 | |     LinearIssueWire,
+50 | |     LinearLabelListWire,
+51 | |     LinearTeamListWire,
+52 | |     LinearUserListWire,
+53 | | )
+   | |_^
+54 |   from kodezart.core.errors import TrackerProtocolError
+55 |   from kodezart.core.protocols import McpToolResult
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_linear_wire_shapes.py:54:1
+   |
+52 |     LinearUserListWire,
+53 | )
+54 | from kodezart.core.errors import TrackerProtocolError
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+55 | from kodezart.core.protocols import McpToolResult
+56 | from kodezart.types.domain.dispatch import SelfWriteLedger
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_linear_wire_shapes.py:55:1
+   |
+53 | )
+54 | from kodezart.core.errors import TrackerProtocolError
+55 | from kodezart.core.protocols import McpToolResult
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+56 | from kodezart.types.domain.dispatch import SelfWriteLedger
+57 | from kodezart.types.domain.operation import LifecycleStage, QueueState
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_linear_wire_shapes.py:56:1
+   |
+54 | from kodezart.core.errors import TrackerProtocolError
+55 | from kodezart.core.protocols import McpToolResult
+56 | from kodezart.types.domain.dispatch import SelfWriteLedger
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+57 | from kodezart.types.domain.operation import LifecycleStage, QueueState
+58 | from kodezart.types.domain.tracker import (
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_linear_wire_shapes.py:57:1
+   |
+55 | from kodezart.core.protocols import McpToolResult
+56 | from kodezart.types.domain.dispatch import SelfWriteLedger
+57 | from kodezart.types.domain.operation import LifecycleStage, QueueState
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+58 | from kodezart.types.domain.tracker import (
+59 |     IssueQuery,
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_linear_wire_shapes.py:58:1
+   |
+56 |   from kodezart.types.domain.dispatch import SelfWriteLedger
+57 |   from kodezart.types.domain.operation import LifecycleStage, QueueState
+58 | / from kodezart.types.domain.tracker import (
+59 | |     IssueQuery,
+60 | |     IssueRelationKind,
+61 | |     MappingKind,
+62 | |     MappingRef,
+63 | | )
+   | |_^
+64 |
+65 |   # --------------------------------------------------------------------------
+   |
+
+E501 Line too long (94 > 88)
+  --> tests/tracker/test_tracker_boot.py:90:89
+   |
+88 | def operation_config() -> OperationConfig:
+89 |     """A structurally valid config naming only entities the fixture resolves."""
+90 |     return OperationConfig(marker_prefixes=MARKER_PREFIXES, agent_identities=[AGENT_IDENTITY],
+   |                                                                                         ^^^^^^
+91 |         operation_name="fixture",
+92 |         workspace="fixture-workspace",
+   |
+
+invalid-syntax: Duplicate keyword argument "agent_identities"
+   --> tests/tracker/test_tracker_boot.py:111:9
+    |
+109 |             ),
+110 |         ],
+111 |         agent_identities=[],
+    |         ^^^^^^^^^^^^^^^^^^^
+112 |         teams={
+113 |             team_key: TeamEntry(name=team_name, key="ENG")
+    |
+
+W291 Trailing whitespace
+   --> tests/tracker/test_tracker_boot.py:575:65
+    |
+574 |     def _tracker(self, server: FakeLinearMcpServer) -> TrackerPort:
+575 |         return LinearMcpTracker(marker_prefixes=MARKER_PREFIXES, 
+    |                                                                 ^
+576 |             caller=server,
+577 |             queue_state_labels=QUEUE_STATE_LABELS,
+    |
+help: Remove trailing whitespace
+
+W293 Blank line contains whitespace
+   --> tests/tracker/test_tracker_boot.py:581:1
+    |
+579 |             team_identifiers=dict(self.TWO_TEAMS),
+580 |             retry=RetryPolicy(attempts=(0) + 1, initial_delay=1.0),
+581 |             
+    | ^^^^^^^^^^^^
+582 |             ledger=SelfWriteLedger(),
+583 |         )
+    |
+help: Remove whitespace from blank line
+
+W291 Trailing whitespace
+   --> tests/tracker/test_tracker_boot.py:700:65
+    |
+699 |     def _tracker(self, server: FakeLinearMcpServer) -> TrackerPort:
+700 |         return LinearMcpTracker(marker_prefixes=MARKER_PREFIXES, 
+    |                                                                 ^
+701 |             caller=server,
+702 |             queue_state_labels=QUEUE_STATE_LABELS,
+    |
+help: Remove trailing whitespace
+
+W293 Blank line contains whitespace
+   --> tests/tracker/test_tracker_boot.py:706:1
+    |
+704 |             team_identifiers=dict(self.DECLARED_TEAMS),
+705 |             retry=RetryPolicy(attempts=(0) + 1, initial_delay=1.0),
+706 |             
+    | ^^^^^^^^^^^^
+707 |             ledger=SelfWriteLedger(),
+708 |         )
+    |
+help: Remove whitespace from blank line
+
+W293 Blank line contains whitespace
+   --> tests/tracker/test_tracker_boot.py:901:1
+    |
+899 |         config = AppConfig(
+900 |             tracker={'token': OAUTH_TOKEN, 'server_url': "https://tracker.invalid/mcp"},
+901 |             
+    | ^^^^^^^^^^^^
+902 |         )
+    |
+help: Remove whitespace from blank line
+
+W293 Blank line contains whitespace
+    --> tests/tracker/test_tracker_boot.py:1040:1
+     |
+1038 |         config = AppConfig(
+1039 |             tracker={'token': LONG_LIVED_KEY, 'server_url': "https://tracker.invalid/mcp"},
+1040 |             
+     | ^^^^^^^^^^^^
+1041 |         )
+     |
+help: Remove whitespace from blank line
+
+E501 Line too long (92 > 88)
+    --> tests/tracker/test_tracker_boot.py:1066:89
+     |
+1064 |         server = _managed_fixture_server()
+1065 |
+1066 |         def factory(*, settings: TrackerSettings, token: str) -> ManagedFakeLinearMcpServer:
+     |                                                                                         ^^^^
+1067 |             return server
+     |
+
+W293 Blank line contains whitespace
+    --> tests/tracker/test_tracker_boot.py:1075:1
+     |
+1073 |         config = AppConfig(
+1074 |             tracker={'token': LONG_LIVED_KEY, 'server_url': "https://tracker.invalid/mcp"},
+1075 |             
+     | ^^^^^^^^^^^^
+1076 |         )
+     |
+help: Remove whitespace from blank line
+
+E501 Line too long (173 > 88)
+   --> tests/tracker/test_tracker_boot_wiring.py:116:89
+    |
+114 | …
+115 | …
+116 | …ezart-claim", work_ref = "kodezart-workref", base_spec = "kodezart-basespec", repository = "kodezart-repo"}}
+    |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+117 | …
+118 | …
+    |
+
+Found 74 errors (17 fixed, 57 remaining).

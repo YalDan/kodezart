@@ -1,0 +1,289 @@
+Using CPython 3.12.13
+Creating virtual environment at: .venv
+   Building kodezart @ file:///private/tmp/kodezart-v03-recovery-organize-ci
+warning: `build_system.requires = ["uv-build>=0.10.9,<0.11.0"]` does not contain the current uv version 0.11.6
+      Built kodezart @ file:///private/tmp/kodezart-v03-recovery-organize-ci
+Installed 174 packages in 1.85s
+FFFFF.....................................................FF....F..FF    [100%]
+=================================== FAILURES ===================================
+______________ test_house_rules_delivered_as_system_prompt_append ______________
+
+    def test_house_rules_delivered_as_system_prompt_append() -> None:
+        """The paired assertion: moving the rules can neither drop nor duplicate them.
+    
+        One half is mechanical over the shipped source — every dispatch reads
+        its session policy from the set, so none can quietly opt out — and the
+        other is the rendered corpus, where the text must now be absent.  A
+        check on only one half would pass while the rules were both appended
+        and still baked into every template.
+        """
+        from kodezart.types.domain.prompts import PromptKey
+        from tests.prompts.sets import ALL_CASES, V5_SET, render_v5_case
+        from tests.prompts.test_prompt_wiring import load_registry
+        from tests.prompts.test_session_policy import v5_metadata
+    
+        house_rules = v5_metadata().fragments.house_rules
+        assert house_rules is not None
+    
+        registry = load_registry(default_set=V5_SET)
+        for key in PromptKey:
+            assert registry.session_policy(key).system_prompt_append == house_rules
+    
+        sites = _dispatch_sites()
+        from collections import Counter
+    
+>       assert Counter(name for name, _ in sites) == KEYED_DISPATCH_COUNTS
+E       AssertionError: assert Counter({'fir..._pass.py': 1}) == {'agent_conte...w.py': 1, ...}
+E         
+E         Omitting 10 identical items, use -vv to show
+E         Left contains 1 more item:
+E         {'lane_delivery.py': 1}
+E         Use -v to get more diff
+
+tests/chains/test_ralph_workflow.py:4953: AssertionError
+_________ test_every_production_graph_with_registered_nodes_is_checked _________
+
+    def test_every_production_graph_with_registered_nodes_is_checked():
+        assert ralph_loop.__file__ is not None
+        source_root = Path(ralph_loop.__file__).resolve().parents[1]
+        actual = {
+            path.resolve()
+            for path in source_root.rglob("*.py")
+            if _add_node_calls(ast.parse(path.read_text(encoding="utf-8")))
+        }
+        declared = {
+            Path(module.__file__).resolve()
+            for module, _, _ in _GRAPH_BINDINGS
+            if module.__file__ is not None
+        }
+>       assert actual == declared
+E       AssertionError: assert {PosixPath('/...neration.py')} == {PosixPath('/...neration.py')}
+E         
+E         Extra items in the left set:
+E         PosixPath('/private/tmp/kodezart-v03-recovery-organize-ci/src/kodezart/chains/native_delivery.py')
+E         Use -v to get more diff
+
+tests/chains/test_retry_floor_wiring.py:160: AssertionError
+_______ test_environment_bounds_reach_the_tick_and_stop_after_one_author _______
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10c3777a0>
+
+    async def test_environment_bounds_reach_the_tick_and_stop_after_one_author(
+        monkeypatch,
+    ):
+        monkeypatch.setenv("KODEZART_ORGANIZE__MAX_ADMISSION_ROUNDS", "1")
+        monkeypatch.setenv("KODEZART_ORGANIZE__MAX_CONVERGENCE_ROUNDS", "7")
+        config = AppConfig()
+        assert config.organize.max_admission_rounds == 1
+        assert config.organize.max_convergence_rounds == 7
+        tick, board, executor = factory(tick=True, settings=config, refuse_forever=True)
+        from kodezart.domain.errors import OrganizeWriteRefusalError
+    
+        instant = datetime(2026, 9, 12, tzinfo=UTC)
+        with pytest.raises(OrganizeWriteRefusalError, match="admission_exhausted"):
+>           await tick.run(instant)
+
+tests/core/test_organize_settings.py:78: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.services.organize_tick.OrganizeTick object at 0x10c375130>
+started_at = datetime.datetime(2026, 9, 12, 0, 0, tzinfo=datetime.timezone.utc)
+
+    async def run(self, started_at: datetime) -> PassRun:
+        identity = RunIdentity(
+            kind=RunKind.GROOMING,
+            name=PromptKey.GROOMING_PASS.value,
+            started_at=started_at,
+        )
+        first_halt: OrganizeHaltError | None = None
+        for target in self._targets:
+            async with owned_workspace(
+                self._workspace,
+                repo_url=target.repository.url,
+                ref=target.repository.trunk,
+                cache_key=identity.title(),
+            ) as workspace:
+                head = await read_remote_head(
+                    git=self._git,
+                    repository=workspace,
+                    remote=self._remote,
+                    branch=target.repository.trunk,
+                )
+            if (
+                head is None
+                or re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", head) is None
+            ):
+                raise OrganizeWriteRefusalError(
+                    issue_key=target.binding.scope.key,
+                    reason="configured repository trunk has no exact remote commit",
+                )
+            report = await target.owner.run(
+                scope=target.binding.scope,
+                repo_url=target.repository.url,
+                base_ref=head,
+                job_id=identity.title(),
+                visibility=RepoVisibility.UNKNOWN,
+            )
+            await self._log.ainfo(
+                "organize_scope_finished",
+                run_identity=identity.title(),
+                scope=target.binding.scope.model_dump(),
+                report=report.model_dump(),
+            )
+            if report.halt is not None and first_halt is None:
+                first_halt = OrganizeHaltError(
+                    scope=target.binding.scope,
+                    report=report,
+                )
+        if first_halt is not None:
+>           raise first_halt
+E           kodezart.domain.errors.OrganizeHaltError: Organize for issue 'FIX-1' halted: admission_exhausted
+
+src/kodezart/services/organize_tick.py:88: OrganizeHaltError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 17:31:41 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-12 17:31:41 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 17:31:41 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 17:31:41 [info     ] outbound_content_gated         categories=[] content_digest=f89d1825e4481064a8b5a1ea1946290f442ebe4ad9e7445547d1046d6df1fd1c failure=None hits=[] surface=tracker verdict=clean visibility=unknown writer=tracker_description
+2026-09-12 17:31:41 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 17:31:41 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_verify resumed_session_id=None session_id=None
+2026-09-12 17:31:41 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 17:31:41 [info     ] outbound_content_gated         categories=[] content_digest=772f1370e241ef12564058455b421071379cd3713291914af1db18f69c56b6f9 failure=None hits=[] surface=tracker verdict=clean visibility=unknown writer=tracker_comment
+2026-09-12 17:31:41 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 17:31:41 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 17:31:41 [info     ] organize_scope_finished        report={'completed_phases': (), 'halt': {'cause': <StageHaltCause.ADMISSION_EXHAUSTED: 'admission_exhausted'>, 'bound': {'setting': 'organize.max_admission_rounds', 'value': 1, 'rounds_used': 1, 'loop': 'admission'}, 'admission_results': ({'admitted_body_digest': 'f89d1825e4481064a8b5a1ea1946290f442ebe4ad9e7445547d1046d6df1fd1c', 'verdict': <AdmissionVerdict.NOT_BUILDABLE: 'not_buildable'>, 'issue_id': 'FIX-1', 'evidence': 'The current body omits the required source.', 'findings': (), 'invented_decision': 'Restore the source requirement.', 'refusal_kind': <RefusalKind.SPEC_GAP: 'spec_gap'>},), 'surviving_findings': (), 'write_back_results': (), 'questions': (), 'unrecorded_escalation_issue_ids': ()}} run_identity='grooming — grooming_pass @ 2026-09-12T00:00:00Z' scope={'kind': <ScopeKind.ISSUE: 'issue'>, 'key': 'FIX-1'}
+________________ test_every_shipped_config_field_is_documented _________________
+
+    def test_every_shipped_config_field_is_documented() -> None:
+        """A field the code reads that the reference does not name is invisible."""
+        undocumented = _shipped_config_variables() - _config_variables_named_in(
+            CONFIGURATION_DOC,
+        )
+>       assert undocumented == set()
+E       AssertionError: assert {'KODEZART_ORGANIZE'} == set()
+E         
+E         Extra items in the left set:
+E         'KODEZART_ORGANIZE'
+E         Use -v to get more diff
+
+tests/docs/test_documented_surface.py:154: AssertionError
+_________ test_no_document_names_a_config_variable_that_does_not_exist _________
+
+    def test_no_document_names_a_config_variable_that_does_not_exist() -> None:
+        """``extra='forbid'`` makes a documented-but-absent variable a boot failure."""
+        shipped = _shipped_config_variables()
+        for path in (CONFIGURATION_DOC, API_DOC, README, ENV_EXAMPLE):
+>           assert _config_variables_named_in(path) - shipped == set(), path.name
+E           AssertionError: configuration.md
+E           assert {'KODEZART_ORGANIZE_MAX_'} == set()
+E             
+E             Extra items in the left set:
+E             'KODEZART_ORGANIZE_MAX_'
+E             Use -v to get more diff
+
+tests/docs/test_documented_surface.py:161: AssertionError
+_ test_every_field_on_every_output_model_has_a_description[ORGANIZE_ADMISSION_SCHEMA] _
+
+name = 'ORGANIZE_ADMISSION_SCHEMA'
+
+    @pytest.mark.parametrize("name", sorted(WIRE_SCHEMAS))
+    def test_every_field_on_every_output_model_has_a_description(name: str) -> None:
+        """Including nested models: the session reads the whole schema, not the root."""
+        undescribed = [
+            path
+            for path, described in described_fields(WIRE_SCHEMAS[name], name)
+            if not described
+        ]
+>       assert undescribed == []
+E       AssertionError: assert ['ORGANIZE_AD...issueId', ...] == []
+E         
+E         Left contains 16 more items, first extra item: 'ORGANIZE_ADMISSION_SCHEMA.$defs.BuildableAdmission.verdict'
+E         Use -v to get more diff
+
+tests/types/test_output_descriptions.py:37: AssertionError
+_ test_every_field_on_every_output_model_has_a_description[ORGANIZE_PROPOSAL_SCHEMA] _
+
+name = 'ORGANIZE_PROPOSAL_SCHEMA'
+
+    @pytest.mark.parametrize("name", sorted(WIRE_SCHEMAS))
+    def test_every_field_on_every_output_model_has_a_description(name: str) -> None:
+        """Including nested models: the session reads the whole schema, not the root."""
+        undescribed = [
+            path
+            for path, described in described_fields(WIRE_SCHEMAS[name], name)
+            if not described
+        ]
+>       assert undescribed == []
+E       AssertionError: assert ['ORGANIZE_PR...riteria', ...] == []
+E         
+E         Left contains 17 more items, first extra item: 'ORGANIZE_PROPOSAL_SCHEMA.$defs.BodyProposal.kind'
+E         Use -v to get more diff
+
+tests/types/test_output_descriptions.py:37: AssertionError
+_ test_every_field_on_every_output_model_has_a_description[WRITE_BACK_SCHEMA] __
+
+name = 'WRITE_BACK_SCHEMA'
+
+    @pytest.mark.parametrize("name", sorted(WIRE_SCHEMAS))
+    def test_every_field_on_every_output_model_has_a_description(name: str) -> None:
+        """Including nested models: the session reads the whole schema, not the root."""
+        undescribed = [
+            path
+            for path, described in described_fields(WIRE_SCHEMAS[name], name)
+            if not described
+        ]
+>       assert undescribed == []
+E       AssertionError: assert ['WRITE_BACK_...MA.citedRefs'] == []
+E         
+E         Left contains 3 more items, first extra item: 'WRITE_BACK_SCHEMA.verdict'
+E         Use -v to get more diff
+
+tests/types/test_output_descriptions.py:37: AssertionError
+__________ test_the_only_excluded_occurrences_are_the_outcome_member ___________
+
+    def test_the_only_excluded_occurrences_are_the_outcome_member() -> None:
+        """Non-vacuity: every explicitly named outcome occurrence exists exactly once.
+    
+        Without this the exclusion set could silently stop matching anything —
+        or grow — and the test above would keep passing either way.
+        """
+        excluded = [
+            line.strip() for _, line in _source_lines() if line.strip() in _OUTCOME_MEMBER
+        ]
+>       assert sorted(excluded) == sorted(_OUTCOME_MEMBER)
+E       AssertionError: assert ['ci_passed =...me.ci_passed'] == ['ci_passed =...me.ci_passed']
+E         
+E         Left contains one more item: 'return WorkflowOutcome.ci_passed'
+E         Use -v to get more diff
+
+tests/types/test_wire_renames.py:74: AssertionError
+______________________ test_surface_vocabulary_is_closed _______________________
+
+    def test_surface_vocabulary_is_closed() -> None:
+>       assert {kind.value for kind in SurfaceKind} == {
+            "issue_description",
+            "marker_comment",
+            "container_description",
+            "container_status_update",
+            "issue_label_set",
+            "criterion_sub_issue",
+        }
+E       AssertionError: assert {'container_d...bel_set', ...} == {'container_d...rker_comment'}
+E         
+E         Extra items in the left set:
+E         'criterion_child_set'
+E         Use -v to get more diff
+
+tests/types/test_writable_surface.py:54: AssertionError
+=========================== short test summary info ============================
+FAILED tests/chains/test_ralph_workflow.py::test_house_rules_delivered_as_system_prompt_append
+FAILED tests/chains/test_retry_floor_wiring.py::test_every_production_graph_with_registered_nodes_is_checked
+FAILED tests/core/test_organize_settings.py::test_environment_bounds_reach_the_tick_and_stop_after_one_author
+FAILED tests/docs/test_documented_surface.py::test_every_shipped_config_field_is_documented
+FAILED tests/docs/test_documented_surface.py::test_no_document_names_a_config_variable_that_does_not_exist
+FAILED tests/types/test_output_descriptions.py::test_every_field_on_every_output_model_has_a_description[ORGANIZE_ADMISSION_SCHEMA]
+FAILED tests/types/test_output_descriptions.py::test_every_field_on_every_output_model_has_a_description[ORGANIZE_PROPOSAL_SCHEMA]
+FAILED tests/types/test_output_descriptions.py::test_every_field_on_every_output_model_has_a_description[WRITE_BACK_SCHEMA]
+FAILED tests/types/test_wire_renames.py::test_the_only_excluded_occurrences_are_the_outcome_member
+FAILED tests/types/test_writable_surface.py::test_surface_vocabulary_is_closed
+10 failed, 59 passed in 6.09s

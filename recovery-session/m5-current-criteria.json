@@ -1,0 +1,757 @@
+[
+  {
+    "id": "KOD-332",
+    "title": "KOD-77-AC-20 — The compiled fire graph carries no PR-opening, check-watching or PR-comment node or route, and the ralph workflow module mentions none of those node names",
+    "description": "**Check:** The compiled fire graph carries no PR-opening, check-watching or PR-comment node and no routing function for them, and the ralph workflow module mentions none of those node names.\n**Do:** Move `_open_pr_node`, `_monitor_ci_node` and `_comment_failure_node` and their routes out of the per-fire graph into the coordinator; `WorkflowState` sheds `pr_url`/`pr_number`/`ci_passed`/`ci_summary` and the terminal event sheds `pr_url`/`pr_number`/`ci_passed` plus the `_force_ci_field` serializer. Graph-shape test in `tests/chains/test_ralph_workflow.py`; the rg execution check is grep-shaped and brittle (2026-08-12 validation), hence soft. (D3)\n**Evidence:** — (sha · test names · session/comment ids)\n**Class:** soft · origin `KOD-77-AC-20`",
+    "status": "Done",
+    "url": "https://linear.app/duckburg/issue/KOD-332/kod-77-ac-20-the-compiled-fire-graph-carries-no-pr-opening-check",
+    "parentId": "KOD-77",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ]
+  },
+  {
+    "id": "KOD-333",
+    "title": "KOD-77-AC-21 — Delivery bounds are enforced by the composed consumer",
+    "description": "**Check:** Required concurrent-watch and red re-run limits are enforced by the composed delivery path, with an explicit non-default operator override changing the corresponding behavior. A bound used only by an unconstructed alternative class does not satisfy this criterion. Stable numeric constants are allowed in code.\n\n**Do:** Use the delivery subsystem's policy values and document supported overrides. Migrate required bounds to the active consumer before deleting the unused DeliveryCoordinator and its exclusive fields under <issue id=\"6d9e1859-d446-451f-adde-a217b52f7e64\" href=\"https://linear.app/duckburg/issue/KOD-746/remove-uncomposed-execution-slices-and-migrate-required-behavior-to\">KOD-746</issue>. Remove the blanket literal ban and field-presence-only test. Prove the behavior with active-path watch/re-observation fixtures; preserve the obligations in <issue id=\"3ea86f3c-23fa-4ca1-a746-53a143b7a145\" href=\"https://linear.app/duckburg/issue/KOD-329/kod-77-ac-17-concurrency-is-bounded-by-configuration-with-the-watch\">KOD-329</issue> and <issue id=\"80178133-aea3-4c45-97a4-61b688cebd53\" href=\"https://linear.app/duckburg/issue/KOD-317/kod-77-ac-5-flake-a-red-whose-re-observation-at-the-same-sha-is-not\">KOD-317</issue>.\n\n**Evidence:** Pending verification of this amended contract at an implementation branch/sha.\n\n**Plan amendment · 2026-09-08:** [KOD-744](<https://linear.app/duckburg/issue/KOD-744>). Previous contract and review evidence retained in comments.",
+    "status": "Done",
+    "url": "https://linear.app/duckburg/issue/KOD-333/kod-77-ac-21-delivery-bounds-are-enforced-by-the-composed-consumer",
+    "parentId": "KOD-77",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ]
+  },
+  {
+    "id": "KOD-322",
+    "title": "KOD-77-AC-10 — An unclassified red never reaches remediation and the red-class vocabulary is defined once at the red-routing site, with no second classifier in the package",
+    "description": "**Check:** An unclassified red never reaches remediation, and the red-classification vocabulary is defined once, at the red-routing site: no second red-class vocabulary and no second red classifier exist in the package, and the check-chain failure classification present at the v0.2 union integration branch — this lane's comparison base, never trunk — is neither renamed nor extended to carry this axis.\n**Do:** Define `CheckRedClass` once in `types/domain/delivery.py` and classify reds only at D7's routing site; leave the base's own check-chain failure classification untouched; the evaluator's per-sub-issue state moves and the terminal's residual report import the vocabulary by name. (M5-2, S1-1)\n**Evidence:** — (sha · test names · session/comment ids)",
+    "status": "Done",
+    "url": "https://linear.app/duckburg/issue/KOD-322/kod-77-ac-10-an-unclassified-red-never-reaches-remediation-and-the-red",
+    "parentId": "KOD-77",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ]
+  },
+  {
+    "id": "KOD-329",
+    "title": "KOD-77-AC-17 — Concurrency is bounded by configuration: with the watch bound at N, N+1 lanes never exceed N in-flight wait_for_checks calls and every one reaches a terminal",
+    "description": "**Check:** Concurrency is bounded by configuration: with the watch bound configured at N, N+1 lanes never exceed N in-flight `wait_for_checks` calls and every one of them reaches a terminal.\n**Do:** Run one `wait_for_checks` watch per open PR, concurrent across lanes, gated by `AppConfig.delivery_max_concurrent_watches`; all other bounds stay the existing CI config. Concurrency fixture with N+1 lanes asserts the in-flight ceiling and that each lane terminates. (D5)\n**Evidence:** — (sha · test names · session/comment ids)",
+    "status": "Done",
+    "url": "https://linear.app/duckburg/issue/KOD-329/kod-77-ac-17-concurrency-is-bounded-by-configuration-with-the-watch",
+    "parentId": "KOD-77",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ]
+  },
+  {
+    "id": "KOD-317",
+    "title": "KOD-77-AC-5 — Flake: a red whose re-observation at the same sha is not red classifies RUNNER_FLAKE; with the re-run bound at zero the same fixture classifies WORK_DEFECT",
+    "description": "**Check:** Flake: a red whose re-observation at the same sha is not red classifies `RUNNER_FLAKE`, creates no remediation entry and consumes one re-run attempt; with the re-run bound configured at zero the same fixture classifies `WORK_DEFECT` and creates a single remediation entry.\n**Do:** Establish `RUNNER_FLAKE` by re-observation at one sha through `CIMonitor.rerun_checks(*, repo_url, ref)`, bounded by `AppConfig.delivery_red_rerun_max_attempts`; classifier order is declarations first (no re-run consumed), then re-observe to the bound. Fixtures for the default bound and for bound = 0. (S1-1)\n**Evidence:** — (sha · test names · session/comment ids)",
+    "status": "Done",
+    "url": "https://linear.app/duckburg/issue/KOD-317/kod-77-ac-5-flake-a-red-whose-re-observation-at-the-same-sha-is-not",
+    "parentId": "KOD-77",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ]
+  },
+  {
+    "id": "KOD-325",
+    "title": "KOD-77-AC-13 — Merging stays inexpressible: the PR-creating port is exactly create_pr and comment_on_pr, the forge double exposes no merge method, nothing reads merge state",
+    "description": "**Check:** Merging stays inexpressible: the PR-creating port's method set is asserted to be exactly `create_pr` and `comment_on_pr`, the forge double exposes no merge method, and no state, log event, config field or predicate in the component is a function of merge state.\n**Do:** Keep `PRCreator` at exactly `create_pr` + `comment_on_pr`, add no merge capability, and never read mergedness (check-before-create idempotence per <issue id=\"66332a93-910c-4529-bda6-f530a3c45f24\" href=\"https://linear.app/duckburg/issue/KOD-95/idempotent-tracker-writes-marker-keyed-comments-assert-then-edit\">KOD-95</issue> is allowed); a merge-capability fixture asserts the port's method set and the double's shape. (D1/D7)\n**Evidence:** — (sha · test names · session/comment ids)",
+    "status": "Done",
+    "url": "https://linear.app/duckburg/issue/KOD-325/kod-77-ac-13-merging-stays-inexpressible-the-pr-creating-port-is",
+    "parentId": "KOD-77",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ]
+  },
+  {
+    "id": "KOD-324",
+    "title": "KOD-77-AC-12 — Appended outcome members are asserted by name with exact string values, every base member survives unchanged, and no test asserts a member count",
+    "description": "**Check:** The appended outcome members are asserted BY NAME with their exact string values — `handed_off_for_delivery`, `ci_failed_environment_prerequisite`, `ci_failed_unclassified`, `ci_no_run_at_ref` — every member present at the v0.2 union integration branch — this lane's comparison base, never trunk — survives with its string value unchanged, and no test asserts a member count.\n**Do:** Append those four members to the single append-only `WorkflowOutcome` in `types/domain/outcome.py`; `tests/domain/test_outcome.py` asserts members by name and value only, never a count. (S1-3)\n**Evidence:** — (sha · test names · session/comment ids)",
+    "status": "Done",
+    "url": "https://linear.app/duckburg/issue/KOD-324/kod-77-ac-12-appended-outcome-members-are-asserted-by-name-with-exact",
+    "parentId": "KOD-77",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ]
+  },
+  {
+    "id": "KOD-321",
+    "title": "KOD-77-AC-9 — No class is established from failure text: the check-monitor double exposes exactly four methods and emptying every check summary changes no classification",
+    "description": "**Check:** No class is established from failure text: the check-monitor double exposes exactly `wait_for_checks`, `checks_declared`, `failed_check_names` and `rerun_checks`, and replacing every check summary string with the empty string changes no fixture's classification.\n**Do:** Keep every classifier input structural (tri-state, declarations, failing-step sets) with no read of summary or log text; the check-monitor test double exposes exactly those four methods, and one fixture blanks all summaries and asserts identical classifications. (S1-1)\n**Evidence:** — (sha · test names · session/comment ids)",
+    "status": "Done",
+    "url": "https://linear.app/duckburg/issue/KOD-321/kod-77-ac-9-no-class-is-established-from-failure-text-the-check",
+    "parentId": "KOD-77",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ]
+  },
+  {
+    "id": "KOD-319",
+    "title": "KOD-77-AC-7 — Both fail-closed misses of the prerequisite path fall through to re-observation and take the class observation establishes",
+    "description": "**Check:** Both fail-closed misses of that path — a failing check name no step declares, and a step whose declared prerequisite the repository's `runner_environment` does not mention — classify as something other than `ENVIRONMENT_PREREQUISITE_UNMET` and fall through to re-observation, taking the class observation establishes.\n**Do:** Make the declaration reader fail closed on both misses and hand the red to the re-observation arm; two fixtures, one per miss, asserting the class is not `ENVIRONMENT_PREREQUISITE_UNMET` and is whatever re-observation establishes. (S1-6)\n**Evidence:** — (sha · test names · session/comment ids)",
+    "status": "Done",
+    "url": "https://linear.app/duckburg/issue/KOD-319/kod-77-ac-7-both-fail-closed-misses-of-the-prerequisite-path-fall",
+    "parentId": "KOD-77",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ]
+  },
+  {
+    "id": "KOD-315",
+    "title": "KOD-77-AC-3 — Checks absent because none are declared: the tri-state None with checks_declared false yields ci_not_configured and creates no remediation entry",
+    "description": "**Check:** Checks absent because none are declared: the tri-state `None` with `checks_declared` false yields `ci_not_configured`, unchanged in meaning, and creates no remediation entry.\n**Do:** Add `CIMonitor.checks_declared(*, repo_url) -> bool` and route `None` + declared false to `ci_not_configured` with no remediation entry; fixture in `tests/chains/test_delivery_coordinator.py`. (D7, S1-2)\n**Evidence:** — (sha · test names · session/comment ids)",
+    "status": "Done",
+    "url": "https://linear.app/duckburg/issue/KOD-315/kod-77-ac-3-checks-absent-because-none-are-declared-the-tri-state-none",
+    "parentId": "KOD-77",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ]
+  },
+  {
+    "id": "KOD-313",
+    "title": "KOD-77-AC-1 — DeliveryCoordinator exposes exactly one entry point deliver(...) -> LaneDelivery and the hand-off adds no field to fire state or terminal event",
+    "description": "**Check:** `DeliveryCoordinator` lives in `src/kodezart/chains/delivery_coordinator.py` and exposes exactly one entry point, `deliver(...) -> LaneDelivery`, taking the lane's dispatch record together with the fire's terminal feature branch and final commit sha; the hand-off adds no field to the fire's state or to its terminal event.\n**Do:** Build `src/kodezart/chains/delivery_coordinator.py` with a single public `deliver(...)` taking the dispatch record plus the fire's terminal `feature_branch` / `final_commit_sha` and returning `LaneDelivery`; shipped identifiers say delivery, never landing or merging. (D1)\n**Evidence:** — (sha · test names · session/comment ids)\n\n**2026-09-08 implementation reconciliation (**<issue id=\"6d9e1859-d446-451f-adde-a217b52f7e64\" href=\"https://linear.app/duckburg/issue/KOD-746/remove-uncomposed-execution-slices-and-migrate-required-behavior-to\">KOD-746</issue>): The unused execution classes and wrappers referenced by older evidence were removed. Do not restore a deleted type or coordinator merely to satisfy its historical name. Retain this criterion's required behavior through the active composition and existing validated schemas, extending those schemas where needed. The current audit comment names the remaining behavior or evidence gap; this issue stays Todo until that contract is satisfied.",
+    "status": "Todo",
+    "url": "https://linear.app/duckburg/issue/KOD-313/kod-77-ac-1-deliverycoordinator-exposes-exactly-one-entry-point",
+    "parentId": "KOD-77",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ]
+  },
+  {
+    "id": "KOD-314",
+    "title": "KOD-77-AC-2 — Green lane: create_pr once with head and the dispatch-resolved base, wait_for_checks once, outcome ci_passed, and the PR still open on return",
+    "description": "**Check:** Green lane: `create_pr` is called once with `head` = the lane's head branch and `base` = the dispatch record's resolved base; `wait_for_checks` is called once with `ref` = that head branch; the returned `LaneDelivery.outcome` is `ci_passed`; and the pull request is still open when `deliver` returns.\n**Do:** Route the green path through one `create_pr` and one `wait_for_checks`, recording and stopping on True (the PR stays open); pin it with a green fixture in `tests/chains/test_delivery_coordinator.py`. (D5/D7)\n**Evidence:** — (sha · test names · session/comment ids)\n\n**2026-09-08 implementation reconciliation (**<issue id=\"6d9e1859-d446-451f-adde-a217b52f7e64\" href=\"https://linear.app/duckburg/issue/KOD-746/remove-uncomposed-execution-slices-and-migrate-required-behavior-to\">KOD-746</issue>): The unused execution classes and wrappers referenced by older evidence were removed. Do not restore a deleted type or coordinator merely to satisfy its historical name. Retain this criterion's required behavior through the active composition and existing validated schemas, extending those schemas where needed. The current audit comment names the remaining behavior or evidence gap; this issue stays Todo until that contract is satisfied.",
+    "status": "Todo",
+    "url": "https://linear.app/duckburg/issue/KOD-314/kod-77-ac-2-green-lane-create-pr-once-with-head-and-the-dispatch",
+    "parentId": "KOD-77",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ]
+  },
+  {
+    "id": "KOD-316",
+    "title": "KOD-77-AC-4 — The third arm: None with checks_declared true yields ci_no_run_at_ref and blocks close-out; a forge-exempt repository terminates cleanly",
+    "description": "**Check:** The third arm: the tri-state `None` with `checks_declared` true yields `ci_no_run_at_ref` and blocks close-out; the same fixture with the repository declared forge-exempt in the operation configuration terminates cleanly. Exemption is read from a declared field and is never inferred.\n**Do:** Add `RepoEntry.forge_exempt: bool = False` in `types/domain/operation.py`; route `None` + declared true to `ci_no_run_at_ref` blocking close-out, and to a clean terminal when the repository declares itself exempt — read from the field, never inferred. (S1-2)\nOpen (2026-08-12 criteria validation, still unresolved): \"blocks close-out\" leans on a term the lane body never names as an artifact.\n**Evidence:** — (sha · test names · session/comment ids)",
+    "status": "Todo",
+    "url": "https://linear.app/duckburg/issue/KOD-316/kod-77-ac-4-the-third-arm-none-with-checks-declared-true-yields-ci-no",
+    "parentId": "KOD-77",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ]
+  },
+  {
+    "id": "KOD-318",
+    "title": "KOD-77-AC-6 — Prerequisite unmet, declaration against declaration, classifies ENVIRONMENT_PREREQUISITE_UNMET with a residual carrying act and owner, no fix round, no rerun_checks",
+    "description": "**Check:** Prerequisite unmet, established by declaration against declaration: a failing forge check name mapping by `CheckStep.forge_check` to a step declaring `REPOSITORY_HISTORY`, in a repository whose `runner_environment` declares that prerequisite false, classifies `ENVIRONMENT_PREREQUISITE_UNMET`, produces a residual item carrying its act and its owner, starts no fix round, and calls `rerun_checks` not at all.\n**Do:** Add `CheckPrerequisite(StrEnum){REPOSITORY_HISTORY, NETWORK, CREDENTIALS}`, `CheckStep.requires`, `CheckStep.forge_check: str | None` and `RepoEntry.runner_environment: dict[CheckPrerequisite, bool]` (three-state; only an explicit False establishes the class) in `types/domain/operation.py`; read failing steps through `CIMonitor.failed_check_names(*, repo_url, ref)` and emit a residual with act + owner. (S1-1/S1-6)\n**Evidence:** — (sha · test names · session/comment ids)",
+    "status": "Todo",
+    "url": "https://linear.app/duckburg/issue/KOD-318/kod-77-ac-6-prerequisite-unmet-declaration-against-declaration",
+    "parentId": "KOD-77",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ]
+  },
+  {
+    "id": "KOD-320",
+    "title": "KOD-77-AC-8 — Unclassified: red across the whole re-run bound with a differing failing-step set classifies UNCLASSIFIED, yields a residual and reaches no remediation",
+    "description": "**Check:** Unclassified: a red that stays red across the whole re-run bound while carrying a failing-step set differing from the original's, with no declared prerequisite unmet, classifies `UNCLASSIFIED`, produces a residual item, reaches no remediation entry, and is asserted NOT to classify `RUNNER_FLAKE`.\n**Do:** Add the all-red-with-a-differing-step-set arm to the red classifier as `CheckRedClass.UNCLASSIFIED` (work defect stays reproduction with the same failing-step set); emit a residual, never a remediation entry; the fixture asserts the class is not `RUNNER_FLAKE`. (S1-1 fix round)\n**Evidence:** — (sha · test names · session/comment ids)",
+    "status": "Todo",
+    "url": "https://linear.app/duckburg/issue/KOD-320/kod-77-ac-8-unclassified-red-across-the-whole-re-run-bound-with-a",
+    "parentId": "KOD-77",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ]
+  },
+  {
+    "id": "KOD-323",
+    "title": "KOD-77-AC-11 — Both outcome classifiers are total with no default arm: an unclassifiable fire state raises, and so does an unclassifiable LaneDelivery",
+    "description": "**Check:** Both outcome classifiers are total with no default arm: an unclassifiable fire state raises, and so does an unclassifiable `LaneDelivery`.\n**Do:** Write the fire-level and lane-level `WorkflowOutcome` classifiers exhaustively with no fallback arm; two tests feed each an unclassifiable input and assert it raises. (D9)\n**Evidence:** — (sha · test names · session/comment ids)",
+    "status": "Todo",
+    "url": "https://linear.app/duckburg/issue/KOD-323/kod-77-ac-11-both-outcome-classifiers-are-total-with-no-default-arm-an",
+    "parentId": "KOD-77",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ]
+  },
+  {
+    "id": "KOD-326",
+    "title": "KOD-77-AC-14 — Write set: across every coordinator fixture the only tracker write attributable to the coordinator is the failure-path pull-request comment",
+    "description": "**Check:** Write set: across every coordinator fixture the tracker writes attributable to the coordinator are exactly the failure-path pull-request comment; any issue state transition, any criterion sub-issue state move, or any unlock write fails the fixture.\n**Do:** Give the coordinator one tracker write — the failure-path PR comment — and no state writes at all: a lane's Done is the tracker's rollup over its `criterion` sub-issues, the evaluator (<issue id=\"c2ab66ca-a97a-4ba3-9883-d06b76878ab6\" href=\"https://linear.app/duckburg/issue/KOD-76/v03-l4-tracker-as-live-run-state-evaluator-write-back-validation-from\">KOD-76</issue>) moves those sub-issue states, and the walker recomputes its own ready set. A write-set fixture spans every scenario. (D8)\n**Evidence:** — (sha · test names · session/comment ids)",
+    "status": "Todo",
+    "url": "https://linear.app/duckburg/issue/KOD-326/kod-77-ac-14-write-set-across-every-coordinator-fixture-the-only",
+    "parentId": "KOD-77",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ]
+  },
+  {
+    "id": "KOD-327",
+    "title": "KOD-77-AC-15 — A stalled lane's do-not-merge pull request is opened and watched like any other, its outcome is stalled_pr_opened, and no do-not-merge branch exists",
+    "description": "**Check:** A stalled lane's do-not-merge pull request is opened and its checks watched like any other's, its outcome is `stalled_pr_opened`, and no do-not-merge-specific branch exists anywhere in the coordinator.\n**Do:** Send stalled lanes down the same open-then-watch path as every other lane, returning `stalled_pr_opened`; the coordinator carries no do-not-merge-specific condition. Stalled fixture in `tests/chains/test_delivery_coordinator.py`. (D8)\n**Evidence:** — (sha · test names · session/comment ids)",
+    "status": "Todo",
+    "url": "https://linear.app/duckburg/issue/KOD-327/kod-77-ac-15-a-stalled-lanes-do-not-merge-pull-request-is-opened-and",
+    "parentId": "KOD-77",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ]
+  },
+  {
+    "id": "KOD-328",
+    "title": "KOD-77-AC-16 — Ordering independence: a dependent lane opens its PR against its blocker's branch, and a resolved base absent from the remote raises the typed error",
+    "description": "**Check:** Ordering independence: a dependent lane whose blocker holds no pull request yet opens its own against the blocker's branch and succeeds; and a resolved base absent from the remote raises the typed error with `create_pr` never called and trunk never substituted.\n**Do:** Open a lane's PR as soon as its head and its resolved base both exist on the remote (`GitService.remote_branch_sha` non-None), never waiting on another lane's PR; a missing base raises <issue id=\"1fdb7b23-7dcd-411b-916d-5827bf7fce20\" href=\"https://linear.app/duckburg/issue/KOD-75/v03-l3-topology-planner-scope-walker-blockedby-graph-execution\">KOD-75</issue> D9's typed error. Dependent-first and missing-base fixtures. (D6)\n**Evidence:** — (sha · test names · session/comment ids)\n\n**2026-09-08 implementation reconciliation (**<issue id=\"6d9e1859-d446-451f-adde-a217b52f7e64\" href=\"https://linear.app/duckburg/issue/KOD-746/remove-uncomposed-execution-slices-and-migrate-required-behavior-to\">KOD-746</issue>): The unused execution classes and wrappers referenced by older evidence were removed. Do not restore a deleted type or coordinator merely to satisfy its historical name. Retain this criterion's required behavior through the active composition and existing validated schemas, extending those schemas where needed. The current audit comment names the remaining behavior or evidence gap; this issue stays Todo until that contract is satisfied.",
+    "status": "Todo",
+    "url": "https://linear.app/duckburg/issue/KOD-328/kod-77-ac-16-ordering-independence-a-dependent-lane-opens-its-pr",
+    "parentId": "KOD-77",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ]
+  },
+  {
+    "id": "KOD-330",
+    "title": "KOD-77-AC-18 — LaneDelivery is a frozen camel-cased model reusing the existing lane-PR model, and every new type lands in the module that owns it",
+    "description": "**Check:** `LaneDelivery` is a frozen camel-cased model in `src/kodezart/types/domain/delivery.py` reusing the existing lane-PR model rather than declaring a second one; its `checks_passed` mirrors the port's tri-state as `bool | None` rather than an enum; its `base_branch` is the base resolved at dispatch. `CheckRedClass` lands in that same module, while `CheckPrerequisite`, `CheckStep.requires`, `CheckStep.forge_check`, `RepoEntry.runner_environment` and `RepoEntry.forge_exempt` land in the operation-configuration module beside the model that owns them.\n**Do:** Add `src/kodezart/types/domain/delivery.py` with frozen `CamelCaseModel` `LaneDelivery` (lane_key, issue_id, head_branch, base_branch, `pr: LanePR | None`, `checks_passed: bool | None`, checks_summary, `outcome: WorkflowOutcome`) and `CheckRedClass`; put the five declaration fields/types in `types/domain/operation.py`. (D4, S1-1/S1-2/S1-6)\n**Evidence:** — (sha · test names · session/comment ids)\n\n**2026-09-08 implementation reconciliation (**<issue id=\"6d9e1859-d446-451f-adde-a217b52f7e64\" href=\"https://linear.app/duckburg/issue/KOD-746/remove-uncomposed-execution-slices-and-migrate-required-behavior-to\">KOD-746</issue>): The unused execution classes and wrappers referenced by older evidence were removed. Do not restore a deleted type or coordinator merely to satisfy its historical name. Retain this criterion's required behavior through the active composition and existing validated schemas, extending those schemas where needed. The current audit comment names the remaining behavior or evidence gap; this issue stays Todo until that contract is satisfied.",
+    "status": "Todo",
+    "url": "https://linear.app/duckburg/issue/KOD-330/kod-77-ac-18-lanedelivery-is-a-frozen-camel-cased-model-reusing-the",
+    "parentId": "KOD-77",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ]
+  },
+  {
+    "id": "KOD-331",
+    "title": "KOD-77-AC-19 — The fire sheds delivery: a clean fire terminates handed_off_for_delivery, its terminal event carries no PR or check keys, and the clean runs in the coordinator",
+    "description": "**Check:** The fire sheds delivery: a clean fire terminates `handed_off_for_delivery`, its terminal event carries no pull-request or check-result keys, a review-failure fire still terminates on its own review-budget member and posts no pull-request comment, and the artifact clean call runs inside the coordinator before `create_pr` rather than inside the fire.\n**Do:** Append `handed_off_for_delivery` (predicate `merged is True and review_passed is True`); strip `pr_url`/`pr_number`/`ci_passed` from the terminal event; keep the review-failure fire on its own review-budget member with no PR comment.\nOpen item (not resolved by this lane): whether an on-branch cache survives at all — and so where its clean call runs — is <issue id=\"c2ab66ca-a97a-4ba3-9883-d06b76878ab6\" href=\"https://linear.app/duckburg/issue/KOD-76/v03-l4-tracker-as-live-run-state-evaluator-write-back-validation-from\">KOD-76</issue>/<issue id=\"67c27449-8a9a-40d7-8572-1b14951f0835\" href=\"https://linear.app/duckburg/issue/KOD-105/v03-l9-tracker-native-fire-composition-one-node-set-two-compositions\">KOD-105</issue>'s ruling under the 2026-09-05 tracker-source-of-truth ruling; `.kodezart/` files are never the spec's carrier. (D3/D9)\n**Evidence:** — (sha · test names · session/comment ids)",
+    "status": "Done",
+    "url": "https://linear.app/duckburg/issue/KOD-331/kod-77-ac-19-the-fire-sheds-delivery-a-clean-fire-terminates-handed",
+    "parentId": "KOD-77",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ]
+  },
+  {
+    "id": "KOD-475",
+    "title": "KOD-78-AC-5 — A declared stop is data: the stopping rule names the configured field, its value and the rounds used",
+    "description": "**Check:** A declared stop is data: the stopping rule names the configured field whose bound fired, its configured value and the rounds used; the organize-halt fixture yields `scope_converged_with_residual` whose stopping rule names that field with rounds used equal to the configured bound, and one unconverged-defect-class item per surviving finding; a stop reached by no configured field is `scope_stopped_short` by arithmetic, with nothing left to judge. (V · R10)\n**Do:** Build `ScopeStoppingRule` (`config_field`, `configured_value`, `rounds_used`) in `src/kodezart/types/domain/scope_terminal.py`. A stop is declared iff it was reached by a `KODEZART_`-prefixed config bound fixed before the run; anything else is `scope_stopped_short` arithmetically.\n**Evidence:** — (sha · test names in tests/chains/test_scope_terminal.py · session/comment ids). Blocked pending supply, never infeasible: the organize-halt report and its round-bound configuration field are the scope-pass lane's deliverable and are absent at the comparison base. This stays Todo until that halt report sits on this lane's base; the Check text needs no edit.",
+    "status": "Todo",
+    "url": "https://linear.app/duckburg/issue/KOD-475/kod-78-ac-5-a-declared-stop-is-data-the-stopping-rule-names-the",
+    "parentId": "KOD-78",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ]
+  },
+  {
+    "id": "KOD-485",
+    "title": "KOD-78-AC-15 — Outbound admission classifies references and aggregate data before rendering",
+    "description": "**Check:** Known references are classified before rendering and generated tracker counts/rosters are checked from structured source data at the durable writer. The configurable regex engine and its aggregate prose heuristics are removed, with no alternative scanner framework added merely to relocate them. Every existing outbound path remains covered by an explicit CLEAN / REDACTED / BLOCKED decision.\n\n**Do:** Replace RegexContentScanner and PatternOutboundContentGate with the smallest composition of reference classification, durable-write admission, deterministic credential checking and the existing semantic privacy judgment. Preserve the OutboundContentGate contract where consumers need it. Use a six-row in-code redaction verdict table, max-severity behavior and identifier-writer blocking. Trace authored and fetched strings as well as app-rendered references; deleting text inspection is permitted only where structured provenance or equivalent checking covers the input.\n\n**Evidence:** Pending verification against the amended contract (branch/sha, real writer path, test names and results).\n\n**Plan amendment · 2026-09-08:** Implements [KOD-744](<https://linear.app/duckburg/issue/KOD-744>). Previous scanner/configuration prescriptions are superseded; historical grooming comments do not verify this new contract. Preserve <issue id=\"f0d50751-a867-4a8b-a05f-48fbdb9fbc8b\" href=\"https://linear.app/duckburg/issue/KOD-47/visibility-aware-output-sanitization-nothing-private-ever-lands-in-a\">KOD-47</issue> visibility/error behavior and <issue id=\"ae6aa78c-f954-4a1a-acb9-a857fa8b759f\" href=\"https://linear.app/duckburg/issue/KOD-106/agentic-outbound-content-scanner-the-judgment-half-of-the-outbound\">KOD-106</issue> semantic privacy judgment for agent-authored and third-party text.",
+    "status": "Todo",
+    "url": "https://linear.app/duckburg/issue/KOD-485/kod-78-ac-15-outbound-admission-classifies-references-and-aggregate",
+    "parentId": "KOD-78",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ]
+  },
+  {
+    "id": "KOD-491",
+    "title": "KOD-78-AC-21 — Deployment privacy facts classify references without vendor regex in core",
+    "description": "**Check:** Known references are classified using parsed host and workspace/slug against deployment-supplied private-surface data; a private and a public workspace on the same host are distinguishable. Vendor URL and issue-key parsing belongs to the owning adapter and produces domain values. No organisation-specific literal or vendor URL/key regex lives in core configuration. The existing six redaction categories suffice.\n\n**Do:** Extend OperationConfig.private_surface into structured hosts/workspace slugs while retaining or migrating its existing semantic privacy description. Coordinate that shape with <issue id=\"0532a765-e9d8-4584-9ffe-e5897becf084\" href=\"https://linear.app/duckburg/issue/KOD-139/operationconfig-is-three-concerns-in-one-model-operation-authority\">KOD-139</issue>. Expose IssueKey/domain references parsed by the adapter; classify known references before rendering and tokenize URLs in agent-authored or fetched text through the same parser/classifier. Keep credentials in CREDENTIAL_SHAPES as code constants. Remove deny_patterns, deny_pattern_verdicts and the ORG_PRIVATE pattern-list rejection when the replacement covers all consumers.\n\n**Evidence:** Pending verification against the amended contract (branch/sha, real writer path, test names and results).\n\n**Plan amendment · 2026-09-08:** Implements [KOD-744](<https://linear.app/duckburg/issue/KOD-744>). Previous scanner/configuration prescriptions are superseded; historical grooming comments do not verify this new contract. Preserve <issue id=\"f0d50751-a867-4a8b-a05f-48fbdb9fbc8b\" href=\"https://linear.app/duckburg/issue/KOD-47/visibility-aware-output-sanitization-nothing-private-ever-lands-in-a\">KOD-47</issue> visibility/error behavior and <issue id=\"ae6aa78c-f954-4a1a-acb9-a857fa8b759f\" href=\"https://linear.app/duckburg/issue/KOD-106/agentic-outbound-content-scanner-the-judgment-half-of-the-outbound\">KOD-106</issue> semantic privacy judgment for agent-authored and third-party text.",
+    "status": "Todo",
+    "url": "https://linear.app/duckburg/issue/KOD-491/kod-78-ac-21-deployment-privacy-facts-classify-references-without",
+    "parentId": "KOD-78",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ]
+  },
+  {
+    "id": "KOD-472",
+    "title": "KOD-78-AC-2 — Three scope_ convergence members are appended to the existing outcome enum, never a parallel enum",
+    "description": "**Check:** The three convergence members are appended to the SAME outcome enum the fire level already uses — never a parallel enum — and are asserted by name with their exact string values (`scope_converged`, `scope_converged_with_residual`, `scope_stopped_short`); every member present at the v0.2 union integration branch — this lane's comparison base, never trunk — survives unchanged, and no test asserts a member count. (V · R9, M5-T4)\n**Do:** Append the three `scope_`-prefixed members to the existing `WorkflowOutcome(StrEnum)` in `types/domain/outcome.py` under its append-only extension convention. The enum EXISTS at the comparison base, so this is an append with nothing to wait for. Assert member names and values, never a member count.\n**Evidence:** — (sha · test names in tests/domain/test_scope_terminal.py · session/comment ids)",
+    "status": "Done",
+    "url": "https://linear.app/duckburg/issue/KOD-472/kod-78-ac-2-three-scope-convergence-members-are-appended-to-the",
+    "parentId": "KOD-78",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ]
+  },
+  {
+    "id": "KOD-483",
+    "title": "KOD-78-AC-13 — SurfaceDurability lands beside the verdict enum with a total in-code mapping over the destination enum",
+    "description": "**Check:** `SurfaceDurability` lands beside the gate's verdict enum, and the writer classification is a TOTAL IN-CODE mapping over the existing outbound-destination enum, asserted total by the same shape of test the shipped destination-to-surface mapping uses: adding a destination member without a durability classification fails the suite, and anything reaching the gate with no destination member resolves DURABLE. (V · R2, S1-T1)\n**Do:** Add `SurfaceDurability(StrEnum){DURABLE, POINT_IN_TIME}` in `types/domain/` beside `GateVerdict`, with a total in-code destination-to-durability mapping — not a configuration mapping. An unclassified writer must be a build failure, not a runtime default.\n**Evidence:** — (sha · test names in tests/core/test_aggregate_scanner.py · session/comment ids)",
+    "status": "Done",
+    "url": "https://linear.app/duckburg/issue/KOD-483/kod-78-ac-13-surfacedurability-lands-beside-the-verdict-enum-with-a",
+    "parentId": "KOD-78",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ]
+  },
+  {
+    "id": "KOD-473",
+    "title": "KOD-78-AC-3 — Validators raise on each inconsistent convergence, residual and stopping-rule combination",
+    "description": "**Check:** Inspectability is enforced by validators, each case raising: `scope_converged` with a non-empty residual, `scope_converged_with_residual` with no stopping rule, and `scope_stopped_short` carrying one. (V · R12)\n**Do:** Add model validators to the frozen models in `src/kodezart/types/domain/scope_terminal.py` so convergence is a wire property rather than a convention. Assert each of the three cases raises `ValidationError`.\n**Evidence:** — (sha · test names in tests/domain/test_scope_terminal.py · session/comment ids)\n\n**2026-09-08 implementation reconciliation (**<issue id=\"6d9e1859-d446-451f-adde-a217b52f7e64\" href=\"https://linear.app/duckburg/issue/KOD-746/remove-uncomposed-execution-slices-and-migrate-required-behavior-to\">KOD-746</issue>): The unused execution classes and wrappers referenced by older evidence were removed. Do not restore a deleted type or coordinator merely to satisfy its historical name. Retain this criterion's required behavior through the active composition and existing validated schemas, extending those schemas where needed. The current audit comment names the remaining behavior or evidence gap; this issue stays Todo until that contract is satisfied.",
+    "status": "Todo",
+    "url": "https://linear.app/duckburg/issue/KOD-473/kod-78-ac-3-validators-raise-on-each-inconsistent-convergence-residual",
+    "parentId": "KOD-78",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ]
+  },
+  {
+    "id": "KOD-474",
+    "title": "KOD-78-AC-4 — A serialized scope_converged event still carries the residual-items and stopping-rule keys",
+    "description": "**Check:** A serialized `scope_converged` event still carries both the residual-items key and the stopping-rule key, asserted on the serialized payload rather than on the attributes, so a consumer never infers convergence from an absent field. (V · R12)\n**Do:** Force both fields onto the wire even when empty, the way `WorkflowCompleteEvent` forces its three-state `ci_passed` to serialize. Assert on the serialized payload, not the model attributes.\n**Evidence:** — (sha · test names in tests/domain/test_scope_terminal.py · session/comment ids)\n\n**2026-09-08 implementation reconciliation (**<issue id=\"6d9e1859-d446-451f-adde-a217b52f7e64\" href=\"https://linear.app/duckburg/issue/KOD-746/remove-uncomposed-execution-slices-and-migrate-required-behavior-to\">KOD-746</issue>): The unused execution classes and wrappers referenced by older evidence were removed. Do not restore a deleted type or coordinator merely to satisfy its historical name. Retain this criterion's required behavior through the active composition and existing validated schemas, extending those schemas where needed. The current audit comment names the remaining behavior or evidence gap; this issue stays Todo until that contract is satisfied.",
+    "status": "Todo",
+    "url": "https://linear.app/duckburg/issue/KOD-474/kod-78-ac-4-a-serialized-scope-converged-event-still-carries-the",
+    "parentId": "KOD-78",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ]
+  },
+  {
+    "id": "KOD-476",
+    "title": "KOD-78-AC-6 — Each residual item carries issue, class, record reference, detail, act and owner; no enum member for machine-complete",
+    "description": "**Check:** Each residual item carries its issue, its class, the record reference of the tracker record that already holds it, its detail, AND the act with its owner; the residual class members are asserted by name; and NO scope-level enum member is added for machine-complete versus complete — that distinction is answerable as a query over residual class and owner. (V · R11, M5-T1)\n**Do:** Build `ScopeResidualItem` / `ScopeResidualClass` / `ScopeResidual` in `src/kodezart/types/domain/scope_terminal.py`. The record reference admits a criterion sub-issue key as a record kind alongside marker keys and comment ids, so a failing-criterion item points at the sub-issue whose state and Evidence already carry it.\n**Evidence:** — (sha · test names in tests/domain/test_scope_terminal.py · session/comment ids)\n\n**2026-09-08 implementation reconciliation (**<issue id=\"6d9e1859-d446-451f-adde-a217b52f7e64\" href=\"https://linear.app/duckburg/issue/KOD-746/remove-uncomposed-execution-slices-and-migrate-required-behavior-to\">KOD-746</issue>): The unused execution classes and wrappers referenced by older evidence were removed. Do not restore a deleted type or coordinator merely to satisfy its historical name. Retain this criterion's required behavior through the active composition and existing validated schemas, extending those schemas where needed. The current audit comment names the remaining behavior or evidence gap; this issue stays Todo until that contract is satisfied.",
+    "status": "Todo",
+    "url": "https://linear.app/duckburg/issue/KOD-476/kod-78-ac-6-each-residual-item-carries-issue-class-record-reference",
+    "parentId": "KOD-78",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ]
+  },
+  {
+    "id": "KOD-477",
+    "title": "KOD-78-AC-7 — An undemonstrable obligation never blocks: such a lane reaches scope_converged_with_residual",
+    "description": "**Check:** An undemonstrable obligation never blocks: a lane whose remaining obligations are all undemonstrable-here or owned elsewhere reaches `scope_converged_with_residual`, never `scope_stopped_short` and never a blocked terminal. (gen · M5-T2)\n**Do:** Encode the terminal-side consequence of the Q1 fire-ruling on <issue id=\"7db77f39-4c85-48b0-8240-826917474e89\" href=\"https://linear.app/duckburg/issue/KOD-78/v03-l6-scope-terminal-per-lane-outcome-vector-initiative-progress\">KOD-78</issue>. A missing DEMONSTRATION routes to residual; it is a different condition from AC-8's missing WRITE, and the two must not be collapsed — routing one into the other lets a skipped write launder itself.\n**Evidence:** — (sha · test names in tests/chains/test_scope_terminal.py · session/comment ids)",
+    "status": "Todo",
+    "url": "https://linear.app/duckburg/issue/KOD-477/kod-78-ac-7-an-undemonstrable-obligation-never-blocks-such-a-lane",
+    "parentId": "KOD-78",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ]
+  },
+  {
+    "id": "KOD-478",
+    "title": "KOD-78-AC-8 — The terminal is never a first writer: an unreadable record becomes UNRECORDED_AT_TERMINAL and forbids convergence",
+    "description": "**Check:** The terminal is never a first writer: before emitting it re-reads every lane-vector entry and every residual item from its owning issue by the item's record reference, an item whose record cannot be read back is emitted as `UNRECORDED_AT_TERMINAL` naming the surface that owed the write, its presence forbids `scope_converged`, and the terminal neither writes the missing record nor omits the item — a missing write is never routed into the residual as a missing demonstration. (V · R15)\n**Do:** Read every item back through the tracker port by its record reference — a criterion sub-issue key reads as that sub-issue's state and Evidence. Assert the fake tracker records zero writes from the terminal to the owing issue.\n**Evidence:** — (sha · test names in tests/chains/test_scope_terminal.py · session/comment ids)",
+    "status": "Todo",
+    "url": "https://linear.app/duckburg/issue/KOD-478/kod-78-ac-8-the-terminal-is-never-a-first-writer-an-unreadable-record",
+    "parentId": "KOD-78",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ]
+  },
+  {
+    "id": "KOD-479",
+    "title": "KOD-78-AC-9 — Write set closed: the terminal's only tracker write is the container status update",
+    "description": "**Check:** Write set closed: across every terminal fixture the tracker writes attributable to the terminal are exactly the container status update; any issue-surface write fails the fixture; and the container description surface this lane holds is never written by it. (V · R16, R13)\n**Do:** Assert the fake tracker's write log attributable to the terminal over every fixture. The lane holds the container description precisely so nothing writes it. The evaluator's per-criterion state moves are the evaluator's writes, not the terminal's, and this criterion does not forbid them.\n**Evidence:** — (sha · test names in tests/chains/test_scope_terminal.py · session/comment ids)",
+    "status": "Todo",
+    "url": "https://linear.app/duckburg/issue/KOD-479/kod-78-ac-9-write-set-closed-the-terminals-only-tracker-write-is-the",
+    "parentId": "KOD-78",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ]
+  },
+  {
+    "id": "KOD-480",
+    "title": "KOD-78-AC-10 — No machine outcome is a function of a merge: lanes holding open unmerged PRs are scope_converged",
+    "description": "**Check:** No machine outcome is a function of a merge: a fixture whose lanes all hold open, unmerged pull requests is `scope_converged`, while a lane holding no open pull request yields `scope_converged_with_residual` carrying a lane-without-open-PR item. (V · R14)\n**Do:** Count a lane toward convergence when its terminal act is complete — an open PR whose checks the run watched — never on a merge, which is a human act outside the loop. Several PRs open at once, parallel or stacked, is the normal converged state.\n**Evidence:** — (sha · test names in tests/chains/test_scope_terminal.py · session/comment ids)",
+    "status": "Todo",
+    "url": "https://linear.app/duckburg/issue/KOD-480/kod-78-ac-10-no-machine-outcome-is-a-function-of-a-merge-lanes-holding",
+    "parentId": "KOD-78",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ]
+  },
+  {
+    "id": "KOD-481",
+    "title": "KOD-78-AC-11 — Silence cannot render as success: reported entries cover the lanes dispatched, an unreported lane forbids convergence",
+    "description": "**Check:** Silence cannot render as success here: the terminal asserts that the entries it reports cover the lanes dispatched, and an unreported lane forbids `scope_converged` exactly as an unrecorded item does. The lane-report vocabulary and the return-boundary assertion are consumed from the sibling issue that owns them; this lane defines neither. (gen · M5-T3)\n**Do:** Assert arity at the evaluator's return boundary: entries reported equal lanes dispatched. Consume the unreported-lane reading from the sibling issue that owns it; define no vocabulary here.\n**Evidence:** — (sha · test names in tests/chains/test_scope_terminal.py · session/comment ids). Blocked pending supply, never infeasible: that vocabulary and that return-boundary assertion are the sibling issue's deliverable and are absent at the comparison base. This stays Todo until the sibling sits on this lane's base; the Check text needs no edit.",
+    "status": "Todo",
+    "url": "https://linear.app/duckburg/issue/KOD-481/kod-78-ac-11-silence-cannot-render-as-success-reported-entries-cover",
+    "parentId": "KOD-78",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ]
+  },
+  {
+    "id": "KOD-471",
+    "title": "KOD-78-AC-1 — The terminal emits a typed lane-vector event and derives the scope outcome arithmetically from it",
+    "description": "**Check:** The terminal emits a typed, wire-visible event carrying an entry for every lane with its issue, outcome, pull request and branch, and the scope-level outcome is derived arithmetically from that vector rather than authored as free text. (V · D1)\n**Do:** Build the scope terminal event with one entry per lane {issue, outcome, pr, branch}, extending the <issue id=\"a4fdc34e-d183-40cf-b77a-16f1459c6c72\" href=\"https://linear.app/duckburg/issue/KOD-30/workflow-complete-has-no-outcome-discriminator-review-failure-exit\">KOD-30</issue> outcome vocabulary one level up rather than a parallel enum. Derive the scope-level outcome as a function of the vector; assert it on a wire snapshot, never on a rendered string.\n**Evidence:** — (sha · test names in tests/chains/test_scope_terminal.py · session/comment ids)",
+    "status": "Todo",
+    "url": "https://linear.app/duckburg/issue/KOD-471/kod-78-ac-1-the-terminal-emits-a-typed-lane-vector-event-and-derives",
+    "parentId": "KOD-78",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ]
+  },
+  {
+    "id": "KOD-482",
+    "title": "KOD-78-AC-12 — Resumability: a prior attempt that left no terminal event is reported scope_stopped_short from durable state",
+    "description": "**Check:** Resumability: a scope run whose prior attempt left no terminal event is reported `scope_stopped_short` on the next entry, computed from durable state, and no residual item is invented for what the dead run never recorded. (V · D6)\n**Do:** Compute the next entry's outcome from durable state per the initiative's resumability ruling. Invent nothing for what the dead run never recorded — an absent record is silence, not a residual item.\n**Evidence:** — (sha · test names in tests/chains/test_scope_terminal.py · session/comment ids)",
+    "status": "Todo",
+    "url": "https://linear.app/duckburg/issue/KOD-482/kod-78-ac-12-resumability-a-prior-attempt-that-left-no-terminal-event",
+    "parentId": "KOD-78",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ]
+  },
+  {
+    "id": "KOD-484",
+    "title": "KOD-78-AC-14 — One destination member per real writer: a point-in-time status-update destination, and none this lane never writes",
+    "description": "**Check:** One destination member per real writer: this lane registers a tracker status-update destination classified point-in-time, registers no destination for the container description it never writes, and registers none for the marker-keyed in-place editor another lane owns. (gen · S1-T1)\n**Do:** Register only the destination members this lane's own writers create. A member naming a writer that does not exist is an invented value; the marker-keyed editor's member and its DURABLE classification belong to the lane that owns marker-keyed records.\n**Evidence:** — (sha · test names in tests/core/test_aggregate_scanner.py · session/comment ids)",
+    "status": "Todo",
+    "url": "https://linear.app/duckburg/issue/KOD-484/kod-78-ac-14-one-destination-member-per-real-writer-a-point-in-time",
+    "parentId": "KOD-78",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ]
+  },
+  {
+    "id": "KOD-486",
+    "title": "KOD-78-AC-16 — Tracker aggregates are refused on durable surfaces and allowed on point-in-time surfaces",
+    "description": "**Check:** The same structured tracker count or roster is blocked on a DURABLE destination and allowed, subject to ordinary privacy checks, on a POINT_IN_TIME destination. A single otherwise-public issue reference remains allowed. A tracker count claim authored directly in text with zero typed references cannot bypass the durable-write rule.\n\n**Do:** Use destination durability and typed count/roster data for generated content; count references at the writer, not by reparsing rendered issue keys. Carry or inspect authorship/provenance at free-text entry paths so an agent-authored count claim and roster receive equivalent admission. Use paired destination cases, including a zero-reference count claim, rather than numeral-distance or separator-regex tests.\n\n**Evidence:** Pending verification against the amended contract (branch/sha, real writer path, test names and results).\n\n**Plan amendment · 2026-09-08:** Implements [KOD-744](<https://linear.app/duckburg/issue/KOD-744>). Previous scanner/configuration prescriptions are superseded; historical grooming comments do not verify this new contract. Preserve <issue id=\"f0d50751-a867-4a8b-a05f-48fbdb9fbc8b\" href=\"https://linear.app/duckburg/issue/KOD-47/visibility-aware-output-sanitization-nothing-private-ever-lands-in-a\">KOD-47</issue> visibility/error behavior and <issue id=\"ae6aa78c-f954-4a1a-acb9-a857fa8b759f\" href=\"https://linear.app/duckburg/issue/KOD-106/agentic-outbound-content-scanner-the-judgment-half-of-the-outbound\">KOD-106</issue> semantic privacy judgment for agent-authored and third-party text.",
+    "status": "Todo",
+    "url": "https://linear.app/duckburg/issue/KOD-486/kod-78-ac-16-tracker-aggregates-are-refused-on-durable-surfaces-and",
+    "parentId": "KOD-78",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ]
+  },
+  {
+    "id": "KOD-487",
+    "title": "KOD-78-AC-17 — A refused durable write identifies the offending structured value or prose span",
+    "description": "**Check:** A blocked durable write raises OutboundContentBlockedError and identifies the offending reference, roster or count claim in a form the writer can repair. When the finding comes from inspected prose, include the actual start/end offsets and matched text when resolvable; never invent string offsets for structured values. Nothing is published on refusal.\n\n**Do:** Extend the existing error/result only where the typed source needs a locator. Verify repair information for a structured roster, a structured count and an authored prose finding; preserve fail-closed handling when a semantic finding cannot be localized.\n\n**Evidence:** Pending verification against the amended contract (branch/sha, real writer path, test names and results).\n\n**Plan amendment · 2026-09-08:** Implements [KOD-744](<https://linear.app/duckburg/issue/KOD-744>). Previous scanner/configuration prescriptions are superseded; historical grooming comments do not verify this new contract. Preserve <issue id=\"f0d50751-a867-4a8b-a05f-48fbdb9fbc8b\" href=\"https://linear.app/duckburg/issue/KOD-47/visibility-aware-output-sanitization-nothing-private-ever-lands-in-a\">KOD-47</issue> visibility/error behavior and <issue id=\"ae6aa78c-f954-4a1a-acb9-a857fa8b759f\" href=\"https://linear.app/duckburg/issue/KOD-106/agentic-outbound-content-scanner-the-judgment-half-of-the-outbound\">KOD-106</issue> semantic privacy judgment for agent-authored and third-party text.",
+    "status": "Todo",
+    "url": "https://linear.app/duckburg/issue/KOD-487/kod-78-ac-17-a-refused-durable-write-identifies-the-offending",
+    "parentId": "KOD-78",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ]
+  },
+  {
+    "id": "KOD-488",
+    "title": "KOD-78-AC-18 — Aggregate admission works without configurable patterns and preserves ordinary numeric prose",
+    "description": "**Check:** With shipped policy and no regex configuration, a durable tracker-object count or roster is refused, while ordinary counts of tests, files and commits remain allowed unless another privacy rule applies. Generated content and authored prose both satisfy the behavior.\n\n**Do:** Represent generated tracker aggregates explicitly and keep the rule at the writer. Preserve the authored-prose boundary for material not built from typed tracker values. Verify allowed test/file/commit counts, a structured tracker count, an authored tracker count with no references, and a prohibited roster. Do not reintroduce configurable nouns, token distance or separator patterns.\n\n**Evidence:** Pending verification against the amended contract (branch/sha, real writer path, test names and results).\n\n**Plan amendment · 2026-09-08:** Implements [KOD-744](<https://linear.app/duckburg/issue/KOD-744>). Previous scanner/configuration prescriptions are superseded; historical grooming comments do not verify this new contract. Preserve <issue id=\"f0d50751-a867-4a8b-a05f-48fbdb9fbc8b\" href=\"https://linear.app/duckburg/issue/KOD-47/visibility-aware-output-sanitization-nothing-private-ever-lands-in-a\">KOD-47</issue> visibility/error behavior and <issue id=\"ae6aa78c-f954-4a1a-acb9-a857fa8b759f\" href=\"https://linear.app/duckburg/issue/KOD-106/agentic-outbound-content-scanner-the-judgment-half-of-the-outbound\">KOD-106</issue> semantic privacy judgment for agent-authored and third-party text.",
+    "status": "Todo",
+    "url": "https://linear.app/duckburg/issue/KOD-488/kod-78-ac-18-aggregate-admission-works-without-configurable-patterns",
+    "parentId": "KOD-78",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ]
+  },
+  {
+    "id": "KOD-489",
+    "title": "KOD-78-AC-19 — Terminal and residual writers prove structured aggregate admission at their real call sites",
+    "description": "**Check:** The terminal event, container status update and residual are rendered from typed source data and pass point-in-time admission. Routing their same aggregate content to a durable container description is refused. The composed writers demonstrate the rule, including their final outbound payloads.\n\n**Do:** Pass structured references/counts through the writer boundary and check durability before rendering or publishing. Exercise the terminal and residual production call paths with paired destinations. Preserve privacy and credential checks on the final payload; a point-in-time destination permits aggregates, not private information. Do not establish this criterion solely with standalone scanner fixtures.\n\n**Evidence:** Pending verification against the amended contract (branch/sha, real writer path, test names and results).\n\n**Plan amendment · 2026-09-08:** Implements [KOD-744](<https://linear.app/duckburg/issue/KOD-744>). Previous scanner/configuration prescriptions are superseded; historical grooming comments do not verify this new contract. Preserve <issue id=\"f0d50751-a867-4a8b-a05f-48fbdb9fbc8b\" href=\"https://linear.app/duckburg/issue/KOD-47/visibility-aware-output-sanitization-nothing-private-ever-lands-in-a\">KOD-47</issue> visibility/error behavior and <issue id=\"ae6aa78c-f954-4a1a-acb9-a857fa8b759f\" href=\"https://linear.app/duckburg/issue/KOD-106/agentic-outbound-content-scanner-the-judgment-half-of-the-outbound\">KOD-106</issue> semantic privacy judgment for agent-authored and third-party text.",
+    "status": "Todo",
+    "url": "https://linear.app/duckburg/issue/KOD-489/kod-78-ac-19-terminal-and-residual-writers-prove-structured-aggregate",
+    "parentId": "KOD-78",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ]
+  },
+  {
+    "id": "KOD-490",
+    "title": "KOD-78-AC-20 — Durable count and roster policy uses domain rules and fixed defaults",
+    "description": "**Check:** Tracker-object counts and identifier rosters remain distinguishable reasons for blocking a durable write. Neither is repaired by merely masking its number or one identifier. The stable policy lives in code; no token-distance, separator, nouns-list or mandatory environment threshold is required.\n\n**Do:** Use typed count and roster facts at the durable writer. Retain the existing roster boundary of three references as a named code constant unless a demonstrated deployment variation justifies a setting. Count claims are an independent rule, not a consequence of reaching the roster boundary. Keep policy reasons disjoint from privacy redaction categories without mandating a particular scanner implementation.\n\n**Evidence:** Pending verification against the amended contract (branch/sha, real writer path, test names and results).\n\n**Plan amendment · 2026-09-08:** Implements [KOD-744](<https://linear.app/duckburg/issue/KOD-744>). Previous scanner/configuration prescriptions are superseded; historical grooming comments do not verify this new contract. Preserve <issue id=\"f0d50751-a867-4a8b-a05f-48fbdb9fbc8b\" href=\"https://linear.app/duckburg/issue/KOD-47/visibility-aware-output-sanitization-nothing-private-ever-lands-in-a\">KOD-47</issue> visibility/error behavior and <issue id=\"ae6aa78c-f954-4a1a-acb9-a857fa8b759f\" href=\"https://linear.app/duckburg/issue/KOD-106/agentic-outbound-content-scanner-the-judgment-half-of-the-outbound\">KOD-106</issue> semantic privacy judgment for agent-authored and third-party text.",
+    "status": "Todo",
+    "url": "https://linear.app/duckburg/issue/KOD-490/kod-78-ac-20-durable-count-and-roster-policy-uses-domain-rules-and",
+    "parentId": "KOD-78",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ]
+  },
+  {
+    "id": "KOD-492",
+    "title": "KOD-78-AC-22 — The cut scope dimension is not built: no new HTTP route, handler or response model for a scope run",
+    "description": "**Check:** The cut scope dimension is not built: no new HTTP route, handler or response model for a scope run appears. Held under the pinned interim recorded on this issue; were the cut refused, this criterion is withdrawn rather than amended. (gen · S1-T2)\n**Do:** Build nothing for the scope dimension of the job-status surface. An execution-only fire builds D1, D2 and D4–D7 only.\n**Evidence:** — (sha · session/comment ids). Backlog, not Todo: the cut is ruled subject to confirmation and the founder decision is still open, recorded once and dated in the pinned interim comment on <issue id=\"7db77f39-4c85-48b0-8240-826917474e89\" href=\"https://linear.app/duckburg/issue/KOD-78/v03-l6-scope-terminal-per-lane-outcome-vector-initiative-progress\">KOD-78</issue>. If the cut is refused this criterion is withdrawn, and D3 returns with no other roadmap consequence — it shares no artifact with the rest of the lane.",
+    "status": "Todo",
+    "url": "https://linear.app/duckburg/issue/KOD-492/kod-78-ac-22-the-cut-scope-dimension-is-not-built-no-new-http-route",
+    "parentId": "KOD-78",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ]
+  },
+  {
+    "id": "KOD-588",
+    "title": "KOD-110-AC-2 — Composition happens in a scratch worktree through the git port, in the planner's lane order, removed on every path",
+    "description": "**Check:** Composition happens in a scratch worktree obtained through the git port, with the lane head branches merged in the planner's lane order — asserted as the planner's order, not the order the pull requests were opened — and the worktree is removed on every path, including the raising one. (V · S1-U2)\n**Do:** Obtain a scratch worktree per union attempt through the git port; merge the lane head branches in the planner's lane order; remove the worktree on every exit path, including the one that raises.\n**Evidence:** d53bbce42d6a0d2804d6bd361a8947e80edfdea2 — tests/chains/test_delivery_coordinator.py::test_no_order_the_union_step_could_re_derive_is_the_planner_order, ::test_the_planner_ranking_is_the_order_the_scope_composes_in, ::test_the_lane_that_conflicts_is_the_one_the_ranking_reaches_second, ::test_the_scratch_tree_is_obtained_through_the_git_port_and_removed, ::test_a_raising_check_chain_still_removes_the_composed_tree, ::test_a_lane_with_no_recorded_deliverable_ref_refuses, ::test_a_lane_with_two_recorded_deliverable_refs_refuses, ::test_a_scope_the_planner_ranks_nothing_in_refuses_to_compose pass; gate 9195/25; judged 2026-09-09 (workhorse tier): REFUTED — the Check's removal clause (\"the worktree is removed on every path, including the raising one\") is not pinned. Mutating `src/kodezart/services/union_composition.py` — setting a leak flag before the merge-conflict `return result` (line 121) and guarding the `finally` (line 155) with `and not leak`, so `remove_worktree` is skipped on the merge-conflict return only — leaves all 8 cited tests passing. The ordering half of the Check does hold: rewriting `src/kodezart/chains/delivery_coordinator.py:74-77` to re-derive the order as `sorted(selection.ready, key=lambda l: (priority_rank(l.issue.priority), l.issue.created_at))` is RED at tip (2 failed / 6 passed, \"- a / + c\" at `tests/chains/test_delivery_coordinator.py:422`) and GREEN under the pre-commit fixture, so the c/a/d/b fixture genuinely distinguishes consuming the ranking from re-deriving it. Revert protocol ran at d53bbce itself (`git revert --no-commit d53bbce` at c17f5d7 conflicts, UU `tests/chains/test_union_forge_isolation.py`, which c17f5d7 rewrote): under revert 2 of the 8 cited tests do not exist (`test_no_order_the_union_step_could_re_derive_is_the_planner_order`, `test_the_lane_that_conflicts_is_the_one_the_ranking_reaches_second`) and the other 6 pass; restored, `git status --short` empty, 16/16 green at tip.",
+    "status": "Todo",
+    "url": "https://linear.app/duckburg/issue/KOD-588/kod-110-ac-2-composition-happens-in-a-scratch-worktree-through-the-git",
+    "parentId": "KOD-110",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ]
+  },
+  {
+    "id": "KOD-589",
+    "title": "KOD-110-AC-3 — Verifying composes nothing into the world: the forge double exposes no merge capability at all",
+    "description": "**Check:** Verifying composes nothing into the world: the step makes no push, no forge merge call and no pull-request state change, every pull request is still open when it returns, and what carries this is structural — the union step holds no forge port at all (only the git port and the check-chain runner), and the forge query port and its double expose no merge capability, so a merge call cannot type-check against the port. The audit terminal's read-only PR lifecycle reader is a separate port with no merge authority and is outside this criterion (ruling <issue id=\"ecb04c93-2d79-4938-aa98-d3f4856116a3\" href=\"https://linear.app/duckburg/issue/KOD-778/ruling-the-no-merge-state-premise-kod-110-ac-3-rests-on-is-the-audit\">KOD-778</issue>); the union never consumes it. (V · property 2)\n**Do:** Keep the union step read-only against the forge — no push, no merge call, no pull-request state change, every pull request still open on return; give the forge query port and its double no merge capability, so a merge call cannot type-check against the port. Do not add a merge-state reader to the union step or to the forge query port.\n**Evidence:** c17f5d71ce95a94d0fd63f74ee6aa467cce01dad — tests/chains/test_union_forge_isolation.py::test_every_exit_of_the_union_step_leaves_every_ref_identical, ::test_the_union_step_holds_no_forge_collaborator_at_all, ::test_the_holdings_walk_reaches_a_collaborator_inside_a_container, ::test_no_module_the_union_step_reaches_asks_a_pull_request_anything, ::test_the_union_steps_own_modules_name_the_merge_state_reader_nowhere, ::test_the_query_ports_and_their_doubles_expose_no_merge_capability[PRStateReader|DeliveryProbe], ::test_the_forge_predicate_recognises_every_forge_double pass; gate 9196/25; judged 2026-09-09 (workhorse tier): REFUTED — the headline clause (\"the step makes no push, no forge merge call and no pull-request state change\") is not pinned against a best-effort publish. Inserting, immediately before the merge-conflict `result = UnionCompositionResult(` return in `src/kodezart/services/union_composition.py`, a `try: await self._git.push(worktree, \"union\")` / `except Exception: pass`, all 8 cited tests PASS (8 passed); same with `except BaseException` (8 passed). Only the bare, unswallowed publish goes RED (1 failed). The battery's sole witness for push/merge_branch/delete_remote_branch is the AssertionError `ForbiddenPublisher` raises, and any swallowing wrapper eats it, while the fatal double keeps `refs() == before` true — so \"best-effort\", which is by definition the swallowing form, is exactly the shape the module's docstring claims the exit battery closes and does not. The mutation is a real publication, not a paper one: the same conflicting scenario run through the production port (`pinned.ObservedGit` / `SubprocessGitService`, `git push upstream HEAD:refs/heads/union`) over the real author/remote/observer world left the remote holding c076e21d9c42bcb2d33edae6875aeeea253a5eda refs/heads/union.",
+    "status": "Todo",
+    "url": "https://linear.app/duckburg/issue/KOD-589/kod-110-ac-3-verifying-composes-nothing-into-the-world-the-forge",
+    "parentId": "KOD-110",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ]
+  },
+  {
+    "id": "KOD-597",
+    "title": "KOD-110-AC-7 — A check-chain runner port with a subprocess adapter, its wall-clock bound a KODEZART_-prefixed config field",
+    "description": "**Check:** The check-chain runner exists as a port in the protocols module, running an ordered step sequence in a given working directory and returning the failed step names with each step's captured output, with a subprocess adapter beside the git one; its wall-clock bound is a configuration field with its `KODEZART_`-prefixed environment name. The configured per-step timeout is passed directly to the runner; a non-default value changes actual command timeout behavior. Stable process-group cleanup cadence remains an adapter-owned constant, with no configurable cleanup-poll field. (gen · S1-U2)\n**Do:** Add the runner as a port in `core/protocols.py`, taking an ordered step sequence and a working directory and returning the failed step names with each step's captured output; add a subprocess adapter beside the git one, and one `AppConfig` field for the per-step wall-clock bound with its `KODEZART_`-prefixed environment name. Pass the validated wall-clock timeout as a narrow value to the adapter. Retain ordered execution, partial output and complete process-group cleanup through repeated cancellation. Remove the cleanup polling setting and refuse its retired input; its stable cadence remains in the adapter.\n**Evidence:** — (sha · test names · session/comment ids)\n\n**Plan amendment · 2026-09-08:** <issue id=\"a35bb59e-e287-4baa-9ddf-0cc099bfd07c\" href=\"https://linear.app/duckburg/issue/KOD-744/v03-architecture-simplification-plan-typed-privacy-focused-settings\">KOD-744</issue>/745/468 retire the blanket literal ban. The former full contract and evidence are preserved in commentdffebd95-eac4-4391-bb90-b8353f69c25c; the reviewer’s state is unchanged. This amendment changes only configuration ownership, not the native cleanup or check-result contract.",
+    "status": "Done",
+    "url": "https://linear.app/duckburg/issue/KOD-597/kod-110-ac-7-a-check-chain-runner-port-with-a-subprocess-adapter-its",
+    "parentId": "KOD-110",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ]
+  },
+  {
+    "id": "KOD-603",
+    "title": "KOD-110-AC-10 — The union result is a typed scope-grain value on a surface any consumer can read, not the terminal's private path",
+    "description": "**Check:** The union result is returned as a typed scope-grain value on a surface any consumer can read — never confined to the terminal's private call path — so a grading step reads the same composed result the terminal does; the third gap class and the referred-obligation shape stay with the lanes that own them and are not defined here. (gen · the inverse finding, S1-U5)\n**Do:** Return the union result as a typed scope-grain value on a surface any consumer can read, rather than inside the terminal's private call path. Leave the third gap class and the referred-obligation shape to the walker and criterion-lifecycle lanes that own them.\n**Evidence:** — (sha · test names · session/comment ids)",
+    "status": "Done",
+    "url": "https://linear.app/duckburg/issue/KOD-603/kod-110-ac-10-the-union-result-is-a-typed-scope-grain-value-on-a",
+    "parentId": "KOD-110",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ]
+  },
+  {
+    "id": "KOD-601",
+    "title": "KOD-110-AC-9 — The union result names the composed lane head shas and the composition order, reported as a scratch result",
+    "description": "**Check:** The union result names the composed lane head shas and the composition order, and is reported as a scratch result — never as a property of any branch a human can inspect. (V · S1-U4)\n**Do:** Carry the composed lane head shas and the composition order on the union result, and report it as a scratch result; write no property onto any branch a human can inspect.\n**Evidence:** — (sha · test names · session/comment ids)",
+    "status": "Done",
+    "url": "https://linear.app/duckburg/issue/KOD-601/kod-110-ac-9-the-union-result-names-the-composed-lane-head-shas-and",
+    "parentId": "KOD-110",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ]
+  },
+  {
+    "id": "KOD-599",
+    "title": "KOD-110-AC-8 — A composed tree whose repository declares no check chain refuses rather than reporting a flat list of reds",
+    "description": "**Check:** A composed tree whose repository declares no check chain refuses rather than reporting a flat list of reds. (V · S1-U6)\n**Do:** Take the shipped refusal path when the repository declares no check chain, instead of reporting the composed tree's failures as a flat list of reds; assert it on a fixture with a composed tree and no chain configured.\n**Evidence:** — (sha · test names · session/comment ids)",
+    "status": "Done",
+    "url": "https://linear.app/duckburg/issue/KOD-599/kod-110-ac-8-a-composed-tree-whose-repository-declares-no-check-chain",
+    "parentId": "KOD-110",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ]
+  },
+  {
+    "id": "KOD-595",
+    "title": "KOD-110-AC-6 — Failed steps are partitioned into roots and cascades by calling the shipped classifier; no second classifier appears",
+    "description": "**Check:** The union's failed steps are partitioned into roots and cascades by CALLING the shipped check-chain classifier rather than re-implementing it, and no second classifier appears: a fixture whose chain fails a gate step and every step depending on it reports one root, and the remediation entry names that root. (V · S1-U2/S1-U6)\n**Do:** Call the shipped root-versus-cascade classifier over the check chain; assert the partition by call, not by re-implementation, and add no second classifier. Fixture: a chain failing a gate step and every step depending on it reports one root, named in the remediation entry.\n**Evidence:** — (sha · test names · session/comment ids)",
+    "status": "Done",
+    "url": "https://linear.app/duckburg/issue/KOD-595/kod-110-ac-6-failed-steps-are-partitioned-into-roots-and-cascades-by",
+    "parentId": "KOD-110",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ]
+  },
+  {
+    "id": "KOD-591",
+    "title": "KOD-110-AC-4 — A composability outcome is not a lane outcome: green and red unions report distinctly, no lane outcome member appended",
+    "description": "**Check:** A composability outcome is not a lane outcome: a fixture of lane branches that compose cleanly reports a green union distinct from the lane outcomes, a fixture in which two lanes widen the same constructor incompatibly reports a RED union while every lane outcome is green, and no lane-level outcome member is appended for either. (V · property 1, S1-U3)\n**Do:** Report the union outcome as a fact distinct from the per-lane outcome vector, appending no lane-level outcome member. Build both fixtures: lane branches that compose cleanly, and two lanes widening the same constructor incompatibly with every lane outcome green.\n**Evidence:** — (sha · test names · session/comment ids)",
+    "status": "Done",
+    "url": "https://linear.app/duckburg/issue/KOD-591/kod-110-ac-4-a-composability-outcome-is-not-a-lane-outcome-green-and",
+    "parentId": "KOD-110",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ]
+  },
+  {
+    "id": "KOD-587",
+    "title": "KOD-110-AC-1 — The union check runs once per walk tick whose lane heads changed, never per lane, and re-runs when its shas are stale",
+    "description": "**Check:** The union check is a scope-grain step invoked once per walk tick whose lane heads changed, never per lane: a tick whose lane heads are unchanged does not re-run it, and a recorded union whose head shas differ from the current lane heads is re-run rather than reported. (V · grain ruling, S1-U4)\n**Do:** Invoke the union step at scope grain from the walk tick, gated on a lane-head change; compare the recorded head shas against the current lane heads and re-run when they differ.\n**Evidence:** — (sha · test names · session/comment ids)",
+    "status": "Todo",
+    "url": "https://linear.app/duckburg/issue/KOD-587/kod-110-ac-1-the-union-check-runs-once-per-walk-tick-whose-lane-heads",
+    "parentId": "KOD-110",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ]
+  },
+  {
+    "id": "KOD-593",
+    "title": "KOD-110-AC-5 — A red union yields one union-red residual plus exactly one remediation entry, and never blocks the scope terminal",
+    "description": "**Check:** A red union produces one residual item of the union-red class carrying its act and its owner, plus exactly one remediation entry, and never blocks the scope terminal. (gen · groomed routing ruling, S1-U1/S1-U3)\n**Do:** On a red union, produce one residual item of the union-red class carrying its act and its owner, with exactly one remediation entry; the class is an append to the scope residual vocabulary the scope terminal defines. Leave the terminal unblocked on that path.\n**Evidence:** — (sha · test names · session/comment ids)",
+    "status": "Todo",
+    "url": "https://linear.app/duckburg/issue/KOD-593/kod-110-ac-5-a-red-union-yields-one-union-red-residual-plus-exactly",
+    "parentId": "KOD-110",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ]
+  },
+  {
+    "id": "KOD-778",
+    "title": "Ruling: the no-merge-state premise KOD-110-AC-3 rests on — is the audit lane's PR lifecycle reader an argued exception",
+    "description": "**Outcome:** the ruling is a dated comment on this issue and <issue id=\"cdf9af2c-05cf-47cb-8021-abce46dd8726\" href=\"https://linear.app/duckburg/issue/KOD-589/kod-110-ac-3-verifying-composes-nothing-into-the-world-the-forge\">KOD-589</issue> is unblocked.\n\n**Fork:** <issue id=\"cdf9af2c-05cf-47cb-8021-abce46dd8726\" href=\"https://linear.app/duckburg/issue/KOD-589/kod-110-ac-3-verifying-composes-nothing-into-the-world-the-forge\">KOD-589</issue>'s Check rests on \"no port at the comparison base declares a merge-state reader and the parent lane forbids adding one\", and its Do says \"Do not add a merge-state reader\". The union step satisfies every operative clause on its own — it holds only the git port and the check-chain runner, pushes nothing, and the forge port and its double expose no merge attribute. But the tip adds exactly such a reader for the audit terminal: `PRStateReader.read_pr_state` → `PRState.lifecycle` with `PRLifecycle.MERGED` (`core/protocols.py`, `adapters/github_api.py`, consumer `services/audit_terminal.py`), added at `3f57793` and absent from trunk. The criterion's global premise is therefore false at the tip while its local behaviour holds.\n\n**Options:**\n\n1. The premise is scoped to the union step and its own doubles: the audit lane's lifecycle reader is an argued exception, and <issue id=\"cdf9af2c-05cf-47cb-8021-abce46dd8726\" href=\"https://linear.app/duckburg/issue/KOD-589/kod-110-ac-3-verifying-composes-nothing-into-the-world-the-forge\">KOD-589</issue> is Done on the operative clauses already verified.\n2. The premise is global: the reader violates it, and either the criterion or the reader must be restated — without deleting legitimate audit evidence or inventing a union merge capability.\n\n**Pinned interim:** option 1, scoped narrowly — the union step holds no forge port and its double exposes no merge attribute; nothing further is built on the wider reading this wave.\n\n**Rules:** ORGANIZE pass\n\n**Source:** the [code-grounded grooming · verified at 2d4ff63] comment `798c8ed4` and the [v0.3 fresh implementation audit · 2026-09-08] comment `c220d8ed` on <issue id=\"cdf9af2c-05cf-47cb-8021-abce46dd8726\" href=\"https://linear.app/duckburg/issue/KOD-589/kod-110-ac-3-verifying-composes-nothing-into-the-world-the-forge\">KOD-589</issue>; the lane summary `923e4f80` on <issue id=\"6655d02b-7b49-4f6c-a020-cd9bd877c9d5\" href=\"https://linear.app/duckburg/issue/KOD-110/union-verification-whether-a-scopes-open-prs-compose-is-unobservable\">KOD-110</issue>.\n\n**Done when:** the ruling is recorded here as a dated comment and mirrored as a [ruling] reply on the source comment.",
+    "status": "Done",
+    "url": "https://linear.app/duckburg/issue/KOD-778/ruling-the-no-merge-state-premise-kod-110-ac-3-rests-on-is-the-audit",
+    "parentId": "KOD-110",
+    "labels": [
+      "decision"
+    ]
+  },
+  {
+    "id": "KOD-579",
+    "title": "KOD-118-AC-2 — A dispatched lane that returns nothing reads UNREPORTED and the scope does not report converged",
+    "description": "**Check:** A dispatched lane that returns nothing is reported, not dropped: a fixture dispatching two lanes where one returns nothing produces an outcome vector covering both, the silent one reading `UNREPORTED`, and the scope does not report converged. (V)\n**Do:** Build the fixture: dispatch two lanes, one returning nothing. Assert the tick's outcome vector covers both dispatched lanes, the silent one reads `UNREPORTED`, and the scope does not report converged.\n**Evidence:** — (sha · test names · session/comment ids)",
+    "status": "Todo",
+    "url": "https://linear.app/duckburg/issue/KOD-579/kod-118-ac-2-a-dispatched-lane-that-returns-nothing-reads-unreported",
+    "parentId": "KOD-118",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ]
+  },
+  {
+    "id": "KOD-580",
+    "title": "KOD-118-AC-3 — Two genuinely empty gaps produce a same-length vector reading CONVERGED, distinguishable in the payload",
+    "description": "**Check:** The two cases are distinguishable in the payload rather than only in prose: the same fixture with both lanes genuinely holding empty gaps produces the same-length vector with both reading `CONVERGED`. (V)\n**Do:** Extend the same two-lane fixture so both lanes genuinely hold empty gaps. Assert an outcome vector of the same length with both entries reading `CONVERGED`, so the lost-lane case and the clean-sweep case differ in the payload itself.\n**Evidence:** — (sha · test names · session/comment ids)",
+    "status": "Todo",
+    "url": "https://linear.app/duckburg/issue/KOD-580/kod-118-ac-3-two-genuinely-empty-gaps-produce-a-same-length-vector",
+    "parentId": "KOD-118",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ]
+  },
+  {
+    "id": "KOD-582",
+    "title": "KOD-118-AC-5 — The arity assertion sits at the evaluator's return boundary and raises a typed roster-arity error",
+    "description": "**Check:** The arity assertion sits at the evaluator's return boundary, while the lanes are still re-gradable, and raises a typed roster-arity error declared beside the other boot- and protocol-level errors, naming both the dispatched lane keys and the reported ones; the terminal re-asserts the same arity on what it receives, so the terminal is never the first to notice. (V · S1-R3)\n**Do:** Assert the reported verdict set against the dispatched roster at the evaluator's return boundary, while the lanes are still re-gradable, raising `LaneRosterArityError` declared in `core/errors.py` beside the other boot- and protocol-level errors and naming both dispatched and reported lane keys. Re-assert the same arity at the terminal on what it receives.\n**Evidence:** — (sha · test names · session/comment ids)",
+    "status": "Todo",
+    "url": "https://linear.app/duckburg/issue/KOD-582/kod-118-ac-5-the-arity-assertion-sits-at-the-evaluators-return",
+    "parentId": "KOD-118",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ]
+  },
+  {
+    "id": "KOD-583",
+    "title": "KOD-118-AC-6 — Dropping is inexpressible: collection is a mapping pre-filled UNREPORTED per dispatched lane",
+    "description": "**Check:** Dropping is made inexpressible rather than forbidden: collection is a mapping keyed by dispatched lane key, initialised to `UNREPORTED` for every dispatched lane before dispatch and only ever overwritten, so a vector shorter than the dispatched roster cannot be constructed — and the property is held by behavioural fixtures, with no source-text scan for filter constructs standing in for it. (V · S1-R4)\n**Do:** Collect lane results into a mapping keyed by dispatched lane key, initialised to `UNREPORTED` for every dispatched lane before dispatch and only ever overwritten, so a short vector cannot be constructed. Hold the property with behavioural fixtures; add no source-text scan for filter constructs.\n**Evidence:** — (sha · test names · session/comment ids)",
+    "status": "Todo",
+    "url": "https://linear.app/duckburg/issue/KOD-583/kod-118-ac-6-dropping-is-inexpressible-collection-is-a-mapping-pre",
+    "parentId": "KOD-118",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ]
+  },
+  {
+    "id": "KOD-584",
+    "title": "KOD-118-AC-7 — Every stage report carries its denominator beside its numerator as fields, not as a convention",
+    "description": "**Check:** Every stage report carries its denominator beside its numerator as fields, not as a convention: the walk tick carries lanes dispatched and lanes reported, the delivery step carries lanes eligible and lanes whose terminal act completed, and a fixture with zero eligible produces a payload different from one with two eligible and none completed — so a zero reads as a measured zero rather than an omission. (V · defect 4, S1-R5)\n**Do:** Add denominator fields beside the numerators: lanes dispatched and lanes reported on the walk tick report; lanes eligible and lanes whose terminal act completed on the delivery step. Fixture: zero eligible versus two eligible with none completed yield different payloads.\n**Evidence:** — (sha · test names · session/comment ids)",
+    "status": "Todo",
+    "url": "https://linear.app/duckburg/issue/KOD-584/kod-118-ac-7-every-stage-report-carries-its-denominator-beside-its",
+    "parentId": "KOD-118",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ]
+  },
+  {
+    "id": "KOD-585",
+    "title": "KOD-118-AC-8 — Claims about a ref, tree or working directory are read from the remote, not a local checkout",
+    "description": "**Check:** A report's claim about its own environment obeys the same evidence rule as its claims about lanes: any claim about a ref, a tree or a working directory is taken from the remote through the git port's remote-branch-sha reader, and a fixture with a deliberately stale local checkout does not change what the report says. (V · second finding, S1-R6)\n**Do:** Route every ref, tree and working-directory claim a report makes through the git port's remote-branch-sha reader rather than the local filesystem. Fixture: a deliberately stale local checkout leaves the report's text unchanged.\n**Evidence:** — (sha · test names · session/comment ids)",
+    "status": "Todo",
+    "url": "https://linear.app/duckburg/issue/KOD-585/kod-118-ac-8-claims-about-a-ref-tree-or-working-directory-are-read",
+    "parentId": "KOD-118",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ]
+  },
+  {
+    "id": "KOD-586",
+    "title": "KOD-118-AC-9 — Ownership stays single: the run-shape alarm is not defined in this lane",
+    "description": "**Check:** Ownership stays single: the run-shape alarm comparing dispatched-roster size against outcome-vector size is not defined here, and this lane's code carries no second alarm arithmetic for it. (gen · S1-R1)\n**Do:** Leave the run-shape alarm comparing dispatched-roster size against outcome-vector size to <issue id=\"1dd459b2-5b14-42d6-8e41-25436b145c66\" href=\"https://linear.app/duckburg/issue/KOD-103/v03-l8-run-supervisor-run-shape-alarms-computed-from-tracker-state\">KOD-103</issue>, which owns it. Ship no second alarm arithmetic for it in this lane's code.\n**Evidence:** — (sha · test names · session/comment ids)",
+    "status": "Todo",
+    "url": "https://linear.app/duckburg/issue/KOD-586/kod-118-ac-9-ownership-stays-single-the-run-shape-alarm-is-not-defined",
+    "parentId": "KOD-118",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ]
+  },
+  {
+    "id": "KOD-581",
+    "title": "KOD-118-AC-4 — UNREPORTED is an alarm, never a terminal: no scope convergence while any entry holds it",
+    "description": "**Check:** `UNREPORTED` is an alarm and never a terminal: no scope-level convergence is reachable while any entry holds it, whatever the other lanes did. (gen · S1-R2, \"The change\")\n**Do:** Make scope-level convergence a positive claim over every entry in the outcome vector: the terminal cannot report converged while any lane report holds `UNREPORTED`, regardless of what the other lanes did.\n**Evidence:** — (sha · test names · session/comment ids)",
+    "status": "Todo",
+    "url": "https://linear.app/duckburg/issue/KOD-581/kod-118-ac-4-unreported-is-an-alarm-never-a-terminal-no-scope",
+    "parentId": "KOD-118",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ]
+  },
+  {
+    "id": "KOD-578",
+    "title": "KOD-118-AC-1 — Lane report vocabulary and frozen lane-report model live in the scope-terminal type module",
+    "description": "**Check:** The lane report vocabulary is `CONVERGED`, `IN_GAP`, `HALTED`, `UNREPORTED`, with a frozen lane-report model carrying lane key, issue, state and optional detail, both in the scope-terminal type module the stopping-rule and residual types already occupy — no second module for them; the members are asserted by name with their exact string values. (gen · S1-R2)\n**Do:** Add `LaneReportState(StrEnum){CONVERGED, IN_GAP, HALTED, UNREPORTED}` and a frozen `LaneReport` `CamelCaseModel` (`lane_key`, `issue_id`, `state`, `detail: str | None`) to the scope-terminal type module that already holds the stopping-rule and residual types. Assert every member by name with its exact string value.\n**Evidence:** — (sha · test names · session/comment ids)",
+    "status": "Done",
+    "url": "https://linear.app/duckburg/issue/KOD-578/kod-118-ac-1-lane-report-vocabulary-and-frozen-lane-report-model-live",
+    "parentId": "KOD-118",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ]
+  }
+]

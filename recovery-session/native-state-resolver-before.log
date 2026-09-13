@@ -1,0 +1,133 @@
+FFFF                                                                     [100%]
+=================================== FAILURES ===================================
+________ test_initial_state_requires_actual_nonblank_native_id[missing] ________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10c5d0f20>
+damage = 'missing'
+
+    @pytest.mark.parametrize("damage", ["missing", "empty", "blank"])
+    async def test_initial_state_requires_actual_nonblank_native_id(monkeypatch, damage):
+        board = _Board()
+        tracker = board.tracker()
+        original = board.call_tool
+    
+        async def damaged(*, name, arguments):
+            result = await original(name=name, arguments=arguments)
+            if name == "list_issue_statuses":
+                result = [dict(row) for row in result]
+                for row in result:
+                    if row["type"] == "unstarted":
+                        if damage == "missing":
+                            del row["id"]
+                        else:
+                            row["id"] = "" if damage == "empty" else " \n"
+            return result
+    
+        monkeypatch.setattr(board, "call_tool", damaged)
+        async with RunSurfaceLease(
+            tracker=tracker, job_id=JOB, surfaces=frozenset({surface()}), lease_seconds=300
+        ):
+>           with pytest.raises(TrackerProtocolError, match="invalid initial state"):
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           Failed: DID NOT RAISE <class 'kodezart.core.errors.TrackerProtocolError'>
+
+tests/tracker/test_criterion_creation.py:245: Failed
+_________ test_initial_state_requires_actual_nonblank_native_id[empty] _________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10c5d2090>
+damage = 'empty'
+
+    @pytest.mark.parametrize("damage", ["missing", "empty", "blank"])
+    async def test_initial_state_requires_actual_nonblank_native_id(monkeypatch, damage):
+        board = _Board()
+        tracker = board.tracker()
+        original = board.call_tool
+    
+        async def damaged(*, name, arguments):
+            result = await original(name=name, arguments=arguments)
+            if name == "list_issue_statuses":
+                result = [dict(row) for row in result]
+                for row in result:
+                    if row["type"] == "unstarted":
+                        if damage == "missing":
+                            del row["id"]
+                        else:
+                            row["id"] = "" if damage == "empty" else " \n"
+            return result
+    
+        monkeypatch.setattr(board, "call_tool", damaged)
+        async with RunSurfaceLease(
+            tracker=tracker, job_id=JOB, surfaces=frozenset({surface()}), lease_seconds=300
+        ):
+>           with pytest.raises(TrackerProtocolError, match="invalid initial state"):
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           Failed: DID NOT RAISE <class 'kodezart.core.errors.TrackerProtocolError'>
+
+tests/tracker/test_criterion_creation.py:245: Failed
+_________ test_initial_state_requires_actual_nonblank_native_id[blank] _________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10c5d3740>
+damage = 'blank'
+
+    @pytest.mark.parametrize("damage", ["missing", "empty", "blank"])
+    async def test_initial_state_requires_actual_nonblank_native_id(monkeypatch, damage):
+        board = _Board()
+        tracker = board.tracker()
+        original = board.call_tool
+    
+        async def damaged(*, name, arguments):
+            result = await original(name=name, arguments=arguments)
+            if name == "list_issue_statuses":
+                result = [dict(row) for row in result]
+                for row in result:
+                    if row["type"] == "unstarted":
+                        if damage == "missing":
+                            del row["id"]
+                        else:
+                            row["id"] = "" if damage == "empty" else " \n"
+            return result
+    
+        monkeypatch.setattr(board, "call_tool", damaged)
+        async with RunSurfaceLease(
+            tracker=tracker, job_id=JOB, surfaces=frozenset({surface()}), lease_seconds=300
+        ):
+>           with pytest.raises(TrackerProtocolError, match="invalid initial state"):
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           Failed: DID NOT RAISE <class 'kodezart.core.errors.TrackerProtocolError'>
+
+tests/tracker/test_criterion_creation.py:245: Failed
+_________ test_initial_state_uses_the_selected_team_id_not_shared_name _________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10c658890>
+
+    async def test_initial_state_uses_the_selected_team_id_not_shared_name(monkeypatch):
+        board = _Board()
+        tracker = board.tracker()
+        original = board.call_tool
+        selected = []
+    
+        async def observed(*, name, arguments):
+            result = await original(name=name, arguments=arguments)
+            if name == "list_issue_statuses":
+                selected.append(arguments["team"])
+            return result
+    
+        monkeypatch.setattr(board, "call_tool", observed)
+        async with RunSurfaceLease(
+            tracker=tracker, job_id=JOB, surfaces=frozenset({surface()}), lease_seconds=300
+        ):
+            child = await create(tracker)
+        assert selected == ["fixture-team"]
+>       assert saves(board)[0]["state"] == "fixture-team-Todo-id"
+E       AssertionError: assert 'Todo' == 'fixture-team-Todo-id'
+E         
+E         - fixture-team-Todo-id
+E         + Todo
+
+tests/tracker/test_criterion_creation.py:268: AssertionError
+=========================== short test summary info ============================
+FAILED tests/tracker/test_criterion_creation.py::test_initial_state_requires_actual_nonblank_native_id[missing]
+FAILED tests/tracker/test_criterion_creation.py::test_initial_state_requires_actual_nonblank_native_id[empty]
+FAILED tests/tracker/test_criterion_creation.py::test_initial_state_requires_actual_nonblank_native_id[blank]
+FAILED tests/tracker/test_criterion_creation.py::test_initial_state_uses_the_selected_team_id_not_shared_name
+4 failed, 16 deselected in 0.51s

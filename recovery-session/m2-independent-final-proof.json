@@ -1,0 +1,36 @@
+{
+  "reviewer": "/root/native_final_review",
+  "verdict": "accept corrected extraction only",
+  "original_candidate": "daae8df4c4e09499f0401c9406251ec88af9a8dd",
+  "original_tree": "a0881f14bbf76515233bb94a9f2bded8a5fe3c14",
+  "corrected_candidate": "a15b33484bc0f88975c910c1706edf20805d98f8",
+  "corrected_tree": "c756178d9dc8cb4fd80c9b0eaa6b69343c51590b",
+  "parent": "73cc5def12a2daa4e0ba319660db76cdad781882",
+  "donor": "36083f83f42c03240ebb5861fe284da2c9f04180",
+  "source_authorship": false,
+  "original_probe_result": "1 failed, 1 passed in 16.08s",
+  "original_selected_result": "161 passed in 60.16s",
+  "corrected_selected_result": "44 passed in 7.00s",
+  "original_oracles_unchanged": true,
+  "files": {
+    "test_m2_criterion_retry_independent.py": "10a31bd94dafc20a8b3ff45cacc5256c25df0e8ac55668be0b0e40ea40cedbe5",
+    "m2_prompt_contract_diagnostic.py": "6a1a9932c4bd1a5cc95246678a2ab2ed9bfdf15f31478a63ae09c07b0702f395",
+    "m2_independent_provenance.py": "d3425ca3caeb6791a5450c3732669d5b684ce5c9ec5914e7638216d29a34466e",
+    "m2-independent-criterion-retry-daae.log": "422bb72f757885ffe6234fc07251eabaa0f96f8599f43eb5fd605869f42e03b3",
+    "m2-independent-selected-daae.log": "a0017eb2847d073dfbd35a7a0f7255d8b2a5c2c34c558207e2a7ae7aef1b964e",
+    "m2-independent-prompt-contract-daae.log": "78398229b9b9d0b2d8e6f5c40ca1c9dd7f68980a78b5a52abf655728ce83a22e",
+    "m2-independent-correction-a15.log": "8fc9ca4e57c9b1f2997d66eed53039dc81234e2932ce751292bd0d2b0b0a8d80",
+    "m2-independent-prompt-contract-a15.log": "8ff72e9a0c7c14bf8ced56384ec9ed291bfe2636b122e589c3df1ce95cddddcb",
+    "m2-independent-provenance-daae.json": "738b82c62ff86026089100333514e29b1bc7fae01df918adcccbfdaa15d02b92",
+    "m2-independent-provenance-a15.json": "1913e7b86d497f4f453b1ff0ac4e0d75621044f738cdfa93d416957f29c6c401",
+    "m2-independent-fixture-proof-4ecd.json": "d7176d1a1ff0cd7dc09d127c3bc2e07e2848d3d9328a8863d67770730361f20b"
+  },
+  "review_worktrees": {
+    "/private/tmp/kodezart-v03-m2-organize-independent-daae": "",
+    "/private/tmp/kodezart-v03-m2-organize-independent-a15": ""
+  },
+  "acceptance_comment": "https://linear.app/duckburg/issue/KOD-74#comment-d5557112-901c-486f-bfbe-b483d142d91a",
+  "findings_comment": "https://linear.app/duckburg/issue/KOD-74#comment-cc8a848c-74cc-48d6-b4aa-8da4f46cb39f",
+  "accepted_fixture_follow_on": "4ecd7c72d155fb9acedc832c32ee016db7ef6749",
+  "fixture_tree": "27e691f7316bd4be0bd4fcddaa248a4d4d74bac5"
+}

@@ -1,0 +1,2 @@
+src/kodezart/services/audit_escalation.py:77: error: "WritableSurface" has no attribute "model_dump_json"  [attr-defined]
+Found 1 error in 1 file (checked 7 source files)

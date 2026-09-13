@@ -1,0 +1,105 @@
+.................F.                                                      [100%]
+=================================== FAILURES ===================================
+_ test_fresh_engine_paused_resume_requires_current_native_obligations[outage] __
+
+change = 'outage'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a595520>
+
+    @pytest.mark.parametrize("change", ["check", "membership", "owed-state", "outage"])
+    async def test_fresh_engine_paused_resume_requires_current_native_obligations(
+        change, monkeypatch
+    ):
+        harness = runtime()
+        await pause_before_delivery(harness)
+        port = harness.port
+        if change == "check":
+            port.issues["A/check"] = port.issues["A/check"].model_copy(
+                update={"body": "**Check:** changed paused Check\n**Evidence:** —"}
+            )
+        elif change == "membership":
+            port.issues["A/new"] = make_tracker_issue(
+                "A/new", parent_key="A", issue_labels=frozenset({"criterion"}),
+                body="**Check:** new owed Check\n**Evidence:** —",
+            )
+        elif change == "owed-state":
+            # Another obligation keeps the lane eligible, while the judged roster changes.
+            port.issues["A/check"] = port.issues["A/check"].model_copy(
+                update={"state_kind": WorkflowStateKind.COMPLETED}
+            )
+            port.issues["A/new"] = make_tracker_issue(
+                "A/new", parent_key="A", issue_labels=frozenset({"criterion"}),
+                body="**Check:** remaining owed Check\n**Evidence:** —",
+            )
+        fresh = runtime(port=port, saver=harness.saver)
+        if change == "outage":
+            original = port.scope_issues
+            async def current_unavailable(*, ref):
+                if ref.kind is ScopeKind.ISSUE:
+                    raise TrackerUnavailableError("current criterion authority unavailable")
+                return await original(ref=ref)
+            # The actual TrackerCriteria reader must translate the neutral port error.
+            monkeypatch.setattr(port, "scope_issues", current_unavailable)
+        with pytest.raises(FireSpecEntryError):
+>           _ = [event async for event in drive(fresh)]
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/integration/test_scope_runtime.py:491: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/composition/engine.py:129: in run
+    async for event in arm.run(
+src/kodezart/services/scope_runtime.py:127: in run
+    ready = await read_scope_ready(ref=scope, tracker=self._tracker)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/scope_walker.py:48: in read_scope_ready
+    plan = await read_scope_plan(ref=ref, tracker=tracker)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/services/scope_planning.py:31: in read_scope_plan
+    subtree = await read_member_subtrees(tracker=tracker, scope=ref, members=members)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/services/scope_membership.py:52: in read_member_subtrees
+    rooted = await read_scope_members(
+src/kodezart/services/scope_membership.py:16: in read_scope_members
+    scoped = (await resolve_scope(ref=scope, tracker=tracker)).issues
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/services/scope_resolution.py:14: in resolve_scope
+    issues = await tracker.scope_issues(ref=ref)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    async def current_unavailable(*, ref):
+        if ref.kind is ScopeKind.ISSUE:
+>           raise TrackerUnavailableError("current criterion authority unavailable")
+E           kodezart.core.errors.TrackerUnavailableError: current criterion authority unavailable
+
+tests/integration/test_scope_runtime.py:486: TrackerUnavailableError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 15:52:42 [info     ] forge_capabilities_selected    forge_less_origin=False repo_url=file:///scope-repository.git
+2026-09-12 15:52:42 [debug    ] no_forge_delivery_probe_answered issue_key=A repo_url=file:///scope-repository.git
+2026-09-12 15:52:42 [debug    ] no_forge_delivery_probe_answered issue_key=A repo_url=file:///scope-repository.git
+2026-09-12 15:52:42 [info     ] repo_visibility_resolved       repo_url=file:///scope-repository.git visibility=unknown
+2026-09-12 15:52:42 [info     ] scope_base_resolved            base_branch=trunk base_role=None input_count=0
+2026-09-12 15:52:42 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 15:52:42 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=2 events={'system': 1, 'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 15:52:42 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=branch_name
+2026-09-12 15:52:42 [info     ] fire_criteria_read             named=1 owed=['A/check'] read_at_version=2026-01-01T00:00:00+00:00 subject=A
+2026-09-12 15:52:42 [info     ] fire_criteria_read             named=1 owed=['A/check'] read_at_version=2026-01-01T00:00:00+00:00 subject=A
+2026-09-12 15:52:42 [info     ] fire_criteria_read             named=1 owed=['A/check'] read_at_version=2026-01-01T00:00:00+00:00 subject=A
+2026-09-12 15:52:42 [info     ] fire_criteria_read             named=1 owed=['A/check'] read_at_version=2026-01-01T00:00:00+00:00 subject=A
+2026-09-12 15:52:42 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 15:52:42 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=2 events={'system': 1, 'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=ralph_evaluator stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 15:52:42 [info     ] fire_criteria_read             named=1 owed=['A/check'] read_at_version=2026-01-01T00:00:00+00:00 subject=A
+2026-09-12 15:52:42 [info     ] fire_criteria_read             named=1 owed=['A/check'] read_at_version=2026-01-01T00:00:00+00:00 subject=A
+2026-09-12 15:52:42 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 15:52:42 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=2 events={'system': 1, 'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=post_merge_review stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 15:52:42 [info     ] fire_criteria_read             named=1 owed=['A/check'] read_at_version=2026-01-01T00:00:00+00:00 subject=A
+2026-09-12 15:52:43 [info     ] forge_capabilities_selected    forge_less_origin=False repo_url=file:///scope-repository.git
+------------------------------ Captured log call -------------------------------
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.fire_spec.TrackerSpec from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.fire_spec', 'TrackerSpec')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.criteria.TrackerCriterionSet from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.criteria', 'TrackerCriterionSet')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.gating.RepoVisibility from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.gating', 'RepoVisibility')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.trajectory.LoopTrajectory from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.trajectory', 'LoopTrajectory')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.native_delivery.PendingLaneDelivery from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.native_delivery', 'PendingLaneDelivery')]
+=========================== short test summary info ============================
+FAILED tests/integration/test_scope_runtime.py::test_fresh_engine_paused_resume_requires_current_native_obligations[outage]
+1 failed, 18 passed in 12.79s

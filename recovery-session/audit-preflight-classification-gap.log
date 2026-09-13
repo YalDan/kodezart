@@ -1,0 +1,2 @@
+preflight accepted: True
+actual configured capability: OperationMemberAbsentError operation config declares no issue_labels['criterion']; scope plan barriers cannot be read

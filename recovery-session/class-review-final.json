@@ -1,0 +1,48 @@
+{
+  "head": "b714b984112efd8471f73985300864d66a3eb814",
+  "source_verdict": "approve for root integration",
+  "runtime_gate": "unresolved: reproduced queue settlement timeout",
+  "tracked_changes": [],
+  "commits_created": [],
+  "model_tier": "Astra/high requested; effective configuration unverified",
+  "tests": [
+    {
+      "selection": "inherited consumers",
+      "failed": 2,
+      "passed": 233,
+      "seconds": 1291.0,
+      "log": "/private/tmp/kodezart-class-recovery-consumers.log"
+    },
+    {
+      "selection": "fresh exact inherited two",
+      "failed": 0,
+      "passed": 2,
+      "seconds": 37.63,
+      "log": "class-review-reproduce.log"
+    },
+    {
+      "selection": "fresh focused",
+      "failed": 0,
+      "passed": 318,
+      "seconds": 255.77,
+      "log": "class-review-focused.log"
+    },
+    {
+      "selection": "fresh expanded consumers",
+      "failed": 3,
+      "passed": 270,
+      "seconds": 780.24,
+      "log": "class-review-consumers.log"
+    },
+    {
+      "selection": "fresh exact three",
+      "failed": 1,
+      "passed": 2,
+      "seconds": 49.53,
+      "log": "class-review-reproduce-three.log"
+    }
+  ],
+  "static": "mypy288,ruff lint,format663,diffcheck PASS",
+  "mutation": "4/4 detected in-memory AC-2 failure exemption",
+  "linear_comment": "65b7a335-c2de-4067-bddb-3e3d43956dd4"
+}

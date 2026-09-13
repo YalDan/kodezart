@@ -1,0 +1,37 @@
+# Native AMENDED archive correction — independent review
+
+Candidate `62a86add7740352da314e7788b7ad1423457f7ab`, tree `5061c8a2160e41a027751f0dc2a86481c651dd65`, parent `4c6322fb10615257ad729357258e55f8b788cd93`. Isolated detached review tree `/private/tmp/kodezart-v03-native-amended-corrective-independent`; source and checked-in tests remain unchanged. Original review tree and red evidence preserved. Inherited Astra ultra requested; effective metadata unverified. No delegation.
+
+Verdict: **ACCEPT the bounded archive-authority correction**. All five originally red variants now pass, and the unchanged positives and affected real integration tests pass. This does not complete KOD97/L9 or the separately reported parent checkpoint-resume requirement. The two-source-file correction addresses the independently reproduced loss of current historical authority. AmendmentWriteBack registers the exact canonical-HOLDS TrackerArtifact before either an applied amendment or recorded refusal can progress. The existing writer guard retains every such artifact in a typed tuple and rereads each addressed native artifact at existing current-source barriers, including the barrier after actual commit receipt and before push. This uses the existing reader and exact artifact equality, not another semantic judge, ownership algorithm, event authority or persistence ledger.
+
+The five original failing variants were four author/applied-judgment mutation/deletion cases and deletion of the first archive while the second claim is judged. The seven original positives include unchanged archive paths, two-claim success, three hostile structured author output refusals and a valid output control. Original hashes remain d4f50dc256103891e2f38921e614cbcf1df3e43ffbc95ec9e2b6fc2b1a9b0e67 and b2965db4c447c982dba59a9adcccd77dc7987353464d785344e8096eb03855a7. The committed archive test received formatting only: independent Python3.12 AST comparison is identical. Source/hash evidence is in native-amended-correction-source-62a86ad.json.
+
+The independent correction command executes those exact external copies plus the four inspected author publication controls:
+
+`PYTHONPATH=/private/tmp/kodezart-v03-native-amended-corrective-independent uv run pytest -q -c pyproject.toml /private/tmp/kodezart-recovery-session/native-amended-correction-probes/test_native_amendment_archive_independent.py /private/tmp/kodezart-recovery-session/native-amended-correction-probes/test_native_amendment_payload_independent.py tests/services/test_native_amendment_archive_publication.py`
+
+Result: **16 passed217.13s** at the frozen SHA; source and checked-in test bytes unchanged throughout. Log: native-amended-correction-independent-62a86ad.log. The four publication tests call the real Git commit before injecting receipt-boundary deletion, assert no remote branch, preserve the actual local receipt/workspace on refusal, and include both unchanged success controls. At the commit-message boundary they assert no commit; at the commit-receipt boundary they assert the retained actual commit. Owners, admission, current-source guard and canonical verifier remain real components with controlled external tracker/agent data.
+
+Affected command: `uv run pytest -q tests/services/test_applied_native_amendments.py tests/services/test_amendment_interrupted_writes.py tests/chains/test_amendment_review_reentry.py tests/chains/test_native_amendment_adoption.py tests/chains/test_native_amendment_runtime.py`. Result: **32 passed426.72s**, completing **48 distinct passing controls** across the two correction commands. Log: native-amended-correction-affected-62a86ad.log. This retains actual criterion/ruling application, bounded repair, uneconomic escalation, typed report adoption, real composed precommit routes, UPHELD/reentry behavior and interruption/fresh-entry controls.
+
+Static command: `uv run mypy src/kodezart/services/amendment_writeback.py src/kodezart/services/native_amendments.py`; two source files passed. Ruff check and format on all four changed files passed. Logs native-amended-correction-static-62a86ad.log and native-amended-correction-format-62a86ad.log.
+
+Eight bounded lenses:
+
+- SOLID: the existing current-source guard owns the additional historical observation; write-back still owns canonical verification.
+- DRY: reuse of read_tracker_artifact and one guard avoids duplicated parsing, judgment or source policy.
+- Hexagonal architecture: the local orchestration protocol carries TrackerArtifact while the native tracker remains behind TrackerPort; real integration probes control external boundaries.
+- KISS: a tuple of actual verified artifacts and comparisons at existing barriers; no persisted state, replay ledger or extra verification loop.
+- Typed agent calls instead of semantic heuristics: author roles and claim subjects stay closed; archive identity/body comes from typed canonical results rather than prose or guessed references.
+- Official framework practices (version matched): existing Python3.12/Pydantic2/LangGraph/asyncio integration is exercised; correction adds no framework API or scheduling mechanism. Async cancellation remains outside the new typed read-refusal catch list.
+- Type safety: improvement in current authority carriage through typed TrackerArtifact; the local AmendmentWriteAuthority protocol explicitly requires observation. No Any or new optional invalid state.
+- Repository hygiene: immutable donor/review source, independent original probe hashes, preserved before failures and exact source/AST proof; no canonical changes, extra PR, push or issue-state changes.
+
+Limits: sequential current reads do not establish backend compare-and-swap or fencing against principal edits after the last observed snapshot. A principal who already damaged history may cause refusal after an earlier authorized edit; the correction does not fabricate rollback or repaired history. A successful local commit followed by refusal is retained and not pushed by these controls. Full release completeness, cross-job/checkpoint provenance and every broader L4/L9 contract remain outside this bounded acceptance. Root owns final integration and whole composed gate; no full-suite result is claimed here.
+
+
+Final review source remained pristine at62a86add after all commands; both source SHA256 hashes equal their frozen git blobs. Installed runtime: Python3.12.13, Pydantic2.12.5, LangGraph1.0.10, pytest9.0.2, pytest-asyncio1.3.0 (native-amended-correction-runtime-62a86ad.json). Latest KOD97 discussion reread returned32 comments with hasNextPage=false; author checkpoint finding d5a96897 is explicitly separate and not promoted to independent restart acceptance.
+
+Integration: root may apply only62a86add after the exact4c6322-equivalent native owned chain and already accepted strict-classification prerequisites. Preserve original baseline/red probes and the author formatting-only test provenance; do not reapply prerequisite commits wholesale. Run the actual integrated gate, keep KOD814/KOD96 and parent/inner saved-state restart gaps visible, and record this as acceptance of the archive correction rather than whole-lane completion. Reviewer made no source changes or commits.
+
+Own KOD97 superseding evidence: https://linear.app/duckburg/issue/KOD-97#comment-42c107f0-64b2-46ee-a9d7-72a57d0983e6 . Earlier request-changes evidence remains intact at75ece4b7; no issue state changed.

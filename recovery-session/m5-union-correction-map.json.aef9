@@ -1,0 +1,979 @@
+{
+  "base": "da39c439898aec1233aa8b6157b35e961df1e453",
+  "candidate": "aef9e78c34dca6897ddfcbfb439246edf76dd364",
+  "old_pr114_current": "c17f5d71ce95a94d0fd63f74ee6aa467cce01dad",
+  "scope": "Bounded F02 complete union participant correction; no native application/terminal integration claim.",
+  "unmodified_boundaries": [
+    "src/kodezart/chains/lane_delivery.py",
+    "src/kodezart/chains/native_delivery.py",
+    "src/kodezart/core/protocols.py",
+    "src/kodezart/core/config.py",
+    "src/kodezart/chains/scope_walker.py",
+    "src/kodezart/services/scope_planning.py",
+    "src/kodezart/domain/topology.py",
+    "src/kodezart/services/union_tick.py",
+    "src/kodezart/services/union_composition.py",
+    "src/kodezart/types/domain/union.py",
+    "src/kodezart/types/domain/scope_terminal.py"
+  ],
+  "constructor_unchanged_ast": true,
+  "deliverable_ref_refusal_unchanged_ast": true,
+  "new_source_type_escape_hatches": false,
+  "files": [
+    {
+      "path": "src/kodezart/chains/delivery_coordinator.py",
+      "blob": "6ec8d8a0b6cf5d3cd15fb24d62fe7f725a327112",
+      "patch": "diff --git a/src/kodezart/chains/delivery_coordinator.py b/src/kodezart/chains/delivery_coordinator.py\nindex de16252..6ec8d8a 100644\n--- a/src/kodezart/chains/delivery_coordinator.py\n+++ b/src/kodezart/chains/delivery_coordinator.py\n@@ -1,20 +1,18 @@\n-\"\"\"Compose a scope's ready lanes, in the order the planner ranked them.\n+\"\"\"Observe a scope's retained lane heads independently of dispatch readiness.\n \n-This is the union step's production constructor: it builds the scratch\n-composition and its tick from configuration, reads the planner's ranked\n-ready set, and hands that ranking to the composition unchanged.\n-\n-It holds the tracker, the git port and the check-chain runner, and no\n-forge port of any kind. Composing a scope is a measurement: nothing here\n-can push, open, merge or read the state of a pull request, so the order a\n-scope composes in can only be the planner's, never the order the lanes'\n-pull requests happen to have been opened in.\n+Membership comes from the complete scope plan. The existing topology policy\n+orders those participants; approval, criterion gaps and live blockers decide\n+future dispatch, not whether a retained branch belongs in this measurement.\n+The consumer holds tracker, Git and check-runner ports without forge or\n+lane-delivery authority. Composition changes only a disposable scratch tree.\n \"\"\"\n \n-from kodezart.chains.scope_walker import read_scope_ready\n from kodezart.core.config import AppConfig\n from kodezart.core.protocols import CheckChainRunner, GitService, TrackerPort\n from kodezart.domain.errors import UnionHeadReadError\n+from kodezart.domain.issue_tree import RECORD_KINDS\n+from kodezart.domain.topology import plan_topology\n+from kodezart.services.scope_planning import read_scope_plan\n from kodezart.services.union_composition import UnionComposition\n from kodezart.services.union_tick import UnionTick\n from kodezart.types.domain.branch import WorkRefRole\n@@ -23,8 +21,8 @@ from kodezart.types.domain.union import UnionCompositionResult\n from kodezart.types.domain.union_tick import UnionLaneBranch, UnionTickContext\n \n \n-class DeliveryCoordinator:\n-    \"\"\"One scope's union observations, taken over the planner's own ranking.\n+class ScopeUnionCoordinator:\n+    \"\"\"One scope's union observations, separate from individual lane delivery.\n \n     The scope is named once, by the union context this consumer was\n     configured with; the kind of container that key addresses is the only\n@@ -58,24 +56,47 @@ class DeliveryCoordinator:\n         )\n \n     async def verify(self) -> UnionCompositionResult:\n-        \"\"\"Observe whether the planner's current ready lanes compose.\n+        \"\"\"Return an observation only while its participant roster remains current.\"\"\"\n+        roster = await self._roster()\n+        result = await self._tick.verify(lane_branches=roster)\n+        if await self._roster() != roster:\n+            raise UnionHeadReadError(\n+                scope_key=self._scope.key,\n+                branch=None,\n+                reason=\"the scope union roster changed during verification\",\n+            )\n+        return result\n+\n+    async def _roster(self) -> tuple[UnionLaneBranch, ...]:\n+        \"\"\"Rank complete ordinary membership without dispatch eligibility.\n \n-        The roster is the ready set in the planner's own order. Nothing\n-        here sorts, filters or reverses it, so a lane's position in the\n-        composition is the position the planner's ranking gave it.\n+        A retained lane still participates when it has no current work or\n+        is blocked from another dispatch. Structural criterion and record\n+        issues are facts for planning, not independent delivery branches.\n         \"\"\"\n-        selection = await read_scope_ready(ref=self._scope, tracker=self._tracker)\n-        if not selection.ready:\n+        plan = await read_scope_plan(ref=self._scope, tracker=self._tracker)\n+        participants = frozenset(\n+            issue.issue_key\n+            for issue in plan.scope.issues\n+            if \"criterion\" not in issue.issue_labels\n+            and not issue.issue_labels & RECORD_KINDS\n+        )\n+        if not participants:\n             raise UnionHeadReadError(\n                 scope_key=self._scope.key,\n                 branch=None,\n-                reason=\"the planner ranked no ready lane to compose\",\n+                reason=\"the scope contains no participating lane to compose\",\n             )\n+        ranking = plan_topology(\n+            issues=(*plan.scope.issues, *plan.dependencies),\n+            candidate_keys=participants,\n+            blocking_issue_keys=frozenset(),\n+        )\n         roster = [\n             await self._lane_branch(issue_key=lane.issue.issue_key)\n-            for lane in selection.ready\n+            for lane in ranking.ready\n         ]\n-        return await self._tick.verify(lane_branches=roster)\n+        return tuple(roster)\n \n     async def _lane_branch(self, *, issue_key: str) -> UnionLaneBranch:\n         \"\"\"The one deliverable ref the lane recorded, or a typed refusal.\"\"\"\n",
+      "units": [
+        {
+          "symbol": "ScopeUnionCoordinator.__init__",
+          "start": 32,
+          "end": 56,
+          "source": "    def __init__(\n        self,\n        *,\n        scope_kind: ScopeKind,\n        tracker: TrackerPort,\n        git: GitService,\n        runner: CheckChainRunner,\n        context: UnionTickContext,\n        config: AppConfig,\n        committer_name: str,\n        committer_email: str,\n    ) -> None:\n        self._tracker = tracker\n        self._scope = ScopeRef(kind=scope_kind, key=context.scope_key)\n        self._tick = UnionTick(\n            composition=UnionComposition(\n                git=git,\n                runner=runner,\n                author_name=committer_name,\n                author_email=committer_email,\n            ),\n            git=git,\n            context=context,\n            config=config,\n        )\n",
+          "provenance": []
+        },
+        {
+          "symbol": "ScopeUnionCoordinator.verify",
+          "start": 58,
+          "end": 68,
+          "source": "    async def verify(self) -> UnionCompositionResult:\n        \"\"\"Return an observation only while its participant roster remains current.\"\"\"\n        roster = await self._roster()\n        result = await self._tick.verify(lane_branches=roster)\n        if await self._roster() != roster:\n            raise UnionHeadReadError(\n                scope_key=self._scope.key,\n                branch=None,\n                reason=\"the scope union roster changed during verification\",\n            )\n        return result\n",
+          "provenance": []
+        },
+        {
+          "symbol": "ScopeUnionCoordinator._roster",
+          "start": 70,
+          "end": 99,
+          "source": "    async def _roster(self) -> tuple[UnionLaneBranch, ...]:\n        \"\"\"Rank complete ordinary membership without dispatch eligibility.\n\n        A retained lane still participates when it has no current work or\n        is blocked from another dispatch. Structural criterion and record\n        issues are facts for planning, not independent delivery branches.\n        \"\"\"\n        plan = await read_scope_plan(ref=self._scope, tracker=self._tracker)\n        participants = frozenset(\n            issue.issue_key\n            for issue in plan.scope.issues\n            if \"criterion\" not in issue.issue_labels\n            and not issue.issue_labels & RECORD_KINDS\n        )\n        if not participants:\n            raise UnionHeadReadError(\n                scope_key=self._scope.key,\n                branch=None,\n                reason=\"the scope contains no participating lane to compose\",\n            )\n        ranking = plan_topology(\n            issues=(*plan.scope.issues, *plan.dependencies),\n            candidate_keys=participants,\n            blocking_issue_keys=frozenset(),\n        )\n        roster = [\n            await self._lane_branch(issue_key=lane.issue.issue_key)\n            for lane in ranking.ready\n        ]\n        return tuple(roster)\n",
+          "provenance": []
+        },
+        {
+          "symbol": "ScopeUnionCoordinator._lane_branch",
+          "start": 101,
+          "end": 119,
+          "source": "    async def _lane_branch(self, *, issue_key: str) -> UnionLaneBranch:\n        \"\"\"The one deliverable ref the lane recorded, or a typed refusal.\"\"\"\n        deliverables = [\n            ref\n            for ref in await self._tracker.work_refs(issue_key=issue_key)\n            if ref.role is WorkRefRole.DELIVERABLE\n        ]\n        match deliverables:\n            case [ref]:\n                return UnionLaneBranch(lane_key=issue_key, branch=ref.branch)\n            case []:\n                reason = \"a ranked lane records no deliverable ref\"\n            case _:\n                reason = \"a ranked lane records more than one deliverable ref\"\n        raise UnionHeadReadError(\n            scope_key=self._scope.key,\n            branch=None,\n            reason=f\"{reason}: {issue_key}\",\n        )\n",
+          "provenance": []
+        }
+      ]
+    },
+    {
+      "path": "tests/chains/test_delivery_coordinator.py",
+      "blob": "26bc6dd02b7144d88973f8fcfe58e37adb44cd8b",
+      "patch": "diff --git a/tests/chains/test_delivery_coordinator.py b/tests/chains/test_delivery_coordinator.py\nindex 1d03c7a..26bc6dd 100644\n--- a/tests/chains/test_delivery_coordinator.py\n+++ b/tests/chains/test_delivery_coordinator.py\n@@ -7,13 +7,14 @@ production constructor, so an implementation that sorted the roster, or took\n the order the refs were recorded in, composes in the wrong order and fails.\n \"\"\"\n \n+import sys\n from datetime import UTC, datetime\n from pathlib import Path\n \n import pytest\n \n from kodezart.adapters.subprocess_check_chain import SubprocessCheckChainRunner\n-from kodezart.chains.delivery_coordinator import DeliveryCoordinator\n+from kodezart.chains.delivery_coordinator import ScopeUnionCoordinator\n from kodezart.chains.scope_walker import read_scope_ready\n from kodezart.core.config import AppConfig\n from kodezart.domain.errors import CheckChainExecutionError, UnionHeadReadError\n@@ -141,8 +142,8 @@ class Fixture:\n         self.context = context\n         self.tracker = scope.tracker()\n \n-    def coordinator(self, runner: object = None) -> DeliveryCoordinator:\n-        return DeliveryCoordinator(\n+    def coordinator(self, runner: object = None) -> ScopeUnionCoordinator:\n+        return ScopeUnionCoordinator(\n             scope_kind=PROJECT.kind,\n             tracker=self.tracker,\n             git=self.git,\n@@ -251,13 +252,147 @@ async def test_a_lane_with_two_recorded_deliverable_refs_refuses(delivery):\n     assert delivery.git.created == []\n \n \n-async def test_a_scope_the_planner_ranks_nothing_in_refuses_to_compose(delivery):\n+async def test_completed_lanes_with_retained_heads_are_checked_together(\n+    delivery, repository\n+):\n     delivery.scope.close_every_criterion()\n     delivery.tracker = delivery.scope.tracker()\n     assert (await read_scope_ready(ref=PROJECT, tracker=delivery.tracker)).ready == ()\n+    command = (\n+        f'{sys.executable} -c \"from pathlib import Path; '\n+        \"assert not (Path('a.txt').exists() and Path('z.txt').exists())\\\"\"\n+    )\n+    checks = pinned.entry(command)\n+    delivery.context = delivery.context.model_copy(\n+        update={\n+            \"repo\": delivery.context.repo.model_copy(update={\"checks\": checks.checks})\n+        }\n+    )\n+    author, base, heads = repository\n+    for head in heads:\n+        alone = await pinned.service(pinned.ObservedGit()).verify(\n+            scope_key=PROJECT.key,\n+            repo_path=str(author),\n+            repo=checks,\n+            base_sha=base,\n+            lane_heads=(head,),\n+        )\n+        assert alone.outcome is UnionOutcome.GREEN\n+        assert not Path(alone.scratch_path).exists()\n \n-    with pytest.raises(UnionHeadReadError) as raised:\n+    result = await delivery.coordinator().verify()\n+\n+    assert result.composition_order == (\"z\", \"a\")\n+    assert result.lane_heads == (\n+        delivery.scope.by_lane[\"z\"],\n+        delivery.scope.by_lane[\"a\"],\n+    )\n+    assert result.outcome is UnionOutcome.RED\n+    assert result.checks.failed_step_names == frozenset({\"gate\"})\n+    assert result.remediation.root_step_names == (\"gate\",)\n+    assert delivery.git.merged == [delivery.sha(\"z\"), delivery.sha(\"a\")]\n+    assert delivery.git.created == delivery.git.removed == [result.scratch_path]\n+    assert not Path(result.scratch_path).exists()\n+\n+\n+@pytest.mark.parametrize(\"completed\", OPENED_ORDER)\n+async def test_completed_and_unfinished_retained_lanes_each_participate_once(\n+    delivery, completed\n+):\n+    key = f\"{completed}-check\"\n+    delivery.tracker.issues[key] = delivery.tracker.issues[key].model_copy(\n+        update={\"state_name\": \"Done\", \"state_kind\": WorkflowStateKind.COMPLETED}\n+    )\n+    ready = await read_scope_ready(ref=PROJECT, tracker=delivery.tracker)\n+    assert tuple(lane.issue.issue_key for lane in ready.ready) == tuple(\n+        lane for lane in (\"z\", \"a\") if lane != completed\n+    )\n+\n+    result = await delivery.coordinator().verify()\n+\n+    assert result.composition_order == (\"z\", \"a\")\n+    assert result.outcome is UnionOutcome.GREEN\n+    assert delivery.git.merged == [delivery.sha(\"z\"), delivery.sha(\"a\")]\n+    assert delivery.git.created == delivery.git.removed == [result.scratch_path]\n+    assert not Path(result.scratch_path).exists()\n+\n+\n+@pytest.mark.parametrize(\"changed\", [\"membership\", \"reference\"])\n+async def test_roster_change_during_measurement_refuses_before_return(\n+    delivery, changed\n+):\n+    class MovingRosterRunner(SubprocessCheckChainRunner):\n+        async def run_chain(self, *, cwd, steps):\n+            result = await super().run_chain(cwd=cwd, steps=steps)\n+            if changed == \"membership\":\n+                delivery.tracker.scope_memberships[PROJECT] = (\"z\",)\n+            else:\n+                delivery.tracker.recorded_work_refs[\"z\"] = [\n+                    work_ref(\"z\", \"work/a\", delivery.sha(\"a\"))\n+                ]\n+            return result\n+\n+    runner = MovingRosterRunner(timeout=AppConfig().union_check_step_timeout_seconds)\n+    with pytest.raises(UnionHeadReadError, match=\"roster changed\"):\n+        await delivery.coordinator(runner).verify()\n+    assert delivery.git.created == delivery.git.removed\n+    assert all(not Path(path).exists() for path in delivery.git.created)\n+\n+\n+async def test_retained_unapproved_lanes_still_participate(delivery):\n+    delivery.tracker.scope_label_members.clear()\n+    assert (await read_scope_ready(ref=PROJECT, tracker=delivery.tracker)).ready == ()\n+    result = await delivery.coordinator().verify()\n+    assert result.composition_order == (\"z\", \"a\")\n+    assert result.outcome is UnionOutcome.GREEN\n+\n+\n+async def test_only_structural_artifacts_is_a_genuinely_empty_roster(delivery):\n+    delivery.tracker.scope_memberships[PROJECT] = (\"a-check\", \"z-check\")\n+    with pytest.raises(UnionHeadReadError, match=\"no participating lane\"):\n+        await delivery.coordinator().verify()\n+    assert delivery.git.created == []\n+\n+\n+async def test_cyclic_parentage_is_refused_before_any_union_work(delivery):\n+    from kodezart.domain.errors import ScopeReadError\n+\n+    for lane, parent in ((\"a\", \"z\"), (\"z\", \"a\")):\n+        delivery.tracker.issues[lane] = delivery.tracker.issues[lane].model_copy(\n+            update={\"parent_key\": parent}\n+        )\n+    with pytest.raises(ScopeReadError):\n+        await delivery.coordinator().verify()\n+    assert delivery.git.created == []\n+\n+\n+async def test_dependency_cycle_is_refused_before_any_union_work(delivery):\n+    from kodezart.domain.errors import ScopeCycleError\n+    from kodezart.types.domain.tracker import IssueRelation, IssueRelationKind\n+\n+    for lane, blocker in ((\"a\", \"z\"), (\"z\", \"a\")):\n+        delivery.tracker.issues[lane] = delivery.tracker.issues[lane].model_copy(\n+            update={\n+                \"relations\": (\n+                    IssueRelation(kind=IssueRelationKind.BLOCKED_BY, issue_key=blocker),\n+                )\n+            }\n+        )\n+    with pytest.raises(ScopeCycleError):\n         await delivery.coordinator().verify()\n+    assert delivery.git.created == []\n \n-    assert \"no ready lane\" in raised.value.reason\n+\n+async def test_missing_dependency_is_not_dropped_by_empty_blocking_predicate(delivery):\n+    from kodezart.types.domain.tracker import IssueRelation, IssueRelationKind\n+\n+    delivery.tracker.issues[\"a\"] = delivery.tracker.issues[\"a\"].model_copy(\n+        update={\n+            \"relations\": (\n+                IssueRelation(kind=IssueRelationKind.BLOCKED_BY, issue_key=\"absent\"),\n+            )\n+        }\n+    )\n+    with pytest.raises(KeyError, match=\"absent\"):\n+        await delivery.coordinator().verify()\n     assert delivery.git.created == []\n",
+      "units": [
+        {
+          "symbol": "PROJECT",
+          "start": 34,
+          "end": 34,
+          "source": "PROJECT = ScopeRef(kind=ScopeKind.PROJECT, key=\"project-one\")\n",
+          "provenance": [
+            {
+              "ref": "da39c439898aec1233aa8b6157b35e961df1e453",
+              "path": "tests/chains/test_delivery_coordinator.py",
+              "start": 33,
+              "end": 33,
+              "ast_same": true
+            },
+            {
+              "ref": "c17f5d71ce95a94d0fd63f74ee6aa467cce01dad",
+              "path": "tests/chains/test_delivery_coordinator.py",
+              "start": 47,
+              "end": 47,
+              "ast_same": true
+            }
+          ]
+        },
+        {
+          "symbol": "OPENED_ORDER",
+          "start": 37,
+          "end": 37,
+          "source": "OPENED_ORDER: tuple[str, ...] = (\"a\", \"z\")\n",
+          "provenance": [
+            {
+              "ref": "da39c439898aec1233aa8b6157b35e961df1e453",
+              "path": "tests/chains/test_delivery_coordinator.py",
+              "start": 36,
+              "end": 36,
+              "ast_same": true
+            },
+            {
+              "ref": "c17f5d71ce95a94d0fd63f74ee6aa467cce01dad",
+              "path": "tests/chains/test_delivery_coordinator.py",
+              "start": 50,
+              "end": 50,
+              "ast_same": false
+            }
+          ]
+        },
+        {
+          "symbol": "RANKING",
+          "start": 40,
+          "end": 43,
+          "source": "RANKING: dict[str, IssuePriority] = {\n    \"a\": IssuePriority.LOW,\n    \"z\": IssuePriority.URGENT,\n}\n",
+          "provenance": [
+            {
+              "ref": "da39c439898aec1233aa8b6157b35e961df1e453",
+              "path": "tests/chains/test_delivery_coordinator.py",
+              "start": 39,
+              "end": 42,
+              "ast_same": true
+            }
+          ]
+        },
+        {
+          "symbol": "repository",
+          "start": 45,
+          "end": 45,
+          "source": "repository = pinned.repository\n",
+          "provenance": [
+            {
+              "ref": "da39c439898aec1233aa8b6157b35e961df1e453",
+              "path": "tests/chains/test_delivery_coordinator.py",
+              "start": 44,
+              "end": 44,
+              "ast_same": true
+            }
+          ]
+        },
+        {
+          "symbol": "issue",
+          "start": 48,
+          "end": 66,
+          "source": "def issue(key: str, **changes: object) -> TrackerIssue:\n    return TrackerIssue.model_validate(\n        {\n            \"issue_key\": key,\n            \"title\": f\"Title for {key}\",\n            \"body\": f\"Body for {key}\",\n            \"priority\": IssuePriority.NONE,\n            \"state_name\": \"Todo\",\n            \"state_kind\": WorkflowStateKind.UNSTARTED,\n            \"queue_states\": [],\n            \"team_key\": \"engineering\",\n            \"project\": PROJECT.key,\n            \"project_id\": PROJECT.key,\n            \"created_at\": datetime(2026, 1, 1, tzinfo=UTC),\n            \"updated_at\": datetime(2026, 1, 1, tzinfo=UTC),\n            \"url\": f\"https://tracker.invalid/{key}\",\n            **changes,\n        }\n    )\n",
+          "provenance": [
+            {
+              "ref": "da39c439898aec1233aa8b6157b35e961df1e453",
+              "path": "tests/chains/test_delivery_coordinator.py",
+              "start": 47,
+              "end": 65,
+              "ast_same": true
+            },
+            {
+              "ref": "c17f5d71ce95a94d0fd63f74ee6aa467cce01dad",
+              "path": "tests/chains/test_delivery_coordinator.py",
+              "start": 100,
+              "end": 118,
+              "ast_same": false
+            }
+          ]
+        },
+        {
+          "symbol": "work_ref",
+          "start": 69,
+          "end": 76,
+          "source": "def work_ref(lane: str, branch: str, sha: str) -> WorkRef:\n    return WorkRef(\n        issue_id=lane,\n        role=WorkRefRole.DELIVERABLE,\n        branch=branch,\n        pushed_head_sha=sha,\n        recorded_at=datetime(2026, 1, 1, tzinfo=UTC),\n    )\n",
+          "provenance": [
+            {
+              "ref": "da39c439898aec1233aa8b6157b35e961df1e453",
+              "path": "tests/chains/test_delivery_coordinator.py",
+              "start": 68,
+              "end": 75,
+              "ast_same": true
+            },
+            {
+              "ref": "c17f5d71ce95a94d0fd63f74ee6aa467cce01dad",
+              "path": "tests/chains/test_delivery_coordinator.py",
+              "start": 129,
+              "end": 136,
+              "ast_same": true
+            }
+          ]
+        },
+        {
+          "symbol": "Scope.__init__",
+          "start": 82,
+          "end": 101,
+          "source": "    def __init__(self, heads: tuple[object, ...]) -> None:\n        self.by_lane = {head.lane_key: head for head in heads}\n        self.refs: dict[str, list[WorkRef]] = {\n            lane: [\n                work_ref(lane, self.by_lane[lane].branch, self.by_lane[lane].head_sha)\n            ]\n            for lane in OPENED_ORDER\n        }\n        self.rows = [\n            row\n            for lane in OPENED_ORDER\n            for row in (\n                issue(lane, priority=RANKING[lane]),\n                issue(\n                    f\"{lane}-check\",\n                    parent_key=lane,\n                    issue_labels=frozenset({\"criterion\"}),\n                ),\n            )\n        ]\n",
+          "provenance": [
+            {
+              "ref": "da39c439898aec1233aa8b6157b35e961df1e453",
+              "path": "tests/chains/test_delivery_coordinator.py",
+              "start": 81,
+              "end": 100,
+              "ast_same": true
+            },
+            {
+              "ref": "c17f5d71ce95a94d0fd63f74ee6aa467cce01dad",
+              "path": "tests/chains/test_delivery_coordinator.py",
+              "start": 142,
+              "end": 166,
+              "ast_same": false
+            }
+          ]
+        },
+        {
+          "symbol": "Scope.close_every_criterion",
+          "start": 103,
+          "end": 112,
+          "source": "    def close_every_criterion(self) -> None:\n        for lane in OPENED_ORDER:\n            key = f\"{lane}-check\"\n            index = next(i for i, row in enumerate(self.rows) if row.issue_key == key)\n            self.rows[index] = self.rows[index].model_copy(\n                update={\n                    \"state_name\": \"Done\",\n                    \"state_kind\": WorkflowStateKind.COMPLETED,\n                }\n            )\n",
+          "provenance": [
+            {
+              "ref": "da39c439898aec1233aa8b6157b35e961df1e453",
+              "path": "tests/chains/test_delivery_coordinator.py",
+              "start": 102,
+              "end": 111,
+              "ast_same": true
+            },
+            {
+              "ref": "c17f5d71ce95a94d0fd63f74ee6aa467cce01dad",
+              "path": "tests/chains/test_delivery_coordinator.py",
+              "start": 168,
+              "end": 177,
+              "ast_same": false
+            }
+          ]
+        },
+        {
+          "symbol": "Scope.tracker",
+          "start": 114,
+          "end": 129,
+          "source": "    def tracker(self) -> FakeTrackerPort:\n        return FakeTrackerPort(\n            issues=self.rows,\n            scope_containers=[\n                ScopeContainer(\n                    ref=PROJECT,\n                    name=PROJECT.key,\n                    description=f\"Complete description of {PROJECT.key}\",\n                    url=f\"https://tracker.invalid/project/{PROJECT.key}\",\n                    parent=None,\n                )\n            ],\n            scope_memberships={PROJECT: list(OPENED_ORDER)},\n            scope_label_members={PROJECT: frozenset({ScopeLabel.APPROVED})},\n            recorded_work_refs=self.refs,\n        )\n",
+          "provenance": [
+            {
+              "ref": "da39c439898aec1233aa8b6157b35e961df1e453",
+              "path": "tests/chains/test_delivery_coordinator.py",
+              "start": 113,
+              "end": 128,
+              "ast_same": true
+            },
+            {
+              "ref": "c17f5d71ce95a94d0fd63f74ee6aa467cce01dad",
+              "path": "tests/chains/test_delivery_coordinator.py",
+              "start": 179,
+              "end": 194,
+              "ast_same": false
+            }
+          ]
+        },
+        {
+          "symbol": "Fixture.__init__",
+          "start": 133,
+          "end": 143,
+          "source": "    def __init__(\n        self,\n        *,\n        scope: Scope,\n        git: pinned.ObservedGit,\n        context: UnionTickContext,\n    ) -> None:\n        self.scope = scope\n        self.git = git\n        self.context = context\n        self.tracker = scope.tracker()\n",
+          "provenance": [
+            {
+              "ref": "da39c439898aec1233aa8b6157b35e961df1e453",
+              "path": "tests/chains/test_delivery_coordinator.py",
+              "start": 132,
+              "end": 142,
+              "ast_same": true
+            },
+            {
+              "ref": "c17f5d71ce95a94d0fd63f74ee6aa467cce01dad",
+              "path": "tests/chains/test_delivery_coordinator.py",
+              "start": 200,
+              "end": 216,
+              "ast_same": false
+            }
+          ]
+        },
+        {
+          "symbol": "Fixture.coordinator",
+          "start": 145,
+          "end": 158,
+          "source": "    def coordinator(self, runner: object = None) -> ScopeUnionCoordinator:\n        return ScopeUnionCoordinator(\n            scope_kind=PROJECT.kind,\n            tracker=self.tracker,\n            git=self.git,\n            runner=runner\n            or SubprocessCheckChainRunner(\n                timeout=AppConfig().union_check_step_timeout_seconds\n            ),\n            context=self.context,\n            config=AppConfig(),\n            committer_name=\"Union Fixture\",\n            committer_email=\"union@example.invalid\",\n        )\n",
+          "provenance": [
+            {
+              "ref": "da39c439898aec1233aa8b6157b35e961df1e453",
+              "path": "tests/chains/test_delivery_coordinator.py",
+              "start": 144,
+              "end": 157,
+              "ast_same": false
+            },
+            {
+              "ref": "c17f5d71ce95a94d0fd63f74ee6aa467cce01dad",
+              "path": "tests/chains/test_delivery_coordinator.py",
+              "start": 218,
+              "end": 231,
+              "ast_same": false
+            }
+          ]
+        },
+        {
+          "symbol": "Fixture.sha",
+          "start": 160,
+          "end": 161,
+          "source": "    def sha(self, lane: str) -> str:\n        return self.scope.by_lane[lane].head_sha\n",
+          "provenance": [
+            {
+              "ref": "da39c439898aec1233aa8b6157b35e961df1e453",
+              "path": "tests/chains/test_delivery_coordinator.py",
+              "start": 159,
+              "end": 160,
+              "ast_same": true
+            },
+            {
+              "ref": "c17f5d71ce95a94d0fd63f74ee6aa467cce01dad",
+              "path": "tests/chains/test_delivery_coordinator.py",
+              "start": 233,
+              "end": 234,
+              "ast_same": true
+            }
+          ]
+        },
+        {
+          "symbol": "RaisingRunner.__init__",
+          "start": 167,
+          "end": 168,
+          "source": "    def __init__(self) -> None:\n        self.trees: list[str] = []\n",
+          "provenance": [
+            {
+              "ref": "da39c439898aec1233aa8b6157b35e961df1e453",
+              "path": "tests/chains/test_delivery_coordinator.py",
+              "start": 166,
+              "end": 167,
+              "ast_same": true
+            },
+            {
+              "ref": "c17f5d71ce95a94d0fd63f74ee6aa467cce01dad",
+              "path": "tests/chains/test_delivery_coordinator.py",
+              "start": 340,
+              "end": 341,
+              "ast_same": true
+            }
+          ]
+        },
+        {
+          "symbol": "RaisingRunner.run_chain",
+          "start": 170,
+          "end": 174,
+          "source": "    async def run_chain(self, *, cwd: str, steps: object) -> object:\n        self.trees.append(cwd)\n        raise CheckChainExecutionError(\n            cwd=cwd, step_name=None, reason=\"the runner could not start\"\n        )\n",
+          "provenance": [
+            {
+              "ref": "da39c439898aec1233aa8b6157b35e961df1e453",
+              "path": "tests/chains/test_delivery_coordinator.py",
+              "start": 169,
+              "end": 173,
+              "ast_same": true
+            },
+            {
+              "ref": "c17f5d71ce95a94d0fd63f74ee6aa467cce01dad",
+              "path": "tests/chains/test_delivery_coordinator.py",
+              "start": 343,
+              "end": 347,
+              "ast_same": true
+            }
+          ]
+        },
+        {
+          "symbol": "delivery",
+          "start": 178,
+          "end": 195,
+          "source": "@pytest.fixture\nasync def delivery(repository, tmp_path):\n    author, base, heads = repository\n    remote, observer = tmp_path / \"remote.git\", tmp_path / \"observer.git\"\n    await pinned.git(tmp_path, \"clone\", \"--bare\", str(author), str(remote))\n    await pinned.git(\n        tmp_path, \"clone\", \"--bare\", \"--origin\", \"upstream\", str(remote), str(observer)\n    )\n    return Fixture(\n        scope=Scope(heads),\n        git=pinned.ObservedGit(),\n        context=UnionTickContext(\n            scope_key=PROJECT.key,\n            repo_path=str(observer),\n            base_sha=base,\n            git_remote=\"upstream\",\n            repo=pinned.entry().model_copy(update={\"url\": remote.as_uri()}),\n        ),\n    )\n",
+          "provenance": [
+            {
+              "ref": "da39c439898aec1233aa8b6157b35e961df1e453",
+              "path": "tests/chains/test_delivery_coordinator.py",
+              "start": 177,
+              "end": 194,
+              "ast_same": true
+            },
+            {
+              "ref": "c17f5d71ce95a94d0fd63f74ee6aa467cce01dad",
+              "path": "tests/chains/test_delivery_coordinator.py",
+              "start": 351,
+              "end": 352,
+              "ast_same": false
+            }
+          ]
+        },
+        {
+          "symbol": "test_the_planner_ranking_is_the_order_the_scope_composes_in",
+          "start": 198,
+          "end": 210,
+          "source": "async def test_the_planner_ranking_is_the_order_the_scope_composes_in(delivery):\n    \"\"\"The ranked order reaches the git port unchanged, opened order does not.\"\"\"\n    ranked = await read_scope_ready(ref=PROJECT, tracker=delivery.tracker)\n    ranking = tuple(lane.issue.issue_key for lane in ranked.ready)\n    assert ranking == (\"z\", \"a\")\n    assert ranking != OPENED_ORDER\n    assert tuple(delivery.scope.refs) == OPENED_ORDER\n\n    result = await delivery.coordinator().verify()\n\n    assert result.composition_order == ranking\n    assert delivery.git.merged == [delivery.sha(\"z\"), delivery.sha(\"a\")]\n    assert result.outcome is UnionOutcome.GREEN\n",
+          "provenance": [
+            {
+              "ref": "da39c439898aec1233aa8b6157b35e961df1e453",
+              "path": "tests/chains/test_delivery_coordinator.py",
+              "start": 197,
+              "end": 209,
+              "ast_same": true
+            },
+            {
+              "ref": "c17f5d71ce95a94d0fd63f74ee6aa467cce01dad",
+              "path": "tests/chains/test_delivery_coordinator.py",
+              "start": 398,
+              "end": 410,
+              "ast_same": false
+            }
+          ]
+        },
+        {
+          "symbol": "test_the_scratch_tree_is_obtained_through_the_git_port_and_removed",
+          "start": 213,
+          "end": 218,
+          "source": "async def test_the_scratch_tree_is_obtained_through_the_git_port_and_removed(delivery):\n    result = await delivery.coordinator().verify()\n\n    assert delivery.git.created == [result.scratch_path]\n    assert delivery.git.removed == delivery.git.created\n    assert not Path(result.scratch_path).exists()\n",
+          "provenance": [
+            {
+              "ref": "da39c439898aec1233aa8b6157b35e961df1e453",
+              "path": "tests/chains/test_delivery_coordinator.py",
+              "start": 212,
+              "end": 217,
+              "ast_same": true
+            },
+            {
+              "ref": "c17f5d71ce95a94d0fd63f74ee6aa467cce01dad",
+              "path": "tests/chains/test_delivery_coordinator.py",
+              "start": 431,
+              "end": 436,
+              "ast_same": true
+            }
+          ]
+        },
+        {
+          "symbol": "test_a_raising_check_chain_still_removes_the_composed_tree",
+          "start": 221,
+          "end": 229,
+          "source": "async def test_a_raising_check_chain_still_removes_the_composed_tree(delivery):\n    runner = RaisingRunner()\n\n    with pytest.raises(CheckChainExecutionError):\n        await delivery.coordinator(runner).verify()\n\n    assert runner.trees == delivery.git.created\n    assert delivery.git.removed == delivery.git.created\n    assert not Path(delivery.git.created[0]).exists()\n",
+          "provenance": [
+            {
+              "ref": "da39c439898aec1233aa8b6157b35e961df1e453",
+              "path": "tests/chains/test_delivery_coordinator.py",
+              "start": 220,
+              "end": 228,
+              "ast_same": true
+            },
+            {
+              "ref": "c17f5d71ce95a94d0fd63f74ee6aa467cce01dad",
+              "path": "tests/chains/test_delivery_coordinator.py",
+              "start": 439,
+              "end": 447,
+              "ast_same": true
+            }
+          ]
+        },
+        {
+          "symbol": "test_a_lane_with_no_recorded_deliverable_ref_refuses",
+          "start": 232,
+          "end": 240,
+          "source": "async def test_a_lane_with_no_recorded_deliverable_ref_refuses(delivery):\n    delivery.scope.refs[\"z\"] = []\n    delivery.tracker = delivery.scope.tracker()\n\n    with pytest.raises(UnionHeadReadError) as raised:\n        await delivery.coordinator().verify()\n\n    assert raised.value.reason.endswith(\"z\")\n    assert delivery.git.created == []\n",
+          "provenance": [
+            {
+              "ref": "da39c439898aec1233aa8b6157b35e961df1e453",
+              "path": "tests/chains/test_delivery_coordinator.py",
+              "start": 231,
+              "end": 239,
+              "ast_same": true
+            },
+            {
+              "ref": "c17f5d71ce95a94d0fd63f74ee6aa467cce01dad",
+              "path": "tests/chains/test_delivery_coordinator.py",
+              "start": 450,
+              "end": 458,
+              "ast_same": false
+            }
+          ]
+        },
+        {
+          "symbol": "test_a_lane_with_two_recorded_deliverable_refs_refuses",
+          "start": 243,
+          "end": 252,
+          "source": "async def test_a_lane_with_two_recorded_deliverable_refs_refuses(delivery):\n    head = delivery.scope.by_lane[\"z\"]\n    delivery.scope.refs[\"z\"].append(work_ref(\"z\", \"work/other\", head.head_sha))\n    delivery.tracker = delivery.scope.tracker()\n\n    with pytest.raises(UnionHeadReadError) as raised:\n        await delivery.coordinator().verify()\n\n    assert \"more than one\" in raised.value.reason\n    assert delivery.git.created == []\n",
+          "provenance": [
+            {
+              "ref": "da39c439898aec1233aa8b6157b35e961df1e453",
+              "path": "tests/chains/test_delivery_coordinator.py",
+              "start": 242,
+              "end": 251,
+              "ast_same": true
+            },
+            {
+              "ref": "c17f5d71ce95a94d0fd63f74ee6aa467cce01dad",
+              "path": "tests/chains/test_delivery_coordinator.py",
+              "start": 461,
+              "end": 472,
+              "ast_same": false
+            }
+          ]
+        },
+        {
+          "symbol": "test_completed_lanes_with_retained_heads_are_checked_together",
+          "start": 255,
+          "end": 295,
+          "source": "async def test_completed_lanes_with_retained_heads_are_checked_together(\n    delivery, repository\n):\n    delivery.scope.close_every_criterion()\n    delivery.tracker = delivery.scope.tracker()\n    assert (await read_scope_ready(ref=PROJECT, tracker=delivery.tracker)).ready == ()\n    command = (\n        f'{sys.executable} -c \"from pathlib import Path; '\n        \"assert not (Path('a.txt').exists() and Path('z.txt').exists())\\\"\"\n    )\n    checks = pinned.entry(command)\n    delivery.context = delivery.context.model_copy(\n        update={\n            \"repo\": delivery.context.repo.model_copy(update={\"checks\": checks.checks})\n        }\n    )\n    author, base, heads = repository\n    for head in heads:\n        alone = await pinned.service(pinned.ObservedGit()).verify(\n            scope_key=PROJECT.key,\n            repo_path=str(author),\n            repo=checks,\n            base_sha=base,\n            lane_heads=(head,),\n        )\n        assert alone.outcome is UnionOutcome.GREEN\n        assert not Path(alone.scratch_path).exists()\n\n    result = await delivery.coordinator().verify()\n\n    assert result.composition_order == (\"z\", \"a\")\n    assert result.lane_heads == (\n        delivery.scope.by_lane[\"z\"],\n        delivery.scope.by_lane[\"a\"],\n    )\n    assert result.outcome is UnionOutcome.RED\n    assert result.checks.failed_step_names == frozenset({\"gate\"})\n    assert result.remediation.root_step_names == (\"gate\",)\n    assert delivery.git.merged == [delivery.sha(\"z\"), delivery.sha(\"a\")]\n    assert delivery.git.created == delivery.git.removed == [result.scratch_path]\n    assert not Path(result.scratch_path).exists()\n",
+          "provenance": []
+        },
+        {
+          "symbol": "test_completed_and_unfinished_retained_lanes_each_participate_once",
+          "start": 299,
+          "end": 317,
+          "source": "@pytest.mark.parametrize(\"completed\", OPENED_ORDER)\nasync def test_completed_and_unfinished_retained_lanes_each_participate_once(\n    delivery, completed\n):\n    key = f\"{completed}-check\"\n    delivery.tracker.issues[key] = delivery.tracker.issues[key].model_copy(\n        update={\"state_name\": \"Done\", \"state_kind\": WorkflowStateKind.COMPLETED}\n    )\n    ready = await read_scope_ready(ref=PROJECT, tracker=delivery.tracker)\n    assert tuple(lane.issue.issue_key for lane in ready.ready) == tuple(\n        lane for lane in (\"z\", \"a\") if lane != completed\n    )\n\n    result = await delivery.coordinator().verify()\n\n    assert result.composition_order == (\"z\", \"a\")\n    assert result.outcome is UnionOutcome.GREEN\n    assert delivery.git.merged == [delivery.sha(\"z\"), delivery.sha(\"a\")]\n    assert delivery.git.created == delivery.git.removed == [result.scratch_path]\n    assert not Path(result.scratch_path).exists()\n",
+          "provenance": []
+        },
+        {
+          "symbol": "test_roster_change_during_measurement_refuses_before_return",
+          "start": 321,
+          "end": 339,
+          "source": "@pytest.mark.parametrize(\"changed\", [\"membership\", \"reference\"])\nasync def test_roster_change_during_measurement_refuses_before_return(\n    delivery, changed\n):\n    class MovingRosterRunner(SubprocessCheckChainRunner):\n        async def run_chain(self, *, cwd, steps):\n            result = await super().run_chain(cwd=cwd, steps=steps)\n            if changed == \"membership\":\n                delivery.tracker.scope_memberships[PROJECT] = (\"z\",)\n            else:\n                delivery.tracker.recorded_work_refs[\"z\"] = [\n                    work_ref(\"z\", \"work/a\", delivery.sha(\"a\"))\n                ]\n            return result\n\n    runner = MovingRosterRunner(timeout=AppConfig().union_check_step_timeout_seconds)\n    with pytest.raises(UnionHeadReadError, match=\"roster changed\"):\n        await delivery.coordinator(runner).verify()\n    assert delivery.git.created == delivery.git.removed\n    assert all(not Path(path).exists() for path in delivery.git.created)\n",
+          "provenance": []
+        },
+        {
+          "symbol": "test_retained_unapproved_lanes_still_participate",
+          "start": 342,
+          "end": 347,
+          "source": "async def test_retained_unapproved_lanes_still_participate(delivery):\n    delivery.tracker.scope_label_members.clear()\n    assert (await read_scope_ready(ref=PROJECT, tracker=delivery.tracker)).ready == ()\n    result = await delivery.coordinator().verify()\n    assert result.composition_order == (\"z\", \"a\")\n    assert result.outcome is UnionOutcome.GREEN\n",
+          "provenance": []
+        },
+        {
+          "symbol": "test_only_structural_artifacts_is_a_genuinely_empty_roster",
+          "start": 350,
+          "end": 354,
+          "source": "async def test_only_structural_artifacts_is_a_genuinely_empty_roster(delivery):\n    delivery.tracker.scope_memberships[PROJECT] = (\"a-check\", \"z-check\")\n    with pytest.raises(UnionHeadReadError, match=\"no participating lane\"):\n        await delivery.coordinator().verify()\n    assert delivery.git.created == []\n",
+          "provenance": []
+        },
+        {
+          "symbol": "test_cyclic_parentage_is_refused_before_any_union_work",
+          "start": 357,
+          "end": 366,
+          "source": "async def test_cyclic_parentage_is_refused_before_any_union_work(delivery):\n    from kodezart.domain.errors import ScopeReadError\n\n    for lane, parent in ((\"a\", \"z\"), (\"z\", \"a\")):\n        delivery.tracker.issues[lane] = delivery.tracker.issues[lane].model_copy(\n            update={\"parent_key\": parent}\n        )\n    with pytest.raises(ScopeReadError):\n        await delivery.coordinator().verify()\n    assert delivery.git.created == []\n",
+          "provenance": []
+        },
+        {
+          "symbol": "test_dependency_cycle_is_refused_before_any_union_work",
+          "start": 369,
+          "end": 383,
+          "source": "async def test_dependency_cycle_is_refused_before_any_union_work(delivery):\n    from kodezart.domain.errors import ScopeCycleError\n    from kodezart.types.domain.tracker import IssueRelation, IssueRelationKind\n\n    for lane, blocker in ((\"a\", \"z\"), (\"z\", \"a\")):\n        delivery.tracker.issues[lane] = delivery.tracker.issues[lane].model_copy(\n            update={\n                \"relations\": (\n                    IssueRelation(kind=IssueRelationKind.BLOCKED_BY, issue_key=blocker),\n                )\n            }\n        )\n    with pytest.raises(ScopeCycleError):\n        await delivery.coordinator().verify()\n    assert delivery.git.created == []\n",
+          "provenance": []
+        },
+        {
+          "symbol": "test_missing_dependency_is_not_dropped_by_empty_blocking_predicate",
+          "start": 386,
+          "end": 398,
+          "source": "async def test_missing_dependency_is_not_dropped_by_empty_blocking_predicate(delivery):\n    from kodezart.types.domain.tracker import IssueRelation, IssueRelationKind\n\n    delivery.tracker.issues[\"a\"] = delivery.tracker.issues[\"a\"].model_copy(\n        update={\n            \"relations\": (\n                IssueRelation(kind=IssueRelationKind.BLOCKED_BY, issue_key=\"absent\"),\n            )\n        }\n    )\n    with pytest.raises(KeyError, match=\"absent\"):\n        await delivery.coordinator().verify()\n    assert delivery.git.created == []\n",
+          "provenance": []
+        }
+      ]
+    },
+    {
+      "path": "tests/chains/test_union_exit_invariance.py",
+      "blob": "4753b8460b1eb8af1cbf25b086b47105140b3a2a",
+      "patch": "diff --git a/tests/chains/test_union_exit_invariance.py b/tests/chains/test_union_exit_invariance.py\nnew file mode 100644\nindex 0000000..4753b84\n--- /dev/null\n+++ b/tests/chains/test_union_exit_invariance.py\n@@ -0,0 +1,315 @@\n+\"\"\"PR114 real-Git exit and ref-invariance scenarios, without source scanners.\n+\n+The named scenarios exercise cleanup and publication invariance directly;\n+no AST inventory or object-holdings heuristic is treated as runtime proof.\n+\"\"\"\n+\n+import asyncio\n+from pathlib import Path\n+\n+import pytest\n+\n+from kodezart.adapters.subprocess_check_chain import SubprocessCheckChainRunner\n+from kodezart.chains.delivery_coordinator import ScopeUnionCoordinator\n+from kodezart.core.config import AppConfig\n+from kodezart.domain.errors import CheckChainExecutionError, MergeConflictError\n+from kodezart.types.domain.operation import CheckStep\n+from kodezart.types.domain.union import UnionLaneHead, UnionOutcome\n+from kodezart.types.domain.union_tick import UnionTickContext\n+from tests.chains.test_delivery_coordinator import (\n+    OPENED_ORDER,\n+    PROJECT,\n+    RaisingRunner,\n+    Scope,\n+)\n+from tests.services import test_union_composition as pinned\n+\n+INDEPENDENT_EDITS = {lane: (f\"{lane}.txt\", lane) for lane in OPENED_ORDER}\n+CONFLICTING_EDITS = {\n+    \"z\": (\"api.py\", \"def build(timeout):\\n    return timeout\\n\"),\n+    \"a\": (\"api.py\", \"def build(credentials):\\n    return credentials\\n\"),\n+}\n+COMPOSED_CHECK = pinned.entry().checks[0].command\n+\n+\n+class Fixture:\n+    \"\"\"A whole delivery world: author repository, remote, and the observer.\"\"\"\n+\n+    def __init__(\n+        self,\n+        *,\n+        scope: Scope,\n+        git: pinned.ObservedGit,\n+        context: UnionTickContext,\n+        author: Path,\n+        remote: Path,\n+        observer: Path,\n+    ) -> None:\n+        self.scope = scope\n+        self.git = git\n+        self.context = context\n+        self.author = author\n+        self.remote = remote\n+        self.observer = observer\n+        self.tracker = scope.tracker()\n+\n+    def coordinator(self, runner: object = None) -> ScopeUnionCoordinator:\n+        return ScopeUnionCoordinator(\n+            scope_kind=PROJECT.kind,\n+            tracker=self.tracker,\n+            git=self.git,\n+            runner=runner\n+            or SubprocessCheckChainRunner(\n+                timeout=AppConfig().union_check_step_timeout_seconds\n+            ),\n+            context=self.context,\n+            config=AppConfig(),\n+            committer_name=\"Union Fixture\",\n+            committer_email=\"union@example.invalid\",\n+        )\n+\n+    def sha(self, lane: str) -> str:\n+        return self.scope.by_lane[lane].head_sha\n+\n+    def with_checks(self, checks: object) -> None:\n+        \"\"\"Replace the declared chain on the repository this scope composes.\"\"\"\n+        self.context = self.context.model_copy(\n+            update={\"repo\": self.context.repo.model_copy(update={\"checks\": checks})}\n+        )\n+\n+    async def refs(self) -> tuple[str, ...]:\n+        \"\"\"Every ref in every repository \u2014 what any publication would move.\"\"\"\n+        return tuple(\n+            [\n+                await pinned.git(path, \"show-ref\")\n+                for path in (self.author, self.remote, self.observer)\n+            ]\n+        )\n+\n+    async def merge_graph_order(self, scratch_sha: str) -> tuple[str, ...]:\n+        \"\"\"The lanes the composed commit actually merged, oldest merge first.\n+\n+        Read out of the merge graph the scratch tree left behind rather than\n+        out of the port double's call log, so an order recorded correctly and\n+        composed differently is still caught.\n+        \"\"\"\n+        by_sha = {head.head_sha: lane for lane, head in self.scope.by_lane.items()}\n+        merged: list[str] = []\n+        cursor = scratch_sha\n+        while True:\n+            parents = (\n+                await pinned.git(self.observer, \"show\", \"-s\", \"--format=%P\", cursor)\n+            ).split()\n+            if len(parents) != 2:\n+                return tuple(reversed(merged))\n+            merged.append(by_sha[parents[1]])\n+            cursor = parents[0]\n+\n+\n+async def make_repository(\n+    root: Path, *, edits: dict[str, tuple[str, str]]\n+) -> tuple[Path, str, tuple[UnionLaneHead, ...]]:\n+    \"\"\"One branch per lane off a shared base, in the opened order.\"\"\"\n+    repo = root / \"repo\"\n+    repo.mkdir(parents=True)\n+    await pinned.git(repo, \"init\", \"-b\", \"main\")\n+    (repo / \"base.txt\").write_text(\"base\\n\")\n+    await pinned.git(repo, \"add\", \".\")\n+    await pinned.git(repo, \"commit\", \"-m\", \"base\")\n+    base = await pinned.git(repo, \"rev-parse\", \"HEAD\")\n+    heads: list[UnionLaneHead] = []\n+    for lane in OPENED_ORDER:\n+        path, text = edits[lane]\n+        await pinned.git(repo, \"checkout\", \"-b\", f\"work/{lane}\", base)\n+        (repo / path).write_text(text)\n+        await pinned.git(repo, \"add\", \".\")\n+        await pinned.git(repo, \"commit\", \"-m\", lane)\n+        heads.append(\n+            UnionLaneHead(\n+                lane_key=lane,\n+                branch=f\"work/{lane}\",\n+                head_sha=await pinned.git(repo, \"rev-parse\", \"HEAD\"),\n+            )\n+        )\n+    await pinned.git(repo, \"checkout\", \"main\")\n+    return repo, base, tuple(heads)\n+\n+\n+async def build_delivery(\n+    root: Path,\n+    *,\n+    edits: dict[str, tuple[str, str]] | None = None,\n+    git: pinned.ObservedGit | None = None,\n+) -> Fixture:\n+    \"\"\"The production wiring over a real repository, remote and observer.\"\"\"\n+    root.mkdir(parents=True, exist_ok=True)\n+    author, base, heads = await make_repository(root, edits=edits or INDEPENDENT_EDITS)\n+    remote, observer = root / \"remote.git\", root / \"observer.git\"\n+    await pinned.git(root, \"clone\", \"--bare\", str(author), str(remote))\n+    await pinned.git(\n+        root, \"clone\", \"--bare\", \"--origin\", \"upstream\", str(remote), str(observer)\n+    )\n+    # Settle the observer's remote-tracking refs through the same port the\n+    # union step fetches with. Fetching is a read the step is entitled to\n+    # make; leaving its first one until then would put a legitimate read\n+    # inside any before/after comparison of the world's refs.\n+    await pinned.SubprocessGitService(remote=\"upstream\").fetch(str(observer))\n+    return Fixture(\n+        scope=Scope(heads),\n+        git=git or pinned.ObservedGit(),\n+        context=UnionTickContext(\n+            scope_key=PROJECT.key,\n+            repo_path=str(observer),\n+            base_sha=base,\n+            git_remote=\"upstream\",\n+            repo=pinned.entry(COMPOSED_CHECK).model_copy(\n+                update={\"url\": remote.as_uri()}\n+            ),\n+        ),\n+        author=author,\n+        remote=remote,\n+        observer=observer,\n+    )\n+\n+\n+class ForbiddenPublisher(pinned.ObservedGit):\n+    \"\"\"The git port the union step actually holds, with publication fatal.\n+\n+    Every one of these is reachable on the object the composition is given,\n+    so a step that grew a publish makes the case fail rather than pass\n+    quietly against a double that could not have been asked.\n+    \"\"\"\n+\n+    async def push(self, cwd: str, branch: str) -> None:\n+        raise AssertionError(\"the union step pushed a branch\")\n+\n+    async def merge_branch(self, cwd: str, source_branch: str) -> None:\n+        raise AssertionError(\"the union step merged a branch\")\n+\n+    async def delete_remote_branch(self, repo_path: str, branch: str) -> None:\n+        raise AssertionError(\"the union step deleted a remote branch\")\n+\n+\n+class PathlessConflict(ForbiddenPublisher):\n+    \"\"\"A refused merge git named no conflicting path for.\"\"\"\n+\n+    async def merge_scratch_head(self, **kwargs: object) -> None:\n+        raise MergeConflictError(\n+            \"the scratch head could not be merged\",\n+            source_branch=str(kwargs[\"head_sha\"]),\n+            paths=(),\n+        )\n+\n+\n+class BlockedCreate(ForbiddenPublisher):\n+    \"\"\"A git port that parks inside worktree creation until released.\"\"\"\n+\n+    def __init__(self) -> None:\n+        super().__init__()\n+        self.entered = asyncio.Event()\n+        self.release = asyncio.Event()\n+\n+    async def create_worktree(self, *args: object, **kwargs: object) -> None:\n+        await super().create_worktree(*args, **kwargs)\n+        self.entered.set()\n+        await self.release.wait()\n+\n+\n+async def drive_green(fixture) -> None:\n+    result = await fixture.coordinator().verify()\n+    assert result.outcome is UnionOutcome.GREEN\n+\n+\n+async def drive_merge_conflict(fixture) -> None:\n+    result = await fixture.coordinator().verify()\n+    assert result.outcome is UnionOutcome.RED\n+    assert result.merge_conflict is not None\n+\n+\n+async def drive_pathless_conflict(fixture) -> None:\n+    with pytest.raises(MergeConflictError):\n+        await fixture.coordinator().verify()\n+\n+\n+async def drive_unclassifiable_chain(fixture) -> None:\n+    repeated = CheckStep(name=\"gate\", command=\"true\")\n+    fixture.with_checks((repeated, repeated))\n+    with pytest.raises(CheckChainExecutionError):\n+        await fixture.coordinator().verify()\n+\n+\n+async def drive_undeclared_chain(fixture) -> None:\n+    fixture.with_checks(())\n+    with pytest.raises(CheckChainExecutionError):\n+        await fixture.coordinator().verify()\n+\n+\n+async def drive_unobservable_chain(fixture) -> None:\n+    with pytest.raises(CheckChainExecutionError):\n+        await fixture.coordinator(RaisingRunner()).verify()\n+\n+\n+async def drive_cancellation(fixture) -> None:\n+    task = asyncio.create_task(fixture.coordinator().verify())\n+    try:\n+        await asyncio.wait_for(fixture.git.entered.wait(), 10)\n+        task.cancel()\n+        await asyncio.sleep(0)\n+        task.cancel()\n+        await asyncio.sleep(0)\n+        assert not task.done()\n+    finally:\n+        fixture.git.release.set()\n+        with pytest.raises(asyncio.CancelledError):\n+            await asyncio.wait_for(task, 10)\n+\n+\n+EXIT_SCENARIOS = (\n+    (\"a green union\", None, ForbiddenPublisher, drive_green),\n+    (\"a merge conflict\", CONFLICTING_EDITS, ForbiddenPublisher, drive_merge_conflict),\n+    (\"a conflict naming no path\", None, PathlessConflict, drive_pathless_conflict),\n+    (\n+        \"a chain that cannot be classified\",\n+        None,\n+        ForbiddenPublisher,\n+        drive_unclassifiable_chain,\n+    ),\n+    (\n+        \"a repository declaring no chain\",\n+        None,\n+        ForbiddenPublisher,\n+        drive_undeclared_chain,\n+    ),\n+    (\n+        \"a chain that cannot be observed\",\n+        None,\n+        ForbiddenPublisher,\n+        drive_unobservable_chain,\n+    ),\n+    (\"cancellation while composing\", None, BlockedCreate, drive_cancellation),\n+)\n+\n+\n+@pytest.mark.parametrize(\n+    \"name, edits, publisher, drive\",\n+    EXIT_SCENARIOS,\n+    ids=[row[0] for row in EXIT_SCENARIOS],\n+)\n+async def test_named_union_exit_preserves_real_refs_and_removes_scratch(\n+    tmp_path,\n+    name,\n+    edits,\n+    publisher,\n+    drive,\n+):\n+    fixture = await build_delivery(tmp_path / \"world\", edits=edits, git=publisher())\n+    before = await fixture.refs()\n+\n+    await drive(fixture)\n+\n+    assert await fixture.refs() == before, name\n+    assert fixture.git.created == fixture.git.removed, name\n+    assert all(not Path(path).exists() for path in fixture.git.created), name\n+    assert (\n+        await pinned.git(fixture.observer, \"worktree\", \"list\", \"--porcelain\")\n+    ).count(\"worktree \") == 1\n",
+      "units": [
+        {
+          "symbol": "INDEPENDENT_EDITS",
+          "start": 27,
+          "end": 27,
+          "source": "INDEPENDENT_EDITS = {lane: (f\"{lane}.txt\", lane) for lane in OPENED_ORDER}\n",
+          "provenance": [
+            {
+              "ref": "c17f5d71ce95a94d0fd63f74ee6aa467cce01dad",
+              "path": "tests/chains/test_delivery_coordinator.py",
+              "start": 79,
+              "end": 81,
+              "ast_same": false
+            }
+          ]
+        },
+        {
+          "symbol": "CONFLICTING_EDITS",
+          "start": 28,
+          "end": 31,
+          "source": "CONFLICTING_EDITS = {\n    \"z\": (\"api.py\", \"def build(timeout):\\n    return timeout\\n\"),\n    \"a\": (\"api.py\", \"def build(credentials):\\n    return credentials\\n\"),\n}\n",
+          "provenance": [
+            {
+              "ref": "c17f5d71ce95a94d0fd63f74ee6aa467cce01dad",
+              "path": "tests/chains/test_delivery_coordinator.py",
+              "start": 86,
+              "end": 90,
+              "ast_same": false
+            }
+          ]
+        },
+        {
+          "symbol": "COMPOSED_CHECK",
+          "start": 32,
+          "end": 32,
+          "source": "COMPOSED_CHECK = pinned.entry().checks[0].command\n",
+          "provenance": [
+            {
+              "ref": "c17f5d71ce95a94d0fd63f74ee6aa467cce01dad",
+              "path": "tests/chains/test_delivery_coordinator.py",
+              "start": 93,
+              "end": 97,
+              "ast_same": false
+            }
+          ]
+        },
+        {
+          "symbol": "Fixture.__init__",
+          "start": 38,
+          "end": 54,
+          "source": "    def __init__(\n        self,\n        *,\n        scope: Scope,\n        git: pinned.ObservedGit,\n        context: UnionTickContext,\n        author: Path,\n        remote: Path,\n        observer: Path,\n    ) -> None:\n        self.scope = scope\n        self.git = git\n        self.context = context\n        self.author = author\n        self.remote = remote\n        self.observer = observer\n        self.tracker = scope.tracker()\n",
+          "provenance": [
+            {
+              "ref": "c17f5d71ce95a94d0fd63f74ee6aa467cce01dad",
+              "path": "tests/chains/test_delivery_coordinator.py",
+              "start": 200,
+              "end": 216,
+              "ast_same": true
+            }
+          ]
+        },
+        {
+          "symbol": "Fixture.coordinator",
+          "start": 56,
+          "end": 69,
+          "source": "    def coordinator(self, runner: object = None) -> ScopeUnionCoordinator:\n        return ScopeUnionCoordinator(\n            scope_kind=PROJECT.kind,\n            tracker=self.tracker,\n            git=self.git,\n            runner=runner\n            or SubprocessCheckChainRunner(\n                timeout=AppConfig().union_check_step_timeout_seconds\n            ),\n            context=self.context,\n            config=AppConfig(),\n            committer_name=\"Union Fixture\",\n            committer_email=\"union@example.invalid\",\n        )\n",
+          "provenance": [
+            {
+              "ref": "c17f5d71ce95a94d0fd63f74ee6aa467cce01dad",
+              "path": "tests/chains/test_delivery_coordinator.py",
+              "start": 218,
+              "end": 231,
+              "ast_same": false
+            }
+          ]
+        },
+        {
+          "symbol": "Fixture.sha",
+          "start": 71,
+          "end": 72,
+          "source": "    def sha(self, lane: str) -> str:\n        return self.scope.by_lane[lane].head_sha\n",
+          "provenance": [
+            {
+              "ref": "c17f5d71ce95a94d0fd63f74ee6aa467cce01dad",
+              "path": "tests/chains/test_delivery_coordinator.py",
+              "start": 233,
+              "end": 234,
+              "ast_same": true
+            }
+          ]
+        },
+        {
+          "symbol": "Fixture.with_checks",
+          "start": 74,
+          "end": 78,
+          "source": "    def with_checks(self, checks: object) -> None:\n        \"\"\"Replace the declared chain on the repository this scope composes.\"\"\"\n        self.context = self.context.model_copy(\n            update={\"repo\": self.context.repo.model_copy(update={\"checks\": checks})}\n        )\n",
+          "provenance": [
+            {
+              "ref": "c17f5d71ce95a94d0fd63f74ee6aa467cce01dad",
+              "path": "tests/chains/test_delivery_coordinator.py",
+              "start": 236,
+              "end": 240,
+              "ast_same": true
+            }
+          ]
+        },
+        {
+          "symbol": "Fixture.refs",
+          "start": 80,
+          "end": 87,
+          "source": "    async def refs(self) -> tuple[str, ...]:\n        \"\"\"Every ref in every repository \u2014 what any publication would move.\"\"\"\n        return tuple(\n            [\n                await pinned.git(path, \"show-ref\")\n                for path in (self.author, self.remote, self.observer)\n            ]\n        )\n",
+          "provenance": [
+            {
+              "ref": "c17f5d71ce95a94d0fd63f74ee6aa467cce01dad",
+              "path": "tests/chains/test_delivery_coordinator.py",
+              "start": 242,
+              "end": 249,
+              "ast_same": true
+            }
+          ]
+        },
+        {
+          "symbol": "Fixture.merge_graph_order",
+          "start": 89,
+          "end": 106,
+          "source": "    async def merge_graph_order(self, scratch_sha: str) -> tuple[str, ...]:\n        \"\"\"The lanes the composed commit actually merged, oldest merge first.\n\n        Read out of the merge graph the scratch tree left behind rather than\n        out of the port double's call log, so an order recorded correctly and\n        composed differently is still caught.\n        \"\"\"\n        by_sha = {head.head_sha: lane for lane, head in self.scope.by_lane.items()}\n        merged: list[str] = []\n        cursor = scratch_sha\n        while True:\n            parents = (\n                await pinned.git(self.observer, \"show\", \"-s\", \"--format=%P\", cursor)\n            ).split()\n            if len(parents) != 2:\n                return tuple(reversed(merged))\n            merged.append(by_sha[parents[1]])\n            cursor = parents[0]\n",
+          "provenance": [
+            {
+              "ref": "c17f5d71ce95a94d0fd63f74ee6aa467cce01dad",
+              "path": "tests/chains/test_delivery_coordinator.py",
+              "start": 251,
+              "end": 268,
+              "ast_same": true
+            }
+          ]
+        },
+        {
+          "symbol": "make_repository",
+          "start": 109,
+          "end": 135,
+          "source": "async def make_repository(\n    root: Path, *, edits: dict[str, tuple[str, str]]\n) -> tuple[Path, str, tuple[UnionLaneHead, ...]]:\n    \"\"\"One branch per lane off a shared base, in the opened order.\"\"\"\n    repo = root / \"repo\"\n    repo.mkdir(parents=True)\n    await pinned.git(repo, \"init\", \"-b\", \"main\")\n    (repo / \"base.txt\").write_text(\"base\\n\")\n    await pinned.git(repo, \"add\", \".\")\n    await pinned.git(repo, \"commit\", \"-m\", \"base\")\n    base = await pinned.git(repo, \"rev-parse\", \"HEAD\")\n    heads: list[UnionLaneHead] = []\n    for lane in OPENED_ORDER:\n        path, text = edits[lane]\n        await pinned.git(repo, \"checkout\", \"-b\", f\"work/{lane}\", base)\n        (repo / path).write_text(text)\n        await pinned.git(repo, \"add\", \".\")\n        await pinned.git(repo, \"commit\", \"-m\", lane)\n        heads.append(\n            UnionLaneHead(\n                lane_key=lane,\n                branch=f\"work/{lane}\",\n                head_sha=await pinned.git(repo, \"rev-parse\", \"HEAD\"),\n            )\n        )\n    await pinned.git(repo, \"checkout\", \"main\")\n    return repo, base, tuple(heads)\n",
+          "provenance": [
+            {
+              "ref": "c17f5d71ce95a94d0fd63f74ee6aa467cce01dad",
+              "path": "tests/chains/test_delivery_coordinator.py",
+              "start": 271,
+              "end": 297,
+              "ast_same": true
+            }
+          ]
+        },
+        {
+          "symbol": "build_delivery",
+          "start": 138,
+          "end": 172,
+          "source": "async def build_delivery(\n    root: Path,\n    *,\n    edits: dict[str, tuple[str, str]] | None = None,\n    git: pinned.ObservedGit | None = None,\n) -> Fixture:\n    \"\"\"The production wiring over a real repository, remote and observer.\"\"\"\n    root.mkdir(parents=True, exist_ok=True)\n    author, base, heads = await make_repository(root, edits=edits or INDEPENDENT_EDITS)\n    remote, observer = root / \"remote.git\", root / \"observer.git\"\n    await pinned.git(root, \"clone\", \"--bare\", str(author), str(remote))\n    await pinned.git(\n        root, \"clone\", \"--bare\", \"--origin\", \"upstream\", str(remote), str(observer)\n    )\n    # Settle the observer's remote-tracking refs through the same port the\n    # union step fetches with. Fetching is a read the step is entitled to\n    # make; leaving its first one until then would put a legitimate read\n    # inside any before/after comparison of the world's refs.\n    await pinned.SubprocessGitService(remote=\"upstream\").fetch(str(observer))\n    return Fixture(\n        scope=Scope(heads),\n        git=git or pinned.ObservedGit(),\n        context=UnionTickContext(\n            scope_key=PROJECT.key,\n            repo_path=str(observer),\n            base_sha=base,\n            git_remote=\"upstream\",\n            repo=pinned.entry(COMPOSED_CHECK).model_copy(\n                update={\"url\": remote.as_uri()}\n            ),\n        ),\n        author=author,\n        remote=remote,\n        observer=observer,\n    )\n",
+          "provenance": [
+            {
+              "ref": "c17f5d71ce95a94d0fd63f74ee6aa467cce01dad",
+              "path": "tests/chains/test_delivery_coordinator.py",
+              "start": 300,
+              "end": 334,
+              "ast_same": true
+            }
+          ]
+        },
+        {
+          "symbol": "ForbiddenPublisher.push",
+          "start": 183,
+          "end": 184,
+          "source": "    async def push(self, cwd: str, branch: str) -> None:\n        raise AssertionError(\"the union step pushed a branch\")\n",
+          "provenance": [
+            {
+              "ref": "c17f5d71ce95a94d0fd63f74ee6aa467cce01dad",
+              "path": "tests/chains/test_union_forge_isolation.py",
+              "start": 117,
+              "end": 118,
+              "ast_same": true
+            }
+          ]
+        },
+        {
+          "symbol": "ForbiddenPublisher.merge_branch",
+          "start": 186,
+          "end": 187,
+          "source": "    async def merge_branch(self, cwd: str, source_branch: str) -> None:\n        raise AssertionError(\"the union step merged a branch\")\n",
+          "provenance": [
+            {
+              "ref": "c17f5d71ce95a94d0fd63f74ee6aa467cce01dad",
+              "path": "tests/chains/test_union_forge_isolation.py",
+              "start": 120,
+              "end": 121,
+              "ast_same": true
+            }
+          ]
+        },
+        {
+          "symbol": "ForbiddenPublisher.delete_remote_branch",
+          "start": 189,
+          "end": 190,
+          "source": "    async def delete_remote_branch(self, repo_path: str, branch: str) -> None:\n        raise AssertionError(\"the union step deleted a remote branch\")\n",
+          "provenance": [
+            {
+              "ref": "c17f5d71ce95a94d0fd63f74ee6aa467cce01dad",
+              "path": "tests/chains/test_union_forge_isolation.py",
+              "start": 123,
+              "end": 124,
+              "ast_same": true
+            }
+          ]
+        },
+        {
+          "symbol": "PathlessConflict.merge_scratch_head",
+          "start": 196,
+          "end": 201,
+          "source": "    async def merge_scratch_head(self, **kwargs: object) -> None:\n        raise MergeConflictError(\n            \"the scratch head could not be merged\",\n            source_branch=str(kwargs[\"head_sha\"]),\n            paths=(),\n        )\n",
+          "provenance": [
+            {
+              "ref": "c17f5d71ce95a94d0fd63f74ee6aa467cce01dad",
+              "path": "tests/chains/test_union_forge_isolation.py",
+              "start": 130,
+              "end": 135,
+              "ast_same": true
+            }
+          ]
+        },
+        {
+          "symbol": "BlockedCreate.__init__",
+          "start": 207,
+          "end": 210,
+          "source": "    def __init__(self) -> None:\n        super().__init__()\n        self.entered = asyncio.Event()\n        self.release = asyncio.Event()\n",
+          "provenance": [
+            {
+              "ref": "c17f5d71ce95a94d0fd63f74ee6aa467cce01dad",
+              "path": "tests/chains/test_union_forge_isolation.py",
+              "start": 141,
+              "end": 144,
+              "ast_same": true
+            }
+          ]
+        },
+        {
+          "symbol": "BlockedCreate.create_worktree",
+          "start": 212,
+          "end": 215,
+          "source": "    async def create_worktree(self, *args: object, **kwargs: object) -> None:\n        await super().create_worktree(*args, **kwargs)\n        self.entered.set()\n        await self.release.wait()\n",
+          "provenance": [
+            {
+              "ref": "c17f5d71ce95a94d0fd63f74ee6aa467cce01dad",
+              "path": "tests/chains/test_union_forge_isolation.py",
+              "start": 146,
+              "end": 149,
+              "ast_same": true
+            }
+          ]
+        },
+        {
+          "symbol": "drive_green",
+          "start": 218,
+          "end": 220,
+          "source": "async def drive_green(fixture) -> None:\n    result = await fixture.coordinator().verify()\n    assert result.outcome is UnionOutcome.GREEN\n",
+          "provenance": [
+            {
+              "ref": "c17f5d71ce95a94d0fd63f74ee6aa467cce01dad",
+              "path": "tests/chains/test_union_forge_isolation.py",
+              "start": 262,
+              "end": 264,
+              "ast_same": true
+            }
+          ]
+        },
+        {
+          "symbol": "drive_merge_conflict",
+          "start": 223,
+          "end": 226,
+          "source": "async def drive_merge_conflict(fixture) -> None:\n    result = await fixture.coordinator().verify()\n    assert result.outcome is UnionOutcome.RED\n    assert result.merge_conflict is not None\n",
+          "provenance": [
+            {
+              "ref": "c17f5d71ce95a94d0fd63f74ee6aa467cce01dad",
+              "path": "tests/chains/test_union_forge_isolation.py",
+              "start": 267,
+              "end": 270,
+              "ast_same": true
+            }
+          ]
+        },
+        {
+          "symbol": "drive_pathless_conflict",
+          "start": 229,
+          "end": 231,
+          "source": "async def drive_pathless_conflict(fixture) -> None:\n    with pytest.raises(MergeConflictError):\n        await fixture.coordinator().verify()\n",
+          "provenance": [
+            {
+              "ref": "c17f5d71ce95a94d0fd63f74ee6aa467cce01dad",
+              "path": "tests/chains/test_union_forge_isolation.py",
+              "start": 273,
+              "end": 275,
+              "ast_same": true
+            }
+          ]
+        },
+        {
+          "symbol": "drive_unclassifiable_chain",
+          "start": 234,
+          "end": 238,
+          "source": "async def drive_unclassifiable_chain(fixture) -> None:\n    repeated = CheckStep(name=\"gate\", command=\"true\")\n    fixture.with_checks((repeated, repeated))\n    with pytest.raises(CheckChainExecutionError):\n        await fixture.coordinator().verify()\n",
+          "provenance": [
+            {
+              "ref": "c17f5d71ce95a94d0fd63f74ee6aa467cce01dad",
+              "path": "tests/chains/test_union_forge_isolation.py",
+              "start": 278,
+              "end": 282,
+              "ast_same": true
+            }
+          ]
+        },
+        {
+          "symbol": "drive_undeclared_chain",
+          "start": 241,
+          "end": 244,
+          "source": "async def drive_undeclared_chain(fixture) -> None:\n    fixture.with_checks(())\n    with pytest.raises(CheckChainExecutionError):\n        await fixture.coordinator().verify()\n",
+          "provenance": [
+            {
+              "ref": "c17f5d71ce95a94d0fd63f74ee6aa467cce01dad",
+              "path": "tests/chains/test_union_forge_isolation.py",
+              "start": 285,
+              "end": 288,
+              "ast_same": true
+            }
+          ]
+        },
+        {
+          "symbol": "drive_unobservable_chain",
+          "start": 247,
+          "end": 249,
+          "source": "async def drive_unobservable_chain(fixture) -> None:\n    with pytest.raises(CheckChainExecutionError):\n        await fixture.coordinator(RaisingRunner()).verify()\n",
+          "provenance": [
+            {
+              "ref": "c17f5d71ce95a94d0fd63f74ee6aa467cce01dad",
+              "path": "tests/chains/test_union_forge_isolation.py",
+              "start": 291,
+              "end": 293,
+              "ast_same": true
+            }
+          ]
+        },
+        {
+          "symbol": "drive_cancellation",
+          "start": 252,
+          "end": 264,
+          "source": "async def drive_cancellation(fixture) -> None:\n    task = asyncio.create_task(fixture.coordinator().verify())\n    try:\n        await asyncio.wait_for(fixture.git.entered.wait(), 10)\n        task.cancel()\n        await asyncio.sleep(0)\n        task.cancel()\n        await asyncio.sleep(0)\n        assert not task.done()\n    finally:\n        fixture.git.release.set()\n        with pytest.raises(asyncio.CancelledError):\n            await asyncio.wait_for(task, 10)\n",
+          "provenance": [
+            {
+              "ref": "c17f5d71ce95a94d0fd63f74ee6aa467cce01dad",
+              "path": "tests/chains/test_union_forge_isolation.py",
+              "start": 296,
+              "end": 308,
+              "ast_same": true
+            }
+          ]
+        },
+        {
+          "symbol": "EXIT_SCENARIOS",
+          "start": 267,
+          "end": 290,
+          "source": "EXIT_SCENARIOS = (\n    (\"a green union\", None, ForbiddenPublisher, drive_green),\n    (\"a merge conflict\", CONFLICTING_EDITS, ForbiddenPublisher, drive_merge_conflict),\n    (\"a conflict naming no path\", None, PathlessConflict, drive_pathless_conflict),\n    (\n        \"a chain that cannot be classified\",\n        None,\n        ForbiddenPublisher,\n        drive_unclassifiable_chain,\n    ),\n    (\n        \"a repository declaring no chain\",\n        None,\n        ForbiddenPublisher,\n        drive_undeclared_chain,\n    ),\n    (\n        \"a chain that cannot be observed\",\n        None,\n        ForbiddenPublisher,\n        drive_unobservable_chain,\n    ),\n    (\"cancellation while composing\", None, BlockedCreate, drive_cancellation),\n)\n",
+          "provenance": [
+            {
+              "ref": "c17f5d71ce95a94d0fd63f74ee6aa467cce01dad",
+              "path": "tests/chains/test_union_forge_isolation.py",
+              "start": 313,
+              "end": 336,
+              "ast_same": true
+            }
+          ]
+        },
+        {
+          "symbol": "test_named_union_exit_preserves_real_refs_and_removes_scratch",
+          "start": 298,
+          "end": 315,
+          "source": "@pytest.mark.parametrize(\n    \"name, edits, publisher, drive\",\n    EXIT_SCENARIOS,\n    ids=[row[0] for row in EXIT_SCENARIOS],\n)\nasync def test_named_union_exit_preserves_real_refs_and_removes_scratch(\n    tmp_path,\n    name,\n    edits,\n    publisher,\n    drive,\n):\n    fixture = await build_delivery(tmp_path / \"world\", edits=edits, git=publisher())\n    before = await fixture.refs()\n\n    await drive(fixture)\n\n    assert await fixture.refs() == before, name\n    assert fixture.git.created == fixture.git.removed, name\n    assert all(not Path(path).exists() for path in fixture.git.created), name\n    assert (\n        await pinned.git(fixture.observer, \"worktree\", \"list\", \"--porcelain\")\n    ).count(\"worktree \") == 1\n",
+          "provenance": []
+        }
+      ]
+    },
+    {
+      "path": "tests/chains/test_union_participant_order.py",
+      "blob": "c0009a2e1df6eb15be265d2e8539383f69d82e10",
+      "patch": "diff --git a/tests/chains/test_union_participant_order.py b/tests/chains/test_union_participant_order.py\nnew file mode 100644\nindex 0000000..c0009a2\n--- /dev/null\n+++ b/tests/chains/test_union_participant_order.py\n@@ -0,0 +1,129 @@\n+\"\"\"Complete participants retain PR114's inherited-priority ordering oracle.\"\"\"\n+\n+import sys\n+from datetime import UTC, datetime\n+\n+import pytest\n+\n+from kodezart.chains.scope_walker import read_scope_ready\n+from kodezart.types.domain.tracker import (\n+    IssuePriority,\n+    IssueRelation,\n+    IssueRelationKind,\n+    priority_rank,\n+)\n+from kodezart.types.domain.union import UnionOutcome\n+from tests.chains.test_delivery_coordinator import PROJECT, issue, work_ref\n+from tests.chains.test_union_exit_invariance import build_delivery\n+from tests.services import test_union_composition as pinned\n+\n+OPENED = (\"a\", \"b\", \"c\", \"d\", \"e\")\n+ORDER = (\"c\", \"e\", \"a\", \"d\", \"b\")\n+PRIORITIES = {\n+    \"a\": IssuePriority.HIGH,\n+    \"b\": IssuePriority.MEDIUM,\n+    \"c\": IssuePriority.LOW,\n+    \"d\": IssuePriority.HIGH,\n+    \"e\": IssuePriority.URGENT,\n+}\n+\n+\n+async def test_complete_order_uses_inherited_priority_and_includes_blocked_head(\n+    tmp_path,\n+):\n+    fixture = await build_delivery(tmp_path / \"world\")\n+    # Extend the real two-lane fixture to the four-lane PR114 priority oracle\n+    # plus the urgent blocked member. It is ordinary and retains a branch,\n+    # so complete union membership includes it as well as its prerequisite.\n+    await pinned.git(fixture.author, \"remote\", \"add\", \"upstream\", str(fixture.remote))\n+    rows = []\n+    refs = {}\n+    for position, lane in enumerate(OPENED):\n+        branch = f\"ordered/{lane}\"\n+        await pinned.git(\n+            fixture.author, \"checkout\", \"-b\", branch, fixture.context.base_sha\n+        )\n+        (fixture.author / f\"{lane}.txt\").write_text(lane)\n+        await pinned.git(fixture.author, \"add\", \".\")\n+        await pinned.git(fixture.author, \"commit\", \"-m\", lane)\n+        await pinned.git(fixture.author, \"push\", \"upstream\", branch)\n+        sha = await pinned.git(fixture.author, \"rev-parse\", \"HEAD\")\n+        refs[lane] = [work_ref(lane, branch, sha)]\n+        rows.append(\n+            issue(\n+                lane,\n+                priority=PRIORITIES[lane],\n+                created_at=datetime(2026, 1, position + 1, tzinfo=UTC),\n+                relations=(\n+                    IssueRelation(kind=IssueRelationKind.BLOCKED_BY, issue_key=\"c\"),\n+                )\n+                if lane == \"e\"\n+                else (),\n+            )\n+        )\n+        rows.append(\n+            issue(\n+                f\"{lane}-check\", parent_key=lane, issue_labels=frozenset({\"criterion\"})\n+            )\n+        )\n+    fixture.tracker.issues = {row.issue_key: row for row in rows}\n+    fixture.tracker.scope_memberships[PROJECT] = OPENED\n+    fixture.tracker.recorded_work_refs = refs\n+    # Existing fixture's chain checks its original two files; this one states\n+    # the complete intended five-lane evidence explicitly.\n+    command = (\n+        f'{sys.executable} -c \"from pathlib import Path; '\n+        + \"; \".join(f\"assert Path('{lane}.txt').exists()\" for lane in OPENED)\n+        + '\"'\n+    )\n+    fixture.with_checks(pinned.entry(command).checks)\n+    await fixture.git.fetch(str(fixture.observer))\n+    before = await fixture.refs()\n+    ready = await read_scope_ready(ref=PROJECT, tracker=fixture.tracker)\n+    assert tuple(lane.issue.issue_key for lane in ready.ready) == (\"c\", \"a\", \"d\", \"b\")\n+    assert ORDER != OPENED\n+    assert ORDER != tuple(sorted(OPENED, reverse=True))\n+    assert ORDER != tuple(reversed(ORDER))\n+    assert ORDER != tuple(\n+        sorted(OPENED, key=lambda key: priority_rank(PRIORITIES[key]))\n+    )\n+\n+    result = await fixture.coordinator().verify()\n+\n+    assert result.composition_order == ORDER\n+    assert len(result.lane_heads) == len(set(OPENED))\n+    assert result.outcome is UnionOutcome.GREEN\n+    expected = [refs[key][0].pushed_head_sha for key in ORDER]\n+    assert fixture.git.merged == expected\n+    # Read actual merge parents: a forged call log cannot satisfy the oracle.\n+    cursor = result.scratch_sha\n+    reverse_merged = []\n+    for _ in ORDER:\n+        parents = (\n+            await pinned.git(fixture.observer, \"show\", \"-s\", \"--format=%P\", cursor)\n+        ).split()\n+        assert len(parents) == 2\n+        reverse_merged.append(parents[1])\n+        cursor = parents[0]\n+    assert tuple(reversed(reverse_merged)) == tuple(expected)\n+    assert cursor == fixture.context.base_sha\n+    assert await fixture.refs() == before\n+    assert fixture.git.created == fixture.git.removed == [result.scratch_path]\n+\n+\n+@pytest.mark.parametrize(\"classification\", [\"tracker\", \"decision\"])\n+async def test_record_artifacts_do_not_add_a_delivery_branch(tmp_path, classification):\n+    fixture = await build_delivery(tmp_path / \"world\")\n+    from kodezart.types.domain.tracker import WorkflowStateKind\n+\n+    record = issue(\n+        \"record\",\n+        issue_labels=frozenset({classification}),\n+        state_kind=WorkflowStateKind.COMPLETED,\n+        state_name=\"Done\",\n+    )\n+    fixture.tracker.issues[record.issue_key] = record\n+    fixture.tracker.scope_memberships[PROJECT] = (\"a\", \"z\", \"record\")\n+    result = await fixture.coordinator().verify()\n+    assert result.composition_order == (\"z\", \"a\")\n+    assert result.outcome is UnionOutcome.GREEN\n",
+      "units": [
+        {
+          "symbol": "OPENED",
+          "start": 20,
+          "end": 20,
+          "source": "OPENED = (\"a\", \"b\", \"c\", \"d\", \"e\")\n",
+          "provenance": []
+        },
+        {
+          "symbol": "ORDER",
+          "start": 21,
+          "end": 21,
+          "source": "ORDER = (\"c\", \"e\", \"a\", \"d\", \"b\")\n",
+          "provenance": []
+        },
+        {
+          "symbol": "PRIORITIES",
+          "start": 22,
+          "end": 28,
+          "source": "PRIORITIES = {\n    \"a\": IssuePriority.HIGH,\n    \"b\": IssuePriority.MEDIUM,\n    \"c\": IssuePriority.LOW,\n    \"d\": IssuePriority.HIGH,\n    \"e\": IssuePriority.URGENT,\n}\n",
+          "provenance": []
+        },
+        {
+          "symbol": "test_complete_order_uses_inherited_priority_and_includes_blocked_head",
+          "start": 31,
+          "end": 111,
+          "source": "async def test_complete_order_uses_inherited_priority_and_includes_blocked_head(\n    tmp_path,\n):\n    fixture = await build_delivery(tmp_path / \"world\")\n    # Extend the real two-lane fixture to the four-lane PR114 priority oracle\n    # plus the urgent blocked member. It is ordinary and retains a branch,\n    # so complete union membership includes it as well as its prerequisite.\n    await pinned.git(fixture.author, \"remote\", \"add\", \"upstream\", str(fixture.remote))\n    rows = []\n    refs = {}\n    for position, lane in enumerate(OPENED):\n        branch = f\"ordered/{lane}\"\n        await pinned.git(\n            fixture.author, \"checkout\", \"-b\", branch, fixture.context.base_sha\n        )\n        (fixture.author / f\"{lane}.txt\").write_text(lane)\n        await pinned.git(fixture.author, \"add\", \".\")\n        await pinned.git(fixture.author, \"commit\", \"-m\", lane)\n        await pinned.git(fixture.author, \"push\", \"upstream\", branch)\n        sha = await pinned.git(fixture.author, \"rev-parse\", \"HEAD\")\n        refs[lane] = [work_ref(lane, branch, sha)]\n        rows.append(\n            issue(\n                lane,\n                priority=PRIORITIES[lane],\n                created_at=datetime(2026, 1, position + 1, tzinfo=UTC),\n                relations=(\n                    IssueRelation(kind=IssueRelationKind.BLOCKED_BY, issue_key=\"c\"),\n                )\n                if lane == \"e\"\n                else (),\n            )\n        )\n        rows.append(\n            issue(\n                f\"{lane}-check\", parent_key=lane, issue_labels=frozenset({\"criterion\"})\n            )\n        )\n    fixture.tracker.issues = {row.issue_key: row for row in rows}\n    fixture.tracker.scope_memberships[PROJECT] = OPENED\n    fixture.tracker.recorded_work_refs = refs\n    # Existing fixture's chain checks its original two files; this one states\n    # the complete intended five-lane evidence explicitly.\n    command = (\n        f'{sys.executable} -c \"from pathlib import Path; '\n        + \"; \".join(f\"assert Path('{lane}.txt').exists()\" for lane in OPENED)\n        + '\"'\n    )\n    fixture.with_checks(pinned.entry(command).checks)\n    await fixture.git.fetch(str(fixture.observer))\n    before = await fixture.refs()\n    ready = await read_scope_ready(ref=PROJECT, tracker=fixture.tracker)\n    assert tuple(lane.issue.issue_key for lane in ready.ready) == (\"c\", \"a\", \"d\", \"b\")\n    assert ORDER != OPENED\n    assert ORDER != tuple(sorted(OPENED, reverse=True))\n    assert ORDER != tuple(reversed(ORDER))\n    assert ORDER != tuple(\n        sorted(OPENED, key=lambda key: priority_rank(PRIORITIES[key]))\n    )\n\n    result = await fixture.coordinator().verify()\n\n    assert result.composition_order == ORDER\n    assert len(result.lane_heads) == len(set(OPENED))\n    assert result.outcome is UnionOutcome.GREEN\n    expected = [refs[key][0].pushed_head_sha for key in ORDER]\n    assert fixture.git.merged == expected\n    # Read actual merge parents: a forged call log cannot satisfy the oracle.\n    cursor = result.scratch_sha\n    reverse_merged = []\n    for _ in ORDER:\n        parents = (\n            await pinned.git(fixture.observer, \"show\", \"-s\", \"--format=%P\", cursor)\n        ).split()\n        assert len(parents) == 2\n        reverse_merged.append(parents[1])\n        cursor = parents[0]\n    assert tuple(reversed(reverse_merged)) == tuple(expected)\n    assert cursor == fixture.context.base_sha\n    assert await fixture.refs() == before\n    assert fixture.git.created == fixture.git.removed == [result.scratch_path]\n",
+          "provenance": []
+        },
+        {
+          "symbol": "test_record_artifacts_do_not_add_a_delivery_branch",
+          "start": 115,
+          "end": 129,
+          "source": "@pytest.mark.parametrize(\"classification\", [\"tracker\", \"decision\"])\nasync def test_record_artifacts_do_not_add_a_delivery_branch(tmp_path, classification):\n    fixture = await build_delivery(tmp_path / \"world\")\n    from kodezart.types.domain.tracker import WorkflowStateKind\n\n    record = issue(\n        \"record\",\n        issue_labels=frozenset({classification}),\n        state_kind=WorkflowStateKind.COMPLETED,\n        state_name=\"Done\",\n    )\n    fixture.tracker.issues[record.issue_key] = record\n    fixture.tracker.scope_memberships[PROJECT] = (\"a\", \"z\", \"record\")\n    result = await fixture.coordinator().verify()\n    assert result.composition_order == (\"z\", \"a\")\n    assert result.outcome is UnionOutcome.GREEN\n",
+          "provenance": []
+        }
+      ]
+    }
+  ]
+}

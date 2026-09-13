@@ -1,0 +1,483 @@
+diff --cc docs/cutover_mapping.md
+index 5a85fe8,03f6d30..0000000
+--- a/docs/cutover_mapping.md
++++ b/docs/cutover_mapping.md
+@@@ -127,4 -122,5 +128,9 @@@ registries
+  
+  | OperationConfig field | Actual native consumer |
+  | --- | --- |
+++<<<<<<< HEAD
+ +| organize_scopes | composition/organize.py::build_organize_tick |
+++=======
++ | issue_labels | composition/tracker.py::build_tracker |
++ | scope_labels | composition/tracker.py::build_tracker |
+++>>>>>>> 268be4057dbcd4d4edb79b35d7e2b60a30f2f3c8
+diff --cc src/kodezart/adapters/linear_mcp_tracker.py
+index c970cc8,dc81993..0000000
+--- a/src/kodezart/adapters/linear_mcp_tracker.py
++++ b/src/kodezart/adapters/linear_mcp_tracker.py
+@@@ -68,25 -65,16 +68,31 @@@ from kodezart.core.errors import 
+  )
+  from kodezart.core.logging import BoundLogger, get_logger
+  from kodezart.core.protocols import McpToolCaller, McpToolResult
+ +from kodezart.domain.criterion_amendment import require_criterion_source
+ +from kodezart.domain.criterion_creation import criterion_body, existing_criterion
+  from kodezart.domain.errors import (
+      CriterionReadError,
+ +    DuplicateIssueIdentityError,
+      DuplicateWorkRefError,
+      IssueLabelReadError,
+++<<<<<<< HEAD
+ +    OrganizeWriteRefusalError,
+++=======
+++>>>>>>> 268be4057dbcd4d4edb79b35d7e2b60a30f2f3c8
+      ScopeReadError,
+      SurfaceLeaseError,
+      SurfaceWriteAttributionError,
+      TransientAPIError,
+  )
+  from kodezart.domain.git_url import extract_owner_repo
+++<<<<<<< HEAD
+ +from kodezart.domain.organize_graph import (
+ +    changed_peers,
+ +    graph_snapshot,
+ +    validate_graph_change,
+ +)
+++=======
+++>>>>>>> 268be4057dbcd4d4edb79b35d7e2b60a30f2f3c8
+  from kodezart.domain.scope_approval import resolve_execution_approval
+  from kodezart.domain.surface_lease import (
+      live_conflict,
+@@@ -110,14 -96,6 +116,17 @@@ from kodezart.types.domain.operation im
+      OperationMemberAbsentError,
+      QueueState,
+      ScopeLabel,
+++<<<<<<< HEAD
+ +)
+ +from kodezart.types.domain.organize_graph import (
+ +    BlockedByChange,
+ +    GraphChange,
+ +    IssueGraphSnapshot,
+ +    MilestoneChange,
+ +    ParentChange,
+ +    PriorityChange,
+++=======
+++>>>>>>> 268be4057dbcd4d4edb79b35d7e2b60a30f2f3c8
+  )
+  from kodezart.types.domain.scope import ScopeContainer, ScopeKind, ScopeRef
+  from kodezart.types.domain.self_writes import (
+@@@ -809,7 -779,6 +833,10 @@@ class LinearMcpTracker
+          self._caller: McpToolCaller = caller
+          self._issue_labels = dict(issue_labels)
+          self._scope_labels = dict(scope_labels)
+++<<<<<<< HEAD
+ +        self._issue_identity = LinearIssueIdentityCarrier(marker_prefixes)
+++=======
+++>>>>>>> 268be4057dbcd4d4edb79b35d7e2b60a30f2f3c8
+          self._markers = LinearMarkers(marker_prefixes)
+          self._retry = retry
+          self._clock: Callable[[], datetime] = clock
+diff --cc src/kodezart/core/prompt_namespaces.py
+index 5283202,661b5a4..0000000
+--- a/src/kodezart/core/prompt_namespaces.py
++++ b/src/kodezart/core/prompt_namespaces.py
+@@@ -135,20 -127,6 +135,23 @@@ def operation_bindings(config: Operatio
+  
+      _bind_absentable(
+          bindings,
+++<<<<<<< HEAD
+ +        "organize_mandates",
+ +        [
+ +            {
+ +                "kind": phase.spec.kind.value,
+ +                "gate_label": phase.gate_label,
+ +                "terminal_marker": phase.terminal_marker,
+ +            }
+ +            for phase in config.resolve_organize_mandates()
+ +        ],
+ +        absent=not config.organize_mandates,
+ +    )
+ +
+ +    _bind_absentable(
+ +        bindings,
+++=======
+++>>>>>>> 268be4057dbcd4d4edb79b35d7e2b60a30f2f3c8
+          "queue_states",
+          dict(config.queue_states),
+          absent=not config.queue_states,
+diff --cc src/kodezart/types/domain/operation.py
+index 86d785d,f9b0418..0000000
+--- a/src/kodezart/types/domain/operation.py
++++ b/src/kodezart/types/domain/operation.py
+@@@ -433,14 -425,6 +433,17 @@@ class ScopeLabel(StrEnum)
+      APPROVED = "approved"
+  
+  
+++<<<<<<< HEAD
+ +class OrganizeScopeBinding(OperationModel):
+ +    """One explicit writable scope and the declared repository it is judged against."""
+ +
+ +    model_config = ConfigDict(extra="forbid", frozen=True, hide_input_in_errors=True)
+ +    scope: ScopeRef
+ +    repo_url: str = Field(min_length=1)
+ +
+ +
+++=======
+++>>>>>>> 268be4057dbcd4d4edb79b35d7e2b60a30f2f3c8
+  class OperationConfig(OperationModel):
+      """The whole operation configuration, validated structurally at load.
+  
+@@@ -488,26 -472,6 +491,29 @@@
+          """Collect EVERY structural failure into one error, never the first."""
+          failures: list[str] = []
+  
+++<<<<<<< HEAD
+ +        try:
+ +            self.resolve_organize_mandates()
+ +        except ValueError as exc:
+ +            failures.append(str(exc))
+ +
+ +        if self.organize_scopes:
+ +            if not self.organize_mandates:
+ +                failures.append("organize_scopes requires configured organize_mandates")
+ +            refs = [binding.scope for binding in self.organize_scopes]
+ +            if len(refs) != len(set(refs)):
+ +                failures.append(
+ +                    "organize_scopes repeats or ambiguously binds one scope"
+ +                )
+ +            for binding in self.organize_scopes:
+ +                if sum(repo.url == binding.repo_url for repo in self.repos) != 1:
+ +                    failures.append(
+ +                        "each organize scope requires exactly one matching "
+ +                        "declared repository"
+ +                    )
+ +
+++=======
+++>>>>>>> 268be4057dbcd4d4edb79b35d7e2b60a30f2f3c8
+          if self.scope_labels:
+              for scope_label in ScopeLabel:
+                  if scope_label.value not in self.scope_labels:
+@@@ -805,67 -769,6 +811,70 @@@
+  
+      scope_labels: dict[str, str] = Field(default_factory=dict)
+  
+++<<<<<<< HEAD
+ +    organize_mandates: tuple[MandateSpec, ...] = ()
+ +
+ +    organize_scopes: tuple[OrganizeScopeBinding, ...] = ()
+ +
+ +    def resolve_organize_mandates(self) -> tuple[ResolvedMandateSpec, ...]:
+ +        """Resolve every declared phase during ordinary configuration validation.
+ +
+ +        An absent table is a legitimate operation without an organizer table.
+ +        A declared table names every phase exactly once. The namespace in
+ +        each key selects its mapping; phase kind never guesses one. Approval
+ +        ends organization, so its configured label cannot be a phase gate
+ +        or a machine-written completion marker, including through aliases.
+ +        """
+ +        if not self.organize_mandates:
+ +            return ()
+ +
+ +        failures: list[str] = []
+ +        kinds = [spec.kind for spec in self.organize_mandates]
+ +        for kind in MandateKind:
+ +            if kind not in kinds:
+ +                failures.append(f"organize_mandates is missing phase {kind.value!r}")
+ +            elif kinds.count(kind) > 1:
+ +                failures.append(f"organize_mandates repeats phase {kind.value!r}")
+ +
+ +        mappings = {
+ +            OrganizeLabelNamespace.SCOPE: self.scope_labels,
+ +            OrganizeLabelNamespace.ISSUE: self.issue_labels,
+ +        }
+ +        approved_label = self.scope_labels.get(ScopeLabel.APPROVED.value)
+ +        resolved: list[ResolvedMandateSpec] = []
+ +        for spec in self.organize_mandates:
+ +            labels: dict[str, str] = {}
+ +            for field, reference in (
+ +                ("gate_label_key", spec.gate_label_key),
+ +                ("terminal_marker_key", spec.terminal_marker_key),
+ +            ):
+ +                namespace, key = split_label_key(reference)
+ +                label = mappings[namespace].get(key)
+ +                location = f"organize_mandates[{spec.kind.value!r}].{field}"
+ +                if label is None or not label.strip():
+ +                    failures.append(
+ +                        f"{location} has no nonempty mapping for {reference!r}"
+ +                    )
+ +                elif label == approved_label:
+ +                    failures.append(
+ +                        f"{location} names scope approval, which ends organize"
+ +                    )
+ +                else:
+ +                    labels[field] = label
+ +            if "gate_label_key" in labels and "terminal_marker_key" in labels:
+ +                resolved.append(
+ +                    ResolvedMandateSpec(
+ +                        spec=spec,
+ +                        gate_label=labels["gate_label_key"],
+ +                        terminal_marker=labels["terminal_marker_key"],
+ +                    )
+ +                )
+ +        if failures:
+ +            raise ValueError("; ".join(failures))
+ +        return tuple(resolved)
+ +
+++=======
+++>>>>>>> 268be4057dbcd4d4edb79b35d7e2b60a30f2f3c8
+  
+  #: Which class every declared field belongs to, and therefore what boot does
+  #: with it.  A fixed partition in the MODEL rather than a per-field flag,
+@@@ -901,8 -804,6 +910,11 @@@ FIELD_OWNERSHIP: dict[str, ConfigOwners
+      "queue_states": ConfigOwnership.OWNED,
+      "issue_labels": ConfigOwnership.OWNED,
+      "scope_labels": ConfigOwnership.OWNED,
+++<<<<<<< HEAD
+ +    "organize_mandates": ConfigOwnership.LOCAL,
+ +    "organize_scopes": ConfigOwnership.LOCAL,
+++=======
+++>>>>>>> 268be4057dbcd4d4edb79b35d7e2b60a30f2f3c8
+      "workflow_states": ConfigOwnership.EXTERNAL,
+      "marker_prefixes": ConfigOwnership.LOCAL,
+      "repos": ConfigOwnership.LOCAL,
+diff --cc tests/fakes.py
+index 4dcc4c7,fe0e50c..0000000
+--- a/tests/fakes.py
++++ b/tests/fakes.py
+@@@ -50,11 -45,6 +50,14 @@@ from kodezart.domain.errors import 
+      TransientAPIError,
+      WorkspaceError,
+  )
+++<<<<<<< HEAD
+ +from kodezart.domain.organize_graph import (
+ +    changed_peers,
+ +    graph_snapshot,
+ +    validate_graph_change,
+ +)
+++=======
+++>>>>>>> 268be4057dbcd4d4edb79b35d7e2b60a30f2f3c8
+  from kodezart.domain.scope_approval import resolve_execution_approval
+  from kodezart.domain.surface_lease import live_conflict, surface_address
+  from kodezart.domain.tracker_writes import (
+@@@ -2992,11 -2991,9 +3069,12 @@@ class FakeTrackerPort
+          self,
+          *,
+          issues: Sequence[TrackerIssue] = (),
+ +        issue_identities: Mapping[str, IssueIdentity] | None = None,
+ +        marker_prefixes: Mapping[str, str] | None = None,
+ +        scope_label_members: Mapping[ScopeRef, frozenset[ScopeLabel]] | None = None,
+          scope_containers: Sequence[ScopeContainer] = (),
+          scope_memberships: Mapping[ScopeRef, Sequence[str]] | None = None,
++         scope_label_members: Mapping[ScopeRef, frozenset[ScopeLabel]] | None = None,
+          assets: Mapping[str, Sequence[TrackerAsset]] | None = None,
+          documents: Mapping[str, str] | None = None,
+          document_titles: Mapping[str, str] | None = None,
+diff --cc tests/prompts/test_operation_config.py
+index dd1c0d3,e6f59d0..0000000
+--- a/tests/prompts/test_operation_config.py
++++ b/tests/prompts/test_operation_config.py
+@@@ -637,7 -637,10 +639,14 @@@ def test_placeholder_mapping_is_total_i
+      # Direction 2 — read off the MODEL, never off the table's own rows, so
+      # the mapping can no longer be checked against what it was derived from.
+      native = dict(markdown_rows("## Native OperationConfig consumers"))
+++<<<<<<< HEAD
+ +    assert native == {"organize_scopes": "composition/organize.py::build_organize_tick"}
+++=======
++     assert native == {
++         "issue_labels": "composition/tracker.py::build_tracker",
++         "scope_labels": "composition/tracker.py::build_tracker",
++     }
+++>>>>>>> 268be4057dbcd4d4edb79b35d7e2b60a30f2f3c8
+      assert set(mapped).isdisjoint(native)
+      assert set(mapped.values()) | set(native) == set(OperationConfig.model_fields)
+  
+diff --cc tests/tracker/conftest.py
+index 3240973,7a5aa17..0000000
+--- a/tests/tracker/conftest.py
++++ b/tests/tracker/conftest.py
+@@@ -240,13 -240,13 +240,19 @@@ def fixture_server
+  def linear_over_fake_mcp(
+      server: FakeLinearMcpServer,
+      *,
++     scope_labels: Mapping[str, str] | None = None,
+      clock: Callable[[], datetime] = _frozen_now,
+ +    scope_labels: Mapping[str, str] | None = None,
+  ) -> TrackerPort:
+      """The shipped Linear adapter, dialing the in-process fake MCP server."""
+      return LinearMcpTracker(
+++<<<<<<< HEAD
+ +        issue_labels={"criterion": "acceptance-condition"},
+ +        scope_labels=scope_labels or {},
+++=======
++         scope_labels=scope_labels if scope_labels is not None else {},
++         issue_labels={},
+++>>>>>>> 268be4057dbcd4d4edb79b35d7e2b60a30f2f3c8
+          marker_prefixes=MARKER_PREFIXES,
+          caller=server,
+          queue_state_labels=QUEUE_STATE_LABELS,
+diff --cc tests/tracker/test_linear_mcp_tracker.py
+index 9c8320d,a3d5997..0000000
+--- a/tests/tracker/test_linear_mcp_tracker.py
++++ b/tests/tracker/test_linear_mcp_tracker.py
+@@@ -80,8 -80,8 +80,13 @@@ def tracker_over
+      """The adapter over *server*, with per-test constructor overrides."""
+      kwargs: dict[str, object] = {
+          "caller": server,
+++<<<<<<< HEAD
+ +        "issue_labels": {"criterion": "acceptance-condition"},
+ +        "scope_labels": {"approved": "execution-consent"},
+++=======
++         "issue_labels": {},
++         "scope_labels": {},
+++>>>>>>> 268be4057dbcd4d4edb79b35d7e2b60a30f2f3c8
+          "marker_prefixes": MARKER_PREFIXES,
+          "queue_state_labels": QUEUE_STATE_LABELS,
+          "workflow_state_names": WORKFLOW_STATE_NAMES,
+diff --cc tests/tracker/test_milestone_approval.py
+index e2accab,2e779df..0000000
+--- a/tests/tracker/test_milestone_approval.py
++++ b/tests/tracker/test_milestone_approval.py
+@@@ -3,17 -3,40 +3,53 @@@
+  import pytest
+  
+  from kodezart.domain.errors import ScopeReadError
+++<<<<<<< HEAD
+ +from kodezart.types.domain.operation import ScopeLabel
+ +from tests.tracker.test_scope_approval import (
+ +    APPROVAL_LABELS,
+ +    ApprovalFixture,
+ +    approval,
+ +)
+ +from tests.tracker.test_scope_reads import MILESTONE, PROJECT, ROOT
+++=======
++ from kodezart.services.scope_resolution import resolve_scope
++ from kodezart.types.domain.operation import ScopeLabel
++ from tests.tracker.test_scope_approval import (
++     APPROVAL_LABELS,
++     PARENT,
++     ApprovalFixture,
++     approval,
++ )
++ from tests.tracker.test_scope_reads import MILESTONE, PROJECT, ROOT, _container
+++>>>>>>> 268be4057dbcd4d4edb79b35d7e2b60a30f2f3c8
+  
+  __all__ = ["approval"]
+  
+  
+++<<<<<<< HEAD
+++=======
++ async def test_actual_milestone_scope_uses_current_project_approval(
++     approval: ApprovalFixture,
++ ) -> None:
++     approval.fake.scope_containers[MILESTONE] = _container(MILESTONE, PROJECT)
++     approval.fake.scope_memberships[MILESTONE] = (ROOT.key, PARENT.key)
++     resolved = await resolve_scope(ref=MILESTONE, tracker=approval.tracker)
++     assert resolved.ref == MILESTONE
++     assert {issue.issue_key for issue in resolved.issues} == {ROOT.key, PARENT.key}
++ 
++     approval.server.calls.clear()
++     for expected in (False, True, False):
++         approval.labels(PROJECT, *([ScopeLabel.APPROVED] if expected else []))
++         for issue in resolved.issues:
++             assert (
++                 await approval.tracker.execution_approved(issue_key=issue.issue_key)
++                 is expected
++             )
++     assert all("milestone" not in tool for tool, _ in approval.server.calls)
++     assert not approval.fake.issue_writes
++ 
++ 
+++>>>>>>> 268be4057dbcd4d4edb79b35d7e2b60a30f2f3c8
+  async def test_a_milestone_label_cannot_approve_its_project_or_members(
+      approval: ApprovalFixture,
+  ) -> None:
+diff --cc tests/tracker/test_native_approval_aliases.py
+index 2984997,dc56715..0000000
+--- a/tests/tracker/test_native_approval_aliases.py
++++ b/tests/tracker/test_native_approval_aliases.py
+@@@ -1,10 -1,9 +1,17 @@@
+++<<<<<<< HEAD
+ +"""Actual approval and spec entry normalize only a reported native UUID."""
+++=======
++ """Actual approval reads normalize only a reported native UUID."""
+++>>>>>>> 268be4057dbcd4d4edb79b35d7e2b60a30f2f3c8
+  
+  import pytest
+  
+  from kodezart.domain.errors import ScopeReadError
+  from tests.fakes import FakeLinearMcpServer, FakeMcpIssue
+++<<<<<<< HEAD
+ +from tests.tracker.conftest import FIRE_ENTRY_LABELS
+++=======
+++>>>>>>> 268be4057dbcd4d4edb79b35d7e2b60a30f2f3c8
+  from tests.tracker.test_linear_mcp_tracker import tracker_over
+  
+  NATIVE_UUID = "00000000-0000-4000-8000-000000000073"
+@@@ -15,7 -14,7 +22,11 @@@ class ApprovalAliasServer(FakeLinearMcp
+      def __init__(self, *, reported_uuid):
+          super().__init__(
+              issues=[
+++<<<<<<< HEAD
+ +                FakeMcpIssue(id="ROOT-1", labels=list(FIRE_ENTRY_LABELS)),
+++=======
++                 FakeMcpIssue(id="ROOT-1", labels=["execution-consent"]),
+++>>>>>>> 268be4057dbcd4d4edb79b35d7e2b60a30f2f3c8
+                  FakeMcpIssue(
+                      id="CHECK-1",
+                      parent_id="ROOT-1",
+@@@ -39,20 -38,11 +50,28 @@@
+          return payload
+  
+  
+++<<<<<<< HEAD
+ +@pytest.mark.parametrize("entry", ["approval"])
+ +@pytest.mark.parametrize("requested", ["ROOT-1", NATIVE_UUID])
+ +async def test_actual_entry_preserves_reported_alias_with_one_subject_read(
+ +    entry, requested
+ +):
+ +    server = ApprovalAliasServer(reported_uuid=NATIVE_UUID)
+ +    tracker = tracker_over(server)
+ +    if entry == "approval":
+ +        assert await tracker.execution_approved(issue_key=requested) is True
+ +    else:
+ +        spec = await tracker.read_fire_spec(issue_key=requested)
+ +        assert spec.subject == "ROOT-1"
+ +        assert spec.criteria == ("CHECK-1",)
+ +        assert server.tool_calls("list_issues")[0]["parentId"] == "ROOT-1"
+++=======
++ @pytest.mark.parametrize("requested", ["ROOT-1", NATIVE_UUID])
++ async def test_actual_entry_preserves_reported_alias_with_one_subject_read(requested):
++     server = ApprovalAliasServer(reported_uuid=NATIVE_UUID)
++     tracker = tracker_over(server, scope_labels={"approved": "execution-consent"})
++     assert await tracker.execution_approved(issue_key=requested) is True
+++>>>>>>> 268be4057dbcd4d4edb79b35d7e2b60a30f2f3c8
+      assert [
+          call
+          for call in server.tool_calls("get_issue")
+@@@ -61,17 -51,11 +80,26 @@@
+      assert server.tool_calls("save_issue") == []
+  
+  
+++<<<<<<< HEAD
+ +@pytest.mark.parametrize("entry", ["approval"])
+ +@pytest.mark.parametrize("reported_uuid", [None, OTHER_UUID])
+ +async def test_actual_entry_refuses_foreign_subject_before_membership(
+ +    entry, reported_uuid
+ +):
+ +    server = ApprovalAliasServer(reported_uuid=reported_uuid)
+ +    tracker = tracker_over(server)
+ +    with pytest.raises(ScopeReadError):
+ +        if entry == "approval":
+ +            await tracker.execution_approved(issue_key=NATIVE_UUID)
+ +        else:
+ +            await tracker.read_fire_spec(issue_key=NATIVE_UUID)
+++=======
++ @pytest.mark.parametrize("reported_uuid", [None, OTHER_UUID])
++ async def test_actual_entry_refuses_foreign_subject_before_membership(reported_uuid):
++     server = ApprovalAliasServer(reported_uuid=reported_uuid)
++     tracker = tracker_over(server, scope_labels={"approved": "execution-consent"})
++     with pytest.raises(ScopeReadError):
++         await tracker.execution_approved(issue_key=NATIVE_UUID)
+++>>>>>>> 268be4057dbcd4d4edb79b35d7e2b60a30f2f3c8
+      assert server.tool_calls("list_issues") == []
+      assert server.tool_calls("save_issue") == []

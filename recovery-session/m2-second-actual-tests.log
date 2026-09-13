@@ -1,0 +1,1952 @@
+........................................................................ [ 23%]
+..FF....F.F..F..........FFF..FFFFFFFF.FFF.F..F.........FF.F....FFF...... [ 46%]
+........................................................................ [ 69%]
+........................................................................ [ 92%]
+.........................                                                [100%]
+=================================== FAILURES ===================================
+__ test_actual_factory_runs_all_configured_phases_and_reentry_writes_nothing ___
+
+    async def test_actual_factory_runs_all_configured_phases_and_reentry_writes_nothing():
+        owner, board, executor = factory()
+>       report = await run_owner(owner)
+                 ^^^^^^^^^^^^^^^^^^^^^^
+
+tests/chains/test_organize_owner.py:202: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/chains/test_organize_owner.py:191: in run_owner
+    return await owner.run(
+src/kodezart/services/organize_owner.py:1038: in run
+    verified_write = await self._author_write(
+src/kodezart/services/organize_owner.py:658: in _author_write
+    result = await self._verifier.write_back(
+src/kodezart/chains/write_back_verifier.py:121: in write_back
+    await step.write(finding=finding)
+src/kodezart/services/organize_owner.py:99: in write
+    await self.apply(finding)
+src/kodezart/services/organize_owner.py:556: in apply
+    content = await gated_write(
+src/kodezart/core/outbound_write.py:59: in gated_write
+    surface=surface_of(destination).value,
+            ^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+destination = <OutboundDestination.TRACKER_DESCRIPTION: 'tracker_description'>
+
+    def surface_of(destination: OutboundDestination) -> OutboundSurface:
+        """The surface class *destination* writes onto."""
+>       return DESTINATION_SURFACE[destination]
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: <OutboundDestination.TRACKER_DESCRIPTION: 'tracker_description'>
+
+src/kodezart/types/domain/gating.py:147: KeyError
+----------------------------- Captured stdout call -----------------------------
+2026-09-13 00:45:13 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-13 00:45:13 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 00:45:13 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+___ test_single_admission_round_stops_with_durable_refusal_and_no_completion ___
+
+    async def test_single_admission_round_stops_with_durable_refusal_and_no_completion():
+        owner, board, executor = factory(refuse_forever=True, bound=1)
+>       report = await run_owner(owner)
+                 ^^^^^^^^^^^^^^^^^^^^^^
+
+tests/chains/test_organize_owner.py:238: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/chains/test_organize_owner.py:191: in run_owner
+    return await owner.run(
+src/kodezart/services/organize_owner.py:1038: in run
+    verified_write = await self._author_write(
+src/kodezart/services/organize_owner.py:658: in _author_write
+    result = await self._verifier.write_back(
+src/kodezart/chains/write_back_verifier.py:121: in write_back
+    await step.write(finding=finding)
+src/kodezart/services/organize_owner.py:99: in write
+    await self.apply(finding)
+src/kodezart/services/organize_owner.py:556: in apply
+    content = await gated_write(
+src/kodezart/core/outbound_write.py:59: in gated_write
+    surface=surface_of(destination).value,
+            ^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+destination = <OutboundDestination.TRACKER_DESCRIPTION: 'tracker_description'>
+
+    def surface_of(destination: OutboundDestination) -> OutboundSurface:
+        """The surface class *destination* writes onto."""
+>       return DESTINATION_SURFACE[destination]
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: <OutboundDestination.TRACKER_DESCRIPTION: 'tracker_description'>
+
+src/kodezart/types/domain/gating.py:147: KeyError
+----------------------------- Captured stdout call -----------------------------
+2026-09-13 00:45:15 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-13 00:45:15 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 00:45:15 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+__________ test_landed_claim_refutation_drives_a_fresh_author_repair ___________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a272b40>
+
+    async def test_landed_claim_refutation_drives_a_fresh_author_repair(monkeypatch):
+        owner, _board, executor = factory()
+        original = executor.stream
+        checked = []
+    
+        async def source_checker(**kwargs):
+            async for event in original(**kwargs):
+                payload = event.structured_output
+                title = kwargs["output_format"]["schema"].get("title")
+                if title == "OrganizeProposal" and payload.get("kind") == "body":
+                    path = (
+                        "tests/real.py"
+                        if "tests/missing.py" in kwargs["prompt"]
+                        else "tests/missing.py"
+                    )
+                    event = result(
+                        structured_output={
+                            **payload,
+                            "body": f"The artifact is demonstrated by {path}.",
+                        }
+                    )
+                elif title == "WriteBackFinding":
+                    artifact = json.loads(
+                        re.search(
+                            r"<written_artifact>\s*(.*?)\s*</written_artifact>",
+                            kwargs["prompt"],
+                            re.S,
+                        )[1]
+                    )
+                    checked.append(artifact["content"])
+                    if "tests/missing.py" in artifact["content"]:
+                        event = result(
+                            structured_output={
+                                "verdict": "refuted",
+                                "evidence": (
+                                    "The named test is absent from the checked repository."
+                                ),
+                                "cited_refs": ["tests/missing.py"],
+                            }
+                        )
+                yield event
+    
+        monkeypatch.setattr(executor, "stream", source_checker)
+>       report = await run_owner(owner)
+                 ^^^^^^^^^^^^^^^^^^^^^^
+
+tests/chains/test_organize_owner.py:380: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/chains/test_organize_owner.py:191: in run_owner
+    return await owner.run(
+src/kodezart/services/organize_owner.py:1038: in run
+    verified_write = await self._author_write(
+src/kodezart/services/organize_owner.py:658: in _author_write
+    result = await self._verifier.write_back(
+src/kodezart/chains/write_back_verifier.py:121: in write_back
+    await step.write(finding=finding)
+src/kodezart/services/organize_owner.py:99: in write
+    await self.apply(finding)
+src/kodezart/services/organize_owner.py:556: in apply
+    content = await gated_write(
+src/kodezart/core/outbound_write.py:59: in gated_write
+    surface=surface_of(destination).value,
+            ^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+destination = <OutboundDestination.TRACKER_DESCRIPTION: 'tracker_description'>
+
+    def surface_of(destination: OutboundDestination) -> OutboundSurface:
+        """The surface class *destination* writes onto."""
+>       return DESTINATION_SURFACE[destination]
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: <OutboundDestination.TRACKER_DESCRIPTION: 'tracker_description'>
+
+src/kodezart/types/domain/gating.py:147: KeyError
+----------------------------- Captured stdout call -----------------------------
+2026-09-13 00:45:16 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-13 00:45:16 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 00:45:16 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+___ test_unanswered_escalation_is_unrecorded_with_exact_issue_and_no_resend ____
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a4d5f40>
+
+    async def test_unanswered_escalation_is_unrecorded_with_exact_issue_and_no_resend(
+        monkeypatch,
+    ):
+        from kodezart.core.errors import McpCallUnansweredError
+    
+        owner, board, _ = factory(refuse_forever=True, bound=1)
+        original = board.call_tool
+        sends = []
+    
+        async def unanswered(*, name, arguments):
+            if name == "save_comment" and str(arguments.get("body", "")).startswith(
+                "[organize-question:"
+            ):
+                sends.append(dict(arguments))
+                raise McpCallUnansweredError(
+                    "response lost after request", server_name="fixture", tool_name=name
+                )
+            return await original(name=name, arguments=arguments)
+    
+        monkeypatch.setattr(board, "call_tool", unanswered)
+>       report = await run_owner(owner)
+                 ^^^^^^^^^^^^^^^^^^^^^^
+
+tests/chains/test_organize_owner.py:453: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/chains/test_organize_owner.py:191: in run_owner
+    return await owner.run(
+src/kodezart/services/organize_owner.py:1038: in run
+    verified_write = await self._author_write(
+src/kodezart/services/organize_owner.py:658: in _author_write
+    result = await self._verifier.write_back(
+src/kodezart/chains/write_back_verifier.py:121: in write_back
+    await step.write(finding=finding)
+src/kodezart/services/organize_owner.py:99: in write
+    await self.apply(finding)
+src/kodezart/services/organize_owner.py:556: in apply
+    content = await gated_write(
+src/kodezart/core/outbound_write.py:59: in gated_write
+    surface=surface_of(destination).value,
+            ^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+destination = <OutboundDestination.TRACKER_DESCRIPTION: 'tracker_description'>
+
+    def surface_of(destination: OutboundDestination) -> OutboundSurface:
+        """The surface class *destination* writes onto."""
+>       return DESTINATION_SURFACE[destination]
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: <OutboundDestination.TRACKER_DESCRIPTION: 'tracker_description'>
+
+src/kodezart/types/domain/gating.py:147: KeyError
+----------------------------- Captured stdout call -----------------------------
+2026-09-13 00:45:17 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-13 00:45:17 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 00:45:17 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+________ test_full_scope_finding_exhausts_the_actual_convergence_bound _________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a4787a0>
+
+    async def test_full_scope_finding_exhausts_the_actual_convergence_bound(monkeypatch):
+        from tests.fakes import FakeMcpIssue
+    
+        owner, board, executor = factory(convergence_bound=1)
+        board.server.issues["untouched-child"] = FakeMcpIssue(
+            id="untouched-child",
+            parent_id=CLAIMED_ISSUE,
+            description="Source version remains unspecified.",
+        )
+        original = executor.stream
+    
+        async def recurring(**kwargs):
+            async for event in original(**kwargs):
+                if (
+                    kwargs["output_format"]["schema"].get("title") == "AdmissionJudgment"
+                    and event.structured_output["issue_id"] == "untouched-child"
+                    and "Adversarially verify the current issue" in kwargs["prompt"]
+                ):
+                    event = result(
+                        structured_output={
+                            **event.structured_output,
+                            "findings": [
+                                {
+                                    "issue_id": "untouched-child",
+                                    "defect_class": "source_version_unspecified",
+                                    "evidence": (
+                                        "The untouched child's source version is absent."
+                                    ),
+                                    "role": "instance",
+                                }
+                            ],
+                        }
+                    )
+                yield event
+    
+        monkeypatch.setattr(executor, "stream", recurring)
+>       report = await run_owner(owner)
+                 ^^^^^^^^^^^^^^^^^^^^^^
+
+tests/chains/test_organize_owner.py:524: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/chains/test_organize_owner.py:191: in run_owner
+    return await owner.run(
+src/kodezart/services/organize_owner.py:1038: in run
+    verified_write = await self._author_write(
+src/kodezart/services/organize_owner.py:658: in _author_write
+    result = await self._verifier.write_back(
+src/kodezart/chains/write_back_verifier.py:121: in write_back
+    await step.write(finding=finding)
+src/kodezart/services/organize_owner.py:99: in write
+    await self.apply(finding)
+src/kodezart/services/organize_owner.py:556: in apply
+    content = await gated_write(
+src/kodezart/core/outbound_write.py:59: in gated_write
+    surface=surface_of(destination).value,
+            ^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+destination = <OutboundDestination.TRACKER_DESCRIPTION: 'tracker_description'>
+
+    def surface_of(destination: OutboundDestination) -> OutboundSurface:
+        """The surface class *destination* writes onto."""
+>       return DESTINATION_SURFACE[destination]
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: <OutboundDestination.TRACKER_DESCRIPTION: 'tracker_description'>
+
+src/kodezart/types/domain/gating.py:147: KeyError
+----------------------------- Captured stdout call -----------------------------
+2026-09-13 00:45:18 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-13 00:45:18 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 00:45:18 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+___ test_criterion_mint_requires_the_parent_revision_its_author_read[False] ____
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a4d7b30>
+amend_parent = False
+
+    @pytest.mark.parametrize("amend_parent", [False, True])
+    async def test_criterion_mint_requires_the_parent_revision_its_author_read(
+        monkeypatch, amend_parent
+    ):
+        owner, board, executor = factory()
+        original = executor.stream
+        criterion_inputs = []
+    
+        async def changed_parent(**kwargs):
+            async for event in original(**kwargs):
+                if (
+                    kwargs["output_format"]["schema"].get("title") == "OrganizeProposal"
+                    and event.structured_output.get("kind") == "criteria"
+                ):
+                    criterion_inputs.append(kwargs["prompt"])
+                    if amend_parent:
+                        board.server.issues[
+                            CLAIMED_ISSUE
+                        ].description = "The revised source requires a different criterion."
+                yield event
+    
+        monkeypatch.setattr(executor, "stream", changed_parent)
+        try:
+>           await run_owner(owner)
+
+tests/chains/test_organize_native_independent.py:37: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/chains/test_organize_owner.py:191: in run_owner
+    return await owner.run(
+src/kodezart/services/organize_owner.py:1038: in run
+    verified_write = await self._author_write(
+src/kodezart/services/organize_owner.py:658: in _author_write
+    result = await self._verifier.write_back(
+src/kodezart/chains/write_back_verifier.py:121: in write_back
+    await step.write(finding=finding)
+src/kodezart/services/organize_owner.py:99: in write
+    await self.apply(finding)
+src/kodezart/services/organize_owner.py:556: in apply
+    content = await gated_write(
+src/kodezart/core/outbound_write.py:59: in gated_write
+    surface=surface_of(destination).value,
+            ^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+destination = <OutboundDestination.TRACKER_DESCRIPTION: 'tracker_description'>
+
+    def surface_of(destination: OutboundDestination) -> OutboundSurface:
+        """The surface class *destination* writes onto."""
+>       return DESTINATION_SURFACE[destination]
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: <OutboundDestination.TRACKER_DESCRIPTION: 'tracker_description'>
+
+src/kodezart/types/domain/gating.py:147: KeyError
+----------------------------- Captured stdout call -----------------------------
+2026-09-13 00:45:40 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-13 00:45:40 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 00:45:40 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+____ test_criterion_mint_requires_the_parent_revision_its_author_read[True] ____
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a092b40>
+amend_parent = True
+
+    @pytest.mark.parametrize("amend_parent", [False, True])
+    async def test_criterion_mint_requires_the_parent_revision_its_author_read(
+        monkeypatch, amend_parent
+    ):
+        owner, board, executor = factory()
+        original = executor.stream
+        criterion_inputs = []
+    
+        async def changed_parent(**kwargs):
+            async for event in original(**kwargs):
+                if (
+                    kwargs["output_format"]["schema"].get("title") == "OrganizeProposal"
+                    and event.structured_output.get("kind") == "criteria"
+                ):
+                    criterion_inputs.append(kwargs["prompt"])
+                    if amend_parent:
+                        board.server.issues[
+                            CLAIMED_ISSUE
+                        ].description = "The revised source requires a different criterion."
+                yield event
+    
+        monkeypatch.setattr(executor, "stream", changed_parent)
+        try:
+>           await run_owner(owner)
+
+tests/chains/test_organize_native_independent.py:37: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/chains/test_organize_owner.py:191: in run_owner
+    return await owner.run(
+src/kodezart/services/organize_owner.py:1038: in run
+    verified_write = await self._author_write(
+src/kodezart/services/organize_owner.py:658: in _author_write
+    result = await self._verifier.write_back(
+src/kodezart/chains/write_back_verifier.py:121: in write_back
+    await step.write(finding=finding)
+src/kodezart/services/organize_owner.py:99: in write
+    await self.apply(finding)
+src/kodezart/services/organize_owner.py:556: in apply
+    content = await gated_write(
+src/kodezart/core/outbound_write.py:59: in gated_write
+    surface=surface_of(destination).value,
+            ^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+destination = <OutboundDestination.TRACKER_DESCRIPTION: 'tracker_description'>
+
+    def surface_of(destination: OutboundDestination) -> OutboundSurface:
+        """The surface class *destination* writes onto."""
+>       return DESTINATION_SURFACE[destination]
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: <OutboundDestination.TRACKER_DESCRIPTION: 'tracker_description'>
+
+src/kodezart/types/domain/gating.py:147: KeyError
+----------------------------- Captured stdout call -----------------------------
+2026-09-13 00:45:40 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-13 00:45:40 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 00:45:40 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+________ test_writeback_exhaustion_retains_its_actual_cited_refutation _________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a4d5700>
+
+    async def test_writeback_exhaustion_retains_its_actual_cited_refutation(monkeypatch):
+        owner, _board, executor = factory(bound=1, write_back_bound=1)
+        original = executor.stream
+        checked_bad_body = []
+    
+        async def refute_landed_body(**kwargs):
+            async for event in original(**kwargs):
+                if kwargs["output_format"]["schema"].get("title") == "WriteBackFinding":
+                    artifact = json.loads(
+                        re.search(
+                            r"<written_artifact>\s*(.*?)\s*</written_artifact>",
+                            kwargs["prompt"],
+                            re.S,
+                        )[1]
+                    )
+                    if artifact["content"] == "Prepared body grounded in the source.":
+                        checked_bad_body.append(artifact)
+                        event = result(
+                            structured_output={
+                                "verdict": "refuted",
+                                "evidence": (
+                                    "tests/absent.py is absent at this exact commit."
+                                ),
+                                "cited_refs": ["tests/absent.py"],
+                            }
+                        )
+                yield event
+    
+        monkeypatch.setattr(executor, "stream", refute_landed_body)
+>       report = await run_owner(owner)
+                 ^^^^^^^^^^^^^^^^^^^^^^
+
+tests/chains/test_organize_native_independent.py:79: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/chains/test_organize_owner.py:191: in run_owner
+    return await owner.run(
+src/kodezart/services/organize_owner.py:1038: in run
+    verified_write = await self._author_write(
+src/kodezart/services/organize_owner.py:658: in _author_write
+    result = await self._verifier.write_back(
+src/kodezart/chains/write_back_verifier.py:121: in write_back
+    await step.write(finding=finding)
+src/kodezart/services/organize_owner.py:99: in write
+    await self.apply(finding)
+src/kodezart/services/organize_owner.py:556: in apply
+    content = await gated_write(
+src/kodezart/core/outbound_write.py:59: in gated_write
+    surface=surface_of(destination).value,
+            ^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+destination = <OutboundDestination.TRACKER_DESCRIPTION: 'tracker_description'>
+
+    def surface_of(destination: OutboundDestination) -> OutboundSurface:
+        """The surface class *destination* writes onto."""
+>       return DESTINATION_SURFACE[destination]
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: <OutboundDestination.TRACKER_DESCRIPTION: 'tracker_description'>
+
+src/kodezart/types/domain/gating.py:147: KeyError
+----------------------------- Captured stdout call -----------------------------
+2026-09-13 00:45:41 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-13 00:45:41 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 00:45:41 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+_______ test_halted_first_binding_does_not_starve_second_binding[False] ________
+
+first_halts = False
+
+    @pytest.mark.parametrize("first_halts", [False, True])
+    async def test_halted_first_binding_does_not_starve_second_binding(first_halts):
+        first, _, _ = factory(tick=True, refuse_forever=first_halts, bound=1)
+        second, board, executor = factory(tick=True)
+        key = "independent-second-scope"
+        issue = board.server.issues.pop(CLAIMED_ISSUE)
+        issue.id = key
+        board.server.issues[key] = issue
+        original = second._targets[0]
+        target = replace(
+            original,
+            binding=original.binding.model_copy(
+                update={"scope": ScopeRef(kind=ScopeKind.ISSUE, key=key)}
+            ),
+        )
+        tick = OrganizeTick(
+            targets=(first._targets[0], target),
+            git=FakeGitService(remote_branch_shas={target.repository.trunk: "a" * 40}),
+            workspace=RecordingWorkspace(),
+            remote="origin",
+        )
+        try:
+>           await tick.run(datetime(2026, 9, 12, tzinfo=UTC))
+
+tests/chains/test_organize_delivery_independent.py:47: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/services/organize_tick.py:69: in run
+    report = await target.owner.run(
+src/kodezart/services/organize_owner.py:1038: in run
+    verified_write = await self._author_write(
+src/kodezart/services/organize_owner.py:658: in _author_write
+    result = await self._verifier.write_back(
+src/kodezart/chains/write_back_verifier.py:121: in write_back
+    await step.write(finding=finding)
+src/kodezart/services/organize_owner.py:99: in write
+    await self.apply(finding)
+src/kodezart/services/organize_owner.py:556: in apply
+    content = await gated_write(
+src/kodezart/core/outbound_write.py:59: in gated_write
+    surface=surface_of(destination).value,
+            ^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+destination = <OutboundDestination.TRACKER_DESCRIPTION: 'tracker_description'>
+
+    def surface_of(destination: OutboundDestination) -> OutboundSurface:
+        """The surface class *destination* writes onto."""
+>       return DESTINATION_SURFACE[destination]
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: <OutboundDestination.TRACKER_DESCRIPTION: 'tracker_description'>
+
+src/kodezart/types/domain/gating.py:147: KeyError
+----------------------------- Captured stdout call -----------------------------
+2026-09-13 00:45:42 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-13 00:45:42 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 00:45:42 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+________ test_halted_first_binding_does_not_starve_second_binding[True] ________
+
+first_halts = True
+
+    @pytest.mark.parametrize("first_halts", [False, True])
+    async def test_halted_first_binding_does_not_starve_second_binding(first_halts):
+        first, _, _ = factory(tick=True, refuse_forever=first_halts, bound=1)
+        second, board, executor = factory(tick=True)
+        key = "independent-second-scope"
+        issue = board.server.issues.pop(CLAIMED_ISSUE)
+        issue.id = key
+        board.server.issues[key] = issue
+        original = second._targets[0]
+        target = replace(
+            original,
+            binding=original.binding.model_copy(
+                update={"scope": ScopeRef(kind=ScopeKind.ISSUE, key=key)}
+            ),
+        )
+        tick = OrganizeTick(
+            targets=(first._targets[0], target),
+            git=FakeGitService(remote_branch_shas={target.repository.trunk: "a" * 40}),
+            workspace=RecordingWorkspace(),
+            remote="origin",
+        )
+        try:
+>           await tick.run(datetime(2026, 9, 12, tzinfo=UTC))
+
+tests/chains/test_organize_delivery_independent.py:47: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/services/organize_tick.py:69: in run
+    report = await target.owner.run(
+src/kodezart/services/organize_owner.py:1038: in run
+    verified_write = await self._author_write(
+src/kodezart/services/organize_owner.py:658: in _author_write
+    result = await self._verifier.write_back(
+src/kodezart/chains/write_back_verifier.py:121: in write_back
+    await step.write(finding=finding)
+src/kodezart/services/organize_owner.py:99: in write
+    await self.apply(finding)
+src/kodezart/services/organize_owner.py:556: in apply
+    content = await gated_write(
+src/kodezart/core/outbound_write.py:59: in gated_write
+    surface=surface_of(destination).value,
+            ^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+destination = <OutboundDestination.TRACKER_DESCRIPTION: 'tracker_description'>
+
+    def surface_of(destination: OutboundDestination) -> OutboundSurface:
+        """The surface class *destination* writes onto."""
+>       return DESTINATION_SURFACE[destination]
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: <OutboundDestination.TRACKER_DESCRIPTION: 'tracker_description'>
+
+src/kodezart/types/domain/gating.py:147: KeyError
+----------------------------- Captured stdout call -----------------------------
+2026-09-13 00:45:42 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-13 00:45:42 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 00:45:42 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+_________ test_approval_is_current_after_last_awaited_gate_read[False] _________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a3fe0f0>
+approval_arrives = False
+
+    @pytest.mark.parametrize("approval_arrives", [False, True])
+    async def test_approval_is_current_after_last_awaited_gate_read(
+        monkeypatch, approval_arrives
+    ):
+        owner, board, _ = factory()
+        original = board.call_tool
+        reads_after_grant = 0
+        changed = False
+    
+        async def interleaved(*, name, arguments):
+            nonlocal reads_after_grant, changed
+            response = await original(name=name, arguments=arguments)
+            if (
+                board.grants()
+                and name == "get_issue"
+                and arguments.get("id") == CLAIMED_ISSUE
+            ):
+                reads_after_grant += 1
+                # execution_approved reads first; read_scope_labels reads second.
+                if reads_after_grant == 2:
+                    changed = True
+                    if approval_arrives:
+                        board.server.issues[CLAIMED_ISSUE].labels.append("approved scope")
+            return response
+    
+        monkeypatch.setattr(board, "call_tool", interleaved)
+        try:
+>           await run_owner(owner)
+
+tests/chains/test_organize_delivery_independent.py:81: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/chains/test_organize_owner.py:191: in run_owner
+    return await owner.run(
+src/kodezart/services/organize_owner.py:1038: in run
+    verified_write = await self._author_write(
+src/kodezart/services/organize_owner.py:658: in _author_write
+    result = await self._verifier.write_back(
+src/kodezart/chains/write_back_verifier.py:121: in write_back
+    await step.write(finding=finding)
+src/kodezart/services/organize_owner.py:99: in write
+    await self.apply(finding)
+src/kodezart/services/organize_owner.py:556: in apply
+    content = await gated_write(
+src/kodezart/core/outbound_write.py:59: in gated_write
+    surface=surface_of(destination).value,
+            ^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+destination = <OutboundDestination.TRACKER_DESCRIPTION: 'tracker_description'>
+
+    def surface_of(destination: OutboundDestination) -> OutboundSurface:
+        """The surface class *destination* writes onto."""
+>       return DESTINATION_SURFACE[destination]
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: <OutboundDestination.TRACKER_DESCRIPTION: 'tracker_description'>
+
+src/kodezart/types/domain/gating.py:147: KeyError
+----------------------------- Captured stdout call -----------------------------
+2026-09-13 00:45:43 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-13 00:45:43 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 00:45:43 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+_________ test_approval_is_current_after_last_awaited_gate_read[True] __________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a47b020>
+approval_arrives = True
+
+    @pytest.mark.parametrize("approval_arrives", [False, True])
+    async def test_approval_is_current_after_last_awaited_gate_read(
+        monkeypatch, approval_arrives
+    ):
+        owner, board, _ = factory()
+        original = board.call_tool
+        reads_after_grant = 0
+        changed = False
+    
+        async def interleaved(*, name, arguments):
+            nonlocal reads_after_grant, changed
+            response = await original(name=name, arguments=arguments)
+            if (
+                board.grants()
+                and name == "get_issue"
+                and arguments.get("id") == CLAIMED_ISSUE
+            ):
+                reads_after_grant += 1
+                # execution_approved reads first; read_scope_labels reads second.
+                if reads_after_grant == 2:
+                    changed = True
+                    if approval_arrives:
+                        board.server.issues[CLAIMED_ISSUE].labels.append("approved scope")
+            return response
+    
+        monkeypatch.setattr(board, "call_tool", interleaved)
+        try:
+>           await run_owner(owner)
+
+tests/chains/test_organize_delivery_independent.py:81: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/chains/test_organize_owner.py:191: in run_owner
+    return await owner.run(
+src/kodezart/services/organize_owner.py:1038: in run
+    verified_write = await self._author_write(
+src/kodezart/services/organize_owner.py:658: in _author_write
+    result = await self._verifier.write_back(
+src/kodezart/chains/write_back_verifier.py:121: in write_back
+    await step.write(finding=finding)
+src/kodezart/services/organize_owner.py:99: in write
+    await self.apply(finding)
+src/kodezart/services/organize_owner.py:556: in apply
+    content = await gated_write(
+src/kodezart/core/outbound_write.py:59: in gated_write
+    surface=surface_of(destination).value,
+            ^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+destination = <OutboundDestination.TRACKER_DESCRIPTION: 'tracker_description'>
+
+    def surface_of(destination: OutboundDestination) -> OutboundSurface:
+        """The surface class *destination* writes onto."""
+>       return DESTINATION_SURFACE[destination]
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: <OutboundDestination.TRACKER_DESCRIPTION: 'tracker_description'>
+
+src/kodezart/types/domain/gating.py:147: KeyError
+----------------------------- Captured stdout call -----------------------------
+2026-09-13 00:45:43 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-13 00:45:43 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 00:45:43 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+_______ test_criterion_author_is_bound_to_current_parent_revision[False] _______
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a412e10>
+source_changes = False
+
+    @pytest.mark.parametrize("source_changes", [False, True])
+    async def test_criterion_author_is_bound_to_current_parent_revision(
+        monkeypatch, source_changes
+    ):
+        owner, board, executor = factory()
+        original = executor.stream
+        changed = False
+    
+        async def interleaved(**kwargs):
+            nonlocal changed
+            async for event in original(**kwargs):
+                if (
+                    kwargs["output_format"]["schema"].get("title") == "OrganizeProposal"
+                    and event.structured_output.get("kind") == "criteria"
+                    and not changed
+                ):
+                    changed = True
+                    if source_changes:
+                        board.server.issues[
+                            CLAIMED_ISSUE
+                        ].description = "Missing specification"
+                yield event
+    
+        monkeypatch.setattr(executor, "stream", interleaved)
+        try:
+>           await run_owner(owner)
+
+tests/chains/test_organize_delivery_independent.py:118: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/chains/test_organize_owner.py:191: in run_owner
+    return await owner.run(
+src/kodezart/services/organize_owner.py:1038: in run
+    verified_write = await self._author_write(
+src/kodezart/services/organize_owner.py:658: in _author_write
+    result = await self._verifier.write_back(
+src/kodezart/chains/write_back_verifier.py:121: in write_back
+    await step.write(finding=finding)
+src/kodezart/services/organize_owner.py:99: in write
+    await self.apply(finding)
+src/kodezart/services/organize_owner.py:556: in apply
+    content = await gated_write(
+src/kodezart/core/outbound_write.py:59: in gated_write
+    surface=surface_of(destination).value,
+            ^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+destination = <OutboundDestination.TRACKER_DESCRIPTION: 'tracker_description'>
+
+    def surface_of(destination: OutboundDestination) -> OutboundSurface:
+        """The surface class *destination* writes onto."""
+>       return DESTINATION_SURFACE[destination]
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: <OutboundDestination.TRACKER_DESCRIPTION: 'tracker_description'>
+
+src/kodezart/types/domain/gating.py:147: KeyError
+----------------------------- Captured stdout call -----------------------------
+2026-09-13 00:45:44 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-13 00:45:44 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 00:45:44 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+_______ test_criterion_author_is_bound_to_current_parent_revision[True] ________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a412450>
+source_changes = True
+
+    @pytest.mark.parametrize("source_changes", [False, True])
+    async def test_criterion_author_is_bound_to_current_parent_revision(
+        monkeypatch, source_changes
+    ):
+        owner, board, executor = factory()
+        original = executor.stream
+        changed = False
+    
+        async def interleaved(**kwargs):
+            nonlocal changed
+            async for event in original(**kwargs):
+                if (
+                    kwargs["output_format"]["schema"].get("title") == "OrganizeProposal"
+                    and event.structured_output.get("kind") == "criteria"
+                    and not changed
+                ):
+                    changed = True
+                    if source_changes:
+                        board.server.issues[
+                            CLAIMED_ISSUE
+                        ].description = "Missing specification"
+                yield event
+    
+        monkeypatch.setattr(executor, "stream", interleaved)
+        try:
+>           await run_owner(owner)
+
+tests/chains/test_organize_delivery_independent.py:118: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/chains/test_organize_owner.py:191: in run_owner
+    return await owner.run(
+src/kodezart/services/organize_owner.py:1038: in run
+    verified_write = await self._author_write(
+src/kodezart/services/organize_owner.py:658: in _author_write
+    result = await self._verifier.write_back(
+src/kodezart/chains/write_back_verifier.py:121: in write_back
+    await step.write(finding=finding)
+src/kodezart/services/organize_owner.py:99: in write
+    await self.apply(finding)
+src/kodezart/services/organize_owner.py:556: in apply
+    content = await gated_write(
+src/kodezart/core/outbound_write.py:59: in gated_write
+    surface=surface_of(destination).value,
+            ^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+destination = <OutboundDestination.TRACKER_DESCRIPTION: 'tracker_description'>
+
+    def surface_of(destination: OutboundDestination) -> OutboundSurface:
+        """The surface class *destination* writes onto."""
+>       return DESTINATION_SURFACE[destination]
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: <OutboundDestination.TRACKER_DESCRIPTION: 'tracker_description'>
+
+src/kodezart/types/domain/gating.py:147: KeyError
+----------------------------- Captured stdout call -----------------------------
+2026-09-13 00:45:44 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-13 00:45:44 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 00:45:44 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+___________ test_current_scope_membership_binds_author_write[False] ____________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a467fb0>
+leaves_scope = False
+
+    @pytest.mark.parametrize("leaves_scope", [False, True])
+    async def test_current_scope_membership_binds_author_write(monkeypatch, leaves_scope):
+        owner, board, executor = factory()
+        key = "child-subject"
+        board.server.issues[key] = FakeMcpIssue(
+            id=key, parent_id=CLAIMED_ISSUE, description="Missing specification"
+        )
+        original = executor.stream
+        reached = False
+    
+        async def interleaved(**kwargs):
+            nonlocal reached
+            async for event in original(**kwargs):
+                if (
+                    kwargs["output_format"]["schema"].get("title") == "OrganizeProposal"
+                    and event.structured_output.get("issue_id") == key
+                    and not reached
+                ):
+                    reached = True
+                    if leaves_scope:
+                        board.server.issues[key].parent_id = None
+                yield event
+    
+        monkeypatch.setattr(executor, "stream", interleaved)
+        try:
+>           await run_owner(owner)
+
+tests/chains/test_organize_delivery_independent.py:151: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/chains/test_organize_owner.py:191: in run_owner
+    return await owner.run(
+src/kodezart/services/organize_owner.py:1038: in run
+    verified_write = await self._author_write(
+src/kodezart/services/organize_owner.py:658: in _author_write
+    result = await self._verifier.write_back(
+src/kodezart/chains/write_back_verifier.py:121: in write_back
+    await step.write(finding=finding)
+src/kodezart/services/organize_owner.py:99: in write
+    await self.apply(finding)
+src/kodezart/services/organize_owner.py:556: in apply
+    content = await gated_write(
+src/kodezart/core/outbound_write.py:59: in gated_write
+    surface=surface_of(destination).value,
+            ^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+destination = <OutboundDestination.TRACKER_DESCRIPTION: 'tracker_description'>
+
+    def surface_of(destination: OutboundDestination) -> OutboundSurface:
+        """The surface class *destination* writes onto."""
+>       return DESTINATION_SURFACE[destination]
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: <OutboundDestination.TRACKER_DESCRIPTION: 'tracker_description'>
+
+src/kodezart/types/domain/gating.py:147: KeyError
+----------------------------- Captured stdout call -----------------------------
+2026-09-13 00:45:45 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-13 00:45:45 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 00:45:45 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+____________ test_current_scope_membership_binds_author_write[True] ____________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a466630>
+leaves_scope = True
+
+    @pytest.mark.parametrize("leaves_scope", [False, True])
+    async def test_current_scope_membership_binds_author_write(monkeypatch, leaves_scope):
+        owner, board, executor = factory()
+        key = "child-subject"
+        board.server.issues[key] = FakeMcpIssue(
+            id=key, parent_id=CLAIMED_ISSUE, description="Missing specification"
+        )
+        original = executor.stream
+        reached = False
+    
+        async def interleaved(**kwargs):
+            nonlocal reached
+            async for event in original(**kwargs):
+                if (
+                    kwargs["output_format"]["schema"].get("title") == "OrganizeProposal"
+                    and event.structured_output.get("issue_id") == key
+                    and not reached
+                ):
+                    reached = True
+                    if leaves_scope:
+                        board.server.issues[key].parent_id = None
+                yield event
+    
+        monkeypatch.setattr(executor, "stream", interleaved)
+        try:
+>           await run_owner(owner)
+
+tests/chains/test_organize_delivery_independent.py:151: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/chains/test_organize_owner.py:191: in run_owner
+    return await owner.run(
+src/kodezart/services/organize_owner.py:1038: in run
+    verified_write = await self._author_write(
+src/kodezart/services/organize_owner.py:658: in _author_write
+    result = await self._verifier.write_back(
+src/kodezart/chains/write_back_verifier.py:121: in write_back
+    await step.write(finding=finding)
+src/kodezart/services/organize_owner.py:99: in write
+    await self.apply(finding)
+src/kodezart/services/organize_owner.py:556: in apply
+    content = await gated_write(
+src/kodezart/core/outbound_write.py:59: in gated_write
+    surface=surface_of(destination).value,
+            ^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+destination = <OutboundDestination.TRACKER_DESCRIPTION: 'tracker_description'>
+
+    def surface_of(destination: OutboundDestination) -> OutboundSurface:
+        """The surface class *destination* writes onto."""
+>       return DESTINATION_SURFACE[destination]
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: <OutboundDestination.TRACKER_DESCRIPTION: 'tracker_description'>
+
+src/kodezart/types/domain/gating.py:147: KeyError
+----------------------------- Captured stdout call -----------------------------
+2026-09-13 00:45:46 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-13 00:45:46 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 00:45:46 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+____________ test_cancel_during_owner_create_settles_before_release ____________
+
+fut = <coroutine object Event.wait at 0x10a4373e0>, timeout = 5
+
+    async def wait_for(fut, timeout):
+        """Wait for the single Future or coroutine to complete, with timeout.
+    
+        Coroutine will be wrapped in Task.
+    
+        Returns result of the Future or coroutine.  When a timeout occurs,
+        it cancels the task and raises TimeoutError.  To avoid the task
+        cancellation, wrap it in shield().
+    
+        If the wait is cancelled, the task is also cancelled.
+    
+        If the task suppresses the cancellation and returns a value instead,
+        that value is returned.
+    
+        This function is a coroutine.
+        """
+        # The special case for timeout <= 0 is for the following case:
+        #
+        # async def test_waitfor():
+        #     func_started = False
+        #
+        #     async def func():
+        #         nonlocal func_started
+        #         func_started = True
+        #
+        #     try:
+        #         await asyncio.wait_for(func(), 0)
+        #     except asyncio.TimeoutError:
+        #         assert not func_started
+        #     else:
+        #         assert False
+        #
+        # asyncio.run(test_waitfor())
+    
+    
+        if timeout is not None and timeout <= 0:
+            fut = ensure_future(fut)
+    
+            if fut.done():
+                return fut.result()
+    
+            await _cancel_and_wait(fut)
+            try:
+                return fut.result()
+            except exceptions.CancelledError as exc:
+                raise TimeoutError from exc
+    
+        async with timeouts.timeout(timeout):
+>           return await fut
+                   ^^^^^^^^^
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/tasks.py:520: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <asyncio.locks.Event object at 0x10a7697f0 [unset]>
+
+    async def wait(self):
+        """Block until the internal flag is true.
+    
+        If the internal flag is true on entry, return True
+        immediately.  Otherwise, block until another coroutine calls
+        set() to set the flag to true, then return True.
+        """
+        if self._value:
+            return True
+    
+        fut = self._get_loop().create_future()
+        self._waiters.append(fut)
+        try:
+>           await fut
+E           asyncio.exceptions.CancelledError
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/locks.py:212: CancelledError
+
+The above exception was the direct cause of the following exception:
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a76adb0>
+
+    async def test_cancel_during_owner_create_settles_before_release(monkeypatch):
+        owner, board, _ = factory()
+        board.pause = lambda name, args: name == "save_issue" and "id" not in args
+        task = asyncio.create_task(run_owner(owner))
+        try:
+>           await asyncio.wait_for(board.reached.wait(), timeout=5)
+
+tests/chains/test_organize_delivery_independent.py:184: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/tasks.py:519: in wait_for
+    async with timeouts.timeout(timeout):
+               ^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <Timeout [expired]>
+exc_type = <class 'asyncio.exceptions.CancelledError'>
+exc_val = CancelledError(), exc_tb = <traceback object at 0x10a3b8e40>
+
+    async def __aexit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType],
+    ) -> Optional[bool]:
+        assert self._state in (_State.ENTERED, _State.EXPIRING)
+    
+        if self._timeout_handler is not None:
+            self._timeout_handler.cancel()
+            self._timeout_handler = None
+    
+        if self._state is _State.EXPIRING:
+            self._state = _State.EXPIRED
+    
+            if self._task.uncancel() <= self._cancelling and exc_type is exceptions.CancelledError:
+                # Since there are no new cancel requests, we're
+                # handling this.
+>               raise TimeoutError from exc_val
+E               TimeoutError
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/timeouts.py:115: TimeoutError
+----------------------------- Captured stdout call -----------------------------
+2026-09-13 00:45:47 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-13 00:45:47 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 00:45:47 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+___ test_configured_owner_applies_graph_priority_then_reentry_writes_nothing ___
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a7682c0>
+
+    async def test_configured_owner_applies_graph_priority_then_reentry_writes_nothing(
+        monkeypatch,
+    ):
+        owner, board, executor = factory(convergence_bound=4, bound=3)
+        original = executor.stream
+    
+        async def stream(**kwargs):
+            schema = kwargs["output_format"]["schema"]
+            key = re.findall(r"<issue_key>(.*?)</issue_key>", kwargs["prompt"])
+            if (
+                key
+                and key[-1] == CLAIMED_ISSUE
+                and board.server.issues[CLAIMED_ISSUE].priority_raw != 1
+            ):
+                executor.calls.append(kwargs)
+                if schema.get("title") == "OrganizeProposal":
+                    yield result(
+                        structured_output={
+                            "kind": "graph",
+                            "issue_id": CLAIMED_ISSUE,
+                            "changes": [{"kind": "priority", "priority": "urgent"}],
+                        }
+                    )
+                else:
+                    yield result(
+                        structured_output={
+                            "issue_id": CLAIMED_ISSUE,
+                            "verdict": "not_buildable",
+                            "evidence": "The configured mandate requires urgent priority.",
+                            "refusal_kind": "spec_gap",
+                            "invented_decision": "Apply the recorded urgent priority.",
+                        }
+                    )
+                return
+            async for event in original(**kwargs):
+                yield event
+    
+        monkeypatch.setattr(executor, "stream", stream)
+>       report = await run_owner(owner)
+                 ^^^^^^^^^^^^^^^^^^^^^^
+
+tests/chains/test_organize_graph_owner.py:48: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/chains/test_organize_owner.py:191: in run_owner
+    return await owner.run(
+src/kodezart/services/organize_owner.py:1038: in run
+    verified_write = await self._author_write(
+src/kodezart/services/organize_owner.py:658: in _author_write
+    result = await self._verifier.write_back(
+src/kodezart/chains/write_back_verifier.py:121: in write_back
+    await step.write(finding=finding)
+src/kodezart/services/organize_owner.py:99: in write
+    await self.apply(finding)
+src/kodezart/services/organize_owner.py:556: in apply
+    content = await gated_write(
+src/kodezart/core/outbound_write.py:59: in gated_write
+    surface=surface_of(destination).value,
+            ^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+destination = <OutboundDestination.TRACKER_DESCRIPTION: 'tracker_description'>
+
+    def surface_of(destination: OutboundDestination) -> OutboundSurface:
+        """The surface class *destination* writes onto."""
+>       return DESTINATION_SURFACE[destination]
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: <OutboundDestination.TRACKER_DESCRIPTION: 'tracker_description'>
+
+src/kodezart/types/domain/gating.py:147: KeyError
+----------------------------- Captured stdout call -----------------------------
+2026-09-13 00:45:52 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-13 00:45:52 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 00:45:52 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 00:45:52 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 00:45:52 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_verify resumed_session_id=None session_id=None
+2026-09-13 00:45:52 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 00:45:52 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+_ test_configured_split_prepares_children_without_execution_and_replays_cleanly _
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a3ee090>
+
+    async def test_configured_split_prepares_children_without_execution_and_replays_cleanly(
+        monkeypatch,
+    ):
+        owner, board, executor = factory(convergence_bound=4, bound=3)
+        original = executor.stream
+    
+        async def stream(**kwargs):
+            key = re.findall(r"<issue_key>(.*?)</issue_key>", kwargs["prompt"])
+            if (
+                key
+                and key[-1] == CLAIMED_ISSUE
+                and not any(
+                    issue.title == "Prepared split"
+                    for issue in board.server.issues.values()
+                )
+            ):
+                schema = kwargs["output_format"]["schema"]
+                if schema.get("title") == "OrganizeProposal":
+                    payload = {
+                        "kind": "split",
+                        "issue_id": CLAIMED_ISSUE,
+                        "children": [
+                            {
+                                "deliverable_key": "stable-deliverable",
+                                "title": "Prepared split",
+                                "body": "Prepared source-grounded child specification.",
+                            }
+                        ],
+                    }
+                else:
+                    payload = {
+                        "issue_id": CLAIMED_ISSUE,
+                        "verdict": "not_buildable",
+                        "refusal_kind": "spec_gap",
+                        "evidence": (
+                            "The settled mandate calls for an independent "
+                            "child deliverable."
+                        ),
+                        "invented_decision": "Prepare the specified split.",
+                    }
+                executor.calls.append(kwargs)
+                yield result(structured_output=payload)
+                return
+            async for event in original(**kwargs):
+                yield event
+    
+        monkeypatch.setattr(executor, "stream", stream)
+>       report = await run_owner(owner)
+                 ^^^^^^^^^^^^^^^^^^^^^^
+
+tests/chains/test_organize_graph_owner.py:108: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/chains/test_organize_owner.py:191: in run_owner
+    return await owner.run(
+src/kodezart/services/organize_owner.py:1038: in run
+    verified_write = await self._author_write(
+src/kodezart/services/organize_owner.py:658: in _author_write
+    result = await self._verifier.write_back(
+src/kodezart/chains/write_back_verifier.py:121: in write_back
+    await step.write(finding=finding)
+src/kodezart/services/organize_owner.py:99: in write
+    await self.apply(finding)
+src/kodezart/services/organize_owner.py:509: in apply
+    gated = await gated_write(
+src/kodezart/core/outbound_write.py:59: in gated_write
+    surface=surface_of(destination).value,
+            ^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+destination = <OutboundDestination.TRACKER_TITLE: 'tracker_title'>
+
+    def surface_of(destination: OutboundDestination) -> OutboundSurface:
+        """The surface class *destination* writes onto."""
+>       return DESTINATION_SURFACE[destination]
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: <OutboundDestination.TRACKER_TITLE: 'tracker_title'>
+
+src/kodezart/types/domain/gating.py:147: KeyError
+----------------------------- Captured stdout call -----------------------------
+2026-09-13 00:45:52 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-13 00:45:52 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 00:45:52 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+_________ test_cancel_during_issued_split_settles_before_lease_release _________
+
+fut = <coroutine object Event.wait at 0x10a40e6c0>, timeout = 5
+
+    async def wait_for(fut, timeout):
+        """Wait for the single Future or coroutine to complete, with timeout.
+    
+        Coroutine will be wrapped in Task.
+    
+        Returns result of the Future or coroutine.  When a timeout occurs,
+        it cancels the task and raises TimeoutError.  To avoid the task
+        cancellation, wrap it in shield().
+    
+        If the wait is cancelled, the task is also cancelled.
+    
+        If the task suppresses the cancellation and returns a value instead,
+        that value is returned.
+    
+        This function is a coroutine.
+        """
+        # The special case for timeout <= 0 is for the following case:
+        #
+        # async def test_waitfor():
+        #     func_started = False
+        #
+        #     async def func():
+        #         nonlocal func_started
+        #         func_started = True
+        #
+        #     try:
+        #         await asyncio.wait_for(func(), 0)
+        #     except asyncio.TimeoutError:
+        #         assert not func_started
+        #     else:
+        #         assert False
+        #
+        # asyncio.run(test_waitfor())
+    
+    
+        if timeout is not None and timeout <= 0:
+            fut = ensure_future(fut)
+    
+            if fut.done():
+                return fut.result()
+    
+            await _cancel_and_wait(fut)
+            try:
+                return fut.result()
+            except exceptions.CancelledError as exc:
+                raise TimeoutError from exc
+    
+        async with timeouts.timeout(timeout):
+>           return await fut
+                   ^^^^^^^^^
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/tasks.py:520: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <asyncio.locks.Event object at 0x10a3eeb10 [unset]>
+
+    async def wait(self):
+        """Block until the internal flag is true.
+    
+        If the internal flag is true on entry, return True
+        immediately.  Otherwise, block until another coroutine calls
+        set() to set the flag to true, then return True.
+        """
+        if self._value:
+            return True
+    
+        fut = self._get_loop().create_future()
+        self._waiters.append(fut)
+        try:
+>           await fut
+E           asyncio.exceptions.CancelledError
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/locks.py:212: CancelledError
+
+The above exception was the direct cause of the following exception:
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a3fdf10>
+
+    async def test_cancel_during_issued_split_settles_before_lease_release(monkeypatch):
+        import asyncio
+    
+        import pytest
+    
+        owner, board, executor = factory()
+        original = executor.stream
+    
+        async def stream(**kwargs):
+            if kwargs["output_format"]["schema"].get("title") == "OrganizeProposal":
+                yield result(
+                    structured_output={
+                        "kind": "split",
+                        "issue_id": CLAIMED_ISSUE,
+                        "children": [
+                            {
+                                "deliverable_key": "cancellation-child",
+                                "title": "Split child",
+                                "body": "Prepared specification",
+                            }
+                        ],
+                    }
+                )
+                return
+            async for event in original(**kwargs):
+                yield event
+    
+        monkeypatch.setattr(executor, "stream", stream)
+        board.pause = lambda name, args: name == "save_issue" and "id" not in args
+        task = asyncio.create_task(run_owner(owner))
+        try:
+>           await asyncio.wait_for(board.reached.wait(), timeout=5)
+
+tests/chains/test_organize_graph_owner.py:193: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/tasks.py:519: in wait_for
+    async with timeouts.timeout(timeout):
+               ^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <Timeout [expired]>
+exc_type = <class 'asyncio.exceptions.CancelledError'>
+exc_val = CancelledError(), exc_tb = <traceback object at 0x10a402140>
+
+    async def __aexit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType],
+    ) -> Optional[bool]:
+        assert self._state in (_State.ENTERED, _State.EXPIRING)
+    
+        if self._timeout_handler is not None:
+            self._timeout_handler.cancel()
+            self._timeout_handler = None
+    
+        if self._state is _State.EXPIRING:
+            self._state = _State.EXPIRED
+    
+            if self._task.uncancel() <= self._cancelling and exc_type is exceptions.CancelledError:
+                # Since there are no new cancel requests, we're
+                # handling this.
+>               raise TimeoutError from exc_val
+E               TimeoutError
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/timeouts.py:115: TimeoutError
+----------------------------- Captured stdout call -----------------------------
+2026-09-13 00:45:53 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-13 00:45:53 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 00:45:53 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+_______ test_configured_owner_refuses_observed_final_split_source_drift ________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a7090a0>
+
+    async def test_configured_owner_refuses_observed_final_split_source_drift(monkeypatch):
+        owner, board, executor = factory()
+        original_stream = executor.stream
+    
+        async def stream(**kwargs):
+            if kwargs["output_format"]["schema"].get("title") == "OrganizeProposal":
+                yield result(
+                    structured_output={
+                        "kind": "split",
+                        "issue_id": CLAIMED_ISSUE,
+                        "children": [
+                            {
+                                "deliverable_key": "independent",
+                                "title": "Split child",
+                                "body": "Prepared child specification",
+                            }
+                        ],
+                    }
+                )
+                return
+            async for event in original_stream(**kwargs):
+                yield event
+    
+        original_call = board.call_tool
+        after_state = False
+        reads = 0
+        injected = False
+    
+        async def call_tool(*, name, arguments):
+            nonlocal after_state, reads, injected
+            if name == "list_issue_statuses":
+                after_state = True
+            if after_state and name == "get_issue" and arguments["id"] == CLAIMED_ISSUE:
+                reads += 1
+                if reads == 2:
+                    injected = True
+                    board.server.issues[
+                        CLAIMED_ISSUE
+                    ].description = (
+                        "The current source no longer asks for the authored child."
+                    )
+            return await original_call(name=name, arguments=arguments)
+    
+        monkeypatch.setattr(executor, "stream", stream)
+        monkeypatch.setattr(board, "call_tool", call_tool)
+        error = None
+        try:
+>           await run_owner(owner)
+
+tests/chains/test_organize_graph_independent.py:56: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/chains/test_organize_owner.py:191: in run_owner
+    return await owner.run(
+src/kodezart/services/organize_owner.py:1038: in run
+    verified_write = await self._author_write(
+src/kodezart/services/organize_owner.py:658: in _author_write
+    result = await self._verifier.write_back(
+src/kodezart/chains/write_back_verifier.py:121: in write_back
+    await step.write(finding=finding)
+src/kodezart/services/organize_owner.py:99: in write
+    await self.apply(finding)
+src/kodezart/services/organize_owner.py:509: in apply
+    gated = await gated_write(
+src/kodezart/core/outbound_write.py:59: in gated_write
+    surface=surface_of(destination).value,
+            ^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+destination = <OutboundDestination.TRACKER_TITLE: 'tracker_title'>
+
+    def surface_of(destination: OutboundDestination) -> OutboundSurface:
+        """The surface class *destination* writes onto."""
+>       return DESTINATION_SURFACE[destination]
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: <OutboundDestination.TRACKER_TITLE: 'tracker_title'>
+
+src/kodezart/types/domain/gating.py:147: KeyError
+----------------------------- Captured stdout call -----------------------------
+2026-09-13 00:46:00 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-13 00:46:00 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 00:46:00 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+_______ test_environment_bounds_reach_the_tick_and_stop_after_one_author _______
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a411f10>
+
+    async def test_environment_bounds_reach_the_tick_and_stop_after_one_author(
+        monkeypatch,
+    ):
+        monkeypatch.setenv("KODEZART_ORGANIZE__MAX_ADMISSION_ROUNDS", "1")
+        monkeypatch.setenv("KODEZART_ORGANIZE__MAX_CONVERGENCE_ROUNDS", "7")
+        monkeypatch.setenv("KODEZART_WRITE_BACK__MAX_VERIFY_ROUNDS", "4")
+        config = AppConfig()
+        assert config.organize.max_admission_rounds == 1
+        assert config.organize.max_convergence_rounds == 7
+        tick, board, executor = factory(tick=True, settings=config, refuse_forever=True)
+        from kodezart.domain.errors import OrganizeHaltError
+    
+        instant = datetime(2026, 9, 12, tzinfo=UTC)
+        with pytest.raises(OrganizeHaltError, match="admission_exhausted") as halted:
+>           await tick.run(instant)
+
+tests/core/test_organize_settings.py:79: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/services/organize_tick.py:69: in run
+    report = await target.owner.run(
+src/kodezart/services/organize_owner.py:1038: in run
+    verified_write = await self._author_write(
+src/kodezart/services/organize_owner.py:658: in _author_write
+    result = await self._verifier.write_back(
+src/kodezart/chains/write_back_verifier.py:121: in write_back
+    await step.write(finding=finding)
+src/kodezart/services/organize_owner.py:99: in write
+    await self.apply(finding)
+src/kodezart/services/organize_owner.py:556: in apply
+    content = await gated_write(
+src/kodezart/core/outbound_write.py:59: in gated_write
+    surface=surface_of(destination).value,
+            ^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+destination = <OutboundDestination.TRACKER_DESCRIPTION: 'tracker_description'>
+
+    def surface_of(destination: OutboundDestination) -> OutboundSurface:
+        """The surface class *destination* writes onto."""
+>       return DESTINATION_SURFACE[destination]
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: <OutboundDestination.TRACKER_DESCRIPTION: 'tracker_description'>
+
+src/kodezart/types/domain/gating.py:147: KeyError
+----------------------------- Captured stdout call -----------------------------
+2026-09-13 00:46:00 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-13 00:46:00 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 00:46:00 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+______ test_actual_tick_uses_fresh_remote_trunk_and_existing_run_identity ______
+
+    async def test_actual_tick_uses_fresh_remote_trunk_and_existing_run_identity():
+        tick, board, executor = factory(tick=True)
+        instant = datetime(2026, 9, 12, tzinfo=UTC)
+>       assert await tick.run(instant) is PassRun.RAN
+               ^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/core/test_organize_settings.py:109: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/services/organize_tick.py:69: in run
+    report = await target.owner.run(
+src/kodezart/services/organize_owner.py:1038: in run
+    verified_write = await self._author_write(
+src/kodezart/services/organize_owner.py:658: in _author_write
+    result = await self._verifier.write_back(
+src/kodezart/chains/write_back_verifier.py:121: in write_back
+    await step.write(finding=finding)
+src/kodezart/services/organize_owner.py:99: in write
+    await self.apply(finding)
+src/kodezart/services/organize_owner.py:556: in apply
+    content = await gated_write(
+src/kodezart/core/outbound_write.py:59: in gated_write
+    surface=surface_of(destination).value,
+            ^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+destination = <OutboundDestination.TRACKER_DESCRIPTION: 'tracker_description'>
+
+    def surface_of(destination: OutboundDestination) -> OutboundSurface:
+        """The surface class *destination* writes onto."""
+>       return DESTINATION_SURFACE[destination]
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: <OutboundDestination.TRACKER_DESCRIPTION: 'tracker_description'>
+
+src/kodezart/types/domain/gating.py:147: KeyError
+----------------------------- Captured stdout call -----------------------------
+2026-09-13 00:46:01 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-13 00:46:01 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 00:46:01 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+___ test_scheduled_owner_prepares_native_children_and_reentry_is_idempotent ____
+
+tmp_path = PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-2008/test_scheduled_owner_prepares_0')
+
+    async def test_scheduled_owner_prepares_native_children_and_reentry_is_idempotent(
+        tmp_path,
+    ):
+        config, operation, board, tracker, prompts, ledger = dependencies(tmp_path)
+        executor = BoardExecutor(board)
+        workspace = RecordingWorkspace()
+        queue = FakeJobQueue()
+        runtime = await build_dispatch_runtime(
+            config=config,
+            operation=operation,
+            dialled=DialledTracker(
+                tracker=tracker,
+                caller=board,
+                operation=operation,
+                ledger=ledger,
+            ),
+            github_api=None,
+            queue=queue,
+            registry=queue,
+            gate=PassThroughGate(),
+            git=FakeGitService(
+                remote_branch_shas={repo.trunk: "a" * 40 for repo in operation.repos}
+            ),
+            cache=FakeRepoCache(),
+            workspace=workspace,
+            prompts=prompts,
+            runner=AgentService(
+                executor=executor,
+                workspace=workspace,
+                git_base_url="https://example.invalid",
+            ),
+            skills=SUPPRESS_ALL_SKILLS,
+            recorder=RunRecorder(records={}, sinks={}),
+            log=get_logger(__name__),
+        )
+        grooming = [
+            entry
+            for entry in runtime.scheduler.passes
+            if entry.name == PromptKey.GROOMING_PASS.value
+        ]
+        assert len(grooming) == 1
+        scheduled = grooming[0]
+        assert scheduled.interval_seconds == config.grooming_pass_interval_seconds
+        assert scheduled.timeout_seconds == config.grooming_pass_timeout_seconds
+        assert scheduled.report is not None
+>       assert await scheduled.run(FIXTURE_EPOCH) is PassRun.RAN
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/integration/test_organize_scheduler.py:117: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/services/organize_tick.py:69: in run
+    report = await target.owner.run(
+src/kodezart/services/organize_owner.py:1038: in run
+    verified_write = await self._author_write(
+src/kodezart/services/organize_owner.py:658: in _author_write
+    result = await self._verifier.write_back(
+src/kodezart/chains/write_back_verifier.py:121: in write_back
+    await step.write(finding=finding)
+src/kodezart/services/organize_owner.py:99: in write
+    await self.apply(finding)
+src/kodezart/services/organize_owner.py:556: in apply
+    content = await gated_write(
+src/kodezart/core/outbound_write.py:59: in gated_write
+    surface=surface_of(destination).value,
+            ^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+destination = <OutboundDestination.TRACKER_DESCRIPTION: 'tracker_description'>
+
+    def surface_of(destination: OutboundDestination) -> OutboundSurface:
+        """The surface class *destination* writes onto."""
+>       return DESTINATION_SURFACE[destination]
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: <OutboundDestination.TRACKER_DESCRIPTION: 'tracker_description'>
+
+src/kodezart/types/domain/gating.py:147: KeyError
+----------------------------- Captured stdout call -----------------------------
+2026-09-13 00:46:02 [info     ] scheduled_passes_not_wired     delivery_probe_present=False operation_config_present=True tracker_present=True
+2026-09-13 00:46:02 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-13 00:46:02 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 00:46:02 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+______________ test_actual_lifespan_registers_and_runs_the_owner _______________
+
+tmp_path = PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-2008/test_actual_lifespan_registers0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a411f70>
+
+    async def test_actual_lifespan_registers_and_runs_the_owner(tmp_path, monkeypatch):
+        from kodezart import main
+        from kodezart.composition.records import BuiltRecorder
+        from kodezart.composition.workspace import GitStack
+        from tests.fakes import (
+            FakeArtifactPersister,
+            FakeBranchMerger,
+            FakeChangePersister,
+            FakeRefPublisher,
+            ManagedFakeLinearMcpServer,
+        )
+    
+        config, operation, board, tracker, prompts, ledger = dependencies(tmp_path)
+        executor = BoardExecutor(board)
+        workspace = RecordingWorkspace()
+        stack = GitStack(
+            git=FakeGitService(
+                remote_branch_shas={repo.trunk: "a" * 40 for repo in operation.repos}
+            ),
+            cache=FakeRepoCache(),
+            workspace=workspace,
+            persister=FakeChangePersister(),
+            merger=FakeBranchMerger(),
+            artifact_persister=FakeArtifactPersister(),
+            ref_publisher=FakeRefPublisher(),
+        )
+    
+        async def tracker_boot(**_kwargs):
+            return DialledTracker(
+                tracker=tracker,
+                caller=ManagedFakeLinearMcpServer(),
+                operation=operation,
+                ledger=ledger,
+            )
+    
+        async def prompt_boot(**_kwargs):
+            return prompts
+    
+        async def recorder_boot(**_kwargs):
+            return BuiltRecorder(RunRecorder(records={}, sinks={}), None)
+    
+        async def knowledge_boot(**_kwargs):
+            return None
+    
+        async def gate_boot(**_kwargs):
+            return PassThroughGate()
+    
+        monkeypatch.setattr(main, "boot_tracker", tracker_boot)
+        monkeypatch.setattr(main, "boot_prompts", prompt_boot)
+        monkeypatch.setattr(main, "build_run_recorder", recorder_boot)
+        monkeypatch.setattr(main, "boot_knowledge_grant", knowledge_boot)
+        monkeypatch.setattr(main, "build_outbound_gate", gate_boot)
+        monkeypatch.setattr(main, "ClaudeClientExecutor", lambda **_kwargs: executor)
+        monkeypatch.setattr(main, "build_git_stack", lambda **_kwargs: stack)
+        app = main.create_app()
+        app.state.config = config
+        async with app.router.lifespan_context(app):
+            scheduler = app.state.pass_scheduler
+            assert scheduler.running
+            grooming = next(
+                entry
+                for entry in scheduler.passes
+                if entry.name == PromptKey.GROOMING_PASS.value
+            )
+            await scheduler._tick(grooming)
+>           assert "criteria complete" in board.server.issues[CLAIMED_ISSUE].labels
+E           AssertionError: assert 'criteria complete' in ['candidate scope']
+E            +  where ['candidate scope'] = FakeMcpIssue(id='FIX-1', title='claimable', description='Missing specification', priority_raw=2, status='Todo', status...ated_at=datetime.datetime(2026, 3, 1, 12, 0, tzinfo=datetime.timezone.utc), url='', project_id=None, milestone_id=None).labels
+
+tests/integration/test_organize_scheduler.py:231: AssertionError
+----------------------------- Captured stdout call -----------------------------
+{"mode": "none", "allowlist": [], "setting_sources": ["user", "project", "local"], "event": "skills_selection_resolved", "level": "info", "logger": "kodezart.main", "timestamp": "2026-09-12T22:46:03.122967Z"}
+{"event": "Task exception was never retrieved\nfuture: <Task finished name='Task-610' coro=<run_owner() done, defined at /private/tmp/kodezart-v03-m2-organize/tests/chains/test_organize_owner.py:190> exception=KeyError(<OutboundDestination.TRACKER_DESCRIPTION: 'tracker_description'>)>", "level": "error", "logger": "asyncio", "timestamp": "2026-09-12T22:46:03.806273Z", "exception": "Traceback (most recent call last):\n  File \"/private/tmp/kodezart-v03-m2-organize/tests/chains/test_organize_owner.py\", line 191, in run_owner\n    return await owner.run(\n           ^^^^^^^^^^^^^^^^\n  File \"/private/tmp/kodezart-v03-m2-organize/src/kodezart/services/organize_owner.py\", line 1038, in run\n    verified_write = await self._author_write(\n                     ^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/private/tmp/kodezart-v03-m2-organize/src/kodezart/services/organize_owner.py\", line 658, in _author_write\n    result = await self._verifier.write_back(\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/private/tmp/kodezart-v03-m2-organize/src/kodezart/chains/write_back_verifier.py\", line 121, in write_back\n    await step.write(finding=finding)\n  File \"/private/tmp/kodezart-v03-m2-organize/src/kodezart/services/organize_owner.py\", line 99, in write\n    await self.apply(finding)\n  File \"/private/tmp/kodezart-v03-m2-organize/src/kodezart/services/organize_owner.py\", line 556, in apply\n    content = await gated_write(\n              ^^^^^^^^^^^^^^^^^^\n  File \"/private/tmp/kodezart-v03-m2-organize/src/kodezart/core/outbound_write.py\", line 59, in gated_write\n    surface=surface_of(destination).value,\n            ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/private/tmp/kodezart-v03-m2-organize/src/kodezart/types/domain/gating.py\", line 147, in surface_of\n    return DESTINATION_SURFACE[destination]\n           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^\nKeyError: <OutboundDestination.TRACKER_DESCRIPTION: 'tracker_description'>"}
+{"tracker_present": true, "operation_config_present": true, "delivery_probe_present": false, "event": "scheduled_passes_not_wired", "level": "info", "logger": "kodezart.main", "timestamp": "2026-09-12T22:46:04.124072Z"}
+{"passes": [{"name": "grooming_pass", "intervalSeconds": 907.0}, {"name": "fire_prep_pass", "intervalSeconds": 613.0}], "event": "pass_scheduler_started", "level": "info", "logger": "kodezart.services.pass_scheduler", "timestamp": "2026-09-12T22:46:04.128807Z"}
+{"project": "kodezart", "debug": false, "event": "application_starting", "level": "info", "logger": "kodezart.main", "timestamp": "2026-09-12T22:46:04.131347Z"}
+{"issue_key": "FIX-1", "prompt_key": "organize_assess", "base_ref": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "session_id": null, "resumed_session_id": null, "event": "organize_admission_attempt", "level": "info", "logger": "kodezart.chains.organize", "timestamp": "2026-09-12T22:46:04.230296Z"}
+{"site": "organize_assess", "events": {"result": 1}, "event_count": 1, "rate_limit_rejected": false, "result_event_observed": true, "has_structured_output": true, "subtype": "result", "is_error": false, "num_turns": 1, "duration_ms": 1, "duration_api_ms": 1, "stop_reason": null, "session_id": "previous-agent-session", "total_cost_usd": null, "usage": null, "result_tail": "Author rationale must never be forwarded.", "event": "stream_drained", "level": "info", "logger": "kodezart.core.stream_drain", "timestamp": "2026-09-12T22:46:04.240803Z"}
+{"site": "organize_author", "events": {"result": 1}, "event_count": 1, "rate_limit_rejected": false, "result_event_observed": true, "has_structured_output": true, "subtype": "result", "is_error": false, "num_turns": 1, "duration_ms": 1, "duration_api_ms": 1, "stop_reason": null, "session_id": "previous-agent-session", "total_cost_usd": null, "usage": null, "result_tail": "Author rationale must never be forwarded.", "event": "stream_drained", "level": "info", "logger": "kodezart.core.stream_drain", "timestamp": "2026-09-12T22:46:04.289820Z"}
+{"name": "grooming_pass", "error_type": "KeyError", "error": "<OutboundDestination.TRACKER_DESCRIPTION: 'tracker_description'>", "duration_seconds": 0.1905943329911679, "event": "scheduled_pass_failed", "level": "error", "logger": "kodezart.services.pass_scheduler", "timestamp": "2026-09-12T22:46:04.333353Z", "exception": "Traceback (most recent call last):\n  File \"/private/tmp/kodezart-v03-m2-organize/src/kodezart/services/pass_scheduler.py\", line 166, in _tick\n    ran = await entry.run(started_at)\n          ^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/private/tmp/kodezart-v03-m2-organize/src/kodezart/services/organize_tick.py\", line 69, in run\n    report = await target.owner.run(\n             ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/private/tmp/kodezart-v03-m2-organize/src/kodezart/services/organize_owner.py\", line 1038, in run\n    verified_write = await self._author_write(\n                     ^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/private/tmp/kodezart-v03-m2-organize/src/kodezart/services/organize_owner.py\", line 658, in _author_write\n    result = await self._verifier.write_back(\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/private/tmp/kodezart-v03-m2-organize/src/kodezart/chains/write_back_verifier.py\", line 121, in write_back\n    await step.write(finding=finding)\n  File \"/private/tmp/kodezart-v03-m2-organize/src/kodezart/services/organize_owner.py\", line 99, in write\n    await self.apply(finding)\n  File \"/private/tmp/kodezart-v03-m2-organize/src/kodezart/services/organize_owner.py\", line 556, in apply\n    content = await gated_write(\n              ^^^^^^^^^^^^^^^^^^\n  File \"/private/tmp/kodezart-v03-m2-organize/src/kodezart/core/outbound_write.py\", line 59, in gated_write\n    surface=surface_of(destination).value,\n            ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/private/tmp/kodezart-v03-m2-organize/src/kodezart/types/domain/gating.py\", line 147, in surface_of\n    return DESTINATION_SURFACE[destination]\n           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^\nKeyError: <OutboundDestination.TRACKER_DESCRIPTION: 'tracker_description'>"}
+{"kind": "grooming", "name": "grooming_pass", "outcome": "failed", "event": "run_record_destination_undeclared", "level": "info", "logger": "kodezart.services.run_recorder", "timestamp": "2026-09-12T22:46:04.345929Z"}
+_______ test_halted_first_binding_does_not_starve_second_binding[False] ________
+
+first_halts = False
+
+    @pytest.mark.parametrize("first_halts", [False, True])
+    async def test_halted_first_binding_does_not_starve_second_binding(first_halts):
+        first, _, _ = factory(tick=True, refuse_forever=first_halts, bound=1)
+        second, board, executor = factory(tick=True)
+        key = "independent-second-scope"
+        issue = board.server.issues.pop(CLAIMED_ISSUE)
+        issue.id = key
+        board.server.issues[key] = issue
+        original = second._targets[0]
+        target = replace(
+            original,
+            binding=original.binding.model_copy(
+                update={"scope": ScopeRef(kind=ScopeKind.ISSUE, key=key)}
+            ),
+        )
+        tick = OrganizeTick(
+            targets=(first._targets[0], target),
+            git=FakeGitService(remote_branch_shas={target.repository.trunk: "a" * 40}),
+            workspace=RecordingWorkspace(),
+            remote="origin",
+        )
+        halt = None
+        try:
+>           await tick.run(datetime(2026, 9, 12, tzinfo=UTC))
+
+tests/integration/test_organize_tick_halt.py:40: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/services/organize_tick.py:69: in run
+    report = await target.owner.run(
+src/kodezart/services/organize_owner.py:1038: in run
+    verified_write = await self._author_write(
+src/kodezart/services/organize_owner.py:658: in _author_write
+    result = await self._verifier.write_back(
+src/kodezart/chains/write_back_verifier.py:121: in write_back
+    await step.write(finding=finding)
+src/kodezart/services/organize_owner.py:99: in write
+    await self.apply(finding)
+src/kodezart/services/organize_owner.py:556: in apply
+    content = await gated_write(
+src/kodezart/core/outbound_write.py:59: in gated_write
+    surface=surface_of(destination).value,
+            ^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+destination = <OutboundDestination.TRACKER_DESCRIPTION: 'tracker_description'>
+
+    def surface_of(destination: OutboundDestination) -> OutboundSurface:
+        """The surface class *destination* writes onto."""
+>       return DESTINATION_SURFACE[destination]
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: <OutboundDestination.TRACKER_DESCRIPTION: 'tracker_description'>
+
+src/kodezart/types/domain/gating.py:147: KeyError
+----------------------------- Captured stdout call -----------------------------
+{"issue_key": "FIX-1", "prompt_key": "organize_assess", "base_ref": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "session_id": null, "resumed_session_id": null, "event": "organize_admission_attempt", "level": "info", "logger": "kodezart.chains.organize", "timestamp": "2026-09-12T22:46:04.593568Z"}
+{"site": "organize_assess", "events": {"result": 1}, "event_count": 1, "rate_limit_rejected": false, "result_event_observed": true, "has_structured_output": true, "subtype": "result", "is_error": false, "num_turns": 1, "duration_ms": 1, "duration_api_ms": 1, "stop_reason": null, "session_id": "previous-agent-session", "total_cost_usd": null, "usage": null, "result_tail": "Author rationale must never be forwarded.", "event": "stream_drained", "level": "info", "logger": "kodezart.core.stream_drain", "timestamp": "2026-09-12T22:46:04.602036Z"}
+{"site": "organize_author", "events": {"result": 1}, "event_count": 1, "rate_limit_rejected": false, "result_event_observed": true, "has_structured_output": true, "subtype": "result", "is_error": false, "num_turns": 1, "duration_ms": 1, "duration_api_ms": 1, "stop_reason": null, "session_id": "previous-agent-session", "total_cost_usd": null, "usage": null, "result_tail": "Author rationale must never be forwarded.", "event": "stream_drained", "level": "info", "logger": "kodezart.core.stream_drain", "timestamp": "2026-09-12T22:46:04.664464Z"}
+------------------------------ Captured log call -------------------------------
+INFO     kodezart.chains.organize:organize.py:120 {'issue_key': 'FIX-1', 'prompt_key': 'organize_assess', 'base_ref': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'session_id': None, 'resumed_session_id': None, 'event': 'organize_admission_attempt', 'level': 'info', 'logger': 'kodezart.chains.organize', 'timestamp': '2026-09-12T22:46:04.593568Z'}
+INFO     kodezart.core.stream_drain:stream_drain.py:68 {'site': 'organize_assess', 'events': {'result': 1}, 'event_count': 1, 'rate_limit_rejected': False, 'result_event_observed': True, 'has_structured_output': True, 'subtype': 'result', 'is_error': False, 'num_turns': 1, 'duration_ms': 1, 'duration_api_ms': 1, 'stop_reason': None, 'session_id': 'previous-agent-session', 'total_cost_usd': None, 'usage': None, 'result_tail': 'Author rationale must never be forwarded.', 'event': 'stream_drained', 'level': 'info', 'logger': 'kodezart.core.stream_drain', 'timestamp': '2026-09-12T22:46:04.602036Z'}
+INFO     kodezart.core.stream_drain:stream_drain.py:68 {'site': 'organize_author', 'events': {'result': 1}, 'event_count': 1, 'rate_limit_rejected': False, 'result_event_observed': True, 'has_structured_output': True, 'subtype': 'result', 'is_error': False, 'num_turns': 1, 'duration_ms': 1, 'duration_api_ms': 1, 'stop_reason': None, 'session_id': 'previous-agent-session', 'total_cost_usd': None, 'usage': None, 'result_tail': 'Author rationale must never be forwarded.', 'event': 'stream_drained', 'level': 'info', 'logger': 'kodezart.core.stream_drain', 'timestamp': '2026-09-12T22:46:04.664464Z'}
+________ test_halted_first_binding_does_not_starve_second_binding[True] ________
+
+first_halts = True
+
+    @pytest.mark.parametrize("first_halts", [False, True])
+    async def test_halted_first_binding_does_not_starve_second_binding(first_halts):
+        first, _, _ = factory(tick=True, refuse_forever=first_halts, bound=1)
+        second, board, executor = factory(tick=True)
+        key = "independent-second-scope"
+        issue = board.server.issues.pop(CLAIMED_ISSUE)
+        issue.id = key
+        board.server.issues[key] = issue
+        original = second._targets[0]
+        target = replace(
+            original,
+            binding=original.binding.model_copy(
+                update={"scope": ScopeRef(kind=ScopeKind.ISSUE, key=key)}
+            ),
+        )
+        tick = OrganizeTick(
+            targets=(first._targets[0], target),
+            git=FakeGitService(remote_branch_shas={target.repository.trunk: "a" * 40}),
+            workspace=RecordingWorkspace(),
+            remote="origin",
+        )
+        halt = None
+        try:
+>           await tick.run(datetime(2026, 9, 12, tzinfo=UTC))
+
+tests/integration/test_organize_tick_halt.py:40: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/services/organize_tick.py:69: in run
+    report = await target.owner.run(
+src/kodezart/services/organize_owner.py:1038: in run
+    verified_write = await self._author_write(
+src/kodezart/services/organize_owner.py:658: in _author_write
+    result = await self._verifier.write_back(
+src/kodezart/chains/write_back_verifier.py:121: in write_back
+    await step.write(finding=finding)
+src/kodezart/services/organize_owner.py:99: in write
+    await self.apply(finding)
+src/kodezart/services/organize_owner.py:556: in apply
+    content = await gated_write(
+src/kodezart/core/outbound_write.py:59: in gated_write
+    surface=surface_of(destination).value,
+            ^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+destination = <OutboundDestination.TRACKER_DESCRIPTION: 'tracker_description'>
+
+    def surface_of(destination: OutboundDestination) -> OutboundSurface:
+        """The surface class *destination* writes onto."""
+>       return DESTINATION_SURFACE[destination]
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: <OutboundDestination.TRACKER_DESCRIPTION: 'tracker_description'>
+
+src/kodezart/types/domain/gating.py:147: KeyError
+----------------------------- Captured stdout call -----------------------------
+{"issue_key": "FIX-1", "prompt_key": "organize_assess", "base_ref": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "session_id": null, "resumed_session_id": null, "event": "organize_admission_attempt", "level": "info", "logger": "kodezart.chains.organize", "timestamp": "2026-09-12T22:46:05.010707Z"}
+{"site": "organize_assess", "events": {"result": 1}, "event_count": 1, "rate_limit_rejected": false, "result_event_observed": true, "has_structured_output": true, "subtype": "result", "is_error": false, "num_turns": 1, "duration_ms": 1, "duration_api_ms": 1, "stop_reason": null, "session_id": "previous-agent-session", "total_cost_usd": null, "usage": null, "result_tail": "Author rationale must never be forwarded.", "event": "stream_drained", "level": "info", "logger": "kodezart.core.stream_drain", "timestamp": "2026-09-12T22:46:05.015480Z"}
+{"site": "organize_author", "events": {"result": 1}, "event_count": 1, "rate_limit_rejected": false, "result_event_observed": true, "has_structured_output": true, "subtype": "result", "is_error": false, "num_turns": 1, "duration_ms": 1, "duration_api_ms": 1, "stop_reason": null, "session_id": "previous-agent-session", "total_cost_usd": null, "usage": null, "result_tail": "Author rationale must never be forwarded.", "event": "stream_drained", "level": "info", "logger": "kodezart.core.stream_drain", "timestamp": "2026-09-12T22:46:05.086571Z"}
+------------------------------ Captured log call -------------------------------
+INFO     kodezart.chains.organize:organize.py:120 {'issue_key': 'FIX-1', 'prompt_key': 'organize_assess', 'base_ref': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'session_id': None, 'resumed_session_id': None, 'event': 'organize_admission_attempt', 'level': 'info', 'logger': 'kodezart.chains.organize', 'timestamp': '2026-09-12T22:46:05.010707Z'}
+INFO     kodezart.core.stream_drain:stream_drain.py:68 {'site': 'organize_assess', 'events': {'result': 1}, 'event_count': 1, 'rate_limit_rejected': False, 'result_event_observed': True, 'has_structured_output': True, 'subtype': 'result', 'is_error': False, 'num_turns': 1, 'duration_ms': 1, 'duration_api_ms': 1, 'stop_reason': None, 'session_id': 'previous-agent-session', 'total_cost_usd': None, 'usage': None, 'result_tail': 'Author rationale must never be forwarded.', 'event': 'stream_drained', 'level': 'info', 'logger': 'kodezart.core.stream_drain', 'timestamp': '2026-09-12T22:46:05.015480Z'}
+INFO     kodezart.core.stream_drain:stream_drain.py:68 {'site': 'organize_author', 'events': {'result': 1}, 'event_count': 1, 'rate_limit_rejected': False, 'result_event_observed': True, 'has_structured_output': True, 'subtype': 'result', 'is_error': False, 'num_turns': 1, 'duration_ms': 1, 'duration_api_ms': 1, 'stop_reason': None, 'session_id': 'previous-agent-session', 'total_cost_usd': None, 'usage': None, 'result_tail': 'Author rationale must never be forwarded.', 'event': 'stream_drained', 'level': 'info', 'logger': 'kodezart.core.stream_drain', 'timestamp': '2026-09-12T22:46:05.086571Z'}
+=========================== short test summary info ============================
+FAILED tests/chains/test_organize_owner.py::test_actual_factory_runs_all_configured_phases_and_reentry_writes_nothing
+FAILED tests/chains/test_organize_owner.py::test_single_admission_round_stops_with_durable_refusal_and_no_completion
+FAILED tests/chains/test_organize_owner.py::test_landed_claim_refutation_drives_a_fresh_author_repair
+FAILED tests/chains/test_organize_owner.py::test_unanswered_escalation_is_unrecorded_with_exact_issue_and_no_resend
+FAILED tests/chains/test_organize_owner.py::test_full_scope_finding_exhausts_the_actual_convergence_bound
+FAILED tests/chains/test_organize_native_independent.py::test_criterion_mint_requires_the_parent_revision_its_author_read[False]
+FAILED tests/chains/test_organize_native_independent.py::test_criterion_mint_requires_the_parent_revision_its_author_read[True]
+FAILED tests/chains/test_organize_native_independent.py::test_writeback_exhaustion_retains_its_actual_cited_refutation
+FAILED tests/chains/test_organize_delivery_independent.py::test_halted_first_binding_does_not_starve_second_binding[False]
+FAILED tests/chains/test_organize_delivery_independent.py::test_halted_first_binding_does_not_starve_second_binding[True]
+FAILED tests/chains/test_organize_delivery_independent.py::test_approval_is_current_after_last_awaited_gate_read[False]
+FAILED tests/chains/test_organize_delivery_independent.py::test_approval_is_current_after_last_awaited_gate_read[True]
+FAILED tests/chains/test_organize_delivery_independent.py::test_criterion_author_is_bound_to_current_parent_revision[False]
+FAILED tests/chains/test_organize_delivery_independent.py::test_criterion_author_is_bound_to_current_parent_revision[True]
+FAILED tests/chains/test_organize_delivery_independent.py::test_current_scope_membership_binds_author_write[False]
+FAILED tests/chains/test_organize_delivery_independent.py::test_current_scope_membership_binds_author_write[True]
+FAILED tests/chains/test_organize_delivery_independent.py::test_cancel_during_owner_create_settles_before_release
+FAILED tests/chains/test_organize_graph_owner.py::test_configured_owner_applies_graph_priority_then_reentry_writes_nothing
+FAILED tests/chains/test_organize_graph_owner.py::test_configured_split_prepares_children_without_execution_and_replays_cleanly
+FAILED tests/chains/test_organize_graph_owner.py::test_cancel_during_issued_split_settles_before_lease_release
+FAILED tests/chains/test_organize_graph_independent.py::test_configured_owner_refuses_observed_final_split_source_drift
+FAILED tests/core/test_organize_settings.py::test_environment_bounds_reach_the_tick_and_stop_after_one_author
+FAILED tests/core/test_organize_settings.py::test_actual_tick_uses_fresh_remote_trunk_and_existing_run_identity
+FAILED tests/integration/test_organize_scheduler.py::test_scheduled_owner_prepares_native_children_and_reentry_is_idempotent
+FAILED tests/integration/test_organize_scheduler.py::test_actual_lifespan_registers_and_runs_the_owner
+FAILED tests/integration/test_organize_tick_halt.py::test_halted_first_binding_does_not_starve_second_binding[False]
+FAILED tests/integration/test_organize_tick_halt.py::test_halted_first_binding_does_not_starve_second_binding[True]
+27 failed, 286 passed in 64.05s (0:01:04)

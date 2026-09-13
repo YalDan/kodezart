@@ -1,0 +1,300 @@
+.........................F.FF                                            [100%]
+=================================== FAILURES ===================================
+_ test_actual_native_graph_delivers_and_only_work_defect_reenters_fire[True-1-ci_passed] _
+
+self = <kodezart.adapters.github_api.GitHubAPIClient object at 0x10a67e180>
+method = 'GET', url = '/repos/owner/repo/pulls'
+parse = <function _pull_request_listing at 0x109d484a0>
+
+    async def _parsed_with_retry(
+        self,
+        method: str,
+        url: str,
+        parse: Callable[[object], _WireT],
+        *,
+        json: dict[str, object] | None = None,
+        params: dict[str, str | int] | None = None,
+        retryable: bool = True,
+    ) -> _WireT:
+        """One request, with its body decoded and validated.
+    
+        The single seam every body read goes through, so the translation
+        below is stated ONCE rather than at each reader.  Both ways a
+        payload fails to become a wire model are ``ValueError``: the JSON
+        decoder raises one on bytes that are not JSON, and pydantic's
+        ``ValidationError`` IS one.  Catching the superset is exact here
+        and keeps the two from needing separate arms that could drift.
+    
+        A body this adapter cannot read is a forge failure like any
+        other, and it carries the status the response really had — the
+        request was answered, and what came back was unusable.
+        """
+        response = await self._request_with_retry(
+            method,
+            url,
+            json=json,
+            params=params,
+            retryable=retryable,
+        )
+        try:
+>           return parse(response.json())
+                   ^^^^^^^^^^^^^^^^^^^^^^
+
+src/kodezart/adapters/github_api.py:338: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/adapters/github_api.py:107: in _pull_request_listing
+    return tuple(PullRequestSummary.model_validate(entry) for entry in payload)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+.0 = <list_iterator object at 0x10a64b640>
+
+>   return tuple(PullRequestSummary.model_validate(entry) for entry in payload)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for PullRequestSummary
+E   title
+E     Field required [type=missing, input_value={'html_url': 'https://git.../pull/17', 'number': 17}, input_type=dict]
+E       For further information visit https://errors.pydantic.dev/2.12/v/missing
+
+src/kodezart/adapters/github_api.py:107: ValidationError
+
+The above exception was the direct cause of the following exception:
+
+red = True, rounds = 1, outcome = <WorkflowOutcome.ci_passed: 'ci_passed'>
+
+    @pytest.mark.parametrize(
+        "red,rounds,outcome",
+        [
+            (False, 0, WorkflowOutcome.ci_passed),
+            (True, 0, WorkflowOutcome.ci_failed_fix_budget_exhausted),
+            (True, 1, WorkflowOutcome.ci_passed),
+        ],
+    )
+    async def test_actual_native_graph_delivers_and_only_work_defect_reenters_fire(
+        red, rounds, outcome
+    ):
+        lane, state, config, wire, forge, executor, tracker = composed(
+            red=red, rounds=rounds
+        )
+        try:
+            assert isinstance(state["delivery"], PendingLaneDelivery)
+>           reports, events, final = await run(lane, state, config)
+                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/chains/test_native_delivery.py:173: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/chains/test_native_delivery.py:145: in run
+    async for _, mode, payload in lane.graph.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/native_delivery.py:98: in _deliver
+    result = await self._delivery.deliver(
+src/kodezart/chains/lane_delivery.py:146: in deliver
+    existing = await self._forge_query.open_pr_for_head(
+src/kodezart/adapters/github_api.py:425: in open_pr_for_head
+    listing = await self._parsed_with_retry(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.github_api.GitHubAPIClient object at 0x10a67e180>
+method = 'GET', url = '/repos/owner/repo/pulls'
+parse = <function _pull_request_listing at 0x109d484a0>
+
+    async def _parsed_with_retry(
+        self,
+        method: str,
+        url: str,
+        parse: Callable[[object], _WireT],
+        *,
+        json: dict[str, object] | None = None,
+        params: dict[str, str | int] | None = None,
+        retryable: bool = True,
+    ) -> _WireT:
+        """One request, with its body decoded and validated.
+    
+        The single seam every body read goes through, so the translation
+        below is stated ONCE rather than at each reader.  Both ways a
+        payload fails to become a wire model are ``ValueError``: the JSON
+        decoder raises one on bytes that are not JSON, and pydantic's
+        ``ValidationError`` IS one.  Catching the superset is exact here
+        and keeps the two from needing separate arms that could drift.
+    
+        A body this adapter cannot read is a forge failure like any
+        other, and it carries the status the response really had — the
+        request was answered, and what came back was unusable.
+        """
+        response = await self._request_with_retry(
+            method,
+            url,
+            json=json,
+            params=params,
+            retryable=retryable,
+        )
+        try:
+            return parse(response.json())
+        except ValueError as exc:
+>           raise ForgeAPIError(
+                f"Forge answered with a body this adapter cannot read: "
+                f"{type(exc).__name__}",
+                status_code=response.status_code,
+                detail=f"{method} {url}",
+            ) from exc
+E           kodezart.domain.errors.ForgeAPIError: Forge answered with a body this adapter cannot read: ValidationError (status: 200; request: GET /repos/owner/repo/pulls)
+E           During task with name 'deliver' and id '6caff685-925b-26bb-8317-518c433c6709'
+
+src/kodezart/adapters/github_api.py:340: ForgeAPIError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 15:36:55 [info     ] repo_visibility_resolved       repo_url=https://github.com/owner/repo.git visibility=unknown
+2026-09-12 15:36:55 [info     ] scope_base_resolved            base_branch=main base_role=None input_count=0
+2026-09-12 15:36:55 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 15:36:55 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 15:36:55 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=branch_name
+2026-09-12 15:36:55 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:36:55 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:36:55 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:36:55 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:36:55 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 15:36:55 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=ralph_evaluator stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 15:36:55 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:36:55 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:36:55 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 15:36:55 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=post_merge_review stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 15:36:55 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:36:55 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:36:55 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:36:55 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 15:36:55 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=pr_description stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 15:36:55 [info     ] outbound_content_gated         categories=[] content_digest=eb122d7b8735eaeed5d4d2e20e2197a7332385519bb8aea3e476efbbb03973b9 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=pr_title
+2026-09-12 15:36:55 [info     ] outbound_content_gated         categories=[] content_digest=67ea6610ea7acff978f8bc9bfd466e5e33f2fa503f68961b4548c20b172578db failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=pr_body
+2026-09-12 15:36:55 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:36:55 [info     ] ci_runs_observed               count=1 ref=kodezart/test-branch-e51d0e53
+2026-09-12 15:36:55 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:36:55 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:36:55 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 15:36:55 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=remediation_ticket stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 15:36:55 [info     ] remediation_ticket_drafted     base_ref=kodezart/test-branch-e51d0e53 entry=ci_failure native=True round_index=0
+2026-09-12 15:36:55 [info     ] remediation_round_opened       base_ref=kodezart/test-branch-e51d0e53 entry=ci_failure round_index=0 rounds_remaining=0
+2026-09-12 15:36:55 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:36:55 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:36:55 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:36:55 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:36:55 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 15:36:55 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=ralph_evaluator stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 15:36:55 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:36:55 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:36:55 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 15:36:55 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=post_merge_review stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 15:36:55 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:36:55 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:36:55 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+_ test_pre_delivery_checkpoint_resume_retains_metadata_and_checks_current_criteria[False] _
+
+changed = False
+
+    @pytest.mark.parametrize("changed", [False, True])
+    async def test_pre_delivery_checkpoint_resume_retains_metadata_and_checks_current_criteria(
+        changed,
+    ):
+        saver = InMemorySaver()
+        lane, state, config, wire, forge, executor, tracker = composed(saver=saver)
+        try:
+            reports, _, _ = await run(lane, state, config, interrupt_before=["deliver"])
+            assert reports == [] and wire.requests == []
+            paused = lane.graph.get_state(config)
+            assert paused.next == ("deliver",)
+            assert (
+>               paused.metadata["scope_lane_request"]
+                == config["metadata"]["scope_lane_request"]
+            )
+E           KeyError: 'scope_lane_request'
+
+tests/chains/test_native_delivery.py:219: KeyError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 15:36:56 [info     ] repo_visibility_resolved       repo_url=https://github.com/owner/repo.git visibility=unknown
+2026-09-12 15:36:56 [info     ] scope_base_resolved            base_branch=main base_role=None input_count=0
+2026-09-12 15:36:56 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 15:36:56 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 15:36:56 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=branch_name
+2026-09-12 15:36:56 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:36:56 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:36:56 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:36:56 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:36:56 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 15:36:56 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=ralph_evaluator stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 15:36:56 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:36:56 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:36:56 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 15:36:56 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=post_merge_review stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 15:36:56 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+------------------------------ Captured log call -------------------------------
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.fire_spec.TrackerSpec from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.fire_spec', 'TrackerSpec')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.criteria.TrackerCriterionSet from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.criteria', 'TrackerCriterionSet')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.gating.RepoVisibility from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.gating', 'RepoVisibility')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.trajectory.LoopTrajectory from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.trajectory', 'LoopTrajectory')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.native_delivery.PendingLaneDelivery from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.native_delivery', 'PendingLaneDelivery')]
+_ test_pre_delivery_checkpoint_resume_retains_metadata_and_checks_current_criteria[True] _
+
+changed = True
+
+    @pytest.mark.parametrize("changed", [False, True])
+    async def test_pre_delivery_checkpoint_resume_retains_metadata_and_checks_current_criteria(
+        changed,
+    ):
+        saver = InMemorySaver()
+        lane, state, config, wire, forge, executor, tracker = composed(saver=saver)
+        try:
+            reports, _, _ = await run(lane, state, config, interrupt_before=["deliver"])
+            assert reports == [] and wire.requests == []
+            paused = lane.graph.get_state(config)
+            assert paused.next == ("deliver",)
+            assert (
+>               paused.metadata["scope_lane_request"]
+                == config["metadata"]["scope_lane_request"]
+            )
+E           KeyError: 'scope_lane_request'
+
+tests/chains/test_native_delivery.py:219: KeyError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 15:36:56 [info     ] repo_visibility_resolved       repo_url=https://github.com/owner/repo.git visibility=unknown
+2026-09-12 15:36:56 [info     ] scope_base_resolved            base_branch=main base_role=None input_count=0
+2026-09-12 15:36:56 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 15:36:56 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 15:36:56 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=branch_name
+2026-09-12 15:36:56 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:36:56 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:36:56 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:36:56 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:36:56 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 15:36:56 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=ralph_evaluator stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 15:36:56 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:36:56 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:36:56 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 15:36:56 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=post_merge_review stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 15:36:56 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+------------------------------ Captured log call -------------------------------
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.fire_spec.TrackerSpec from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.fire_spec', 'TrackerSpec')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.criteria.TrackerCriterionSet from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.criteria', 'TrackerCriterionSet')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.gating.RepoVisibility from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.gating', 'RepoVisibility')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.trajectory.LoopTrajectory from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.trajectory', 'LoopTrajectory')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.native_delivery.PendingLaneDelivery from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.native_delivery', 'PendingLaneDelivery')]
+=========================== short test summary info ============================
+FAILED tests/chains/test_native_delivery.py::test_actual_native_graph_delivers_and_only_work_defect_reenters_fire[True-1-ci_passed]
+FAILED tests/chains/test_native_delivery.py::test_pre_delivery_checkpoint_resume_retains_metadata_and_checks_current_criteria[False]
+FAILED tests/chains/test_native_delivery.py::test_pre_delivery_checkpoint_resume_retains_metadata_and_checks_current_criteria[True]
+3 failed, 26 passed in 6.11s

@@ -1,0 +1,343 @@
+F...FFFFFFFFFFFFFF.F...                                                  [100%]
+=================================== FAILURES ===================================
+______ test_green_opens_on_actual_head_and_resolved_base_and_round_trips _______
+
+    async def test_green_opens_on_actual_head_and_resolved_base_and_round_trips():
+        parts = await setup()
+        result = await deliver(parts)
+        _, _, _, creator, ci, query, tracker = parts
+        assert result.outcome is WorkflowOutcome.ci_passed
+        assert result.pr.state == "open"
+        assert result.final_commit_sha == SHA
+        assert result.issue_id == result.lane_key == SUBJECT
+        assert creator.calls[0]["head"] == HEAD
+        assert creator.calls[0]["base"] == BASE
+>       assert ci.calls == [{"repo_url": REPO, "ref": HEAD}]
+E       AssertionError: assert [{'ref': 'lan...er/repo.git'}] == [{'ref': 'lan.../owner/repo'}]
+E         
+E         At index 0 diff: {'repo_url': 'https://github.com/owner/repo.git', 'ref': 'lane-head'} != {'repo_url': 'https://github.com/owner/repo', 'ref': 'lane-head'}
+E         Use -v to get more diff
+
+tests/chains/test_lane_delivery.py:101: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 15:34:24 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:34:24 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:34:24 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 15:34:24 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=pr_description stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 15:34:24 [info     ] outbound_content_gated         categories=[] content_digest=eb122d7b8735eaeed5d4d2e20e2197a7332385519bb8aea3e476efbbb03973b9 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=pr_title
+2026-09-12 15:34:24 [info     ] outbound_content_gated         categories=[] content_digest=67ea6610ea7acff978f8bc9bfd466e5e33f2fa503f68961b4548c20b172578db failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=pr_body
+2026-09-12 15:34:24 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+_______ test_open_pr_replay_reuses_native_head_lookup_without_generation _______
+
+    async def test_open_pr_replay_reuses_native_head_lookup_without_generation():
+        parts = await setup()
+        owner, state, context, creator, *_ = parts
+        owner._forge_query = FakeForgeQuery(
+            open_prs={(REPO, HEAD): ("https://github.com/owner/repo/pull/7", 7)}
+        )
+        result = await owner.deliver(
+            state=state, context=context, stalled=False, remediation_available=False
+        )
+>       assert result.pr.number == 7 and creator.calls == []
+E       AssertionError: assert (1 == 7)
+E        +  where 1 = LanePR(url='https://github.com/o/r/pull/1', number=1, state='open').number
+E        +    where LanePR(url='https://github.com/o/r/pull/1', number=1, state='open') = LaneDelivery(lane_key='fire/subject', issue_id='fire/subject', head_branch='lane-head', base_branch='blocker-branch', ...ng=False, checks_passed=True, checks_summary='All CI checks passed.', outcome=<WorkflowOutcome.ci_passed: 'ci_passed'>).pr
+
+tests/chains/test_lane_delivery.py:143: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 15:34:25 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:34:25 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:34:25 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 15:34:25 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=pr_description stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 15:34:25 [info     ] outbound_content_gated         categories=[] content_digest=eb122d7b8735eaeed5d4d2e20e2197a7332385519bb8aea3e476efbbb03973b9 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=pr_title
+2026-09-12 15:34:25 [info     ] outbound_content_gated         categories=[] content_digest=67ea6610ea7acff978f8bc9bfd466e5e33f2fa503f68961b4548c20b172578db failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=pr_body
+2026-09-12 15:34:25 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+_ test_absent_checks_keep_the_declaration_and_exemption_arms[False-False-ci_not_configured] _
+
+declared = False, exempt = False
+outcome = <WorkflowOutcome.ci_not_configured: 'ci_not_configured'>
+
+    @pytest.mark.parametrize(
+        "declared,exempt,outcome",
+        [
+            (False, False, WorkflowOutcome.ci_not_configured),
+            (True, False, WorkflowOutcome.ci_no_run_at_ref),
+            (True, True, WorkflowOutcome.ci_not_configured),
+        ],
+    )
+    async def test_absent_checks_keep_the_declaration_and_exemption_arms(
+        declared, exempt, outcome
+    ):
+        parts = await setup(
+            monitor=FakeCIMonitor(passed=None, declared=declared),
+>           repositories=[RepoEntry(url=REPO, forge_exempt=exempt)],
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        )
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for RepoEntry
+E       trunk
+E         Field required [type=missing]
+E           For further information visit https://errors.pydantic.dev/2.12/v/missing
+
+tests/chains/test_lane_delivery.py:159: ValidationError
+_ test_absent_checks_keep_the_declaration_and_exemption_arms[True-False-ci_no_run_at_ref] _
+
+declared = True, exempt = False
+outcome = <WorkflowOutcome.ci_no_run_at_ref: 'ci_no_run_at_ref'>
+
+    @pytest.mark.parametrize(
+        "declared,exempt,outcome",
+        [
+            (False, False, WorkflowOutcome.ci_not_configured),
+            (True, False, WorkflowOutcome.ci_no_run_at_ref),
+            (True, True, WorkflowOutcome.ci_not_configured),
+        ],
+    )
+    async def test_absent_checks_keep_the_declaration_and_exemption_arms(
+        declared, exempt, outcome
+    ):
+        parts = await setup(
+            monitor=FakeCIMonitor(passed=None, declared=declared),
+>           repositories=[RepoEntry(url=REPO, forge_exempt=exempt)],
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        )
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for RepoEntry
+E       trunk
+E         Field required [type=missing]
+E           For further information visit https://errors.pydantic.dev/2.12/v/missing
+
+tests/chains/test_lane_delivery.py:159: ValidationError
+_ test_absent_checks_keep_the_declaration_and_exemption_arms[True-True-ci_not_configured] _
+
+declared = True, exempt = True
+outcome = <WorkflowOutcome.ci_not_configured: 'ci_not_configured'>
+
+    @pytest.mark.parametrize(
+        "declared,exempt,outcome",
+        [
+            (False, False, WorkflowOutcome.ci_not_configured),
+            (True, False, WorkflowOutcome.ci_no_run_at_ref),
+            (True, True, WorkflowOutcome.ci_not_configured),
+        ],
+    )
+    async def test_absent_checks_keep_the_declaration_and_exemption_arms(
+        declared, exempt, outcome
+    ):
+        parts = await setup(
+            monitor=FakeCIMonitor(passed=None, declared=declared),
+>           repositories=[RepoEntry(url=REPO, forge_exempt=exempt)],
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        )
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for RepoEntry
+E       trunk
+E         Field required [type=missing]
+E           For further information visit https://errors.pydantic.dev/2.12/v/missing
+
+tests/chains/test_lane_delivery.py:159: ValidationError
+_ test_only_reproduced_work_defect_can_request_remediation[environment-Runner unavailable] _
+
+kind = 'environment', summary = 'Runner unavailable'
+
+    @pytest.mark.parametrize("summary", ["Runner unavailable", ""])
+    @pytest.mark.parametrize("kind", ["environment", "flake", "work", "unclassified"])
+    async def test_only_reproduced_work_defect_can_request_remediation(kind, summary):
+>       repository = RepoEntry(url=REPO)
+                     ^^^^^^^^^^^^^^^^^^^
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for RepoEntry
+E       trunk
+E         Field required [type=missing]
+E           For further information visit https://errors.pydantic.dev/2.12/v/missing
+
+tests/chains/test_lane_delivery.py:170: ValidationError
+____ test_only_reproduced_work_defect_can_request_remediation[environment-] ____
+
+kind = 'environment', summary = ''
+
+    @pytest.mark.parametrize("summary", ["Runner unavailable", ""])
+    @pytest.mark.parametrize("kind", ["environment", "flake", "work", "unclassified"])
+    async def test_only_reproduced_work_defect_can_request_remediation(kind, summary):
+>       repository = RepoEntry(url=REPO)
+                     ^^^^^^^^^^^^^^^^^^^
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for RepoEntry
+E       trunk
+E         Field required [type=missing]
+E           For further information visit https://errors.pydantic.dev/2.12/v/missing
+
+tests/chains/test_lane_delivery.py:170: ValidationError
+_ test_only_reproduced_work_defect_can_request_remediation[flake-Runner unavailable] _
+
+kind = 'flake', summary = 'Runner unavailable'
+
+    @pytest.mark.parametrize("summary", ["Runner unavailable", ""])
+    @pytest.mark.parametrize("kind", ["environment", "flake", "work", "unclassified"])
+    async def test_only_reproduced_work_defect_can_request_remediation(kind, summary):
+>       repository = RepoEntry(url=REPO)
+                     ^^^^^^^^^^^^^^^^^^^
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for RepoEntry
+E       trunk
+E         Field required [type=missing]
+E           For further information visit https://errors.pydantic.dev/2.12/v/missing
+
+tests/chains/test_lane_delivery.py:170: ValidationError
+_______ test_only_reproduced_work_defect_can_request_remediation[flake-] _______
+
+kind = 'flake', summary = ''
+
+    @pytest.mark.parametrize("summary", ["Runner unavailable", ""])
+    @pytest.mark.parametrize("kind", ["environment", "flake", "work", "unclassified"])
+    async def test_only_reproduced_work_defect_can_request_remediation(kind, summary):
+>       repository = RepoEntry(url=REPO)
+                     ^^^^^^^^^^^^^^^^^^^
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for RepoEntry
+E       trunk
+E         Field required [type=missing]
+E           For further information visit https://errors.pydantic.dev/2.12/v/missing
+
+tests/chains/test_lane_delivery.py:170: ValidationError
+_ test_only_reproduced_work_defect_can_request_remediation[work-Runner unavailable] _
+
+kind = 'work', summary = 'Runner unavailable'
+
+    @pytest.mark.parametrize("summary", ["Runner unavailable", ""])
+    @pytest.mark.parametrize("kind", ["environment", "flake", "work", "unclassified"])
+    async def test_only_reproduced_work_defect_can_request_remediation(kind, summary):
+>       repository = RepoEntry(url=REPO)
+                     ^^^^^^^^^^^^^^^^^^^
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for RepoEntry
+E       trunk
+E         Field required [type=missing]
+E           For further information visit https://errors.pydantic.dev/2.12/v/missing
+
+tests/chains/test_lane_delivery.py:170: ValidationError
+_______ test_only_reproduced_work_defect_can_request_remediation[work-] ________
+
+kind = 'work', summary = ''
+
+    @pytest.mark.parametrize("summary", ["Runner unavailable", ""])
+    @pytest.mark.parametrize("kind", ["environment", "flake", "work", "unclassified"])
+    async def test_only_reproduced_work_defect_can_request_remediation(kind, summary):
+>       repository = RepoEntry(url=REPO)
+                     ^^^^^^^^^^^^^^^^^^^
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for RepoEntry
+E       trunk
+E         Field required [type=missing]
+E           For further information visit https://errors.pydantic.dev/2.12/v/missing
+
+tests/chains/test_lane_delivery.py:170: ValidationError
+_ test_only_reproduced_work_defect_can_request_remediation[unclassified-Runner unavailable] _
+
+kind = 'unclassified', summary = 'Runner unavailable'
+
+    @pytest.mark.parametrize("summary", ["Runner unavailable", ""])
+    @pytest.mark.parametrize("kind", ["environment", "flake", "work", "unclassified"])
+    async def test_only_reproduced_work_defect_can_request_remediation(kind, summary):
+>       repository = RepoEntry(url=REPO)
+                     ^^^^^^^^^^^^^^^^^^^
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for RepoEntry
+E       trunk
+E         Field required [type=missing]
+E           For further information visit https://errors.pydantic.dev/2.12/v/missing
+
+tests/chains/test_lane_delivery.py:170: ValidationError
+___ test_only_reproduced_work_defect_can_request_remediation[unclassified-] ____
+
+kind = 'unclassified', summary = ''
+
+    @pytest.mark.parametrize("summary", ["Runner unavailable", ""])
+    @pytest.mark.parametrize("kind", ["environment", "flake", "work", "unclassified"])
+    async def test_only_reproduced_work_defect_can_request_remediation(kind, summary):
+>       repository = RepoEntry(url=REPO)
+                     ^^^^^^^^^^^^^^^^^^^
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for RepoEntry
+E       trunk
+E         Field required [type=missing]
+E           For further information visit https://errors.pydantic.dev/2.12/v/missing
+
+tests/chains/test_lane_delivery.py:170: ValidationError
+_____ test_zero_rerun_bound_spends_no_probe_and_exhausted_budget_comments ______
+
+    async def test_zero_rerun_bound_spends_no_probe_and_exhausted_budget_comments():
+        parts = await setup(monitor=FakeCIMonitor(passed=False), bound=0)
+        result = await deliver(parts)
+        assert result.outcome is WorkflowOutcome.ci_failed_fix_budget_exhausted
+        assert result.red_class is CheckRedClass.WORK_DEFECT
+        assert parts[4].rerun_calls == []
+>       assert len(parts[3].comment_calls) == 1
+                   ^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'FakePRCreator' object has no attribute 'comment_calls'
+
+tests/chains/test_lane_delivery.py:217: AttributeError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 15:34:25 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:34:25 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:34:25 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 15:34:25 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=pr_description stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 15:34:25 [info     ] outbound_content_gated         categories=[] content_digest=eb122d7b8735eaeed5d4d2e20e2197a7332385519bb8aea3e476efbbb03973b9 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=pr_title
+2026-09-12 15:34:25 [info     ] outbound_content_gated         categories=[] content_digest=67ea6610ea7acff978f8bc9bfd466e5e33f2fa503f68961b4548c20b172578db failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=pr_body
+2026-09-12 15:34:25 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:34:25 [info     ] outbound_content_gated         categories=[] content_digest=d3ebee9e8942463b18b6f0fb2def4d2365edf3ac86dae1404c7384f114c08ff8 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=pr_comment
+________ test_stalled_lane_uses_the_same_open_watch_path_without_a_fix _________
+
+    async def test_stalled_lane_uses_the_same_open_watch_path_without_a_fix():
+        parts = await setup(monitor=FakeCIMonitor(passed=False), bound=0)
+        result = await deliver(parts, stalled=True, remediation=True)
+        assert result.outcome is WorkflowOutcome.stalled_pr_opened
+>       assert len(parts[3].calls) == len(parts[4].calls) == 1
+E       AssertionError: assert 2 == 1
+E        +  where 2 = len([{'base': 'blocker-branch', 'body': 'Test PR description.\n\nTracker issue: fire/subject', 'head': 'lane-head', 'metho...n\nAll CI checks passed.', 'method': 'comment_on_pr', 'pr_number': 1, 'repo_url': 'https://github.com/owner/repo.git'}])
+E        +    where [{'base': 'blocker-branch', 'body': 'Test PR description.\n\nTracker issue: fire/subject', 'head': 'lane-head', 'metho...n\nAll CI checks passed.', 'method': 'comment_on_pr', 'pr_number': 1, 'repo_url': 'https://github.com/owner/repo.git'}] = <tests.fakes.FakePRCreator object at 0x10adf08c0>.calls
+E        +  and   1 = len([{'ref': 'lane-head', 'repo_url': 'https://github.com/owner/repo.git'}])
+E        +    where [{'ref': 'lane-head', 'repo_url': 'https://github.com/owner/repo.git'}] = <tests.fakes.FakeCIMonitor object at 0x10adf2630>.calls
+
+tests/chains/test_lane_delivery.py:224: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 15:34:25 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:34:25 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:34:25 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 15:34:25 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=pr_description stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 15:34:26 [info     ] outbound_content_gated         categories=[] content_digest=eb122d7b8735eaeed5d4d2e20e2197a7332385519bb8aea3e476efbbb03973b9 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=pr_title
+2026-09-12 15:34:26 [info     ] outbound_content_gated         categories=[] content_digest=67ea6610ea7acff978f8bc9bfd466e5e33f2fa503f68961b4548c20b172578db failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=pr_body
+2026-09-12 15:34:26 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:34:26 [info     ] outbound_content_gated         categories=[] content_digest=f7f78dcb447e0ce1023fed37c6f4da8559334444a3321bbe03cfa188b79b9212 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=pr_comment
+______ test_current_checks_are_revalidated_after_the_awaited_description _______
+
+    async def test_current_checks_are_revalidated_after_the_awaited_description():
+        parts = await setup()
+        owner, _, _, creator, _, _, tracker = parts
+    
+        class ChangingGate(PassThroughGate):
+            async def scan(self, content):
+                change_tracker(tracker, "changed-check")
+                return await super().scan(content)
+    
+        owner._gate = ChangingGate()
+>       with pytest.raises(FireSpecEntryError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'kodezart.domain.errors.FireSpecEntryError'>
+
+tests/chains/test_lane_delivery.py:261: Failed
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 15:34:26 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:34:26 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:34:26 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 15:34:26 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=pr_description stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 15:34:26 [info     ] outbound_content_gated         categories=[] content_digest=eb122d7b8735eaeed5d4d2e20e2197a7332385519bb8aea3e476efbbb03973b9 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=pr_title
+2026-09-12 15:34:26 [info     ] outbound_content_gated         categories=[] content_digest=67ea6610ea7acff978f8bc9bfd466e5e33f2fa503f68961b4548c20b172578db failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=pr_body
+2026-09-12 15:34:26 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+=========================== short test summary info ============================
+FAILED tests/chains/test_lane_delivery.py::test_green_opens_on_actual_head_and_resolved_base_and_round_trips
+FAILED tests/chains/test_lane_delivery.py::test_open_pr_replay_reuses_native_head_lookup_without_generation
+FAILED tests/chains/test_lane_delivery.py::test_absent_checks_keep_the_declaration_and_exemption_arms[False-False-ci_not_configured]
+FAILED tests/chains/test_lane_delivery.py::test_absent_checks_keep_the_declaration_and_exemption_arms[True-False-ci_no_run_at_ref]
+FAILED tests/chains/test_lane_delivery.py::test_absent_checks_keep_the_declaration_and_exemption_arms[True-True-ci_not_configured]
+FAILED tests/chains/test_lane_delivery.py::test_only_reproduced_work_defect_can_request_remediation[environment-Runner unavailable]
+FAILED tests/chains/test_lane_delivery.py::test_only_reproduced_work_defect_can_request_remediation[environment-]
+FAILED tests/chains/test_lane_delivery.py::test_only_reproduced_work_defect_can_request_remediation[flake-Runner unavailable]
+FAILED tests/chains/test_lane_delivery.py::test_only_reproduced_work_defect_can_request_remediation[flake-]
+FAILED tests/chains/test_lane_delivery.py::test_only_reproduced_work_defect_can_request_remediation[work-Runner unavailable]
+FAILED tests/chains/test_lane_delivery.py::test_only_reproduced_work_defect_can_request_remediation[work-]
+FAILED tests/chains/test_lane_delivery.py::test_only_reproduced_work_defect_can_request_remediation[unclassified-Runner unavailable]
+FAILED tests/chains/test_lane_delivery.py::test_only_reproduced_work_defect_can_request_remediation[unclassified-]
+FAILED tests/chains/test_lane_delivery.py::test_zero_rerun_bound_spends_no_probe_and_exhausted_budget_comments
+FAILED tests/chains/test_lane_delivery.py::test_stalled_lane_uses_the_same_open_watch_path_without_a_fix
+FAILED tests/chains/test_lane_delivery.py::test_current_checks_are_revalidated_after_the_awaited_description
+16 failed, 7 passed in 2.97s

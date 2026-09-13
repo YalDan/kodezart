@@ -1,0 +1,34 @@
+[
+  {
+    "path": "tests/test_composition_root.py",
+    "scope_none_lines": [
+      444
+    ]
+  },
+  {
+    "path": "tests/probes/test_ab_smoke.py",
+    "scope_none_lines": [
+      379
+    ]
+  },
+  {
+    "path": "tests/core/test_logging_chain.py",
+    "scope_none_lines": [
+      177
+    ]
+  },
+  {
+    "path": "tests/services/test_run_surface_lease.py",
+    "scope_none_lines": [
+      163
+    ]
+  },
+  {
+    "path": "tests/services/test_lifecycle_watcher.py",
+    "scope_none_lines": [
+      594,
+      463,
+      518
+    ]
+  }
+]

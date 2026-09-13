@@ -1,0 +1,10 @@
+Using CPython 3.12.13
+Creating virtual environment at: .venv
+   Building kodezart @ file:///private/tmp/kodezart-v03-native-read-address-root-review
+warning: `build_system.requires = ["uv-build>=0.10.9,<0.11.0"]` does not contain the current uv version 0.11.6
+      Built kodezart @ file:///private/tmp/kodezart-v03-native-read-address-root-review
+Installed 174 packages in 2.12s
+ERROR: file or directory not found: tests/tracker/test_execution_approval.py
+
+
+no tests ran in 0.02s

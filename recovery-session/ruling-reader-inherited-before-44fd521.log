@@ -1,0 +1,94 @@
+Using CPython 3.12.13
+Creating virtual environment at: .venv
+   Building kodezart @ file:///private/tmp/kodezart-v03-recovery-ruling-reader-before
+warning: `build_system.requires = ["uv-build>=0.10.9,<0.11.0"]` does not contain the current uv version 0.11.6
+      Built kodezart @ file:///private/tmp/kodezart-v03-recovery-ruling-reader-before
+Installed 174 packages in 1.76s
+FFF                                                                      [100%]
+=================================== FAILURES ===================================
+_ test_inherited_explicit_lane_boundary_refuses_ambiguous_native_record[conflicting-answer] _
+
+defect = 'conflicting-answer'
+
+    @pytest.mark.parametrize(
+        "defect", ["conflicting-answer", "conflicting-question", "missing-reply"]
+    )
+    async def test_inherited_explicit_lane_boundary_refuses_ambiguous_native_record(defect):
+        first, _ = native_row()
+        if defect == "missing-reply":
+            del first["parentId"]
+            server = two_pages([], [first])
+        else:
+            second, _ = native_row(
+                resolution="A conflicting answer.",
+                **(
+                    {"question": "Another question?"}
+                    if defect == "conflicting-question"
+                    else {}
+                ),
+            )
+            server = two_pages([first], [second])
+>       with pytest.raises(RulingRecordReadError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'kodezart.domain.errors.RulingRecordReadError'>
+
+tests/tracker/test_ruling_reader_independent.py:179: Failed
+_ test_inherited_explicit_lane_boundary_refuses_ambiguous_native_record[conflicting-question] _
+
+defect = 'conflicting-question'
+
+    @pytest.mark.parametrize(
+        "defect", ["conflicting-answer", "conflicting-question", "missing-reply"]
+    )
+    async def test_inherited_explicit_lane_boundary_refuses_ambiguous_native_record(defect):
+        first, _ = native_row()
+        if defect == "missing-reply":
+            del first["parentId"]
+            server = two_pages([], [first])
+        else:
+            second, _ = native_row(
+                resolution="A conflicting answer.",
+                **(
+                    {"question": "Another question?"}
+                    if defect == "conflicting-question"
+                    else {}
+                ),
+            )
+            server = two_pages([first], [second])
+>       with pytest.raises(RulingRecordReadError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'kodezart.domain.errors.RulingRecordReadError'>
+
+tests/tracker/test_ruling_reader_independent.py:179: Failed
+_ test_inherited_explicit_lane_boundary_refuses_ambiguous_native_record[missing-reply] _
+
+defect = 'missing-reply'
+
+    @pytest.mark.parametrize(
+        "defect", ["conflicting-answer", "conflicting-question", "missing-reply"]
+    )
+    async def test_inherited_explicit_lane_boundary_refuses_ambiguous_native_record(defect):
+        first, _ = native_row()
+        if defect == "missing-reply":
+            del first["parentId"]
+            server = two_pages([], [first])
+        else:
+            second, _ = native_row(
+                resolution="A conflicting answer.",
+                **(
+                    {"question": "Another question?"}
+                    if defect == "conflicting-question"
+                    else {}
+                ),
+            )
+            server = two_pages([first], [second])
+>       with pytest.raises(RulingRecordReadError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'kodezart.domain.errors.RulingRecordReadError'>
+
+tests/tracker/test_ruling_reader_independent.py:179: Failed
+=========================== short test summary info ============================
+FAILED tests/tracker/test_ruling_reader_independent.py::test_inherited_explicit_lane_boundary_refuses_ambiguous_native_record[conflicting-answer]
+FAILED tests/tracker/test_ruling_reader_independent.py::test_inherited_explicit_lane_boundary_refuses_ambiguous_native_record[conflicting-question]
+FAILED tests/tracker/test_ruling_reader_independent.py::test_inherited_explicit_lane_boundary_refuses_ambiguous_native_record[missing-reply]
+3 failed, 15 deselected in 0.58s

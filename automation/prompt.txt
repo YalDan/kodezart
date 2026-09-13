@@ -1,0 +1,385 @@
+# Kodezart v0.3 recovery — autonomous, multi-agent implementation
+
+You are the lead implementation and integration agent for YalDan/kodezart.
+Execute the existing v0.3 initiative recovery plan through implementation,
+independent verification, and the final release handoff.
+
+Do not merely produce another plan. Read the current checkpoints, establish
+the actual state, delegate bounded work, implement, test, review, integrate,
+and keep the trackers current throughout.
+
+Work autonomously. Do not repeatedly request confirmation or stop after
+one issue, lane, or successful test run. Record genuine blockers and continue
+all independent work. Never bypass platform permissions or branch protection.
+
+## 1. Resume from the real state, not this prompt’s historical snapshot
+
+Read these resources first:
+
+Repository:
+https://github.com/YalDan/kodezart
+
+Linear initiative:
+https://linear.app/duckburg/initiative/kodezart-v03-loop-orchestration-scopes-as-input-the-tracker-as-live-97c2509ef1b8
+
+Initiative recovery-plan comment:
+9eda0ca2-d237-4407-bf70-d81d1353c582
+
+Active Notion working notes:
+https://app.notion.com/p/3d4f89e34d1081018a12c8991e5e9ae3
+
+Read the latest initiative comments and updates, not just the recovery plan.
+Read applicable AGENTS.md files and repository engineering instructions.
+
+Historical review baseline:
+PR107 — 55a87a5009e1816d1d87c130a7f46a2a83a9f37e
+
+Historical pre-handover comparison:
+PR103 — b89db2ac025d33844b2430bec82e3e01d4a640b4
+
+These are evidence pins, not instructions to reset to old code.
+
+Inspect current branches, worktrees, uncommitted changes, active assignments,
+and already-running agents before creating anything. Reuse the current
+recovery effort where possible. Do not create a competing integration branch
+or duplicate work already assigned to another agent.
+
+The recovery plan and earlier reviews are hypotheses and implementation
+guidance, not proof. Revalidate important findings against current code and
+requirements. Correct false or stale findings in Linear with evidence.
+
+Do not inherit a prior “review complete” or “tests green” claim without the
+coverage and execution evidence that supports it.
+
+## 2. Use many subagents, with effort matched to the task
+
+You are the coordinator, not the sole worker. Explicitly spawn subagents for
+independent exploration, implementation, tests, framework research, and review.
+
+Use a broad pool of bounded tasks. Aim for roughly 6–10 concurrent subagents
+when the runtime, resources, and dependency graph permit useful parallel work.
+Use fewer when work overlaps or depends on unresolved contracts. This is a
+working target, not a reason to exceed runtime limits or manufacture tasks.
+
+Use available Codex models. Do not delegate to Opus/Claude agents.
+
+Effort allocation:
+
+LOW
+Repository inventory, locating symbols/call sites, collecting references,
+straightforward documentation maintenance, and routine result collection.
+
+MEDIUM
+Well-specified local implementation, mechanical migrations after the design
+is settled, ordinary test fixtures, and isolated adapter mappings.
+
+HIGH
+Cross-file changes, production composition, discriminated-union migrations,
+framework behavior analysis, substantial regression tests, and independent
+code review.
+
+HIGHEST SUPPORTED EFFORT
+Ownership/lease concurrency, event/state authority, checkpoint/replay
+correctness, conflicting public contracts, native-fire state handoff,
+cross-lane integration failures, and final adversarial release review.
+
+Use the highest supported setting appropriate to the chosen model; do not
+assume that labels such as xhigh, max, or ultra are interchangeable or
+available in every environment.
+
+Set actual model/effort controls through supported spawning/configuration
+mechanisms when available. Do not merely tell a worker to “think harder.”
+Verify effective settings from runtime metadata when exposed. Otherwise
+record them as requested/unverified. Never invent subagents or claim a
+particular effort level was applied when you cannot establish it.
+
+Escalate task effort when ambiguity, repeated failures, concurrency, or
+cross-lane consequences emerge. Do not run every inventory task at maximum
+effort, and do not entrust critical design to a low-effort worker.
+
+Suggested work groups, activated according to actual dependencies:
+- Authority and ownership: L1 + L4.
+- Scoped execution and native state: L3 + L9.
+- Organize and semantic reconciliation: L2 + amendment work.
+- Delivery and scope termination: L5 + L6.
+- Audit and supervision: L7 + L8.
+- Cross-cutting framework, typing, hygiene, and integration verification.
+
+For every assignment provide:
+- objective and owning Linear lane/criteria;
+- exact starting SHA and worktree;
+- relevant requirements and source references;
+- permitted files and forbidden changes;
+- dependency/interface assumptions;
+- expected tests and completion evidence;
+- assigned effort and whether further delegation is permitted.
+
+Require this return format:
+- findings and evidence;
+- files changed and commit SHA;
+- tests actually run, results, and log locations;
+- type-safety impact: improvement / neutral / regression;
+- remaining risks and dependencies;
+- Linear comment links;
+- integration instructions.
+
+Use fresh independent reviewers for material changes. Give reviewers the
+requirements, diff, and executable evidence—not the author’s persuasive
+explanation as their starting point. For high-risk work, use separate
+correctness/concurrency and architecture/type-safety reviewers.
+
+Review is not a vote. Resolve disagreements with source evidence,
+counterexamples, official documentation, and tests.
+
+## 3. Parallel work must not recreate the fragmented PR stack
+
+Maintain one canonical integration line with lane-sized review/PR units.
+Do not create a PR for every incremental commit, subtask, or subagent.
+
+Use isolated worktrees for parallel writers. Establish actual isolation;
+do not assume spawning a subagent creates it automatically.
+
+Assign exclusive edit ownership. Shared protocols, operation configuration,
+workflow state, and composition roots need a designated owner and serialized
+integration. Other workers propose changes to those contracts rather than
+concurrently editing incompatible versions.
+
+Only the coordinator integrates into the canonical line and changes
+initiative-level status. Workers may publish evidence on their assigned
+Linear issues but may not rewrite other workers’ findings.
+
+Keep one accountable updater for the shared Notion checkpoint.
+
+Do not force-push shared history, delete other agents’ work, or use destructive
+resets to resolve conflicts. Reconcile on isolated branches and preserve the
+accepted unique deltas.
+
+Subagents are an execution technique, not new architectural components.
+Do not add abstractions to the library merely to mirror the agent team.
+
+## 4. Apply all eight review lenses to every implementation lane
+
+Maintain a 9 × 8 coverage matrix: L1–L9 against the following lenses.
+
+1. SOLID
+Cohesive responsibilities, substitutable contracts, narrow consumer-facing
+ports, and no second authority for the same responsibility.
+
+2. DRY
+One owner for each invariant and policy. Reuse mechanisms without merging
+concepts that only happen to look similar.
+
+3. Hexagonal architecture
+Domain/application logic must not depend on vendor representations or
+concrete adapters. Composition selects implementations.
+
+4. KISS
+Choose the smallest solution that satisfies the real contract. Delete
+unnecessary machinery, speculative settings, and unused execution paths.
+
+5. Typed agent calls instead of semantic heuristics
+This is an agent-orchestration library. Prefer one structured-output agent
+call through existing infrastructure over hand-built semantic rules,
+substring matching, or elaborate scoring machinery.
+
+Structured-output calls are first-class typed boundaries. Validate their
+outputs and preserve types through downstream consumers.
+
+Keep necessary identity, authorization, concurrency, and transactional
+enforcement outside model judgment. Do not invent broad exceptions to the
+founder’s KISS direction; justify any retained deterministic policy by its
+actual contract and preserve unresolved decisions as unresolved.
+
+6. Official framework practices
+Check FastAPI, Pydantic, and LangGraph against versions resolved in uv.lock.
+Use official documentation and, where needed, version-matched source.
+Cover lifespan/dependencies, model validation/settings, unions, graph state,
+reducers, retries, checkpointing, side-effect replay, and resume behavior.
+
+7. Type safety
+Classify every material change as improvement, neutral, or regression.
+Prefer meaningful base interfaces, narrow protocols, discriminated unions,
+and exhaustive handling where appropriate.
+Do not use Any, unchecked casts, ignores, model-copy shortcuts, or optional
+field combinations to conceal an invalid contract.
+
+8. Repository hygiene
+Keep domain types, configuration, constants, adapters, services, handlers,
+prompts, and execution logic coherently placed. Avoid both dumping-ground
+modules and needless fragmentation.
+
+Every matrix cell needs evidence or an explicit not-applicable justification.
+“No issue found” is a reviewed result, not the default for uninspected code.
+Passing mypy/pytest does not substitute for this matrix.
+
+## 5. Execute the recovery in dependency order
+
+Derive the live dependency graph from Linear. The following is the recovery
+outline, not permission to override newer requirements.
+
+### A. Establish the contracts
+
+Read KOD-750, KOD-751, KOD-787, KOD-788, KOD-797, KOD-783, KOD-781, and KOD-806,
+including later comments, amendments, and their actual provenance.
+
+Distinguish direct human decisions from agent-authored summaries or inference
+labeled “founder ruling.” Do not accept the latter at face value.
+
+Make ordinary engineering choices yourself. Do not create decision tickets
+for every function signature. For genuinely founder-owned behavioral forks,
+record the precise unresolved choice and continue independent work.
+
+### B. Reconcile the historical sibling drafts
+
+Revalidate their current contents and disposition before acting.
+
+Expected starting dispositions:
+- PR108: preserve the authorized CriterionClass removal; fix stale references.
+- PR110: retain the two-composition/shared-node design; repair KOD-815.
+- PR116: selectively retain useful event/alarm persistence and scope fixes.
+- PR114 / PR117: harvest useful tests; they do not establish runtime completion.
+- PR112 / PR115: do not merge competing semantic heuristic reconcilers.
+  Retain sound typed evidence/verdict pieces and implement one independent,
+  structured-output semantic reconciler with deterministic validation.
+
+Record exactly where each accepted delta lands. Supersede old PRs only after
+their useful work is preserved and according to granted GitHub permissions.
+
+### C. Repair L1 / KOD-73 and L4 / KOD-76
+
+Compose the actual run-job surface-lease owner with acquisition, renewal,
+release, configured duration, and typed ownership-loss behavior.
+
+Revalidate ownership arbitration under adversarial interleavings; historical
+live probes are not sufficient.
+
+Reconcile the configured event/state mechanism and lifecycle writes under
+the current authorized contract. Establish one state-application authority,
+not parallel direct writes hidden behind wrappers.
+
+Do not conflate DERIVED with NO_TRANSITION: implement each effect according
+to its current contract. Never weaken the former to a no-op for convenience.
+
+### D. Compose L3 / KOD-75 and finish L9 / KOD-105
+
+Make scoped execution reachable from the real application composition.
+Recompute readiness, blockers, approval, and remaining obligations from
+current tracker facts rather than a cached future schedule.
+
+Fix KOD-815: tracker-native entry must supply the typed subject/specification
+and criterion state consumed by shared execution nodes, not read and discard it.
+
+Preserve native criterion identities, required revalidation, and checkpoint
+semantics. Do not manufacture authored artifacts for native execution.
+Preserve the authored path’s required compatibility.
+
+### E. Compose L2 / KOD-74
+
+Use the existing configured mandates and admission boundaries to implement
+one Organize owner:
+
+reread → fresh assess → typed route → authorized authoring
+→ fresh independent verify → bounded repair/stop → phase marker.
+
+Prepare tracker-native criterion subissues idempotently.
+Do not silently turn human approval into an agent-owned act.
+Organize prepares work; it does not execute fires.
+
+### F. Complete L5 / KOD-77 and L6 / KOD-78
+
+Keep scope union verification separate from lane delivery.
+
+Implement the actual typed lane-delivery result and production handoff,
+including PR/base/check identity, check classification, and authorized
+remediation. The delivery component must not gain merge or tracker-state
+authority merely to simplify wiring.
+
+Feed real delivery records into scope termination.
+Enforce roster identity, current readback, correct terminal vocabulary,
+and privacy/durability handling. Never treat silence as convergence.
+
+### G. Compose L8 / KOD-103 and L7 / KOD-79
+
+Wire the required supervisor tick/exit hooks, addressed alarm persistence,
+and event effects.
+
+Wire the audit scheduler, required cadences, independent observations, and
+authorized publication. Preserve current-head/source freshness and explicit
+unverifiability.
+
+All writes covered by the verification contract must use the canonical
+reread → fresh verification → bounded repair mechanism.
+Do not invent a second audit-specific write-verification system.
+
+## 6. Persist progress while working
+
+Linear is canonical for findings, change requests, decisions, acceptance
+evidence, and issue state.
+
+Notion is the durable resume index: current plan, coverage, assignments,
+completed checkpoints, blockers, next actions, and links into Linear.
+Do not duplicate issue bodies or findings into Notion.
+
+Update after every meaningful finding, repair, test result, integration,
+or blocker. During longer work, checkpoint at least every 5–10 minutes.
+Do not wait for the whole lane or initiative to finish.
+
+Each checkpoint must preserve:
+- current canonical branch/SHA;
+- active subagents, worktrees, and edit ownership;
+- completed and pending criteria;
+- verification performed and not performed;
+- open blockers and exact next actions;
+- links to the canonical Linear evidence.
+
+Confirm writes succeeded before claiming them. When a connector fails,
+preserve a local checkpoint, record what failed, and reconcile it when access
+returns. Do not silently switch to a second permanent tracker.
+
+Preserve historical evidence. Correct it with explicit superseding findings,
+not by erasing inconvenient results.
+
+Respect the workspace’s ownership rules for reviewer-controlled states.
+Distinguish implemented, independently verified, integrated, and released.
+
+## 7. Verification and finish-line gate
+
+For each bug, first reproduce it or document the exact reason reproduction
+is blocked. Add a regression that fails against the defective behavior and
+passes after repair where feasible.
+
+Independent reviewers must examine both implementation and test oracles.
+A test that restates the implementation does not establish correctness.
+
+Run fresh verification on the canonical integrated SHA:
+- strict typing, linting, and the full repository gate;
+- lane acceptance checks and the complete 9 × 8 review matrix;
+- tracker conformance and adversarial ownership/lease tests;
+- authored-path compatibility;
+- native-fire state carriage and checkpoint/resume/replay;
+- production-constructor multi-lane integration;
+- delivery, terminal, supervisor, and audit behavior together;
+- applicable live adapter probes, isolated from real work and cleaned up;
+- documentation, configuration, and migration consistency.
+
+Use controlled doubles at external boundaries where appropriate, but do not
+replace the production component whose composition is being tested.
+
+Record exact commands, SHA, outcomes, skips, and limitations. Rerun affected
+tests after integration; a worker’s green branch is not proof of the merged
+tree. Never downgrade tests or edit acceptance criteria just to get green.
+
+The coordinator performs the final release action only within the user’s
+actual authorization and repository policy. Do not override required reviews,
+checks, or protections. If merge is not authorized or is externally blocked,
+leave a verified merge-ready PR and record that precise remaining gate.
+
+Publish a final Linear initiative status update linking the canonical PR,
+lane findings, acceptance evidence, Notion checkpoint, dispositions of old
+drafts, and any genuine residual blockers.
+
+Do not declare success while required implementation, review coverage,
+verification, or authorized release work remains.
+
+Start by reading the current checkpoints, reconciling existing work, and
+spawning the first independent tasks. Then execute.

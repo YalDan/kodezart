@@ -1,0 +1,1614 @@
+check	Run make check	﻿2026-09-12T13:58:06.1849937Z ##[group]Run make check
+check	Run make check	2026-09-12T13:58:06.1850173Z [36;1mmake check[0m
+check	Run make check	2026-09-12T13:58:06.1882687Z shell: /usr/bin/bash -e {0}
+check	Run make check	2026-09-12T13:58:06.1882891Z env:
+check	Run make check	2026-09-12T13:58:06.1883092Z   UV_CACHE_DIR: /home/runner/work/_temp/setup-uv-cache
+check	Run make check	2026-09-12T13:58:06.1883341Z ##[endgroup]
+check	Run make check	2026-09-12T13:58:06.2011371Z uv run --locked ruff format --check src/ tests/
+check	Run make check	2026-09-12T13:58:06.3633642Z 678 files already formatted
+check	Run make check	2026-09-12T13:58:06.3660775Z uv run --locked ruff check src/ tests/
+check	Run make check	2026-09-12T13:58:06.5248034Z All checks passed!
+check	Run make check	2026-09-12T13:58:06.5274148Z uv run --locked mypy src/
+check	Run make check	2026-09-12T13:58:17.9286440Z Success: no issues found in 292 source files
+check	Run make check	2026-09-12T13:58:17.9587807Z uv run --locked pytest
+check	Run make check	2026-09-12T13:58:30.0898531Z ============================= test session starts ==============================
+check	Run make check	2026-09-12T13:58:30.0899270Z platform linux -- Python 3.12.3, pytest-9.0.2, pluggy-1.6.0
+check	Run make check	2026-09-12T13:58:30.0899815Z rootdir: /home/runner/work/kodezart/kodezart
+check	Run make check	2026-09-12T13:58:30.0900363Z configfile: pyproject.toml
+check	Run make check	2026-09-12T13:58:30.0900652Z testpaths: tests
+check	Run make check	2026-09-12T13:58:30.0901312Z plugins: anyio-4.12.1, langsmith-0.7.14, logfire-4.27.0, asyncio-1.3.0
+check	Run make check	2026-09-12T13:58:30.0901918Z asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=session, asyncio_default_test_loop_scope=function
+check	Run make check	2026-09-12T13:58:30.0902346Z collected 9693 items
+check	Run make check	2026-09-12T13:58:30.0902454Z 
+check	Run make check	2026-09-12T13:58:30.2428781Z tests/adapters/test_cache_configured_remote.py ..                        [  0%]
+check	Run make check	2026-09-12T13:58:30.7753077Z tests/adapters/test_check_chain_cleanup.py ....                          [  0%]
+check	Run make check	2026-09-12T13:58:31.8456488Z tests/adapters/test_check_chain_runner.py ...................            [  0%]
+check	Run make check	2026-09-12T13:58:31.8723198Z tests/adapters/test_ci_observation.py ................                   [  0%]
+check	Run make check	2026-09-12T13:58:31.9649722Z tests/adapters/test_ci_rerun.py ........................................ [  0%]
+check	Run make check	2026-09-12T13:58:31.9974958Z ............                                                             [  0%]
+check	Run make check	2026-09-12T13:58:32.0387328Z tests/adapters/test_ci_watch_evidence.py ...................             [  1%]
+check	Run make check	2026-09-12T13:58:32.0493358Z tests/adapters/test_ci_watch_result.py ............                      [  1%]
+check	Run make check	2026-09-12T13:58:32.0636944Z tests/adapters/test_claude_client_executor.py .........                  [  1%]
+check	Run make check	2026-09-12T13:58:32.1050220Z tests/adapters/test_claude_executors.py ................................ [  1%]
+check	Run make check	2026-09-12T13:58:32.1502155Z ..................................                                       [  2%]
+check	Run make check	2026-09-12T13:58:32.1688873Z tests/adapters/test_forge_query.py ..................                    [  2%]
+check	Run make check	2026-09-12T13:58:32.8398604Z tests/adapters/test_git_artifact_persister.py ......                     [  2%]
+check	Run make check	2026-09-12T13:58:33.3097368Z tests/adapters/test_git_branch_merger.py ..............                  [  2%]
+check	Run make check	2026-09-12T13:58:33.5972842Z tests/adapters/test_git_change_persister.py ...............              [  2%]
+check	Run make check	2026-09-12T13:58:33.6023664Z tests/adapters/test_git_ref_publisher.py .....                           [  2%]
+check	Run make check	2026-09-12T13:58:33.7270263Z tests/adapters/test_git_worktree_provider.py ...........                 [  2%]
+check	Run make check	2026-09-12T13:58:33.8232792Z tests/adapters/test_github_api.py ...................................... [  3%]
+check	Run make check	2026-09-12T13:58:34.0670180Z ...................................................................      [  3%]
+check	Run make check	2026-09-12T13:58:34.0900123Z tests/adapters/test_host_skill_inventory.py ................             [  4%]
+check	Run make check	2026-09-12T13:58:35.1402696Z tests/adapters/test_hosted_mcp_session.py .......                        [  4%]
+check	Run make check	2026-09-12T13:58:35.2517504Z tests/adapters/test_http_mcp_tool_caller.py ............................ [  4%]
+check	Run make check	2026-09-12T13:58:44.2703781Z ..............................                                           [  4%]
+check	Run make check	2026-09-12T13:58:44.3540535Z tests/adapters/test_judgment_scanner.py ................................ [  5%]
+check	Run make check	2026-09-12T13:58:44.4293208Z ......................                                                   [  5%]
+check	Run make check	2026-09-12T13:58:44.5004603Z tests/adapters/test_knowledge_settings_delivery.py .........             [  5%]
+check	Run make check	2026-09-12T13:58:44.5326282Z tests/adapters/test_knowledge_transport.py ..................            [  5%]
+check	Run make check	2026-09-12T13:58:46.7801445Z tests/adapters/test_mcp_strictness.py ...................                [  5%]
+check	Run make check	2026-09-12T13:58:46.7994133Z tests/adapters/test_nested_run_progress.py ..                            [  5%]
+check	Run make check	2026-09-12T13:58:46.8034201Z tests/adapters/test_no_forge_delivery.py ...                             [  5%]
+check	Run make check	2026-09-12T13:58:46.8251298Z tests/adapters/test_outbound_corpus.py ....................              [  5%]
+check	Run make check	2026-09-12T13:58:46.8517024Z tests/adapters/test_outbound_gate.py .............................       [  6%]
+check	Run make check	2026-09-12T13:58:47.0982040Z tests/adapters/test_permission_boundary.py ............................. [  6%]
+check	Run make check	2026-09-12T13:58:47.4905839Z ................................................................         [  7%]
+check	Run make check	2026-09-12T13:58:47.5431281Z tests/adapters/test_pr_state_reader.py ................................. [  7%]
+check	Run make check	2026-09-12T13:58:47.5655688Z .....................                                                    [  7%]
+check	Run make check	2026-09-12T13:58:47.5919863Z tests/adapters/test_record_failure_boundary.py ......................... [  8%]
+check	Run make check	2026-09-12T13:58:47.5925586Z                                                                          [  8%]
+check	Run make check	2026-09-12T13:58:47.6055682Z tests/adapters/test_record_publication_failures.py ..........            [  8%]
+check	Run make check	2026-09-12T13:58:48.1034714Z tests/adapters/test_scanner_sdk_failures.py ............................ [  8%]
+check	Run make check	2026-09-12T13:58:48.7813600Z ........................................................................ [  9%]
+check	Run make check	2026-09-12T13:58:48.7919330Z ...                                                                      [  9%]
+check	Run make check	2026-09-12T13:58:48.8056593Z tests/adapters/test_sdk_mapping.py .......................               [  9%]
+check	Run make check	2026-09-12T13:58:48.8638730Z tests/adapters/test_self_write_history_receipts.py ..................... [  9%]
+check	Run make check	2026-09-12T13:58:48.8672792Z .                                                                        [  9%]
+check	Run make check	2026-09-12T13:58:48.9487906Z tests/adapters/test_self_write_replay.py ............................... [  9%]
+check	Run make check	2026-09-12T13:58:49.1935316Z ......                                                                   [ 10%]
+check	Run make check	2026-09-12T13:58:49.3234846Z tests/adapters/test_shared_retry.py ...........................          [ 10%]
+check	Run make check	2026-09-12T13:58:53.0329211Z tests/adapters/test_stdio_mcp_tool_caller.py ..................          [ 10%]
+check	Run make check	2026-09-12T13:58:53.6885518Z tests/adapters/test_subprocess_git.py .................................. [ 10%]
+check	Run make check	2026-09-12T13:58:53.7351369Z .....                                                                    [ 10%]
+check	Run make check	2026-09-12T13:58:53.7770097Z tests/adapters/test_tool_selection.py .................................. [ 11%]
+check	Run make check	2026-09-12T13:58:54.0743047Z ......................................                                   [ 11%]
+check	Run make check	2026-09-12T13:58:54.1005326Z tests/adapters/test_tracker_self_writes.py .............                 [ 11%]
+check	Run make check	2026-09-12T13:58:54.3173997Z tests/api/v1/test_agent.py .........2026-09-12 13:58:54 [info     ] job_finished                   job_id=1906139edfeb406fbbb5fc9b9b84ce0e lane=workflow outcome=review_passed_no_pr_adapter
+check	Run make check	2026-09-12T13:58:54.7936133Z ......2026-09-12 13:58:54 [info     ] job_finished                   job_id=47683a3ec1194fe9b4f86a732576878d lane=workflow outcome=ci_no_run_at_ref
+check	Run make check	2026-09-12T13:58:54.8818010Z ..2026-09-12 13:58:54 [info     ] job_finished                   job_id=1986e7f12be84c849154054af83ddf0d lane=workflow outcome=merge_divergent
+check	Run make check	2026-09-12T13:58:55.0205611Z ..2026-09-12 13:58:55 [info     ] job_finished                   job_id=7de05feaa684450480830e6308956866 lane=workflow outcome=review_passed_no_pr_adapter
+check	Run make check	2026-09-12T13:58:55.0223325Z .                          [ 12%]
+check	Run make check	2026-09-12T13:58:55.2111831Z tests/api/v1/test_dependencies.py ..............                         [ 12%]
+check	Run make check	2026-09-12T13:58:55.2330317Z tests/api/v1/test_health.py .....                                        [ 12%]
+check	Run make check	2026-09-12T13:58:55.2780977Z tests/api/v1/test_job_acceptance.py .................................... [ 12%]
+check	Run make check	2026-09-12T13:58:55.6847053Z ......................................                                   [ 12%]
+check	Run make check	2026-09-12T13:58:55.7682292Z tests/api/v1/test_jobs.py ..2026-09-12 13:58:55 [info     ] repo_visibility_resolved       repo_url=None visibility=unknown
+check	Run make check	2026-09-12T13:58:57.2441002Z .....................................2026-09-12 13:58:57 [info     ] scope_base_resolved            base_branch=main base_role=None input_count=0
+check	Run make check	2026-09-12T13:58:57.3773038Z ....... [ 13%]
+check	Run make check	2026-09-12T13:58:57.5418027Z ..........                                                               [ 13%]
+check	Run make check	2026-09-12T13:58:57.8416110Z tests/api/v1/test_scope_request_boundary.py ............................ [ 13%]
+check	Run make check	2026-09-12T13:58:57.9735172Z ............                                                             [ 13%]
+check	Run make check	2026-09-12T13:58:58.1707645Z tests/chains/test_accept_gate.py ........................                [ 14%]
+check	Run make check	2026-09-12T13:58:58.3904094Z tests/chains/test_audit_pass.py ........................................ [ 14%]
+check	Run make check	2026-09-12T13:58:58.5980800Z ........................................                                 [ 15%]
+check	Run make check	2026-09-12T13:58:59.9337158Z tests/chains/test_audit_terminal_cancellation.py ....................... [ 15%]
+check	Run make check	2026-09-12T13:58:59.9937417Z .                                                                        [ 15%]
+check	Run make check	2026-09-12T13:59:01.1804618Z tests/chains/test_authored_check_routing.py ............................ [ 15%]
+check	Run make check	2026-09-12T13:59:01.2251390Z .                                                                        [ 15%]
+check	Run make check	2026-09-12T13:59:02.1461533Z tests/chains/test_criteria_validation.py ..............................  [ 15%]
+check	Run make check	2026-09-12T13:59:02.6849745Z tests/chains/test_delivery_coordinator.py ......                         [ 15%]
+check	Run make check	2026-09-12T13:59:02.7408955Z tests/chains/test_dispatch_definitions.py .............                  [ 16%]
+check	Run make check	2026-09-12T13:59:03.0617971Z tests/chains/test_fire_extraction.py ...............                     [ 16%]
+check	Run make check	2026-09-12T13:59:03.0798961Z tests/chains/test_fire_graph.py .                                        [ 16%]
+check	Run make check	2026-09-12T13:59:03.7016415Z tests/chains/test_fire_spec_prompt_consumers.py ........................ [ 16%]
+check	Run make check	2026-09-12T13:59:04.3327922Z ........................                                                 [ 16%]
+check	Run make check	2026-09-12T13:59:06.1345571Z tests/chains/test_native_fire.py ....................................... [ 17%]
+check	Run make check	2026-09-12T13:59:06.5382145Z ........                                                                 [ 17%]
+check	Run make check	2026-09-12T13:59:08.4172994Z tests/chains/test_native_fresh_boundaries.py ........................... [ 17%]
+check	Run make check	2026-09-12T13:59:08.8244479Z ......                                                                   [ 17%]
+check	Run make check	2026-09-12T13:59:08.8299094Z tests/chains/test_native_port_failures.py ....                           [ 17%]
+check	Run make check	2026-09-12T13:59:09.5601236Z tests/chains/test_node_session_events.py ............................    [ 17%]
+check	Run make check	2026-09-12T13:59:09.7843439Z tests/chains/test_organize.py .......................................... [ 18%]
+check	Run make check	2026-09-12T13:59:09.8495246Z ..............................                                           [ 18%]
+check	Run make check	2026-09-12T13:59:10.0462327Z tests/chains/test_organize_ownership.py ......                           [ 18%]
+check	Run make check	2026-09-12T13:59:10.5297623Z tests/chains/test_outbound_gating.py ..............                      [ 18%]
+check	Run make check	2026-09-12T13:59:11.0451322Z tests/chains/test_ralph_loop.py ........................................ [ 19%]
+check	Run make check	2026-09-12T13:59:11.2755772Z ........                                                                 [ 19%]
+check	Run make check	2026-09-12T13:59:12.4317145Z tests/chains/test_ralph_workflow.py .................................... [ 19%]
+check	Run make check	2026-09-12T13:59:16.2597670Z ........................................................................ [ 20%]
+check	Run make check	2026-09-12T13:59:16.4461839Z ......                                                                   [ 20%]
+check	Run make check	2026-09-12T13:59:16.4752389Z tests/chains/test_remediation.py .......                                 [ 20%]
+check	Run make check	2026-09-12T13:59:16.6909716Z tests/chains/test_retry_floor_wiring.py ................................ [ 20%]
+check	Run make check	2026-09-12T13:59:16.9471475Z .....                                                                    [ 20%]
+check	Run make check	2026-09-12T13:59:17.0799472Z tests/chains/test_scope_gap_membership.py .....................          [ 21%]
+check	Run make check	2026-09-12T13:59:17.2430741Z tests/chains/test_scope_gap_selection.py ................                [ 21%]
+check	Run make check	2026-09-12T13:59:17.5210310Z tests/chains/test_scope_ready.py ....................................... [ 21%]
+check	Run make check	2026-09-12T13:59:17.6030443Z ..................                                                       [ 21%]
+check	Run make check	2026-09-12T13:59:17.9797233Z tests/chains/test_shorthand_url_resolution.py ...                        [ 21%]
+check	Run make check	2026-09-12T13:59:18.0806315Z tests/chains/test_stalled_handoff.py ...                                 [ 22%]
+check	Run make check	2026-09-12T13:59:18.4667431Z tests/chains/test_ticket_generation.py ................................. [ 22%]
+check	Run make check	2026-09-12T13:59:18.6630537Z ....                                                                     [ 22%]
+check	Run make check	2026-09-12T13:59:19.2058488Z tests/chains/test_tool_preset_composition.py ..                          [ 22%]
+check	Run make check	2026-09-12T13:59:19.6005067Z tests/chains/test_union_forge_isolation.py .......                       [ 22%]
+check	Run make check	2026-09-12T13:59:22.1167085Z tests/chains/test_workflow_phase_composition.py ................         [ 22%]
+check	Run make check	2026-09-12T13:59:22.1327823Z tests/chains/test_write_back_verifier.py ..............                  [ 22%]
+check	Run make check	2026-09-12T13:59:22.3392586Z tests/core/test_agent_settings.py ...................................... [ 23%]
+check	Run make check	2026-09-12T13:59:22.3957202Z ..........                                                               [ 23%]
+check	Run make check	2026-09-12T13:59:22.4200088Z tests/core/test_audit_config.py ........                                 [ 23%]
+check	Run make check	2026-09-12T13:59:22.5017393Z tests/core/test_bare_mode.py .                                           [ 23%]
+check	Run make check	2026-09-12T13:59:22.5700100Z tests/core/test_config.py ......................                         [ 23%]
+check	Run make check	2026-09-12T13:59:22.5775449Z tests/core/test_config_error_redaction.py ....                           [ 23%]
+check	Run make check	2026-09-12T13:59:22.5980273Z tests/core/test_credential_shapes.py .........                           [ 23%]
+check	Run make check	2026-09-12T13:59:22.6130046Z tests/core/test_delivery_config.py .....                                 [ 23%]
+check	Run make check	2026-09-12T13:59:22.6844588Z tests/core/test_docs_prompt_knobs.py ...........                         [ 23%]
+check	Run make check	2026-09-12T13:59:22.8465643Z tests/core/test_durable_admission.py ................................... [ 24%]
+check	Run make check	2026-09-12T13:59:22.8981623Z ......                                                                   [ 24%]
+check	Run make check	2026-09-12T13:59:22.9168749Z tests/core/test_error_egress.py ................................         [ 24%]
+check	Run make check	2026-09-12T13:59:23.6045285Z tests/core/test_git_settings.py ..................................       [ 25%]
+check	Run make check	2026-09-12T13:59:23.8945325Z tests/core/test_http_settings.py ......................                  [ 25%]
+check	Run make check	2026-09-12T13:59:24.0440524Z tests/core/test_job_queue_settings.py .................................. [ 25%]
+check	Run make check	2026-09-12T13:59:24.0701684Z .....                                                                    [ 25%]
+check	Run make check	2026-09-12T13:59:24.1686942Z tests/core/test_knowledge_connection.py ................................ [ 25%]
+check	Run make check	2026-09-12T13:59:24.2798823Z .............................                                            [ 26%]
+check	Run make check	2026-09-12T13:59:24.3779181Z tests/core/test_knowledge_grant.py ...........                           [ 26%]
+check	Run make check	2026-09-12T13:59:26.4118299Z tests/core/test_log_emitter.py .......                                   [ 26%]
+check	Run make check	2026-09-12T13:59:26.4132147Z tests/core/test_logging.py .                                             [ 26%]
+check	Run make check	2026-09-12T13:59:26.4539354Z tests/core/test_logging_chain.py .....                                   [ 26%]
+check	Run make check	2026-09-12T13:59:26.5926944Z tests/core/test_logging_settings.py .................................... [ 26%]
+check	Run make check	2026-09-12T13:59:26.5931747Z                                                                          [ 26%]
+check	Run make check	2026-09-12T13:59:26.6703859Z tests/core/test_notion_credential.py ......                              [ 26%]
+check	Run make check	2026-09-12T13:59:26.6758640Z tests/core/test_owned_tasks.py .....                                     [ 26%]
+check	Run make check	2026-09-12T13:59:26.8849499Z tests/core/test_prompt_boot.py ......                                    [ 27%]
+check	Run make check	2026-09-12T13:59:27.0332657Z tests/core/test_retired_config.py ...................................... [ 27%]
+check	Run make check	2026-09-12T13:59:27.1130826Z ..................                                                       [ 27%]
+check	Run make check	2026-09-12T13:59:27.2355769Z tests/core/test_retry.py .............................                   [ 27%]
+check	Run make check	2026-09-12T13:59:27.2479861Z tests/core/test_stream_drain.py ........                                 [ 28%]
+check	Run make check	2026-09-12T13:59:27.2726591Z tests/core/test_surface_lease_config.py ........                         [ 28%]
+check	Run make check	2026-09-12T13:59:27.3536476Z tests/core/test_tracker_credential.py .......                            [ 28%]
+check	Run make check	2026-09-12T13:59:27.5767531Z tests/core/test_tracker_settings.py .................................... [ 28%]
+check	Run make check	2026-09-12T13:59:28.8285384Z ....................................................                     [ 29%]
+check	Run make check	2026-09-12T13:59:28.8324083Z tests/docs/test_api_event_reference.py ....                              [ 29%]
+check	Run make check	2026-09-12T13:59:29.0070065Z tests/docs/test_documented_surface.py .................................. [ 29%]
+check	Run make check	2026-09-12T13:59:29.0572228Z ..........                                                               [ 29%]
+check	Run make check	2026-09-12T13:59:29.1136368Z tests/docs/test_parity_checklist.py .........                            [ 29%]
+check	Run make check	2026-09-12T13:59:29.1476636Z tests/docs/test_setup_guide.py ...............                           [ 29%]
+check	Run make check	2026-09-12T13:59:29.1491729Z tests/domain/test_agent.py ..                                            [ 29%]
+check	Run make check	2026-09-12T13:59:29.1619283Z tests/domain/test_assertion_drift.py ..................                  [ 30%]
+check	Run make check	2026-09-12T13:59:29.1769339Z tests/domain/test_audit_overclaim.py ....................                [ 30%]
+check	Run make check	2026-09-12T13:59:29.1870088Z tests/domain/test_audit_overclaim_report.py ............                 [ 30%]
+check	Run make check	2026-09-12T13:59:29.1970983Z tests/domain/test_audit_terminal_report.py ..............                [ 30%]
+check	Run make check	2026-09-12T13:59:29.2033741Z tests/domain/test_authored_feasibility_compatibility.py ..               [ 30%]
+check	Run make check	2026-09-12T13:59:29.2326798Z tests/domain/test_barren_tick.py ....................................... [ 30%]
+check	Run make check	2026-09-12T13:59:29.2606387Z .............................                                            [ 31%]
+check	Run make check	2026-09-12T13:59:30.6052601Z tests/domain/test_base_resolution.py ............................        [ 31%]
+check	Run make check	2026-09-12T13:59:30.6124442Z tests/domain/test_base_scope.py ...........                              [ 31%]
+check	Run make check	2026-09-12T13:59:30.6207576Z tests/domain/test_base_staleness.py ......                               [ 31%]
+check	Run make check	2026-09-12T13:59:30.6238320Z tests/domain/test_branch.py .....                                        [ 31%]
+check	Run make check	2026-09-12T13:59:30.9744899Z tests/domain/test_comment_markers.py ...............                     [ 31%]
+check	Run make check	2026-09-12T13:59:30.9934154Z tests/domain/test_criteria_feasibility.py .............................. [ 32%]
+check	Run make check	2026-09-12T13:59:31.0224852Z .............................................                            [ 32%]
+check	Run make check	2026-09-12T13:59:31.0270015Z tests/domain/test_criteria_grading.py .......                            [ 32%]
+check	Run make check	2026-09-12T13:59:31.0403654Z tests/domain/test_criterion_evidence.py .....................            [ 32%]
+check	Run make check	2026-09-12T13:59:31.3198314Z tests/domain/test_criterion_identity.py ...............                  [ 33%]
+check	Run make check	2026-09-12T13:59:32.8580027Z tests/domain/test_criterion_lifecycle.py ............................... [ 33%]
+check	Run make check	2026-09-12T13:59:39.1019819Z ........................................................................ [ 34%]
+check	Run make check	2026-09-12T13:59:40.4602368Z ........................................................................ [ 34%]
+check	Run make check	2026-09-12T13:59:40.5038434Z ............................                                             [ 35%]
+check	Run make check	2026-09-12T13:59:40.5180034Z tests/domain/test_detector_removal_report.py ................            [ 35%]
+check	Run make check	2026-09-12T13:59:40.5356671Z tests/domain/test_dispatch_predicate.py ................................ [ 35%]
+check	Run make check	2026-09-12T13:59:40.5377572Z ...                                                                      [ 35%]
+check	Run make check	2026-09-12T13:59:40.5617342Z tests/domain/test_escalation_ageing.py ................................. [ 36%]
+check	Run make check	2026-09-12T13:59:40.6115769Z ..........................................                               [ 36%]
+check	Run make check	2026-09-12T13:59:40.6170478Z tests/domain/test_fire_spec.py .......                                   [ 36%]
+check	Run make check	2026-09-12T13:59:40.6346238Z tests/domain/test_fire_spec_formatter.py .............................   [ 36%]
+check	Run make check	2026-09-12T13:59:40.6366748Z tests/domain/test_fire_spec_purity.py .                                  [ 36%]
+check	Run make check	2026-09-12T13:59:40.6519337Z tests/domain/test_gap.py ..................                              [ 37%]
+check	Run make check	2026-09-12T13:59:40.6660398Z tests/domain/test_git_url.py .........................                   [ 37%]
+check	Run make check	2026-09-12T13:59:40.6716595Z tests/domain/test_issue_label_config.py ........                         [ 37%]
+check	Run make check	2026-09-12T13:59:40.6724997Z tests/domain/test_lane_delivery.py .                                     [ 37%]
+check	Run make check	2026-09-12T13:59:40.6852142Z tests/domain/test_lane_record.py ...................                     [ 37%]
+check	Run make check	2026-09-12T13:59:40.7106794Z tests/domain/test_mandate_graph.py ..................................... [ 38%]
+check	Run make check	2026-09-12T13:59:40.7568080Z ........................................................                 [ 38%]
+check	Run make check	2026-09-12T13:59:40.7862358Z tests/domain/test_no_ref_parsing.py ....                                 [ 38%]
+check	Run make check	2026-09-12T13:59:40.8025051Z tests/domain/test_operation_optionality.py ..........................    [ 38%]
+check	Run make check	2026-09-12T13:59:41.3981518Z tests/domain/test_organize.py .......................................... [ 39%]
+check	Run make check	2026-09-12T13:59:41.4690982Z .....................................................................    [ 40%]
+check	Run make check	2026-09-12T13:59:41.4888483Z tests/domain/test_organize_routing.py ............................       [ 40%]
+check	Run make check	2026-09-12T13:59:41.5026814Z tests/domain/test_outcome.py ........................                    [ 40%]
+check	Run make check	2026-09-12T13:59:41.5253897Z tests/domain/test_record_consistency.py ................................ [ 40%]
+check	Run make check	2026-09-12T13:59:41.5539363Z ....................................                                     [ 41%]
+check	Run make check	2026-09-12T13:59:41.5785674Z tests/domain/test_record_superseded.py ................................. [ 41%]
+check	Run make check	2026-09-12T13:59:41.6257246Z .............................................................            [ 42%]
+check	Run make check	2026-09-12T13:59:42.8613916Z tests/domain/test_recorded_landing.py ...........................        [ 42%]
+check	Run make check	2026-09-12T13:59:43.7305871Z tests/domain/test_ruling_identity.py .........................           [ 42%]
+check	Run make check	2026-09-12T13:59:44.9519102Z tests/domain/test_ruling_protected_tests.py ...............              [ 42%]
+check	Run make check	2026-09-12T13:59:44.9815060Z tests/domain/test_rulings.py ......................................      [ 43%]
+check	Run make check	2026-09-12T13:59:45.0064587Z tests/domain/test_run_alarm.py ......................................... [ 43%]
+check	Run make check	2026-09-12T13:59:45.0390050Z ....................................................                     [ 44%]
+check	Run make check	2026-09-12T13:59:45.0559769Z tests/domain/test_run_alarm_payload.py ..........................        [ 44%]
+check	Run make check	2026-09-12T13:59:45.0810017Z tests/domain/test_run_event_table.py ................................... [ 44%]
+check	Run make check	2026-09-12T13:59:45.1067202Z ........................                                                 [ 45%]
+check	Run make check	2026-09-12T13:59:45.1183652Z tests/domain/test_scope_container.py ...............                     [ 45%]
+check	Run make check	2026-09-12T13:59:45.1319601Z tests/domain/test_scope_label_config.py ..........                       [ 45%]
+check	Run make check	2026-09-12T13:59:45.1362334Z tests/domain/test_scope_labels.py .......                                [ 45%]
+check	Run make check	2026-09-12T13:59:45.1466541Z tests/domain/test_scope_ref.py .................                         [ 45%]
+check	Run make check	2026-09-12T13:59:45.1693726Z tests/domain/test_scope_tally.py ...............................         [ 45%]
+check	Run make check	2026-09-12T13:59:45.1713690Z tests/domain/test_scope_terminal.py ...                                  [ 46%]
+check	Run make check	2026-09-12T13:59:45.4609317Z tests/domain/test_self_write_retention.py ..                             [ 46%]
+check	Run make check	2026-09-12T13:59:45.4681691Z tests/domain/test_stall_report.py .........                              [ 46%]
+check	Run make check	2026-09-12T13:59:45.4766505Z tests/domain/test_subtree_closure.py ........                            [ 46%]
+check	Run make check	2026-09-12T13:59:45.4996008Z tests/domain/test_surface_contention.py ................................ [ 46%]
+check	Run make check	2026-09-12T13:59:45.5190553Z .....................                                                    [ 46%]
+check	Run make check	2026-09-12T13:59:45.5282464Z tests/domain/test_surface_lease.py .................                     [ 46%]
+check	Run make check	2026-09-12T13:59:45.5302539Z tests/domain/test_surface_lease_error.py ...                             [ 46%]
+check	Run make check	2026-09-12T13:59:45.5530385Z tests/domain/test_topology.py ......................                     [ 47%]
+check	Run make check	2026-09-12T13:59:45.5647853Z tests/domain/test_topology_cycles.py ......                              [ 47%]
+check	Run make check	2026-09-12T13:59:45.5702759Z tests/domain/test_union.py ........                                      [ 47%]
+check	Run make check	2026-09-12T13:59:45.5737171Z tests/domain/test_union_check_classification.py ......                   [ 47%]
+check	Run make check	2026-09-12T13:59:45.5868272Z tests/domain/test_union_remediation.py .....................             [ 47%]
+check	Run make check	2026-09-12T13:59:46.3187878Z tests/integration/test_authored_aggregate_admission.py ................. [ 47%]
+check	Run make check	2026-09-12T13:59:47.7685674Z ...........................................                              [ 48%]
+check	Run make check	2026-09-12T13:59:47.7696919Z tests/integration/test_checkpointer_postgres.py ss                       [ 48%]
+check	Run make check	2026-09-12T13:59:47.8675916Z tests/integration/test_criteria_oracle.py ...                            [ 48%]
+check	Run make check	2026-09-12T13:59:47.9449486Z tests/integration/test_derived_lifecycle_admission.py ........           [ 48%]
+check	Run make check	2026-09-12T13:59:56.4093479Z tests/integration/test_fixed_outbound_admission.py ..........            [ 48%]
+check	Run make check	2026-09-12T13:59:58.5387431Z tests/integration/test_issue_key_carriage.py ......                      [ 48%]
+check	Run make check	2026-09-12T13:59:58.5398045Z tests/integration/test_live_criteria_probes.py ss                        [ 48%]
+check	Run make check	2026-09-12T14:00:00.5342732Z tests/integration/test_pr_footer_gating.py ...........                   [ 48%]
+check	Run make check	2026-09-12T14:00:01.1007867Z tests/integration/test_private_reference_writes.py ..................... [ 48%]
+check	Run make check	2026-09-12T14:00:01.7530236Z ........................................                                 [ 49%]
+check	Run make check	2026-09-12T14:00:01.9058636Z tests/integration/test_self_running_chain.py F..                         [ 49%]
+check	Run make check	2026-09-12T14:00:01.9073452Z tests/integration/test_session_resume.py sss                             [ 49%]
+check	Run make check	2026-09-12T14:00:03.7201598Z tests/integration/test_stacked_scope.py .....                            [ 49%]
+check	Run make check	2026-09-12T14:00:07.7566650Z tests/integration/test_workflow_e2e.py .................                 [ 49%]
+check	Run make check	2026-09-12T14:00:07.7599777Z tests/probes/test_ab_failure_capture.py ...                              [ 49%]
+check	Run make check	2026-09-12T14:00:07.7606305Z tests/probes/test_ab_smoke.py s                                          [ 49%]
+check	Run make check	2026-09-12T14:00:07.7695230Z tests/probes/test_harness_capabilities.py .ssssss                        [ 49%]
+check	Run make check	2026-09-12T14:00:07.7728208Z tests/probes/test_live_ownership.py ssssssss                             [ 49%]
+check	Run make check	2026-09-12T14:00:07.7772888Z tests/probes/test_strict_output_enforcement.py .s                        [ 49%]
+check	Run make check	2026-09-12T14:00:07.7779105Z tests/probes/test_v5_orchestration_live.py s                             [ 49%]
+check	Run make check	2026-09-12T14:00:07.8240866Z tests/prompts/test_absence_bindings.py ................................. [ 50%]
+check	Run make check	2026-09-12T14:00:07.8263643Z .                                                                        [ 50%]
+check	Run make check	2026-09-12T14:00:07.8866052Z tests/prompts/test_criteria_generation_prompts.py ..............         [ 50%]
+check	Run make check	2026-09-12T14:00:08.0498140Z tests/prompts/test_fire_record.py .................                      [ 50%]
+check	Run make check	2026-09-12T14:00:08.0513069Z tests/prompts/test_issue_label_bindings.py ..                            [ 50%]
+check	Run make check	2026-09-12T14:00:08.1702537Z tests/prompts/test_knowledge_map.py ..........................           [ 50%]
+check	Run make check	2026-09-12T14:00:08.1733279Z tests/prompts/test_minimal_floor.py ....                                 [ 50%]
+check	Run make check	2026-09-12T14:00:08.2103932Z tests/prompts/test_native_initiative_configuration.py .....              [ 50%]
+check	Run make check	2026-09-12T14:00:08.3364479Z tests/prompts/test_operation_config.py ............F.................... [ 51%]
+check	Run make check	2026-09-12T14:00:08.4231373Z ...........F.....                                                        [ 51%]
+check	Run make check	2026-09-12T14:00:08.5577654Z tests/prompts/test_organize_call_bindings.py ........................... [ 51%]
+check	Run make check	2026-09-12T14:00:08.7498290Z ..........................................                               [ 52%]
+check	Run make check	2026-09-12T14:00:08.7767941Z tests/prompts/test_organize_mandate_bindings.py .....                    [ 52%]
+check	Run make check	2026-09-12T14:00:08.8994198Z tests/prompts/test_organize_roles.py ..................                  [ 52%]
+check	Run make check	2026-09-12T14:00:08.9747364Z tests/prompts/test_pass_roster.py ...................................... [ 52%]
+check	Run make check	2026-09-12T14:00:09.5008072Z ............................................................             [ 53%]
+check	Run make check	2026-09-12T14:00:09.5245980Z tests/prompts/test_principal_roles.py ..........                         [ 53%]
+check	Run make check	2026-09-12T14:00:09.6171882Z tests/prompts/test_prompt_wiring.py .................................... [ 53%]
+check	Run make check	2026-09-12T14:00:09.7315079Z .................                                                        [ 53%]
+check	Run make check	2026-09-12T14:00:09.8045115Z tests/prompts/test_resolvable_identifiers.py ...........                 [ 54%]
+check	Run make check	2026-09-12T14:00:09.9074578Z tests/prompts/test_rollback.py ........                                  [ 54%]
+check	Run make check	2026-09-12T14:00:09.9096860Z tests/prompts/test_scope_label_bindings.py ...                           [ 54%]
+check	Run make check	2026-09-12T14:00:10.0562136Z tests/prompts/test_session_policy.py ................................... [ 54%]
+check	Run make check	2026-09-12T14:00:23.4729251Z ..................................................................       [ 55%]
+check	Run make check	2026-09-12T14:00:23.5199836Z tests/prompts/test_set_completeness.py .............                     [ 55%]
+check	Run make check	2026-09-12T14:00:23.6184279Z tests/prompts/test_skills_loadouts.py .....................              [ 55%]
+check	Run make check	2026-09-12T14:00:23.6224569Z tests/prompts/test_supervision_adoption.py ..F                           [ 55%]
+check	Run make check	2026-09-12T14:00:23.8255440Z tests/prompts/test_v5_fragments.py ..................................... [ 56%]
+check	Run make check	2026-09-12T14:00:23.8260480Z                                                                          [ 56%]
+check	Run make check	2026-09-12T14:00:23.8692421Z tests/prompts/test_v5_lenses.py ........                                 [ 56%]
+check	Run make check	2026-09-12T14:00:23.9739766Z tests/prompts/test_v5_orchestration.py ....................              [ 56%]
+check	Run make check	2026-09-12T14:00:24.1816439Z tests/prompts/test_v5_style_rules.py ................................... [ 56%]
+check	Run make check	2026-09-12T14:00:24.8181799Z ........................................................................ [ 57%]
+check	Run make check	2026-09-12T14:00:25.4166643Z ........................................................................ [ 58%]
+check	Run make check	2026-09-12T14:00:26.0425560Z ........................................................................ [ 58%]
+check	Run make check	2026-09-12T14:00:26.6440357Z .......................................................................  [ 59%]
+check	Run make check	2026-09-12T14:00:26.8603282Z tests/prompts/test_v5_wiring.py ........................................ [ 60%]
+check	Run make check	2026-09-12T14:00:27.1069822Z .......................................                                  [ 60%]
+check	Run make check	2026-09-12T14:00:27.1116226Z tests/services/test_agent_service.py ...                                 [ 60%]
+check	Run make check	2026-09-12T14:00:28.2665740Z tests/services/test_assertion_drift.py ...........................       [ 60%]
+check	Run make check	2026-09-12T14:00:28.2826649Z tests/services/test_audit_coverage.py ............                       [ 60%]
+check	Run make check	2026-09-12T14:00:28.5295858Z tests/services/test_audit_session_ownership.py .......                   [ 60%]
+check	Run make check	2026-09-12T14:00:28.9603085Z tests/services/test_audit_sessions.py ....................               [ 61%]
+check	Run make check	2026-09-12T14:00:29.2435203Z tests/services/test_audit_sources.py ............................        [ 61%]
+check	Run make check	2026-09-12T14:00:29.2779036Z tests/services/test_check_classification.py ..........................   [ 61%]
+check	Run make check	2026-09-12T14:00:29.4287296Z tests/services/test_claim_heartbeat.py .....................             [ 61%]
+check	Run make check	2026-09-12T14:00:29.4462664Z tests/services/test_dispatch_pass.py ........2026-09-12 14:00:29 [info     ] run_record_destination_undeclared kind=fire name=K-1 outcome=never_started
+check	Run make check	2026-09-12T14:00:29.4762273Z ...2026-09-12 14:00:29 [info     ] run_record_destination_undeclared kind=fire name=K-1 outcome=never_started
+check	Run make check	2026-09-12T14:00:34.6691716Z .......F...........      [ 62%]
+check	Run make check	2026-09-12T14:00:34.7151304Z tests/services/test_fire_context.py .....................                [ 62%]
+check	Run make check	2026-09-12T14:00:34.7903714Z tests/services/test_fire_dispatcher.py ................................. [ 62%]
+check	Run make check	2026-09-12T14:00:34.8971398Z ..................................................                       [ 63%]
+check	Run make check	2026-09-12T14:00:34.9174156Z tests/services/test_fire_log_facts.py ........                           [ 63%]
+check	Run make check	2026-09-12T14:00:35.0227577Z tests/services/test_fire_record_identity.py ....                         [ 63%]
+check	Run make check	2026-09-12T14:00:35.1253243Z tests/services/test_git_source_lookup.py .....                           [ 63%]
+check	Run make check	2026-09-12T14:00:35.1384973Z tests/services/test_landing_dispatch.py ......                           [ 63%]
+check	Run make check	2026-09-12T14:00:35.1546537Z tests/services/test_lane_reports.py ........................             [ 63%]
+check	Run make check	2026-09-12T14:00:35.2223995Z tests/services/test_lifecycle_watcher.py ............................... [ 64%]
+check	Run make check	2026-09-12T14:00:35.2420162Z .........                                                                [ 64%]
+check	Run make check	2026-09-12T14:00:35.2473549Z tests/services/test_parent_rollup_authority.py ..                        [ 64%]
+check	Run make check	2026-09-12T14:00:35.3071791Z tests/services/test_pass_gate.py .....................................   [ 64%]
+check	Run make check	2026-09-12T14:00:35.5556910Z tests/services/test_pass_scheduler.py ........................           [ 64%]
+check	Run make check	2026-09-12T14:00:35.9102963Z tests/services/test_prompt_pass.py .......................               [ 65%]
+check	Run make check	2026-09-12T14:00:36.2357232Z tests/services/test_prompt_passes.py .........................           [ 65%]
+check	Run make check	2026-09-12T14:00:36.2691874Z tests/services/test_run_recorder.py .............................        [ 65%]
+check	Run make check	2026-09-12T14:00:36.3196397Z tests/services/test_run_surface_lease.py ...................             [ 65%]
+check	Run make check	2026-09-12T14:00:36.5728031Z tests/services/test_scope_dispatcher.py .............................    [ 66%]
+check	Run make check	2026-09-12T14:00:36.5844419Z tests/services/test_scope_planning.py .........                          [ 66%]
+check	Run make check	2026-09-12T14:00:36.5898265Z tests/services/test_scope_resolution.py .....                            [ 66%]
+check	Run make check	2026-09-12T14:00:37.4432634Z tests/services/test_session_grant_threading.py ......................    [ 66%]
+check	Run make check	2026-09-12T14:00:37.4782611Z tests/services/test_structured_run_records.py .......................... [ 66%]
+check	Run make check	2026-09-12T14:00:37.5029193Z ...........                                                              [ 66%]
+check	Run make check	2026-09-12T14:00:37.5434926Z tests/services/test_tracker_lifecycle.py .........................       [ 67%]
+check	Run make check	2026-09-12T14:00:39.5314184Z tests/services/test_union_composition.py .....................           [ 67%]
+check	Run make check	2026-09-12T14:00:40.0174291Z tests/services/test_union_conflict_remediation.py ..                     [ 67%]
+check	Run make check	2026-09-12T14:00:41.9815316Z tests/services/test_union_replacement_identity.py ...............        [ 67%]
+check	Run make check	2026-09-12T14:00:45.5708472Z tests/services/test_union_tick.py ........................               [ 67%]
+check	Run make check	2026-09-12T14:00:45.6602668Z tests/spec/test_model_agreement.py ..................................... [ 68%]
+check	Run make check	2026-09-12T14:00:45.8121826Z ........................................................................ [ 68%]
+check	Run make check	2026-09-12T14:00:45.8697853Z ...............................s                                         [ 69%]
+check	Run make check	2026-09-12T14:00:45.9486283Z tests/test_composition_root.py ...............                           [ 69%]
+check	Run make check	2026-09-12T14:00:47.0006977Z tests/test_forge_origin_selection.py ...........................         [ 69%]
+check	Run make check	2026-09-12T14:00:47.0379380Z tests/test_lane_verification.py ......                                   [ 69%]
+check	Run make check	2026-09-12T14:00:47.3560258Z tests/test_lifespan_cleanup.py ........................................  [ 70%]
+check	Run make check	2026-09-12T14:00:47.8876408Z tests/test_organize_portability.py ..................................    [ 70%]
+check	Run make check	2026-09-12T14:00:47.9634877Z tests/test_release.py ....                                               [ 70%]
+check	Run make check	2026-09-12T14:00:48.2035440Z tests/tracker/test_audit_claim.py ...................................... [ 70%]
+check	Run make check	2026-09-12T14:00:49.5217347Z ............................................................             [ 71%]
+check	Run make check	2026-09-12T14:00:50.7750431Z tests/tracker/test_audit_claim_replacements.py ....................      [ 71%]
+check	Run make check	2026-09-12T14:00:52.5412893Z tests/tracker/test_audit_combined_review.py ........                     [ 71%]
+check	Run make check	2026-09-12T14:01:03.9806718Z tests/tracker/test_audit_detection_removal.py .......................... [ 72%]
+check	Run make check	2026-09-12T14:01:08.9535757Z ............                                                             [ 72%]
+check	Run make check	2026-09-12T14:01:09.2804076Z tests/tracker/test_audit_evidence.py ................................... [ 72%]
+check	Run make check	2026-09-12T14:01:09.5052518Z .........................                                                [ 72%]
+check	Run make check	2026-09-12T14:01:10.8671647Z tests/tracker/test_audit_evidence_git.py ................                [ 73%]
+check	Run make check	2026-09-12T14:01:13.7787081Z tests/tracker/test_audit_evidence_replacements.py ...................... [ 73%]
+check	Run make check	2026-09-12T14:01:13.9025061Z ..                                                                       [ 73%]
+check	Run make check	2026-09-12T14:01:14.1319484Z tests/tracker/test_audit_forge.py ...................................... [ 73%]
+check	Run make check	2026-09-12T14:01:14.4749243Z ..............................................................           [ 74%]
+check	Run make check	2026-09-12T14:01:14.9647205Z tests/tracker/test_audit_forge_sweep.py ................................ [ 74%]
+check	Run make check	2026-09-12T14:01:15.5297110Z ........................................                                 [ 75%]
+check	Run make check	2026-09-12T14:01:16.1919510Z tests/tracker/test_audit_forge_sweep_git.py ....                         [ 75%]
+check	Run make check	2026-09-12T14:01:16.3854383Z tests/tracker/test_audit_mandate.py .................................... [ 75%]
+check	Run make check	2026-09-12T14:01:16.9310256Z ........................                                                 [ 75%]
+check	Run make check	2026-09-12T14:01:18.7848072Z tests/tracker/test_audit_mandate_replacements.py ....................    [ 75%]
+check	Run make check	2026-09-12T14:01:19.1831958Z tests/tracker/test_audit_overclaim.py ..............................     [ 76%]
+check	Run make check	2026-09-12T14:01:19.4964033Z tests/tracker/test_audit_overclaim_bytes.py ........................     [ 76%]
+check	Run make check	2026-09-12T14:01:21.1163132Z tests/tracker/test_audit_overclaim_git.py ................               [ 76%]
+check	Run make check	2026-09-12T14:01:21.4652772Z tests/tracker/test_audit_overclaim_sweep.py ............................ [ 76%]
+check	Run make check	2026-09-12T14:01:21.6606016Z ................                                                         [ 77%]
+check	Run make check	2026-09-12T14:01:24.9660011Z tests/tracker/test_audit_overclaim_sweep_git.py ................         [ 77%]
+check	Run make check	2026-09-12T14:01:25.4250154Z tests/tracker/test_audit_repository_cancellation.py ........             [ 77%]
+check	Run make check	2026-09-12T14:01:25.5243547Z tests/tracker/test_audit_requests.py ................................... [ 77%]
+check	Run make check	2026-09-12T14:01:25.6641705Z .................................................                        [ 78%]
+check	Run make check	2026-09-12T14:01:26.1362997Z tests/tracker/test_audit_sweep.py ...................................... [ 78%]
+check	Run make check	2026-09-12T14:01:26.1370920Z                                                                          [ 78%]
+check	Run make check	2026-09-12T14:01:27.8126066Z tests/tracker/test_audit_sweep_git.py ..............                     [ 78%]
+check	Run make check	2026-09-12T14:01:28.2065937Z tests/tracker/test_audit_terminal_mandate.py ..........................  [ 79%]
+check	Run make check	2026-09-12T14:01:31.0809340Z tests/tracker/test_audit_terminal_mandate_git.py ..........              [ 79%]
+check	Run make check	2026-09-12T14:01:31.2691335Z tests/tracker/test_barren_record_collector.py ......................F... [ 79%]
+check	Run make check	2026-09-12T14:01:31.4926744Z ..............................................                           [ 79%]
+check	Run make check	2026-09-12T14:01:31.5724906Z tests/tracker/test_barren_tick.py ...................                    [ 80%]
+check	Run make check	2026-09-12T14:01:31.6359236Z tests/tracker/test_body_revisions.py ................................... [ 80%]
+check	Run make check	2026-09-12T14:01:31.6553992Z ............                                                             [ 80%]
+check	Run make check	2026-09-12T14:01:31.6647081Z tests/tracker/test_combined_issue_writes.py ...........                  [ 80%]
+check	Run make check	2026-09-12T14:01:31.6715962Z tests/tracker/test_comment_pages.py .....                                [ 80%]
+check	Run make check	2026-09-12T14:01:32.6979997Z tests/tracker/test_consumer_read_ports.py .......................        [ 80%]
+check	Run make check	2026-09-12T14:01:32.7030353Z tests/tracker/test_criterion_identity_conformance.py ..                  [ 80%]
+check	Run make check	2026-09-12T14:01:32.7367198Z tests/tracker/test_criterion_reader.py ................                  [ 81%]
+check	Run make check	2026-09-12T14:01:32.7535350Z tests/tracker/test_criterion_reader_boundary.py ............             [ 81%]
+check	Run make check	2026-09-12T14:01:32.7892399Z tests/tracker/test_criterion_record_fidelity.py ............             [ 81%]
+check	Run make check	2026-09-12T14:01:32.8609665Z tests/tracker/test_criterion_resolution.py ............................. [ 81%]
+check	Run make check	2026-09-12T14:01:32.8626064Z .                                                                        [ 81%]
+check	Run make check	2026-09-12T14:01:33.0227324Z tests/tracker/test_criterion_resolution_consumers.py ................... [ 81%]
+check	Run make check	2026-09-12T14:01:33.0636222Z .....                                                                    [ 81%]
+check	Run make check	2026-09-12T14:01:33.4086244Z tests/tracker/test_detector_removal_sweep.py ........................... [ 82%]
+check	Run make check	2026-09-12T14:01:33.5739491Z .............                                                            [ 82%]
+check	Run make check	2026-09-12T14:01:39.0243395Z tests/tracker/test_detector_removal_sweep_git.py ..........              [ 82%]
+check	Run make check	2026-09-12T14:01:39.0433363Z tests/tracker/test_document_relation_assets.py ...............           [ 82%]
+check	Run make check	2026-09-12T14:01:39.0894730Z tests/tracker/test_empty_fire_entry.py ..................                [ 82%]
+check	Run make check	2026-09-12T14:01:39.1340871Z tests/tracker/test_escalation_ageing.py ..........                       [ 82%]
+check	Run make check	2026-09-12T14:01:39.2556199Z tests/tracker/test_escalation_record_collector.py ...................... [ 83%]
+check	Run make check	2026-09-12T14:01:39.4572228Z .........................................                                [ 83%]
+check	Run make check	2026-09-12T14:01:39.5041874Z tests/tracker/test_escalation_record_reader.py ......................... [ 83%]
+check	Run make check	2026-09-12T14:01:39.5135323Z ....                                                                     [ 83%]
+check	Run make check	2026-09-12T14:01:39.5680752Z tests/tracker/test_escalation_resolution.py ............................ [ 84%]
+check	Run make check	2026-09-12T14:01:39.5842849Z ...........                                                              [ 84%]
+check	Run make check	2026-09-12T14:01:39.6041697Z tests/tracker/test_escalation_resolution_boundary.py .................   [ 84%]
+check	Run make check	2026-09-12T14:01:39.6957731Z tests/tracker/test_escalation_resolution_drift.py ..............         [ 84%]
+check	Run make check	2026-09-12T14:01:39.7403476Z tests/tracker/test_fire_spec_approval.py ......................          [ 84%]
+check	Run make check	2026-09-12T14:01:39.7464603Z tests/tracker/test_fire_spec_approval_ancestry.py ....                   [ 84%]
+check	Run make check	2026-09-12T14:01:39.8114788Z tests/tracker/test_fire_spec_reader.py ................................. [ 85%]
+check	Run make check	2026-09-12T14:01:39.8462489Z ..................                                                       [ 85%]
+check	Run make check	2026-09-12T14:01:39.9051013Z tests/tracker/test_idempotent_writes.py ................................ [ 85%]
+check	Run make check	2026-09-12T14:01:39.9953083Z ..................................................                       [ 86%]
+check	Run make check	2026-09-12T14:01:40.0050782Z tests/tracker/test_issue_classification_reads.py .............           [ 86%]
+check	Run make check	2026-09-12T14:01:40.0200305Z tests/tracker/test_issue_identity_boundary.py .............              [ 86%]
+check	Run make check	2026-09-12T14:01:40.0734964Z tests/tracker/test_issue_upsert.py ............................          [ 86%]
+check	Run make check	2026-09-12T14:01:40.0968444Z tests/tracker/test_labeled_issues.py ..................                  [ 86%]
+check	Run make check	2026-09-12T14:01:40.1117569Z tests/tracker/test_landing_ambiguity.py ........                         [ 87%]
+check	Run make check	2026-09-12T14:01:40.1448346Z tests/tracker/test_landing_base_resolution.py ..................         [ 87%]
+check	Run make check	2026-09-12T14:01:40.1938956Z tests/tracker/test_lane_escalation.py ..............................     [ 87%]
+check	Run make check	2026-09-12T14:01:40.2608274Z tests/tracker/test_lane_record_signals.py .............................. [ 87%]
+check	Run make check	2026-09-12T14:01:40.2980330Z ..................                                                       [ 88%]
+check	Run make check	2026-09-12T14:01:40.3734647Z tests/tracker/test_lane_records.py ..................................... [ 88%]
+check	Run make check	2026-09-12T14:01:40.4514952Z ........................................                                 [ 88%]
+check	Run make check	2026-09-12T14:01:40.4860110Z tests/tracker/test_linear_mcp_tracker.py ............................... [ 89%]
+check	Run make check	2026-09-12T14:01:41.5157730Z ...............................                                          [ 89%]
+check	Run make check	2026-09-12T14:01:41.5283993Z tests/tracker/test_linear_tool_arguments.py .......                      [ 89%]
+check	Run make check	2026-09-12T14:01:41.5816941Z tests/tracker/test_linear_tool_roster.py .....                           [ 89%]
+check	Run make check	2026-09-12T14:01:41.6005735Z tests/tracker/test_linear_wire_shapes.py ............................... [ 89%]
+check	Run make check	2026-09-12T14:01:41.6027943Z ..                                                                       [ 89%]
+check	Run make check	2026-09-12T14:01:41.6958641Z tests/tracker/test_mandate_graph.py ......................               [ 90%]
+check	Run make check	2026-09-12T14:01:41.7113982Z tests/tracker/test_marker_configuration.py .....                         [ 90%]
+check	Run make check	2026-09-12T14:01:41.7195466Z tests/tracker/test_milestone_approval.py ......                          [ 90%]
+check	Run make check	2026-09-12T14:01:41.7271379Z tests/tracker/test_native_recorded_landing.py .......                    [ 90%]
+check	Run make check	2026-09-12T14:01:41.7812827Z tests/tracker/test_ownership_arbitration.py ............................ [ 90%]
+check	Run make check	2026-09-12T14:01:41.7821385Z                                                                          [ 90%]
+check	Run make check	2026-09-12T14:01:41.7894636Z tests/tracker/test_port_failure_boundary.py ......                       [ 90%]
+check	Run make check	2026-09-12T14:01:44.6032930Z tests/tracker/test_recorded_assertion_drift.py ......................... [ 90%]
+check	Run make check	2026-09-12T14:01:46.4058198Z .............................                                            [ 91%]
+check	Run make check	2026-09-12T14:01:46.4479505Z tests/tracker/test_recorded_landing.py ..............................    [ 91%]
+check	Run make check	2026-09-12T14:01:46.5629413Z tests/tracker/test_recorded_landing_git.py ..                            [ 91%]
+check	Run make check	2026-09-12T14:01:46.6786223Z tests/tracker/test_recorded_ruling_growth.py ..........................  [ 91%]
+check	Run make check	2026-09-12T14:01:46.7597667Z tests/tracker/test_ruling_records.py ................................... [ 92%]
+check	Run make check	2026-09-12T14:01:46.7630990Z ..                                                                       [ 92%]
+check	Run make check	2026-09-12T14:01:46.8072882Z tests/tracker/test_scope_approval.py ................................... [ 92%]
+check	Run make check	2026-09-12T14:01:46.8499356Z .................................                                        [ 92%]
+check	Run make check	2026-09-12T14:01:46.8935122Z tests/tracker/test_scope_label_mappings.py ............................. [ 93%]
+check	Run make check	2026-09-12T14:01:46.8957582Z ..                                                                       [ 93%]
+check	Run make check	2026-09-12T14:01:46.9611337Z tests/tracker/test_scope_planning.py ................................... [ 93%]
+check	Run make check	2026-09-12T14:01:46.9628908Z .                                                                        [ 93%]
+check	Run make check	2026-09-12T14:01:47.0081585Z tests/tracker/test_scope_reads.py ...................................... [ 94%]
+check	Run make check	2026-09-12T14:01:47.0467788Z .............................                                            [ 94%]
+check	Run make check	2026-09-12T14:01:47.1075564Z tests/tracker/test_scope_subtree_reach.py ............                   [ 94%]
+check	Run make check	2026-09-12T14:01:47.2814254Z tests/tracker/test_scope_tally.py ...................................... [ 94%]
+check	Run make check	2026-09-12T14:01:54.3785747Z ....................                                                     [ 95%]
+check	Run make check	2026-09-12T14:01:54.3808443Z tests/tracker/test_scope_tool_arguments.py .                             [ 95%]
+check	Run make check	2026-09-12T14:01:54.4377405Z tests/tracker/test_state_history.py .................................... [ 95%]
+check	Run make check	2026-09-12T14:01:54.4619000Z ............                                                             [ 95%]
+check	Run make check	2026-09-12T14:01:54.5074989Z tests/tracker/test_tracker_boot.py ....................................  [ 95%]
+check	Run make check	2026-09-12T14:01:54.7323500Z tests/tracker/test_tracker_boot_cleanup.py ..........                    [ 96%]
+check	Run make check	2026-09-12T14:01:55.9915910Z tests/tracker/test_tracker_boot_wiring.py ..................F..          [ 96%]
+check	Run make check	2026-09-12T14:01:56.0394811Z tests/tracker/test_tracker_conformance.py .............................. [ 96%]
+check	Run make check	2026-09-12T14:01:56.1693418Z ........................................................................ [ 97%]
+check	Run make check	2026-09-12T14:01:56.2948267Z ........................................................................ [ 98%]
+check	Run make check	2026-09-12T14:01:56.3983760Z ...............................................................          [ 98%]
+check	Run make check	2026-09-12T14:01:56.4102602Z tests/types/test_output_descriptions.py ..................               [ 98%]
+check	Run make check	2026-09-12T14:01:56.8807092Z tests/types/test_wire_renames.py ......                                  [ 98%]
+check	Run make check	2026-09-12T14:01:56.9508303Z tests/types/test_wire_schemas.py ....................................... [ 99%]
+check	Run make check	2026-09-12T14:01:59.4674864Z ..............................                                           [ 99%]
+check	Run make check	2026-09-12T14:01:59.4818375Z tests/types/test_writable_surface.py ........................            [ 99%]
+check	Run make check	2026-09-12T14:01:59.8092012Z tests/workflows/test_investigate_fan_in.py ...........                   [100%]
+check	Run make check	2026-09-12T14:01:59.8092428Z 
+check	Run make check	2026-09-12T14:01:59.8092622Z =================================== FAILURES ===================================
+check	Run make check	2026-09-12T14:01:59.8093260Z _______ test_an_approved_issue_walks_the_whole_chain_back_to_its_ticket ________
+check	Run make check	2026-09-12T14:01:59.8093635Z 
+check	Run make check	2026-09-12T14:01:59.8094051Z     async def test_an_approved_issue_walks_the_whole_chain_back_to_its_ticket() -> None:
+check	Run make check	2026-09-12T14:01:59.8094593Z         config = AppConfig()
+check	Run make check	2026-09-12T14:01:59.8094926Z         tracker = FakeTrackerPort(
+check	Run make check	2026-09-12T14:01:59.8095311Z             issues=[make_tracker_issue(ISSUE)],
+check	Run make check	2026-09-12T14:01:59.8095643Z         )
+check	Run make check	2026-09-12T14:01:59.8095905Z         engine = _MergingEngine()
+check	Run make check	2026-09-12T14:01:59.8096241Z         queue = AsyncioJobQueue(
+check	Run make check	2026-09-12T14:01:59.8096546Z             engine=engine,
+check	Run make check	2026-09-12T14:01:59.8097037Z             max_concurrent_runs_per_lane=config.queue.max_concurrent_runs_per_lane,
+check	Run make check	2026-09-12T14:01:59.8097653Z             max_depth_per_lane=config.queue.max_depth_per_lane,
+check	Run make check	2026-09-12T14:01:59.8098243Z             terminal_retention_seconds=config.queue.terminal_retention_seconds,
+check	Run make check	2026-09-12T14:01:59.8098753Z             event_buffer_retention_seconds=config.queue.event_buffer_retention_seconds,
+check	Run make check	2026-09-12T14:01:59.8099423Z             event_buffer_capacity=config.queue.event_buffer_capacity,
+check	Run make check	2026-09-12T14:01:59.8099681Z         )
+check	Run make check	2026-09-12T14:01:59.8099849Z         await queue.start()
+check	Run make check	2026-09-12T14:01:59.8100033Z         try:
+check	Run make check	2026-09-12T14:01:59.8100238Z             built = await build_dispatch_passes(
+check	Run make check	2026-09-12T14:01:59.8100521Z                 recorder=RunRecorder(records={}, sinks={}),
+check	Run make check	2026-09-12T14:01:59.8100779Z                 config=config,
+check	Run make check	2026-09-12T14:01:59.8101006Z                 operation=operation_config(),
+check	Run make check	2026-09-12T14:01:59.8101538Z                 tracker=tracker,
+check	Run make check	2026-09-12T14:01:59.8101883Z                 ledger=SelfWriteLedger(),
+check	Run make check	2026-09-12T14:01:59.8102263Z                 delivery=FakeDeliveryProbe(),
+check	Run make check	2026-09-12T14:01:59.8102585Z                 queue=queue,
+check	Run make check	2026-09-12T14:01:59.8102786Z                 registry=queue,
+check	Run make check	2026-09-12T14:01:59.8103010Z                 gate=PassThroughGate(),
+check	Run make check	2026-09-12T14:01:59.8103250Z                 git=FakeGitService(),
+check	Run make check	2026-09-12T14:01:59.8103537Z                 cache=FakeRepoCache(),
+check	Run make check	2026-09-12T14:01:59.8103796Z                 integration_workspace_dir=INTEGRATION_DIR,
+check	Run make check	2026-09-12T14:01:59.8104029Z             )
+check	Run make check	2026-09-12T14:01:59.8104181Z     
+check	Run make check	2026-09-12T14:01:59.8104387Z             await built.passes[0].run(TICK_STARTED_AT)
+check	Run make check	2026-09-12T14:01:59.8104603Z     
+check	Run make check	2026-09-12T14:01:59.8104856Z             # 1. the claim was granted, to this deployment's configured holder.
+check	Run make check	2026-09-12T14:01:59.8105237Z             #    Read while the run is in flight, which is the whole window the
+check	Run make check	2026-09-12T14:01:59.8105594Z             #    claim is meant to cover: it is handed back at the end of it.
+check	Run make check	2026-09-12T14:01:59.8105953Z             assert tracker.claims[ISSUE].holder == config.dispatch_holder
+check	Run make check	2026-09-12T14:01:59.8106224Z     
+check	Run make check	2026-09-12T14:01:59.8106433Z             await _until(lambda: bool(tracker.comments))
+check	Run make check	2026-09-12T14:01:59.8106654Z     
+check	Run make check	2026-09-12T14:01:59.8106883Z             # 2. the fire reached the queue, on the base the graph implied
+check	Run make check	2026-09-12T14:01:59.8107259Z             assert engine.base_branches == [operation_config().repos[0].trunk]
+check	Run make check	2026-09-12T14:01:59.8107543Z     
+check	Run make check	2026-09-12T14:01:59.8107761Z             # 3. the lifecycle walked, in the run's own order
+check	Run make check	2026-09-12T14:01:59.8108071Z >           assert tracker.workflow_writes == [
+check	Run make check	2026-09-12T14:01:59.8108341Z                 (ISSUE, LifecycleStage.IN_PROGRESS),
+check	Run make check	2026-09-12T14:01:59.8108605Z                 (ISSUE, LifecycleStage.IN_REVIEW),
+check	Run make check	2026-09-12T14:01:59.8108862Z                 (ISSUE, LifecycleStage.DONE),
+check	Run make check	2026-09-12T14:01:59.8109074Z             ]
+check	Run make check	2026-09-12T14:01:59.8109441Z E           AssertionError: assert [('K-1', <Lif...'in_review'>)] == [('K-1', <Lif...ONE: 'done'>)]
+check	Run make check	2026-09-12T14:01:59.8109914Z E             
+check	Run make check	2026-09-12T14:01:59.8110221Z E             Right contains one more item: ('K-1', <LifecycleStage.DONE: 'done'>)
+check	Run make check	2026-09-12T14:01:59.8110534Z E             
+check	Run make check	2026-09-12T14:01:59.8110704Z E             Full diff:
+check	Run make check	2026-09-12T14:01:59.8110892Z E               [
+check	Run make check	2026-09-12T14:01:59.8111056Z E                   (
+check	Run make check	2026-09-12T14:01:59.8111397Z E                       'K-1',
+check	Run make check	2026-09-12T14:01:59.8111678Z E                       <LifecycleStage.IN_PROGRESS: 'in_progress'>,
+check	Run make check	2026-09-12T14:01:59.8111931Z E                   ),
+check	Run make check	2026-09-12T14:01:59.8112100Z E                   (
+check	Run make check	2026-09-12T14:01:59.8112286Z E                       'K-1',
+check	Run make check	2026-09-12T14:01:59.8112552Z E                       <LifecycleStage.IN_REVIEW: 'in_review'>,
+check	Run make check	2026-09-12T14:01:59.8112793Z E                   ),
+check	Run make check	2026-09-12T14:01:59.8112983Z E             -     (
+check	Run make check	2026-09-12T14:01:59.8113168Z E             -         'K-1',
+check	Run make check	2026-09-12T14:01:59.8113406Z E             -         <LifecycleStage.DONE: 'done'>,
+check	Run make check	2026-09-12T14:01:59.8113640Z E             -     ),
+check	Run make check	2026-09-12T14:01:59.8113803Z E               ]
+check	Run make check	2026-09-12T14:01:59.8113897Z 
+check	Run make check	2026-09-12T14:01:59.8114089Z tests/integration/test_self_running_chain.py:181: AssertionError
+check	Run make check	2026-09-12T14:01:59.8114500Z ----------------------------- Captured stdout call -----------------------------
+check	Run make check	2026-09-12T14:01:59.8115297Z 2026-09-12 14:00:01 [info     ] pass_gate_delta                changed=['K-1'] mark=2026-01-01T00:00:00+00:00 signals=['approved_changed'] unanswerable=[]
+check	Run make check	2026-09-12T14:01:59.8115911Z 2026-09-12 14:00:01 [info     ] dispatch_ranked                order=['K-1'] tied=['K-1'] winner=K-1
+check	Run make check	2026-09-12T14:01:59.8116383Z 2026-09-12 14:00:01 [info     ] fire_context_assembled         asset_keys=[] issue_key=K-1
+check	Run make check	2026-09-12T14:01:59.8116953Z 2026-09-12 14:00:01 [info     ] job_submitted                  job_id=471e6c7743124e119b760ee1d1c6282c lane=tracker queue_position=1
+check	Run make check	2026-09-12T14:01:59.8117535Z 2026-09-12 14:00:01 [info     ] job_started                    job_id=471e6c7743124e119b760ee1d1c6282c lane=tracker
+check	Run make check	2026-09-12T14:01:59.8118266Z 2026-09-12 14:00:01 [info     ] dispatch_fire_enqueued         base_branch=trunk base_role=None issue_key=K-1 job_id=471e6c7743124e119b760ee1d1c6282c outcome=fire_enqueued
+check	Run make check	2026-09-12T14:01:59.8119011Z 2026-09-12 14:00:01 [info     ] job_finished                   job_id=471e6c7743124e119b760ee1d1c6282c lane=tracker outcome=ci_passed
+check	Run make check	2026-09-12T14:01:59.8119757Z 2026-09-12 14:00:01 [info     ] dispatch_pass_completed        changed=['K-1'] claimed_issue_key=K-1 job_id=471e6c7743124e119b760ee1d1c6282c outcome=fire_enqueued
+check	Run make check	2026-09-12T14:01:59.8120329Z 2026-09-12 14:00:01 [info     ] lifecycle_in_progress          issue_key=K-1
+check	Run make check	2026-09-12T14:01:59.8120976Z 2026-09-12 14:00:01 [info     ] lifecycle_deliverable_ref      branch=kodezart/k-1 issue_key=K-1 pushed_head_sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+check	Run make check	2026-09-12T14:01:59.8121714Z 2026-09-12 14:00:01 [info     ] lifecycle_in_review            issue_key=K-1
+check	Run make check	2026-09-12T14:01:59.8122102Z 2026-09-12 14:00:01 [info     ] lifecycle_queue_finished       issue_key=K-1
+check	Run make check	2026-09-12T14:01:59.8123056Z 2026-09-12 14:00:01 [info     ] outbound_content_gated         categories=[] content_digest=6ca851ca03e60366776ee1649190e5498533be056038d0b3a6975227341fd93f failure=None hits=[] surface=tracker verdict=clean visibility=public writer=tracker_comment
+check	Run make check	2026-09-12T14:01:59.8124015Z 2026-09-12 14:00:01 [info     ] job_queue_stopped              abandoned=0 lanes=2 outcome=shutdown_abandoned
+check	Run make check	2026-09-12T14:01:59.8124647Z 2026-09-12 14:00:01 [info     ] lifecycle_outcome_comment      issue_key=K-1 job_id=471e6c7743124e119b760ee1d1c6282c outcome=ci_passed
+check	Run make check	2026-09-12T14:01:59.8125179Z --------------------------- Captured stdout teardown ---------------------------
+check	Run make check	2026-09-12T14:01:59.8125629Z 2026-09-12 14:00:01 [info     ] claim_released                 holder=kodezart issue_key=K-1
+check	Run make check	2026-09-12T14:01:59.8126287Z 2026-09-12 14:00:01 [info     ] lifecycle_watch_finished       issue_key=K-1 job_id=471e6c7743124e119b760ee1d1c6282c run_started=True terminal_outcome=True
+check	Run make check	2026-09-12T14:01:59.8127079Z 2026-09-12 14:00:01 [info     ] run_record_destination_undeclared kind=fire name=K-1 outcome=completed
+check	Run make check	2026-09-12T14:01:59.8127556Z _______________ test_no_label_or_status_literal_lives_in_source ________________
+check	Run make check	2026-09-12T14:01:59.8127784Z 
+check	Run make check	2026-09-12T14:01:59.8127947Z     def test_no_label_or_status_literal_lives_in_source() -> None:
+check	Run make check	2026-09-12T14:01:59.8128323Z         """Code addresses members via enum members, never via a label string."""
+check	Run make check	2026-09-12T14:01:59.8128647Z         src = REPO_ROOT / "src" / "kodezart"
+check	Run make check	2026-09-12T14:01:59.8128859Z         labels = {
+check	Run make check	2026-09-12T14:01:59.8129075Z             *example_config().queue_states.values(),
+check	Run make check	2026-09-12T14:01:59.8129348Z             *example_config().scope_labels.values(),
+check	Run make check	2026-09-12T14:01:59.8129617Z             *example_config().workflow_states.values(),
+check	Run make check	2026-09-12T14:01:59.8129838Z         }
+check	Run make check	2026-09-12T14:01:59.8130021Z         for path in src.rglob("*.py"):
+check	Run make check	2026-09-12T14:01:59.8130279Z             text = path.read_text(encoding="utf-8")
+check	Run make check	2026-09-12T14:01:59.8130538Z             for label in labels:
+check	Run make check	2026-09-12T14:01:59.8130840Z >               assert label not in text, f"{path} hardcodes {label!r}"
+check	Run make check	2026-09-12T14:01:59.8131557Z E               AssertionError: /home/runner/work/kodezart/kodezart/src/kodezart/services/tracker_lifecycle.py hardcodes 'Done'
+check	Run make check	2026-09-12T14:01:59.8132175Z E               assert 'Done' not in '"""Ticket l...n        )\n'
+check	Run make check	2026-09-12T14:01:59.8132420Z E                 
+check	Run make check	2026-09-12T14:01:59.8132629Z E                 'Done' is contained here:
+check	Run make check	2026-09-12T14:01:59.8132887Z E                   criterion Done states.
+check	Run make check	2026-09-12T14:01:59.8133120Z E                 ?           ++++
+check	Run make check	2026-09-12T14:01:59.8133314Z E                   
+check	Run make check	2026-09-12T14:01:59.8133905Z E                   **The pull-request arm also records the delivery — when there is one.**  A
+check	Run make check	2026-09-12T14:01:59.8134389Z E                   ``DELIVERABLE`` work ref is what a dependent lane's base resolves through,
+check	Run make check	2026-09-12T14:01:59.8134862Z E                   and before this writer existed nothing in the process wrote one: every
+check	Run make check	2026-09-12T14:01:59.8135359Z E                   issue with a blocker failed base resolution, because the ref the resolver walks the
+check	Run make check	2026-09-12T14:01:59.8135849Z E                   chain looking for was never recorded by anything.  The open pull request
+check	Run make check	2026-09-12T14:01:59.8136301Z E                   is the moment the branch and its pushed tip both exist, so this is where
+check	Run make check	2026-09-12T14:01:59.8136975Z E                   it is written — for the pull request that DELIVERS.  The stall exit opens
+check	Run make check	2026-09-12T14:01:59.8137633Z E                   one too, over a branch its own acceptance gate rejected, and the event
+check	Run make check	2026-09-12T14:01:59.8138114Z E                   says which it is.
+check	Run make check	2026-09-12T14:01:59.8138415Z E                   """
+check	Run make check	2026-09-12T14:01:59.8138666Z E                   
+check	Run make check	2026-09-12T14:01:59.8139037Z E                   from collections.abc import Callable, Mapping
+check	Run make check	2026-09-12T14:01:59.8139525Z E                   from datetime import UTC, datetime
+check	Run make check	2026-09-12T14:01:59.8139856Z E                   
+check	Run make check	2026-09-12T14:01:59.8140284Z E                   from kodezart.core.logging import BoundLogger, get_logger
+check	Run make check	2026-09-12T14:01:59.8140844Z E                   from kodezart.core.outbound_write import gated_write
+check	Run make check	2026-09-12T14:01:59.8141568Z E                   from kodezart.core.owned_tasks import settle
+check	Run make check	2026-09-12T14:01:59.8141999Z E                   from kodezart.core.protocols import OutboundContentGate, TrackerPort
+check	Run make check	2026-09-12T14:01:59.8142417Z E                   from kodezart.domain.comment_markers import (
+check	Run make check	2026-09-12T14:01:59.8142727Z E                       compose_comment_marker,
+check	Run make check	2026-09-12T14:01:59.8143006Z E                       configured_marker_prefix,
+check	Run make check	2026-09-12T14:01:59.8143230Z E                   )
+check	Run make check	2026-09-12T14:01:59.8143525Z E                   from kodezart.domain.errors import DuplicateWorkRefError
+check	Run make check	2026-09-12T14:01:59.8143946Z E                   from kodezart.services.run_surface_lease import RunSurfaceLease
+check	Run make check	2026-09-12T14:01:59.8144526Z E                   from kodezart.types.domain.agent import RaiseSite
+check	Run make check	2026-09-12T14:01:59.8144924Z E                   from kodezart.types.domain.branch import WorkRef, WorkRefRole
+check	Run make check	2026-09-12T14:01:59.8145302Z E                   from kodezart.types.domain.gating import (
+check	Run make check	2026-09-12T14:01:59.8145580Z E                       ContentClass,
+check	Run make check	2026-09-12T14:01:59.8145828Z E                       OutboundDestination,
+check	Run make check	2026-09-12T14:01:59.8146079Z E                       RepoVisibility,
+check	Run make check	2026-09-12T14:01:59.8146314Z E                       WriterShape,
+check	Run make check	2026-09-12T14:01:59.8146513Z E                   )
+check	Run make check	2026-09-12T14:01:59.8146852Z E                   from kodezart.types.domain.operation import LifecycleStage, QueueState
+check	Run make check	2026-09-12T14:01:59.8147284Z E                   from kodezart.types.domain.outcome import WorkflowOutcome
+check	Run make check	2026-09-12T14:01:59.8147725Z E                   from kodezart.types.domain.scope import ScopeKind, ScopeRef
+check	Run make check	2026-09-12T14:01:59.8148180Z E                   from kodezart.types.domain.surface import SurfaceKind, WritableSurface
+check	Run make check	2026-09-12T14:01:59.8148483Z E                   
+check	Run make check	2026-09-12T14:01:59.8148651Z E                   
+check	Run make check	2026-09-12T14:01:59.8148860Z E                   def _now() -> datetime:
+check	Run make check	2026-09-12T14:01:59.8149246Z E                       return datetime.now(tz=UTC)
+check	Run make check	2026-09-12T14:01:59.8149476Z E                   
+check	Run make check	2026-09-12T14:01:59.8149640Z E                   
+check	Run make check	2026-09-12T14:01:59.8149860Z E                   class TrackerLifecycleWriter:
+check	Run make check	2026-09-12T14:01:59.8150214Z E                       """Writes a fire's lifecycle back onto its originating issue.
+check	Run make check	2026-09-12T14:01:59.8150494Z E                   
+check	Run make check	2026-09-12T14:01:59.8150933Z E                       The state transitions carry no prose — a stage and a queue member, both
+check	Run make check	2026-09-12T14:01:59.8151663Z E                       resolved from configuration — so the gate has nothing to judge on them.
+check	Run make check	2026-09-12T14:01:59.8152136Z E                       The comment does carry prose, so it routes through the same gated-write
+check	Run make check	2026-09-12T14:01:59.8152600Z E                       path as every other outbound writer.  It is gated BEFORE the passes
+check	Run make check	2026-09-12T14:01:59.8153045Z E                       that will compose their comment bodies out of private board state,
+check	Run make check	2026-09-12T14:01:59.8153505Z E                       which is the whole reason this enforcement lands ahead of the thing it
+check	Run make check	2026-09-12T14:01:59.8153839Z E                       enforces.
+check	Run make check	2026-09-12T14:01:59.8154034Z E                   
+check	Run make check	2026-09-12T14:01:59.8154355Z E                       Which POSTURE it is gated under is per board, and it rides in from the
+check	Run make check	2026-09-12T14:01:59.8154795Z E                       pass that claimed the issue rather than being a constant here: one
+check	Run make check	2026-09-12T14:01:59.8155246Z E                       operation declares a board that mirrors publicly beside a board that
+check	Run make check	2026-09-12T14:01:59.8155710Z E                       syncs to a private surface, and the write-backs onto an issue belong to
+check	Run make check	2026-09-12T14:01:59.8156207Z E                       the surface its own board mirrors to.  Absent or unresolved is public —
+check	Run make check	2026-09-12T14:01:59.8156646Z E                       over-scrubbing is the arm that costs nothing but a redaction.
+check	Run make check	2026-09-12T14:01:59.8156934Z E                       """
+check	Run make check	2026-09-12T14:01:59.8157125Z E                   
+check	Run make check	2026-09-12T14:01:59.8157324Z E                       def __init__(
+check	Run make check	2026-09-12T14:01:59.8157558Z E                           self,
+check	Run make check	2026-09-12T14:01:59.8157772Z E                           *,
+check	Run make check	2026-09-12T14:01:59.8158011Z E                           tracker: TrackerPort,
+check	Run make check	2026-09-12T14:01:59.8158294Z E                           gate: OutboundContentGate,
+check	Run make check	2026-09-12T14:01:59.8158599Z E                           marker_prefixes: Mapping[str, str],
+check	Run make check	2026-09-12T14:01:59.8158899Z E                           surface_lease_seconds: float,
+check	Run make check	2026-09-12T14:01:59.8159202Z E                           clock: Callable[[], datetime] = _now,
+check	Run make check	2026-09-12T14:01:59.8159465Z E                       ) -> None:
+check	Run make check	2026-09-12T14:01:59.8159940Z E                           configured_marker_prefix(marker_prefixes, purpose="run_outcome")
+check	Run make check	2026-09-12T14:01:59.8160320Z E                           self._tracker: TrackerPort = tracker
+check	Run make check	2026-09-12T14:01:59.8160636Z E                           self._gate: OutboundContentGate = gate
+check	Run make check	2026-09-12T14:01:59.8160984Z E                           self._marker_prefixes = dict(marker_prefixes)
+check	Run make check	2026-09-12T14:01:59.8161540Z E                           self._surface_lease_seconds = surface_lease_seconds
+check	Run make check	2026-09-12T14:01:59.8161897Z E                           self._clock: Callable[[], datetime] = clock
+check	Run make check	2026-09-12T14:01:59.8162235Z E                           self._log: BoundLogger = get_logger(__name__)
+check	Run make check	2026-09-12T14:01:59.8162484Z E                   
+check	Run make check	2026-09-12T14:01:59.8162771Z E                       async def on_dequeue(self, *, issue_key: str) -> None:
+check	Run make check	2026-09-12T14:01:59.8163174Z E                           """The run started: move the issue to its in-progress state."""
+check	Run make check	2026-09-12T14:01:59.8163552Z E                           await self._tracker.set_workflow_state(
+check	Run make check	2026-09-12T14:01:59.8163841Z E                               issue_key=issue_key,
+check	Run make check	2026-09-12T14:01:59.8164135Z E                               stage=LifecycleStage.IN_PROGRESS,
+check	Run make check	2026-09-12T14:01:59.8164502Z E                           )
+check	Run make check	2026-09-12T14:01:59.8164845Z E                           await self._log.ainfo("lifecycle_in_progress", issue_key=issue_key)
+check	Run make check	2026-09-12T14:01:59.8165138Z E                   
+check	Run make check	2026-09-12T14:01:59.8165354Z E                       async def on_pull_request(
+check	Run make check	2026-09-12T14:01:59.8165597Z E                           self,
+check	Run make check	2026-09-12T14:01:59.8165804Z E                           *,
+check	Run make check	2026-09-12T14:01:59.8166033Z E                           issue_key: str,
+check	Run make check	2026-09-12T14:01:59.8166291Z E                           feature_branch: str,
+check	Run make check	2026-09-12T14:01:59.8166558Z E                           feature_tip_sha: str,
+check	Run make check	2026-09-12T14:01:59.8166817Z E                           delivered: bool,
+check	Run make check	2026-09-12T14:01:59.8167069Z E                       ) -> None:
+check	Run make check	2026-09-12T14:01:59.8167438Z E                           """A pull request is open: move to review, and record what delivers it.
+check	Run make check	2026-09-12T14:01:59.8167745Z E                   
+check	Run make check	2026-09-12T14:01:59.8168056Z E                           The state write is unconditional and stays that way.  Both nodes
+check	Run make check	2026-09-12T14:01:59.8168499Z E                           that open a pull request leave a human with one to read, which is
+check	Run make check	2026-09-12T14:01:59.8169145Z E                           what the review stage means — the stall exit's do-not-merge branch
+check	Run make check	2026-09-12T14:01:59.8169870Z E                           needs a reader more than an accepted one does, and an issue left in
+check	Run make check	2026-09-12T14:01:59.8170632Z E                           the in-progress stage with nothing running is the lie the failure
+check	Run make check	2026-09-12T14:01:59.8171315Z E                           arm exists to prevent.
+check	Run make check	2026-09-12T14:01:59.8171667Z E                   
+check	Run make check	2026-09-12T14:01:59.8172220Z E                           The DELIVERABLE ref is the half that is NOT unconditional.  A ref is
+check	Run make check	2026-09-12T14:01:59.8173008Z E                           at-most-one and nothing in this process can delete one, so recording
+check	Run make check	2026-09-12T14:01:59.8173537Z E                           a branch the run's acceptance gate rejected would make it the base
+check	Run make check	2026-09-12T14:01:59.8174070Z E                           every dependent lane resolves to — and the designed recovery, a
+check	Run make check	2026-09-12T14:01:59.8174516Z E                           human closing the stall pull request so the pass re-fires, could
+check	Run make check	2026-09-12T14:01:59.8174966Z E                           never replace it.  A run that did not deliver records nothing here;
+check	Run make check	2026-09-12T14:01:59.8175413Z E                           the pull request still reaches the issue, in the terminal comment
+check	Run make check	2026-09-12T14:01:59.8175762Z E                           the outcome arm posts.
+check	Run make check	2026-09-12T14:01:59.8176007Z E                           """
+check	Run make check	2026-09-12T14:01:59.8176281Z E                           await self._tracker.set_workflow_state(
+check	Run make check	2026-09-12T14:01:59.8176801Z E                               issue_key=issue_key,
+check	Run make check	2026-09-12T14:01:59.8177099Z E                               stage=LifecycleStage.IN_REVIEW,
+check	Run make check	2026-09-12T14:01:59.8177345Z E                           )
+check	Run make check	2026-09-12T14:01:59.8177576Z E                           if delivered:
+check	Run make check	2026-09-12T14:01:59.8177850Z E                               await self._record_deliverable(
+check	Run make check	2026-09-12T14:01:59.8178136Z E                                   issue_key=issue_key,
+check	Run make check	2026-09-12T14:01:59.8178433Z E                                   feature_branch=feature_branch,
+check	Run make check	2026-09-12T14:01:59.8178747Z E                                   feature_tip_sha=feature_tip_sha,
+check	Run make check	2026-09-12T14:01:59.8179016Z E                               )
+check	Run make check	2026-09-12T14:01:59.8179231Z E                           else:
+check	Run make check	2026-09-12T14:01:59.8179474Z E                               await self._log.ainfo(
+check	Run make check	2026-09-12T14:01:59.8179780Z E                                   "lifecycle_undelivered_pull_request",
+check	Run make check	2026-09-12T14:01:59.8180086Z E                                   issue_key=issue_key,
+check	Run make check	2026-09-12T14:01:59.8180368Z E                                   branch=feature_branch,
+check	Run make check	2026-09-12T14:01:59.8180676Z E                                   pushed_head_sha=feature_tip_sha,
+check	Run make check	2026-09-12T14:01:59.8181035Z E                               )
+check	Run make check	2026-09-12T14:01:59.8181536Z E                           await self._log.ainfo("lifecycle_in_review", issue_key=issue_key)
+check	Run make check	2026-09-12T14:01:59.8181837Z E                   
+check	Run make check	2026-09-12T14:01:59.8182137Z E                       async def on_verified_merge(self, *, issue_key: str) -> None:
+check	Run make check	2026-09-12T14:01:59.8182577Z E                           """Retire the queue entry without asserting criterion completion."""
+check	Run make check	2026-09-12T14:01:59.8182950Z E                           await self._tracker.set_queue_state(
+check	Run make check	2026-09-12T14:01:59.8183236Z E                               issue_key=issue_key,
+check	Run make check	2026-09-12T14:01:59.8183515Z E                               state=QueueState.DONE,
+check	Run make check	2026-09-12T14:01:59.8183749Z E                           )
+check	Run make check	2026-09-12T14:01:59.8184102Z E                           await self._log.ainfo("lifecycle_queue_finished", issue_key=issue_key)
+check	Run make check	2026-09-12T14:01:59.8184406Z E                   
+check	Run make check	2026-09-12T14:01:59.8184617Z E                       async def on_run_failed(
+check	Run make check	2026-09-12T14:01:59.8184863Z E                           self,
+check	Run make check	2026-09-12T14:01:59.8185068Z E                           *,
+check	Run make check	2026-09-12T14:01:59.8185292Z E                           issue_key: str,
+check	Run make check	2026-09-12T14:01:59.8185633Z E                           job_id: str,
+check	Run make check	2026-09-12T14:01:59.8185893Z E                           pre_claim_state: str,
+check	Run make check	2026-09-12T14:01:59.8186170Z E                           failure_class: str | None,
+check	Run make check	2026-09-12T14:01:59.8186441Z E                           step: RaiseSite | None,
+check	Run make check	2026-09-12T14:01:59.8186783Z E                           visibility: RepoVisibility = RepoVisibility.PUBLIC,
+check	Run make check	2026-09-12T14:01:59.8187085Z E                       ) -> None:
+check	Run make check	2026-09-12T14:01:59.8187412Z E                           """The run ended with no terminal outcome: undo, then say so.
+check	Run make check	2026-09-12T14:01:59.8187699Z E                   
+check	Run make check	2026-09-12T14:01:59.8188020Z E                           Ruled 2026-08-26: option (a), restore the prior state and comment.
+check	Run make check	2026-09-12T14:01:59.8188544Z E                           The vocabulary this operation declares has no failure state — only
+check	Run make check	2026-09-12T14:01:59.8189042Z E                           in-progress, in-review and done — so the issue goes back to the
+check	Run make check	2026-09-12T14:01:59.8189483Z E                           state the pass found it in, and a comment carries the rest.  The
+check	Run make check	2026-09-12T14:01:59.8189919Z E                           in-progress stage with nothing running is the lie the criterion
+check	Run make check	2026-09-12T14:01:59.8190328Z E                           exists to prevent, and a comment alone does not remove it.
+check	Run make check	2026-09-12T14:01:59.8190620Z E                   
+check	Run make check	2026-09-12T14:01:59.8190942Z E                           Order matches the success path: the state lands before the comment
+check	Run make check	2026-09-12T14:01:59.8191680Z E                           reports it, so no reader sees the note beside a stale state.  The
+check	Run make check	2026-09-12T14:01:59.8192128Z E                           claim is released by the watcher after every stream end the process
+check	Run make check	2026-09-12T14:01:59.8192592Z E                           survives, this arm included, so the next pass is free to re-fire as
+check	Run make check	2026-09-12T14:01:59.8192990Z E                           soon as it ticks rather than waiting a lease out.
+check	Run make check	2026-09-12T14:01:59.8193272Z E                           """
+check	Run make check	2026-09-12T14:01:59.8193560Z E                           await self._tracker.restore_workflow_state(
+check	Run make check	2026-09-12T14:01:59.8193859Z E                               issue_key=issue_key,
+check	Run make check	2026-09-12T14:01:59.8194151Z E                               state_name=pre_claim_state,
+check	Run make check	2026-09-12T14:01:59.8194381Z E                           )
+check	Run make check	2026-09-12T14:01:59.8194703Z E                           # Three states on both halves: a failure class the producer did
+check	Run make check	2026-09-12T14:01:59.8195131Z E                           # not name, and a step it did not name, are reported as absent
+check	Run make check	2026-09-12T14:01:59.8195557Z E                           # rather than guessed at.  ``raise_site`` is the enumeration this
+check	Run make check	2026-09-12T14:01:59.8195955Z E                           # codebase already keeps for "which step raised".
+check	Run make check	2026-09-12T14:01:59.8196367Z E                           named_failure = (
+check	Run make check	2026-09-12T14:01:59.8196757Z E                               "an unnamed failure class" if failure_class is None else failure_class
+check	Run make check	2026-09-12T14:01:59.8197080Z E                           )
+check	Run make check	2026-09-12T14:01:59.8197418Z E                           named_step = "no step named" if step is None else f"step {step}"
+check	Run make check	2026-09-12T14:01:59.8197845Z E                           # DERIVED for the reason the outcome comment is: a job id, an
+check	Run make check	2026-09-12T14:01:59.8198282Z E                           # exception class name and a RaiseSite member are all readable off
+check	Run make check	2026-09-12T14:01:59.8198726Z E                           # the job-status surface by a process that never held the session.
+check	Run make check	2026-09-12T14:01:59.8199092Z E                           body = await gated_write(
+check	Run make check	2026-09-12T14:01:59.8199359Z E                               gate=self._gate,
+check	Run make check	2026-09-12T14:01:59.8199617Z E                               log=self._log,
+check	Run make check	2026-09-12T14:01:59.8199869Z E                               content=(
+check	Run make check	2026-09-12T14:01:59.8200263Z E                                   f"job {job_id} ended without a terminal outcome — "
+check	Run make check	2026-09-12T14:01:59.8200614Z E                                   f"{named_failure}, {named_step}. "
+check	Run make check	2026-09-12T14:01:59.8200995Z E                                   "The issue is back in the state it held before the claim."
+check	Run make check	2026-09-12T14:01:59.8201380Z E                               ),
+check	Run make check	2026-09-12T14:01:59.8201637Z E                               visibility=visibility,
+check	Run make check	2026-09-12T14:01:59.8201929Z E                               shape=WriterShape.PROSE,
+check	Run make check	2026-09-12T14:01:59.8202272Z E                               destination=OutboundDestination.TRACKER_COMMENT,
+check	Run make check	2026-09-12T14:01:59.8202632Z E                               content_class=ContentClass.DERIVED,
+check	Run make check	2026-09-12T14:01:59.8202879Z E                           )
+check	Run make check	2026-09-12T14:01:59.8203217Z E                           await self._tracker.post_comment(issue_key=issue_key, body=body)
+check	Run make check	2026-09-12T14:01:59.8203570Z E                           await self._log.aerror(
+check	Run make check	2026-09-12T14:01:59.8203848Z E                               "lifecycle_run_failed",
+check	Run make check	2026-09-12T14:01:59.8204119Z E                               issue_key=issue_key,
+check	Run make check	2026-09-12T14:01:59.8204383Z E                               job_id=job_id,
+check	Run make check	2026-09-12T14:01:59.8204666Z E                               restored_state=pre_claim_state,
+check	Run make check	2026-09-12T14:01:59.8204968Z E                               failure_class=failure_class,
+check	Run make check	2026-09-12T14:01:59.8205237Z E                               step=step,
+check	Run make check	2026-09-12T14:01:59.8205454Z E                           )
+check	Run make check	2026-09-12T14:01:59.8205645Z E                   
+check	Run make check	2026-09-12T14:01:59.8205878Z E                       async def on_terminal_outcome(
+check	Run make check	2026-09-12T14:01:59.8206240Z E                           self,
+check	Run make check	2026-09-12T14:01:59.8206456Z E                           *,
+check	Run make check	2026-09-12T14:01:59.8206685Z E                           issue_key: str,
+check	Run make check	2026-09-12T14:01:59.8206935Z E                           job_id: str,
+check	Run make check	2026-09-12T14:01:59.8207202Z E                           outcome: WorkflowOutcome,
+check	Run make check	2026-09-12T14:01:59.8207542Z E                           visibility: RepoVisibility = RepoVisibility.PUBLIC,
+check	Run make check	2026-09-12T14:01:59.8207842Z E                       ) -> None:
+check	Run make check	2026-09-12T14:01:59.8208203Z E                           """Post the run's terminal outcome, read off the job-status surface."""
+check	Run make check	2026-09-12T14:01:59.8208669Z E                           # The TARGET REPOSITORY's visibility is not the question here, and
+check	Run make check	2026-09-12T14:01:59.8209119Z E                           # never was: this payload lands on the coordination surface. What
+check	Run make check	2026-09-12T14:01:59.8209550Z E                           # settles it is the posture of the BOARD the issue sits on, which
+check	Run make check	2026-09-12T14:01:59.8210050Z E                           # rides in from the pass that claimed it — a private-sync board and
+check	Run make check	2026-09-12T14:01:59.8210455Z E                           # a mirrored one are both declared by one operation.
+check	Run make check	2026-09-12T14:01:59.8210967Z E                           # DERIVED: the body is a job id and a WorkflowOutcome member, both
+check	Run make check	2026-09-12T14:01:59.8211599Z E                           # readable off the job-status surface. A process that never held the
+check	Run make check	2026-09-12T14:01:59.8211992Z E                           # session recomputes this note exactly.
+check	Run make check	2026-09-12T14:01:59.8212316Z E                           marker = compose_comment_marker(
+check	Run make check	2026-09-12T14:01:59.8212616Z E                               prefixes=self._marker_prefixes,
+check	Run make check	2026-09-12T14:01:59.8212903Z E                               purpose="run_outcome",
+check	Run make check	2026-09-12T14:01:59.8213180Z E                               lane=issue_key,
+check	Run make check	2026-09-12T14:01:59.8213448Z E                               occurrence_key=job_id,
+check	Run make check	2026-09-12T14:01:59.8213684Z E                           )
+check	Run make check	2026-09-12T14:01:59.8213920Z E                           surfaces = frozenset(
+check	Run make check	2026-09-12T14:01:59.8214161Z E                               {
+check	Run make check	2026-09-12T14:01:59.8214409Z E                                   WritableSurface(
+check	Run make check	2026-09-12T14:01:59.8214723Z E                                       kind=SurfaceKind.MARKER_COMMENT,
+check	Run make check	2026-09-12T14:01:59.8215100Z E                                       ref=ScopeRef(kind=ScopeKind.ISSUE, key=issue_key),
+check	Run make check	2026-09-12T14:01:59.8215423Z E                                       marker=marker,
+check	Run make check	2026-09-12T14:01:59.8215669Z E                                   )
+check	Run make check	2026-09-12T14:01:59.8215885Z E                               }
+check	Run make check	2026-09-12T14:01:59.8216082Z E                           )
+check	Run make check	2026-09-12T14:01:59.8216332Z E                           async with RunSurfaceLease(
+check	Run make check	2026-09-12T14:01:59.8216606Z E                               tracker=self._tracker,
+check	Run make check	2026-09-12T14:01:59.8216869Z E                               job_id=job_id,
+check	Run make check	2026-09-12T14:01:59.8217132Z E                               surfaces=surfaces,
+check	Run make check	2026-09-12T14:01:59.8217440Z E                               lease_seconds=self._surface_lease_seconds,
+check	Run make check	2026-09-12T14:01:59.8217728Z E                           ) as lease:
+check	Run make check	2026-09-12T14:01:59.8217998Z E                               body = await gated_write(
+check	Run make check	2026-09-12T14:01:59.8218275Z E                                   gate=self._gate,
+check	Run make check	2026-09-12T14:01:59.8218534Z E                                   log=self._log,
+check	Run make check	2026-09-12T14:01:59.8218889Z E                                   content=f"job {job_id} reached outcome {outcome.value}",
+check	Run make check	2026-09-12T14:01:59.8219229Z E                                   visibility=visibility,
+check	Run make check	2026-09-12T14:01:59.8219529Z E                                   shape=WriterShape.PROSE,
+check	Run make check	2026-09-12T14:01:59.8219872Z E                                   destination=OutboundDestination.TRACKER_COMMENT,
+check	Run make check	2026-09-12T14:01:59.8220224Z E                                   content_class=ContentClass.DERIVED,
+check	Run make check	2026-09-12T14:01:59.8220610Z E                               )
+check	Run make check	2026-09-12T14:01:59.8220851Z E                               await lease.renew()
+check	Run make check	2026-09-12T14:01:59.8221200Z E                               await settle(
+check	Run make check	2026-09-12T14:01:59.8221489Z E                                   self._tracker.upsert_comment(
+check	Run make check	2026-09-12T14:01:59.8221871Z E                                       target=issue_key, marker=marker, body=body, holder=job_id
+check	Run make check	2026-09-12T14:01:59.8222182Z E                                   )
+check	Run make check	2026-09-12T14:01:59.8222408Z E                               )
+check	Run make check	2026-09-12T14:01:59.8222643Z E                           await self._log.ainfo(
+check	Run make check	2026-09-12T14:01:59.8222926Z E                               "lifecycle_outcome_comment",
+check	Run make check	2026-09-12T14:01:59.8223201Z E                               issue_key=issue_key,
+check	Run make check	2026-09-12T14:01:59.8223455Z E                               job_id=job_id,
+check	Run make check	2026-09-12T14:01:59.8223715Z E                               outcome=outcome.value,
+check	Run make check	2026-09-12T14:01:59.8223948Z E                           )
+check	Run make check	2026-09-12T14:01:59.8224136Z E                   
+check	Run make check	2026-09-12T14:01:59.8224374Z E                       async def _record_deliverable(
+check	Run make check	2026-09-12T14:01:59.8224623Z E                           self,
+check	Run make check	2026-09-12T14:01:59.8224940Z E                           *,
+check	Run make check	2026-09-12T14:01:59.8225167Z E                           issue_key: str,
+check	Run make check	2026-09-12T14:01:59.8225420Z E                           feature_branch: str,
+check	Run make check	2026-09-12T14:01:59.8225688Z E                           feature_tip_sha: str,
+check	Run make check	2026-09-12T14:01:59.8225933Z E                       ) -> None:
+check	Run make check	2026-09-12T14:01:59.8226268Z E                           """Record the issue's DELIVERABLE ref, or say why it could not.
+check	Run make check	2026-09-12T14:01:59.8226551Z E                   
+check	Run make check	2026-09-12T14:01:59.8226857Z E                           The port's at-most-one-DELIVERABLE rule stays: a ref naming a
+check	Run make check	2026-09-12T14:01:59.8227282Z E                           DIFFERENT branch is refused there and never silently replaced,
+check	Run make check	2026-09-12T14:01:59.8227741Z E                           because replacing it would move every dependent lane's base with
+check	Run make check	2026-09-12T14:01:59.8228199Z E                           nothing saying so.  Recording the ref this arm already recorded is
+check	Run make check	2026-09-12T14:01:59.8228545Z E                           the port's own no-op.
+check	Run make check	2026-09-12T14:01:59.8228766Z E                   
+check	Run make check	2026-09-12T14:01:59.8229099Z E                           The refusal is caught rather than propagated.  A conflicting ref is
+check	Run make check	2026-09-12T14:01:59.8229563Z E                           a fact about the board that a human resolves; killing the rest of a
+check	Run make check	2026-09-12T14:01:59.8230005Z E                           run's lifecycle write-back over it would leave the issue in the
+check	Run make check	2026-09-12T14:01:59.8230522Z E                           in-progress stage with nothing running — the exact lie the failure
+check	Run make check	2026-09-12T14:01:59.8230872Z E                           arm exists to prevent.
+check	Run make check	2026-09-12T14:01:59.8231253Z E                           """
+check	Run make check	2026-09-12T14:01:59.8231504Z E                           try:
+check	Run make check	2026-09-12T14:01:59.8231789Z E                               await self._tracker.record_work_ref(
+check	Run make check	2026-09-12T14:01:59.8232129Z E                                   ref=WorkRef(
+check	Run make check	2026-09-12T14:01:59.8232513Z E                                       issue_id=issue_key,
+check	Run make check	2026-09-12T14:01:59.8242109Z E                                       role=WorkRefRole.DELIVERABLE,
+check	Run make check	2026-09-12T14:01:59.8242600Z E                                       branch=feature_branch,
+check	Run make check	2026-09-12T14:01:59.8243087Z E                                       pushed_head_sha=feature_tip_sha,
+check	Run make check	2026-09-12T14:01:59.8243690Z E                                       recorded_at=self._clock(),
+check	Run make check	2026-09-12T14:01:59.8244131Z E                                   ),
+check	Run make check	2026-09-12T14:01:59.8244493Z E                               )
+check	Run make check	2026-09-12T14:01:59.8244794Z E                           except DuplicateWorkRefError as exc:
+check	Run make check	2026-09-12T14:01:59.8245120Z E                               await self._log.aerror(
+check	Run make check	2026-09-12T14:01:59.8245592Z E                                   "deliverable_ref_conflict",
+check	Run make check	2026-09-12T14:01:59.8245896Z E                                   issue_key=issue_key,
+check	Run make check	2026-09-12T14:01:59.8246216Z E                                   existing_branch=exc.existing_branch,
+check	Run make check	2026-09-12T14:01:59.8246542Z E                                   offered_branch=exc.offered_branch,
+check	Run make check	2026-09-12T14:01:59.8246849Z E                                   offered_sha=feature_tip_sha,
+check	Run make check	2026-09-12T14:01:59.8247104Z E                               )
+check	Run make check	2026-09-12T14:01:59.8247319Z E                               return
+check	Run make check	2026-09-12T14:01:59.8247608Z E                           await self._log.ainfo(
+check	Run make check	2026-09-12T14:01:59.8247908Z E                               "lifecycle_deliverable_ref",
+check	Run make check	2026-09-12T14:01:59.8248196Z E                               issue_key=issue_key,
+check	Run make check	2026-09-12T14:01:59.8248474Z E                               branch=feature_branch,
+check	Run make check	2026-09-12T14:01:59.8248771Z E                               pushed_head_sha=feature_tip_sha,
+check	Run make check	2026-09-12T14:01:59.8249032Z E                           )
+check	Run make check	2026-09-12T14:01:59.8249160Z 
+check	Run make check	2026-09-12T14:01:59.8249356Z tests/prompts/test_operation_config.py:337: AssertionError
+check	Run make check	2026-09-12T14:01:59.8249779Z _____________ test_placeholder_mapping_is_total_in_both_directions _____________
+check	Run make check	2026-09-12T14:01:59.8250150Z 
+check	Run make check	2026-09-12T14:01:59.8250337Z     def test_placeholder_mapping_is_total_in_both_directions() -> None:
+check	Run make check	2026-09-12T14:01:59.8250751Z         """Every placeholder maps to one path; every field is template-reachable."""
+check	Run make check	2026-09-12T14:01:59.8251448Z         rows = markdown_rows("## Placeholder → OperationConfig field")
+check	Run make check	2026-09-12T14:01:59.8251778Z         mapped = {row[0]: row[1] for row in rows}
+check	Run make check	2026-09-12T14:01:59.8252038Z         assert len(mapped) == len(rows)
+check	Run make check	2026-09-12T14:01:59.8252241Z     
+check	Run make check	2026-09-12T14:01:59.8252571Z         # Direction 1 — no placeholder the templates reference is unmapped.
+check	Run make check	2026-09-12T14:01:59.8252906Z         referenced = template_placeholders()
+check	Run make check	2026-09-12T14:01:59.8253237Z >       assert referenced == set(mapped), referenced ^ set(mapped)
+check	Run make check	2026-09-12T14:01:59.8253583Z E       AssertionError: {'workflow_states.done'}
+check	Run make check	2026-09-12T14:01:59.8253947Z E       assert {'agent_ident...nnector', ...} == {'agent_ident...nnector', ...}
+check	Run make check	2026-09-12T14:01:59.8254227Z E         
+check	Run make check	2026-09-12T14:01:59.8254428Z E         Extra items in the right set:
+check	Run make check	2026-09-12T14:01:59.8254665Z E         'workflow_states.done'
+check	Run make check	2026-09-12T14:01:59.8254847Z E         
+check	Run make check	2026-09-12T14:01:59.8255002Z E         Full diff:
+check	Run make check	2026-09-12T14:01:59.8255161Z E           {
+check	Run make check	2026-09-12T14:01:59.8255353Z E               'agent_identities.0',
+check	Run make check	2026-09-12T14:01:59.8255592Z E               'agent_identities.1',
+check	Run make check	2026-09-12T14:01:59.8255834Z E               'documents.constitution.id',
+check	Run make check	2026-09-12T14:01:59.8256107Z E               'endpoints.cloudflare_docs_mcp',
+check	Run make check	2026-09-12T14:01:59.8256367Z E               'endpoints.host_runner',
+check	Run make check	2026-09-12T14:01:59.8256621Z E               'endpoints.notion_connector',
+check	Run make check	2026-09-12T14:01:59.8256873Z E               'issue_labels.criterion',
+check	Run make check	2026-09-12T14:01:59.8257141Z E               'knowledge.constitution',
+check	Run make check	2026-09-12T14:01:59.8257410Z E               'knowledge.memories',
+check	Run make check	2026-09-12T14:01:59.8257649Z E               'knowledge.notes',
+check	Run make check	2026-09-12T14:01:59.8257878Z E               'knowledge.personas',
+check	Run make check	2026-09-12T14:01:59.8258112Z E               'knowledge.run_logs',
+check	Run make check	2026-09-12T14:01:59.8258353Z E               'marker_prefixes.repository',
+check	Run make check	2026-09-12T14:01:59.8258599Z E               'operation_name',
+check	Run make check	2026-09-12T14:01:59.8258824Z E               'organize_mandates',
+check	Run make check	2026-09-12T14:01:59.8259068Z E               'principals.1.tracker_user',
+check	Run make check	2026-09-12T14:01:59.8259315Z E               'principals.2.handle',
+check	Run make check	2026-09-12T14:01:59.8259556Z E               'principals.2.tracker_user',
+check	Run make check	2026-09-12T14:01:59.8259830Z E               'principals.approver.forge_handle',
+check	Run make check	2026-09-12T14:01:59.8260125Z E               'principals.approver.tracker_user',
+check	Run make check	2026-09-12T14:01:59.8260416Z E               'principals.assignee.tracker_user',
+check	Run make check	2026-09-12T14:01:59.8260799Z E               'private_surface',
+check	Run make check	2026-09-12T14:01:59.8261044Z E               'queue_states.approved',
+check	Run make check	2026-09-12T14:01:59.8261392Z E               'queue_states.decision',
+check	Run make check	2026-09-12T14:01:59.8261637Z E               'queue_states.done',
+check	Run make check	2026-09-12T14:01:59.8261881Z E               'queue_states.proposed',
+check	Run make check	2026-09-12T14:01:59.8262121Z E               'queue_states.triage',
+check	Run make check	2026-09-12T14:01:59.8262350Z E               'records.fire',
+check	Run make check	2026-09-12T14:01:59.8262613Z E               'records.fire.columns.what_happened',
+check	Run make check	2026-09-12T14:01:59.8262874Z E               'records.fire.id',
+check	Run make check	2026-09-12T14:01:59.8263107Z E               'records.fire.name',
+check	Run make check	2026-09-12T14:01:59.8263341Z E               'records.fire.system',
+check	Run make check	2026-09-12T14:01:59.8263581Z E               'records.fire_prep.id',
+check	Run make check	2026-09-12T14:01:59.8263824Z E               'records.fire_prep.name',
+check	Run make check	2026-09-12T14:01:59.8264064Z E               'records.grooming.id',
+check	Run make check	2026-09-12T14:01:59.8264300Z E               'records.grooming.name',
+check	Run make check	2026-09-12T14:01:59.8264520Z E               'repos',
+check	Run make check	2026-09-12T14:01:59.8264726Z E               'run_event_states',
+check	Run make check	2026-09-12T14:01:59.8264947Z E               'scope_labels',
+check	Run make check	2026-09-12T14:01:59.8265169Z E               'scope_labels.approved',
+check	Run make check	2026-09-12T14:01:59.8265528Z E               'scope_labels.proposed',
+check	Run make check	2026-09-12T14:01:59.8265762Z E               'scope_labels.triage',
+check	Run make check	2026-09-12T14:01:59.8265965Z E               'teams',
+check	Run make check	2026-09-12T14:01:59.8266172Z E         -     'workflow_states.done',
+check	Run make check	2026-09-12T14:01:59.8266426Z E               'workflow_states.in_progress',
+check	Run make check	2026-09-12T14:01:59.8266688Z E               'workflow_states.in_review',
+check	Run make check	2026-09-12T14:01:59.8266908Z E               'workspace',
+check	Run make check	2026-09-12T14:01:59.8267085Z E           }
+check	Run make check	2026-09-12T14:01:59.8267178Z 
+check	Run make check	2026-09-12T14:01:59.8267357Z tests/prompts/test_operation_config.py:629: AssertionError
+check	Run make check	2026-09-12T14:01:59.8267774Z ______ test_the_queue_terminal_turns_on_demonstration_and_not_on_a_merge _______
+check	Run make check	2026-09-12T14:01:59.8268009Z 
+check	Run make check	2026-09-12T14:01:59.8268199Z     def test_the_queue_terminal_turns_on_demonstration_and_not_on_a_merge():
+check	Run make check	2026-09-12T14:01:59.8268601Z         """Confirmed in substance: the base did gate its terminal on a merge."""
+check	Run make check	2026-09-12T14:01:59.8268895Z         text = template()
+check	Run make check	2026-09-12T14:01:59.8269167Z         assert "PR merged →" not in text
+check	Run make check	2026-09-12T14:01:59.8269475Z         assert "the work demonstrated in the branch that carries it" in text
+check	Run make check	2026-09-12T14:01:59.8269743Z >       assert (
+check	Run make check	2026-09-12T14:01:59.8270035Z             "Demonstration is a fact about the branch and never about the branch's fate"
+check	Run make check	2026-09-12T14:01:59.8270333Z             in text
+check	Run make check	2026-09-12T14:01:59.8270491Z         )
+check	Run make check	2026-09-12T14:01:59.8271949Z E       assert "Demonstration is a fact about the branch and never about the branch's fate" in '<role>\nYou are the project-management grooming pass for the {{operation_name}} delivery operation — you own the corr...n empty pass is a finding, and\na gap in the log is indistinguishable from a pass that never ran.\n</notion_logging>\n'
+check	Run make check	2026-09-12T14:01:59.8272814Z 
+check	Run make check	2026-09-12T14:01:59.8273005Z tests/prompts/test_supervision_adoption.py:55: AssertionError
+check	Run make check	2026-09-12T14:01:59.8273423Z ____________ test_a_pass_the_root_built_follows_the_run_it_enqueued ____________
+check	Run make check	2026-09-12T14:01:59.8273658Z 
+check	Run make check	2026-09-12T14:01:59.8273848Z     async def test_a_pass_the_root_built_follows_the_run_it_enqueued() -> None:
+check	Run make check	2026-09-12T14:01:59.8274236Z         """The lifecycle write-back is reached from the composition root.
+check	Run make check	2026-09-12T14:01:59.8274506Z     
+check	Run make check	2026-09-12T14:01:59.8274767Z         Nothing here calls ``TrackerLifecycleWriter``.  The only input is a
+check	Run make check	2026-09-12T14:01:59.8275157Z         dispatch pass built by ``build_dispatch_passes`` running over a queue
+check	Run make check	2026-09-12T14:01:59.8275550Z         whose job emits a completed run, and the observable is the transition
+check	Run make check	2026-09-12T14:01:59.8275976Z         on the tracker — so a root that constructs the writer without wiring
+check	Run make check	2026-09-12T14:01:59.8276248Z         it fails this.
+check	Run make check	2026-09-12T14:01:59.8276532Z         """
+check	Run make check	2026-09-12T14:01:59.8276712Z         tracker = FakeTrackerPort(
+check	Run make check	2026-09-12T14:01:59.8276955Z             issues=[make_tracker_issue("K-1")],
+check	Run make check	2026-09-12T14:01:59.8277170Z         )
+check	Run make check	2026-09-12T14:01:59.8277325Z         queue = FakeJobQueue(
+check	Run make check	2026-09-12T14:01:59.8277519Z             events=[
+check	Run make check	2026-09-12T14:01:59.8277716Z                 WorkflowCompleteEvent(
+check	Run make check	2026-09-12T14:01:59.8277951Z                     feature_branch="feature",
+check	Run make check	2026-09-12T14:01:59.8278186Z                     ralph_branch="ralph",
+check	Run make check	2026-09-12T14:01:59.8278409Z                     total_iterations=1,
+check	Run make check	2026-09-12T14:01:59.8278629Z                     accepted=True,
+check	Run make check	2026-09-12T14:01:59.8278867Z                     outcome=WorkflowOutcome.ci_passed,
+check	Run make check	2026-09-12T14:01:59.8279109Z                     merged=True,
+check	Run make check	2026-09-12T14:01:59.8279291Z                 ),
+check	Run make check	2026-09-12T14:01:59.8279448Z             ],
+check	Run make check	2026-09-12T14:01:59.8279591Z         )
+check	Run make check	2026-09-12T14:01:59.8279773Z         built = await build_dispatch_passes(
+check	Run make check	2026-09-12T14:01:59.8280043Z             recorder=RunRecorder(records={}, sinks={}),
+check	Run make check	2026-09-12T14:01:59.8280294Z             config=AppConfig(),
+check	Run make check	2026-09-12T14:01:59.8280509Z             operation=operation_config(),
+check	Run make check	2026-09-12T14:01:59.8280725Z             tracker=tracker,
+check	Run make check	2026-09-12T14:01:59.8281074Z             ledger=tracker.self_writes,
+check	Run make check	2026-09-12T14:01:59.8281391Z             delivery=FakeDeliveryProbe(),
+check	Run make check	2026-09-12T14:01:59.8281595Z             queue=queue,
+check	Run make check	2026-09-12T14:01:59.8281774Z             registry=queue,
+check	Run make check	2026-09-12T14:01:59.8281978Z             gate=PassThroughGate(),
+check	Run make check	2026-09-12T14:01:59.8282209Z             git=FakeGitService(),
+check	Run make check	2026-09-12T14:01:59.8282422Z             cache=FakeRepoCache(),
+check	Run make check	2026-09-12T14:01:59.8282667Z             integration_workspace_dir=INTEGRATION_DIR,
+check	Run make check	2026-09-12T14:01:59.8282890Z         )
+check	Run make check	2026-09-12T14:01:59.8283029Z     
+check	Run make check	2026-09-12T14:01:59.8283217Z         await built.passes[0].run(TICK_STARTED_AT)
+check	Run make check	2026-09-12T14:01:59.8283554Z         # The write-back runs in a background watch, so the test waits for the
+check	Run make check	2026-09-12T14:01:59.8283947Z         # terminal chain it asserts on: the DONE transition, then the comment
+check	Run make check	2026-09-12T14:01:59.8284270Z         # that ``LifecycleWatcher`` posts after it.
+check	Run make check	2026-09-12T14:01:59.8284497Z         await settled(
+check	Run make check	2026-09-12T14:01:59.8284673Z             lambda: (
+check	Run make check	2026-09-12T14:01:59.8284930Z                 ("K-1", LifecycleStage.DONE) in tracker.workflow_writes
+check	Run make check	2026-09-12T14:01:59.8285219Z                 and bool(tracker.comments)
+check	Run make check	2026-09-12T14:01:59.8285419Z             ),
+check	Run make check	2026-09-12T14:01:59.8285564Z         )
+check	Run make check	2026-09-12T14:01:59.8285705Z     
+check	Run make check	2026-09-12T14:01:59.8285887Z         assert queue.attached == ["job-0001"]
+check	Run make check	2026-09-12T14:01:59.8286153Z >       assert tracker.workflow_writes == [
+check	Run make check	2026-09-12T14:01:59.8286404Z             ("K-1", LifecycleStage.IN_PROGRESS),
+check	Run make check	2026-09-12T14:01:59.8286651Z             ("K-1", LifecycleStage.DONE),
+check	Run make check	2026-09-12T14:01:59.8286851Z         ]
+check	Run make check	2026-09-12T14:01:59.8287189Z E       AssertionError: assert [('K-1', <Lif...n_progress'>)] == [('K-1', <Lif...ONE: 'done'>)]
+check	Run make check	2026-09-12T14:01:59.8287510Z E         
+check	Run make check	2026-09-12T14:01:59.8287803Z E         Right contains one more item: ('K-1', <LifecycleStage.DONE: 'done'>)
+check	Run make check	2026-09-12T14:01:59.8288081Z E         
+check	Run make check	2026-09-12T14:01:59.8288237Z E         Full diff:
+check	Run make check	2026-09-12T14:01:59.8288401Z E           [
+check	Run make check	2026-09-12T14:01:59.8288558Z E               (
+check	Run make check	2026-09-12T14:01:59.8288725Z E                   'K-1',
+check	Run make check	2026-09-12T14:01:59.8288996Z E                   <LifecycleStage.IN_PROGRESS: 'in_progress'>,
+check	Run make check	2026-09-12T14:01:59.8289239Z E               ),
+check	Run make check	2026-09-12T14:01:59.8289399Z E         -     (
+check	Run make check	2026-09-12T14:01:59.8289565Z E         -         'K-1',
+check	Run make check	2026-09-12T14:01:59.8289808Z E         -         <LifecycleStage.DONE: 'done'>,
+check	Run make check	2026-09-12T14:01:59.8290031Z E         -     ),
+check	Run make check	2026-09-12T14:01:59.8290188Z E           ]
+check	Run make check	2026-09-12T14:01:59.8290279Z 
+check	Run make check	2026-09-12T14:01:59.8290447Z tests/services/test_dispatch_pass.py:902: AssertionError
+check	Run make check	2026-09-12T14:01:59.8290830Z ----------------------------- Captured stdout call -----------------------------
+check	Run make check	2026-09-12T14:01:59.8291779Z 2026-09-12 14:00:29 [info     ] pass_gate_delta                changed=['K-1'] mark=2026-01-01T00:00:00+00:00 signals=['approved_changed'] unanswerable=[]
+check	Run make check	2026-09-12T14:01:59.8292407Z 2026-09-12 14:00:29 [info     ] dispatch_ranked                order=['K-1'] tied=['K-1'] winner=K-1
+check	Run make check	2026-09-12T14:01:59.8292894Z 2026-09-12 14:00:29 [info     ] fire_context_assembled         asset_keys=[] issue_key=K-1
+check	Run make check	2026-09-12T14:01:59.8293524Z 2026-09-12 14:00:29 [info     ] dispatch_fire_enqueued         base_branch=trunk base_role=None issue_key=K-1 job_id=job-0001 outcome=fire_enqueued
+check	Run make check	2026-09-12T14:01:59.8294264Z 2026-09-12 14:00:29 [info     ] dispatch_pass_completed        changed=['K-1'] claimed_issue_key=K-1 job_id=job-0001 outcome=fire_enqueued
+check	Run make check	2026-09-12T14:01:59.8294791Z 2026-09-12 14:00:29 [info     ] lifecycle_in_progress          issue_key=K-1
+check	Run make check	2026-09-12T14:01:59.8295178Z 2026-09-12 14:00:29 [info     ] lifecycle_queue_finished       issue_key=K-1
+check	Run make check	2026-09-12T14:01:59.8296149Z 2026-09-12 14:00:29 [info     ] outbound_content_gated         categories=[] content_digest=fdfd09ada3e6d93a2f2e6c1cc13db95ffcdb0cdb1495ec29b06ab7d0a66a2f97 failure=None hits=[] surface=tracker verdict=clean visibility=public writer=tracker_comment
+check	Run make check	2026-09-12T14:01:59.8297204Z 2026-09-12 14:00:29 [info     ] lifecycle_outcome_comment      issue_key=K-1 job_id=job-0001 outcome=ci_passed
+check	Run make check	2026-09-12T14:01:59.8297725Z 2026-09-12 14:00:29 [info     ] claim_released                 holder=kodezart issue_key=K-1
+check	Run make check	2026-09-12T14:01:59.8298315Z 2026-09-12 14:00:29 [info     ] lifecycle_watch_finished       issue_key=K-1 job_id=job-0001 run_started=True terminal_outcome=True
+check	Run make check	2026-09-12T14:01:59.8298937Z 2026-09-12 14:00:29 [info     ] run_record_destination_undeclared kind=fire name=K-1 outcome=completed
+check	Run make check	2026-09-12T14:01:59.8299423Z ____________ test_cold_clients_read_current_native_bytes[fake-port] ____________
+check	Run make check	2026-09-12T14:01:59.8299654Z 
+check	Run make check	2026-09-12T14:01:59.8299856Z tracker = <tests.fakes.FakeTrackerPort object at 0x7fdcf430a660>
+check	Run make check	2026-09-12T14:01:59.8300252Z server = <tests.fakes.FakeLinearMcpServer object at 0x7fdcf433b020>
+check	Run make check	2026-09-12T14:01:59.8300456Z 
+check	Run make check	2026-09-12T14:01:59.8300641Z     async def test_cold_clients_read_current_native_bytes(tracker, server):
+check	Run make check	2026-09-12T14:01:59.8301047Z         stored = await seed(tracker, data={**record_data(), "filesChanged": 11})
+check	Run make check	2026-09-12T14:01:59.8301466Z         if isinstance(tracker, FakeTrackerPort):
+check	Run make check	2026-09-12T14:01:59.8301696Z             issues = [
+check	Run make check	2026-09-12T14:01:59.8301963Z                 TrackerIssue.model_validate_json(item.model_dump_json())
+check	Run make check	2026-09-12T14:01:59.8302273Z                 for item in tracker.issues.values()
+check	Run make check	2026-09-12T14:01:59.8302491Z             ]
+check	Run make check	2026-09-12T14:01:59.8302653Z             comments = [
+check	Run make check	2026-09-12T14:01:59.8302928Z                 TrackerComment.model_validate_json(item.model_dump_json())
+check	Run make check	2026-09-12T14:01:59.8303244Z                 for item in tracker.comments
+check	Run make check	2026-09-12T14:01:59.8303449Z             ]
+check	Run make check	2026-09-12T14:01:59.8303650Z             tracker = FakeTrackerPort(issues=issues)
+check	Run make check	2026-09-12T14:01:59.8303905Z             tracker.comments = comments
+check	Run make check	2026-09-12T14:01:59.8304104Z         else:
+check	Run make check	2026-09-12T14:01:59.8304304Z             tracker = linear_over_fake_mcp(server)
+check	Run make check	2026-09-12T14:01:59.8304573Z         result = await observe_recorded_barren_tick(
+check	Run make check	2026-09-12T14:01:59.8304877Z             tracker=tracker, **arguments(record_ref=stored.comment_key)
+check	Run make check	2026-09-12T14:01:59.8305130Z         )
+check	Run make check	2026-09-12T14:01:59.8305362Z         assert result.readings[2].source_ref == stored.comment_key
+check	Run make check	2026-09-12T14:01:59.8305787Z >       await seed(tracker, data={**record_data(), "filesChanged": 0, "commitsAhead": 0})
+check	Run make check	2026-09-12T14:01:59.8306025Z 
+check	Run make check	2026-09-12T14:01:59.8306176Z tests/tracker/test_barren_record_collector.py:169: 
+check	Run make check	2026-09-12T14:01:59.8306510Z _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+check	Run make check	2026-09-12T14:01:59.8306838Z tests/tracker/test_lane_records.py:43: in seed
+check	Run make check	2026-09-12T14:01:59.8307208Z     return await leased_comment(
+check	Run make check	2026-09-12T14:01:59.8307485Z tests/tracker/lease_fixtures.py:40: in leased_comment
+check	Run make check	2026-09-12T14:01:59.8307759Z     return await tracker.upsert_comment(
+check	Run make check	2026-09-12T14:01:59.8308063Z _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+check	Run make check	2026-09-12T14:01:59.8308241Z 
+check	Run make check	2026-09-12T14:01:59.8308421Z self = <tests.fakes.FakeTrackerPort object at 0x7fdcf430a660>
+check	Run make check	2026-09-12T14:01:59.8308615Z 
+check	Run make check	2026-09-12T14:01:59.8308691Z     async def upsert_comment(
+check	Run make check	2026-09-12T14:01:59.8308985Z         self, *, target: str, marker: str, body: str, holder: str | None = None
+check	Run make check	2026-09-12T14:01:59.8309265Z     ) -> TrackerComment:
+check	Run make check	2026-09-12T14:01:59.8309516Z         content = marked_comment_body(marker=marker, body=body)
+check	Run make check	2026-09-12T14:01:59.8309792Z         existing = comment_under_marker(
+check	Run make check	2026-09-12T14:01:59.8310002Z             target=target,
+check	Run make check	2026-09-12T14:01:59.8310179Z             marker=marker,
+check	Run make check	2026-09-12T14:01:59.8310428Z             comments=await self.list_comments(issue_key=target),
+check	Run make check	2026-09-12T14:01:59.8310668Z         )
+check	Run make check	2026-09-12T14:01:59.8310838Z         surface = WritableSurface(
+check	Run make check	2026-09-12T14:01:59.8311068Z             kind=SurfaceKind.MARKER_COMMENT,
+check	Run make check	2026-09-12T14:01:59.8311506Z             ref=ScopeRef(kind=ScopeKind.ISSUE, key=target),
+check	Run make check	2026-09-12T14:01:59.8311857Z             marker=marker,
+check	Run make check	2026-09-12T14:01:59.8312022Z         )
+check	Run make check	2026-09-12T14:01:59.8312236Z         if existing is not None and existing.body != content:
+check	Run make check	2026-09-12T14:01:59.8312565Z             if existing.author_key not in await self.writer_identity():
+check	Run make check	2026-09-12T14:01:59.8312889Z >               raise SurfaceWriteAttributionError(
+check	Run make check	2026-09-12T14:01:59.8313171Z                     surface=surface, author=existing.author_key
+check	Run make check	2026-09-12T14:01:59.8313407Z                 )
+check	Run make check	2026-09-12T14:01:59.8314007Z E               kodezart.domain.errors.SurfaceWriteAttributionError: the protected tracker record is not attributable to this writer (author: 'fixture-approver')
+check	Run make check	2026-09-12T14:01:59.8314460Z 
+check	Run make check	2026-09-12T14:01:59.8314609Z tests/fakes.py:3804: SurfaceWriteAttributionError
+check	Run make check	2026-09-12T14:01:59.8314997Z _______ test_boot_starts_a_scheduler_carrying_one_dispatch_pass_per_repo _______
+check	Run make check	2026-09-12T14:01:59.8315226Z 
+check	Run make check	2026-09-12T14:01:59.8315443Z monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7fdcf37107a0>
+check	Run make check	2026-09-12T14:01:59.8315917Z tmp_path = PosixPath('/tmp/pytest-of-runner/pytest-0/test_boot_starts_a_scheduler_c0')
+check	Run make check	2026-09-12T14:01:59.8316380Z wired = <tests.fakes.ManagedFakeLinearMcpServer object at 0x7fdcf37104a0>
+check	Run make check	2026-09-12T14:01:59.8316606Z 
+check	Run make check	2026-09-12T14:01:59.8316795Z     async def test_boot_starts_a_scheduler_carrying_one_dispatch_pass_per_repo(
+check	Run make check	2026-09-12T14:01:59.8317120Z         monkeypatch: pytest.MonkeyPatch,
+check	Run make check	2026-09-12T14:01:59.8317338Z         tmp_path: Path,
+check	Run make check	2026-09-12T14:01:59.8317549Z         wired: ManagedFakeLinearMcpServer,
+check	Run make check	2026-09-12T14:01:59.8317759Z     ) -> None:
+check	Run make check	2026-09-12T14:01:59.8318030Z         """AC-20: the scheduler is constructed, driven and stopped by the root.
+check	Run make check	2026-09-12T14:01:59.8318301Z     
+check	Run make check	2026-09-12T14:01:59.8318559Z         The interval asserted here is a value no default would produce, so the
+check	Run make check	2026-09-12T14:01:59.8318952Z         assertion is about the knob's consumer and not about a coincidence.
+check	Run make check	2026-09-12T14:01:59.8319223Z         """
+check	Run make check	2026-09-12T14:01:59.8319481Z         monkeypatch.setenv("KODEZART_GITHUB_TOKEN", "fixture-forge-token")
+check	Run make check	2026-09-12T14:01:59.8319764Z         monkeypatch.setenv(
+check	Run make check	2026-09-12T14:01:59.8319997Z             "KODEZART_DISPATCH_PASS_INTERVAL_SECONDS",
+check	Run make check	2026-09-12T14:01:59.8320250Z             str(UNUSUAL_INTERVAL),
+check	Run make check	2026-09-12T14:01:59.8320438Z         )
+check	Run make check	2026-09-12T14:01:59.8320659Z         _configure(monkeypatch, tmp_path, _operation_toml())
+check	Run make check	2026-09-12T14:01:59.8320905Z         app = create_app()
+check	Run make check	2026-09-12T14:01:59.8321304Z         assert app.state.config.dispatch_pass_interval_seconds == UNUSUAL_INTERVAL
+check	Run make check	2026-09-12T14:01:59.8321604Z     
+check	Run make check	2026-09-12T14:01:59.8321792Z >       async with lifespan(app):
+check	Run make check	2026-09-12T14:01:59.8322033Z 
+check	Run make check	2026-09-12T14:01:59.8322178Z tests/tracker/test_tracker_boot_wiring.py:732: 
+check	Run make check	2026-09-12T14:01:59.8322503Z _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+check	Run make check	2026-09-12T14:01:59.8322826Z /usr/lib/python3.12/contextlib.py:210: in __aenter__
+check	Run make check	2026-09-12T14:01:59.8323089Z     return await anext(self.gen)
+check	Run make check	2026-09-12T14:01:59.8323294Z            ^^^^^^^^^^^^^^^^^^^^^
+check	Run make check	2026-09-12T14:01:59.8323524Z src/kodezart/main.py:253: in lifespan
+check	Run make check	2026-09-12T14:01:59.8323785Z     raise cleanup_error from cleanup_error.__context__
+check	Run make check	2026-09-12T14:01:59.8324055Z src/kodezart/main.py:242: in unwind
+check	Run make check	2026-09-12T14:01:59.8324248Z     raise failure
+check	Run make check	2026-09-12T14:01:59.8324448Z src/kodezart/main.py:198: in lifespan
+check	Run make check	2026-09-12T14:01:59.8324686Z     dispatch = await build_dispatch_runtime(
+check	Run make check	2026-09-12T14:01:59.8325022Z src/kodezart/composition/passes.py:754: in build_dispatch_runtime
+check	Run make check	2026-09-12T14:01:59.8325321Z     built = await build_dispatch_passes(
+check	Run make check	2026-09-12T14:01:59.8325640Z src/kodezart/composition/passes.py:479: in build_dispatch_passes
+check	Run make check	2026-09-12T14:01:59.8325938Z     writer=TrackerLifecycleWriter(
+check	Run make check	2026-09-12T14:01:59.8326230Z src/kodezart/services/tracker_lifecycle.py:85: in __init__
+check	Run make check	2026-09-12T14:01:59.8326583Z     configured_marker_prefix(marker_prefixes, purpose="run_outcome")
+check	Run make check	2026-09-12T14:01:59.8327074Z _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+check	Run make check	2026-09-12T14:01:59.8327251Z 
+check	Run make check	2026-09-12T14:01:59.8327326Z prefixes = {}
+check	Run make check	2026-09-12T14:01:59.8327423Z 
+check	Run make check	2026-09-12T14:01:59.8327634Z     def configured_marker_prefix(prefixes: Mapping[str, str], *, purpose: str) -> str:
+check	Run make check	2026-09-12T14:01:59.8328071Z         """Refuse an absent purpose where it is needed, never guess its prefix."""
+check	Run make check	2026-09-12T14:01:59.8328383Z         if purpose not in prefixes:
+check	Run make check	2026-09-12T14:01:59.8328637Z >           raise OperationMemberAbsentError(
+check	Run make check	2026-09-12T14:01:59.8328908Z                 missing=f"marker_prefixes[{purpose!r}]",
+check	Run make check	2026-09-12T14:01:59.8329234Z                 stops="this tracker comment identity cannot be read or written",
+check	Run make check	2026-09-12T14:01:59.8329504Z             )
+check	Run make check	2026-09-12T14:01:59.8330188Z E           kodezart.types.domain.operation.OperationMemberAbsentError: operation config declares no marker_prefixes['run_outcome']; this tracker comment identity cannot be read or written
+check	Run make check	2026-09-12T14:01:59.8330700Z 
+check	Run make check	2026-09-12T14:01:59.8330910Z src/kodezart/domain/comment_markers.py:12: OperationMemberAbsentError
+check	Run make check	2026-09-12T14:01:59.8331467Z ----------------------------- Captured stdout call -----------------------------
+check	Run make check	2026-09-12T14:01:59.8332934Z {"backend": "linear", "adopted": ["document 'checkpoint' -> 'doc-1'", "queue_state 'approved' -> 'queue:approved'", "queue_state 'decision' -> 'queue:decision'", "queue_state 'done' -> 'queue:done'", "queue_state 'proposed' -> 'queue:proposed'", "queue_state 'triage' -> 'queue:triage'"], "created": [], "event": "tracker_mappings_reconciled", "level": "info", "logger": "kodezart.main", "timestamp": "2026-09-12T14:01:55.494371Z"}
+check	Run make check	2026-09-12T14:01:59.8337086Z {"table": {"branch_name": "anthropic_v5", "ticket_create": "anthropic_v5", "ticket_review": "anthropic_v5", "ticket_revision": "anthropic_v5", "acceptance_criteria": "anthropic_v5", "criteria_validation": "anthropic_v5", "implementation": "anthropic_v5", "evaluation": "anthropic_v5", "iteration_feedback": "anthropic_v5", "post_merge_review": "anthropic_v5", "fix": "anthropic_v5", "remediation_ticket": "anthropic_v5", "commit_message": "anthropic_v5", "pr_description": "anthropic_v5", "fire_prep_pass": "anthropic_v5", "grooming_pass": "anthropic_v5", "content_audit": "anthropic_v5", "organize_assess": "anthropic_v5", "organize_author": "anthropic_v5", "organize_verify": "anthropic_v5", "audit_claim": "anthropic_v5", "audit_overclaim": "anthropic_v5", "audit_mandate": "anthropic_v5", "audit_detection_removal": "anthropic_v5", "organize_criteria_author": "anthropic_v5", "knowledge_map": "anthropic_v5", "fire_record": "anthropic_v5"}, "event": "prompt_resolution_table", "level": "info", "logger": "kodezart.main", "timestamp": "2026-09-12T14:01:55.498127Z"}
+check	Run make check	2026-09-12T14:01:59.8340518Z {"prompt_set": "anthropic_v5", "declared_engines": ["opus-5", "fable-5", "sonnet-5"], "model": null, "session_models": null, "event": "prompt_set_engine_mismatch", "level": "info", "logger": "kodezart.main", "timestamp": "2026-09-12T14:01:55.498271Z"}
+check	Run make check	2026-09-12T14:01:59.8341811Z {"mode": "none", "allowlist": [], "setting_sources": ["user", "project", "local"], "event": "skills_selection_resolved", "level": "info", "logger": "kodezart.main", "timestamp": "2026-09-12T14:01:55.498723Z"}
+check	Run make check	2026-09-12T14:01:59.8343117Z {"detail": "no session type is granted the knowledge MCP server; the service runs without the capability and nothing substitutes for it", "event": "knowledge_capability_unconfigured", "level": "info", "logger": "kodezart.main", "timestamp": "2026-09-12T14:01:55.498829Z"}
+check	Run make check	2026-09-12T14:01:59.8344264Z {"privacy_judgment_enabled": false, "event": "outbound_content_admission_resolved", "level": "info", "logger": "kodezart.main", "timestamp": "2026-09-12T14:01:55.498994Z"}
+check	Run make check	2026-09-12T14:01:59.8345266Z {"lanes": 1, "abandoned": 0, "outcome": "shutdown_abandoned", "event": "job_queue_stopped", "level": "info", "logger": "kodezart.adapters.asyncio_job_queue", "timestamp": "2026-09-12T14:01:55.541416Z"}
+check	Run make check	2026-09-12T14:01:59.8346034Z =========================== short test summary info ============================
+check	Run make check	2026-09-12T14:01:59.8346893Z FAILED tests/integration/test_self_running_chain.py::test_an_approved_issue_walks_the_whole_chain_back_to_its_ticket - AssertionError: assert [('K-1', <Lif...'in_review'>)] == [('K-1', <Lif...ONE: 'done'>)]
+check	Run make check	2026-09-12T14:01:59.8347479Z   
+check	Run make check	2026-09-12T14:01:59.8347759Z   Right contains one more item: ('K-1', <LifecycleStage.DONE: 'done'>)
+check	Run make check	2026-09-12T14:01:59.8348030Z   
+check	Run make check	2026-09-12T14:01:59.8348168Z   Full diff:
+check	Run make check	2026-09-12T14:01:59.8348317Z     [
+check	Run make check	2026-09-12T14:01:59.8348460Z         (
+check	Run make check	2026-09-12T14:01:59.8348610Z             'K-1',
+check	Run make check	2026-09-12T14:01:59.8348833Z             <LifecycleStage.IN_PROGRESS: 'in_progress'>,
+check	Run make check	2026-09-12T14:01:59.8349066Z         ),
+check	Run make check	2026-09-12T14:01:59.8349205Z         (
+check	Run make check	2026-09-12T14:01:59.8349349Z             'K-1',
+check	Run make check	2026-09-12T14:01:59.8349556Z             <LifecycleStage.IN_REVIEW: 'in_review'>,
+check	Run make check	2026-09-12T14:01:59.8349770Z         ),
+check	Run make check	2026-09-12T14:01:59.8349916Z   -     (
+check	Run make check	2026-09-12T14:01:59.8350060Z   -         'K-1',
+check	Run make check	2026-09-12T14:01:59.8350245Z   -         <LifecycleStage.DONE: 'done'>,
+check	Run make check	2026-09-12T14:01:59.8350453Z   -     ),
+check	Run make check	2026-09-12T14:01:59.8350596Z     ]
+check	Run make check	2026-09-12T14:01:59.8351514Z FAILED tests/prompts/test_operation_config.py::test_no_label_or_status_literal_lives_in_source - AssertionError: /home/runner/work/kodezart/kodezart/src/kodezart/services/tracker_lifecycle.py hardcodes 'Done'
+check	Run make check	2026-09-12T14:01:59.8352221Z assert 'Done' not in '"""Ticket l...n        )\n'
+check	Run make check	2026-09-12T14:01:59.8352442Z   
+check	Run make check	2026-09-12T14:01:59.8352594Z   'Done' is contained here:
+check	Run make check	2026-09-12T14:01:59.8352787Z     criterion Done states.
+check	Run make check	2026-09-12T14:01:59.8352968Z   ?           ++++
+check	Run make check	2026-09-12T14:01:59.8353121Z     
+check	Run make check	2026-09-12T14:01:59.8353456Z     **The pull-request arm also records the delivery — when there is one.**  A
+check	Run make check	2026-09-12T14:01:59.8353865Z     ``DELIVERABLE`` work ref is what a dependent lane's base resolves through,
+check	Run make check	2026-09-12T14:01:59.8354260Z     and before this writer existed nothing in the process wrote one: every
+check	Run make check	2026-09-12T14:01:59.8354695Z     issue with a blocker failed base resolution, because the ref the resolver walks the
+check	Run make check	2026-09-12T14:01:59.8355131Z     chain looking for was never recorded by anything.  The open pull request
+check	Run make check	2026-09-12T14:01:59.8355521Z     is the moment the branch and its pushed tip both exist, so this is where
+check	Run make check	2026-09-12T14:01:59.8355957Z     it is written — for the pull request that DELIVERS.  The stall exit opens
+check	Run make check	2026-09-12T14:01:59.8356344Z     one too, over a branch its own acceptance gate rejected, and the event
+check	Run make check	2026-09-12T14:01:59.8356630Z     says which it is.
+check	Run make check	2026-09-12T14:01:59.8356799Z     """
+check	Run make check	2026-09-12T14:01:59.8356943Z     
+check	Run make check	2026-09-12T14:01:59.8357266Z     from collections.abc import Callable, Mapping
+check	Run make check	2026-09-12T14:01:59.8357527Z     from datetime import UTC, datetime
+check	Run make check	2026-09-12T14:01:59.8357721Z     
+check	Run make check	2026-09-12T14:01:59.8357945Z     from kodezart.core.logging import BoundLogger, get_logger
+check	Run make check	2026-09-12T14:01:59.8358289Z     from kodezart.core.outbound_write import gated_write
+check	Run make check	2026-09-12T14:01:59.8358583Z     from kodezart.core.owned_tasks import settle
+check	Run make check	2026-09-12T14:01:59.8358922Z     from kodezart.core.protocols import OutboundContentGate, TrackerPort
+check	Run make check	2026-09-12T14:01:59.8359255Z     from kodezart.domain.comment_markers import (
+check	Run make check	2026-09-12T14:01:59.8359503Z         compose_comment_marker,
+check	Run make check	2026-09-12T14:01:59.8359719Z         configured_marker_prefix,
+check	Run make check	2026-09-12T14:01:59.8359905Z     )
+check	Run make check	2026-09-12T14:01:59.8360129Z     from kodezart.domain.errors import DuplicateWorkRefError
+check	Run make check	2026-09-12T14:01:59.8360475Z     from kodezart.services.run_surface_lease import RunSurfaceLease
+check	Run make check	2026-09-12T14:01:59.8360800Z     from kodezart.types.domain.agent import RaiseSite
+check	Run make check	2026-09-12T14:01:59.8361220Z     from kodezart.types.domain.branch import WorkRef, WorkRefRole
+check	Run make check	2026-09-12T14:01:59.8361541Z     from kodezart.types.domain.gating import (
+check	Run make check	2026-09-12T14:01:59.8361808Z         ContentClass,
+check	Run make check	2026-09-12T14:01:59.8361991Z         OutboundDestination,
+check	Run make check	2026-09-12T14:01:59.8362292Z         RepoVisibility,
+check	Run make check	2026-09-12T14:01:59.8362467Z         WriterShape,
+check	Run make check	2026-09-12T14:01:59.8362629Z     )
+check	Run make check	2026-09-12T14:01:59.8362899Z     from kodezart.types.domain.operation import LifecycleStage, QueueState
+check	Run make check	2026-09-12T14:01:59.8363273Z     from kodezart.types.domain.outcome import WorkflowOutcome
+check	Run make check	2026-09-12T14:01:59.8363609Z     from kodezart.types.domain.scope import ScopeKind, ScopeRef
+check	Run make check	2026-09-12T14:01:59.8363976Z     from kodezart.types.domain.surface import SurfaceKind, WritableSurface
+check	Run make check	2026-09-12T14:01:59.8364249Z     
+check	Run make check	2026-09-12T14:01:59.8364389Z     
+check	Run make check	2026-09-12T14:01:59.8364538Z     def _now() -> datetime:
+check	Run make check	2026-09-12T14:01:59.8364750Z         return datetime.now(tz=UTC)
+check	Run make check	2026-09-12T14:01:59.8364954Z     
+check	Run make check	2026-09-12T14:01:59.8365086Z     
+check	Run make check	2026-09-12T14:01:59.8365253Z     class TrackerLifecycleWriter:
+check	Run make check	2026-09-12T14:01:59.8365582Z         """Writes a fire's lifecycle back onto its originating issue.
+check	Run make check	2026-09-12T14:01:59.8365839Z     
+check	Run make check	2026-09-12T14:01:59.8366168Z         The state transitions carry no prose — a stage and a queue member, both
+check	Run make check	2026-09-12T14:01:59.8366628Z         resolved from configuration — so the gate has nothing to judge on them.
+check	Run make check	2026-09-12T14:01:59.8367026Z         The comment does carry prose, so it routes through the same gated-write
+check	Run make check	2026-09-12T14:01:59.8367408Z         path as every other outbound writer.  It is gated BEFORE the passes
+check	Run make check	2026-09-12T14:01:59.8367785Z         that will compose their comment bodies out of private board state,
+check	Run make check	2026-09-12T14:01:59.8368161Z         which is the whole reason this enforcement lands ahead of the thing it
+check	Run make check	2026-09-12T14:01:59.8368435Z         enforces.
+check	Run make check	2026-09-12T14:01:59.8368587Z     
+check	Run make check	2026-09-12T14:01:59.8368835Z         Which POSTURE it is gated under is per board, and it rides in from the
+check	Run make check	2026-09-12T14:01:59.8369229Z         pass that claimed the issue rather than being a constant here: one
+check	Run make check	2026-09-12T14:01:59.8369608Z         operation declares a board that mirrors publicly beside a board that
+check	Run make check	2026-09-12T14:01:59.8370002Z         syncs to a private surface, and the write-backs onto an issue belong to
+check	Run make check	2026-09-12T14:01:59.8370420Z         the surface its own board mirrors to.  Absent or unresolved is public —
+check	Run make check	2026-09-12T14:01:59.8370790Z         over-scrubbing is the arm that costs nothing but a redaction.
+check	Run make check	2026-09-12T14:01:59.8371053Z         """
+check	Run make check	2026-09-12T14:01:59.8371361Z     
+check	Run make check	2026-09-12T14:01:59.8371505Z         def __init__(
+check	Run make check	2026-09-12T14:01:59.8371676Z             self,
+check	Run make check	2026-09-12T14:01:59.8371834Z             *,
+check	Run make check	2026-09-12T14:01:59.8372014Z             tracker: TrackerPort,
+check	Run make check	2026-09-12T14:01:59.8372240Z             gate: OutboundContentGate,
+check	Run make check	2026-09-12T14:01:59.8372506Z             marker_prefixes: Mapping[str, str],
+check	Run make check	2026-09-12T14:01:59.8372916Z             surface_lease_seconds: float,
+check	Run make check	2026-09-12T14:01:59.8373159Z             clock: Callable[[], datetime] = _now,
+check	Run make check	2026-09-12T14:01:59.8373378Z         ) -> None:
+check	Run make check	2026-09-12T14:01:59.8373648Z             configured_marker_prefix(marker_prefixes, purpose="run_outcome")
+check	Run make check	2026-09-12T14:01:59.8373980Z             self._tracker: TrackerPort = tracker
+check	Run make check	2026-09-12T14:01:59.8374245Z             self._gate: OutboundContentGate = gate
+check	Run make check	2026-09-12T14:01:59.8374526Z             self._marker_prefixes = dict(marker_prefixes)
+check	Run make check	2026-09-12T14:01:59.8374824Z             self._surface_lease_seconds = surface_lease_seconds
+check	Run make check	2026-09-12T14:01:59.8375115Z             self._clock: Callable[[], datetime] = clock
+check	Run make check	2026-09-12T14:01:59.8375393Z             self._log: BoundLogger = get_logger(__name__)
+check	Run make check	2026-09-12T14:01:59.8375608Z     
+check	Run make check	2026-09-12T14:01:59.8375823Z         async def on_dequeue(self, *, issue_key: str) -> None:
+check	Run make check	2026-09-12T14:01:59.8376161Z             """The run started: move the issue to its in-progress state."""
+check	Run make check	2026-09-12T14:01:59.8376474Z             await self._tracker.set_workflow_state(
+check	Run make check	2026-09-12T14:01:59.8376714Z                 issue_key=issue_key,
+check	Run make check	2026-09-12T14:01:59.8376953Z                 stage=LifecycleStage.IN_PROGRESS,
+check	Run make check	2026-09-12T14:01:59.8377161Z             )
+check	Run make check	2026-09-12T14:01:59.8377533Z             await self._log.ainfo("lifecycle_in_progress", issue_key=issue_key)
+check	Run make check	2026-09-12T14:01:59.8377797Z     
+check	Run make check	2026-09-12T14:01:59.8377962Z         async def on_pull_request(
+check	Run make check	2026-09-12T14:01:59.8378154Z             self,
+check	Run make check	2026-09-12T14:01:59.8378307Z             *,
+check	Run make check	2026-09-12T14:01:59.8378465Z             issue_key: str,
+check	Run make check	2026-09-12T14:01:59.8378665Z             feature_branch: str,
+check	Run make check	2026-09-12T14:01:59.8378873Z             feature_tip_sha: str,
+check	Run make check	2026-09-12T14:01:59.8379068Z             delivered: bool,
+check	Run make check	2026-09-12T14:01:59.8379248Z         ) -> None:
+check	Run make check	2026-09-12T14:01:59.8379520Z             """A pull request is open: move to review, and record what delivers it.
+check	Run make check	2026-09-12T14:01:59.8379794Z     
+check	Run make check	2026-09-12T14:01:59.8380040Z             The state write is unconditional and stays that way.  Both nodes
+check	Run make check	2026-09-12T14:01:59.8380407Z             that open a pull request leave a human with one to read, which is
+check	Run make check	2026-09-12T14:01:59.8380845Z             what the review stage means — the stall exit's do-not-merge branch
+check	Run make check	2026-09-12T14:01:59.8381329Z             needs a reader more than an accepted one does, and an issue left in
+check	Run make check	2026-09-12T14:01:59.8381717Z             the in-progress stage with nothing running is the lie the failure
+check	Run make check	2026-09-12T14:01:59.8382012Z             arm exists to prevent.
+check	Run make check	2026-09-12T14:01:59.8382195Z     
+check	Run make check	2026-09-12T14:01:59.8382451Z             The DELIVERABLE ref is the half that is NOT unconditional.  A ref is
+check	Run make check	2026-09-12T14:01:59.8382840Z             at-most-one and nothing in this process can delete one, so recording
+check	Run make check	2026-09-12T14:01:59.8383231Z             a branch the run's acceptance gate rejected would make it the base
+check	Run make check	2026-09-12T14:01:59.8383656Z             every dependent lane resolves to — and the designed recovery, a
+check	Run make check	2026-09-12T14:01:59.8384036Z             human closing the stall pull request so the pass re-fires, could
+check	Run make check	2026-09-12T14:01:59.8384435Z             never replace it.  A run that did not deliver records nothing here;
+check	Run make check	2026-09-12T14:01:59.8384815Z             the pull request still reaches the issue, in the terminal comment
+check	Run make check	2026-09-12T14:01:59.8385129Z             the outcome arm posts.
+check	Run make check	2026-09-12T14:01:59.8385319Z             """
+check	Run make check	2026-09-12T14:01:59.8385523Z             await self._tracker.set_workflow_state(
+check	Run make check	2026-09-12T14:01:59.8385769Z                 issue_key=issue_key,
+check	Run make check	2026-09-12T14:01:59.8386003Z                 stage=LifecycleStage.IN_REVIEW,
+check	Run make check	2026-09-12T14:01:59.8386210Z             )
+check	Run make check	2026-09-12T14:01:59.8386369Z             if delivered:
+check	Run make check	2026-09-12T14:01:59.8386578Z                 await self._record_deliverable(
+check	Run make check	2026-09-12T14:01:59.8386811Z                     issue_key=issue_key,
+check	Run make check	2026-09-12T14:01:59.8387051Z                     feature_branch=feature_branch,
+check	Run make check	2026-09-12T14:01:59.8387437Z                     feature_tip_sha=feature_tip_sha,
+check	Run make check	2026-09-12T14:01:59.8387660Z                 )
+check	Run make check	2026-09-12T14:01:59.8387812Z             else:
+check	Run make check	2026-09-12T14:01:59.8387991Z                 await self._log.ainfo(
+check	Run make check	2026-09-12T14:01:59.8388238Z                     "lifecycle_undelivered_pull_request",
+check	Run make check	2026-09-12T14:01:59.8388488Z                     issue_key=issue_key,
+check	Run make check	2026-09-12T14:01:59.8388715Z                     branch=feature_branch,
+check	Run make check	2026-09-12T14:01:59.8388956Z                     pushed_head_sha=feature_tip_sha,
+check	Run make check	2026-09-12T14:01:59.8389168Z                 )
+check	Run make check	2026-09-12T14:01:59.8389425Z             await self._log.ainfo("lifecycle_in_review", issue_key=issue_key)
+check	Run make check	2026-09-12T14:01:59.8389688Z     
+check	Run make check	2026-09-12T14:01:59.8389918Z         async def on_verified_merge(self, *, issue_key: str) -> None:
+check	Run make check	2026-09-12T14:01:59.8390289Z             """Retire the queue entry without asserting criterion completion."""
+check	Run make check	2026-09-12T14:01:59.8390606Z             await self._tracker.set_queue_state(
+check	Run make check	2026-09-12T14:01:59.8390842Z                 issue_key=issue_key,
+check	Run make check	2026-09-12T14:01:59.8391063Z                 state=QueueState.DONE,
+check	Run make check	2026-09-12T14:01:59.8391424Z             )
+check	Run make check	2026-09-12T14:01:59.8391688Z             await self._log.ainfo("lifecycle_queue_finished", issue_key=issue_key)
+check	Run make check	2026-09-12T14:01:59.8392084Z     
+check	Run make check	2026-09-12T14:01:59.8392250Z         async def on_run_failed(
+check	Run make check	2026-09-12T14:01:59.8392440Z             self,
+check	Run make check	2026-09-12T14:01:59.8392592Z             *,
+check	Run make check	2026-09-12T14:01:59.8392750Z             issue_key: str,
+check	Run make check	2026-09-12T14:01:59.8392934Z             job_id: str,
+check	Run make check	2026-09-12T14:01:59.8393133Z             pre_claim_state: str,
+check	Run make check	2026-09-12T14:01:59.8393351Z             failure_class: str | None,
+check	Run make check	2026-09-12T14:01:59.8393573Z             step: RaiseSite | None,
+check	Run make check	2026-09-12T14:01:59.8393841Z             visibility: RepoVisibility = RepoVisibility.PUBLIC,
+check	Run make check	2026-09-12T14:01:59.8394091Z         ) -> None:
+check	Run make check	2026-09-12T14:01:59.8394338Z             """The run ended with no terminal outcome: undo, then say so.
+check	Run make check	2026-09-12T14:01:59.8394603Z     
+check	Run make check	2026-09-12T14:01:59.8394852Z             Ruled 2026-08-26: option (a), restore the prior state and comment.
+check	Run make check	2026-09-12T14:01:59.8395298Z             The vocabulary this operation declares has no failure state — only
+check	Run make check	2026-09-12T14:01:59.8395723Z             in-progress, in-review and done — so the issue goes back to the
+check	Run make check	2026-09-12T14:01:59.8396105Z             state the pass found it in, and a comment carries the rest.  The
+check	Run make check	2026-09-12T14:01:59.8396474Z             in-progress stage with nothing running is the lie the criterion
+check	Run make check	2026-09-12T14:01:59.8396829Z             exists to prevent, and a comment alone does not remove it.
+check	Run make check	2026-09-12T14:01:59.8397087Z     
+check	Run make check	2026-09-12T14:01:59.8397332Z             Order matches the success path: the state lands before the comment
+check	Run make check	2026-09-12T14:01:59.8397703Z             reports it, so no reader sees the note beside a stale state.  The
+check	Run make check	2026-09-12T14:01:59.8398079Z             claim is released by the watcher after every stream end the process
+check	Run make check	2026-09-12T14:01:59.8398473Z             survives, this arm included, so the next pass is free to re-fire as
+check	Run make check	2026-09-12T14:01:59.8398816Z             soon as it ticks rather than waiting a lease out.
+check	Run make check	2026-09-12T14:01:59.8399047Z             """
+check	Run make check	2026-09-12T14:01:59.8399260Z             await self._tracker.restore_workflow_state(
+check	Run make check	2026-09-12T14:01:59.8399521Z                 issue_key=issue_key,
+check	Run make check	2026-09-12T14:01:59.8399750Z                 state_name=pre_claim_state,
+check	Run make check	2026-09-12T14:01:59.8399951Z             )
+check	Run make check	2026-09-12T14:01:59.8400198Z             # Three states on both halves: a failure class the producer did
+check	Run make check	2026-09-12T14:01:59.8400556Z             # not name, and a step it did not name, are reported as absent
+check	Run make check	2026-09-12T14:01:59.8400919Z             # rather than guessed at.  ``raise_site`` is the enumeration this
+check	Run make check	2026-09-12T14:01:59.8401335Z             # codebase already keeps for "which step raised".
+check	Run make check	2026-09-12T14:01:59.8401583Z             named_failure = (
+check	Run make check	2026-09-12T14:01:59.8401886Z                 "an unnamed failure class" if failure_class is None else failure_class
+check	Run make check	2026-09-12T14:01:59.8402291Z             )
+check	Run make check	2026-09-12T14:01:59.8402548Z             named_step = "no step named" if step is None else f"step {step}"
+check	Run make check	2026-09-12T14:01:59.8402916Z             # DERIVED for the reason the outcome comment is: a job id, an
+check	Run make check	2026-09-12T14:01:59.8403290Z             # exception class name and a RaiseSite member are all readable off
+check	Run make check	2026-09-12T14:01:59.8403661Z             # the job-status surface by a process that never held the session.
+check	Run make check	2026-09-12T14:01:59.8403956Z             body = await gated_write(
+check	Run make check	2026-09-12T14:01:59.8404178Z                 gate=self._gate,
+check	Run make check	2026-09-12T14:01:59.8404385Z                 log=self._log,
+check	Run make check	2026-09-12T14:01:59.8404573Z                 content=(
+check	Run make check	2026-09-12T14:01:59.8404880Z                     f"job {job_id} ended without a terminal outcome — "
+check	Run make check	2026-09-12T14:01:59.8405177Z                     f"{named_failure}, {named_step}. "
+check	Run make check	2026-09-12T14:01:59.8405483Z                     "The issue is back in the state it held before the claim."
+check	Run make check	2026-09-12T14:01:59.8405751Z                 ),
+check	Run make check	2026-09-12T14:01:59.8405936Z                 visibility=visibility,
+check	Run make check	2026-09-12T14:01:59.8406167Z                 shape=WriterShape.PROSE,
+check	Run make check	2026-09-12T14:01:59.8406448Z                 destination=OutboundDestination.TRACKER_COMMENT,
+check	Run make check	2026-09-12T14:01:59.8406851Z                 content_class=ContentClass.DERIVED,
+check	Run make check	2026-09-12T14:01:59.8407074Z             )
+check	Run make check	2026-09-12T14:01:59.8407325Z             await self._tracker.post_comment(issue_key=issue_key, body=body)
+check	Run make check	2026-09-12T14:01:59.8407620Z             await self._log.aerror(
+check	Run make check	2026-09-12T14:01:59.8407844Z                 "lifecycle_run_failed",
+check	Run make check	2026-09-12T14:01:59.8408062Z                 issue_key=issue_key,
+check	Run make check	2026-09-12T14:01:59.8408271Z                 job_id=job_id,
+check	Run make check	2026-09-12T14:01:59.8408496Z                 restored_state=pre_claim_state,
+check	Run make check	2026-09-12T14:01:59.8408746Z                 failure_class=failure_class,
+check	Run make check	2026-09-12T14:01:59.8408956Z                 step=step,
+check	Run make check	2026-09-12T14:01:59.8409136Z             )
+check	Run make check	2026-09-12T14:01:59.8409282Z     
+check	Run make check	2026-09-12T14:01:59.8409450Z         async def on_terminal_outcome(
+check	Run make check	2026-09-12T14:01:59.8409649Z             self,
+check	Run make check	2026-09-12T14:01:59.8409804Z             *,
+check	Run make check	2026-09-12T14:01:59.8409960Z             issue_key: str,
+check	Run make check	2026-09-12T14:01:59.8410146Z             job_id: str,
+check	Run make check	2026-09-12T14:01:59.8410355Z             outcome: WorkflowOutcome,
+check	Run make check	2026-09-12T14:01:59.8410639Z             visibility: RepoVisibility = RepoVisibility.PUBLIC,
+check	Run make check	2026-09-12T14:01:59.8410895Z         ) -> None:
+check	Run make check	2026-09-12T14:01:59.8411315Z             """Post the run's terminal outcome, read off the job-status surface."""
+check	Run make check	2026-09-12T14:01:59.8411717Z             # The TARGET REPOSITORY's visibility is not the question here, and
+check	Run make check	2026-09-12T14:01:59.8412090Z             # never was: this payload lands on the coordination surface. What
+check	Run make check	2026-09-12T14:01:59.8412452Z             # settles it is the posture of the BOARD the issue sits on, which
+check	Run make check	2026-09-12T14:01:59.8412880Z             # rides in from the pass that claimed it — a private-sync board and
+check	Run make check	2026-09-12T14:01:59.8413232Z             # a mirrored one are both declared by one operation.
+check	Run make check	2026-09-12T14:01:59.8413578Z             # DERIVED: the body is a job id and a WorkflowOutcome member, both
+check	Run make check	2026-09-12T14:01:59.8413963Z             # readable off the job-status surface. A process that never held the
+check	Run make check	2026-09-12T14:01:59.8414283Z             # session recomputes this note exactly.
+check	Run make check	2026-09-12T14:01:59.8414536Z             marker = compose_comment_marker(
+check	Run make check	2026-09-12T14:01:59.8414777Z                 prefixes=self._marker_prefixes,
+check	Run make check	2026-09-12T14:01:59.8415014Z                 purpose="run_outcome",
+check	Run make check	2026-09-12T14:01:59.8415226Z                 lane=issue_key,
+check	Run make check	2026-09-12T14:01:59.8415430Z                 occurrence_key=job_id,
+check	Run make check	2026-09-12T14:01:59.8415624Z             )
+check	Run make check	2026-09-12T14:01:59.8415796Z             surfaces = frozenset(
+check	Run make check	2026-09-12T14:01:59.8415984Z                 {
+check	Run make check	2026-09-12T14:01:59.8416162Z                     WritableSurface(
+check	Run make check	2026-09-12T14:01:59.8416535Z                         kind=SurfaceKind.MARKER_COMMENT,
+check	Run make check	2026-09-12T14:01:59.8416844Z                         ref=ScopeRef(kind=ScopeKind.ISSUE, key=issue_key),
+check	Run make check	2026-09-12T14:01:59.8417121Z                         marker=marker,
+check	Run make check	2026-09-12T14:01:59.8417317Z                     )
+check	Run make check	2026-09-12T14:01:59.8417477Z                 }
+check	Run make check	2026-09-12T14:01:59.8417626Z             )
+check	Run make check	2026-09-12T14:01:59.8417804Z             async with RunSurfaceLease(
+check	Run make check	2026-09-12T14:01:59.8418025Z                 tracker=self._tracker,
+check	Run make check	2026-09-12T14:01:59.8418238Z                 job_id=job_id,
+check	Run make check	2026-09-12T14:01:59.8418440Z                 surfaces=surfaces,
+check	Run make check	2026-09-12T14:01:59.8418681Z                 lease_seconds=self._surface_lease_seconds,
+check	Run make check	2026-09-12T14:01:59.8418909Z             ) as lease:
+check	Run make check	2026-09-12T14:01:59.8419109Z                 body = await gated_write(
+check	Run make check	2026-09-12T14:01:59.8419341Z                     gate=self._gate,
+check	Run make check	2026-09-12T14:01:59.8419564Z                     log=self._log,
+check	Run make check	2026-09-12T14:01:59.8419847Z                     content=f"job {job_id} reached outcome {outcome.value}",
+check	Run make check	2026-09-12T14:01:59.8420136Z                     visibility=visibility,
+check	Run make check	2026-09-12T14:01:59.8420367Z                     shape=WriterShape.PROSE,
+check	Run make check	2026-09-12T14:01:59.8420646Z                     destination=OutboundDestination.TRACKER_COMMENT,
+check	Run make check	2026-09-12T14:01:59.8421054Z                     content_class=ContentClass.DERIVED,
+check	Run make check	2026-09-12T14:01:59.8421359Z                 )
+check	Run make check	2026-09-12T14:01:59.8421541Z                 await lease.renew()
+check	Run make check	2026-09-12T14:01:59.8421741Z                 await settle(
+check	Run make check	2026-09-12T14:01:59.8421961Z                     self._tracker.upsert_comment(
+check	Run make check	2026-09-12T14:01:59.8422271Z                         target=issue_key, marker=marker, body=body, holder=job_id
+check	Run make check	2026-09-12T14:01:59.8422544Z                     )
+check	Run make check	2026-09-12T14:01:59.8422704Z                 )
+check	Run make check	2026-09-12T14:01:59.8422884Z             await self._log.ainfo(
+check	Run make check	2026-09-12T14:01:59.8423105Z                 "lifecycle_outcome_comment",
+check	Run make check	2026-09-12T14:01:59.8423346Z                 issue_key=issue_key,
+check	Run make check	2026-09-12T14:01:59.8423555Z                 job_id=job_id,
+check	Run make check	2026-09-12T14:01:59.8423762Z                 outcome=outcome.value,
+check	Run make check	2026-09-12T14:01:59.8423950Z             )
+check	Run make check	2026-09-12T14:01:59.8424094Z     
+check	Run make check	2026-09-12T14:01:59.8424262Z         async def _record_deliverable(
+check	Run make check	2026-09-12T14:01:59.8424452Z             self,
+check	Run make check	2026-09-12T14:01:59.8424601Z             *,
+check	Run make check	2026-09-12T14:01:59.8424762Z             issue_key: str,
+check	Run make check	2026-09-12T14:01:59.8424959Z             feature_branch: str,
+check	Run make check	2026-09-12T14:01:59.8425166Z             feature_tip_sha: str,
+check	Run make check	2026-09-12T14:01:59.8425352Z         ) -> None:
+check	Run make check	2026-09-12T14:01:59.8425604Z             """Record the issue's DELIVERABLE ref, or say why it could not.
+check	Run make check	2026-09-12T14:01:59.8425856Z     
+check	Run make check	2026-09-12T14:01:59.8426097Z             The port's at-most-one-DELIVERABLE rule stays: a ref naming a
+check	Run make check	2026-09-12T14:01:59.8426461Z             DIFFERENT branch is refused there and never silently replaced,
+check	Run make check	2026-09-12T14:01:59.8426833Z             because replacing it would move every dependent lane's base with
+check	Run make check	2026-09-12T14:01:59.8427213Z             nothing saying so.  Recording the ref this arm already recorded is
+check	Run make check	2026-09-12T14:01:59.8427505Z             the port's own no-op.
+check	Run make check	2026-09-12T14:01:59.8427691Z     
+check	Run make check	2026-09-12T14:01:59.8427941Z             The refusal is caught rather than propagated.  A conflicting ref is
+check	Run make check	2026-09-12T14:01:59.8428319Z             a fact about the board that a human resolves; killing the rest of a
+check	Run make check	2026-09-12T14:01:59.8428689Z             run's lifecycle write-back over it would leave the issue in the
+check	Run make check	2026-09-12T14:01:59.8429121Z             in-progress stage with nothing running — the exact lie the failure
+check	Run make check	2026-09-12T14:01:59.8429425Z             arm exists to prevent.
+check	Run make check	2026-09-12T14:01:59.8429612Z             """
+check	Run make check	2026-09-12T14:01:59.8429763Z             try:
+check	Run make check	2026-09-12T14:01:59.8429969Z                 await self._tracker.record_work_ref(
+check	Run make check	2026-09-12T14:01:59.8430209Z                     ref=WorkRef(
+check	Run make check	2026-09-12T14:01:59.8430566Z                         issue_id=issue_key,
+check	Run make check	2026-09-12T14:01:59.8430821Z                         role=WorkRefRole.DELIVERABLE,
+check	Run make check	2026-09-12T14:01:59.8431072Z                         branch=feature_branch,
+check	Run make check	2026-09-12T14:01:59.8431475Z                         pushed_head_sha=feature_tip_sha,
+check	Run make check	2026-09-12T14:01:59.8431750Z                         recorded_at=self._clock(),
+check	Run make check	2026-09-12T14:01:59.8431983Z                     ),
+check	Run make check	2026-09-12T14:01:59.8432148Z                 )
+check	Run make check	2026-09-12T14:01:59.8432357Z             except DuplicateWorkRefError as exc:
+check	Run make check	2026-09-12T14:01:59.8432614Z                 await self._log.aerror(
+check	Run make check	2026-09-12T14:01:59.8432851Z                     "deliverable_ref_conflict",
+check	Run make check	2026-09-12T14:01:59.8433090Z                     issue_key=issue_key,
+check	Run make check	2026-09-12T14:01:59.8433342Z                     existing_branch=exc.existing_branch,
+check	Run make check	2026-09-12T14:01:59.8433619Z                     offered_branch=exc.offered_branch,
+check	Run make check	2026-09-12T14:01:59.8433724Z                     offered_sha=feature_tip_sha,
+check	Run make check	2026-09-12T14:01:59.8433807Z                 )
+check	Run make check	2026-09-12T14:01:59.8433881Z                 return
+check	Run make check	2026-09-12T14:01:59.8433973Z             await self._log.ainfo(
+check	Run make check	2026-09-12T14:01:59.8434081Z                 "lifecycle_deliverable_ref",
+check	Run make check	2026-09-12T14:01:59.8434278Z                 issue_key=issue_key,
+check	Run make check	2026-09-12T14:01:59.8434385Z                 branch=feature_branch,
+check	Run make check	2026-09-12T14:01:59.8434497Z                 pushed_head_sha=feature_tip_sha,
+check	Run make check	2026-09-12T14:02:01.1937978Z             )
+check	Run make check	2026-09-12T14:02:01.1939017Z FAILED tests/prompts/test_operation_config.py::test_placeholder_mapping_is_total_in_both_directions - AssertionError: {'workflow_states.done'}
+check	Run make check	2026-09-12T14:02:01.1939920Z assert {'agent_ident...nnector', ...} == {'agent_ident...nnector', ...}
+check	Run make check	2026-09-12T14:02:01.1940308Z   
+check	Run make check	2026-09-12T14:02:01.1940536Z   Extra items in the right set:
+check	Run make check	2026-09-12T14:02:01.1940808Z   'workflow_states.done'
+check	Run make check	2026-09-12T14:02:01.1941047Z   
+check	Run make check	2026-09-12T14:02:01.1941524Z   Full diff:
+check	Run make check	2026-09-12T14:02:01.1941731Z     {
+check	Run make check	2026-09-12T14:02:01.1941935Z         'agent_identities.0',
+check	Run make check	2026-09-12T14:02:01.1942139Z         'agent_identities.1',
+check	Run make check	2026-09-12T14:02:01.1942360Z         'documents.constitution.id',
+check	Run make check	2026-09-12T14:02:01.1942621Z         'endpoints.cloudflare_docs_mcp',
+check	Run make check	2026-09-12T14:02:01.1942871Z         'endpoints.host_runner',
+check	Run make check	2026-09-12T14:02:01.1943098Z         'endpoints.notion_connector',
+check	Run make check	2026-09-12T14:02:01.1943334Z         'issue_labels.criterion',
+check	Run make check	2026-09-12T14:02:01.1943556Z         'knowledge.constitution',
+check	Run make check	2026-09-12T14:02:01.1943763Z         'knowledge.memories',
+check	Run make check	2026-09-12T14:02:01.1943956Z         'knowledge.notes',
+check	Run make check	2026-09-12T14:02:01.1944155Z         'knowledge.personas',
+check	Run make check	2026-09-12T14:02:01.1944349Z         'knowledge.run_logs',
+check	Run make check	2026-09-12T14:02:01.1944566Z         'marker_prefixes.repository',
+check	Run make check	2026-09-12T14:02:01.1944777Z         'operation_name',
+check	Run make check	2026-09-12T14:02:01.1944966Z         'organize_mandates',
+check	Run make check	2026-09-12T14:02:01.1945177Z         'principals.1.tracker_user',
+check	Run make check	2026-09-12T14:02:01.1945405Z         'principals.2.handle',
+check	Run make check	2026-09-12T14:02:01.1945623Z         'principals.2.tracker_user',
+check	Run make check	2026-09-12T14:02:01.1945860Z         'principals.approver.forge_handle',
+check	Run make check	2026-09-12T14:02:01.1946116Z         'principals.approver.tracker_user',
+check	Run make check	2026-09-12T14:02:01.1946362Z         'principals.assignee.tracker_user',
+check	Run make check	2026-09-12T14:02:01.1946578Z         'private_surface',
+check	Run make check	2026-09-12T14:02:01.1946785Z         'queue_states.approved',
+check	Run make check	2026-09-12T14:02:01.1947003Z         'queue_states.decision',
+check	Run make check	2026-09-12T14:02:01.1947191Z         'queue_states.done',
+check	Run make check	2026-09-12T14:02:01.1947394Z         'queue_states.proposed',
+check	Run make check	2026-09-12T14:02:01.1947597Z         'queue_states.triage',
+check	Run make check	2026-09-12T14:02:01.1947784Z         'records.fire',
+check	Run make check	2026-09-12T14:02:01.1948013Z         'records.fire.columns.what_happened',
+check	Run make check	2026-09-12T14:02:01.1948243Z         'records.fire.id',
+check	Run make check	2026-09-12T14:02:01.1948436Z         'records.fire.name',
+check	Run make check	2026-09-12T14:02:01.1948648Z         'records.fire.system',
+check	Run make check	2026-09-12T14:02:01.1948857Z         'records.fire_prep.id',
+check	Run make check	2026-09-12T14:02:01.1949350Z         'records.fire_prep.name',
+check	Run make check	2026-09-12T14:02:01.1949569Z         'records.grooming.id',
+check	Run make check	2026-09-12T14:02:01.1949778Z         'records.grooming.name',
+check	Run make check	2026-09-12T14:02:01.1949964Z         'repos',
+check	Run make check	2026-09-12T14:02:01.1950128Z         'run_event_states',
+check	Run make check	2026-09-12T14:02:01.1950318Z         'scope_labels',
+check	Run make check	2026-09-12T14:02:01.1950516Z         'scope_labels.approved',
+check	Run make check	2026-09-12T14:02:01.1950726Z         'scope_labels.proposed',
+check	Run make check	2026-09-12T14:02:01.1950927Z         'scope_labels.triage',
+check	Run make check	2026-09-12T14:02:01.1951197Z         'teams',
+check	Run make check	2026-09-12T14:02:01.1951377Z   -     'workflow_states.done',
+check	Run make check	2026-09-12T14:02:01.1951598Z         'workflow_states.in_progress',
+check	Run make check	2026-09-12T14:02:01.1951828Z         'workflow_states.in_review',
+check	Run make check	2026-09-12T14:02:01.1952032Z         'workspace',
+check	Run make check	2026-09-12T14:02:01.1952194Z     }
+check	Run make check	2026-09-12T14:02:01.1954327Z FAILED tests/prompts/test_supervision_adoption.py::test_the_queue_terminal_turns_on_demonstration_and_not_on_a_merge - assert "Demonstration is a fact about the branch and never about the branch's fate" in '<role>\nYou are the project-management grooming pass for the {{operation_name}} delivery operation — you own the corr...n empty pass is a finding, and\na gap in the log is indistinguishable from a pass that never ran.\n</notion_logging>\n'
+check	Run make check	2026-09-12T14:02:01.1956393Z FAILED tests/services/test_dispatch_pass.py::test_a_pass_the_root_built_follows_the_run_it_enqueued - AssertionError: assert [('K-1', <Lif...n_progress'>)] == [('K-1', <Lif...ONE: 'done'>)]
+check	Run make check	2026-09-12T14:02:01.1956937Z   
+check	Run make check	2026-09-12T14:02:01.1957197Z   Right contains one more item: ('K-1', <LifecycleStage.DONE: 'done'>)
+check	Run make check	2026-09-12T14:02:01.1957469Z   
+check	Run make check	2026-09-12T14:02:01.1957611Z   Full diff:
+check	Run make check	2026-09-12T14:02:01.1957765Z     [
+check	Run make check	2026-09-12T14:02:01.1957912Z         (
+check	Run make check	2026-09-12T14:02:01.1958066Z             'K-1',
+check	Run make check	2026-09-12T14:02:01.1958296Z             <LifecycleStage.IN_PROGRESS: 'in_progress'>,
+check	Run make check	2026-09-12T14:02:01.1958527Z         ),
+check	Run make check	2026-09-12T14:02:01.1958672Z   -     (
+check	Run make check	2026-09-12T14:02:01.1958830Z   -         'K-1',
+check	Run make check	2026-09-12T14:02:01.1959025Z   -         <LifecycleStage.DONE: 'done'>,
+check	Run make check	2026-09-12T14:02:01.1959237Z   -     ),
+check	Run make check	2026-09-12T14:02:01.1959374Z     ]
+check	Run make check	2026-09-12T14:02:01.1960439Z FAILED tests/tracker/test_barren_record_collector.py::test_cold_clients_read_current_native_bytes[fake-port] - kodezart.domain.errors.SurfaceWriteAttributionError: the protected tracker record is not attributable to this writer (author: 'fixture-approver')
+check	Run make check	2026-09-12T14:02:01.1962373Z FAILED tests/tracker/test_tracker_boot_wiring.py::test_boot_starts_a_scheduler_carrying_one_dispatch_pass_per_repo - kodezart.types.domain.operation.OperationMemberAbsentError: operation config declares no marker_prefixes['run_outcome']; this tracker comment identity cannot be read or written
+check	Run make check	2026-09-12T14:02:01.1963427Z ============ 7 failed, 9661 passed, 25 skipped in 218.55s (0:03:38) ============
+check	Run make check	2026-09-12T14:02:02.4112424Z make: *** [Makefile:34: test] Error 1
+check	Run make check	2026-09-12T14:02:02.4126607Z ##[error]Process completed with exit code 2.

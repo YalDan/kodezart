@@ -1,0 +1,4 @@
+2026-09-12 22:32:57 [debug    ] fire_workflow_endpoint
+{"endpoint": "fire", "status": 500, "body": "Internal Server Error", "submissions": 0}
+2026-09-12 22:32:57 [debug    ] stream_workflow_endpoint
+{"endpoint": "workflow", "status": 500, "body": "Internal Server Error", "submissions": 0}

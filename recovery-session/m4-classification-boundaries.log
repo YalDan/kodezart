@@ -1,0 +1,519 @@
+...............................................FFFFFF................... [ 91%]
+.......                                                                  [100%]
+=================================== FAILURES ===================================
+_ test_actual_before_write_guard_stops_each_write_after_internal_waits[refusal-1] _
+
+stage = 1, failure = 'refusal'
+
+    @pytest.mark.parametrize("stage", [1, 2])
+    @pytest.mark.parametrize("failure", ["refusal", "cancellation"])
+    async def test_actual_before_write_guard_stops_each_write_after_internal_waits(
+        stage, failure
+    ):
+        board, writer = actual_writer()
+        entered = asyncio.Event()
+        never = asyncio.Event()
+        visits = []
+        refusal = RuntimeError("the supplied current policy refused this write")
+    
+        async def guard():
+            visits.append(len(questions(board)))
+            assert len(board.grants()) == 2
+            assert "decision-needed" not in board.server.issues[CLAIMED_ISSUE].labels
+            if len(visits) == stage:
+                if failure == "refusal":
+                    raise refusal
+                entered.set()
+                await never.wait()
+    
+        task = asyncio.create_task(
+            writer.raise_escalation(
+                lane_key="actual-lane",
+                job_id="actual-job",
+                escalation=question(),
+                visibility=RepoVisibility.PUBLIC,
+                before_write=guard,
+            )
+        )
+        try:
+            if failure == "cancellation":
+                await asyncio.wait_for(entered.wait(), timeout=5)
+                task.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await task
+            else:
+                with pytest.raises(RuntimeError) as caught:
+>                   await task
+
+tests/tracker/test_escalation_owned_boundaries.py:94: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/services/lane_escalation.py:132: in raise_escalation
+    await before_write()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    async def guard():
+        visits.append(len(questions(board)))
+>       assert len(board.grants()) == 2
+E       AssertionError: assert 1 == 2
+E        +  where 1 = len([FakeMcpComment(id='comment-0001', issue_id='FIX-1', author='fixture-approver', body='```kodezart-claim\nkind: lease\n...mezone.utc), parent_id=None, updated_at=datetime.datetime(2026, 3, 1, 12, 0, 1, 500000, tzinfo=datetime.timezone.utc))])
+E        +    where [FakeMcpComment(id='comment-0001', issue_id='FIX-1', author='fixture-approver', body='```kodezart-claim\nkind: lease\n...mezone.utc), parent_id=None, updated_at=datetime.datetime(2026, 3, 1, 12, 0, 1, 500000, tzinfo=datetime.timezone.utc))] = grants()
+E        +      where grants = <tests.services.test_run_surface_lease._Board object at 0x10c6dd9a0>.grants
+
+tests/tracker/test_escalation_owned_boundaries.py:69: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 23:24:30 [info     ] outbound_content_gated         categories=[] content_digest=d0775b3e583872183bd3c3707135fd72ba23a39e52b98598f6d3eba9bb31ef4a failure=None hits=[] surface=tracker verdict=clean visibility=public writer=tracker_comment
+_ test_actual_before_write_guard_stops_each_write_after_internal_waits[refusal-2] _
+
+stage = 2, failure = 'refusal'
+
+    @pytest.mark.parametrize("stage", [1, 2])
+    @pytest.mark.parametrize("failure", ["refusal", "cancellation"])
+    async def test_actual_before_write_guard_stops_each_write_after_internal_waits(
+        stage, failure
+    ):
+        board, writer = actual_writer()
+        entered = asyncio.Event()
+        never = asyncio.Event()
+        visits = []
+        refusal = RuntimeError("the supplied current policy refused this write")
+    
+        async def guard():
+            visits.append(len(questions(board)))
+            assert len(board.grants()) == 2
+            assert "decision-needed" not in board.server.issues[CLAIMED_ISSUE].labels
+            if len(visits) == stage:
+                if failure == "refusal":
+                    raise refusal
+                entered.set()
+                await never.wait()
+    
+        task = asyncio.create_task(
+            writer.raise_escalation(
+                lane_key="actual-lane",
+                job_id="actual-job",
+                escalation=question(),
+                visibility=RepoVisibility.PUBLIC,
+                before_write=guard,
+            )
+        )
+        try:
+            if failure == "cancellation":
+                await asyncio.wait_for(entered.wait(), timeout=5)
+                task.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await task
+            else:
+                with pytest.raises(RuntimeError) as caught:
+>                   await task
+
+tests/tracker/test_escalation_owned_boundaries.py:94: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/services/lane_escalation.py:132: in raise_escalation
+    await before_write()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    async def guard():
+        visits.append(len(questions(board)))
+>       assert len(board.grants()) == 2
+E       AssertionError: assert 1 == 2
+E        +  where 1 = len([FakeMcpComment(id='comment-0001', issue_id='FIX-1', author='fixture-approver', body='```kodezart-claim\nkind: lease\n...mezone.utc), parent_id=None, updated_at=datetime.datetime(2026, 3, 1, 12, 0, 1, 500000, tzinfo=datetime.timezone.utc))])
+E        +    where [FakeMcpComment(id='comment-0001', issue_id='FIX-1', author='fixture-approver', body='```kodezart-claim\nkind: lease\n...mezone.utc), parent_id=None, updated_at=datetime.datetime(2026, 3, 1, 12, 0, 1, 500000, tzinfo=datetime.timezone.utc))] = grants()
+E        +      where grants = <tests.services.test_run_surface_lease._Board object at 0x10c716090>.grants
+
+tests/tracker/test_escalation_owned_boundaries.py:69: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 23:24:30 [info     ] outbound_content_gated         categories=[] content_digest=d0775b3e583872183bd3c3707135fd72ba23a39e52b98598f6d3eba9bb31ef4a failure=None hits=[] surface=tracker verdict=clean visibility=public writer=tracker_comment
+_ test_actual_before_write_guard_stops_each_write_after_internal_waits[cancellation-1] _
+
+fut = <coroutine object Event.wait at 0x10c5ce0a0>, timeout = 5
+
+    async def wait_for(fut, timeout):
+        """Wait for the single Future or coroutine to complete, with timeout.
+    
+        Coroutine will be wrapped in Task.
+    
+        Returns result of the Future or coroutine.  When a timeout occurs,
+        it cancels the task and raises TimeoutError.  To avoid the task
+        cancellation, wrap it in shield().
+    
+        If the wait is cancelled, the task is also cancelled.
+    
+        If the task suppresses the cancellation and returns a value instead,
+        that value is returned.
+    
+        This function is a coroutine.
+        """
+        # The special case for timeout <= 0 is for the following case:
+        #
+        # async def test_waitfor():
+        #     func_started = False
+        #
+        #     async def func():
+        #         nonlocal func_started
+        #         func_started = True
+        #
+        #     try:
+        #         await asyncio.wait_for(func(), 0)
+        #     except asyncio.TimeoutError:
+        #         assert not func_started
+        #     else:
+        #         assert False
+        #
+        # asyncio.run(test_waitfor())
+    
+    
+        if timeout is not None and timeout <= 0:
+            fut = ensure_future(fut)
+    
+            if fut.done():
+                return fut.result()
+    
+            await _cancel_and_wait(fut)
+            try:
+                return fut.result()
+            except exceptions.CancelledError as exc:
+                raise TimeoutError from exc
+    
+        async with timeouts.timeout(timeout):
+>           return await fut
+                   ^^^^^^^^^
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/tasks.py:520: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <asyncio.locks.Event object at 0x10c6dce00 [unset]>
+
+    async def wait(self):
+        """Block until the internal flag is true.
+    
+        If the internal flag is true on entry, return True
+        immediately.  Otherwise, block until another coroutine calls
+        set() to set the flag to true, then return True.
+        """
+        if self._value:
+            return True
+    
+        fut = self._get_loop().create_future()
+        self._waiters.append(fut)
+        try:
+>           await fut
+E           asyncio.exceptions.CancelledError
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/locks.py:212: CancelledError
+
+The above exception was the direct cause of the following exception:
+
+stage = 1, failure = 'cancellation'
+
+    @pytest.mark.parametrize("stage", [1, 2])
+    @pytest.mark.parametrize("failure", ["refusal", "cancellation"])
+    async def test_actual_before_write_guard_stops_each_write_after_internal_waits(
+        stage, failure
+    ):
+        board, writer = actual_writer()
+        entered = asyncio.Event()
+        never = asyncio.Event()
+        visits = []
+        refusal = RuntimeError("the supplied current policy refused this write")
+    
+        async def guard():
+            visits.append(len(questions(board)))
+            assert len(board.grants()) == 2
+            assert "decision-needed" not in board.server.issues[CLAIMED_ISSUE].labels
+            if len(visits) == stage:
+                if failure == "refusal":
+                    raise refusal
+                entered.set()
+                await never.wait()
+    
+        task = asyncio.create_task(
+            writer.raise_escalation(
+                lane_key="actual-lane",
+                job_id="actual-job",
+                escalation=question(),
+                visibility=RepoVisibility.PUBLIC,
+                before_write=guard,
+            )
+        )
+        try:
+            if failure == "cancellation":
+>               await asyncio.wait_for(entered.wait(), timeout=5)
+
+tests/tracker/test_escalation_owned_boundaries.py:88: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/tasks.py:519: in wait_for
+    async with timeouts.timeout(timeout):
+               ^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <Timeout [expired]>
+exc_type = <class 'asyncio.exceptions.CancelledError'>
+exc_val = CancelledError(), exc_tb = <traceback object at 0x10c688900>
+
+    async def __aexit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType],
+    ) -> Optional[bool]:
+        assert self._state in (_State.ENTERED, _State.EXPIRING)
+    
+        if self._timeout_handler is not None:
+            self._timeout_handler.cancel()
+            self._timeout_handler = None
+    
+        if self._state is _State.EXPIRING:
+            self._state = _State.EXPIRED
+    
+            if self._task.uncancel() <= self._cancelling and exc_type is exceptions.CancelledError:
+                # Since there are no new cancel requests, we're
+                # handling this.
+>               raise TimeoutError from exc_val
+E               TimeoutError
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/timeouts.py:115: TimeoutError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 23:24:30 [info     ] outbound_content_gated         categories=[] content_digest=d0775b3e583872183bd3c3707135fd72ba23a39e52b98598f6d3eba9bb31ef4a failure=None hits=[] surface=tracker verdict=clean visibility=public writer=tracker_comment
+_ test_actual_before_write_guard_stops_each_write_after_internal_waits[cancellation-2] _
+
+fut = <coroutine object Event.wait at 0x10c75c9e0>, timeout = 5
+
+    async def wait_for(fut, timeout):
+        """Wait for the single Future or coroutine to complete, with timeout.
+    
+        Coroutine will be wrapped in Task.
+    
+        Returns result of the Future or coroutine.  When a timeout occurs,
+        it cancels the task and raises TimeoutError.  To avoid the task
+        cancellation, wrap it in shield().
+    
+        If the wait is cancelled, the task is also cancelled.
+    
+        If the task suppresses the cancellation and returns a value instead,
+        that value is returned.
+    
+        This function is a coroutine.
+        """
+        # The special case for timeout <= 0 is for the following case:
+        #
+        # async def test_waitfor():
+        #     func_started = False
+        #
+        #     async def func():
+        #         nonlocal func_started
+        #         func_started = True
+        #
+        #     try:
+        #         await asyncio.wait_for(func(), 0)
+        #     except asyncio.TimeoutError:
+        #         assert not func_started
+        #     else:
+        #         assert False
+        #
+        # asyncio.run(test_waitfor())
+    
+    
+        if timeout is not None and timeout <= 0:
+            fut = ensure_future(fut)
+    
+            if fut.done():
+                return fut.result()
+    
+            await _cancel_and_wait(fut)
+            try:
+                return fut.result()
+            except exceptions.CancelledError as exc:
+                raise TimeoutError from exc
+    
+        async with timeouts.timeout(timeout):
+>           return await fut
+                   ^^^^^^^^^
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/tasks.py:520: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <asyncio.locks.Event object at 0x10c715520 [unset]>
+
+    async def wait(self):
+        """Block until the internal flag is true.
+    
+        If the internal flag is true on entry, return True
+        immediately.  Otherwise, block until another coroutine calls
+        set() to set the flag to true, then return True.
+        """
+        if self._value:
+            return True
+    
+        fut = self._get_loop().create_future()
+        self._waiters.append(fut)
+        try:
+>           await fut
+E           asyncio.exceptions.CancelledError
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/locks.py:212: CancelledError
+
+The above exception was the direct cause of the following exception:
+
+stage = 2, failure = 'cancellation'
+
+    @pytest.mark.parametrize("stage", [1, 2])
+    @pytest.mark.parametrize("failure", ["refusal", "cancellation"])
+    async def test_actual_before_write_guard_stops_each_write_after_internal_waits(
+        stage, failure
+    ):
+        board, writer = actual_writer()
+        entered = asyncio.Event()
+        never = asyncio.Event()
+        visits = []
+        refusal = RuntimeError("the supplied current policy refused this write")
+    
+        async def guard():
+            visits.append(len(questions(board)))
+            assert len(board.grants()) == 2
+            assert "decision-needed" not in board.server.issues[CLAIMED_ISSUE].labels
+            if len(visits) == stage:
+                if failure == "refusal":
+                    raise refusal
+                entered.set()
+                await never.wait()
+    
+        task = asyncio.create_task(
+            writer.raise_escalation(
+                lane_key="actual-lane",
+                job_id="actual-job",
+                escalation=question(),
+                visibility=RepoVisibility.PUBLIC,
+                before_write=guard,
+            )
+        )
+        try:
+            if failure == "cancellation":
+>               await asyncio.wait_for(entered.wait(), timeout=5)
+
+tests/tracker/test_escalation_owned_boundaries.py:88: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/tasks.py:519: in wait_for
+    async with timeouts.timeout(timeout):
+               ^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <Timeout [expired]>
+exc_type = <class 'asyncio.exceptions.CancelledError'>
+exc_val = CancelledError(), exc_tb = <traceback object at 0x10c8a1f40>
+
+    async def __aexit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType],
+    ) -> Optional[bool]:
+        assert self._state in (_State.ENTERED, _State.EXPIRING)
+    
+        if self._timeout_handler is not None:
+            self._timeout_handler.cancel()
+            self._timeout_handler = None
+    
+        if self._state is _State.EXPIRING:
+            self._state = _State.EXPIRED
+    
+            if self._task.uncancel() <= self._cancelling and exc_type is exceptions.CancelledError:
+                # Since there are no new cancel requests, we're
+                # handling this.
+>               raise TimeoutError from exc_val
+E               TimeoutError
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/timeouts.py:115: TimeoutError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 23:24:36 [info     ] outbound_content_gated         categories=[] content_digest=d0775b3e583872183bd3c3707135fd72ba23a39e52b98598f6d3eba9bb31ef4a failure=None hits=[] surface=tracker verdict=clean visibility=public writer=tracker_comment
+_ test_cancelled_caller_settles_exact_issued_mutation_before_releasing[comment] _
+
+issued = 'comment'
+
+    @pytest.mark.parametrize("issued", ["comment", "classification"])
+    async def test_cancelled_caller_settles_exact_issued_mutation_before_releasing(issued):
+        board, writer = actual_writer()
+        board.after = True
+        if issued == "comment":
+            board.pause = lambda name, arguments: (
+                name == "save_comment"
+                and str(arguments.get("body", "")).startswith("[question:")
+            )
+        else:
+            board.pause = lambda name, arguments: (
+                name == "save_issue" and ("addLabels" in arguments)
+            )
+        task = asyncio.create_task(
+            writer.raise_escalation(
+                lane_key="actual-lane",
+                job_id="actual-job",
+                escalation=question(),
+                visibility=RepoVisibility.PUBLIC,
+            )
+        )
+        try:
+            await asyncio.wait_for(board.reached.wait(), timeout=5)
+            assert len(questions(board)) == 1
+            task.cancel()
+            await asyncio.sleep(0)
+            task.cancel()
+            await asyncio.sleep(0)
+            assert not task.done()
+>           assert len(board.grants()) == 2
+E           AssertionError: assert 1 == 2
+E            +  where 1 = len([FakeMcpComment(id='comment-0001', issue_id='FIX-1', author='fixture-approver', body='```kodezart-claim\nkind: lease\n...mezone.utc), parent_id=None, updated_at=datetime.datetime(2026, 3, 1, 12, 0, 1, 500000, tzinfo=datetime.timezone.utc))])
+E            +    where [FakeMcpComment(id='comment-0001', issue_id='FIX-1', author='fixture-approver', body='```kodezart-claim\nkind: lease\n...mezone.utc), parent_id=None, updated_at=datetime.datetime(2026, 3, 1, 12, 0, 1, 500000, tzinfo=datetime.timezone.utc))] = grants()
+E            +      where grants = <tests.services.test_run_surface_lease._Board object at 0x10c7952b0>.grants
+
+tests/tracker/test_escalation_owned_boundaries.py:135: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 23:24:41 [info     ] outbound_content_gated         categories=[] content_digest=d0775b3e583872183bd3c3707135fd72ba23a39e52b98598f6d3eba9bb31ef4a failure=None hits=[] surface=tracker verdict=clean visibility=public writer=tracker_comment
+_ test_cancelled_caller_settles_exact_issued_mutation_before_releasing[classification] _
+
+issued = 'classification'
+
+    @pytest.mark.parametrize("issued", ["comment", "classification"])
+    async def test_cancelled_caller_settles_exact_issued_mutation_before_releasing(issued):
+        board, writer = actual_writer()
+        board.after = True
+        if issued == "comment":
+            board.pause = lambda name, arguments: (
+                name == "save_comment"
+                and str(arguments.get("body", "")).startswith("[question:")
+            )
+        else:
+            board.pause = lambda name, arguments: (
+                name == "save_issue" and ("addLabels" in arguments)
+            )
+        task = asyncio.create_task(
+            writer.raise_escalation(
+                lane_key="actual-lane",
+                job_id="actual-job",
+                escalation=question(),
+                visibility=RepoVisibility.PUBLIC,
+            )
+        )
+        try:
+            await asyncio.wait_for(board.reached.wait(), timeout=5)
+            assert len(questions(board)) == 1
+            task.cancel()
+            await asyncio.sleep(0)
+            task.cancel()
+            await asyncio.sleep(0)
+            assert not task.done()
+>           assert len(board.grants()) == 2
+E           AssertionError: assert 1 == 2
+E            +  where 1 = len([FakeMcpComment(id='comment-0001', issue_id='FIX-1', author='fixture-approver', body='```kodezart-claim\nkind: lease\n...mezone.utc), parent_id=None, updated_at=datetime.datetime(2026, 3, 1, 12, 0, 3, 500000, tzinfo=datetime.timezone.utc))])
+E            +    where [FakeMcpComment(id='comment-0001', issue_id='FIX-1', author='fixture-approver', body='```kodezart-claim\nkind: lease\n...mezone.utc), parent_id=None, updated_at=datetime.datetime(2026, 3, 1, 12, 0, 3, 500000, tzinfo=datetime.timezone.utc))] = grants()
+E            +      where grants = <tests.services.test_run_surface_lease._Board object at 0x10c795730>.grants
+
+tests/tracker/test_escalation_owned_boundaries.py:135: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 23:24:41 [info     ] outbound_content_gated         categories=[] content_digest=d0775b3e583872183bd3c3707135fd72ba23a39e52b98598f6d3eba9bb31ef4a failure=None hits=[] surface=tracker verdict=clean visibility=public writer=tracker_comment
+=========================== short test summary info ============================
+FAILED tests/tracker/test_escalation_owned_boundaries.py::test_actual_before_write_guard_stops_each_write_after_internal_waits[refusal-1]
+FAILED tests/tracker/test_escalation_owned_boundaries.py::test_actual_before_write_guard_stops_each_write_after_internal_waits[refusal-2]
+FAILED tests/tracker/test_escalation_owned_boundaries.py::test_actual_before_write_guard_stops_each_write_after_internal_waits[cancellation-1]
+FAILED tests/tracker/test_escalation_owned_boundaries.py::test_actual_before_write_guard_stops_each_write_after_internal_waits[cancellation-2]
+FAILED tests/tracker/test_escalation_owned_boundaries.py::test_cancelled_caller_settles_exact_issued_mutation_before_releasing[comment]
+FAILED tests/tracker/test_escalation_owned_boundaries.py::test_cancelled_caller_settles_exact_issued_mutation_before_releasing[classification]
+6 failed, 73 passed in 12.00s

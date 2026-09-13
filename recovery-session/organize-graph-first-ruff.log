@@ -1,0 +1,1157 @@
+E501 Line too long (97 > 88)
+    --> src/kodezart/adapters/linear_mcp_tracker.py:1371:89
+     |
+1369 |     ) -> TrackerIssue:
+1370 |         async def current_facts() -> tuple[TrackerIssue, ...]:
+1371 |             current = tuple([await self.read_issue(issue_key=row.issue_key) for row in expected])
+     |                                                                                         ^^^^^^^^^
+1372 |             if tuple(graph_snapshot(issue) for issue in current) != expected:
+1373 |                 raise OrganizeWriteRefusalError(issue_key=issue_key, reason="the native graph changed before writing")
+     |
+
+E501 Line too long (118 > 88)
+    --> src/kodezart/adapters/linear_mcp_tracker.py:1373:89
+     |
+1371 |             current = tuple([await self.read_issue(issue_key=row.issue_key) for row in expected])
+1372 |             if tuple(graph_snapshot(issue) for issue in current) != expected:
+1373 |                 raise OrganizeWriteRefusalError(issue_key=issue_key, reason="the native graph changed before writing")
+     |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1374 |             return current
+     |
+
+E501 Line too long (152 > 88)
+    --> src/kodezart/adapters/linear_mcp_tracker.py:1389:89
+     |
+1387 | …
+1388 | …
+1389 | …ue_key=issue_key, reason="the backend cannot clear a milestone through its declared save schema")
+     |                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1390 | …ta(ref=ScopeRef(kind=ScopeKind.MILESTONE, key=change.milestone_id))
+1391 | …e_id or milestone.parent != ScopeRef(kind=ScopeKind.PROJECT, key=candidate.project_id or ""):
+     |
+
+E501 Line too long (122 > 88)
+    --> src/kodezart/adapters/linear_mcp_tracker.py:1390:89
+     |
+1388 | …     if change.milestone_id is None:
+1389 | …         raise OrganizeWriteRefusalError(issue_key=issue_key, reason="the backend cannot clear a milestone through its declared sav…
+1390 | …     milestone = await self.container_metadata(ref=ScopeRef(kind=ScopeKind.MILESTONE, key=change.milestone_id))
+     |                                                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1391 | …     if milestone.ref.key != change.milestone_id or milestone.parent != ScopeRef(kind=ScopeKind.PROJECT, key=candidate.project_id o…
+1392 | …         raise OrganizeWriteRefusalError(issue_key=issue_key, reason="milestone does not belong to the current native project")
+     |
+
+E501 Line too long (148 > 88)
+    --> src/kodezart/adapters/linear_mcp_tracker.py:1391:89
+     |
+1389 | …ssue_key=issue_key, reason="the backend cannot clear a milestone through its declared save schema")
+1390 | …data(ref=ScopeRef(kind=ScopeKind.MILESTONE, key=change.milestone_id))
+1391 | …one_id or milestone.parent != ScopeRef(kind=ScopeKind.PROJECT, key=candidate.project_id or ""):
+     |                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1392 | …ssue_key=issue_key, reason="milestone does not belong to the current native project")
+1393 | …tone_id
+     |
+
+E501 Line too long (138 > 88)
+    --> src/kodezart/adapters/linear_mcp_tracker.py:1392:89
+     |
+1390 | …_metadata(ref=ScopeRef(kind=ScopeKind.MILESTONE, key=change.milestone_id))
+1391 | …ilestone_id or milestone.parent != ScopeRef(kind=ScopeKind.PROJECT, key=candidate.project_id or ""):
+1392 | …ror(issue_key=issue_key, reason="milestone does not belong to the current native project")
+     |                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1393 | …milestone_id
+1394 | …
+     |
+
+E501 Line too long (149 > 88)
+    --> src/kodezart/adapters/linear_mcp_tracker.py:1395:89
+     |
+1393 | …tone_id
+1394 | …
+1395 | … "removeBlockedBy") if isinstance(change, BlockedByChange) else ("relatedTo", "removeRelatedTo")
+     |                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1396 | …
+1397 | ….add)
+     |
+
+E501 Line too long (131 > 88)
+    --> src/kodezart/adapters/linear_mcp_tracker.py:1402:89
+     |
+1400 |         for peer in sorted(peers):
+1401 |             await self._require_surface_holder(
+1402 |                 surface=WritableSurface(kind=SurfaceKind.ISSUE_GRAPH, ref=ScopeRef(kind=ScopeKind.ISSUE, key=peer)), holder=holder,
+     |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1403 |             )
+1404 |         facts = await current_facts()
+     |
+
+E501 Line too long (119 > 88)
+    --> src/kodezart/adapters/linear_mcp_tracker.py:1405:89
+     |
+1403 |             )
+1404 |         facts = await current_facts()
+1405 |         if graph_snapshot(next(issue for issue in facts if issue.issue_key == issue_key)) == graph_snapshot(candidate):
+     |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1406 |             return candidate
+1407 |         self._saved_issue(await self._call(_TOOL_SAVE_ISSUE, arguments))
+     |
+
+E501 Line too long (95 > 88)
+    --> src/kodezart/adapters/linear_mcp_tracker.py:1420:89
+     |
+1418 |                 raise DuplicateIssueIdentityError(
+1419 |                     scope_key=scope, deliverable_key=identity.deliverable_key,
+1420 |                     issue_keys=[children[identity.deliverable_key].issue_key, issue.issue_key],
+     |                                                                                         ^^^^^^^
+1421 |                 )
+1422 |             if issue.parent_key != source_key or {"criterion", "decision"} & issue.issue_labels:
+     |
+
+E501 Line too long (96 > 88)
+    --> src/kodezart/adapters/linear_mcp_tracker.py:1422:89
+     |
+1420 | …             issue_keys=[children[identity.deliverable_key].issue_key, issue.issue_key],
+1421 | …         )
+1422 | …     if issue.parent_key != source_key or {"criterion", "decision"} & issue.issue_labels:
+     |                                                                                   ^^^^^^^^
+1423 | …         raise OrganizeWriteRefusalError(issue_key=source_key, reason="split identity is misplaced or no longer an ordinary deliver…
+1424 | …     children[identity.deliverable_key] = issue
+     |
+
+E501 Line too long (144 > 88)
+    --> src/kodezart/adapters/linear_mcp_tracker.py:1423:89
+     |
+1421 | …
+1422 | …criterion", "decision"} & issue.issue_labels:
+1423 | …ue_key=source_key, reason="split identity is misplaced or no longer an ordinary deliverable")
+     |                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1424 | …sue
+1425 | …lambda issue: issue.issue_key))
+     |
+
+E501 Line too long (91 > 88)
+    --> src/kodezart/adapters/linear_mcp_tracker.py:1428:89
+     |
+1427 |     async def create_split_if_absent(
+1428 |         self, *, source_key: str, deliverable_key: str, title: str, body: str, holder: str,
+     |                                                                                         ^^^
+1429 |     ) -> TrackerIssue:
+1430 |         if not all(value.strip() for value in (source_key, deliverable_key, title, body)):
+     |
+
+E501 Line too long (90 > 88)
+    --> src/kodezart/adapters/linear_mcp_tracker.py:1430:89
+     |
+1428 |         self, *, source_key: str, deliverable_key: str, title: str, body: str, holder: str,
+1429 |     ) -> TrackerIssue:
+1430 |         if not all(value.strip() for value in (source_key, deliverable_key, title, body)):
+     |                                                                                         ^^
+1431 |             raise OrganizeWriteRefusalError(issue_key=source_key, reason="split creation requires nonblank identity and specificatio…
+1432 |         identity = IssueIdentity(scope_key=ScopeRef(kind=ScopeKind.ISSUE, key=source_key), deliverable_key=deliverable_key)
+     |
+
+E501 Line too long (135 > 88)
+    --> src/kodezart/adapters/linear_mcp_tracker.py:1431:89
+     |
+1429 | …
+1430 | …(source_key, deliverable_key, title, body)):
+1431 | …sue_key=source_key, reason="split creation requires nonblank identity and specification")
+     |                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1432 | …peRef(kind=ScopeKind.ISSUE, key=source_key), deliverable_key=deliverable_key)
+1433 | …
+     |
+
+E501 Line too long (123 > 88)
+    --> src/kodezart/adapters/linear_mcp_tracker.py:1432:89
+     |
+1430 | …     if not all(value.strip() for value in (source_key, deliverable_key, title, body)):
+1431 | …         raise OrganizeWriteRefusalError(issue_key=source_key, reason="split creation requires nonblank identity and specification")
+1432 | …     identity = IssueIdentity(scope_key=ScopeRef(kind=ScopeKind.ISSUE, key=source_key), deliverable_key=deliverable_key)
+     |                                                                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1433 | …     self._issue_identity.require_prefix()
+1434 | …     # The whole set read also refuses damaged, duplicate and misplaced peers.
+     |
+
+E501 Line too long (116 > 88)
+    --> src/kodezart/adapters/linear_mcp_tracker.py:1440:89
+     |
+1438 |         source = await self.read_issue(issue_key=source_key)
+1439 |         if source.issue_key != source_key or source.team_key is None:
+1440 |             raise OrganizeWriteRefusalError(issue_key=source_key, reason="split source has no declared native team")
+     |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1441 |         team = self._team_identifier(source.team_key)
+1442 |         state = await self._unstarted_state_id(team_id=team, issue_key=source_key)
+     |
+
+E501 Line too long (95 > 88)
+    --> src/kodezart/adapters/linear_mcp_tracker.py:1443:89
+     |
+1441 |         team = self._team_identifier(source.team_key)
+1442 |         state = await self._unstarted_state_id(team_id=team, issue_key=source_key)
+1443 |         content = self._issue_identity.encode(identity, body=body, issue_key="new split child")
+     |                                                                                         ^^^^^^^
+1444 |         arguments: dict[str, object] = {
+1445 |             "title": title, "description": content, "team": team,
+     |
+
+E501 Line too long (109 > 88)
+    --> src/kodezart/adapters/linear_mcp_tracker.py:1451:89
+     |
+1449 |             arguments["project"] = source.project_id
+1450 |         await self._require_surface_holder(
+1451 |             surface=WritableSurface(kind=SurfaceKind.ISSUE_SPLIT_SET, ref=identity.scope_key), holder=holder,
+     |                                                                                         ^^^^^^^^^^^^^^^^^^^^^
+1452 |         )
+1453 |         current_source = await self.read_issue(issue_key=source_key)
+     |
+
+E501 Line too long (146 > 88)
+    --> src/kodezart/adapters/linear_mcp_tracker.py:1454:89
+     |
+1452 | …
+1453 | …_key=source_key)
+1454 | … current_source.team_key != source.team_key or current_source.project_id != source.project_id:
+     |                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1455 | …y=source_key, reason="split source placement changed before creation")
+1456 | …(_TOOL_SAVE_ISSUE, arguments))
+     |
+
+E501 Line too long (122 > 88)
+    --> src/kodezart/adapters/linear_mcp_tracker.py:1455:89
+     |
+1453 | …     current_source = await self.read_issue(issue_key=source_key)
+1454 | …     if current_source.issue_key != source_key or current_source.team_key != source.team_key or current_source.project_id != source…
+1455 | …         raise OrganizeWriteRefusalError(issue_key=source_key, reason="split source placement changed before creation")
+     |                                                                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1456 | …     created = self._saved_issue(await self._call(_TOOL_SAVE_ISSUE, arguments))
+1457 | …     current = await self.read_issue(issue_key=created.issue_key)
+     |
+
+E501 Line too long (93 > 88)
+    --> src/kodezart/adapters/linear_mcp_tracker.py:1460:89
+     |
+1458 |         if (
+1459 |             current.issue_key != created.issue_key or current.parent_key != source_key
+1460 |             or current.team_key != source.team_key or current.project_id != source.project_id
+     |                                                                                         ^^^^^
+1461 |             or current.title != title or current.body != content
+1462 |             or current.state_kind is not WorkflowStateKind.UNSTARTED
+     |
+
+E501 Line too long (130 > 88)
+    --> src/kodezart/adapters/linear_mcp_tracker.py:1466:89
+     |
+1464 |             or await self.read_issue_identity(issue_key=current.issue_key) != identity
+1465 |         ):
+1466 |             raise OrganizeWriteRefusalError(issue_key=source_key, reason="created split did not retain its required native shape")
+     |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1467 |         return current
+     |
+
+E501 Line too long (100 > 88)
+    --> src/kodezart/adapters/linear_mcp_tracker.py:1475:89
+     |
+1473 |         except ValidationError as exc:
+1474 |             raise TrackerProtocolError(
+1475 |                 "invalid initial state vocabulary", tool=_TOOL_LIST_ISSUE_STATUSES, detail=str(exc),
+     |                                                                                         ^^^^^^^^^^^^
+1476 |             ) from exc
+1477 |         unstarted = [state.id for state in states if state.type == WorkflowStateKind.UNSTARTED.value]
+     |
+
+E501 Line too long (101 > 88)
+    --> src/kodezart/adapters/linear_mcp_tracker.py:1477:89
+     |
+1475 |                 "invalid initial state vocabulary", tool=_TOOL_LIST_ISSUE_STATUSES, detail=str(exc),
+1476 |             ) from exc
+1477 |         unstarted = [state.id for state in states if state.type == WorkflowStateKind.UNSTARTED.value]
+     |                                                                                         ^^^^^^^^^^^^^
+1478 |         if len(unstarted) != 1:
+1479 |             raise CriterionReadError(issue_key=issue_key, reason="initialization requires exactly one unstarted team state")
+     |
+
+E501 Line too long (124 > 88)
+    --> src/kodezart/adapters/linear_mcp_tracker.py:1479:89
+     |
+1477 |         unstarted = [state.id for state in states if state.type == WorkflowStateKind.UNSTARTED.value]
+1478 |         if len(unstarted) != 1:
+1479 |             raise CriterionReadError(issue_key=issue_key, reason="initialization requires exactly one unstarted team state")
+     |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1480 |         return unstarted[0]
+     |
+
+E501 Line too long (136 > 88)
+    --> src/kodezart/adapters/linear_mcp_tracker.py:1754:89
+     |
+1752 | …     )
+1753 | …     if wire.id != entry.id:
+1754 | …         raise TrackerProtocolError("issue identity read returned another native key", tool=_TOOL_GET_ISSUE, detail=entry.id)
+     |                                                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1755 | …     if held is not None:
+1756 | …         matches.append((held, self._to_issue(wire)))
+     |
+
+E501 Line too long (89 > 88)
+    --> src/kodezart/adapters/linear_mcp_tracker.py:1759:89
+     |
+1757 |         return tuple(matches)
+1758 |
+1759 |     async def _find_issue_identity(self, identity: IssueIdentity) -> TrackerIssue | None:
+     |                                                                                         ^
+1760 |         matches = [issue for held, issue in await self._identity_issues() if held == identity]
+1761 |         if len(matches) > 1:
+     |
+
+E501 Line too long (94 > 88)
+    --> src/kodezart/adapters/linear_mcp_tracker.py:1760:89
+     |
+1759 |     async def _find_issue_identity(self, identity: IssueIdentity) -> TrackerIssue | None:
+1760 |         matches = [issue for held, issue in await self._identity_issues() if held == identity]
+     |                                                                                         ^^^^^^
+1761 |         if len(matches) > 1:
+1762 |             raise DuplicateIssueIdentityError(
+     |
+
+E501 Line too long (90 > 88)
+   --> src/kodezart/core/protocols.py:910:89
+    |
+909 |     async def read_split_children(self, *, source_key: str) -> tuple[TrackerIssue, ...]:
+910 |         """Read unique ordinary children carrying the source's stable split identities."""
+    |                                                                                         ^^
+911 |         ...
+    |
+
+E501 Line too long (91 > 88)
+   --> src/kodezart/core/protocols.py:914:89
+    |
+913 |     async def create_split_if_absent(
+914 |         self, *, source_key: str, deliverable_key: str, title: str, body: str, holder: str,
+    |                                                                                         ^^^
+915 |     ) -> TrackerIssue:
+916 |         """Create one ordinary unstarted child under ISSUE_SPLIT_SET authority.
+    |
+
+E501 Line too long (101 > 88)
+  --> src/kodezart/domain/organize_graph.py:23:89
+   |
+21 |         issue_key=issue.issue_key, parent_key=issue.parent_key, priority=issue.priority,
+22 |         milestone_key=issue.milestone_key, project_id=issue.project_id,
+23 |         relations=tuple(sorted(issue.relations, key=lambda edge: (edge.kind.value, edge.issue_key))),
+   |                                                                                         ^^^^^^^^^^^^^
+24 |     )
+   |
+
+E501 Line too long (95 > 88)
+  --> src/kodezart/domain/organize_graph.py:31:89
+   |
+29 |     for change in changes:
+30 |         if isinstance(change, ParentChange):
+31 |             keys.update(key for key in (issue.parent_key, change.parent_id) if key is not None)
+   |                                                                                         ^^^^^^^
+32 |         elif isinstance(change, (BlockedByChange, RelatedToChange)):
+33 |             keys.update((*change.add, *change.remove))
+   |
+
+E501 Line too long (117 > 88)
+  --> src/kodezart/domain/organize_graph.py:49:89
+   |
+47 |             fields['milestone_key'] = change.milestone_id
+48 |         else:
+49 |             kind = IssueRelationKind.BLOCKED_BY if isinstance(change, BlockedByChange) else IssueRelationKind.RELATED
+   |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+50 |             relations = [edge for edge in relations if not (edge.kind is kind and edge.issue_key in change.remove)]
+51 |             held = {edge.issue_key for edge in relations if edge.kind is kind}
+   |
+
+E501 Line too long (115 > 88)
+  --> src/kodezart/domain/organize_graph.py:50:89
+   |
+48 |         else:
+49 |             kind = IssueRelationKind.BLOCKED_BY if isinstance(change, BlockedByChange) else IssueRelationKind.RELATED
+50 |             relations = [edge for edge in relations if not (edge.kind is kind and edge.issue_key in change.remove)]
+   |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+51 |             held = {edge.issue_key for edge in relations if edge.kind is kind}
+52 |             relations.extend(IssueRelation(kind=kind, issue_key=key) for key in change.add if key not in held)
+   |
+
+E501 Line too long (110 > 88)
+  --> src/kodezart/domain/organize_graph.py:52:89
+   |
+50 |             relations = [edge for edge in relations if not (edge.kind is kind and edge.issue_key in change.remove)]
+51 |             held = {edge.issue_key for edge in relations if edge.kind is kind}
+52 |             relations.extend(IssueRelation(kind=kind, issue_key=key) for key in change.add if key not in held)
+   |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^
+53 |     fields['relations'] = relations
+54 |     return TrackerIssue.model_validate(fields)
+   |
+
+E501 Line too long (113 > 88)
+  --> src/kodezart/domain/organize_graph.py:75:89
+   |
+73 |     candidate = changed_issue(source, changes)
+74 |     for change in changes:
+75 |         if isinstance(change, (BlockedByChange, RelatedToChange)) and issue_key in (*change.add, *change.remove):
+   |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^
+76 |             raise refuse('an issue cannot relate to itself')
+77 |     by_key[issue_key] = candidate
+   |
+
+E501 Line too long (93 > 88)
+  --> src/kodezart/services/organize_context.py:66:89
+   |
+64 |             issues=tuple(facts[key] for key in sorted(facts)),
+65 |             ruling_comments=tuple(
+66 |                 sorted(rulings, key=lambda comment: (comment.issue_key, comment.comment_key))
+   |                                                                                         ^^^^^
+67 |             ),
+68 |         )
+   |
+
+E501 Line too long (89 > 88)
+  --> src/kodezart/services/organize_context.py:82:89
+   |
+80 |             row["issue_labels"] = sorted(issue.issue_labels - self._phase_labels)
+81 |             row["relations"] = sorted(
+82 |                 (relation.kind.value, relation.issue_key) for relation in issue.relations
+   |                                                                                         ^
+83 |             )
+84 |             facts.append(row)
+   |
+
+E501 Line too long (92 > 88)
+   --> src/kodezart/services/organize_owner.py:228:89
+    |
+226 |             {
+227 |                 **organize_variables(
+228 |                     graph_context=(await self._context.read(scope=scope)).model_dump_json(),
+    |                                                                                         ^^^^
+229 |                     mandate_rubric="",
+230 |                     issue_body=issue.body,
+    |
+
+E501 Line too long (90 > 88)
+   --> src/kodezart/services/organize_owner.py:342:89
+    |
+340 |         initial_value = initial.proposal.root
+341 |         kind = (
+342 |             SurfaceKind.CRITERION_CHILD_SET if isinstance(initial_value, CriteriaProposal)
+    |                                                                                         ^^
+343 |             else SurfaceKind.ISSUE_GRAPH if isinstance(initial_value, GraphProposal)
+344 |             else SurfaceKind.ISSUE_SPLIT_SET if isinstance(initial_value, SplitProposal)
+    |
+
+E501 Line too long (107 > 88)
+   --> src/kodezart/services/organize_owner.py:357:89
+    |
+355 |             ):
+356 |                 raise OrganizeWriteRefusalError(
+357 |                     issue_key=request.issue_key, reason="the author's graph context changed before writing"
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^
+358 |                 )
+    |
+
+E501 Line too long (101 > 88)
+   --> src/kodezart/services/organize_owner.py:387:89
+    |
+385 |             }[kind]
+386 |             if not isinstance(value, expected_type) or (
+387 |                 key is PromptKey.ORGANIZE_CRITERIA_AUTHOR and not isinstance(value, CriteriaProposal)
+    |                                                                                         ^^^^^^^^^^^^^
+388 |             ) or (key is not PromptKey.ORGANIZE_CRITERIA_AUTHOR and isinstance(value, CriteriaProposal)):
+389 |                 raise OrganizeWriteRefusalError(issue_key=request.issue_key, reason="author returned another write surface")
+    |
+
+E501 Line too long (105 > 88)
+   --> src/kodezart/services/organize_owner.py:388:89
+    |
+386 |             if not isinstance(value, expected_type) or (
+387 |                 key is PromptKey.ORGANIZE_CRITERIA_AUTHOR and not isinstance(value, CriteriaProposal)
+388 |             ) or (key is not PromptKey.ORGANIZE_CRITERIA_AUTHOR and isinstance(value, CriteriaProposal)):
+    |                                                                                         ^^^^^^^^^^^^^^^^^
+389 |                 raise OrganizeWriteRefusalError(issue_key=request.issue_key, reason="author returned another write surface")
+390 |             if isinstance(value, GraphProposal):
+    |
+
+E501 Line too long (124 > 88)
+   --> src/kodezart/services/organize_owner.py:389:89
+    |
+387 |                 key is PromptKey.ORGANIZE_CRITERIA_AUTHOR and not isinstance(value, CriteriaProposal)
+388 |             ) or (key is not PromptKey.ORGANIZE_CRITERIA_AUTHOR and isinstance(value, CriteriaProposal)):
+389 |                 raise OrganizeWriteRefusalError(issue_key=request.issue_key, reason="author returned another write surface")
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+390 |             if isinstance(value, GraphProposal):
+391 |                 _, peers = validate_graph_change(
+    |
+
+E501 Line too long (111 > 88)
+   --> src/kodezart/services/organize_owner.py:397:89
+    |
+395 |                 )
+396 |                 surfaces = frozenset(
+397 |                     WritableSurface(kind=SurfaceKind.ISSUE_GRAPH, ref=ScopeRef(kind=ScopeKind.ISSUE, key=peer))
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^
+398 |                     for peer in peers
+399 |                 )
+    |
+
+E501 Line too long (99 > 88)
+   --> src/kodezart/services/organize_owner.py:410:89
+    |
+408 |                     await settle(self._tracker.update_issue_graph(
+409 |                         issue_key=request.issue_key,
+410 |                         expected=tuple(graph_snapshot(issue) for issue in proposal.context.issues),
+    |                                                                                         ^^^^^^^^^^^
+411 |                         changes=value.changes, holder=job_id,
+412 |                     ))
+    |
+
+E501 Line too long (154 > 88)
+   --> src/kodezart/services/organize_owner.py:418:89
+    |
+416 | …reate-only port boundary.
+417 | …
+418 | ….title, OutboundDestination.TRACKER_TITLE), (child.body, OutboundDestination.TRACKER_DESCRIPTION)):
+    |                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+419 | …self._gate, log=self._log, content=content, visibility=visibility, shape=WriterShape.PROSE, destination=destination, content_class=C…
+420 | …
+    |
+
+E501 Line too long (208 > 88)
+   --> src/kodezart/services/organize_owner.py:419:89
+    |
+417 | …
+418 | ….TRACKER_TITLE), (child.body, OutboundDestination.TRACKER_DESCRIPTION)):
+419 | …content=content, visibility=visibility, shape=WriterShape.PROSE, destination=destination, content_class=ContentClass.AUTHORED)
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+420 | …
+421 | …e_key, reason="outbound gate changed split specification")
+    |
+
+E501 Line too long (140 > 88)
+   --> src/kodezart/services/organize_owner.py:421:89
+    |
+419 | …e(gate=self._gate, log=self._log, content=content, visibility=visibility, shape=WriterShape.PROSE, destination=destination, content_…
+420 | …
+421 | …efusalError(issue_key=request.issue_key, reason="outbound gate changed split specification")
+    |                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+422 | …ext
+423 | …er=self._tracker, job_id=job_id, surfaces=frozenset({surface}), lease_seconds=self._lease_seconds) as lease:
+    |
+
+E501 Line too long (156 > 88)
+   --> src/kodezart/services/organize_owner.py:423:89
+    |
+421 | …ror(issue_key=request.issue_key, reason="outbound gate changed split specification")
+422 | …
+423 | …_tracker, job_id=job_id, surfaces=frozenset({surface}), lease_seconds=self._lease_seconds) as lease:
+    |                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+424 | …
+425 | …
+    |
+
+E501 Line too long (119 > 88)
+   --> src/kodezart/services/organize_owner.py:427:89
+    |
+425 | …     await lease.renew()
+426 | …     await self._require_revision(proposal.revision)
+427 | …     if not await self._context.matches(scope=scope, digest=self._context.digest(expected_context)):
+    |                                                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+428 | …         raise OrganizeWriteRefusalError(issue_key=request.issue_key, reason="split source context changed before creation")
+429 | …     await self._may_write(request.issue_key, phase=phase, scope=scope)
+    |
+
+E501 Line too long (143 > 88)
+   --> src/kodezart/services/organize_owner.py:428:89
+    |
+426 | …     await self._require_revision(proposal.revision)
+427 | …     if not await self._context.matches(scope=scope, digest=self._context.digest(expected_context)):
+428 | …         raise OrganizeWriteRefusalError(issue_key=request.issue_key, reason="split source context changed before creation")
+    |                                                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+429 | …     await self._may_write(request.issue_key, phase=phase, scope=scope)
+430 | …     created = await settle(self._tracker.create_split_if_absent(source_key=request.issue_key, deliverable_key=child.deliverable_key…
+    |
+
+E501 Line too long (90 > 88)
+   --> src/kodezart/services/organize_owner.py:429:89
+    |
+427 | …     if not await self._context.matches(scope=scope, digest=self._context.digest(expected_context)):
+428 | …         raise OrganizeWriteRefusalError(issue_key=request.issue_key, reason="split source context changed before creation")
+429 | …     await self._may_write(request.issue_key, phase=phase, scope=scope)
+    |                                                                       ^^
+430 | …     created = await settle(self._tracker.create_split_if_absent(source_key=request.issue_key, deliverable_key=child.deliverable_key…
+431 | …     if created.issue_key not in expected_context.member_keys:
+    |
+
+E501 Line too long (204 > 88)
+   --> src/kodezart/services/organize_owner.py:430:89
+    |
+428 | …sue_key, reason="split source context changed before creation")
+429 | …ope=scope)
+430 | …ent(source_key=request.issue_key, deliverable_key=child.deliverable_key, title=child.title, body=child.body, holder=job_id))
+    |          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+431 | …:
+432 | …
+    |
+
+E501 Line too long (110 > 88)
+   --> src/kodezart/services/organize_owner.py:434:89
+    |
+432 | …                     expected_context = OrganizeContext(
+433 | …                         scope=scope,
+434 | …                         member_keys=tuple(sorted((*expected_context.member_keys, created.issue_key))),
+    |                                                                                   ^^^^^^^^^^^^^^^^^^^^^^
+435 | …                         issues=tuple(sorted((*expected_context.issues, created), key=lambda issue: issue.issue_key)),
+436 | …                         ruling_comments=expected_context.ruling_comments,
+    |
+
+E501 Line too long (125 > 88)
+   --> src/kodezart/services/organize_owner.py:435:89
+    |
+433 | …                         scope=scope,
+434 | …                         member_keys=tuple(sorted((*expected_context.member_keys, created.issue_key))),
+435 | …                         issues=tuple(sorted((*expected_context.issues, created), key=lambda issue: issue.issue_key)),
+    |                                                                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+436 | …                         ruling_comments=expected_context.ruling_comments,
+437 | …                     )
+    |
+
+E501 Line too long (107 > 88)
+   --> src/kodezart/services/organize_owner.py:817:89
+    |
+815 |                     revisions=snapshot,
+816 |                     admissions=tuple(
+817 |                         [result for result in admissions.values() if await self._admission.is_live(result)]
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^
+818 |                     ),
+819 |                     open_findings=findings,
+    |
+
+E501 Line too long (228 > 88)
+  --> src/kodezart/services/tracker_artifacts.py:48:89
+   |
+46 | …
+47 | …
+48 | …dentity is None or identity.scope_key != surface.ref or identity.deliverable_key in identities or {"criterion", "decision"} & child.issue_labels:
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+49 | …r missing native identity")
+50 | …
+   |
+
+E501 Line too long (110 > 88)
+  --> src/kodezart/services/tracker_artifacts.py:49:89
+   |
+47 | …     identity = await tracker.read_issue_identity(issue_key=child.issue_key)
+48 | …     if child.issue_key in keys or child.parent_key != source.issue_key or identity is None or identity.scope_key != surface.ref or i…
+49 | …         raise WriteBackReadError("split artifact has duplicate, misplaced or missing native identity")
+   |                                                                                   ^^^^^^^^^^^^^^^^^^^^^^
+50 | …     keys.add(child.issue_key)
+51 | …     identities.add(identity.deliverable_key)
+   |
+
+E501 Line too long (142 > 88)
+  --> src/kodezart/services/tracker_artifacts.py:52:89
+   |
+50 | …
+51 | …ey)
+52 | …el_dump(mode="json"), **child.model_dump(mode="json", exclude={"created_at", "updated_at"})})
+   |                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+53 | …ative_ref=source.issue_key, content=json.dumps(sorted(rows, key=lambda row: str(row["issue_key"])), sort_keys=True))
+54 | …
+   |
+
+E501 Line too long (165 > 88)
+  --> src/kodezart/services/tracker_artifacts.py:53:89
+   |
+51 | …
+52 | …e="json"), **child.model_dump(mode="json", exclude={"created_at", "updated_at"})})
+53 | …ource.issue_key, content=json.dumps(sorted(rows, key=lambda row: str(row["issue_key"])), sort_keys=True))
+   |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+54 | …
+55 | …ef.key)
+   |
+
+E501 Line too long (124 > 88)
+  --> src/kodezart/services/tracker_artifacts.py:58:89
+   |
+56 |         if issue.issue_key != surface.ref.key:
+57 |             raise WriteBackReadError("graph artifact returned another identity")
+58 |         return TrackerArtifact(surface=surface, native_ref=issue.issue_key, content=graph_snapshot(issue).model_dump_json())
+   |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+59 |     if surface.kind in {
+60 |         SurfaceKind.CRITERION_SUB_ISSUE,
+   |
+
+E501 Line too long (102 > 88)
+  --> src/kodezart/types/domain/organize_graph.py:21:89
+   |
+19 | class ParentChange(CamelCaseModel):
+20 |     model_config = ConfigDict(frozen=True)
+21 |     kind: Literal["parent"] = Field(description="Set or explicitly clear the current issue's parent.")
+   |                                                                                         ^^^^^^^^^^^^^^
+22 |     parent_id: NativeKey | None = Field(description="Exact current native parent key, or null to remove parentage.")
+   |
+
+E501 Line too long (116 > 88)
+  --> src/kodezart/types/domain/organize_graph.py:22:89
+   |
+20 |     model_config = ConfigDict(frozen=True)
+21 |     kind: Literal["parent"] = Field(description="Set or explicitly clear the current issue's parent.")
+22 |     parent_id: NativeKey | None = Field(description="Exact current native parent key, or null to remove parentage.")
+   |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+
+E501 Line too long (148 > 88)
+  --> src/kodezart/types/domain/organize_graph.py:27:89
+   |
+25 | …
+26 | …
+27 | …escription="Current native issue keys whose relation must be added; other edges are preserved.")
+   |                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+28 | …, description="Current native issue keys whose relation must be removed; never an implicit replacement set.")
+   |
+
+E501 Line too long (161 > 88)
+  --> src/kodezart/types/domain/organize_graph.py:28:89
+   |
+26 | …
+27 | …tion="Current native issue keys whose relation must be added; other edges are preserved.")
+28 | …ription="Current native issue keys whose relation must be removed; never an implicit replacement set.")
+   |                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+29 | …
+30 | …
+   |
+
+E501 Line too long (90 > 88)
+  --> src/kodezart/types/domain/organize_graph.py:33:89
+   |
+31 |     def _one_unambiguous_delta(self) -> Self:
+32 |         if not self.add and not self.remove:
+33 |             raise ValueError("a relation change requires an explicit addition or removal")
+   |                                                                                         ^^
+34 |         if len(set(self.add)) != len(self.add) or len(set(self.remove)) != len(self.remove):
+35 |             raise ValueError("a relation change cannot repeat native keys")
+   |
+
+E501 Line too long (92 > 88)
+  --> src/kodezart/types/domain/organize_graph.py:34:89
+   |
+32 |         if not self.add and not self.remove:
+33 |             raise ValueError("a relation change requires an explicit addition or removal")
+34 |         if len(set(self.add)) != len(self.add) or len(set(self.remove)) != len(self.remove):
+   |                                                                                         ^^^^
+35 |             raise ValueError("a relation change cannot repeat native keys")
+36 |         if set(self.add) & set(self.remove):
+   |
+
+E501 Line too long (129 > 88)
+  --> src/kodezart/types/domain/organize_graph.py:42:89
+   |
+41 | class BlockedByChange(_RelationChange):
+42 |     kind: Literal["blocked_by"] = Field(description="Add or remove prerequisite edges, without altering unrelated dependencies.")
+   |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+
+E501 Line too long (122 > 88)
+  --> src/kodezart/types/domain/organize_graph.py:46:89
+   |
+45 | class RelatedToChange(_RelationChange):
+46 |     kind: Literal["related_to"] = Field(description="Add or remove related issue edges; these do not imply dependencies.")
+   |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+
+E501 Line too long (121 > 88)
+  --> src/kodezart/types/domain/organize_graph.py:51:89
+   |
+49 | class PriorityChange(CamelCaseModel):
+50 |     model_config = ConfigDict(frozen=True)
+51 |     kind: Literal["priority"] = Field(description="Set the issue's native priority according to the configured mandate.")
+   |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+52 |     priority: IssuePriority = Field(description="Exact desired domain priority; the tracker adapter maps its backend value.")
+   |
+
+E501 Line too long (125 > 88)
+  --> src/kodezart/types/domain/organize_graph.py:52:89
+   |
+50 |     model_config = ConfigDict(frozen=True)
+51 |     kind: Literal["priority"] = Field(description="Set the issue's native priority according to the configured mandate.")
+52 |     priority: IssuePriority = Field(description="Exact desired domain priority; the tracker adapter maps its backend value.")
+   |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+
+E501 Line too long (118 > 88)
+  --> src/kodezart/types/domain/organize_graph.py:57:89
+   |
+55 | class MilestoneChange(CamelCaseModel):
+56 |     model_config = ConfigDict(frozen=True)
+57 |     kind: Literal["milestone"] = Field(description="Assign an existing milestone within the issue's current project.")
+   |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+58 |     milestone_id: NativeKey | None = Field(description="Exact native milestone key, or explicit null requesting removal; unsupported b…
+   |
+
+E501 Line too long (159 > 88)
+  --> src/kodezart/types/domain/organize_graph.py:58:89
+   |
+56 | …
+57 | …n an existing milestone within the issue's current project.")
+58 | …xact native milestone key, or explicit null requesting removal; unsupported backend removal refuses.")
+   |                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+
+E501 Line too long (108 > 88)
+  --> src/kodezart/types/domain/organize_graph.py:69:89
+   |
+67 | class GraphProposal(CamelCaseModel):
+68 |     model_config = ConfigDict(frozen=True)
+69 |     kind: Literal["graph"] = Field(description="Propose only explicit graph fields on the addressed issue.")
+   |                                                                                         ^^^^^^^^^^^^^^^^^^^^
+70 |     issue_id: NativeKey = Field(description="Exact native tracker key supplied as the authoring subject.")
+71 |     changes: tuple[GraphChange, ...] = Field(min_length=1, description="Explicit field changes, at most one per field; unrequested gra…
+   |
+
+E501 Line too long (106 > 88)
+  --> src/kodezart/types/domain/organize_graph.py:70:89
+   |
+68 |     model_config = ConfigDict(frozen=True)
+69 |     kind: Literal["graph"] = Field(description="Propose only explicit graph fields on the addressed issue.")
+70 |     issue_id: NativeKey = Field(description="Exact native tracker key supplied as the authoring subject.")
+   |                                                                                         ^^^^^^^^^^^^^^^^^^
+71 |     changes: tuple[GraphChange, ...] = Field(min_length=1, description="Explicit field changes, at most one per field; unrequested gra…
+   |
+
+E501 Line too long (162 > 88)
+  --> src/kodezart/types/domain/organize_graph.py:71:89
+   |
+69 | …y explicit graph fields on the addressed issue.")
+70 | …racker key supplied as the authoring subject.")
+71 | …description="Explicit field changes, at most one per field; unrequested graph facts remain unchanged.")
+   |                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+72 | …
+73 | …
+   |
+
+E501 Line too long (154 > 88)
+  --> src/kodezart/types/domain/organize_graph.py:82:89
+   |
+80 | …
+81 | …
+82 | …ble logical deliverable identity within this source issue; reuse its recorded identity on replay.")
+   |                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+83 | …new ordinary deliverable child.")
+84 | …nce-grounded specification of the new child; this does not execute work or mark criteria Done.")
+   |
+
+E501 Line too long (151 > 88)
+  --> src/kodezart/types/domain/organize_graph.py:84:89
+   |
+82 | …table logical deliverable identity within this source issue; reuse its recorded identity on replay.")
+83 | …e new ordinary deliverable child.")
+84 | …dence-grounded specification of the new child; this does not execute work or mark criteria Done.")
+   |                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+
+E501 Line too long (129 > 88)
+  --> src/kodezart/types/domain/organize_graph.py:89:89
+   |
+87 | class SplitProposal(CamelCaseModel):
+88 |     model_config = ConfigDict(frozen=True)
+89 |     kind: Literal["split"] = Field(description="Prepare missing ordinary deliverable children under the addressed source issue.")
+   |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+90 |     issue_id: NativeKey = Field(description="Exact current native source issue key; it remains the parent of the split children.")
+91 |     children: tuple[SplitChildProposal, ...] = Field(min_length=1, description="Missing deliverables to create by stable identity; exi…
+   |
+
+E501 Line too long (130 > 88)
+  --> src/kodezart/types/domain/organize_graph.py:90:89
+   |
+88 | …
+89 | …ion="Prepare missing ordinary deliverable children under the addressed source issue.")
+90 | …="Exact current native source issue key; it remains the parent of the split children.")
+   |                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+91 | …] = Field(min_length=1, description="Missing deliverables to create by stable identity; existing matching children are never overwrit…
+   |
+
+E501 Line too long (182 > 88)
+  --> src/kodezart/types/domain/organize_graph.py:91:89
+   |
+89 | …ary deliverable children under the addressed source issue.")
+90 | …rce issue key; it remains the parent of the split children.")
+91 | …scription="Missing deliverables to create by stable identity; existing matching children are never overwritten.")
+   |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+92 | …
+93 | …
+   |
+
+E501 Line too long (89 > 88)
+  --> src/kodezart/types/domain/organize_graph.py:95:89
+   |
+93 |     @model_validator(mode="after")
+94 |     def _distinct_deliverables(self) -> Self:
+95 |         if len({child.deliverable_key for child in self.children}) != len(self.children):
+   |                                                                                         ^
+96 |             raise ValueError("a split proposal cannot repeat a deliverable identity")
+97 |         return self
+   |
+
+E501 Line too long (128 > 88)
+    --> tests/fakes.py:2340:89
+     |
+2338 |             "parentId": self.parent_id,
+2339 |             "projectId": self.project_id,
+2340 |             "projectMilestone": {"id": self.milestone_id, "name": self.milestone_id} if self.milestone_id is not None else None,
+     |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2341 |             "assignee": self.assignee,
+2342 |             "createdAt": self.created_at.isoformat(),
+     |
+
+E501 Line too long (119 > 88)
+    --> tests/fakes.py:2708:89
+     |
+2706 |         state = str(arguments.get("state", "Backlog"))
+2707 |         if state not in self.state_types:
+2708 |             matches = [name for team, names in self.statuses.items() for name in names if f"{team}-{name}-id" == state]
+     |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2709 |             if len(matches) != 1:
+2710 |                 raise LookupError(f"unknown or ambiguous native state {state!r}")
+     |
+
+E501 Line too long (103 > 88)
+    --> tests/fakes.py:2724:89
+     |
+2722 |                 else None,
+2723 |                 labels=list(arguments.get("labels", [])),
+2724 |                 project_id=str(arguments["project"]) if arguments.get("project") is not None else None,
+     |                                                                                         ^^^^^^^^^^^^^^^
+2725 |                 status=state,
+2726 |                 status_type=self.state_types[state]
+     |
+
+E501 Line too long (99 > 88)
+    --> tests/fakes.py:2745:89
+     |
+2743 |             issue.priority_raw = int(str(arguments["priority"]))
+2744 |         if "parentId" in arguments:
+2745 |             issue.parent_id = None if arguments["parentId"] is None else str(arguments["parentId"])
+     |                                                                                         ^^^^^^^^^^^
+2746 |         if "milestone" in arguments:
+2747 |             issue.milestone_id = str(arguments["milestone"])
+     |
+
+E501 Line too long (95 > 88)
+    --> tests/fakes.py:2751:89
+     |
+2749 |             removal = "remove" + relation[0].upper() + relation[1:]
+2750 |             for key in arguments.get(removal, []):
+2751 |                 issue.relations = [edge for edge in issue.relations if edge != (relation, key)]
+     |                                                                                         ^^^^^^^
+2752 |                 peer = self.issues[key]
+2753 |                 peer.relations = [edge for edge in peer.relations if edge != (inverse, issue.id)]
+     |
+
+E501 Line too long (97 > 88)
+    --> tests/fakes.py:2753:89
+     |
+2751 |                 issue.relations = [edge for edge in issue.relations if edge != (relation, key)]
+2752 |                 peer = self.issues[key]
+2753 |                 peer.relations = [edge for edge in peer.relations if edge != (inverse, issue.id)]
+     |                                                                                         ^^^^^^^^^
+2754 |             for key in arguments.get(relation, []):
+2755 |                 if (relation, key) not in issue.relations:
+     |
+
+E501 Line too long (93 > 88)
+    --> tests/fakes.py:3612:89
+     |
+3610 |         changes: tuple[GraphChange, ...], holder: str,
+3611 |     ) -> TrackerIssue:
+3612 |         current = tuple([await self.read_issue(issue_key=row.issue_key) for row in expected])
+     |                                                                                         ^^^^^
+3613 |         if tuple(graph_snapshot(issue) for issue in current) != expected:
+3614 |             raise OrganizeWriteRefusalError(issue_key=issue_key, reason="native graph changed")
+     |
+
+E501 Line too long (95 > 88)
+    --> tests/fakes.py:3614:89
+     |
+3612 | …     current = tuple([await self.read_issue(issue_key=row.issue_key) for row in expected])
+3613 | …     if tuple(graph_snapshot(issue) for issue in current) != expected:
+3614 | …         raise OrganizeWriteRefusalError(issue_key=issue_key, reason="native graph changed")
+     |                                                                                       ^^^^^^^
+3615 | …     candidate, peers = validate_graph_change(issue_key=issue_key, changes=changes, issues=current, member_keys=frozenset(row.issue…
+3616 | …     for peer in peers:
+     |
+
+E501 Line too long (160 > 88)
+    --> tests/fakes.py:3615:89
+     |
+3613 | …) != expected:
+3614 | …_key, reason="native graph changed")
+3615 | …issue_key, changes=changes, issues=current, member_keys=frozenset(row.issue_key for row in expected))
+     |                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+3616 | …
+3617 | …UE_GRAPH, issue_key=peer, holder=holder)
+     |
+
+E501 Line too long (99 > 88)
+    --> tests/fakes.py:3617:89
+     |
+3615 | …     candidate, peers = validate_graph_change(issue_key=issue_key, changes=changes, issues=current, member_keys=frozenset(row.issue…
+3616 | …     for peer in peers:
+3617 | …         self._require_graph_holder(kind=SurfaceKind.ISSUE_GRAPH, issue_key=peer, holder=holder)
+     |                                                                                       ^^^^^^^^^^^
+3618 | …     self.issues[issue_key] = candidate
+3619 | …     return candidate
+     |
+
+E501 Line too long (95 > 88)
+    --> tests/fakes.py:3621:89
+     |
+3619 |         return candidate
+3620 |
+3621 |     def _require_graph_holder(self, *, kind: SurfaceKind, issue_key: str, holder: str) -> None:
+     |                                                                                         ^^^^^^^
+3622 |         surface = WritableSurface(kind=kind, ref=ScopeRef(kind=ScopeKind.ISSUE, key=issue_key))
+3623 |         lease = self.leases.get(surface)
+     |
+
+E501 Line too long (95 > 88)
+    --> tests/fakes.py:3622:89
+     |
+3621 |     def _require_graph_holder(self, *, kind: SurfaceKind, issue_key: str, holder: str) -> None:
+3622 |         surface = WritableSurface(kind=kind, ref=ScopeRef(kind=ScopeKind.ISSUE, key=issue_key))
+     |                                                                                         ^^^^^^^
+3623 |         lease = self.leases.get(surface)
+3624 |         owner = lease.holder if lease is not None and lease.expires_at > self._clock() else None
+     |
+
+E501 Line too long (96 > 88)
+    --> tests/fakes.py:3624:89
+     |
+3622 |         surface = WritableSurface(kind=kind, ref=ScopeRef(kind=ScopeKind.ISSUE, key=issue_key))
+3623 |         lease = self.leases.get(surface)
+3624 |         owner = lease.holder if lease is not None and lease.expires_at > self._clock() else None
+     |                                                                                         ^^^^^^^^
+3625 |         if owner != holder:
+3626 |             raise SurfaceLeaseError("graph write requires its addressed grant", surface=surface, current_holder=owner)
+     |
+
+E501 Line too long (118 > 88)
+    --> tests/fakes.py:3626:89
+     |
+3624 |         owner = lease.holder if lease is not None and lease.expires_at > self._clock() else None
+3625 |         if owner != holder:
+3626 |             raise SurfaceLeaseError("graph write requires its addressed grant", surface=surface, current_holder=owner)
+     |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+3627 |
+3628 |     async def read_split_children(self, *, source_key: str) -> tuple[TrackerIssue, ...]:
+     |
+
+E501 Line too long (184 > 88)
+    --> tests/fakes.py:3636:89
+     |
+3634 | …
+3635 | …
+3636 | …verable_key=identity.deliverable_key, issue_keys=[children[identity.deliverable_key].issue_key, issue.issue_key])
+     |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+3637 | …n"} & issue.issue_labels:
+3638 | …eason="split identity is misplaced")
+     |
+
+E501 Line too long (96 > 88)
+    --> tests/fakes.py:3637:89
+     |
+3635 | …     if identity.deliverable_key in children:
+3636 | …         raise DuplicateIssueIdentityError(scope_key=scope, deliverable_key=identity.deliverable_key, issue_keys=[children[identity…
+3637 | …     if issue.parent_key != source_key or {"criterion", "decision"} & issue.issue_labels:
+     |                                                                                   ^^^^^^^^
+3638 | …         raise OrganizeWriteRefusalError(issue_key=source_key, reason="split identity is misplaced")
+3639 | …     children[identity.deliverable_key] = issue
+     |
+
+E501 Line too long (107 > 88)
+    --> tests/fakes.py:3638:89
+     |
+3636 | …             raise DuplicateIssueIdentityError(scope_key=scope, deliverable_key=identity.deliverable_key, issue_keys=[children[iden…
+3637 | …         if issue.parent_key != source_key or {"criterion", "decision"} & issue.issue_labels:
+3638 | …             raise OrganizeWriteRefusalError(issue_key=source_key, reason="split identity is misplaced")
+     |                                                                                       ^^^^^^^^^^^^^^^^^^^
+3639 | …         children[identity.deliverable_key] = issue
+3640 | …     return tuple(sorted(children.values(), key=lambda child: child.issue_key))
+     |
+
+E501 Line too long (137 > 88)
+    --> tests/fakes.py:3642:89
+     |
+3640 | …key=lambda child: child.issue_key))
+3641 | …
+3642 | …ource_key: str, deliverable_key: str, title: str, body: str, holder: str) -> TrackerIssue:
+     |                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+3643 | …eRef(kind=ScopeKind.ISSUE, key=source_key), deliverable_key=deliverable_key)
+3644 | …dren(source_key=source_key):
+     |
+
+E501 Line too long (123 > 88)
+    --> tests/fakes.py:3643:89
+     |
+3642 |     async def create_split_if_absent(self, *, source_key: str, deliverable_key: str, title: str, body: str, holder: str) -> TrackerI…
+3643 |         identity = IssueIdentity(scope_key=ScopeRef(kind=ScopeKind.ISSUE, key=source_key), deliverable_key=deliverable_key)
+     |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+3644 |         for child in await self.read_split_children(source_key=source_key):
+3645 |             if await self.read_issue_identity(issue_key=child.issue_key) == identity:
+     |
+
+E501 Line too long (105 > 88)
+    --> tests/fakes.py:3647:89
+     |
+3645 |             if await self.read_issue_identity(issue_key=child.issue_key) == identity:
+3646 |                 return child
+3647 |         self._require_graph_holder(kind=SurfaceKind.ISSUE_SPLIT_SET, issue_key=source_key, holder=holder)
+     |                                                                                         ^^^^^^^^^^^^^^^^^
+3648 |         source = await self.read_issue(issue_key=source_key)
+3649 |         if source.team_key is None or not all(value.strip() for value in (deliverable_key, title, body)):
+     |
+
+E501 Line too long (105 > 88)
+    --> tests/fakes.py:3649:89
+     |
+3647 | …     self._require_graph_holder(kind=SurfaceKind.ISSUE_SPLIT_SET, issue_key=source_key, holder=holder)
+3648 | …     source = await self.read_issue(issue_key=source_key)
+3649 | …     if source.team_key is None or not all(value.strip() for value in (deliverable_key, title, body)):
+     |                                                                                       ^^^^^^^^^^^^^^^^^
+3650 | …         raise OrganizeWriteRefusalError(issue_key=source_key, reason="split creation requires a team, identity and specification")
+3651 | …     created = await self.upsert_issue(scope_key=identity.scope_key, deliverable_key=deliverable_key, title=title, body=body, team_…
+     |
+
+E501 Line too long (134 > 88)
+    --> tests/fakes.py:3650:89
+     |
+3648 | …ey=source_key)
+3649 | …value.strip() for value in (deliverable_key, title, body)):
+3650 | …sue_key=source_key, reason="split creation requires a team, identity and specification")
+     |                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+3651 | …e_key=identity.scope_key, deliverable_key=deliverable_key, title=title, body=body, team_key=source.team_key, priority=IssuePriority…
+3652 | …*created.model_dump(), "parent_key": source_key, "project_id": source.project_id, "state_name": "Todo", "state_kind": WorkflowState…
+     |
+
+E501 Line too long (183 > 88)
+    --> tests/fakes.py:3651:89
+     |
+3649 | …in (deliverable_key, title, body)):
+3650 | …on="split creation requires a team, identity and specification")
+3651 | …, deliverable_key=deliverable_key, title=title, body=body, team_key=source.team_key, priority=IssuePriority.NONE)
+     |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+3652 | …parent_key": source_key, "project_id": source.project_id, "state_name": "Todo", "state_kind": WorkflowStateKind.UNSTARTED})
+3653 | …
+     |
+
+E501 Line too long (193 > 88)
+    --> tests/fakes.py:3652:89
+     |
+3650 | …plit creation requires a team, identity and specification")
+3651 | …iverable_key=deliverable_key, title=title, body=body, team_key=source.team_key, priority=IssuePriority.NONE)
+3652 | …t_key": source_key, "project_id": source.project_id, "state_name": "Todo", "state_kind": WorkflowStateKind.UNSTARTED})
+     |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+3653 | …
+3654 | …
+     |
+
+Found 118 errors (10 fixed, 108 remaining).

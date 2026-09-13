@@ -1,0 +1,170 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+___ test_nested_fire_resume_reuses_branch_and_original_attributed_run[False] ___
+
+amended = False
+
+    @pytest.mark.parametrize("amended", [False, True])
+    async def test_nested_fire_resume_reuses_branch_and_original_attributed_run(amended):
+        harness = runtime()
+        lane = lane_of(harness)
+        lane.fire.native_graph.interrupt_before_nodes = ["review_against_ticket"]
+        before = []
+        with pytest.raises(ScopeReadError, match="no final delivery phase"):
+            async for event in drive(harness):
+                before.append(event)
+        paused = await lane.graph.aget_state(checkpoint_config(), subgraphs=True)
+        child = paused.tasks[0].state
+        assert child.next == ("review_against_ticket",)
+        branch = child.values["feature_branch"]
+        original_identity = RunIdentity.model_validate_json(
+            paused.metadata["scope_lane_run_identity"]
+        )
+        if amended:
+            harness.port.issues["A/check"] = harness.port.issues["A/check"].model_copy(
+                update={"body": "**Check:** amended before resumed review\n**Evidence:** —"}
+            )
+        harness.port.issues["A"] = harness.port.issues["A"].model_copy(
+            update={"body": "A later subject body must not replace the frozen subject"}
+        )
+        fresh = runtime(port=harness.port, saver=harness.saver)
+        after = [event async for event in drive(fresh)]
+        assert fresh.executor.execution_prompts == []
+        assert not any("slug" in props for props in fresh.executor.schema_calls)
+        reviews = fresh.executor.evaluation_prompts
+        assert len(reviews) == 1
+>       assert "Exact native subject A  with spaces" in reviews[0]
+E       AssertionError: assert 'Exact native subject A  with spaces' in '── SKILLS AVAILABLE FOR THIS ROLE ──\nLoad each skill below when its subject matter is in play; ignore the ones that ..., test file names and line numbers, lint rule IDs). Return exactly one result per id listed above — no more, no fewer.'
+
+tests/integration/test_scope_runtime.py:728: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 16:00:11 [info     ] forge_capabilities_selected    forge_less_origin=False repo_url=file:///scope-repository.git
+2026-09-12 16:00:11 [debug    ] no_forge_delivery_probe_answered issue_key=A repo_url=file:///scope-repository.git
+2026-09-12 16:00:11 [debug    ] no_forge_delivery_probe_answered issue_key=A repo_url=file:///scope-repository.git
+2026-09-12 16:00:11 [info     ] repo_visibility_resolved       repo_url=file:///scope-repository.git visibility=unknown
+2026-09-12 16:00:11 [info     ] scope_base_resolved            base_branch=trunk base_role=None input_count=0
+2026-09-12 16:00:11 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 16:00:11 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=2 events={'system': 1, 'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:00:11 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=branch_name
+2026-09-12 16:00:11 [info     ] fire_criteria_read             named=1 owed=['A/check'] read_at_version=2026-01-01T00:00:00+00:00 subject=A
+2026-09-12 16:00:11 [info     ] fire_criteria_read             named=1 owed=['A/check'] read_at_version=2026-01-01T00:00:00+00:00 subject=A
+2026-09-12 16:00:11 [info     ] fire_criteria_read             named=1 owed=['A/check'] read_at_version=2026-01-01T00:00:00+00:00 subject=A
+2026-09-12 16:00:11 [info     ] fire_criteria_read             named=1 owed=['A/check'] read_at_version=2026-01-01T00:00:00+00:00 subject=A
+2026-09-12 16:00:11 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 16:00:11 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=2 events={'system': 1, 'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=ralph_evaluator stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:00:11 [info     ] fire_criteria_read             named=1 owed=['A/check'] read_at_version=2026-01-01T00:00:00+00:00 subject=A
+2026-09-12 16:00:11 [info     ] forge_capabilities_selected    forge_less_origin=False repo_url=file:///scope-repository.git
+2026-09-12 16:00:11 [debug    ] no_forge_delivery_probe_answered issue_key=A repo_url=file:///scope-repository.git
+2026-09-12 16:00:11 [debug    ] no_forge_delivery_probe_answered issue_key=A repo_url=file:///scope-repository.git
+2026-09-12 16:00:11 [info     ] fire_criteria_read             named=1 owed=['A/check'] read_at_version=2026-01-01T00:00:00+00:00 subject=A
+2026-09-12 16:00:11 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 16:00:11 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=2 events={'system': 1, 'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=post_merge_review stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:00:11 [info     ] fire_criteria_read             named=1 owed=['A/check'] read_at_version=2026-01-01T00:00:00+00:00 subject=A
+2026-09-12 16:00:11 [info     ] fire_criteria_read             named=1 owed=['A/check'] read_at_version=2026-01-01T00:00:00+00:00 subject=A
+2026-09-12 16:00:11 [info     ] fire_criteria_read             named=1 owed=['A/check'] read_at_version=2026-01-01T00:00:00+00:00 subject=A
+------------------------------ Captured log call -------------------------------
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.gating.RepoVisibility from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.gating', 'RepoVisibility')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.native_delivery.PendingLaneDelivery from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.native_delivery', 'PendingLaneDelivery')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.fire_spec.TrackerSpec from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.fire_spec', 'TrackerSpec')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.criteria.TrackerCriterionSet from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.criteria', 'TrackerCriterionSet')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.gating.RepoVisibility from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.gating', 'RepoVisibility')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.trajectory.LoopTrajectory from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.trajectory', 'LoopTrajectory')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.gating.RepoVisibility from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.gating', 'RepoVisibility')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.native_delivery.PendingLaneDelivery from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.native_delivery', 'PendingLaneDelivery')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.gating.RepoVisibility from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.gating', 'RepoVisibility')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.native_delivery.PendingLaneDelivery from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.native_delivery', 'PendingLaneDelivery')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.fire_spec.TrackerSpec from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.fire_spec', 'TrackerSpec')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.criteria.TrackerCriterionSet from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.criteria', 'TrackerCriterionSet')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.gating.RepoVisibility from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.gating', 'RepoVisibility')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.trajectory.LoopTrajectory from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.trajectory', 'LoopTrajectory')]
+___ test_nested_fire_resume_reuses_branch_and_original_attributed_run[True] ____
+
+amended = True
+
+    @pytest.mark.parametrize("amended", [False, True])
+    async def test_nested_fire_resume_reuses_branch_and_original_attributed_run(amended):
+        harness = runtime()
+        lane = lane_of(harness)
+        lane.fire.native_graph.interrupt_before_nodes = ["review_against_ticket"]
+        before = []
+        with pytest.raises(ScopeReadError, match="no final delivery phase"):
+            async for event in drive(harness):
+                before.append(event)
+        paused = await lane.graph.aget_state(checkpoint_config(), subgraphs=True)
+        child = paused.tasks[0].state
+        assert child.next == ("review_against_ticket",)
+        branch = child.values["feature_branch"]
+        original_identity = RunIdentity.model_validate_json(
+            paused.metadata["scope_lane_run_identity"]
+        )
+        if amended:
+            harness.port.issues["A/check"] = harness.port.issues["A/check"].model_copy(
+                update={"body": "**Check:** amended before resumed review\n**Evidence:** —"}
+            )
+        harness.port.issues["A"] = harness.port.issues["A"].model_copy(
+            update={"body": "A later subject body must not replace the frozen subject"}
+        )
+        fresh = runtime(port=harness.port, saver=harness.saver)
+        after = [event async for event in drive(fresh)]
+        assert fresh.executor.execution_prompts == []
+        assert not any("slug" in props for props in fresh.executor.schema_calls)
+        reviews = fresh.executor.evaluation_prompts
+        assert len(reviews) == 1
+>       assert "Exact native subject A  with spaces" in reviews[0]
+E       AssertionError: assert 'Exact native subject A  with spaces' in '── SKILLS AVAILABLE FOR THIS ROLE ──\nLoad each skill below when its subject matter is in play; ignore the ones that ..., test file names and line numbers, lint rule IDs). Return exactly one result per id listed above — no more, no fewer.'
+
+tests/integration/test_scope_runtime.py:728: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 16:00:11 [info     ] forge_capabilities_selected    forge_less_origin=False repo_url=file:///scope-repository.git
+2026-09-12 16:00:11 [debug    ] no_forge_delivery_probe_answered issue_key=A repo_url=file:///scope-repository.git
+2026-09-12 16:00:11 [debug    ] no_forge_delivery_probe_answered issue_key=A repo_url=file:///scope-repository.git
+2026-09-12 16:00:11 [info     ] repo_visibility_resolved       repo_url=file:///scope-repository.git visibility=unknown
+2026-09-12 16:00:11 [info     ] scope_base_resolved            base_branch=trunk base_role=None input_count=0
+2026-09-12 16:00:11 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 16:00:12 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=2 events={'system': 1, 'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:00:12 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=branch_name
+2026-09-12 16:00:12 [info     ] fire_criteria_read             named=1 owed=['A/check'] read_at_version=2026-01-01T00:00:00+00:00 subject=A
+2026-09-12 16:00:12 [info     ] fire_criteria_read             named=1 owed=['A/check'] read_at_version=2026-01-01T00:00:00+00:00 subject=A
+2026-09-12 16:00:12 [info     ] fire_criteria_read             named=1 owed=['A/check'] read_at_version=2026-01-01T00:00:00+00:00 subject=A
+2026-09-12 16:00:12 [info     ] fire_criteria_read             named=1 owed=['A/check'] read_at_version=2026-01-01T00:00:00+00:00 subject=A
+2026-09-12 16:00:12 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 16:00:12 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=2 events={'system': 1, 'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=ralph_evaluator stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:00:12 [info     ] fire_criteria_read             named=1 owed=['A/check'] read_at_version=2026-01-01T00:00:00+00:00 subject=A
+2026-09-12 16:00:12 [info     ] forge_capabilities_selected    forge_less_origin=False repo_url=file:///scope-repository.git
+2026-09-12 16:00:12 [debug    ] no_forge_delivery_probe_answered issue_key=A repo_url=file:///scope-repository.git
+2026-09-12 16:00:12 [debug    ] no_forge_delivery_probe_answered issue_key=A repo_url=file:///scope-repository.git
+2026-09-12 16:00:12 [info     ] fire_criteria_read             named=1 owed=['A/check'] read_at_version=2026-01-01T00:00:00+00:00 subject=A
+2026-09-12 16:00:12 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 16:00:12 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=2 events={'system': 1, 'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=post_merge_review stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:00:12 [info     ] fire_criteria_read             named=1 owed=['A/check'] read_at_version=2026-01-01T00:00:00+00:00 subject=A
+2026-09-12 16:00:12 [info     ] fire_criteria_read             named=1 owed=['A/check'] read_at_version=2026-01-01T00:00:00+00:00 subject=A
+2026-09-12 16:00:12 [info     ] fire_criteria_read             named=1 owed=['A/check'] read_at_version=2026-01-01T00:00:00+00:00 subject=A
+------------------------------ Captured log call -------------------------------
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.gating.RepoVisibility from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.gating', 'RepoVisibility')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.native_delivery.PendingLaneDelivery from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.native_delivery', 'PendingLaneDelivery')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.fire_spec.TrackerSpec from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.fire_spec', 'TrackerSpec')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.criteria.TrackerCriterionSet from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.criteria', 'TrackerCriterionSet')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.gating.RepoVisibility from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.gating', 'RepoVisibility')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.trajectory.LoopTrajectory from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.trajectory', 'LoopTrajectory')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.gating.RepoVisibility from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.gating', 'RepoVisibility')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.native_delivery.PendingLaneDelivery from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.native_delivery', 'PendingLaneDelivery')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.gating.RepoVisibility from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.gating', 'RepoVisibility')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.native_delivery.PendingLaneDelivery from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.native_delivery', 'PendingLaneDelivery')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.fire_spec.TrackerSpec from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.fire_spec', 'TrackerSpec')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.criteria.TrackerCriterionSet from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.criteria', 'TrackerCriterionSet')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.gating.RepoVisibility from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.gating', 'RepoVisibility')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.trajectory.LoopTrajectory from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.trajectory', 'LoopTrajectory')]
+=========================== short test summary info ============================
+FAILED tests/integration/test_scope_runtime.py::test_nested_fire_resume_reuses_branch_and_original_attributed_run[False]
+FAILED tests/integration/test_scope_runtime.py::test_nested_fire_resume_reuses_branch_and_original_attributed_run[True]
+2 failed, 24 deselected in 1.74s

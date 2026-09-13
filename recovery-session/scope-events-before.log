@@ -1,0 +1,154 @@
+FFFF...F.                                                                [100%]
+=================================== FAILURES ===================================
+____________ test_scope_lane_round_trips_its_concrete_event[inner0] ____________
+
+inner = AssistantTextEvent(type='assistant_text', text='evidence', model='model')
+
+    @pytest.mark.parametrize("inner", [
+        AssistantTextEvent(text="evidence", model="model"),
+        SystemEvent(subtype="init", data={"session_id": "actual-session"}),
+        NodeSessionStartedEvent(
+            invocation=NodeInvocation(
+                run=RunIdentity(kind=RunKind.FIRE, name="lane", started_at=FIXTURE_EPOCH),
+                node_key="evaluate", invocation_key="attempt-1", declared_sessions=1,
+            ),
+            session_id="actual-session",
+        ),
+        LaneDeliveryEvent(delivery=SkippedLaneDelivery(
+            outcome=WorkflowOutcome.review_passed_no_pr_adapter,
+            reason="No forge adapter for the selected origin",
+        )),
+    ])
+    def test_scope_lane_round_trips_its_concrete_event(inner):
+        event = ScopeLaneEvent(lane_key="lane", event=inner)
+>       parsed = ScopeLaneEvent.model_validate_json(event.model_dump_json())
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       pydantic_core._pydantic_core.ValidationError: 2 validation errors for ScopeLaneEvent
+E       event.text
+E         Extra inputs are not permitted [type=extra_forbidden, input_value='evidence', input_type=str]
+E           For further information visit https://errors.pydantic.dev/2.12/v/extra_forbidden
+E       event.model
+E         Extra inputs are not permitted [type=extra_forbidden, input_value='model', input_type=str]
+E           For further information visit https://errors.pydantic.dev/2.12/v/extra_forbidden
+
+tests/types/test_scope_events.py:33: ValidationError
+____________ test_scope_lane_round_trips_its_concrete_event[inner1] ____________
+
+inner = SystemEvent(type='system', subtype='init', data={'session_id': 'actual-session'}, output_style=None)
+
+    @pytest.mark.parametrize("inner", [
+        AssistantTextEvent(text="evidence", model="model"),
+        SystemEvent(subtype="init", data={"session_id": "actual-session"}),
+        NodeSessionStartedEvent(
+            invocation=NodeInvocation(
+                run=RunIdentity(kind=RunKind.FIRE, name="lane", started_at=FIXTURE_EPOCH),
+                node_key="evaluate", invocation_key="attempt-1", declared_sessions=1,
+            ),
+            session_id="actual-session",
+        ),
+        LaneDeliveryEvent(delivery=SkippedLaneDelivery(
+            outcome=WorkflowOutcome.review_passed_no_pr_adapter,
+            reason="No forge adapter for the selected origin",
+        )),
+    ])
+    def test_scope_lane_round_trips_its_concrete_event(inner):
+        event = ScopeLaneEvent(lane_key="lane", event=inner)
+>       parsed = ScopeLaneEvent.model_validate_json(event.model_dump_json())
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       pydantic_core._pydantic_core.ValidationError: 3 validation errors for ScopeLaneEvent
+E       event.subtype
+E         Extra inputs are not permitted [type=extra_forbidden, input_value='init', input_type=str]
+E           For further information visit https://errors.pydantic.dev/2.12/v/extra_forbidden
+E       event.data
+E         Extra inputs are not permitted [type=extra_forbidden, input_value={'session_id': 'actual-session'}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.12/v/extra_forbidden
+E       event.output_style
+E         Extra inputs are not permitted [type=extra_forbidden, input_value=None, input_type=NoneType]
+E           For further information visit https://errors.pydantic.dev/2.12/v/extra_forbidden
+
+tests/types/test_scope_events.py:33: ValidationError
+____________ test_scope_lane_round_trips_its_concrete_event[inner2] ____________
+
+inner = NodeSessionStartedEvent(type=<RunEventKind.NODE_SESSION_STARTED: 'node_session_started'>, invocation=NodeInvocation(ru...ime.timezone.utc)), node_key='evaluate', invocation_key='attempt-1', declared_sessions=1), session_id='actual-session')
+
+    @pytest.mark.parametrize("inner", [
+        AssistantTextEvent(text="evidence", model="model"),
+        SystemEvent(subtype="init", data={"session_id": "actual-session"}),
+        NodeSessionStartedEvent(
+            invocation=NodeInvocation(
+                run=RunIdentity(kind=RunKind.FIRE, name="lane", started_at=FIXTURE_EPOCH),
+                node_key="evaluate", invocation_key="attempt-1", declared_sessions=1,
+            ),
+            session_id="actual-session",
+        ),
+        LaneDeliveryEvent(delivery=SkippedLaneDelivery(
+            outcome=WorkflowOutcome.review_passed_no_pr_adapter,
+            reason="No forge adapter for the selected origin",
+        )),
+    ])
+    def test_scope_lane_round_trips_its_concrete_event(inner):
+        event = ScopeLaneEvent(lane_key="lane", event=inner)
+>       parsed = ScopeLaneEvent.model_validate_json(event.model_dump_json())
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       pydantic_core._pydantic_core.ValidationError: 2 validation errors for ScopeLaneEvent
+E       event.invocation
+E         Extra inputs are not permitted [type=extra_forbidden, input_value={'run': {'kind': 'fire', ... 'declared_sessions': 1}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.12/v/extra_forbidden
+E       event.session_id
+E         Extra inputs are not permitted [type=extra_forbidden, input_value='actual-session', input_type=str]
+E           For further information visit https://errors.pydantic.dev/2.12/v/extra_forbidden
+
+tests/types/test_scope_events.py:33: ValidationError
+____________ test_scope_lane_round_trips_its_concrete_event[inner3] ____________
+
+inner = LaneDeliveryEvent(type='lane_delivery', delivery=SkippedLaneDelivery(phase='skipped', outcome=<WorkflowOutcome.review_passed_no_pr_adapter: 'review_passed_no_pr_adapter'>, reason='No forge adapter for the selected origin'))
+
+    @pytest.mark.parametrize("inner", [
+        AssistantTextEvent(text="evidence", model="model"),
+        SystemEvent(subtype="init", data={"session_id": "actual-session"}),
+        NodeSessionStartedEvent(
+            invocation=NodeInvocation(
+                run=RunIdentity(kind=RunKind.FIRE, name="lane", started_at=FIXTURE_EPOCH),
+                node_key="evaluate", invocation_key="attempt-1", declared_sessions=1,
+            ),
+            session_id="actual-session",
+        ),
+        LaneDeliveryEvent(delivery=SkippedLaneDelivery(
+            outcome=WorkflowOutcome.review_passed_no_pr_adapter,
+            reason="No forge adapter for the selected origin",
+        )),
+    ])
+    def test_scope_lane_round_trips_its_concrete_event(inner):
+        event = ScopeLaneEvent(lane_key="lane", event=inner)
+>       parsed = ScopeLaneEvent.model_validate_json(event.model_dump_json())
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for ScopeLaneEvent
+E       event.delivery
+E         Extra inputs are not permitted [type=extra_forbidden, input_value={'phase': 'skipped', 'out...or the selected origin'}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.12/v/extra_forbidden
+
+tests/types/test_scope_events.py:33: ValidationError
+___ test_scope_lane_refuses_unknown_malformed_and_terminal_payloads[inner3] ____
+
+inner = {'type': 'workflow_complete'}
+
+    @pytest.mark.parametrize("inner", [
+        {"type": "unknown_progress", "text": "not registered"},
+        {"type": "assistant_text", "model": "missing text"},
+        {"type": "assistant_text", "model": "model", "text": "evidence", "extra": True},
+        {"type": "workflow_complete"},
+        {"type": "lane_delivery", "delivery": {"phase": "pending"}},
+    ])
+    def test_scope_lane_refuses_unknown_malformed_and_terminal_payloads(inner):
+>       with pytest.raises(ValidationError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'pydantic_core._pydantic_core.ValidationError'>
+
+tests/types/test_scope_events.py:46: Failed
+=========================== short test summary info ============================
+FAILED tests/types/test_scope_events.py::test_scope_lane_round_trips_its_concrete_event[inner0]
+FAILED tests/types/test_scope_events.py::test_scope_lane_round_trips_its_concrete_event[inner1]
+FAILED tests/types/test_scope_events.py::test_scope_lane_round_trips_its_concrete_event[inner2]
+FAILED tests/types/test_scope_events.py::test_scope_lane_round_trips_its_concrete_event[inner3]
+FAILED tests/types/test_scope_events.py::test_scope_lane_refuses_unknown_malformed_and_terminal_payloads[inner3]
+5 failed, 4 passed in 0.32s

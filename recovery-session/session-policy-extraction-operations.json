@@ -1,0 +1,127 @@
+[
+  {
+    "path": "src/kodezart/types/domain/session.py",
+    "donor": "1f4296c8c36a7498625d2478f8ec7ae6ec187923",
+    "cut": "Exact PermissionMode/ToolPreset/AllowedTools nodes only; KnowledgeGrant and SessionType unchanged"
+  },
+  {
+    "path": "src/kodezart/adapters/_permission_modes.py",
+    "donor": "1f4296c8c36a7498625d2478f8ec7ae6ec187923",
+    "cut": "Exact entire SDK permission translation module"
+  },
+  {
+    "path": "src/kodezart/adapters/_agents_mapping.py",
+    "donor": "1f4296c8c36a7498625d2478f8ec7ae6ec187923",
+    "cut": "Exact entire module; only AllowedTools import and SDK tool preset map/expansion differ from baseline"
+  },
+  {
+    "path": "src/kodezart/core/constants.py",
+    "donor": "1f4296c8c36a7498625d2478f8ec7ae6ec187923",
+    "cut": "Exact permission constants/removal of migrated tool lists; ARTIFACT_DIR remains later consumer-owned"
+  },
+  {
+    "path": "src/kodezart/adapters/claude_agent_executor.py",
+    "donor": "1f4296c8c36a7498625d2478f8ec7ae6ec187923",
+    "cut": "Donor permission/tool signature and SDK option translation hunks only; no run identity/workspace/phase additions"
+  },
+  {
+    "path": "src/kodezart/adapters/claude_client_executor.py",
+    "donor": "1f4296c8c36a7498625d2478f8ec7ae6ec187923",
+    "cut": "Donor permission/tool signature and SDK option translation hunks only; no run identity/workspace/phase additions"
+  },
+  {
+    "path": "src/kodezart/chains/ralph_loop.py",
+    "donor": "1f4296c8c36a7498625d2478f8ec7ae6ec187923",
+    "cut": "Donor permission/tool signature and SDK option translation hunks only; no run identity/workspace/phase additions"
+  },
+  {
+    "path": "src/kodezart/chains/ralph_workflow.py",
+    "donor": "1f4296c8c36a7498625d2478f8ec7ae6ec187923",
+    "cut": "Donor permission/tool signature and SDK option translation hunks only; no run identity/workspace/phase additions"
+  },
+  {
+    "path": "src/kodezart/composition/engine.py",
+    "donor": "1f4296c8c36a7498625d2478f8ec7ae6ec187923",
+    "cut": "Donor permission/tool signature and SDK option translation hunks only; no run identity/workspace/phase additions"
+  },
+  {
+    "path": "src/kodezart/core/protocols.py",
+    "donor": "1f4296c8c36a7498625d2478f8ec7ae6ec187923",
+    "cut": "Donor permission/tool signature and SDK option translation hunks only; no run identity/workspace/phase additions"
+  },
+  {
+    "path": "src/kodezart/services/agent_service.py",
+    "donor": "1f4296c8c36a7498625d2478f8ec7ae6ec187923",
+    "cut": "Donor permission/tool signature and SDK option translation hunks only; no run identity/workspace/phase additions"
+  },
+  {
+    "path": "src/kodezart/services/prompt_pass.py",
+    "donor": "1f4296c8c36a7498625d2478f8ec7ae6ec187923",
+    "cut": "Donor permission/tool signature and SDK option translation hunks only; no run identity/workspace/phase additions"
+  },
+  {
+    "path": "src/kodezart/chains/ralph_loop.py",
+    "donor": "1f4296c8c36a7498625d2478f8ec7ae6ec187923",
+    "cut": "Same existing callsite policy mapped to donor ToolPreset; later phase extraction excluded"
+  },
+  {
+    "path": "src/kodezart/chains/ralph_workflow.py",
+    "donor": "1f4296c8c36a7498625d2478f8ec7ae6ec187923",
+    "cut": "Same existing callsite policy mapped to donor ToolPreset; later phase extraction excluded"
+  },
+  {
+    "path": "src/kodezart/chains/remediation.py",
+    "donor": "1f4296c8c36a7498625d2478f8ec7ae6ec187923",
+    "cut": "Same existing callsite policy mapped to donor ToolPreset; later phase extraction excluded"
+  },
+  {
+    "path": "src/kodezart/chains/ticket_generation.py",
+    "donor": "1f4296c8c36a7498625d2478f8ec7ae6ec187923",
+    "cut": "Same existing callsite policy mapped to donor ToolPreset; later phase extraction excluded"
+  },
+  {
+    "path": "src/kodezart/adapters/agent_content_scanner.py",
+    "donor": "1f4296c8c36a7498625d2478f8ec7ae6ec187923",
+    "cut": "Only donor scanner permission constant/import; scanner behavior unchanged"
+  },
+  {
+    "path": "src/kodezart/adapters/git_change_persister.py",
+    "donor": "1f4296c8c36a7498625d2478f8ec7ae6ec187923",
+    "cut": "Existing commit-message judge exact donor permission/preset only"
+  },
+  {
+    "path": "src/kodezart/types/domain/workflow.py",
+    "donor": "1f4296c8c36a7498625d2478f8ec7ae6ec187923",
+    "cut": "Exact ExecutionContext field types; donor WorkflowSubmission present-base fields only; issue_key/scope deferred M3"
+  },
+  {
+    "path": "src/kodezart/types/requests/agent.py",
+    "donor": "1f4296c8c36a7498625d2478f8ec7ae6ec187923",
+    "cut": "Exact HTTP alias only; external values/defaults unchanged"
+  },
+  {
+    "path": "src/kodezart/core/protocols.py",
+    "donor": "1f4296c8c36a7498625d2478f8ec7ae6ec187923",
+    "cut": "Agent/session signature closure plus exact JobQueue domain submission type; no tracker/Git/workspace changes"
+  },
+  {
+    "path": "src/kodezart/adapters/asyncio_job_queue.py",
+    "donor": "1f4296c8c36a7498625d2478f8ec7ae6ec187923",
+    "cut": "Donor submit/storage domain types and normalized base handoff only; queue scheduling/errors unchanged"
+  },
+  {
+    "path": "src/kodezart/handlers/agent_handler.py",
+    "donor": "1f4296c8c36a7498625d2478f8ec7ae6ec187923",
+    "cut": "Exact HTTP permission map and present-field donor submit_workflow handler; native scope/issue/egress hunks excluded"
+  },
+  {
+    "path": "src/kodezart/api/v1/endpoints/agent.py",
+    "donor": "1f4296c8c36a7498625d2478f8ec7ae6ec187923",
+    "cut": "Adapt donor handler entry to existing app.state endpoints; no new dependency subsystem/route/SSE changes"
+  },
+  {
+    "path": "src/kodezart/services/fire_dispatcher.py",
+    "donor": "1f4296c8c36a7498625d2478f8ec7ae6ec187923",
+    "cut": "Exact donor domain submission/permission/tool defaults at existing dispatcher; no issue identity/readiness machinery"
+  }
+]

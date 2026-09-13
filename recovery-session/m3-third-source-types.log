@@ -1,0 +1,7 @@
+src/kodezart/adapters/github_api.py:935: error: "GitHubAPIClient" has no attribute "_PENDING_STATUSES"  [attr-defined]
+src/kodezart/adapters/github_api.py:946: error: "GitHubAPIClient" has no attribute "_PENDING_STATUSES"  [attr-defined]
+src/kodezart/composition/forge.py:20: error: Unexpected keyword argument "max_retries" for "GitHubAPIClient"  [call-arg]
+src/kodezart/adapters/github_api.py:146: note: "GitHubAPIClient" defined here
+src/kodezart/composition/forge.py:20: error: Unexpected keyword argument "retry_backoff_factor" for "GitHubAPIClient"  [call-arg]
+src/kodezart/main.py:150: error: Item "None" of "OperationConfig | None" has no attribute "repos"  [union-attr]
+Found 5 errors in 3 files (checked 255 source files)

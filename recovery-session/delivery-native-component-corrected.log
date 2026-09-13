@@ -1,0 +1,32 @@
+F......................                                                  [100%]
+=================================== FAILURES ===================================
+______ test_green_opens_on_actual_head_and_resolved_base_and_round_trips _______
+
+    async def test_green_opens_on_actual_head_and_resolved_base_and_round_trips():
+        parts = await setup()
+        result = await deliver(parts)
+        _, _, _, creator, ci, query, tracker = parts
+        assert result.outcome is WorkflowOutcome.ci_passed
+        assert result.pr.state == "open"
+        assert result.final_commit_sha == SHA
+        assert result.issue_id == result.lane_key == SUBJECT
+        assert creator.calls[0]["head"] == HEAD
+        assert creator.calls[0]["base"] == BASE
+        assert ci.calls == [{"repo_url": REPO, "ref": HEAD}]
+        assert len(query.lookups) == 1
+>       assert not any(call[0] == "update_issue" for call in tracker.calls)
+                                                             ^^^^^^^^^^^^^
+E       AttributeError: 'CountingTracker' object has no attribute 'calls'
+
+tests/chains/test_lane_delivery.py:103: AttributeError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 15:35:07 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:35:07 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:35:07 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 15:35:07 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=pr_description stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 15:35:07 [info     ] outbound_content_gated         categories=[] content_digest=eb122d7b8735eaeed5d4d2e20e2197a7332385519bb8aea3e476efbbb03973b9 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=pr_title
+2026-09-12 15:35:07 [info     ] outbound_content_gated         categories=[] content_digest=67ea6610ea7acff978f8bc9bfd466e5e33f2fa503f68961b4548c20b172578db failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=pr_body
+2026-09-12 15:35:07 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+=========================== short test summary info ============================
+FAILED tests/chains/test_lane_delivery.py::test_green_opens_on_actual_head_and_resolved_base_and_round_trips
+1 failed, 22 passed in 3.87s

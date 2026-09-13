@@ -1,0 +1,509 @@
+........................................................................ [  8%]
+..........F............................................................. [ 16%]
+...................................FFFFFFF.............................. [ 24%]
+........................................................................ [ 32%]
+........................................................................ [ 40%]
+........................................................................ [ 48%]
+......................................................FFFFFF............ [ 56%]
+........................................................................ [ 64%]
+........................................................................ [ 72%]
+F..................F.................................................... [ 81%]
+........................................................................ [ 89%]
+..............................................FF............FF.......... [ 97%]
+........................                                                 [100%]
+=================================== FAILURES ===================================
+______________ test_surface_identity_remains_typed_in_the_domain _______________
+
+    def test_surface_identity_remains_typed_in_the_domain():
+        data = subject_data(AlarmSubjectKind.SURFACE)
+>       data["surface"] = data["surface"].model_dump_json()
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'WritableSurface' object has no attribute 'model_dump_json'
+
+tests/domain/test_run_alarm.py:174: AttributeError
+__ test_only_an_explicit_successful_lookup_boolean_can_answer_presence[None] ___
+
+present = None
+
+    @pytest.mark.parametrize("present", [None, 0, 1, "false", "true", {}, []])
+    def test_only_an_explicit_successful_lookup_boolean_can_answer_presence(present):
+        address = surface()
+        with pytest.raises(ValidationError) as raised:
+            evaluate(
+                write_back_missing,
+                surface_subject(address),
+                write_readings(address, present=present),
+            )
+>       assert raised.value.source_ref == surface_alarm_member_id(address)
+               ^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'pydantic_core._pydantic_core.ValidationError' object has no attribute 'source_ref'
+
+tests/domain/test_record_consistency.py:154: AttributeError
+____ test_only_an_explicit_successful_lookup_boolean_can_answer_presence[0] ____
+
+present = 0
+
+    @pytest.mark.parametrize("present", [None, 0, 1, "false", "true", {}, []])
+    def test_only_an_explicit_successful_lookup_boolean_can_answer_presence(present):
+        address = surface()
+        with pytest.raises(ValidationError) as raised:
+            evaluate(
+                write_back_missing,
+                surface_subject(address),
+                write_readings(address, present=present),
+            )
+>       assert raised.value.source_ref == surface_alarm_member_id(address)
+               ^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'pydantic_core._pydantic_core.ValidationError' object has no attribute 'source_ref'
+
+tests/domain/test_record_consistency.py:154: AttributeError
+____ test_only_an_explicit_successful_lookup_boolean_can_answer_presence[1] ____
+
+present = 1
+
+    @pytest.mark.parametrize("present", [None, 0, 1, "false", "true", {}, []])
+    def test_only_an_explicit_successful_lookup_boolean_can_answer_presence(present):
+        address = surface()
+        with pytest.raises(ValidationError) as raised:
+            evaluate(
+                write_back_missing,
+                surface_subject(address),
+                write_readings(address, present=present),
+            )
+>       assert raised.value.source_ref == surface_alarm_member_id(address)
+               ^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'pydantic_core._pydantic_core.ValidationError' object has no attribute 'source_ref'
+
+tests/domain/test_record_consistency.py:154: AttributeError
+__ test_only_an_explicit_successful_lookup_boolean_can_answer_presence[false] __
+
+present = 'false'
+
+    @pytest.mark.parametrize("present", [None, 0, 1, "false", "true", {}, []])
+    def test_only_an_explicit_successful_lookup_boolean_can_answer_presence(present):
+        address = surface()
+        with pytest.raises(ValidationError) as raised:
+            evaluate(
+                write_back_missing,
+                surface_subject(address),
+                write_readings(address, present=present),
+            )
+>       assert raised.value.source_ref == surface_alarm_member_id(address)
+               ^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'pydantic_core._pydantic_core.ValidationError' object has no attribute 'source_ref'
+
+tests/domain/test_record_consistency.py:154: AttributeError
+__ test_only_an_explicit_successful_lookup_boolean_can_answer_presence[true] ___
+
+present = 'true'
+
+    @pytest.mark.parametrize("present", [None, 0, 1, "false", "true", {}, []])
+    def test_only_an_explicit_successful_lookup_boolean_can_answer_presence(present):
+        address = surface()
+        with pytest.raises(ValidationError) as raised:
+            evaluate(
+                write_back_missing,
+                surface_subject(address),
+                write_readings(address, present=present),
+            )
+>       assert raised.value.source_ref == surface_alarm_member_id(address)
+               ^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'pydantic_core._pydantic_core.ValidationError' object has no attribute 'source_ref'
+
+tests/domain/test_record_consistency.py:154: AttributeError
+_ test_only_an_explicit_successful_lookup_boolean_can_answer_presence[present5] _
+
+present = {}
+
+    @pytest.mark.parametrize("present", [None, 0, 1, "false", "true", {}, []])
+    def test_only_an_explicit_successful_lookup_boolean_can_answer_presence(present):
+        address = surface()
+        with pytest.raises(ValidationError) as raised:
+            evaluate(
+                write_back_missing,
+                surface_subject(address),
+                write_readings(address, present=present),
+            )
+>       assert raised.value.source_ref == surface_alarm_member_id(address)
+               ^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'pydantic_core._pydantic_core.ValidationError' object has no attribute 'source_ref'
+
+tests/domain/test_record_consistency.py:154: AttributeError
+_ test_only_an_explicit_successful_lookup_boolean_can_answer_presence[present6] _
+
+present = []
+
+    @pytest.mark.parametrize("present", [None, 0, 1, "false", "true", {}, []])
+    def test_only_an_explicit_successful_lookup_boolean_can_answer_presence(present):
+        address = surface()
+        with pytest.raises(ValidationError) as raised:
+            evaluate(
+                write_back_missing,
+                surface_subject(address),
+                write_readings(address, present=present),
+            )
+>       assert raised.value.source_ref == surface_alarm_member_id(address)
+               ^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'pydantic_core._pydantic_core.ValidationError' object has no attribute 'source_ref'
+
+tests/domain/test_record_consistency.py:154: AttributeError
+____________ test_required_author_is_a_closed_recorded_field[None] _____________
+
+value = None
+
+    @pytest.mark.parametrize("value", [None, 1, True, {}, "human", ""])
+    def test_required_author_is_a_closed_recorded_field(value: object) -> None:
+        row: dict[str, object] = dict(ruling("x"))
+        row["authoredBy"] = value
+        inputs = list(ruling_inputs())
+        inputs[1] = reading(
+            RulingsEvidence(
+>               value=LaneRulingSnapshot.model_validate(
+                    {"laneKey": "lane", "issueKeys": ["FIRE"], "rulings": [row]}
+                )
+            )
+        )
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for LaneRulingSnapshot
+E       rulings.0.authoredBy
+E         Input should be 'machine' or 'principal' [type=enum, input_value=None, input_type=NoneType]
+E           For further information visit https://errors.pydantic.dev/2.12/v/enum
+
+tests/domain/test_mandate_graph.py:209: ValidationError
+______________ test_required_author_is_a_closed_recorded_field[1] ______________
+
+value = 1
+
+    @pytest.mark.parametrize("value", [None, 1, True, {}, "human", ""])
+    def test_required_author_is_a_closed_recorded_field(value: object) -> None:
+        row: dict[str, object] = dict(ruling("x"))
+        row["authoredBy"] = value
+        inputs = list(ruling_inputs())
+        inputs[1] = reading(
+            RulingsEvidence(
+>               value=LaneRulingSnapshot.model_validate(
+                    {"laneKey": "lane", "issueKeys": ["FIRE"], "rulings": [row]}
+                )
+            )
+        )
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for LaneRulingSnapshot
+E       rulings.0.authoredBy
+E         Input should be 'machine' or 'principal' [type=enum, input_value=1, input_type=int]
+E           For further information visit https://errors.pydantic.dev/2.12/v/enum
+
+tests/domain/test_mandate_graph.py:209: ValidationError
+____________ test_required_author_is_a_closed_recorded_field[True] _____________
+
+value = True
+
+    @pytest.mark.parametrize("value", [None, 1, True, {}, "human", ""])
+    def test_required_author_is_a_closed_recorded_field(value: object) -> None:
+        row: dict[str, object] = dict(ruling("x"))
+        row["authoredBy"] = value
+        inputs = list(ruling_inputs())
+        inputs[1] = reading(
+            RulingsEvidence(
+>               value=LaneRulingSnapshot.model_validate(
+                    {"laneKey": "lane", "issueKeys": ["FIRE"], "rulings": [row]}
+                )
+            )
+        )
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for LaneRulingSnapshot
+E       rulings.0.authoredBy
+E         Input should be 'machine' or 'principal' [type=enum, input_value=True, input_type=bool]
+E           For further information visit https://errors.pydantic.dev/2.12/v/enum
+
+tests/domain/test_mandate_graph.py:209: ValidationError
+___________ test_required_author_is_a_closed_recorded_field[value3] ____________
+
+value = {}
+
+    @pytest.mark.parametrize("value", [None, 1, True, {}, "human", ""])
+    def test_required_author_is_a_closed_recorded_field(value: object) -> None:
+        row: dict[str, object] = dict(ruling("x"))
+        row["authoredBy"] = value
+        inputs = list(ruling_inputs())
+        inputs[1] = reading(
+            RulingsEvidence(
+>               value=LaneRulingSnapshot.model_validate(
+                    {"laneKey": "lane", "issueKeys": ["FIRE"], "rulings": [row]}
+                )
+            )
+        )
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for LaneRulingSnapshot
+E       rulings.0.authoredBy
+E         Input should be 'machine' or 'principal' [type=enum, input_value={}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.12/v/enum
+
+tests/domain/test_mandate_graph.py:209: ValidationError
+____________ test_required_author_is_a_closed_recorded_field[human] ____________
+
+value = 'human'
+
+    @pytest.mark.parametrize("value", [None, 1, True, {}, "human", ""])
+    def test_required_author_is_a_closed_recorded_field(value: object) -> None:
+        row: dict[str, object] = dict(ruling("x"))
+        row["authoredBy"] = value
+        inputs = list(ruling_inputs())
+        inputs[1] = reading(
+            RulingsEvidence(
+>               value=LaneRulingSnapshot.model_validate(
+                    {"laneKey": "lane", "issueKeys": ["FIRE"], "rulings": [row]}
+                )
+            )
+        )
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for LaneRulingSnapshot
+E       rulings.0.authoredBy
+E         Input should be 'machine' or 'principal' [type=enum, input_value='human', input_type=str]
+E           For further information visit https://errors.pydantic.dev/2.12/v/enum
+
+tests/domain/test_mandate_graph.py:209: ValidationError
+______________ test_required_author_is_a_closed_recorded_field[] _______________
+
+value = ''
+
+    @pytest.mark.parametrize("value", [None, 1, True, {}, "human", ""])
+    def test_required_author_is_a_closed_recorded_field(value: object) -> None:
+        row: dict[str, object] = dict(ruling("x"))
+        row["authoredBy"] = value
+        inputs = list(ruling_inputs())
+        inputs[1] = reading(
+            RulingsEvidence(
+>               value=LaneRulingSnapshot.model_validate(
+                    {"laneKey": "lane", "issueKeys": ["FIRE"], "rulings": [row]}
+                )
+            )
+        )
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for LaneRulingSnapshot
+E       rulings.0.authoredBy
+E         Input should be 'machine' or 'principal' [type=enum, input_value='', input_type=str]
+E           For further information visit https://errors.pydantic.dev/2.12/v/enum
+
+tests/domain/test_mandate_graph.py:209: ValidationError
+_____ test_collector_calls_only_record_read_closure_and_local_construction _____
+
+    def test_collector_calls_only_record_read_closure_and_local_construction():
+        tree = ast.parse(inspect.getsource(barren_record_signals))
+        imports = {
+            item.name
+            for node in ast.walk(tree)
+            if isinstance(node, (ast.Import, ast.ImportFrom))
+            for item in node.names
+        }
+>       assert imports == {
+            "Mapping",
+            "AppConfig",
+            "TrackerPort",
+            "RunShapeReadError",
+            "LaneRecordReader",
+            "read_barren_tick",
+            "OperationConfig",
+            "AlarmReading",
+            "ReferencesEvidence",
+            "AlarmSignal",
+            "RunAlarm",
+        }
+E       AssertionError: assert {'AlarmReadin...Mapping', ...} == {'AlarmReadin...nConfig', ...}
+E         
+E         Extra items in the left set:
+E         'CountEvidence'
+E         Extra items in the right set:
+E         'ReferencesEvidence'
+E         Use -v to get more diff
+
+tests/tracker/test_barren_record_collector.py:339: AssertionError
+_____ test_observer_has_one_tracker_read_and_no_version_control_dependency _____
+
+    def test_observer_has_one_tracker_read_and_no_version_control_dependency():
+        wrapper = ast.parse(inspect.getsource(observe_barren_tick))
+        assert {
+            ast.unparse(node.func)
+            for node in ast.walk(wrapper)
+            if isinstance(node, ast.Call)
+        } == {"read_barren_tick"}
+        tree = ast.parse(inspect.getsource(read_barren_tick))
+        tracker_calls = {
+            node.func.attr
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id == "tracker"
+        }
+        assert tracker_calls == {"read_criteria"}
+        imports = {
+            node.module
+            for node in ast.walk(ast.parse(inspect.getsource(run_shape)))
+            if isinstance(node, ast.ImportFrom)
+        }
+>       assert imports == {
+            "collections.abc",
+            "pydantic",
+            "kodezart.core.config",
+            "kodezart.core.protocols",
+            "kodezart.domain.errors",
+            "kodezart.domain.gap",
+            "kodezart.domain.run_shape",
+            "kodezart.types.domain.escalation",
+            "kodezart.types.domain.run_alarm",
+            "kodezart.types.domain.run_state",
+            "kodezart.types.domain.tracker",
+        }
+E       AssertionError: assert {'collections...alation', ...} == {'collections...n_shape', ...}
+E         
+E         Extra items in the right set:
+E         'pydantic'
+E         'kodezart.domain.errors'
+E         'kodezart.types.domain.run_state'
+E         Use -v to get more diff
+
+tests/tracker/test_barren_tick.py:191: AssertionError
+_________ test_collector_preserves_pretty_native_json_bytes[fake-port] _________
+
+tracker = <tests.fakes.FakeTrackerPort object at 0x10af4c830>
+
+    async def test_collector_preserves_pretty_native_json_bytes(tracker):
+        from tests.tracker.test_escalation_record_collector import escalation
+    
+        payload = escalation().model_dump_json(by_alias=True, indent=2) + "\n"
+        comment = await seed_escalation(tracker, payload=payload)
+        await seed(tracker)
+        alarm = await observe_recorded_escalation_ageing(tracker=tracker, **arguments())
+>       assert alarm.readings[0].value == payload
+E       assert EscalationEvidence(value=LaneEscalation(issue_id='FIX-2', escalation_key='question:ageing', raised_by='original-holder....', interim_basis='The original source, including ``` and a newline.\n', raised_at_sha='first-sha'), kind='escalation') == '{\n  "issueId": "FIX-2",\n  "escalationKey": "question:ageing",\n  "raisedBy": "original-holder",\n  "question": "Whi...ation.",\n  "interimBasis": "The original source, including ``` and a newline.\\n",\n  "raisedAtSha": "first-sha"\n}\n'
+E        +  where EscalationEvidence(value=LaneEscalation(issue_id='FIX-2', escalation_key='question:ageing', raised_by='original-holder....', interim_basis='The original source, including ``` and a newline.\n', raised_at_sha='first-sha'), kind='escalation') = AlarmReading(source_ref='comment-0001', value=EscalationEvidence(value=LaneEscalation(issue_id='FIX-2', escalation_key...e original source, including ``` and a newline.\n', raised_at_sha='first-sha'), kind='escalation'), at_sha='first-sha').value
+
+tests/tracker/test_escalation_resolution_drift.py:103: AssertionError
+________ test_collector_preserves_pretty_native_json_bytes[linear-mcp] _________
+
+tracker = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10af4d4f0>
+
+    async def test_collector_preserves_pretty_native_json_bytes(tracker):
+        from tests.tracker.test_escalation_record_collector import escalation
+    
+        payload = escalation().model_dump_json(by_alias=True, indent=2) + "\n"
+        comment = await seed_escalation(tracker, payload=payload)
+        await seed(tracker)
+        alarm = await observe_recorded_escalation_ageing(tracker=tracker, **arguments())
+>       assert alarm.readings[0].value == payload
+E       assert EscalationEvidence(value=LaneEscalation(issue_id='FIX-2', escalation_key='question:ageing', raised_by='original-holder....', interim_basis='The original source, including ``` and a newline.\n', raised_at_sha='first-sha'), kind='escalation') == '{\n  "issueId": "FIX-2",\n  "escalationKey": "question:ageing",\n  "raisedBy": "original-holder",\n  "question": "Whi...ation.",\n  "interimBasis": "The original source, including ``` and a newline.\\n",\n  "raisedAtSha": "first-sha"\n}\n'
+E        +  where EscalationEvidence(value=LaneEscalation(issue_id='FIX-2', escalation_key='question:ageing', raised_by='original-holder....', interim_basis='The original source, including ``` and a newline.\n', raised_at_sha='first-sha'), kind='escalation') = AlarmReading(source_ref='comment-0002', value=EscalationEvidence(value=LaneEscalation(issue_id='FIX-2', escalation_key...e original source, including ``` and a newline.\n', raised_at_sha='first-sha'), kind='escalation'), at_sha='first-sha').value
+
+tests/tracker/test_escalation_resolution_drift.py:103: AssertionError
+______ test_closure_on_another_declared_lane_issue_is_observed[fake-port] ______
+
+tracker = <tests.fakes.FakeTrackerPort object at 0x10af78080>
+server = <tests.fakes.FakeLinearMcpServer object at 0x10af4dfd0>
+
+    async def test_closure_on_another_declared_lane_issue_is_observed(tracker, server):
+        child = FakeMcpIssue(
+            id="other/criterion",
+            parent_id=CLAIMED_ISSUE,
+            labels=["acceptance-condition"],
+            description="**Check:** Another condition.",
+            status="Done",
+            status_type="completed",
+        )
+        server.issues[child.id] = child
+        if isinstance(tracker, FakeTrackerPort):
+            tracker.issues[child.id] = await linear_over_fake_mcp(server).read_issue(
+                issue_key=child.id
+            )
+        kwargs = arguments()
+        snapshot = {
+            "laneKey": "lane",
+            "issueKeys": [APPROVED_ISSUE, CLAIMED_ISSUE],
+            "rulings": [
+                ruling("a", issue=APPROVED_ISSUE),
+                ruling("b", issue=CLAIMED_ISSUE),
+            ],
+        }
+        kwargs["current_rulings"] = reading(
+            RulingsEvidence(value=LaneRulingSnapshot.model_validate(snapshot))
+        )
+>       kwargs["previous_open"] = reading(["other/criterion"])
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/tracker/test_mandate_graph.py:152: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+value = ['other/criterion'], source = 'lane-record'
+
+    def reading(value, source: str = "lane-record") -> AlarmReading:
+>       return AlarmReading(source_ref=source, value=value)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for AlarmReading
+E       value
+E         Input should be a valid dictionary or object to extract fields from [type=model_attributes_type, input_value=['other/criterion'], input_type=list]
+E           For further information visit https://errors.pydantic.dev/2.12/v/model_attributes_type
+
+tests/domain/test_mandate_graph.py:40: ValidationError
+_____ test_closure_on_another_declared_lane_issue_is_observed[linear-mcp] ______
+
+tracker = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10af79760>
+server = <tests.fakes.FakeLinearMcpServer object at 0x10af793a0>
+
+    async def test_closure_on_another_declared_lane_issue_is_observed(tracker, server):
+        child = FakeMcpIssue(
+            id="other/criterion",
+            parent_id=CLAIMED_ISSUE,
+            labels=["acceptance-condition"],
+            description="**Check:** Another condition.",
+            status="Done",
+            status_type="completed",
+        )
+        server.issues[child.id] = child
+        if isinstance(tracker, FakeTrackerPort):
+            tracker.issues[child.id] = await linear_over_fake_mcp(server).read_issue(
+                issue_key=child.id
+            )
+        kwargs = arguments()
+        snapshot = {
+            "laneKey": "lane",
+            "issueKeys": [APPROVED_ISSUE, CLAIMED_ISSUE],
+            "rulings": [
+                ruling("a", issue=APPROVED_ISSUE),
+                ruling("b", issue=CLAIMED_ISSUE),
+            ],
+        }
+        kwargs["current_rulings"] = reading(
+            RulingsEvidence(value=LaneRulingSnapshot.model_validate(snapshot))
+        )
+>       kwargs["previous_open"] = reading(["other/criterion"])
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/tracker/test_mandate_graph.py:152: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+value = ['other/criterion'], source = 'lane-record'
+
+    def reading(value, source: str = "lane-record") -> AlarmReading:
+>       return AlarmReading(source_ref=source, value=value)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for AlarmReading
+E       value
+E         Input should be a valid dictionary or object to extract fields from [type=model_attributes_type, input_value=['other/criterion'], input_type=list]
+E           For further information visit https://errors.pydantic.dev/2.12/v/model_attributes_type
+
+tests/domain/test_mandate_graph.py:40: ValidationError
+=========================== short test summary info ============================
+FAILED tests/domain/test_run_alarm.py::test_surface_identity_remains_typed_in_the_domain
+FAILED tests/domain/test_record_consistency.py::test_only_an_explicit_successful_lookup_boolean_can_answer_presence[None]
+FAILED tests/domain/test_record_consistency.py::test_only_an_explicit_successful_lookup_boolean_can_answer_presence[0]
+FAILED tests/domain/test_record_consistency.py::test_only_an_explicit_successful_lookup_boolean_can_answer_presence[1]
+FAILED tests/domain/test_record_consistency.py::test_only_an_explicit_successful_lookup_boolean_can_answer_presence[false]
+FAILED tests/domain/test_record_consistency.py::test_only_an_explicit_successful_lookup_boolean_can_answer_presence[true]
+FAILED tests/domain/test_record_consistency.py::test_only_an_explicit_successful_lookup_boolean_can_answer_presence[present5]
+FAILED tests/domain/test_record_consistency.py::test_only_an_explicit_successful_lookup_boolean_can_answer_presence[present6]
+FAILED tests/domain/test_mandate_graph.py::test_required_author_is_a_closed_recorded_field[None]
+FAILED tests/domain/test_mandate_graph.py::test_required_author_is_a_closed_recorded_field[1]
+FAILED tests/domain/test_mandate_graph.py::test_required_author_is_a_closed_recorded_field[True]
+FAILED tests/domain/test_mandate_graph.py::test_required_author_is_a_closed_recorded_field[value3]
+FAILED tests/domain/test_mandate_graph.py::test_required_author_is_a_closed_recorded_field[human]
+FAILED tests/domain/test_mandate_graph.py::test_required_author_is_a_closed_recorded_field[]
+FAILED tests/tracker/test_barren_record_collector.py::test_collector_calls_only_record_read_closure_and_local_construction
+FAILED tests/tracker/test_barren_tick.py::test_observer_has_one_tracker_read_and_no_version_control_dependency
+FAILED tests/tracker/test_escalation_resolution_drift.py::test_collector_preserves_pretty_native_json_bytes[fake-port]
+FAILED tests/tracker/test_escalation_resolution_drift.py::test_collector_preserves_pretty_native_json_bytes[linear-mcp]
+FAILED tests/tracker/test_mandate_graph.py::test_closure_on_another_declared_lane_issue_is_observed[fake-port]
+FAILED tests/tracker/test_mandate_graph.py::test_closure_on_another_declared_lane_issue_is_observed[linear-mcp]
+20 failed, 868 passed in 9.79s

@@ -1,0 +1,9 @@
+   Building kodezart @ file:///private/tmp/kodezart-v03-recovery-integration
+warning: `build_system.requires = ["uv-build>=0.10.9,<0.11.0"]` does not contain the current uv version 0.11.6
+      Built kodezart @ file:///private/tmp/kodezart-v03-recovery-integration
+Uninstalled 1 package in 4ms
+Installed 1 package in 16ms
+ERROR: file or directory not found: tests/services/test_git_change_persister.py
+
+
+no tests ran in 0.02s

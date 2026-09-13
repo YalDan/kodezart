@@ -1,0 +1,106 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+____ test_actual_scope_composition_retains_completed_native_delivery_record ____
+
+    async def test_actual_scope_composition_retains_completed_native_delivery_record():
+        from kodezart.types.domain.native_delivery import CompletedLaneDelivery
+        from tests.adapters.test_github_api import _make_client
+        from tests.chains.test_native_delivery import ForgeWire
+    
+        origin = "https://github.com/owner/repo"
+        wire = ForgeWire()
+        def scope_wire(request):
+            if (
+                request.method == "GET" and request.url.path.endswith("/pulls")
+                and "head" not in request.url.params
+            ):
+                wire.requests.append(request)
+                return httpx.Response(200, json=[] if wire.pr is None else [wire.pr])
+            return wire(request)
+        forge = _make_client(scope_wire)
+        try:
+            harness = runtime(origin=origin, forge=forge, trunk="main")
+>           events = [event async for event in drive(harness, origin=origin)]
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/integration/test_scope_runtime.py:636: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/composition/engine.py:129: in run
+    async for event in arm.run(
+src/kodezart/services/scope_runtime.py:269: in run
+    async for namespace, mode, payload in lane.graph.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/native_delivery.py:98: in _deliver
+    result = await self._delivery.deliver(
+src/kodezart/chains/lane_delivery.py:132: in deliver
+    await self._require_remote_refs(state, context)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.chains.lane_delivery.LaneDeliveryCoordinator object at 0x10ca18b60>
+state = {'accept_verdict': <AcceptVerdict.accepted: 'accepted'>, 'acceptance_criteria': [], 'best_iteration_sha': None, 'criteria_infeasible': False, ...}
+context = ExecutionContext(prompt='Exact native subject A  with spaces\n', repo_path='/tmp/fake-cache', repo_url='https://github...s=(), base_branch='main', base_role=None), permission_mode=<PermissionMode.UNATTENDED: 'unattended'>, allowed_tools=[])
+
+    async def _require_remote_refs(
+        self, state: WorkflowState, context: ExecutionContext
+    ) -> None:
+        issue_id, sha, repo_url = (
+            state["issue_key"],
+            state["feature_tip_sha"],
+            context.repo_url,
+        )
+        if issue_id is None or sha is None or repo_url is None:
+            raise ValueError("Delivery remote checks require their captured address")
+        head = state["feature_branch"]
+        cwd = context.repo_path or "."
+        remote_sha = await self._git.remote_branch_sha(cwd, repo_url, head)
+        if remote_sha != sha:
+>           raise DeliveryHeadError(
+                issue_id=issue_id,
+                branch=head,
+                expected_sha=sha,
+                observed_sha=remote_sha,
+            )
+E           kodezart.domain.errors.DeliveryHeadError: Delivery head changed for A on kodezart/test-branch-ca367c97: expected mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm, observed 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+E           During task with name 'deliver' and id '675f8bd1-e9e8-36e6-4f6b-62d347707cef'
+
+src/kodezart/chains/lane_delivery.py:264: DeliveryHeadError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 15:57:10 [info     ] forge_capabilities_selected    forge_less_origin=False repo_url=https://github.com/owner/repo
+2026-09-12 15:57:10 [warning  ] repo_visibility_resolution_failed error='Unexpected forge capability: GET https://api.github.com/repos/owner/repo' error_kind=AssertionError
+2026-09-12 15:57:10 [info     ] repo_visibility_resolved       repo_url=https://github.com/owner/repo.git visibility=unknown
+2026-09-12 15:57:10 [info     ] scope_base_resolved            base_branch=main base_role=None input_count=0
+2026-09-12 15:57:10 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 15:57:10 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=2 events={'system': 1, 'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 15:57:10 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=branch_name
+2026-09-12 15:57:10 [info     ] fire_criteria_read             named=1 owed=['A/check'] read_at_version=2026-01-01T00:00:00+00:00 subject=A
+2026-09-12 15:57:10 [info     ] fire_criteria_read             named=1 owed=['A/check'] read_at_version=2026-01-01T00:00:00+00:00 subject=A
+2026-09-12 15:57:10 [info     ] fire_criteria_read             named=1 owed=['A/check'] read_at_version=2026-01-01T00:00:00+00:00 subject=A
+2026-09-12 15:57:10 [info     ] fire_criteria_read             named=1 owed=['A/check'] read_at_version=2026-01-01T00:00:00+00:00 subject=A
+2026-09-12 15:57:10 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 15:57:10 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=2 events={'system': 1, 'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=ralph_evaluator stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 15:57:10 [info     ] fire_criteria_read             named=1 owed=['A/check'] read_at_version=2026-01-01T00:00:00+00:00 subject=A
+2026-09-12 15:57:10 [info     ] fire_criteria_read             named=1 owed=['A/check'] read_at_version=2026-01-01T00:00:00+00:00 subject=A
+2026-09-12 15:57:10 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 15:57:10 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=2 events={'system': 1, 'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=post_merge_review stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 15:57:10 [info     ] fire_criteria_read             named=1 owed=['A/check'] read_at_version=2026-01-01T00:00:00+00:00 subject=A
+2026-09-12 15:57:10 [info     ] fire_criteria_read             named=1 owed=['A/check'] read_at_version=2026-01-01T00:00:00+00:00 subject=A
+2026-09-12 15:57:10 [info     ] fire_criteria_read             named=1 owed=['A/check'] read_at_version=2026-01-01T00:00:00+00:00 subject=A
+=========================== short test summary info ============================
+FAILED tests/integration/test_scope_runtime.py::test_actual_scope_composition_retains_completed_native_delivery_record
+1 failed in 1.27s

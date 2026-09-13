@@ -1,0 +1,46 @@
+{
+  "candidate": "1a83163ecdecf962b21d4ea029ccdd31d16a45de",
+  "parent": "aef9e78c34dca6897ddfcbfb439246edf76dd364",
+  "coherent_read_statements_exact_ast": true,
+  "probes": {
+    "test_m5_union_final_freshness_independent.py": {
+      "external_sha256": "257145bf6e7bb8cde92d272940467ea0b30ff5a61caf7feba4cb4a1db29a986e",
+      "committed_sha256": "db6f5cef8206710fc48a1300e89898322e332a50321e2921f3bd6f04c9c0a429",
+      "exact_bytes": false,
+      "exact_ast": true
+    },
+    "test_m5_union_stage_independence.py": {
+      "external_sha256": "4eb3e5ca09b4d994a944e14ed8417bb3ee29956eca6e9a51f64810a6976d30ac",
+      "committed_sha256": "41c615b7a7cca074be78e2d688efdc82a70adab56a5fc4b9d15ca9d35abe4b25",
+      "exact_bytes": false,
+      "exact_ast": true
+    }
+  },
+  "original_test_functions": {
+    "tests/services/test_scope_planning.py": {
+      "removed": [],
+      "changed": [
+        "test_a_member_absent_from_its_ancestors_subtree_refuses",
+        "test_a_subtree_that_moves_during_planning_never_returns_a_plan"
+      ],
+      "added": []
+    },
+    "tests/tracker/test_scope_planning.py": {
+      "removed": [],
+      "changed": [
+        "test_unstable_native_facts_never_return_a_plan"
+      ],
+      "added": []
+    },
+    "tests/services/test_union_tick.py": {
+      "removed": [],
+      "changed": [],
+      "added": [
+        "test_changed_roster_refuses_cached_result_before_head_read",
+        "test_continuous_roster_read_head_moves_use_existing_retry_bound",
+        "test_roster_read_head_move_after_composition_retries",
+        "test_roster_read_head_move_invalidates_cached_result"
+      ]
+    }
+  }
+}

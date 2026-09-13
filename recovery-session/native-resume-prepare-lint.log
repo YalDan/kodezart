@@ -1,0 +1,88 @@
+E501 Line too long (89 > 88)
+  --> tests/chains/test_native_prepare_cancel_peer.py:21:89
+   |
+19 |     port, saver = tracker(), InMemorySaver()
+20 |     executor = Executor(claim=False)
+21 |     fire, workspace, _, config = await prepared_parent(repository, executor, port, saver)
+   |                                                                                         ^
+22 |     reached = asyncio.Event()
+23 |     actual_scan = port.scope_issues
+   |
+
+E501 Line too long (89 > 88)
+  --> tests/chains/test_native_prepare_cancel_peer.py:37:89
+   |
+35 |     target = asyncio.create_task(reached.wait())
+36 |     try:
+37 |         done, _ = await asyncio.wait((task, target), return_when=asyncio.FIRST_COMPLETED)
+   |                                                                                         ^
+38 |         assert target in done, "the real parent failed before the synchronization target"
+39 |         task.cancel()
+   |
+
+E501 Line too long (89 > 88)
+  --> tests/chains/test_native_prepare_cancel_peer.py:38:89
+   |
+36 |     try:
+37 |         done, _ = await asyncio.wait((task, target), return_when=asyncio.FIRST_COMPLETED)
+38 |         assert target in done, "the real parent failed before the synchronization target"
+   |                                                                                         ^
+39 |         task.cancel()
+40 |         with pytest.raises(asyncio.CancelledError):
+   |
+
+E501 Line too long (92 > 88)
+  --> tests/chains/test_native_prepare_cancel_peer.py:46:89
+   |
+44 |         assert not executor.calls
+45 |         assert not port.comments
+46 |         assert not workspace._workspaces, "pre-writer cancellation leaks acquired ownership"
+   |                                                                                         ^^^^
+47 |         assert all(not Path(path).exists() for path in observed_paths)
+48 |     finally:
+   |
+
+E501 Line too long (89 > 88)
+  --> tests/chains/test_native_prepare_cleanup_peer.py:24:89
+   |
+22 |     port, saver = tracker(), InMemorySaver()
+23 |     executor = Executor(claim=False)
+24 |     fire, workspace, _, config = await prepared_parent(repository, executor, port, saver)
+   |                                                                                         ^
+25 |     observed_paths = set()
+26 |     actual_scan = port.scope_issues
+   |
+
+E501 Line too long (89 > 88)
+  --> tests/chains/test_native_prepare_cleanup_peer.py:36:89
+   |
+35 |     async def unavailable_capture(workspace_path, *, repository_path):
+36 |         identity = await actual_identity(workspace_path, repository_path=repository_path)
+   |                                                                                         ^
+37 |         assert identity.head_sha
+38 |         observed_paths.add(workspace_path)
+   |
+
+E501 Line too long (93 > 88)
+  --> tests/chains/test_native_prepare_cleanup_peer.py:46:89
+   |
+44 |         monkeypatch.setattr(workspace._git, "worktree_identity", unavailable_capture)
+45 |     try:
+46 |         with pytest.raises((NativeWriteRefusalError, FireSpecEntryError, GitOperationError)):
+   |                                                                                         ^^^^^
+47 |             await fire.native_graph.ainvoke(None, config=config)
+48 |         assert observed_paths
+   |
+
+E501 Line too long (95 > 88)
+  --> tests/chains/test_native_prepare_cleanup_peer.py:57:89
+   |
+55 |         assert phases and all(isinstance(phase, NewNativeExecution) for phase in phases)
+56 |         assert not port.comments
+57 |         assert not workspace._workspaces, "failed preparation retains uncheckpointed ownership"
+   |                                                                                         ^^^^^^^
+58 |         assert all(not Path(path).exists() for path in observed_paths)
+59 |     finally:
+   |
+
+Found 8 errors.

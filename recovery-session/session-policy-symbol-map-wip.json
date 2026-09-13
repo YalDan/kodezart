@@ -1,0 +1,2927 @@
+{
+  "base": "fec7f28292975f0b4635a06ba84e4e35fdc3c2e8",
+  "donor": "1f4296c8c36a7498625d2478f8ec7ae6ec187923",
+  "files": [
+    {
+      "path": "src/kodezart/adapters/_agents_mapping.py",
+      "sha256": "ddfd1b33dee244c62bb5e9b7b73e71d1ba2e76d2a1caf999205d62cda2cda0b0",
+      "whole_file_donor_equal": true,
+      "changed_symbols": [
+        {
+          "symbol": "_SDK_TOOL_PRESETS",
+          "line": 138,
+          "end_line": 151,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "map_allowed_tools",
+          "line": 154,
+          "end_line": 158,
+          "exact_donor_ast": true
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/adapters/_permission_modes.py",
+      "sha256": "799e0fed150c144151016a755dccc47196d95f3fcb32b1e17c2203c33b3414a5",
+      "whole_file_donor_equal": true,
+      "changed_symbols": [
+        {
+          "symbol": "_PERMISSION_MODE_MAP",
+          "line": 7,
+          "end_line": 12,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "map_permission_mode",
+          "line": 15,
+          "end_line": 19,
+          "exact_donor_ast": true
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/adapters/agent_content_scanner.py",
+      "sha256": "f03329e72c9eae815556d28e5505d15a3f834ba0abec89eab1b7866acfe2803e",
+      "whole_file_donor_equal": false,
+      "changed_symbols": [
+        {
+          "symbol": "_AUDIT_PERMISSION_MODE",
+          "line": 44,
+          "end_line": 44,
+          "exact_donor_ast": true
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/adapters/asyncio_job_queue.py",
+      "sha256": "d74cdf82c5317581ccf78f0ee1881e71d7a1837a29d80d028e0d2b40005ab152",
+      "whole_file_donor_equal": false,
+      "changed_symbols": [
+        {
+          "symbol": "AsyncioJobQueue",
+          "line": 97,
+          "end_line": 396,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "AsyncioJobQueue.__init__",
+          "line": 114,
+          "end_line": 136,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "AsyncioJobQueue.submit",
+          "line": 207,
+          "end_line": 239,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "AsyncioJobQueue._run_job",
+          "line": 276,
+          "end_line": 320,
+          "exact_donor_ast": false
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/adapters/claude_agent_executor.py",
+      "sha256": "b37566281154179305413ab3a50148df388da61796350033c964d7f8fe217790",
+      "whole_file_donor_equal": false,
+      "changed_symbols": [
+        {
+          "symbol": "ClaudeAgentExecutor",
+          "line": 48,
+          "end_line": 155,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "ClaudeAgentExecutor.stream",
+          "line": 66,
+          "end_line": 155,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "ClaudeAgentExecutor.stream.options",
+          "line": 92,
+          "end_line": 108,
+          "exact_donor_ast": true
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/adapters/claude_client_executor.py",
+      "sha256": "9b4b63e7ae30f79f53469bbc2fa7154744a323c7c72f4af1bc40e8ab32b69983",
+      "whole_file_donor_equal": false,
+      "changed_symbols": [
+        {
+          "symbol": "ClaudeClientExecutor",
+          "line": 84,
+          "end_line": 240,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "ClaudeClientExecutor.stream",
+          "line": 125,
+          "end_line": 240,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "ClaudeClientExecutor.stream.options",
+          "line": 156,
+          "end_line": 177,
+          "exact_donor_ast": true
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/adapters/git_change_persister.py",
+      "sha256": "3a87299d01b7b9aaf464380a36d374251bdd13108388f983d13544b903f61795",
+      "whole_file_donor_equal": false,
+      "changed_symbols": [
+        {
+          "symbol": "GitChangePersister",
+          "line": 47,
+          "end_line": 338,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "GitChangePersister._generate_commit_message",
+          "line": 302,
+          "end_line": 338,
+          "exact_donor_ast": true
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/api/v1/endpoints/agent.py",
+      "sha256": "5774ad9224e14405c9dace30b2d8c977635f832c7016fce2a0174864c89cad9f",
+      "whole_file_donor_equal": false,
+      "changed_symbols": [
+        {
+          "symbol": "stream_workflow",
+          "line": 72,
+          "end_line": 109,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "fire_workflow",
+          "line": 113,
+          "end_line": 140,
+          "exact_donor_ast": false
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/chains/ralph_loop.py",
+      "sha256": "aaa74d0fda55de47e04a943d92da4bf753100d8701ca3be4ce2f6f4b11b0a438",
+      "whole_file_donor_equal": false,
+      "changed_symbols": [
+        {
+          "symbol": "RalphLoop",
+          "line": 53,
+          "end_line": 393,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "RalphLoop.run",
+          "line": 99,
+          "end_line": 167,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "RalphLoop._evaluate_node",
+          "line": 239,
+          "end_line": 377,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "RalphLoop._evaluate_node.evaluate",
+          "line": 266,
+          "end_line": 306,
+          "exact_donor_ast": false
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/chains/ralph_workflow.py",
+      "sha256": "82d3c550a1fb908d23e6c8984d2f2e55efde158624ca9c6f0489c6cd3e64d339",
+      "whole_file_donor_equal": false,
+      "changed_symbols": [
+        {
+          "symbol": "RalphWorkflowEngine",
+          "line": 151,
+          "end_line": 1880,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "RalphWorkflowEngine.run",
+          "line": 221,
+          "end_line": 319,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "RalphWorkflowEngine._generate_criteria_node",
+          "line": 631,
+          "end_line": 700,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "RalphWorkflowEngine._validate_criteria_node",
+          "line": 702,
+          "end_line": 825,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "RalphWorkflowEngine._validate_criteria_node.validate",
+          "line": 737,
+          "end_line": 775,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "RalphWorkflowEngine._run_quality_gate",
+          "line": 840,
+          "end_line": 881,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "RalphWorkflowEngine._review_against_ticket_node",
+          "line": 1305,
+          "end_line": 1434,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "RalphWorkflowEngine._review_against_ticket_node.review",
+          "line": 1338,
+          "end_line": 1375,
+          "exact_donor_ast": false
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/chains/remediation.py",
+      "sha256": "e549c495645d186aaf0f5608a1142ed9ffa7f6129c9f4d5ee8197261ffac4dec",
+      "whole_file_donor_equal": false,
+      "changed_symbols": [
+        {
+          "symbol": "RemediationChain",
+          "line": 32,
+          "end_line": 118,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "RemediationChain.run",
+          "line": 55,
+          "end_line": 118,
+          "exact_donor_ast": false
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/chains/ticket_generation.py",
+      "sha256": "b2a0afb5e38fb2ad831dfca065c115ac745509ba71a472bb90ad3dad0641823a",
+      "whole_file_donor_equal": false,
+      "changed_symbols": [
+        {
+          "symbol": "TicketGenerationLoop",
+          "line": 92,
+          "end_line": 500,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "TicketGenerationLoop._create_node",
+          "line": 259,
+          "end_line": 349,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "TicketGenerationLoop._review_node",
+          "line": 351,
+          "end_line": 434,
+          "exact_donor_ast": false
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/composition/engine.py",
+      "sha256": "abe3a5ddf8abf428001357237f4502ab8a504dd3e004714aecf579cdafefbff1",
+      "whole_file_donor_equal": false,
+      "changed_symbols": [
+        {
+          "symbol": "OriginRoutedWorkflowEngine",
+          "line": 40,
+          "end_line": 116,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "OriginRoutedWorkflowEngine.run",
+          "line": 82,
+          "end_line": 116,
+          "exact_donor_ast": false
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/core/constants.py",
+      "sha256": "fbebdbed0b8e171d7fd2cda08894d8e38a8b8a80f12d79a6d86ae24508150fb2",
+      "whole_file_donor_equal": false,
+      "changed_symbols": [
+        {
+          "symbol": "EVAL_PERMISSION_MODE",
+          "line": 5,
+          "end_line": 5,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "UNATTENDED_PERMISSION_MODE",
+          "line": 9,
+          "end_line": 9,
+          "exact_donor_ast": true
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/core/protocols.py",
+      "sha256": "bf63e7f69299295ea7d1076a2020092adfb3db069cff29ef5e3bb213c7c890d3",
+      "whole_file_donor_equal": false,
+      "changed_symbols": [
+        {
+          "symbol": "AgentExecutor",
+          "line": 249,
+          "end_line": 279,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "AgentExecutor.stream",
+          "line": 252,
+          "end_line": 279,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "AgentRunner",
+          "line": 1031,
+          "end_line": 1097,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "AgentRunner.stream",
+          "line": 1040,
+          "end_line": 1058,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "AgentRunner.stream_workflow",
+          "line": 1060,
+          "end_line": 1080,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "AgentRunner.stream_in_workspace",
+          "line": 1082,
+          "end_line": 1097,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "QualityGate",
+          "line": 1114,
+          "end_line": 1140,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "QualityGate.run",
+          "line": 1123,
+          "end_line": 1140,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "WorkflowEngine",
+          "line": 1182,
+          "end_line": 1202,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "WorkflowEngine.run",
+          "line": 1185,
+          "end_line": 1202,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "JobQueue",
+          "line": 1206,
+          "end_line": 1222,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "JobQueue.submit",
+          "line": 1216,
+          "end_line": 1218,
+          "exact_donor_ast": true
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/handlers/agent_handler.py",
+      "sha256": "ab5c45731659888aac6a703d7af6fe6876332dead6acde96e47154116fb389f6",
+      "whole_file_donor_equal": false,
+      "changed_symbols": [
+        {
+          "symbol": "_HTTP_PERMISSIONS",
+          "line": 22,
+          "end_line": 25,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "AgentHandler",
+          "line": 28,
+          "end_line": 178,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "AgentHandler.stream_query",
+          "line": 84,
+          "end_line": 115,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "AgentHandler.submit_workflow",
+          "line": 117,
+          "end_line": 140,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "AgentHandler.submit_workflow.submission",
+          "line": 127,
+          "end_line": 139,
+          "exact_donor_ast": false
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/services/agent_service.py",
+      "sha256": "4de7dffaf74bb697a1f195faae9af822779f8d1417bccf3722e3c8651d61ed1d",
+      "whole_file_donor_equal": false,
+      "changed_symbols": [
+        {
+          "symbol": "AgentService",
+          "line": 24,
+          "end_line": 254,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "AgentService.stream",
+          "line": 43,
+          "end_line": 82,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "AgentService.stream_in_workspace",
+          "line": 84,
+          "end_line": 111,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "AgentService.stream_workflow",
+          "line": 113,
+          "end_line": 156,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "AgentService._run_in_workspace",
+          "line": 158,
+          "end_line": 254,
+          "exact_donor_ast": false
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/services/fire_dispatcher.py",
+      "sha256": "54a65fd050b0af0cbc3c1a207de49a8891f97e3bb514eb5a374312a4290161b1",
+      "whole_file_donor_equal": false,
+      "changed_symbols": [
+        {
+          "symbol": "FireDispatcher",
+          "line": 175,
+          "end_line": 791,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "FireDispatcher._claim_and_enqueue",
+          "line": 297,
+          "end_line": 488,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "FireDispatcher._claim_and_enqueue.record",
+          "line": 447,
+          "end_line": 458,
+          "exact_donor_ast": false
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/services/prompt_pass.py",
+      "sha256": "92963a10564fa791b6ee9af064b0ee77e2edc7417016ee448efea0ee2fcb92a7",
+      "whole_file_donor_equal": false,
+      "changed_symbols": [
+        {
+          "symbol": "run_prompt_pass",
+          "line": 58,
+          "end_line": 169,
+          "exact_donor_ast": false
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/types/domain/session.py",
+      "sha256": "87d06f8aab1b6e6c1384aa9db98b7d7fcc6a90bd9a57b01bd6201b28a9b879b5",
+      "whole_file_donor_equal": false,
+      "changed_symbols": [
+        {
+          "symbol": "PermissionMode",
+          "line": 20,
+          "end_line": 30,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "PermissionMode.INTERACTIVE",
+          "line": 27,
+          "end_line": 27,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "PermissionMode.ACCEPT_EDITS",
+          "line": 28,
+          "end_line": 28,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "PermissionMode.PLAN",
+          "line": 29,
+          "end_line": 29,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "PermissionMode.UNATTENDED",
+          "line": 30,
+          "end_line": 30,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "ToolPreset",
+          "line": 33,
+          "end_line": 43,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "ToolPreset.EVALUATION",
+          "line": 40,
+          "end_line": 40,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "ToolPreset.DELEGATED_EVALUATION",
+          "line": 41,
+          "end_line": 41,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "ToolPreset.AUTHORING",
+          "line": 42,
+          "end_line": 42,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "ToolPreset.IMPLEMENTATION",
+          "line": 43,
+          "end_line": 43,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "AllowedTools",
+          "line": 46,
+          "end_line": 46,
+          "exact_donor_ast": true
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/types/domain/workflow.py",
+      "sha256": "4c31bb0c692a9e4c2708994fb0456952473cc00fb4613726276e1ebfec9dba5d",
+      "whole_file_donor_equal": false,
+      "changed_symbols": [
+        {
+          "symbol": "WorkflowSubmission",
+          "line": 43,
+          "end_line": 57,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "WorkflowSubmission.model_config",
+          "line": 49,
+          "end_line": 49,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "WorkflowSubmission.prompt",
+          "line": 51,
+          "end_line": 51,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "WorkflowSubmission.repo_path",
+          "line": 52,
+          "end_line": 52,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "WorkflowSubmission.repo_url",
+          "line": 53,
+          "end_line": 53,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "WorkflowSubmission.base_spec",
+          "line": 54,
+          "end_line": 54,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "WorkflowSubmission.implied_base",
+          "line": 55,
+          "end_line": 55,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "WorkflowSubmission.permission_mode",
+          "line": 56,
+          "end_line": 56,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "WorkflowSubmission.allowed_tools",
+          "line": 57,
+          "end_line": 57,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "ExecutionContext",
+          "line": 84,
+          "end_line": 100,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "ExecutionContext.permission_mode",
+          "line": 94,
+          "end_line": 94,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "ExecutionContext.allowed_tools",
+          "line": 95,
+          "end_line": 95,
+          "exact_donor_ast": true
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/types/requests/agent.py",
+      "sha256": "13bc82908c25bc168b75d2f8b79bf87c92a3788325b1c58c00035749dd3507c4",
+      "whole_file_donor_equal": false,
+      "changed_symbols": [
+        {
+          "symbol": "HttpPermissionMode",
+          "line": 10,
+          "end_line": 10,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "QueryRequest",
+          "line": 34,
+          "end_line": 54,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "QueryRequest.permission_mode",
+          "line": 42,
+          "end_line": 42,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "WorkflowRequest",
+          "line": 57,
+          "end_line": 88,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "WorkflowRequest.permission_mode",
+          "line": 78,
+          "end_line": 78,
+          "exact_donor_ast": true
+        }
+      ]
+    },
+    {
+      "path": "tests/adapters/test_claude_client_executor.py",
+      "sha256": "244f15eaa63fae90dd4e3a0a04b058e325a113fc832949f5b01cb9ebc8e99591",
+      "whole_file_donor_equal": true,
+      "changed_symbols": [
+        {
+          "symbol": "_failure_of",
+          "line": 66,
+          "end_line": 90,
+          "exact_donor_ast": true
+        }
+      ]
+    },
+    {
+      "path": "tests/adapters/test_claude_executors.py",
+      "sha256": "0277adb185e37e89abcc1c6b1aaf0fb4671c0397da7ac1f005a15db8610ba5f0",
+      "whole_file_donor_equal": false,
+      "changed_symbols": [
+        {
+          "symbol": "test_process_error_round_trips_exit_code_and_stderr_on_re_raise",
+          "line": 129,
+          "end_line": 157,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_process_error_with_none_stderr_does_not_crash",
+          "line": 160,
+          "end_line": 185,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_process_error_redacts_token_in_warning_log",
+          "line": 201,
+          "end_line": 238,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_process_error_stderr_tail_on_agent_sdk_error_is_redacted",
+          "line": 241,
+          "end_line": 265,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "_options_for",
+          "line": 288,
+          "end_line": 313,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_both_executors_pass_the_mapped_skills_never_none",
+          "line": 343,
+          "end_line": 366,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_setting_sources_come_from_config_in_every_mode",
+          "line": 371,
+          "end_line": 392,
+          "exact_donor_ast": true
+        }
+      ]
+    },
+    {
+      "path": "tests/api/v1/test_jobs.py",
+      "sha256": "3af99e937cf43836d8470b9e983d503523e409eb13044242b0a3461459132587",
+      "whole_file_donor_equal": false,
+      "changed_symbols": [
+        {
+          "symbol": "_request",
+          "line": 231,
+          "end_line": 240,
+          "exact_donor_ast": false
+        }
+      ]
+    },
+    {
+      "path": "tests/chains/test_accept_gate.py",
+      "sha256": "4f6a6ad57d9c16b69698fc51e74973dd709157b3eaf6e0be55366b69198cea10",
+      "whole_file_donor_equal": false,
+      "changed_symbols": [
+        {
+          "symbol": "_run",
+          "line": 375,
+          "end_line": 387,
+          "exact_donor_ast": false
+        }
+      ]
+    },
+    {
+      "path": "tests/chains/test_criteria_validation.py",
+      "sha256": "d7b0c92ceb9e9c1c96e052c1b0122d267dead4ea32de6823e0951cbb80721856",
+      "whole_file_donor_equal": false,
+      "changed_symbols": [
+        {
+          "symbol": "_run",
+          "line": 232,
+          "end_line": 250,
+          "exact_donor_ast": false
+        }
+      ]
+    },
+    {
+      "path": "tests/chains/test_dispatch_definitions.py",
+      "sha256": "d5a7bb1b9a7616b15469bc7c34c6be985ff2beb56ec093844a57670cb0513f3e",
+      "whole_file_donor_equal": false,
+      "changed_symbols": [
+        {
+          "symbol": "evaluator_dispatches",
+          "line": 353,
+          "end_line": 403,
+          "exact_donor_ast": true
+        }
+      ]
+    },
+    {
+      "path": "tests/chains/test_outbound_gating.py",
+      "sha256": "84fd044ac69ea445f6025fc2f45202a0576420a3285ed7a8726de9865318a4db",
+      "whole_file_donor_equal": false,
+      "changed_symbols": [
+        {
+          "symbol": "run_engine",
+          "line": 91,
+          "end_line": 109,
+          "exact_donor_ast": false
+        }
+      ]
+    },
+    {
+      "path": "tests/chains/test_ralph_loop.py",
+      "sha256": "829fa59ff9f6dc3ae6e0e3eb927b45f41935e11ebdd40e068069f77d32675e63",
+      "whole_file_donor_equal": false,
+      "changed_symbols": [
+        {
+          "symbol": "_run_kwargs",
+          "line": 126,
+          "end_line": 148,
+          "exact_donor_ast": true
+        }
+      ]
+    },
+    {
+      "path": "tests/chains/test_ralph_workflow.py",
+      "sha256": "4d7318de6bbccafc7df30ac462956247f63bc764bf800130f55f16d7cf629396",
+      "whole_file_donor_equal": false,
+      "changed_symbols": [
+        {
+          "symbol": "test_workflow_single_iteration_accepted",
+          "line": 186,
+          "end_line": 212,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_single_iteration_accepted.events",
+          "line": 196,
+          "end_line": 207,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_max_iterations_exhausted",
+          "line": 215,
+          "end_line": 241,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_max_iterations_exhausted.events",
+          "line": 225,
+          "end_line": 236,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_streams_events_per_node",
+          "line": 244,
+          "end_line": 272,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_streams_events_per_node.events",
+          "line": 254,
+          "end_line": 265,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_accepted_calls_merger",
+          "line": 275,
+          "end_line": 315,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_accepted_calls_merger.events",
+          "line": 286,
+          "end_line": 297,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_merge_failure_reports_error",
+          "line": 318,
+          "end_line": 353,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_merge_failure_reports_error.events",
+          "line": 336,
+          "end_line": 347,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_merge_success_has_no_error",
+          "line": 356,
+          "end_line": 383,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_merge_success_has_no_error.events",
+          "line": 367,
+          "end_line": 378,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_rejected_does_not_merge",
+          "line": 386,
+          "end_line": 414,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_rejected_does_not_merge.events",
+          "line": 397,
+          "end_line": 408,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_concurrent_workflow_runs_isolated",
+          "line": 427,
+          "end_line": 456,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_concurrent_workflow_runs_isolated.collect",
+          "line": 437,
+          "end_line": 449,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_quality_gate_receives_correct_params",
+          "line": 459,
+          "end_line": 492,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_quality_gate_receives_correct_params._",
+          "line": 469,
+          "end_line": 480,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_run_rejects_acceptance_criteria_kwarg",
+          "line": 495,
+          "end_line": 515,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_generates_criteria_before_loop",
+          "line": 518,
+          "end_line": 542,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_generates_criteria_before_loop._",
+          "line": 528,
+          "end_line": 539,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_streams_criteria_event",
+          "line": 545,
+          "end_line": 565,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_streams_criteria_event.events",
+          "line": 549,
+          "end_line": 560,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_criteria_event_before_iteration_event",
+          "line": 568,
+          "end_line": 591,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_criteria_event_before_iteration_event.events",
+          "line": 572,
+          "end_line": 583,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_criteria_generation_failure_raises",
+          "line": 594,
+          "end_line": 718,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_quality_gate_never_receives_empty_criteria",
+          "line": 721,
+          "end_line": 747,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_quality_gate_never_receives_empty_criteria._",
+          "line": 731,
+          "end_line": 742,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_accepted_cleans_up_ralph_branch",
+          "line": 750,
+          "end_line": 777,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_accepted_cleans_up_ralph_branch._",
+          "line": 761,
+          "end_line": 772,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_rejected_does_not_clean_up",
+          "line": 780,
+          "end_line": 804,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_rejected_does_not_clean_up._",
+          "line": 791,
+          "end_line": 802,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_cleanup_failure_does_not_change_outcome",
+          "line": 807,
+          "end_line": 848,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_cleanup_failure_does_not_change_outcome.events",
+          "line": 832,
+          "end_line": 843,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_generate_ticket_runs_in_order",
+          "line": 856,
+          "end_line": 884,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_generate_ticket_runs_in_order.events",
+          "line": 863,
+          "end_line": 874,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_generate_ticket_node_forwards_base_branch",
+          "line": 887,
+          "end_line": 906,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_generate_ticket_node_forwards_base_branch._",
+          "line": 892,
+          "end_line": 903,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_criteria_receives_formatted_ticket",
+          "line": 909,
+          "end_line": 970,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_criteria_receives_formatted_ticket._",
+          "line": 946,
+          "end_line": 957,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_quality_gate_receives_formatted_ticket",
+          "line": 985,
+          "end_line": 1011,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_quality_gate_receives_formatted_ticket._",
+          "line": 996,
+          "end_line": 1007,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_ticket_event_yielded",
+          "line": 1014,
+          "end_line": 1032,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_ticket_event_yielded.events",
+          "line": 1018,
+          "end_line": 1029,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_no_ticket_event_raises",
+          "line": 1035,
+          "end_line": 1079,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_review_passes_opens_pr",
+          "line": 1216,
+          "end_line": 1252,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_review_passes_opens_pr.events",
+          "line": 1232,
+          "end_line": 1243,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_review_fails_triggers_fix",
+          "line": 1255,
+          "end_line": 1355,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_review_fails_triggers_fix.events",
+          "line": 1334,
+          "end_line": 1345,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_ci_passes_completes",
+          "line": 1358,
+          "end_line": 1389,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_ci_passes_completes.events",
+          "line": 1374,
+          "end_line": 1385,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_ci_fails_budget_exhausted_comments",
+          "line": 1392,
+          "end_line": 1427,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_ci_fails_budget_exhausted_comments._",
+          "line": 1409,
+          "end_line": 1420,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_no_pr_creator_skips_pr",
+          "line": 1430,
+          "end_line": 1464,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_no_pr_creator_skips_pr.events",
+          "line": 1445,
+          "end_line": 1456,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_no_ci_monitor_skips_ci",
+          "line": 1467,
+          "end_line": 1500,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_no_ci_monitor_skips_ci.events",
+          "line": 1482,
+          "end_line": 1493,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_rejected_skips_review",
+          "line": 1503,
+          "end_line": 1542,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_rejected_skips_review.events",
+          "line": 1524,
+          "end_line": 1535,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_complete_event_includes_pr_fields",
+          "line": 1545,
+          "end_line": 1582,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_complete_event_includes_pr_fields.events",
+          "line": 1564,
+          "end_line": 1575,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_review_fails_budget_exhausted_no_pr",
+          "line": 1585,
+          "end_line": 1664,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_review_fails_budget_exhausted_no_pr.events",
+          "line": 1645,
+          "end_line": 1656,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_ci_fails_budget_remaining_triggers_fix",
+          "line": 1667,
+          "end_line": 1720,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_ci_fails_budget_remaining_triggers_fix.events",
+          "line": 1693,
+          "end_line": 1704,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_review_fails_exhausted_with_pr_comments",
+          "line": 1723,
+          "end_line": 1831,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_review_fails_exhausted_with_pr_comments.events",
+          "line": 1805,
+          "end_line": 1816,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_repo_url_none_with_protocols_skips_pr",
+          "line": 1834,
+          "end_line": 1873,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_repo_url_none_with_protocols_skips_pr.events",
+          "line": 1854,
+          "end_line": 1865,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_route_after_review_no_pr_creator_routes_complete",
+          "line": 1881,
+          "end_line": 1913,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_route_after_review_no_pr_creator_routes_complete.events",
+          "line": 1895,
+          "end_line": 1906,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_route_after_review_no_repo_url_routes_complete",
+          "line": 1916,
+          "end_line": 1946,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_route_after_review_no_repo_url_routes_complete.events",
+          "line": 1930,
+          "end_line": 1941,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_route_after_ci_budget_remaining_routes_fix",
+          "line": 1980,
+          "end_line": 2015,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_route_after_ci_budget_remaining_routes_fix.events",
+          "line": 1998,
+          "end_line": 2009,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_persists_the_ticket_first_then_both_artifacts",
+          "line": 2021,
+          "end_line": 2060,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_persists_the_ticket_first_then_both_artifacts.events",
+          "line": 2032,
+          "end_line": 2043,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_reports_artifacts_ignored_by_target",
+          "line": 2063,
+          "end_line": 2088,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_reports_artifacts_ignored_by_target.events",
+          "line": 2070,
+          "end_line": 2081,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_the_artifact_persister_is_handed_the_base_the_run_was_fired_with",
+          "line": 2113,
+          "end_line": 2159,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_the_artifact_persister_is_handed_the_base_the_run_was_fired_with._",
+          "line": 2145,
+          "end_line": 2156,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_a_run_killed_at_criteria_leaves_the_ticket_retrievable",
+          "line": 2305,
+          "end_line": 2344,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_a_rate_limit_rejection_retries_the_node_instead_of_ending_the_run",
+          "line": 2347,
+          "end_line": 2377,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_a_rate_limit_rejection_retries_the_node_instead_of_ending_the_run.events",
+          "line": 2360,
+          "end_line": 2371,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_a_deterministic_empty_output_still_ends_the_run_on_one_attempt",
+          "line": 2380,
+          "end_line": 2407,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_an_exhausted_rate_limit_budget_ends_the_run_with_the_cause_named",
+          "line": 2410,
+          "end_line": 2439,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_a_rate_limited_node_waits_the_floor_before_its_next_attempt",
+          "line": 2443,
+          "end_line": 2482,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_a_rate_limited_node_waits_the_floor_before_its_next_attempt.events",
+          "line": 2466,
+          "end_line": 2477,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_cleans_artifacts_before_pr",
+          "line": 2485,
+          "end_line": 2513,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_cleans_artifacts_before_pr.events",
+          "line": 2494,
+          "end_line": 2505,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_without_artifact_persister",
+          "line": 2516,
+          "end_line": 2535,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_without_artifact_persister.events",
+          "line": 2520,
+          "end_line": 2531,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_success_cleans_backup_branches",
+          "line": 2543,
+          "end_line": 2574,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_success_cleans_backup_branches._",
+          "line": 2554,
+          "end_line": 2565,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_rejected_skips_backup_cleanup",
+          "line": 2577,
+          "end_line": 2604,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_rejected_skips_backup_cleanup._",
+          "line": 2588,
+          "end_line": 2599,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_backup_cleanup_failure_does_not_block_complete",
+          "line": 2607,
+          "end_line": 2639,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_backup_cleanup_failure_does_not_block_complete.events",
+          "line": 2621,
+          "end_line": 2632,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_consolidation_event_emitted_post_loop",
+          "line": 2650,
+          "end_line": 2706,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_consolidation_event_emitted_post_loop.events",
+          "line": 2675,
+          "end_line": 2686,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_complete_event_final_commit_sha_sources_from_feature_tip_sha",
+          "line": 2709,
+          "end_line": 2742,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_complete_event_final_commit_sha_sources_from_feature_tip_sha.events",
+          "line": 2727,
+          "end_line": 2738,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_merge_to_feature_already_integrated_proceeds_to_review",
+          "line": 2745,
+          "end_line": 2779,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_merge_to_feature_already_integrated_proceeds_to_review.events",
+          "line": 2762,
+          "end_line": 2773,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_merge_to_feature_divergent_routes_to_complete_with_merge_error",
+          "line": 2782,
+          "end_line": 2815,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_merge_to_feature_divergent_routes_to_complete_with_merge_error.events",
+          "line": 2799,
+          "end_line": 2810,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_merge_to_feature_source_missing_raises",
+          "line": 2818,
+          "end_line": 2847,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_review_against_ticket_renders_the_changeset_digest",
+          "line": 2850,
+          "end_line": 2884,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_review_against_ticket_renders_the_changeset_digest._",
+          "line": 2869,
+          "end_line": 2880,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_review_uses_review_base_sha_and_review_head_sha_not_branch_refs",
+          "line": 3015,
+          "end_line": 3090,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_review_uses_review_base_sha_and_review_head_sha_not_branch_refs._",
+          "line": 3068,
+          "end_line": 3079,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_review_of_a_stacked_lane_resolves_its_recorded_base_not_trunk",
+          "line": 3093,
+          "end_line": 3177,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_review_of_a_stacked_lane_resolves_its_recorded_base_not_trunk._",
+          "line": 3148,
+          "end_line": 3169,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_a_stale_recorded_base_produces_no_scope_verdict_at_all",
+          "line": 3180,
+          "end_line": 3253,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_review_against_ticket_raises_when_review_shas_missing",
+          "line": 3256,
+          "end_line": 3300,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_review_against_ticket_raises_when_review_shas_missing.config",
+          "line": 3288,
+          "end_line": 3298,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "TestForgeNodePreconditions",
+          "line": 3311,
+          "end_line": 3401,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "TestForgeNodePreconditions._config",
+          "line": 3328,
+          "end_line": 3339,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "TestCommentFailureContainment",
+          "line": 3409,
+          "end_line": 3481,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "TestCommentFailureContainment._run",
+          "line": 3419,
+          "end_line": 3443,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_branch_name_generation_failure_raises_no_structured_output_error",
+          "line": 3492,
+          "end_line": 3593,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_terminal_event_always_carries_an_outcome",
+          "line": 3631,
+          "end_line": 3651,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_terminal_event_always_carries_an_outcome.events",
+          "line": 3635,
+          "end_line": 3646,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_terminal_outcome_merge_divergent_on_diverged_consolidation",
+          "line": 3654,
+          "end_line": 3680,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_terminal_outcome_merge_divergent_on_diverged_consolidation.events",
+          "line": 3666,
+          "end_line": 3677,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_terminal_outcome_ci_passed_on_green_ci",
+          "line": 3683,
+          "end_line": 3704,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_terminal_outcome_ci_passed_on_green_ci.events",
+          "line": 3690,
+          "end_line": 3701,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_terminal_outcome_ci_not_configured_when_ci_reports_none",
+          "line": 3707,
+          "end_line": 3728,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_terminal_outcome_ci_not_configured_when_ci_reports_none.events",
+          "line": 3714,
+          "end_line": 3725,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_terminal_outcome_loop_not_accepted_when_gate_rejects",
+          "line": 3731,
+          "end_line": 3757,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_terminal_outcome_loop_not_accepted_when_gate_rejects.events",
+          "line": 3741,
+          "end_line": 3752,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_plateaued_run_reports_loop_plateaued_with_actionable_payload",
+          "line": 3760,
+          "end_line": 3802,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_plateaued_run_reports_loop_plateaued_with_actionable_payload.events",
+          "line": 3771,
+          "end_line": 3782,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_state_holds_most_recent_gate_trajectory",
+          "line": 3805,
+          "end_line": 3832,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_state_holds_most_recent_gate_trajectory.events",
+          "line": 3816,
+          "end_line": 3827,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_fix_round_success_leaves_the_ci_status_unchanged",
+          "line": 3835,
+          "end_line": 3926,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_fix_round_success_leaves_the_ci_status_unchanged.events",
+          "line": 3911,
+          "end_line": 3922,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "_stalled_run",
+          "line": 3980,
+          "end_line": 4005,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_a_forge_without_a_ref_publisher_is_a_wiring_error_not_a_no_pr_path",
+          "line": 4142,
+          "end_line": 4184,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "_failing_run",
+          "line": 4205,
+          "end_line": 4231,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "_run_engine",
+          "line": 4520,
+          "end_line": 4536,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "_review_failure_round",
+          "line": 4860,
+          "end_line": 4890,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "TestWorkBaseRefIsWrittenWhereItBecomesTrue",
+          "line": 4969,
+          "end_line": 5067,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "TestWorkBaseRefIsWrittenWhereItBecomesTrue._config",
+          "line": 4978,
+          "end_line": 4989,
+          "exact_donor_ast": true
+        }
+      ]
+    },
+    {
+      "path": "tests/chains/test_shorthand_url_resolution.py",
+      "sha256": "8016fc5c425a0e9dd00536826dbe7c7d1eea3f0fcf407fe25abec2444afe38bd",
+      "whole_file_donor_equal": false,
+      "changed_symbols": [
+        {
+          "symbol": "test_merger_receives_resolved_url_not_shorthand",
+          "line": 84,
+          "end_line": 118,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_merger_receives_resolved_url_not_shorthand.events",
+          "line": 91,
+          "end_line": 102,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_full_url_passes_through_unchanged",
+          "line": 121,
+          "end_line": 152,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_full_url_passes_through_unchanged.events",
+          "line": 126,
+          "end_line": 137,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_local_repo_path_not_affected",
+          "line": 155,
+          "end_line": 179,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_local_repo_path_not_affected.events",
+          "line": 160,
+          "end_line": 171,
+          "exact_donor_ast": false
+        }
+      ]
+    },
+    {
+      "path": "tests/chains/test_ticket_generation.py",
+      "sha256": "8567e83164cad4b8663c570de4a80cfd25d135c136e5f2ddcae10b4f8028276e",
+      "whole_file_donor_equal": false,
+      "changed_symbols": [
+        {
+          "symbol": "test_websearch_in_allowed_tools",
+          "line": 350,
+          "end_line": 359,
+          "exact_donor_ast": false
+        }
+      ]
+    },
+    {
+      "path": "tests/core/test_logging_chain.py",
+      "sha256": "3eec248c365fad90c224f0edb06c9923993abf1c2cea5b1c7db5c1a8d5e5f4ef",
+      "whole_file_donor_equal": false,
+      "changed_symbols": [
+        {
+          "symbol": "test_the_queues_failure_event_carries_the_traceback",
+          "line": 159,
+          "end_line": 196,
+          "exact_donor_ast": false
+        }
+      ]
+    },
+    {
+      "path": "tests/domain/test_base_scope.py",
+      "sha256": "c387d4427fb74a69806e9a1a40c828b140db31902b3796a3b83813aaecdb40f0",
+      "whole_file_donor_equal": true,
+      "changed_symbols": [
+        {
+          "symbol": "_context",
+          "line": 45,
+          "end_line": 53,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_the_context_holds_no_base_of_its_own",
+          "line": 79,
+          "end_line": 97,
+          "exact_donor_ast": true
+        }
+      ]
+    },
+    {
+      "path": "tests/fakes.py",
+      "sha256": "0da907497e56a8fcc931e30fd5434d428b0026c23f3fc2b784abe06426a37391",
+      "whole_file_donor_equal": false,
+      "changed_symbols": [
+        {
+          "symbol": "recorded_session",
+          "line": 356,
+          "end_line": 395,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "FakeAgentExecutor",
+          "line": 606,
+          "end_line": 859,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "FakeAgentExecutor.stream",
+          "line": 698,
+          "end_line": 859,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "FakeRaisingExecutor",
+          "line": 862,
+          "end_line": 883,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "FakeRaisingExecutor.stream",
+          "line": 868,
+          "end_line": 883,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "FakeAgentRunner",
+          "line": 1023,
+          "end_line": 1115,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "FakeAgentRunner.stream",
+          "line": 1030,
+          "end_line": 1056,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "FakeAgentRunner.stream_workflow",
+          "line": 1058,
+          "end_line": 1087,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "FakeAgentRunner.stream_in_workspace",
+          "line": 1089,
+          "end_line": 1115,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "ScriptedFakeExecutor",
+          "line": 1118,
+          "end_line": 1333,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "ScriptedFakeExecutor.stream",
+          "line": 1142,
+          "end_line": 1333,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "FakeQualityGate",
+          "line": 1469,
+          "end_line": 1543,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "FakeQualityGate.run",
+          "line": 1487,
+          "end_line": 1543,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "FakeJobQueue",
+          "line": 3816,
+          "end_line": 3876,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "FakeJobQueue.__init__",
+          "line": 3823,
+          "end_line": 3834,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "FakeJobQueue.submit",
+          "line": 3836,
+          "end_line": 3849,
+          "exact_donor_ast": true
+        }
+      ]
+    },
+    {
+      "path": "tests/integration/test_criteria_oracle.py",
+      "sha256": "d7ce4a38a7effe9989007cd1f2789c65da37f04501ed291257213902b7f7afb6",
+      "whole_file_donor_equal": false,
+      "changed_symbols": [
+        {
+          "symbol": "test_the_oracle_is_byte_identical_across_all_four_surfaces",
+          "line": 190,
+          "end_line": 279,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_the_oracle_is_byte_identical_across_all_four_surfaces.events",
+          "line": 234,
+          "end_line": 245,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_the_second_iteration_is_asked_about_the_harness_text",
+          "line": 282,
+          "end_line": 344,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_the_second_iteration_is_asked_about_the_harness_text._",
+          "line": 325,
+          "end_line": 336,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_both_iterations_dispatch_the_full_id_set",
+          "line": 347,
+          "end_line": 407,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_both_iterations_dispatch_the_full_id_set._",
+          "line": 371,
+          "end_line": 400,
+          "exact_donor_ast": false
+        }
+      ]
+    },
+    {
+      "path": "tests/integration/test_live_criteria_probes.py",
+      "sha256": "762dab771bc49d0fc253ca4a41b522df083ee8b5dd8016b5ad3676ec7fc23ea3",
+      "whole_file_donor_equal": false,
+      "changed_symbols": [
+        {
+          "symbol": "_generate_live",
+          "line": 134,
+          "end_line": 167,
+          "exact_donor_ast": false
+        }
+      ]
+    },
+    {
+      "path": "tests/integration/test_stacked_scope.py",
+      "sha256": "4ccb14c4d2c371fbe7b8c670121a89cc907e3b7b5944c9c46604e5cccb2c50f9",
+      "whole_file_donor_equal": false,
+      "changed_symbols": [
+        {
+          "symbol": "_run",
+          "line": 208,
+          "end_line": 224,
+          "exact_donor_ast": false
+        }
+      ]
+    },
+    {
+      "path": "tests/integration/test_workflow_e2e.py",
+      "sha256": "aac3c671a213fec2090ce1f37235380d3973b2151ea9a9eb55fed30e3a9176f3",
+      "whole_file_donor_equal": false,
+      "changed_symbols": [
+        {
+          "symbol": "test_workflow_e2e_creates_branch_and_pushes",
+          "line": 137,
+          "end_line": 285,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_e2e_creates_branch_and_pushes.events",
+          "line": 259,
+          "end_line": 270,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_e2e_exhausts_iterations",
+          "line": 288,
+          "end_line": 427,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_e2e_exhausts_iterations.events",
+          "line": 410,
+          "end_line": 421,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_e2e_divergent_base_branch",
+          "line": 489,
+          "end_line": 646,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_e2e_divergent_base_branch._",
+          "line": 615,
+          "end_line": 626,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_e2e_subprocess_argv_threads_configured_remote",
+          "line": 774,
+          "end_line": 985,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_e2e_subprocess_argv_threads_configured_remote.events",
+          "line": 915,
+          "end_line": 926,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_ralph_workflow_base_branch_not_found_error_references_configured_remote",
+          "line": 1130,
+          "end_line": 1202,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_e2e_under_flipped_defaults_runs_the_create_only_path",
+          "line": 1381,
+          "end_line": 1518,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_workflow_e2e_under_flipped_defaults_runs_the_create_only_path.events",
+          "line": 1491,
+          "end_line": 1502,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_a_review_entry_round_is_built_on_the_consolidated_work",
+          "line": 1743,
+          "end_line": 1813,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_a_review_entry_round_is_built_on_the_consolidated_work.events",
+          "line": 1771,
+          "end_line": 1787,
+          "exact_donor_ast": false
+        }
+      ]
+    },
+    {
+      "path": "tests/probes/test_ab_smoke.py",
+      "sha256": "26e282ca90d13ecdbc480c16836d6a839bbf85eef289ef8f57e105fdc47f0822",
+      "whole_file_donor_equal": false,
+      "changed_symbols": [
+        {
+          "symbol": "run_arm",
+          "line": 312,
+          "end_line": 422,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "run_arm.request",
+          "line": 374,
+          "end_line": 382,
+          "exact_donor_ast": false
+        }
+      ]
+    },
+    {
+      "path": "tests/probes/test_harness_capabilities.py",
+      "sha256": "11eb30fd5a9f1021e11aa166a3c77eca4dea86712b06cbef03da5840f36c2615",
+      "whole_file_donor_equal": false,
+      "changed_symbols": [
+        {
+          "symbol": "UNGATED_PERMISSION_MODE",
+          "line": 58,
+          "end_line": 58,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "WORKFLOW_ALLOWED_TOOLS",
+          "line": 59,
+          "end_line": 62,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "EVALUATIVE_CONFIGURATION",
+          "line": 84,
+          "end_line": 86,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "GENERATIVE_CONFIGURATION",
+          "line": 87,
+          "end_line": 87,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "session_options",
+          "line": 122,
+          "end_line": 141,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "evaluator_options",
+          "line": 144,
+          "end_line": 151,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "generative_options",
+          "line": 154,
+          "end_line": 161,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_probe_config_matches_production",
+          "line": 267,
+          "end_line": 294,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_probe_c_workflow_tool_presence",
+          "line": 371,
+          "end_line": 391,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_probe_d_named_workflow_invocation",
+          "line": 400,
+          "end_line": 449,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_probe_e_agent_type_and_bounding",
+          "line": 458,
+          "end_line": 504,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_probe_f_origin_gate",
+          "line": 513,
+          "end_line": 558,
+          "exact_donor_ast": true
+        }
+      ]
+    },
+    {
+      "path": "tests/prompts/test_skills_loadouts.py",
+      "sha256": "20d85025ad9c2e5f654b76a0a353637bbf3891790d504d4c373c8ee002588c02",
+      "whole_file_donor_equal": false,
+      "changed_symbols": [
+        {
+          "symbol": "test_configured_skills_reach_the_executor_through_chain_dispatch",
+          "line": 218,
+          "end_line": 266,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_configured_skills_reach_the_executor_through_chain_dispatch._",
+          "line": 252,
+          "end_line": 263,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_ralph_loop_threads_the_selection_into_stream_workflow",
+          "line": 269,
+          "end_line": 304,
+          "exact_donor_ast": true
+        }
+      ]
+    },
+    {
+      "path": "tests/services/test_agent_service.py",
+      "sha256": "4b0c255450e1bf5f98edb1a1147011228714a219f734cf293b4bfacb8b145a73",
+      "whole_file_donor_equal": false,
+      "changed_symbols": [
+        {
+          "symbol": "test_stream_workflow_persists_changes",
+          "line": 20,
+          "end_line": 63,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_stream_workflow_persists_changes.collected",
+          "line": 47,
+          "end_line": 60,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_stream_passes_output_format",
+          "line": 66,
+          "end_line": 100,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_stream_propagates_executor_error",
+          "line": 103,
+          "end_line": 120,
+          "exact_donor_ast": true
+        }
+      ]
+    },
+    {
+      "path": "tests/services/test_fire_dispatcher.py",
+      "sha256": "68854d2cf651838ab08bf6daaf5c23b53064f2528b48fafe6af6375ff74d72f4",
+      "whole_file_donor_equal": false,
+      "changed_symbols": [
+        {
+          "symbol": "TestTheBaseIsReadOffTheGraph",
+          "line": 1045,
+          "end_line": 1188,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "TestTheBaseIsReadOffTheGraph.test_a_lane_with_no_blockers_is_dispatched_on_the_configured_trunk",
+          "line": 1054,
+          "end_line": 1071,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "TestTheBaseIsReadOffTheGraph.test_a_lane_with_a_blocker_is_dispatched_on_that_blockers_ref",
+          "line": 1073,
+          "end_line": 1096,
+          "exact_donor_ast": true
+        }
+      ]
+    },
+    {
+      "path": "tests/services/test_lifecycle_watcher.py",
+      "sha256": "ddc9f0bc97388d117f21b5eb2f9e37059529d642daab18a3831c0ec2d50735ef",
+      "whole_file_donor_equal": false,
+      "changed_symbols": [
+        {
+          "symbol": "TestThePremiseAgainstTheShippedQueue",
+          "line": 446,
+          "end_line": 543,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "TestThePremiseAgainstTheShippedQueue.test_no_frame_is_published_while_the_job_is_still_queued",
+          "line": 449,
+          "end_line": 487,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "TestThePremiseAgainstTheShippedQueue.test_the_watcher_writes_in_progress_over_the_shipped_queue",
+          "line": 489,
+          "end_line": 543,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "TestGracefulShutdownHandsTheClaimBack",
+          "line": 546,
+          "end_line": 641,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "TestGracefulShutdownHandsTheClaimBack.test_a_stopped_instance_leaves_its_issue_claimable",
+          "line": 561,
+          "end_line": 621,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "TestGracefulShutdownHandsTheClaimBack.test_a_stopped_instance_leaves_its_issue_claimable.record",
+          "line": 592,
+          "end_line": 603,
+          "exact_donor_ast": false
+        }
+      ]
+    },
+    {
+      "path": "tests/services/test_run_surface_lease.py",
+      "sha256": "65244f62711c3b13ddbf0960a47b82f74978dfd5929762c14517ff41886f0d56",
+      "whole_file_donor_equal": false,
+      "changed_symbols": [
+        {
+          "symbol": "test_composed_outcome_comment_is_held_by_the_actual_queue_job_id",
+          "line": 136,
+          "end_line": 201,
+          "exact_donor_ast": false
+        }
+      ]
+    },
+    {
+      "path": "tests/services/test_session_grant_threading.py",
+      "sha256": "b8d2be38a887af538284e290753062fcc211269a14437e0f2695f8a70fec5f3b",
+      "whole_file_donor_equal": false,
+      "changed_symbols": [
+        {
+          "symbol": "test_stream_carries_the_session_type_to_the_executor",
+          "line": 66,
+          "end_line": 82,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_stream_in_workspace_carries_the_session_type",
+          "line": 86,
+          "end_line": 100,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_stream_workflow_carries_the_session_type",
+          "line": 104,
+          "end_line": 120,
+          "exact_donor_ast": true
+        }
+      ]
+    },
+    {
+      "path": "tests/test_composition_root.py",
+      "sha256": "85eb61d3addf9b9a9eb73f552d29834abc81e675a2e495e7a0c6fcd2a819a896",
+      "whole_file_donor_equal": false,
+      "changed_symbols": [
+        {
+          "symbol": "_shutdown",
+          "line": 393,
+          "end_line": 481,
+          "exact_donor_ast": false
+        }
+      ]
+    },
+    {
+      "path": "tests/test_forge_origin_selection.py",
+      "sha256": "1f85888dbe419092b5191e3bac20c41a7fc2cad98bcfe6e6d1687d10e1da5432",
+      "whole_file_donor_equal": false,
+      "changed_symbols": [
+        {
+          "symbol": "_drive",
+          "line": 186,
+          "end_line": 202,
+          "exact_donor_ast": false
+        }
+      ]
+    },
+    {
+      "path": "tests/adapters/test_permission_boundary.py",
+      "sha256": "429292e7658cb82d0af78bf02685d3b148aa6511b2a8e5273bdd5cfadf7c9aa9",
+      "whole_file_donor_equal": false,
+      "changed_symbols": [
+        {
+          "symbol": "MODES",
+          "line": 29,
+          "end_line": 34,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "TOOLS",
+          "line": 35,
+          "end_line": 35,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "sdk",
+          "line": 39,
+          "end_line": 53,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "sdk.module",
+          "line": 40,
+          "end_line": 40,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "sdk.records",
+          "line": 41,
+          "end_line": 41,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "sdk.persistent",
+          "line": 42,
+          "end_line": 42,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "sdk.target",
+          "line": 43,
+          "end_line": 43,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "sdk.replacement",
+          "line": 44,
+          "end_line": 46,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "sdk.workspace",
+          "line": 47,
+          "end_line": 47,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "sdk.executor",
+          "line": 48,
+          "end_line": 48,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "sdk.service",
+          "line": 49,
+          "end_line": 51,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_application_permission_reaches_each_sdk_as_its_existing_option",
+          "line": 57,
+          "end_line": 77,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_application_permission_reaches_each_sdk_as_its_existing_option.options",
+          "line": 73,
+          "end_line": 73,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_existing_http_values_and_defaults_translate_before_application_entry",
+          "line": 82,
+          "end_line": 115,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_existing_http_values_and_defaults_translate_before_application_entry.queue",
+          "line": 86,
+          "end_line": 86,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_existing_http_values_and_defaults_translate_before_application_entry.app",
+          "line": 87,
+          "end_line": 87,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_existing_http_values_and_defaults_translate_before_application_entry.body",
+          "line": 92,
+          "end_line": 92,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_existing_http_values_and_defaults_translate_before_application_entry.effective_wire",
+          "line": 95,
+          "end_line": 95,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_existing_http_values_and_defaults_translate_before_application_entry.expected",
+          "line": 96,
+          "end_line": 98,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_http_does_not_widen_its_existing_two_mode_contract",
+          "line": 122,
+          "end_line": 147,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_http_does_not_widen_its_existing_two_mode_contract.queue",
+          "line": 124,
+          "end_line": 124,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_http_does_not_widen_its_existing_two_mode_contract.app",
+          "line": 125,
+          "end_line": 125,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_untyped_adapter_input_refuses_before_sdk_construction",
+          "line": 153,
+          "end_line": 167,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_domain_construction_rejects_vendor_modes_and_unknown_values",
+          "line": 174,
+          "end_line": 188,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_domain_construction_rejects_vendor_modes_and_unknown_values.fields",
+          "line": 175,
+          "end_line": 182,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_checkpoint_config_restores_the_same_domain_permission",
+          "line": 192,
+          "end_line": 206,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_checkpoint_config_restores_the_same_domain_permission.context",
+          "line": 193,
+          "end_line": 200,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_checkpoint_config_restores_the_same_domain_permission.serializer",
+          "line": 201,
+          "end_line": 201,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_checkpoint_config_restores_the_same_domain_permission.loaded",
+          "line": 202,
+          "end_line": 202,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_checkpoint_config_restores_the_same_domain_permission.restored",
+          "line": 203,
+          "end_line": 203,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_cancellation_still_closes_sdk_and_releases_the_workspace",
+          "line": 210,
+          "end_line": 277,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_cancellation_still_closes_sdk_and_releases_the_workspace.entered",
+          "line": 211,
+          "end_line": 211,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_cancellation_still_closes_sdk_and_releases_the_workspace.closed",
+          "line": 212,
+          "end_line": 212,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_cancellation_still_closes_sdk_and_releases_the_workspace.options_seen",
+          "line": 213,
+          "end_line": 213,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_cancellation_still_closes_sdk_and_releases_the_workspace.Client",
+          "line": 215,
+          "end_line": 231,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_cancellation_still_closes_sdk_and_releases_the_workspace.Client.__init__",
+          "line": 216,
+          "end_line": 217,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_cancellation_still_closes_sdk_and_releases_the_workspace.Client.__aenter__",
+          "line": 219,
+          "end_line": 220,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_cancellation_still_closes_sdk_and_releases_the_workspace.Client.__aexit__",
+          "line": 222,
+          "end_line": 223,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_cancellation_still_closes_sdk_and_releases_the_workspace.Client.query",
+          "line": 225,
+          "end_line": 227,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_cancellation_still_closes_sdk_and_releases_the_workspace.Client.receive_response",
+          "line": 229,
+          "end_line": 231,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_cancellation_still_closes_sdk_and_releases_the_workspace.query",
+          "line": 233,
+          "end_line": 240,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_cancellation_still_closes_sdk_and_releases_the_workspace.workspace",
+          "line": 242,
+          "end_line": 242,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_cancellation_still_closes_sdk_and_releases_the_workspace.service",
+          "line": 243,
+          "end_line": 247,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_cancellation_still_closes_sdk_and_releases_the_workspace.run",
+          "line": 249,
+          "end_line": 260,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_cancellation_still_closes_sdk_and_releases_the_workspace.persistent",
+          "line": 262,
+          "end_line": 262,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_cancellation_still_closes_sdk_and_releases_the_workspace.target",
+          "line": 263,
+          "end_line": 263,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_opt_in_harness_probe_uses_the_same_sdk_translation",
+          "line": 281,
+          "end_line": 289,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_opt_in_harness_probe_uses_the_same_sdk_translation.options",
+          "line": 284,
+          "end_line": 286,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_the_probe_alternative_preserves_its_interactive_sdk_mode",
+          "line": 292,
+          "end_line": 304,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_the_probe_alternative_preserves_its_interactive_sdk_mode.options",
+          "line": 298,
+          "end_line": 303,
+          "exact_donor_ast": true
+        }
+      ]
+    },
+    {
+      "path": "tests/adapters/test_tool_selection.py",
+      "sha256": "c65910bc21867001f63e15e0235c4544163df6eac5315149dc6fbec3dbcbe8e9",
+      "whole_file_donor_equal": false,
+      "changed_symbols": [
+        {
+          "symbol": "BUNDLES",
+          "line": 23,
+          "end_line": 31,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "OPEN",
+          "line": 32,
+          "end_line": 39,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "SELECTIONS",
+          "line": 40,
+          "end_line": 40,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "context",
+          "line": 43,
+          "end_line": 57,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "context.fields",
+          "line": 44,
+          "end_line": 51,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_actual_sdk_expands_only_application_bundles",
+          "line": 61,
+          "end_line": 85,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_checkpoint_and_json_keep_preset_distinct_from_explicit_list",
+          "line": 90,
+          "end_line": 105,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_checkpoint_and_json_keep_preset_distinct_from_explicit_list.original",
+          "line": 93,
+          "end_line": 93,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_checkpoint_and_json_keep_preset_distinct_from_explicit_list.serializer",
+          "line": 94,
+          "end_line": 94,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_checkpoint_and_json_keep_preset_distinct_from_explicit_list.loaded",
+          "line": 95,
+          "end_line": 95,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_unsupported_whole_value_is_refused_by_actual_context",
+          "line": 112,
+          "end_line": 114,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_actual_queue_keeps_selection_until_native_execution",
+          "line": 118,
+          "end_line": 148,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_actual_queue_keeps_selection_until_native_execution.seen",
+          "line": 122,
+          "end_line": 122,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_actual_queue_keeps_selection_until_native_execution.Engine",
+          "line": 124,
+          "end_line": 135,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_actual_queue_keeps_selection_until_native_execution.Engine.run",
+          "line": 125,
+          "end_line": 135,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_actual_queue_keeps_selection_until_native_execution.queue",
+          "line": 137,
+          "end_line": 137,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_http_remains_an_explicit_open_list_contract",
+          "line": 153,
+          "end_line": 195,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_http_remains_an_explicit_open_list_contract.queue",
+          "line": 155,
+          "end_line": 155,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_http_remains_an_explicit_open_list_contract.app",
+          "line": 156,
+          "end_line": 156,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_http_remains_an_explicit_open_list_contract.body",
+          "line": 161,
+          "end_line": 161,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_http_remains_an_explicit_open_list_contract.expected",
+          "line": 181,
+          "end_line": 189,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_http_remains_an_explicit_open_list_contract.actual",
+          "line": 190,
+          "end_line": 194,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_actual_http_schemas_match_the_captured_previous_boundary",
+          "line": 198,
+          "end_line": 205,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_actual_http_schemas_match_the_captured_previous_boundary.expected",
+          "line": 199,
+          "end_line": 201,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_actual_tracker_dispatch_requests_the_implementation_bundle",
+          "line": 208,
+          "end_line": 216,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_actual_tracker_dispatch_requests_the_implementation_bundle.tracker",
+          "line": 212,
+          "end_line": 212,
+          "exact_donor_ast": true
+        },
+        {
+          "symbol": "test_unknown_whole_value_cannot_reach_native_sdk",
+          "line": 219,
+          "end_line": 234,
+          "exact_donor_ast": true
+        }
+      ]
+    },
+    {
+      "path": "tests/adapters/tool_request_schemas.json",
+      "sha256": "7966614b01a206a74815535994a5c955a0aec9420974e6ae4d27906eb52d6868",
+      "whole_file_donor_equal": false,
+      "changed_symbols": []
+    },
+    {
+      "path": "tests/chains/test_session_policy_composition.py",
+      "sha256": "a315524bfe83d6ff57f8f1673a5f7ee732739a7bd85f2e0773913e42ec128df1",
+      "whole_file_donor_equal": false,
+      "changed_symbols": [
+        {
+          "symbol": "test_existing_real_workflow_tool_policy_reaches_native_options",
+          "line": 16,
+          "end_line": 105,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_existing_real_workflow_tool_policy_reaches_native_options.factory",
+          "line": 19,
+          "end_line": 19,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_existing_real_workflow_tool_policy_reaches_native_options.executor",
+          "line": 22,
+          "end_line": 24,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_existing_real_workflow_tool_policy_reaches_native_options.messages",
+          "line": 26,
+          "end_line": 52,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_existing_real_workflow_tool_policy_reaches_native_options.Client",
+          "line": 54,
+          "end_line": 70,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_existing_real_workflow_tool_policy_reaches_native_options.Client.__init__",
+          "line": 55,
+          "end_line": 57,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_existing_real_workflow_tool_policy_reaches_native_options.Client.__aenter__",
+          "line": 59,
+          "end_line": 60,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_existing_real_workflow_tool_policy_reaches_native_options.Client.__aexit__",
+          "line": 62,
+          "end_line": 63,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_existing_real_workflow_tool_policy_reaches_native_options.Client.query",
+          "line": 65,
+          "end_line": 66,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_existing_real_workflow_tool_policy_reaches_native_options.Client.receive_response",
+          "line": 68,
+          "end_line": 70,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_existing_real_workflow_tool_policy_reaches_native_options.query",
+          "line": 72,
+          "end_line": 78,
+          "exact_donor_ast": false
+        },
+        {
+          "symbol": "test_existing_real_workflow_tool_policy_reaches_native_options.persistent",
+          "line": 81,
+          "end_line": 81,
+          "exact_donor_ast": false
+        }
+      ]
+    }
+  ]
+}

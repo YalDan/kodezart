@@ -1,0 +1,51 @@
+..........................................F                              [100%]
+=================================== FAILURES ===================================
+_ test_removed_peer_refutation_retains_exact_citations_and_bound_without_peer_repair _
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a42f230>
+
+    async def test_removed_peer_refutation_retains_exact_citations_and_bound_without_peer_repair(monkeypatch):
+        import json
+        from tests.fakes import FakeMcpIssue
+        owner, board, executor = factory(bound=2)
+        board.server.issues["peer"] = FakeMcpIssue(id="peer", parent_id=CLAIMED_ISSUE, description="Prepared peer body", relations=[("relatedTo", CLAIMED_ISSUE)])
+        board.server.issues[CLAIMED_ISSUE].relations = [("relatedTo", "peer")]
+        original = executor.stream
+        peer_judgments = []
+        async def stream(**kwargs):
+            title = kwargs["output_format"]["schema"].get("title")
+            if title == "OrganizeProposal":
+                yield result(structured_output={"kind": "graph", "issue_id": CLAIMED_ISSUE, "changes": [{"kind": "related_to", "remove": ["peer"]}]})
+                return
+            if title == "WriteBackFinding":
+                artifact = json.loads(re.findall(r"<written_artifact>\s*(.*?)\s*</written_artifact>", kwargs["prompt"], re.S)[-1])
+                if artifact["nativeRef"] == "peer":
+                    peer_judgments.append(kwargs)
+                    yield result(structured_output={"verdict": "refuted", "evidence": "The peer's retained claim names an absent test.", "cited_refs": ["tests/absent_peer.py"]})
+                    return
+            async for event in original(**kwargs):
+                yield event
+        monkeypatch.setattr(executor, "stream", stream)
+        report = await run_owner(owner)
+        assert report.halt is not None
+>       assert report.halt.bound.value == report.halt.bound.rounds_used == 2
+               ^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'NoneType' object has no attribute 'value'
+
+tests/chains/test_organize_graph_owner.py:212: AttributeError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 18:38:46 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-12 18:38:46 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 18:38:46 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 18:38:46 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 18:38:46 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 18:38:46 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 18:38:46 [info     ] outbound_content_gated         categories=[] content_digest=f06f715cfee7cdd4dca55f7644f34f9030727be4261cf01b40e546ac1be6c486 failure=None hits=[] surface=tracker verdict=clean visibility=private writer=tracker_comment
+2026-09-12 18:38:46 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 18:38:46 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 18:38:46 [info     ] outbound_content_gated         categories=[] content_digest=f43a64777d82a18fab15ed8d62039e61cdba22acbb677ab1c4842ffbd98e5e81 failure=None hits=[] surface=tracker verdict=clean visibility=private writer=tracker_comment
+2026-09-12 18:38:46 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 18:38:46 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+=========================== short test summary info ============================
+FAILED tests/chains/test_organize_graph_owner.py::test_removed_peer_refutation_retains_exact_citations_and_bound_without_peer_repair
+1 failed, 42 passed in 1.81s

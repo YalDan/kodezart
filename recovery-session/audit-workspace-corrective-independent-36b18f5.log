@@ -1,0 +1,9 @@
+Using CPython 3.12.13
+Creating virtual environment at: .venv
+   Building kodezart @ file:///private/tmp/kodezart-v03-audit-workspace-independent
+warning: `build_system.requires = ["uv-build>=0.10.9,<0.11.0"]` does not contain the current uv version 0.11.6
+      Built kodezart @ file:///private/tmp/kodezart-v03-audit-workspace-independent
+Installed 174 packages in 1.62s
+........................................................................ [ 93%]
+.....                                                                    [100%]
+77 passed in 138.78s (0:02:18)

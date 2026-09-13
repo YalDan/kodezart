@@ -1,0 +1,320 @@
+Using CPython 3.12.13
+Creating virtual environment at: .venv
+   Building kodezart @ file:///private/tmp/kodezart-v03-m2-groom-independent-parent
+warning: `build_system.requires = ["uv-build>=0.10.9,<0.11.0"]` does not contain the current uv version 0.11.6
+      Built kodezart @ file:///private/tmp/kodezart-v03-m2-groom-independent-parent
+Installed 174 packages in 1.58s
+FFFFFFFF                                                                 [100%]
+=================================== FAILURES ===================================
+_ test_real_factory_dispatches_declared_groom_rubric_with_native_inputs[claude-opus] _
+
+prompt_set = 'claude-opus'
+
+    @pytest.mark.parametrize("prompt_set", ["claude-opus", "anthropic_v5"])
+    async def test_real_factory_dispatches_declared_groom_rubric_with_native_inputs(
+        prompt_set,
+    ):
+        owner, board, executor, registry = build(prompt_set=prompt_set)
+        with pytest.raises(NoStructuredOutputError):
+>           await run_owner(owner)
+
+tests/chains/test_organize_rubric.py:110: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/chains/test_organize_owner.py:191: in run_owner
+    return await owner.run(
+src/kodezart/services/organize_owner.py:1012: in run
+    request = await self._request(
+src/kodezart/services/organize_owner.py:251: in _request
+    rubric = self._prompts.template_for(phase.spec.rubric_prompt_key).render(
+src/kodezart/core/prompt_rendering.py:206: in render
+    return render_template(self.body, merged)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+body = '<role>\nYou are the project-management grooming pass for the {{operation_name}} delivery operation — you own the corr... an empty pass is a finding, and\na gap in the log is indistinguishable from a pass that never ran.\n</notion_logging>'
+bindings = {'agent_identities': {'0': '@example-agent', '1': 'example-agent'}, 'agent_identities_absent': None, 'base_ref': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'criterion_issue_bodies': (), ...}
+
+    def render_template(body: str, bindings: Mapping[str, object]) -> str:
+        """Render *body* against *bindings* — the one substitution implementation.
+    
+        Raises :class:`PromptRenderError` naming every unconditional reference
+        that had no binding.
+        """
+        nodes = _parse(body)
+        missing: list[str] = []
+        scopes: list[_Scope] = [_Scope(names=bindings, item=_ABSENT)]
+        rendered = _render_nodes(nodes, scopes, missing)
+        if missing:
+            msg = "Unbound template placeholders: " + ", ".join(missing)
+>           raise PromptRenderError(msg, missing=missing)
+E           kodezart.core.errors.PromptRenderError: Unbound template placeholders: record_title
+
+src/kodezart/core/prompt_rendering.py:184: PromptRenderError
+_ test_real_factory_dispatches_declared_groom_rubric_with_native_inputs[anthropic_v5] _
+
+prompt_set = 'anthropic_v5'
+
+    @pytest.mark.parametrize("prompt_set", ["claude-opus", "anthropic_v5"])
+    async def test_real_factory_dispatches_declared_groom_rubric_with_native_inputs(
+        prompt_set,
+    ):
+        owner, board, executor, registry = build(prompt_set=prompt_set)
+        with pytest.raises(NoStructuredOutputError):
+>           await run_owner(owner)
+
+tests/chains/test_organize_rubric.py:110: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/chains/test_organize_owner.py:191: in run_owner
+    return await owner.run(
+src/kodezart/services/organize_owner.py:1012: in run
+    request = await self._request(
+src/kodezart/services/organize_owner.py:251: in _request
+    rubric = self._prompts.template_for(phase.spec.rubric_prompt_key).render(
+src/kodezart/core/prompt_rendering.py:206: in render
+    return render_template(self.body, merged)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+body = "Groom the backlog of operation {{operation_name}}.\n\n{{#if issue_labels.criterion}}Read an issue's criteria from its...Ultrathink. Deeper reasoning is requested for this work — reason as thoroughly\nas the task warrants before you act.\n"
+bindings = {'agent_identities': {'0': '@example-agent', '1': 'example-agent'}, 'agent_identities_absent': None, 'base_ref': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'criterion_issue_bodies': (), ...}
+
+    def render_template(body: str, bindings: Mapping[str, object]) -> str:
+        """Render *body* against *bindings* — the one substitution implementation.
+    
+        Raises :class:`PromptRenderError` naming every unconditional reference
+        that had no binding.
+        """
+        nodes = _parse(body)
+        missing: list[str] = []
+        scopes: list[_Scope] = [_Scope(names=bindings, item=_ABSENT)]
+        rendered = _render_nodes(nodes, scopes, missing)
+        if missing:
+            msg = "Unbound template placeholders: " + ", ".join(missing)
+>           raise PromptRenderError(msg, missing=missing)
+E           kodezart.core.errors.PromptRenderError: Unbound template placeholders: record_title
+
+src/kodezart/core/prompt_rendering.py:184: PromptRenderError
+_____ test_boot_rejects_incompatible_native_admission_roles[ticket_review] _____
+
+key = 'ticket_review'
+
+    @pytest.mark.parametrize("key", ["ticket_review", "commit_message"])
+    def test_boot_rejects_incompatible_native_admission_roles(key):
+        fields = native_fields()
+        fields["organize_mandates"][0]["admission_prompt_key"] = key
+>       with pytest.raises(PromptResolutionError, match=key):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'kodezart.core.errors.PromptResolutionError'>
+
+tests/chains/test_organize_rubric.py:128: Failed
+____ test_boot_rejects_incompatible_native_admission_roles[commit_message] _____
+
+key = 'commit_message'
+
+    @pytest.mark.parametrize("key", ["ticket_review", "commit_message"])
+    def test_boot_rejects_incompatible_native_admission_roles(key):
+        fields = native_fields()
+        fields["organize_mandates"][0]["admission_prompt_key"] = key
+>       with pytest.raises(PromptResolutionError, match=key):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'kodezart.core.errors.PromptResolutionError'>
+
+tests/chains/test_organize_rubric.py:128: Failed
+____ test_each_organizational_refusal_prevents_groom_convergence[blockers] _____
+
+defect = 'blockers'
+
+    @pytest.mark.parametrize("defect", ORGANIZATIONAL_EVIDENCE)
+    async def test_each_organizational_refusal_prevents_groom_convergence(defect):
+        evidence = ORGANIZATIONAL_EVIDENCE[defect]
+        # A typed grader response is an input oracle for the owner. No prompt-text
+        # classifier or fake model judgment is used to derive it.
+        owner, board, executor, _ = build(
+            executor=UnrepairedDefectExecutor(evidence), body=evidence
+        )
+>       report = await run_owner(owner)
+                 ^^^^^^^^^^^^^^^^^^^^^^
+
+tests/chains/test_organize_rubric.py:232: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/chains/test_organize_owner.py:191: in run_owner
+    return await owner.run(
+src/kodezart/services/organize_owner.py:1012: in run
+    request = await self._request(
+src/kodezart/services/organize_owner.py:251: in _request
+    rubric = self._prompts.template_for(phase.spec.rubric_prompt_key).render(
+src/kodezart/core/prompt_rendering.py:206: in render
+    return render_template(self.body, merged)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+body = '<role>\nYou are the project-management grooming pass for the {{operation_name}} delivery operation — you own the corr... an empty pass is a finding, and\na gap in the log is indistinguishable from a pass that never ran.\n</notion_logging>'
+bindings = {'agent_identities': {'0': '@example-agent', '1': 'example-agent'}, 'agent_identities_absent': None, 'base_ref': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'criterion_issue_bodies': (), ...}
+
+    def render_template(body: str, bindings: Mapping[str, object]) -> str:
+        """Render *body* against *bindings* — the one substitution implementation.
+    
+        Raises :class:`PromptRenderError` naming every unconditional reference
+        that had no binding.
+        """
+        nodes = _parse(body)
+        missing: list[str] = []
+        scopes: list[_Scope] = [_Scope(names=bindings, item=_ABSENT)]
+        rendered = _render_nodes(nodes, scopes, missing)
+        if missing:
+            msg = "Unbound template placeholders: " + ", ".join(missing)
+>           raise PromptRenderError(msg, missing=missing)
+E           kodezart.core.errors.PromptRenderError: Unbound template placeholders: record_title
+
+src/kodezart/core/prompt_rendering.py:184: PromptRenderError
+____ test_each_organizational_refusal_prevents_groom_convergence[decisions] ____
+
+defect = 'decisions'
+
+    @pytest.mark.parametrize("defect", ORGANIZATIONAL_EVIDENCE)
+    async def test_each_organizational_refusal_prevents_groom_convergence(defect):
+        evidence = ORGANIZATIONAL_EVIDENCE[defect]
+        # A typed grader response is an input oracle for the owner. No prompt-text
+        # classifier or fake model judgment is used to derive it.
+        owner, board, executor, _ = build(
+            executor=UnrepairedDefectExecutor(evidence), body=evidence
+        )
+>       report = await run_owner(owner)
+                 ^^^^^^^^^^^^^^^^^^^^^^
+
+tests/chains/test_organize_rubric.py:232: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/chains/test_organize_owner.py:191: in run_owner
+    return await owner.run(
+src/kodezart/services/organize_owner.py:1012: in run
+    request = await self._request(
+src/kodezart/services/organize_owner.py:251: in _request
+    rubric = self._prompts.template_for(phase.spec.rubric_prompt_key).render(
+src/kodezart/core/prompt_rendering.py:206: in render
+    return render_template(self.body, merged)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+body = '<role>\nYou are the project-management grooming pass for the {{operation_name}} delivery operation — you own the corr... an empty pass is a finding, and\na gap in the log is indistinguishable from a pass that never ran.\n</notion_logging>'
+bindings = {'agent_identities': {'0': '@example-agent', '1': 'example-agent'}, 'agent_identities_absent': None, 'base_ref': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'criterion_issue_bodies': (), ...}
+
+    def render_template(body: str, bindings: Mapping[str, object]) -> str:
+        """Render *body* against *bindings* — the one substitution implementation.
+    
+        Raises :class:`PromptRenderError` naming every unconditional reference
+        that had no binding.
+        """
+        nodes = _parse(body)
+        missing: list[str] = []
+        scopes: list[_Scope] = [_Scope(names=bindings, item=_ABSENT)]
+        rendered = _render_nodes(nodes, scopes, missing)
+        if missing:
+            msg = "Unbound template placeholders: " + ", ".join(missing)
+>           raise PromptRenderError(msg, missing=missing)
+E           kodezart.core.errors.PromptRenderError: Unbound template placeholders: record_title
+
+src/kodezart/core/prompt_rendering.py:184: PromptRenderError
+___ test_each_organizational_refusal_prevents_groom_convergence[dates_order] ___
+
+defect = 'dates_order'
+
+    @pytest.mark.parametrize("defect", ORGANIZATIONAL_EVIDENCE)
+    async def test_each_organizational_refusal_prevents_groom_convergence(defect):
+        evidence = ORGANIZATIONAL_EVIDENCE[defect]
+        # A typed grader response is an input oracle for the owner. No prompt-text
+        # classifier or fake model judgment is used to derive it.
+        owner, board, executor, _ = build(
+            executor=UnrepairedDefectExecutor(evidence), body=evidence
+        )
+>       report = await run_owner(owner)
+                 ^^^^^^^^^^^^^^^^^^^^^^
+
+tests/chains/test_organize_rubric.py:232: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/chains/test_organize_owner.py:191: in run_owner
+    return await owner.run(
+src/kodezart/services/organize_owner.py:1012: in run
+    request = await self._request(
+src/kodezart/services/organize_owner.py:251: in _request
+    rubric = self._prompts.template_for(phase.spec.rubric_prompt_key).render(
+src/kodezart/core/prompt_rendering.py:206: in render
+    return render_template(self.body, merged)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+body = '<role>\nYou are the project-management grooming pass for the {{operation_name}} delivery operation — you own the corr... an empty pass is a finding, and\na gap in the log is indistinguishable from a pass that never ran.\n</notion_logging>'
+bindings = {'agent_identities': {'0': '@example-agent', '1': 'example-agent'}, 'agent_identities_absent': None, 'base_ref': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'criterion_issue_bodies': (), ...}
+
+    def render_template(body: str, bindings: Mapping[str, object]) -> str:
+        """Render *body* against *bindings* — the one substitution implementation.
+    
+        Raises :class:`PromptRenderError` naming every unconditional reference
+        that had no binding.
+        """
+        nodes = _parse(body)
+        missing: list[str] = []
+        scopes: list[_Scope] = [_Scope(names=bindings, item=_ABSENT)]
+        rendered = _render_nodes(nodes, scopes, missing)
+        if missing:
+            msg = "Unbound template placeholders: " + ", ".join(missing)
+>           raise PromptRenderError(msg, missing=missing)
+E           kodezart.core.errors.PromptRenderError: Unbound template placeholders: record_title
+
+src/kodezart/core/prompt_rendering.py:184: PromptRenderError
+_ test_each_organizational_refusal_prevents_groom_convergence[measurable_goal] _
+
+defect = 'measurable_goal'
+
+    @pytest.mark.parametrize("defect", ORGANIZATIONAL_EVIDENCE)
+    async def test_each_organizational_refusal_prevents_groom_convergence(defect):
+        evidence = ORGANIZATIONAL_EVIDENCE[defect]
+        # A typed grader response is an input oracle for the owner. No prompt-text
+        # classifier or fake model judgment is used to derive it.
+        owner, board, executor, _ = build(
+            executor=UnrepairedDefectExecutor(evidence), body=evidence
+        )
+>       report = await run_owner(owner)
+                 ^^^^^^^^^^^^^^^^^^^^^^
+
+tests/chains/test_organize_rubric.py:232: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/chains/test_organize_owner.py:191: in run_owner
+    return await owner.run(
+src/kodezart/services/organize_owner.py:1012: in run
+    request = await self._request(
+src/kodezart/services/organize_owner.py:251: in _request
+    rubric = self._prompts.template_for(phase.spec.rubric_prompt_key).render(
+src/kodezart/core/prompt_rendering.py:206: in render
+    return render_template(self.body, merged)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+body = '<role>\nYou are the project-management grooming pass for the {{operation_name}} delivery operation — you own the corr... an empty pass is a finding, and\na gap in the log is indistinguishable from a pass that never ran.\n</notion_logging>'
+bindings = {'agent_identities': {'0': '@example-agent', '1': 'example-agent'}, 'agent_identities_absent': None, 'base_ref': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'criterion_issue_bodies': (), ...}
+
+    def render_template(body: str, bindings: Mapping[str, object]) -> str:
+        """Render *body* against *bindings* — the one substitution implementation.
+    
+        Raises :class:`PromptRenderError` naming every unconditional reference
+        that had no binding.
+        """
+        nodes = _parse(body)
+        missing: list[str] = []
+        scopes: list[_Scope] = [_Scope(names=bindings, item=_ABSENT)]
+        rendered = _render_nodes(nodes, scopes, missing)
+        if missing:
+            msg = "Unbound template placeholders: " + ", ".join(missing)
+>           raise PromptRenderError(msg, missing=missing)
+E           kodezart.core.errors.PromptRenderError: Unbound template placeholders: record_title
+
+src/kodezart/core/prompt_rendering.py:184: PromptRenderError
+=========================== short test summary info ============================
+FAILED tests/chains/test_organize_rubric.py::test_real_factory_dispatches_declared_groom_rubric_with_native_inputs[claude-opus]
+FAILED tests/chains/test_organize_rubric.py::test_real_factory_dispatches_declared_groom_rubric_with_native_inputs[anthropic_v5]
+FAILED tests/chains/test_organize_rubric.py::test_boot_rejects_incompatible_native_admission_roles[ticket_review]
+FAILED tests/chains/test_organize_rubric.py::test_boot_rejects_incompatible_native_admission_roles[commit_message]
+FAILED tests/chains/test_organize_rubric.py::test_each_organizational_refusal_prevents_groom_convergence[blockers]
+FAILED tests/chains/test_organize_rubric.py::test_each_organizational_refusal_prevents_groom_convergence[decisions]
+FAILED tests/chains/test_organize_rubric.py::test_each_organizational_refusal_prevents_groom_convergence[dates_order]
+FAILED tests/chains/test_organize_rubric.py::test_each_organizational_refusal_prevents_groom_convergence[measurable_goal]
+8 failed, 7 deselected in 8.56s

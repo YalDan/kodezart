@@ -1,0 +1,843 @@
+..FFFFFFFFF.FF..........F.                                               [100%]
+=================================== FAILURES ===================================
+__ test_actual_factory_runs_all_configured_phases_and_reentry_writes_nothing ___
+
+    async def test_actual_factory_runs_all_configured_phases_and_reentry_writes_nothing():
+>       owner, board, executor = factory()
+                                 ^^^^^^^^^
+
+tests/chains/test_organize_owner.py:194: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def factory(
+        *, refuse_forever=False, wrong_proposal=False, bound=2, tick=False, settings=None
+    ):
+        board = _Board()
+        operation_fields = declared_operation().model_dump()
+        operation_fields["issue_labels"]["decision"] = "needs decision"
+        operation_fields["marker_prefixes"]["escalation"] = "organize-question"
+        for mandate in operation_fields["organize_mandates"]:
+            mandate["rubric_prompt_key"] = "organize_assess"
+            mandate["admission_prompt_key"] = "organize_assess"
+        if tick:
+            operation_fields["organize_scopes"] = [
+                {
+                    "scope": {"kind": "issue", "key": CLAIMED_ISSUE},
+                    "repo_url": operation_fields["repos"][0]["url"],
+                }
+            ]
+        operation = OperationConfig.model_validate(operation_fields)
+        parent = board.server.issues[CLAIMED_ISSUE]
+        parent.description = "Missing specification"
+        parent.labels = ["candidate scope"]
+        tracker = tracker_over(
+            board.server,
+            caller=board,
+            clock=lambda: board.now,
+            issue_labels=operation.issue_labels,
+            scope_labels=operation.scope_labels,
+            criteria_stage_label_key="criteria",
+        )
+        executor = BoardExecutor(
+            board, refuse_forever=refuse_forever, wrong_proposal=wrong_proposal
+        )
+        workspace = RecordingWorkspace()
+        constructor = build_organize_tick if tick else build_organize_owner
+        owner = constructor(
+            config=settings
+            or AppConfig(
+                organize=OrganizeSettings(
+>                   max_admission_rounds=bound, max_convergence_rounds=convergence_bound
+                                                                       ^^^^^^^^^^^^^^^^^
+                )
+            ),
+            operation=operation,
+            tracker=tracker,
+            runner=AgentService(
+                executor=executor,
+                workspace=workspace,
+                git_base_url="https://example.invalid",
+            ),
+            workspace=workspace,
+            git=FakeGitService(
+                remote_branch_shas={repo.trunk: "a" * 40 for repo in operation.repos}
+            ),
+            prompts=load_registry(
+                default_set="claude-opus", bindings=operation_bindings(operation)
+            ),
+            skills=SUPPRESS_ALL_SKILLS,
+            gate=PassThroughGate(),
+            **({} if tick else {"repo_url": "https://example.invalid/repository"}),
+        )
+E       NameError: name 'convergence_bound' is not defined
+
+tests/chains/test_organize_owner.py:159: NameError
+___ test_single_admission_round_stops_with_durable_refusal_and_no_completion ___
+
+    async def test_single_admission_round_stops_with_durable_refusal_and_no_completion():
+>       owner, board, executor = factory(refuse_forever=True, bound=1)
+                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/chains/test_organize_owner.py:230: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def factory(
+        *, refuse_forever=False, wrong_proposal=False, bound=2, tick=False, settings=None
+    ):
+        board = _Board()
+        operation_fields = declared_operation().model_dump()
+        operation_fields["issue_labels"]["decision"] = "needs decision"
+        operation_fields["marker_prefixes"]["escalation"] = "organize-question"
+        for mandate in operation_fields["organize_mandates"]:
+            mandate["rubric_prompt_key"] = "organize_assess"
+            mandate["admission_prompt_key"] = "organize_assess"
+        if tick:
+            operation_fields["organize_scopes"] = [
+                {
+                    "scope": {"kind": "issue", "key": CLAIMED_ISSUE},
+                    "repo_url": operation_fields["repos"][0]["url"],
+                }
+            ]
+        operation = OperationConfig.model_validate(operation_fields)
+        parent = board.server.issues[CLAIMED_ISSUE]
+        parent.description = "Missing specification"
+        parent.labels = ["candidate scope"]
+        tracker = tracker_over(
+            board.server,
+            caller=board,
+            clock=lambda: board.now,
+            issue_labels=operation.issue_labels,
+            scope_labels=operation.scope_labels,
+            criteria_stage_label_key="criteria",
+        )
+        executor = BoardExecutor(
+            board, refuse_forever=refuse_forever, wrong_proposal=wrong_proposal
+        )
+        workspace = RecordingWorkspace()
+        constructor = build_organize_tick if tick else build_organize_owner
+        owner = constructor(
+            config=settings
+            or AppConfig(
+                organize=OrganizeSettings(
+>                   max_admission_rounds=bound, max_convergence_rounds=convergence_bound
+                                                                       ^^^^^^^^^^^^^^^^^
+                )
+            ),
+            operation=operation,
+            tracker=tracker,
+            runner=AgentService(
+                executor=executor,
+                workspace=workspace,
+                git_base_url="https://example.invalid",
+            ),
+            workspace=workspace,
+            git=FakeGitService(
+                remote_branch_shas={repo.trunk: "a" * 40 for repo in operation.repos}
+            ),
+            prompts=load_registry(
+                default_set="claude-opus", bindings=operation_bindings(operation)
+            ),
+            skills=SUPPRESS_ALL_SKILLS,
+            gate=PassThroughGate(),
+            **({} if tick else {"repo_url": "https://example.invalid/repository"}),
+        )
+E       NameError: name 'convergence_bound' is not defined
+
+tests/chains/test_organize_owner.py:159: NameError
+_________ test_wrong_author_identity_refuses_before_native_issue_write _________
+
+    async def test_wrong_author_identity_refuses_before_native_issue_write():
+>       owner, board, _ = factory(wrong_proposal=True)
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/chains/test_organize_owner.py:257: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def factory(
+        *, refuse_forever=False, wrong_proposal=False, bound=2, tick=False, settings=None
+    ):
+        board = _Board()
+        operation_fields = declared_operation().model_dump()
+        operation_fields["issue_labels"]["decision"] = "needs decision"
+        operation_fields["marker_prefixes"]["escalation"] = "organize-question"
+        for mandate in operation_fields["organize_mandates"]:
+            mandate["rubric_prompt_key"] = "organize_assess"
+            mandate["admission_prompt_key"] = "organize_assess"
+        if tick:
+            operation_fields["organize_scopes"] = [
+                {
+                    "scope": {"kind": "issue", "key": CLAIMED_ISSUE},
+                    "repo_url": operation_fields["repos"][0]["url"],
+                }
+            ]
+        operation = OperationConfig.model_validate(operation_fields)
+        parent = board.server.issues[CLAIMED_ISSUE]
+        parent.description = "Missing specification"
+        parent.labels = ["candidate scope"]
+        tracker = tracker_over(
+            board.server,
+            caller=board,
+            clock=lambda: board.now,
+            issue_labels=operation.issue_labels,
+            scope_labels=operation.scope_labels,
+            criteria_stage_label_key="criteria",
+        )
+        executor = BoardExecutor(
+            board, refuse_forever=refuse_forever, wrong_proposal=wrong_proposal
+        )
+        workspace = RecordingWorkspace()
+        constructor = build_organize_tick if tick else build_organize_owner
+        owner = constructor(
+            config=settings
+            or AppConfig(
+                organize=OrganizeSettings(
+>                   max_admission_rounds=bound, max_convergence_rounds=convergence_bound
+                                                                       ^^^^^^^^^^^^^^^^^
+                )
+            ),
+            operation=operation,
+            tracker=tracker,
+            runner=AgentService(
+                executor=executor,
+                workspace=workspace,
+                git_base_url="https://example.invalid",
+            ),
+            workspace=workspace,
+            git=FakeGitService(
+                remote_branch_shas={repo.trunk: "a" * 40 for repo in operation.repos}
+            ),
+            prompts=load_registry(
+                default_set="claude-opus", bindings=operation_bindings(operation)
+            ),
+            skills=SUPPRESS_ALL_SKILLS,
+            gate=PassThroughGate(),
+            **({} if tick else {"repo_url": "https://example.invalid/repository"}),
+        )
+E       NameError: name 'convergence_bound' is not defined
+
+tests/chains/test_organize_owner.py:159: NameError
+_______ test_author_source_changed_during_session_cannot_be_overwritten ________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a608f50>
+
+    async def test_author_source_changed_during_session_cannot_be_overwritten(monkeypatch):
+        from kodezart.domain.errors import StaleWriteError
+    
+>       owner, board, executor = factory()
+                                 ^^^^^^^^^
+
+tests/chains/test_organize_owner.py:266: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def factory(
+        *, refuse_forever=False, wrong_proposal=False, bound=2, tick=False, settings=None
+    ):
+        board = _Board()
+        operation_fields = declared_operation().model_dump()
+        operation_fields["issue_labels"]["decision"] = "needs decision"
+        operation_fields["marker_prefixes"]["escalation"] = "organize-question"
+        for mandate in operation_fields["organize_mandates"]:
+            mandate["rubric_prompt_key"] = "organize_assess"
+            mandate["admission_prompt_key"] = "organize_assess"
+        if tick:
+            operation_fields["organize_scopes"] = [
+                {
+                    "scope": {"kind": "issue", "key": CLAIMED_ISSUE},
+                    "repo_url": operation_fields["repos"][0]["url"],
+                }
+            ]
+        operation = OperationConfig.model_validate(operation_fields)
+        parent = board.server.issues[CLAIMED_ISSUE]
+        parent.description = "Missing specification"
+        parent.labels = ["candidate scope"]
+        tracker = tracker_over(
+            board.server,
+            caller=board,
+            clock=lambda: board.now,
+            issue_labels=operation.issue_labels,
+            scope_labels=operation.scope_labels,
+            criteria_stage_label_key="criteria",
+        )
+        executor = BoardExecutor(
+            board, refuse_forever=refuse_forever, wrong_proposal=wrong_proposal
+        )
+        workspace = RecordingWorkspace()
+        constructor = build_organize_tick if tick else build_organize_owner
+        owner = constructor(
+            config=settings
+            or AppConfig(
+                organize=OrganizeSettings(
+>                   max_admission_rounds=bound, max_convergence_rounds=convergence_bound
+                                                                       ^^^^^^^^^^^^^^^^^
+                )
+            ),
+            operation=operation,
+            tracker=tracker,
+            runner=AgentService(
+                executor=executor,
+                workspace=workspace,
+                git_base_url="https://example.invalid",
+            ),
+            workspace=workspace,
+            git=FakeGitService(
+                remote_branch_shas={repo.trunk: "a" * 40 for repo in operation.repos}
+            ),
+            prompts=load_registry(
+                default_set="claude-opus", bindings=operation_bindings(operation)
+            ),
+            skills=SUPPRESS_ALL_SKILLS,
+            gate=PassThroughGate(),
+            **({} if tick else {"repo_url": "https://example.invalid/repository"}),
+        )
+E       NameError: name 'convergence_bound' is not defined
+
+tests/chains/test_organize_owner.py:159: NameError
+__ test_human_approval_arriving_during_authorship_ends_organize_before_write ___
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a60a360>
+
+    async def test_human_approval_arriving_during_authorship_ends_organize_before_write(
+        monkeypatch,
+    ):
+        from kodezart.domain.errors import OrganizeWriteRefusalError
+    
+>       owner, board, executor = factory()
+                                 ^^^^^^^^^
+
+tests/chains/test_organize_owner.py:292: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def factory(
+        *, refuse_forever=False, wrong_proposal=False, bound=2, tick=False, settings=None
+    ):
+        board = _Board()
+        operation_fields = declared_operation().model_dump()
+        operation_fields["issue_labels"]["decision"] = "needs decision"
+        operation_fields["marker_prefixes"]["escalation"] = "organize-question"
+        for mandate in operation_fields["organize_mandates"]:
+            mandate["rubric_prompt_key"] = "organize_assess"
+            mandate["admission_prompt_key"] = "organize_assess"
+        if tick:
+            operation_fields["organize_scopes"] = [
+                {
+                    "scope": {"kind": "issue", "key": CLAIMED_ISSUE},
+                    "repo_url": operation_fields["repos"][0]["url"],
+                }
+            ]
+        operation = OperationConfig.model_validate(operation_fields)
+        parent = board.server.issues[CLAIMED_ISSUE]
+        parent.description = "Missing specification"
+        parent.labels = ["candidate scope"]
+        tracker = tracker_over(
+            board.server,
+            caller=board,
+            clock=lambda: board.now,
+            issue_labels=operation.issue_labels,
+            scope_labels=operation.scope_labels,
+            criteria_stage_label_key="criteria",
+        )
+        executor = BoardExecutor(
+            board, refuse_forever=refuse_forever, wrong_proposal=wrong_proposal
+        )
+        workspace = RecordingWorkspace()
+        constructor = build_organize_tick if tick else build_organize_owner
+        owner = constructor(
+            config=settings
+            or AppConfig(
+                organize=OrganizeSettings(
+>                   max_admission_rounds=bound, max_convergence_rounds=convergence_bound
+                                                                       ^^^^^^^^^^^^^^^^^
+                )
+            ),
+            operation=operation,
+            tracker=tracker,
+            runner=AgentService(
+                executor=executor,
+                workspace=workspace,
+                git_base_url="https://example.invalid",
+            ),
+            workspace=workspace,
+            git=FakeGitService(
+                remote_branch_shas={repo.trunk: "a" * 40 for repo in operation.repos}
+            ),
+            prompts=load_registry(
+                default_set="claude-opus", bindings=operation_bindings(operation)
+            ),
+            skills=SUPPRESS_ALL_SKILLS,
+            gate=PassThroughGate(),
+            **({} if tick else {"repo_url": "https://example.invalid/repository"}),
+        )
+E       NameError: name 'convergence_bound' is not defined
+
+tests/chains/test_organize_owner.py:159: NameError
+____________ test_cancelled_author_never_reaches_a_tracker_mutation ____________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a64a330>
+
+    async def test_cancelled_author_never_reaches_a_tracker_mutation(monkeypatch):
+        import asyncio
+    
+>       owner, board, executor = factory()
+                                 ^^^^^^^^^
+
+tests/chains/test_organize_owner.py:310: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def factory(
+        *, refuse_forever=False, wrong_proposal=False, bound=2, tick=False, settings=None
+    ):
+        board = _Board()
+        operation_fields = declared_operation().model_dump()
+        operation_fields["issue_labels"]["decision"] = "needs decision"
+        operation_fields["marker_prefixes"]["escalation"] = "organize-question"
+        for mandate in operation_fields["organize_mandates"]:
+            mandate["rubric_prompt_key"] = "organize_assess"
+            mandate["admission_prompt_key"] = "organize_assess"
+        if tick:
+            operation_fields["organize_scopes"] = [
+                {
+                    "scope": {"kind": "issue", "key": CLAIMED_ISSUE},
+                    "repo_url": operation_fields["repos"][0]["url"],
+                }
+            ]
+        operation = OperationConfig.model_validate(operation_fields)
+        parent = board.server.issues[CLAIMED_ISSUE]
+        parent.description = "Missing specification"
+        parent.labels = ["candidate scope"]
+        tracker = tracker_over(
+            board.server,
+            caller=board,
+            clock=lambda: board.now,
+            issue_labels=operation.issue_labels,
+            scope_labels=operation.scope_labels,
+            criteria_stage_label_key="criteria",
+        )
+        executor = BoardExecutor(
+            board, refuse_forever=refuse_forever, wrong_proposal=wrong_proposal
+        )
+        workspace = RecordingWorkspace()
+        constructor = build_organize_tick if tick else build_organize_owner
+        owner = constructor(
+            config=settings
+            or AppConfig(
+                organize=OrganizeSettings(
+>                   max_admission_rounds=bound, max_convergence_rounds=convergence_bound
+                                                                       ^^^^^^^^^^^^^^^^^
+                )
+            ),
+            operation=operation,
+            tracker=tracker,
+            runner=AgentService(
+                executor=executor,
+                workspace=workspace,
+                git_base_url="https://example.invalid",
+            ),
+            workspace=workspace,
+            git=FakeGitService(
+                remote_branch_shas={repo.trunk: "a" * 40 for repo in operation.repos}
+            ),
+            prompts=load_registry(
+                default_set="claude-opus", bindings=operation_bindings(operation)
+            ),
+            skills=SUPPRESS_ALL_SKILLS,
+            gate=PassThroughGate(),
+            **({} if tick else {"repo_url": "https://example.invalid/repository"}),
+        )
+E       NameError: name 'convergence_bound' is not defined
+
+tests/chains/test_organize_owner.py:159: NameError
+__________ test_landed_claim_refutation_drives_a_fresh_author_repair ___________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a649cd0>
+
+    async def test_landed_claim_refutation_drives_a_fresh_author_repair(monkeypatch):
+>       owner, _board, executor = factory()
+                                  ^^^^^^^^^
+
+tests/chains/test_organize_owner.py:331: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def factory(
+        *, refuse_forever=False, wrong_proposal=False, bound=2, tick=False, settings=None
+    ):
+        board = _Board()
+        operation_fields = declared_operation().model_dump()
+        operation_fields["issue_labels"]["decision"] = "needs decision"
+        operation_fields["marker_prefixes"]["escalation"] = "organize-question"
+        for mandate in operation_fields["organize_mandates"]:
+            mandate["rubric_prompt_key"] = "organize_assess"
+            mandate["admission_prompt_key"] = "organize_assess"
+        if tick:
+            operation_fields["organize_scopes"] = [
+                {
+                    "scope": {"kind": "issue", "key": CLAIMED_ISSUE},
+                    "repo_url": operation_fields["repos"][0]["url"],
+                }
+            ]
+        operation = OperationConfig.model_validate(operation_fields)
+        parent = board.server.issues[CLAIMED_ISSUE]
+        parent.description = "Missing specification"
+        parent.labels = ["candidate scope"]
+        tracker = tracker_over(
+            board.server,
+            caller=board,
+            clock=lambda: board.now,
+            issue_labels=operation.issue_labels,
+            scope_labels=operation.scope_labels,
+            criteria_stage_label_key="criteria",
+        )
+        executor = BoardExecutor(
+            board, refuse_forever=refuse_forever, wrong_proposal=wrong_proposal
+        )
+        workspace = RecordingWorkspace()
+        constructor = build_organize_tick if tick else build_organize_owner
+        owner = constructor(
+            config=settings
+            or AppConfig(
+                organize=OrganizeSettings(
+>                   max_admission_rounds=bound, max_convergence_rounds=convergence_bound
+                                                                       ^^^^^^^^^^^^^^^^^
+                )
+            ),
+            operation=operation,
+            tracker=tracker,
+            runner=AgentService(
+                executor=executor,
+                workspace=workspace,
+                git_base_url="https://example.invalid",
+            ),
+            workspace=workspace,
+            git=FakeGitService(
+                remote_branch_shas={repo.trunk: "a" * 40 for repo in operation.repos}
+            ),
+            prompts=load_registry(
+                default_set="claude-opus", bindings=operation_bindings(operation)
+            ),
+            skills=SUPPRESS_ALL_SKILLS,
+            gate=PassThroughGate(),
+            **({} if tick else {"repo_url": "https://example.invalid/repository"}),
+        )
+E       NameError: name 'convergence_bound' is not defined
+
+tests/chains/test_organize_owner.py:159: NameError
+_______ test_author_decision_is_recorded_without_inventing_an_admission ________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a62f1d0>
+
+    async def test_author_decision_is_recorded_without_inventing_an_admission(monkeypatch):
+>       owner, board, executor = factory()
+                                 ^^^^^^^^^
+
+tests/chains/test_organize_owner.py:388: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def factory(
+        *, refuse_forever=False, wrong_proposal=False, bound=2, tick=False, settings=None
+    ):
+        board = _Board()
+        operation_fields = declared_operation().model_dump()
+        operation_fields["issue_labels"]["decision"] = "needs decision"
+        operation_fields["marker_prefixes"]["escalation"] = "organize-question"
+        for mandate in operation_fields["organize_mandates"]:
+            mandate["rubric_prompt_key"] = "organize_assess"
+            mandate["admission_prompt_key"] = "organize_assess"
+        if tick:
+            operation_fields["organize_scopes"] = [
+                {
+                    "scope": {"kind": "issue", "key": CLAIMED_ISSUE},
+                    "repo_url": operation_fields["repos"][0]["url"],
+                }
+            ]
+        operation = OperationConfig.model_validate(operation_fields)
+        parent = board.server.issues[CLAIMED_ISSUE]
+        parent.description = "Missing specification"
+        parent.labels = ["candidate scope"]
+        tracker = tracker_over(
+            board.server,
+            caller=board,
+            clock=lambda: board.now,
+            issue_labels=operation.issue_labels,
+            scope_labels=operation.scope_labels,
+            criteria_stage_label_key="criteria",
+        )
+        executor = BoardExecutor(
+            board, refuse_forever=refuse_forever, wrong_proposal=wrong_proposal
+        )
+        workspace = RecordingWorkspace()
+        constructor = build_organize_tick if tick else build_organize_owner
+        owner = constructor(
+            config=settings
+            or AppConfig(
+                organize=OrganizeSettings(
+>                   max_admission_rounds=bound, max_convergence_rounds=convergence_bound
+                                                                       ^^^^^^^^^^^^^^^^^
+                )
+            ),
+            operation=operation,
+            tracker=tracker,
+            runner=AgentService(
+                executor=executor,
+                workspace=workspace,
+                git_base_url="https://example.invalid",
+            ),
+            workspace=workspace,
+            git=FakeGitService(
+                remote_branch_shas={repo.trunk: "a" * 40 for repo in operation.repos}
+            ),
+            prompts=load_registry(
+                default_set="claude-opus", bindings=operation_bindings(operation)
+            ),
+            skills=SUPPRESS_ALL_SKILLS,
+            gate=PassThroughGate(),
+            **({} if tick else {"repo_url": "https://example.invalid/repository"}),
+        )
+E       NameError: name 'convergence_bound' is not defined
+
+tests/chains/test_organize_owner.py:159: NameError
+___ test_unanswered_escalation_is_unrecorded_with_exact_issue_and_no_resend ____
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a62e060>
+
+    async def test_unanswered_escalation_is_unrecorded_with_exact_issue_and_no_resend(
+        monkeypatch,
+    ):
+        from kodezart.core.errors import McpCallUnansweredError
+    
+>       owner, board, _ = factory(refuse_forever=True, bound=1)
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/chains/test_organize_owner.py:431: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def factory(
+        *, refuse_forever=False, wrong_proposal=False, bound=2, tick=False, settings=None
+    ):
+        board = _Board()
+        operation_fields = declared_operation().model_dump()
+        operation_fields["issue_labels"]["decision"] = "needs decision"
+        operation_fields["marker_prefixes"]["escalation"] = "organize-question"
+        for mandate in operation_fields["organize_mandates"]:
+            mandate["rubric_prompt_key"] = "organize_assess"
+            mandate["admission_prompt_key"] = "organize_assess"
+        if tick:
+            operation_fields["organize_scopes"] = [
+                {
+                    "scope": {"kind": "issue", "key": CLAIMED_ISSUE},
+                    "repo_url": operation_fields["repos"][0]["url"],
+                }
+            ]
+        operation = OperationConfig.model_validate(operation_fields)
+        parent = board.server.issues[CLAIMED_ISSUE]
+        parent.description = "Missing specification"
+        parent.labels = ["candidate scope"]
+        tracker = tracker_over(
+            board.server,
+            caller=board,
+            clock=lambda: board.now,
+            issue_labels=operation.issue_labels,
+            scope_labels=operation.scope_labels,
+            criteria_stage_label_key="criteria",
+        )
+        executor = BoardExecutor(
+            board, refuse_forever=refuse_forever, wrong_proposal=wrong_proposal
+        )
+        workspace = RecordingWorkspace()
+        constructor = build_organize_tick if tick else build_organize_owner
+        owner = constructor(
+            config=settings
+            or AppConfig(
+                organize=OrganizeSettings(
+>                   max_admission_rounds=bound, max_convergence_rounds=convergence_bound
+                                                                       ^^^^^^^^^^^^^^^^^
+                )
+            ),
+            operation=operation,
+            tracker=tracker,
+            runner=AgentService(
+                executor=executor,
+                workspace=workspace,
+                git_base_url="https://example.invalid",
+            ),
+            workspace=workspace,
+            git=FakeGitService(
+                remote_branch_shas={repo.trunk: "a" * 40 for repo in operation.repos}
+            ),
+            prompts=load_registry(
+                default_set="claude-opus", bindings=operation_bindings(operation)
+            ),
+            skills=SUPPRESS_ALL_SKILLS,
+            gate=PassThroughGate(),
+            **({} if tick else {"repo_url": "https://example.invalid/repository"}),
+        )
+E       NameError: name 'convergence_bound' is not defined
+
+tests/chains/test_organize_owner.py:159: NameError
+___________ test_already_approved_scope_starts_no_author_or_judgment ___________
+
+    async def test_already_approved_scope_starts_no_author_or_judgment():
+>       owner, board, executor = factory()
+                                 ^^^^^^^^^
+
+tests/chains/test_organize_owner.py:472: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def factory(
+        *, refuse_forever=False, wrong_proposal=False, bound=2, tick=False, settings=None
+    ):
+        board = _Board()
+        operation_fields = declared_operation().model_dump()
+        operation_fields["issue_labels"]["decision"] = "needs decision"
+        operation_fields["marker_prefixes"]["escalation"] = "organize-question"
+        for mandate in operation_fields["organize_mandates"]:
+            mandate["rubric_prompt_key"] = "organize_assess"
+            mandate["admission_prompt_key"] = "organize_assess"
+        if tick:
+            operation_fields["organize_scopes"] = [
+                {
+                    "scope": {"kind": "issue", "key": CLAIMED_ISSUE},
+                    "repo_url": operation_fields["repos"][0]["url"],
+                }
+            ]
+        operation = OperationConfig.model_validate(operation_fields)
+        parent = board.server.issues[CLAIMED_ISSUE]
+        parent.description = "Missing specification"
+        parent.labels = ["candidate scope"]
+        tracker = tracker_over(
+            board.server,
+            caller=board,
+            clock=lambda: board.now,
+            issue_labels=operation.issue_labels,
+            scope_labels=operation.scope_labels,
+            criteria_stage_label_key="criteria",
+        )
+        executor = BoardExecutor(
+            board, refuse_forever=refuse_forever, wrong_proposal=wrong_proposal
+        )
+        workspace = RecordingWorkspace()
+        constructor = build_organize_tick if tick else build_organize_owner
+        owner = constructor(
+            config=settings
+            or AppConfig(
+                organize=OrganizeSettings(
+>                   max_admission_rounds=bound, max_convergence_rounds=convergence_bound
+                                                                       ^^^^^^^^^^^^^^^^^
+                )
+            ),
+            operation=operation,
+            tracker=tracker,
+            runner=AgentService(
+                executor=executor,
+                workspace=workspace,
+                git_base_url="https://example.invalid",
+            ),
+            workspace=workspace,
+            git=FakeGitService(
+                remote_branch_shas={repo.trunk: "a" * 40 for repo in operation.repos}
+            ),
+            prompts=load_registry(
+                default_set="claude-opus", bindings=operation_bindings(operation)
+            ),
+            skills=SUPPRESS_ALL_SKILLS,
+            gate=PassThroughGate(),
+            **({} if tick else {"repo_url": "https://example.invalid/repository"}),
+        )
+E       NameError: name 'convergence_bound' is not defined
+
+tests/chains/test_organize_owner.py:159: NameError
+________ test_full_scope_finding_exhausts_the_actual_convergence_bound _________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a62fda0>
+
+    async def test_full_scope_finding_exhausts_the_actual_convergence_bound(monkeypatch):
+        from tests.fakes import FakeMcpIssue
+>       owner, board, executor = factory(convergence_bound=1)
+                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: factory() got an unexpected keyword argument 'convergence_bound'
+
+tests/chains/test_organize_owner.py:483: TypeError
+______ test_actual_tick_uses_fresh_remote_trunk_and_existing_run_identity ______
+
+    async def test_actual_tick_uses_fresh_remote_trunk_and_existing_run_identity():
+>       tick, board, executor = factory(tick=True)
+                                ^^^^^^^^^^^^^^^^^^
+
+tests/core/test_organize_settings.py:100: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def factory(
+        *, refuse_forever=False, wrong_proposal=False, bound=2, tick=False, settings=None
+    ):
+        board = _Board()
+        operation_fields = declared_operation().model_dump()
+        operation_fields["issue_labels"]["decision"] = "needs decision"
+        operation_fields["marker_prefixes"]["escalation"] = "organize-question"
+        for mandate in operation_fields["organize_mandates"]:
+            mandate["rubric_prompt_key"] = "organize_assess"
+            mandate["admission_prompt_key"] = "organize_assess"
+        if tick:
+            operation_fields["organize_scopes"] = [
+                {
+                    "scope": {"kind": "issue", "key": CLAIMED_ISSUE},
+                    "repo_url": operation_fields["repos"][0]["url"],
+                }
+            ]
+        operation = OperationConfig.model_validate(operation_fields)
+        parent = board.server.issues[CLAIMED_ISSUE]
+        parent.description = "Missing specification"
+        parent.labels = ["candidate scope"]
+        tracker = tracker_over(
+            board.server,
+            caller=board,
+            clock=lambda: board.now,
+            issue_labels=operation.issue_labels,
+            scope_labels=operation.scope_labels,
+            criteria_stage_label_key="criteria",
+        )
+        executor = BoardExecutor(
+            board, refuse_forever=refuse_forever, wrong_proposal=wrong_proposal
+        )
+        workspace = RecordingWorkspace()
+        constructor = build_organize_tick if tick else build_organize_owner
+        owner = constructor(
+            config=settings
+            or AppConfig(
+                organize=OrganizeSettings(
+>                   max_admission_rounds=bound, max_convergence_rounds=convergence_bound
+                                                                       ^^^^^^^^^^^^^^^^^
+                )
+            ),
+            operation=operation,
+            tracker=tracker,
+            runner=AgentService(
+                executor=executor,
+                workspace=workspace,
+                git_base_url="https://example.invalid",
+            ),
+            workspace=workspace,
+            git=FakeGitService(
+                remote_branch_shas={repo.trunk: "a" * 40 for repo in operation.repos}
+            ),
+            prompts=load_registry(
+                default_set="claude-opus", bindings=operation_bindings(operation)
+            ),
+            skills=SUPPRESS_ALL_SKILLS,
+            gate=PassThroughGate(),
+            **({} if tick else {"repo_url": "https://example.invalid/repository"}),
+        )
+E       NameError: name 'convergence_bound' is not defined
+
+tests/chains/test_organize_owner.py:159: NameError
+=========================== short test summary info ============================
+FAILED tests/chains/test_organize_owner.py::test_actual_factory_runs_all_configured_phases_and_reentry_writes_nothing
+FAILED tests/chains/test_organize_owner.py::test_single_admission_round_stops_with_durable_refusal_and_no_completion
+FAILED tests/chains/test_organize_owner.py::test_wrong_author_identity_refuses_before_native_issue_write
+FAILED tests/chains/test_organize_owner.py::test_author_source_changed_during_session_cannot_be_overwritten
+FAILED tests/chains/test_organize_owner.py::test_human_approval_arriving_during_authorship_ends_organize_before_write
+FAILED tests/chains/test_organize_owner.py::test_cancelled_author_never_reaches_a_tracker_mutation
+FAILED tests/chains/test_organize_owner.py::test_landed_claim_refutation_drives_a_fresh_author_repair
+FAILED tests/chains/test_organize_owner.py::test_author_decision_is_recorded_without_inventing_an_admission
+FAILED tests/chains/test_organize_owner.py::test_unanswered_escalation_is_unrecorded_with_exact_issue_and_no_resend
+FAILED tests/chains/test_organize_owner.py::test_already_approved_scope_starts_no_author_or_judgment
+FAILED tests/chains/test_organize_owner.py::test_full_scope_finding_exhausts_the_actual_convergence_bound
+FAILED tests/core/test_organize_settings.py::test_actual_tick_uses_fresh_remote_trunk_and_existing_run_identity
+12 failed, 14 passed in 1.30s

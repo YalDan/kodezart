@@ -1,0 +1,1169 @@
+diff --git a/tests/adapters/test_judgment_scanner.py b/tests/adapters/test_judgment_scanner.py
+index 99ac432..a149715 100644
+--- a/tests/adapters/test_judgment_scanner.py
++++ b/tests/adapters/test_judgment_scanner.py
+@@ -26,18 +26,17 @@ import pytest
+ 
+ from kodezart.adapters.agent_content_scanner import AgentContentScanner
+ from kodezart.adapters.git_change_persister import GitChangePersister
+-from kodezart.adapters.pattern_outbound_gate import PatternOutboundContentGate
+-from kodezart.adapters.regex_content_scanner import RegexContentScanner
++from kodezart.adapters.outbound_admission import OutboundAdmission
+ from kodezart.adapters.toml_operation_config import load_operation_config
+-from kodezart.chains.ralph_workflow import RalphWorkflowEngine
+-from kodezart.composition.gating import outbound_scanners
++from kodezart.composition.gating import build_outbound_gate
++from kodezart.core.backoff import RetryPolicy
+ from kodezart.core.config import AppConfig
+ from kodezart.core.errors import ContentScannerBootError
++from kodezart.core.logging import get_logger
+ from kodezart.core.outbound_write import gated_write
+-from kodezart.core.protocols import ContentScanner, OutboundContentGate
++from kodezart.core.protocols import ContentJudgment, OutboundContentGate
+ from kodezart.types.domain.agent import AgentEvent, RateLimitWarningEvent, ResultEvent
+ from kodezart.types.domain.gating import (
+-    UNCONDITIONAL_ROUTING,
+     ContentClass,
+     GateVerdict,
+     OutboundDestination,
+@@ -47,7 +46,12 @@ from kodezart.types.domain.gating import (
+     WriterShape,
+ )
+ from kodezart.types.domain.operation import OperationConfig
+-from kodezart.types.domain.session import SessionType
++from kodezart.types.domain.run_records import RunIdentity
++from kodezart.types.domain.session import (
++    PermissionMode,
++    SessionFailureKind,
++    SessionType,
++)
+ from kodezart.types.domain.skills import SkillsMode, SkillsSelection
+ from kodezart.types.domain.subagents import (
+     NO_SUBAGENTS,
+@@ -55,7 +59,8 @@ from kodezart.types.domain.subagents import (
+     AgentDefinition,
+     SessionPolicy,
+ )
+-from tests.fakes import FAKE_SESSION_TYPE, FakeContentScanner
++from tests.fakes import FAKE_SESSION_TYPE, FakeContentJudgment
++from tests.outbound import make_admission
+ from tests.prompts.test_prompt_wiring import load_registry
+ 
+ # A SYNTHETIC organisation. A fixture built from the real description would
+@@ -77,16 +82,29 @@ def audit_result(
+     *,
+     is_error: bool = False,
+     subtype: str = "success",
++    stop_reason: str | None = None,
++    failure_kind: SessionFailureKind | None = None,
+ ) -> ResultEvent:
+     """A terminal event carrying a structured audit verdict, or an error."""
+     return ResultEvent(
+         subtype=subtype,
++        stop_reason=stop_reason,
++        failure_kind=failure_kind,
+         duration_ms=1,
+         duration_api_ms=1,
+         is_error=is_error,
+         num_turns=1,
+         session_id="audit",
+-        structured_output=None if findings is None else {"findings": findings},
++        structured_output=(
++            None
++            if findings is None
++            else {
++                "findings": [
++                    {"category": RedactionCategory.ORG_PRIVATE.value, **finding}
++                    for finding in findings
++                ]
++            }
++        ),
+     )
+ 
+ 
+@@ -108,10 +126,11 @@ class ScriptedAuditExecutor:
+         *,
+         prompt: str,
+         cwd: str,
+-        permission_mode: str,
++        permission_mode: PermissionMode,
+         allowed_tools: list[str],
+         skills: SkillsSelection,
+         session_type: SessionType = FAKE_SESSION_TYPE,
++        run_identity: RunIdentity | None = None,
+         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
+         session_id: str | None = None,
+@@ -139,6 +158,7 @@ def scanner_for(
+     *,
+     private_surface: str | None = FIXTURE_PRIVATE_SURFACE,
+     retry_max_attempts: int = 1,
++    retry: RetryPolicy | None = None,
+     timeout_seconds: float = 30.0,
+ ) -> AgentContentScanner:
+     """A judgment scanner over the REAL registry and template."""
+@@ -150,18 +170,13 @@ def scanner_for(
+         prompts=load_registry(bindings=bindings),
+         neutral_cwd="/tmp/kodezart-content-audit-test",
+         skills=NO_SKILLS,
+-        retry_max_attempts=retry_max_attempts,
+-        retry_initial_interval=0.01,
++        retry=retry or RetryPolicy(attempts=retry_max_attempts, initial_delay=0.01),
+         timeout_seconds=timeout_seconds,
+     )
+ 
+ 
+-def gate_over(scanners: list[ContentScanner]) -> PatternOutboundContentGate:
+-    """A gate over *scanners* with the shipped category verdicts."""
+-    return PatternOutboundContentGate(
+-        scanners=scanners,
+-        verdicts=AppConfig().deny_pattern_verdicts,
+-    )
++def gate_over(judgment: ContentJudgment | None = None) -> OutboundAdmission:
++    return make_admission(judgment)
+ 
+ 
+ # ---------------------------------------------------------------------------
+@@ -187,7 +202,7 @@ async def test_a_session_that_never_answers_is_timeout() -> None:
+ async def test_a_refused_session_is_refusal() -> None:
+     """F/REFUSAL."""
+     executor = ScriptedAuditExecutor(
+-        [audit_result(None, is_error=True, subtype="refusal")],
++        [audit_result(None, failure_kind=SessionFailureKind.REFUSAL)],
+     )
+     result = await scanner_for(executor).scan(
+         content=PROSE,
+@@ -262,7 +277,11 @@ async def test_a_span_outside_the_payload_is_spans_unresolvable() -> None:
+ async def test_an_exhausted_budget_is_budget_exhausted() -> None:
+     """F/BUDGET_EXHAUSTED."""
+     executor = ScriptedAuditExecutor(
+-        [audit_result(None, is_error=True, subtype="budget_exceeded")],
++        [
++            audit_result(
++                None, is_error=True, failure_kind=SessionFailureKind.BUDGET_EXHAUSTED
++            )
++        ],
+     )
+     result = await scanner_for(executor).scan(
+         content=PROSE,
+@@ -285,7 +304,7 @@ async def test_every_failure_kind_blocks_and_names_itself(
+     kind: ScanFailureKind,
+ ) -> None:
+     """No member yields CLEAN, none yields REDACTED, none is skipped."""
+-    gate = gate_over([FakeContentScanner(failure=kind)])
++    gate = gate_over(FakeContentJudgment(failure=kind))
+     decision = await gate.gate(
+         content=PROSE,
+         visibility=RepoVisibility.PUBLIC,
+@@ -301,7 +320,7 @@ async def test_every_failure_kind_blocks_and_names_itself(
+ async def test_did_not_answer_and_said_clean_are_different_states() -> None:
+     """The three-state discipline, asserted as an inequality of observables."""
+     silent = await gate_over(
+-        [FakeContentScanner(failure=ScanFailureKind.TIMEOUT)],
++        FakeContentJudgment(failure=ScanFailureKind.TIMEOUT),
+     ).gate(
+         content=PROSE,
+         visibility=RepoVisibility.PUBLIC,
+@@ -309,7 +328,7 @@ async def test_did_not_answer_and_said_clean_are_different_states() -> None:
+         destination=OutboundDestination.PR_BODY,
+         content_class=ContentClass.AUTHORED,
+     )
+-    clean = await gate_over([FakeContentScanner(hits=[])]).gate(
++    clean = await gate_over(FakeContentJudgment(hits=[])).gate(
+         content=PROSE,
+         visibility=RepoVisibility.PUBLIC,
+         shape=WriterShape.PROSE,
+@@ -327,7 +346,7 @@ async def test_did_not_answer_and_said_clean_are_different_states() -> None:
+ 
+ 
+ async def gate_once(
+-    scanner: FakeContentScanner,
++    scanner: FakeContentJudgment,
+     *,
+     content: str,
+     destination: OutboundDestination,
+@@ -340,7 +359,7 @@ async def gate_once(
+     ``content_class`` has no default here either: a helper that supplied one
+     would hide the very declaration these routing tests measure.
+     """
+-    await gate_over([scanner]).gate(
++    await gate_over(scanner).gate(
+         content=content,
+         visibility=visibility,
+         shape=shape,
+@@ -351,7 +370,7 @@ async def gate_once(
+ 
+ async def test_a_derived_evaluator_cadence_payload_costs_nothing() -> None:
+     """R: zero calls — by declared provenance, never by exemption."""
+-    scanner = FakeContentScanner(hits=[])
++    scanner = FakeContentJudgment(hits=[])
+     await gate_once(
+         scanner,
+         content='{"criterion": "AC-1", "passed": true, "sha": "a1b2c3d"}',
+@@ -363,7 +382,7 @@ async def test_a_derived_evaluator_cadence_payload_costs_nothing() -> None:
+ 
+ async def test_an_authored_pull_request_body_costs_exactly_one() -> None:
+     """R: one call."""
+-    scanner = FakeContentScanner(hits=[])
++    scanner = FakeContentJudgment(hits=[])
+     await gate_once(
+         scanner,
+         content=PROSE,
+@@ -373,15 +392,18 @@ async def test_an_authored_pull_request_body_costs_exactly_one() -> None:
+     assert len(scanner.calls) == 1
+ 
+ 
+-async def test_a_branch_name_is_audited_despite_being_an_identifier() -> None:
++@pytest.mark.parametrize("content_class", list(ContentClass))
++async def test_a_branch_name_is_audited_despite_being_an_identifier(
++    content_class,
++) -> None:
+     """R: one call per run — the routing rule is frequency x prose origin."""
+-    scanner = FakeContentScanner(hits=[])
++    scanner = FakeContentJudgment(hits=[])
+     await gate_once(
+         scanner,
+         content="kodezart/quarry-works-pricing-pilot",
+         destination=OutboundDestination.BRANCH_NAME,
+         shape=WriterShape.IDENTIFIER,
+-        content_class=ContentClass.AUTHORED,
++        content_class=content_class,
+     )
+     assert len(scanner.calls) == 1
+ 
+@@ -391,7 +413,7 @@ async def test_a_private_target_costs_nothing_at_every_destination(
+     destination: OutboundDestination,
+ ) -> None:
+     """R: zero calls — the gate returns before any scanner runs."""
+-    scanner = FakeContentScanner(hits=[])
++    scanner = FakeContentJudgment(hits=[])
+     await gate_once(
+         scanner,
+         content=PROSE,
+@@ -404,7 +426,7 @@ async def test_a_private_target_costs_nothing_at_every_destination(
+ 
+ async def test_the_repository_surface_is_out_of_scope_for_the_judgment_path() -> None:
+     """R: a commit message is carried in history, not published at write time."""
+-    scanner = FakeContentScanner(hits=[])
++    scanner = FakeContentJudgment(hits=[])
+     await gate_once(
+         scanner,
+         content=PROSE,
+@@ -415,20 +437,9 @@ async def test_the_repository_surface_is_out_of_scope_for_the_judgment_path() ->
+ 
+ 
+ async def test_a_deterministic_block_short_circuits_the_model_call() -> None:
+-    """R: a credential is caught with no network call, ordering preserved."""
+-    judgment = FakeContentScanner(hits=[])
+-    gate = gate_over(
+-        [
+-            RegexContentScanner(
+-                patterns={
+-                    RedactionCategory.CREDENTIALS: [r"\bgh[posu]_[A-Za-z0-9]{36,}"]
+-                },
+-            ),
+-            judgment,
+-        ],
+-    )
+-    decision = await gate.gate(
+-        content="deploy with ghp_" + "a" * 36 + " and tell nobody",
++    judgment = FakeContentJudgment(hits=[])
++    decision = await make_admission(judgment).gate(
++        content="deploy with ghp_" + "a" * 36,
+         visibility=RepoVisibility.PUBLIC,
+         shape=WriterShape.PROSE,
+         destination=OutboundDestination.PR_BODY,
+@@ -445,12 +456,8 @@ async def test_a_deterministic_block_short_circuits_the_model_call() -> None:
+ 
+ async def test_the_same_payload_triple_is_answered_once_per_run() -> None:
+     """D: one invocation, one verdict, no second cost."""
+-    scanner = FakeContentScanner(hits=[])
+-    gate = PatternOutboundContentGate(
+-        scanners=[scanner],
+-        verdicts=AppConfig().deny_pattern_verdicts,
+-        fragment_digest="digest-a",
+-    )
++    scanner = FakeContentJudgment(hits=[])
++    gate = make_admission(scanner, fragment_digest="digest-a")
+     first = await gate.gate(
+         content=PROSE,
+         visibility=RepoVisibility.PUBLIC,
+@@ -471,13 +478,9 @@ async def test_the_same_payload_triple_is_answered_once_per_run() -> None:
+ 
+ async def test_a_changed_fragment_digest_invalidates_the_answer() -> None:
+     """D: the memo is keyed on the fragment, so a changed one re-invokes."""
+-    scanner = FakeContentScanner(hits=[])
++    scanner = FakeContentJudgment(hits=[])
+     for digest in ("digest-a", "digest-b"):
+-        gate = PatternOutboundContentGate(
+-            scanners=[scanner],
+-            verdicts=AppConfig().deny_pattern_verdicts,
+-            fragment_digest=digest,
+-        )
++        gate = make_admission(scanner, fragment_digest=digest)
+         await gate.gate(
+             content=PROSE,
+             visibility=RepoVisibility.PUBLIC,
+@@ -490,8 +493,8 @@ async def test_a_changed_fragment_digest_invalidates_the_answer() -> None:
+ 
+ async def test_a_changed_destination_is_a_different_question() -> None:
+     """D: the memo key carries the destination, never the payload alone."""
+-    scanner = FakeContentScanner(hits=[])
+-    gate = gate_over([scanner])
++    scanner = FakeContentJudgment(hits=[])
++    gate = gate_over(scanner)
+     for destination in (
+         OutboundDestination.PR_BODY,
+         OutboundDestination.TRACKER_COMMENT,
+@@ -507,25 +510,23 @@ async def test_a_changed_destination_is_a_different_question() -> None:
+ 
+ 
+ async def test_a_changed_content_class_is_a_different_question() -> None:
+-    """D: the memo key carries the declared class, never the bytes alone.
+-
+-    Two writes identical in payload and destination but declared with
+-    different provenance are routed differently, so a shared memo entry
+-    would hand one of them the other's verdict.  The scanner here declares
+-    UNCONDITIONAL routing so that both calls reach it and the only thing
+-    being measured is the memo key.
+-    """
+-    scanner = FakeContentScanner(hits=[], routing=UNCONDITIONAL_ROUTING)
+-    gate = gate_over([scanner])
+-    for content_class in (ContentClass.AUTHORED, ContentClass.DERIVED):
++    judgment = FakeContentJudgment(failure=ScanFailureKind.REFUSAL)
++    gate = make_admission(judgment)
++    results = [
+         await gate.gate(
+             content=PROSE,
+             visibility=RepoVisibility.PUBLIC,
+             shape=WriterShape.PROSE,
+             destination=OutboundDestination.PR_BODY,
+-            content_class=content_class,
++            content_class=kind,
+         )
+-    assert len(scanner.calls) == 2
++        for kind in (ContentClass.DERIVED, ContentClass.AUTHORED)
++    ]
++    assert [result.verdict for result in results] == [
++        GateVerdict.CLEAN,
++        GateVerdict.BLOCKED,
++    ]
++    assert judgment.calls == [PROSE]
+ 
+ 
+ # ---------------------------------------------------------------------------
+@@ -556,7 +557,7 @@ async def test_a_credential_shaped_payload_declared_authored_is_audited() -> Non
+     rule treated as safe.  Under a declared class the writer's provenance
+     decides, and the scanner sees it.
+     """
+-    scanner = FakeContentScanner(hits=[])
++    scanner = FakeContentJudgment(hits=[])
+     await gate_once(
+         scanner,
+         content=CREDENTIAL_SHAPED,
+@@ -568,7 +569,7 @@ async def test_a_credential_shaped_payload_declared_authored_is_audited() -> Non
+ 
+ async def test_a_machine_derived_note_declared_derived_is_not_audited() -> None:
+     """P: the other direction — a sentence that costs nothing."""
+-    scanner = FakeContentScanner(hits=[])
++    scanner = FakeContentJudgment(hits=[])
+     await gate_once(
+         scanner,
+         content=DERIVED_NOTE,
+@@ -582,20 +583,20 @@ def test_the_declared_class_can_never_be_omitted() -> None:
+     """P: required and keyword-only on the port and on every wrapper.
+ 
+     A default would be a silent cheap path — the caller that forgot to think
+-    about provenance would get the unaudited answer and no diagnostic.  This
+-    asserts the static property that matters, at each of the five surfaces a
++    about provenance would get the unaudited answer and no diagnostic.
++    The phase writers now call ``gated_write`` directly. This
++    asserts the static property that matters, at each of the four surfaces a
+     caller can reach the gate through: the parameter exists, it is annotated
+     ``ContentClass``, and it carries NO DEFAULT.  Calling convention is not
+-    asserted and deliberately so -- four of the five are keyword-only while
++    asserted and deliberately so -- three of the four are keyword-only while
+     ``GitChangePersister._gated_message`` is positional-or-keyword, matching
+     its neighbours, and that difference cannot produce the silent cheap path
+     this test exists to prevent.
+     """
+     surfaces = (
+         OutboundContentGate.gate,
+-        PatternOutboundContentGate.gate,
++        OutboundAdmission.gate,
+         gated_write,
+-        RalphWorkflowEngine._gated,
+         GitChangePersister._gated_message,
+     )
+     for surface in surfaces:
+@@ -604,7 +605,7 @@ def test_the_declared_class_can_never_be_omitted() -> None:
+         assert parameter.annotation in (ContentClass, "ContentClass"), surface
+ 
+     with pytest.raises(TypeError, match="content_class"):
+-        gate_over([]).gate(  # type: ignore[call-arg]
++        gate_over().gate(  # type: ignore[call-arg]
+             content=PROSE,
+             visibility=RepoVisibility.PUBLIC,
+             shape=WriterShape.PROSE,
+@@ -629,27 +630,16 @@ def test_no_module_reconstructs_the_class_from_the_payload_bytes() -> None:
+ # ---------------------------------------------------------------------------
+ 
+ 
+-def conformance_adapters() -> list[ContentScanner]:
+-    """Every registered ``ContentScanner`` implementation, both of them.
+-
+-    The judgment adapter is driven by a scripted session reporting a real
+-    span; what conforms or fails to conform here is the port contract, not
+-    the verdict.
+-    """
++def conformance_adapters() -> list[ContentJudgment]:
+     executor = ScriptedAuditExecutor(
+-        [audit_result([{"start": 4, "end": 16, "rationale": "workspace segment"}])],
++        [audit_result([{"start": 4, "end": 16, "rationale": "workspace segment"}])]
+     )
+-    return [
+-        RegexContentScanner(
+-            patterns={RedactionCategory.TRACKER_URLS: [r"quarry-works"]},
+-        ),
+-        scanner_for(executor),
+-    ]
++    return [scanner_for(executor), FakeContentJudgment()]
+ 
+ 
+ @pytest.mark.parametrize("scanner", conformance_adapters())
+ async def test_every_returned_span_lies_inside_the_payload(
+-    scanner: ContentScanner,
++    scanner: ContentJudgment,
+ ) -> None:
+     """S: a span that cannot be excised is not a hit."""
+     result = await scanner.scan(
+@@ -664,7 +654,7 @@ async def test_every_returned_span_lies_inside_the_payload(
+ 
+ 
+ @pytest.mark.parametrize("scanner", conformance_adapters())
+-async def test_no_scanner_raises_across_the_port(scanner: ContentScanner) -> None:
++async def test_no_scanner_raises_across_the_port(scanner: ContentJudgment) -> None:
+     """S: a failure is a typed value, never an exception at the seam."""
+     for destination in OutboundDestination:
+         result = await scanner.scan(content="", destination=destination)
+@@ -673,10 +663,10 @@ async def test_no_scanner_raises_across_the_port(scanner: ContentScanner) -> Non
+ 
+ @pytest.mark.parametrize("scanner", conformance_adapters())
+ async def test_a_private_visibility_call_invokes_no_scanner_at_all(
+-    scanner: ContentScanner,
++    scanner: ContentJudgment,
+ ) -> None:
+     """S: the gate returns CLEAN before the ordered list is entered."""
+-    decision = await gate_over([scanner]).gate(
++    decision = await gate_over(scanner).gate(
+         content=PROSE,
+         visibility=RepoVisibility.PRIVATE,
+         shape=WriterShape.PROSE,
+@@ -687,17 +677,6 @@ async def test_a_private_visibility_call_invokes_no_scanner_at_all(
+     assert decision.content == PROSE
+ 
+ 
+-def test_the_deterministic_adapter_declares_unconditional_routing() -> None:
+-    """S: the port widening did not become a judgment-only port."""
+-    scanner = RegexContentScanner(patterns={})
+-    for destination in OutboundDestination:
+-        for content_class in ContentClass:
+-            assert scanner.routing.applies(
+-                destination=destination,
+-                content_class=content_class,
+-            )
+-
+-
+ # ---------------------------------------------------------------------------
+ # Boot — three states, none silent
+ # ---------------------------------------------------------------------------
+@@ -707,50 +686,47 @@ def operation_with(private_surface: str | None) -> OperationConfig:
+     """The shipped example operation config, with its private surface set."""
+     root = Path(__file__).resolve().parents[2]
+     config = load_operation_config(root / "docs" / "operation.example.toml")
+-    return config.model_copy(update={"private_surface": private_surface})
++    return OperationConfig.model_validate(
++        {**config.model_dump(), "private_surface": private_surface}
++    )
+ 
+ 
+-def boot_scanners(
+-    *,
+-    enabled: bool,
+-    private_surface: str | None,
+-) -> tuple[list[ContentScanner], str]:
+-    """Resolve the ordered scanner list exactly as the lifespan does."""
+-    return outbound_scanners(
++async def boot_admission(*, enabled: bool, private_surface: str | None):
++    executor = ScriptedAuditExecutor([audit_result([])])
++    gate = await build_outbound_gate(
+         config=AppConfig(agentic_content_scanner_enabled=enabled),
+         operation=operation_with(private_surface),
+-        executor=ScriptedAuditExecutor([]),
+-        prompts=load_registry(),
++        executor=executor,
++        prompts=load_registry(bindings={"private_surface": private_surface}),
+         skills=NO_SKILLS,
++        log=get_logger(__name__),
+     )
++    return gate, executor
+ 
+ 
+-def test_disabled_registers_the_deterministic_scanner_alone() -> None:
+-    """State 1: the mechanism ships, the policy is operator configuration."""
+-    scanners, digest = boot_scanners(
+-        enabled=False,
+-        private_surface=FIXTURE_PRIVATE_SURFACE,
++@pytest.mark.parametrize("enabled", [False, True])
++async def test_privacy_opt_out_keeps_mandatory_authored_aggregate_judgment(
++    enabled,
++) -> None:
++    gate, executor = await boot_admission(
++        enabled=enabled, private_surface=FIXTURE_PRIVATE_SURFACE
+     )
+-    assert [type(scanner).__name__ for scanner in scanners] == ["RegexContentScanner"]
+-    assert digest == ""
+-
+-
+-def test_enabled_with_a_description_registers_the_judgment_scanner_second() -> None:
+-    """State 2: deterministic FIRST, and that ordering is load-bearing."""
+-    scanners, digest = boot_scanners(
+-        enabled=True,
+-        private_surface=FIXTURE_PRIVATE_SURFACE,
++    result = await gate.gate(
++        content=PROSE,
++        visibility=RepoVisibility.PUBLIC,
++        shape=WriterShape.PROSE,
++        destination=OutboundDestination.PR_BODY,
++        content_class=ContentClass.AUTHORED,
+     )
+-    assert [type(scanner).__name__ for scanner in scanners] == [
+-        "RegexContentScanner",
+-        "AgentContentScanner",
+-    ]
+-    assert digest
++    assert result.verdict is GateVerdict.CLEAN
++    assert len(executor.calls) == 1
+ 
+ 
+ @pytest.mark.parametrize("private_surface", [None, "", "   \n "])
+-def test_enabled_without_a_description_aborts_boot(private_surface: str | None) -> None:
++async def test_enabled_without_a_description_aborts_boot(
++    private_surface: str | None,
++) -> None:
+     """State 3: NOT_CONFIGURED never degrades into a quietly missing scanner."""
+     with pytest.raises(ContentScannerBootError) as excinfo:
+-        boot_scanners(enabled=True, private_surface=private_surface)
++        await boot_admission(enabled=True, private_surface=private_surface)
+     assert excinfo.value.missing == "OperationConfig.private_surface"
+diff --git a/tests/chains/test_retry_floor_wiring.py b/tests/chains/test_retry_floor_wiring.py
+index d760213..4c0eccc 100644
+--- a/tests/chains/test_retry_floor_wiring.py
++++ b/tests/chains/test_retry_floor_wiring.py
+@@ -1,47 +1,48 @@
+-"""Every retrying node in every graph waits the floor its caller built.
+-
+-The three graphs each take a floor resolver and the suite proves one node
+-per graph WAITS it (KOD-195), but a per-node case can only ever clock the
+-node it names.  Sixteen of the nineteen ``self._floor`` sites were
+-unwrapped one at a time and the whole suite stayed green (KOD-275 sweep at
+-``f24fe90``): the storm KOD-174 measured is a node that spawns a session
+-under a standing limit with the floor peeled off, and nothing red would
+-have said so.
+-
+-The property that actually holds the floor on is structural, not
+-behavioural: a node registered WITH a retry policy is a node the graph
+-will re-enter, and the floor is what a re-entry must wait — so every
+-``add_node`` that carries ``retry_policy=self._retry`` must hand a node
+-wrapped in ``self._floor``, and the two nodes that carry no retry policy
+-(``finalize``, ``complete``) are the only ones that may go bare.  Read off
+-the syntax tree because it is a property of the WIRING, which no fixture
+-holds and which is the same reason the resolver hand-off is read this way
+-in :mod:`tests.test_composition_root`.
++"""Each retrying registration uses its graph owner's floor and retry policy.
++
++The fire graph owns the shared pair used by its authored delivery graph.
++The quality and ticket graphs each own their own pair. Actual registrations
++are checked in both directions, including every extracted delivery node;
++missing wrappers, unrelated owners and incorrect policies must all fail.
++Runtime wait behavior is exercised separately by the real loop tests.
+ """
+ 
+ import ast
++import copy
+ from pathlib import Path
+ from types import ModuleType
+-from typing import Final
+ 
+ import pytest
+ 
+-from kodezart.chains import ralph_loop, ralph_workflow, ticket_generation
++from kodezart.chains import (
++    authored_delivery,
++    native_amendment,
++    native_delivery,
++    native_execution,
++    ralph_loop,
++    ralph_workflow,
++    ticket_generation,
++)
++
++_GRAPH_BINDINGS = (
++    (ralph_loop, "self._floor", "self._retry"),
++    (ticket_generation, "self._floor", "self._retry"),
++    (ralph_workflow, "self.floor", "self.retry"),
++    (authored_delivery, "self.fire.floor", "self.fire.retry"),
++    (native_delivery, "fire.floor", "fire.retry"),
++)
+ 
+-#: The three graph modules, each read as its own source tree.
+-_GRAPH_MODULES: Final = (ralph_loop, ralph_workflow, ticket_generation)
++# These graph steps include side effects that have no automatic retry authority.
++_NONRETRYING_GRAPHS = (native_amendment, native_execution)
+ 
+ 
+ def _module_source(module: ModuleType) -> str:
+-    """The module's own source, its path asserted present for the type."""
+     path = module.__file__
+     assert path is not None, f"{module.__name__} has no source file"
+     return Path(path).read_text(encoding="utf-8")
+ 
+ 
+-def _add_node_calls(source: str) -> list[ast.Call]:
+-    """Every ``graph.add_node(...)`` call in *source*."""
+-    tree = ast.parse(source)
++def _add_node_calls(tree: ast.AST) -> list[ast.Call]:
+     return [
+         node
+         for node in ast.walk(tree)
+@@ -51,74 +52,141 @@ def _add_node_calls(source: str) -> list[ast.Call]:
+     ]
+ 
+ 
+-def _carries_retry_policy(call: ast.Call) -> bool:
+-    """Whether the registration hands the graph a retry policy."""
+-    return any(keyword.arg == "retry_policy" for keyword in call.keywords)
+-
+-
+-def _node_name(call: ast.Call) -> str:
+-    """The registered node's name, for a legible failure."""
+-    if call.args and isinstance(call.args[0], ast.Constant):
+-        return str(call.args[0].value)
+-    return ast.unparse(call)
+-
+-
+-def _is_floored(call: ast.Call) -> bool:
+-    """Whether the node argument is wrapped in ``self._floor(...)``."""
++def _is_floored(call: ast.Call, floor: str) -> bool:
+     if len(call.args) < 2:
+         return False
+     node = call.args[1]
+     return (
+         isinstance(node, ast.Call)
+-        and isinstance(node.func, ast.Attribute)
+-        and node.func.attr == "_floor"
++        and ast.unparse(node.func) == floor
++        and len(node.args) == 1
++        and not node.keywords
+     )
+ 
+ 
++def _assert_wiring(tree: ast.AST, floor: str, retry: str) -> None:
++    retrying = 0
++    for call in _add_node_calls(tree):
++        policy = next(
++            (kw.value for kw in call.keywords if kw.arg == "retry_policy"), None
++        )
++        if policy is not None:
++            retrying += 1
++            assert ast.unparse(policy) == retry, ast.unparse(call)
++            assert _is_floored(call, floor), ast.unparse(call)
++        else:
++            assert not _is_floored(call, floor), ast.unparse(call)
++    assert retrying, "No actual retrying registration was checked"
++
++
++@pytest.mark.parametrize(("module", "floor", "retry"), _GRAPH_BINDINGS)
++def test_every_retrying_node_uses_its_own_floor_and_policy(module, floor, retry):
++    _assert_wiring(ast.parse(_module_source(module)), floor, retry)
++
++
++@pytest.mark.parametrize(("module", "floor", "retry"), _GRAPH_BINDINGS)
++def test_removing_any_actual_node_floor_is_detected(module, floor, retry):
++    tree = ast.parse(_module_source(module))
++    calls = _add_node_calls(tree)
++    indices = [
++        index
++        for index, call in enumerate(calls)
++        if any(kw.arg == "retry_policy" for kw in call.keywords)
++    ]
++    assert indices
++    for index in indices:
++        changed = copy.deepcopy(tree)
++        call = _add_node_calls(changed)[index]
++        wrapper = call.args[1]
++        assert isinstance(wrapper, ast.Call)
++        call.args[1] = wrapper.args[0]
++        with pytest.raises(AssertionError):
++            _assert_wiring(changed, floor, retry)
++
++
++@pytest.mark.parametrize(("module", "floor", "retry"), _GRAPH_BINDINGS)
+ @pytest.mark.parametrize(
+-    "module",
+-    _GRAPH_MODULES,
+-    ids=lambda module: module.__name__.rsplit(".", 1)[-1],
++    "defect",
++    [
++        "bare",
++        "unrelated_floor",
++        "wrong_owner",
++        "wrong_retry",
++        "missing_retry",
++        "null_retry",
++    ],
+ )
+-def test_every_retrying_node_is_floored(module: ModuleType) -> None:
+-    """A node the graph will re-enter must wait the floor on the way back in.
+-
+-    The pairing is the whole guard: ``retry_policy`` present is the graph
+-    saying it will run this node again, and ``self._floor`` is what that
+-    re-run has to wait.  Peel the floor off any retrying node and it shows
+-    up here as a retrying node that is not floored.
+-    """
+-    source = _module_source(module)
+-    retrying = [call for call in _add_node_calls(source) if _carries_retry_policy(call)]
+-    assert retrying, f"{module.__name__}: no node is registered with a retry policy"
+-    unfloored = [_node_name(call) for call in retrying if not _is_floored(call)]
+-    assert unfloored == [], (
+-        f"{module.__name__.rsplit('.', 1)[-1]}: these nodes are registered with a "
+-        f"retry policy but their node is not wrapped in self._floor, so a rejection "
+-        f"re-enters them with no wait: {unfloored}"
++def test_wrong_or_unpaired_dependencies_cannot_satisfy_the_guard(
++    module, floor, retry, defect
++):
++    node = f"{floor}(self.work)"
++    policy = f", retry_policy={retry}"
++    if defect == "bare":
++        node = "self.work"
++    elif defect == "unrelated_floor":
++        node = "unrelated.floor(self.work)"
++    elif defect == "wrong_owner":
++        node = "self.unrelated.floor(self.work)"
++    elif defect == "wrong_retry":
++        policy = ", retry_policy=self.unrelated.retry"
++    elif defect == "missing_retry":
++        policy = ""
++    elif defect == "null_retry":
++        policy = ", retry_policy=None"
++    # A valid sibling prevents no-registration refusal from hiding a bad arm.
++    source = (
++        f'graph.add_node("valid", {floor}(self.other), retry_policy={retry})\n'
++        f'graph.add_node("changed", {node}{policy})'
+     )
++    with pytest.raises(AssertionError):
++        _assert_wiring(ast.parse(source), floor, retry)
+ 
+ 
+-@pytest.mark.parametrize(
+-    "module",
+-    _GRAPH_MODULES,
+-    ids=lambda module: module.__name__.rsplit(".", 1)[-1],
+-)
+-def test_a_floored_node_always_carries_the_retry_policy(module: ModuleType) -> None:
+-    """The paired negative: a floor with no retry policy floors nothing.
+-
+-    A ``self._floor`` wrapper on a node the graph never re-enters is a wait
+-    that can never be paid — the node runs once and its rejection leaves
+-    the graph.  So the two are one fact, asserted in both directions, and
+-    neither may drift without the other.
+-    """
+-    source = _module_source(module)
+-    floored_without_policy = [
+-        _node_name(call)
+-        for call in _add_node_calls(source)
+-        if _is_floored(call) and not _carries_retry_policy(call)
+-    ]
+-    assert floored_without_policy == [], (
+-        f"{module.__name__.rsplit('.', 1)[-1]}: these nodes are floored but carry no "
+-        f"retry policy, so the floor is never paid: {floored_without_policy}"
++@pytest.mark.parametrize(("module", "floor", "retry"), _GRAPH_BINDINGS)
++def test_correct_owner_and_unretried_terminal_are_valid(module, floor, retry):
++    source = (
++        f'graph.add_node("work", {floor}(self.work), retry_policy={retry})\n'
++        'graph.add_node("complete", self.complete)'
++    )
++    _assert_wiring(ast.parse(source), floor, retry)
++
++
++def _assert_nonretrying(tree: ast.AST) -> None:
++    calls = _add_node_calls(tree)
++    assert calls, "No actual nonretrying registration was checked"
++    for call in calls:
++        assert not any(kw.arg == "retry_policy" for kw in call.keywords)
++
++
++@pytest.mark.parametrize("module", _NONRETRYING_GRAPHS)
++def test_nonretrying_graphs_do_not_gain_automatic_replay(module):
++    tree = ast.parse(_module_source(module))
++    _assert_nonretrying(tree)
++    for index in range(len(_add_node_calls(tree))):
++        changed = copy.deepcopy(tree)
++        _add_node_calls(changed)[index].keywords.append(
++            ast.keyword(arg="retry_policy", value=ast.Name(id="unexpected_retry"))
++        )
++        with pytest.raises(AssertionError):
++            _assert_nonretrying(changed)
++
++
++def test_every_production_graph_with_registered_nodes_is_checked():
++    assert ralph_loop.__file__ is not None
++    source_root = Path(ralph_loop.__file__).resolve().parents[1]
++    actual = {
++        path.resolve()
++        for path in source_root.rglob("*.py")
++        if _add_node_calls(ast.parse(path.read_text(encoding="utf-8")))
++    }
++    declared = {
++        Path(module.__file__).resolve()
++        for module, _, _ in _GRAPH_BINDINGS
++        if module.__file__ is not None
++    }
++    declared.update(
++        Path(module.__file__).resolve()
++        for module in _NONRETRYING_GRAPHS
++        if module.__file__ is not None
+     )
++    assert actual == declared
+diff --git a/tests/domain/test_criterion_identity.py b/tests/domain/test_criterion_identity.py
+index e143349..99c2258 100644
+--- a/tests/domain/test_criterion_identity.py
++++ b/tests/domain/test_criterion_identity.py
+@@ -22,7 +22,7 @@ from pathlib import Path
+ from typing import Annotated, NewType, Union, get_args, get_origin
+ 
+ import pytest
+-from pydantic import BaseModel, ValidationError
++from pydantic import BaseModel, Field, ValidationError
+ from pydantic.fields import FieldInfo
+ 
+ from kodezart.domain.criteria import mint_criterion_id
+@@ -31,6 +31,7 @@ from kodezart.types.domain.criteria import (
+     Contradiction,
+     CriterionId,
+ )
++from kodezart.types.domain.fire_spec import CriterionRef
+ from kodezart.types.domain.grading import IterationGrade
+ 
+ _IDENTITY_FIELD_SUFFIXES = ("criterion_id", "criterion_ids")
+@@ -53,17 +54,19 @@ def _domain_models() -> list[type[BaseModel]]:
+     return models
+ 
+ 
+-def _mentions_identity(annotation: object) -> bool:
+-    """Whether ``CriterionId`` appears anywhere in *annotation*."""
+-    if annotation is CriterionId:
++def _mentions_identity(
++    annotation: object, identities: tuple[object, ...] = (CriterionId, CriterionRef)
++) -> bool:
++    """Whether an authored or tracker-native identity types the field."""
++    if any(annotation is identity for identity in identities):
+         return True
+     origin = get_origin(annotation)
+     if origin is None:
+         return False
+     if origin is Annotated:
+-        return _mentions_identity(get_args(annotation)[0])
++        return _mentions_identity(get_args(annotation)[0], identities)
+     if origin is Union or origin is list or origin is tuple or origin is set:
+-        return any(_mentions_identity(arg) for arg in get_args(annotation))
++        return any(_mentions_identity(arg, identities) for arg in get_args(annotation))
+     return False
+ 
+ 
+@@ -100,7 +103,7 @@ def test_every_field_constrained_by_the_id_pattern_annotates_the_identity() -> N
+         f"{model}.{name}"
+         for model, name, field in _fields()
+         if _constrained_by_the_id_pattern(field)
+-        and not _mentions_identity(field.annotation)
++        and not _mentions_identity(field.annotation, (CriterionId,))
+     ]
+     assert offenders == []
+ 
+@@ -116,13 +119,8 @@ def test_every_field_named_for_a_criterion_id_annotates_the_identity() -> None:
+     assert offenders == []
+ 
+ 
+-def test_the_minting_function_is_the_only_construction_site() -> None:
+-    """Nothing outside the minting module may call `CriterionId(...)`.
+-
+-    Two construction sites is two places that know the `AC-n` shape, and
+-    the second one is how a value that never passed the format check
+-    acquires the type that says it did.
+-    """
++def test_identity_construction_is_authored_mint_or_exact_tracker_key() -> None:
++    """Authored IDs are minted; the native reader carries the exact source key."""
+     offenders: list[str] = []
+     for path in Path("src").rglob("*.py"):
+         tree = ast.parse(path.read_text())
+@@ -131,10 +129,21 @@ def test_the_minting_function_is_the_only_construction_site() -> None:
+                 isinstance(node, ast.Call)
+                 and isinstance(node.func, ast.Name)
+                 and node.func.id == "CriterionId"
+-                and path != _MINTING_MODULE
++                and path
++                not in {_MINTING_MODULE, Path("src/kodezart/chains/criteria.py")}
+             ):
+                 offenders.append(f"{path}:{node.lineno}")
+     assert offenders == []
++    source = Path("src/kodezart/chains/criteria.py").read_text()
++    native_calls = [
++        node
++        for node in ast.walk(ast.parse(source))
++        if isinstance(node, ast.Call)
++        and isinstance(node.func, ast.Name)
++        and node.func.id == "CriterionId"
++    ]
++    assert len(native_calls) == 1
++    assert ast.unparse(native_calls[0]) == "CriterionId(key)"
+ 
+ 
+ @pytest.mark.parametrize(
+@@ -143,7 +152,7 @@ def test_the_minting_function_is_the_only_construction_site() -> None:
+         (
+             Contradiction,
+             "criterionIds",
+-            {"criterionIds": ["banana", "AC-99"], "explanation": "conflict"},
++            {"criterionIds": [" ", "AC-99"], "explanation": "conflict"},
+         ),
+         (
+             IterationGrade,
+@@ -157,7 +166,7 @@ def test_the_minting_function_is_the_only_construction_site() -> None:
+                         "reasoning": "r",
+                     }
+                 ],
+-                "missingIds": ["not-an-id"],
++                "missingIds": ["\t\n"],
+                 "dispatchedCount": 1,
+                 "passedCount": 1,
+                 "verdict": "accepted",
+@@ -171,12 +180,7 @@ def test_a_malformed_element_of_an_identity_list_fails_closed(
+     field: str,
+     payload: dict[str, object],
+ ) -> None:
+-    """The pattern is on the ELEMENT, so the list cannot smuggle one in.
+-
+-    ``Field(min_length=...)`` constrains the list; the members went
+-    unchecked, so a payload naming ``banana`` validated and the id reached
+-    the regenerator's prompt and the pre-loop halt intact.
+-    """
++    """Nonblank identity applies to each element, for either source arm."""
+     with pytest.raises(ValidationError) as excinfo:
+         record.model_validate(payload)
+     locations = [error["loc"] for error in excinfo.value.errors()]
+@@ -191,3 +195,50 @@ def test_a_minted_identity_matches_the_scheme() -> None:
+ def test_positions_are_one_based() -> None:
+     with pytest.raises(ValueError, match="1-based"):
+         mint_criterion_id(0)
++
++
++def test_tracker_identity_is_distinct_and_loose_strings_remain_rejected():
++    assert CriterionRef is not CriterionId
++    assert _mentions_identity(CriterionRef)
++    assert _mentions_identity(list[CriterionRef])
++    assert not _mentions_identity(str)
++    assert not _mentions_identity(list[str])
++
++
++def test_authored_pattern_requires_authored_identity_even_on_native_shape():
++    assert _mentions_identity(CriterionId, (CriterionId,))
++    assert not _mentions_identity(CriterionRef, (CriterionId,))
++    assert not _mentions_identity(
++        Annotated[CriterionRef, Field(pattern=CRITERION_ID_PATTERN)],
++        (CriterionId,),
++    )
++
++
++@pytest.mark.parametrize("key", ["fire/native-key", "KOD-815", "AC-1"])
++def test_shared_identity_lists_preserve_nonblank_native_or_authored_keys(key):
++    record = IterationGrade.model_validate(
++        {
++            "results": [
++                {
++                    "criterionId": "AC-1",
++                    "criterion": "c",
++                    "passed": True,
++                    "reasoning": "r",
++                }
++            ],
++            "missingIds": [key, "another/key"],
++            "dispatchedCount": 3,
++            "passedCount": 1,
++            "verdict": "rejected",
++        }
++    )
++    assert record.missing_ids == [key, "another/key"]
++
++
++@pytest.mark.parametrize("key", ["fire/native-key", "KOD-815"])
++def test_authored_contradiction_rejects_native_criterion_keys(key):
++    with pytest.raises(ValidationError) as excinfo:
++        Contradiction.model_validate(
++            {"criterionIds": ["AC-1", key], "explanation": "conflict"}
++        )
++    assert excinfo.value.errors()[0]["loc"] == ("criterionIds", 1)
+diff --git a/tests/integration/test_self_running_chain.py b/tests/integration/test_self_running_chain.py
+index 00779f2..b6861c8 100644
+--- a/tests/integration/test_self_running_chain.py
++++ b/tests/integration/test_self_running_chain.py
+@@ -31,7 +31,7 @@ from kodezart.services.run_recorder import RunRecorder
+ from kodezart.types.domain.agent import (
+     AgentEvent,
+     AssistantTextEvent,
+-    WorkflowCompleteEvent,
++    AuthoredWorkflowCompleteEvent,
+     WorkflowPREvent,
+ )
+ from kodezart.types.domain.branch import BaseSpec
+@@ -96,7 +96,7 @@ class _MergingEngine:
+             feature_tip_sha=FEATURE_TIP_SHA,
+             delivered=True,
+         )
+-        yield WorkflowCompleteEvent(
++        yield AuthoredWorkflowCompleteEvent(
+             feature_branch=FEATURE_BRANCH,
+             ralph_branch="kodezart/k-1-ralph",
+             total_iterations=1,
+@@ -142,11 +142,11 @@ async def test_an_approved_issue_walks_the_whole_chain_back_to_its_ticket() -> N
+     engine = _MergingEngine()
+     queue = AsyncioJobQueue(
+         engine=engine,
+-        max_concurrent_runs_per_lane=config.queue_max_concurrent_runs_per_lane,
+-        max_depth_per_lane=config.queue_max_depth_per_lane,
+-        terminal_retention_seconds=config.queue_terminal_retention_seconds,
+-        event_buffer_retention_seconds=config.queue_event_buffer_retention_seconds,
+-        event_buffer_capacity=config.queue_event_buffer_capacity,
++        max_concurrent_runs_per_lane=config.queue.max_concurrent_runs_per_lane,
++        max_depth_per_lane=config.queue.max_depth_per_lane,
++        terminal_retention_seconds=config.queue.terminal_retention_seconds,
++        event_buffer_retention_seconds=config.queue.event_buffer_retention_seconds,
++        event_buffer_capacity=config.queue.event_buffer_capacity,
+     )
+     await queue.start()
+     try:
+@@ -177,12 +177,12 @@ async def test_an_approved_issue_walks_the_whole_chain_back_to_its_ticket() -> N
+         # 2. the fire reached the queue, on the base the graph implied
+         assert engine.base_branches == [operation_config().repos[0].trunk]
+ 
+-        # 3. the lifecycle walked, in the run's own order
++        # 3. the lifecycle reached review; delivery retires only the queue label.
+         assert tracker.workflow_writes == [
+             (ISSUE, LifecycleStage.IN_PROGRESS),
+             (ISSUE, LifecycleStage.IN_REVIEW),
+-            (ISSUE, LifecycleStage.DONE),
+         ]
++        assert (ISSUE, LifecycleStage.DONE) not in tracker.workflow_writes
+         assert tracker.queue_writes == [(ISSUE, QueueState.DONE)]
+ 
+         # 4. the terminal outcome is on the ticket, naming the run's outcome
+@@ -212,11 +212,11 @@ async def test_the_chain_never_sets_the_approved_state_itself() -> None:
+     )
+     queue = AsyncioJobQueue(
+         engine=_MergingEngine(),
+-        max_concurrent_runs_per_lane=config.queue_max_concurrent_runs_per_lane,
+-        max_depth_per_lane=config.queue_max_depth_per_lane,
+-        terminal_retention_seconds=config.queue_terminal_retention_seconds,
+-        event_buffer_retention_seconds=config.queue_event_buffer_retention_seconds,
+-        event_buffer_capacity=config.queue_event_buffer_capacity,
++        max_concurrent_runs_per_lane=config.queue.max_concurrent_runs_per_lane,
++        max_depth_per_lane=config.queue.max_depth_per_lane,
++        terminal_retention_seconds=config.queue.terminal_retention_seconds,
++        event_buffer_retention_seconds=config.queue.event_buffer_retention_seconds,
++        event_buffer_capacity=config.queue.event_buffer_capacity,
+     )
+     await queue.start()
+     try:
+@@ -285,11 +285,11 @@ async def test_a_fire_that_crashes_puts_its_issue_back_and_says_why() -> None:
+     )
+     queue = AsyncioJobQueue(
+         engine=_CrashingEngine(),
+-        max_concurrent_runs_per_lane=config.queue_max_concurrent_runs_per_lane,
+-        max_depth_per_lane=config.queue_max_depth_per_lane,
+-        terminal_retention_seconds=config.queue_terminal_retention_seconds,
+-        event_buffer_retention_seconds=config.queue_event_buffer_retention_seconds,
+-        event_buffer_capacity=config.queue_event_buffer_capacity,
++        max_concurrent_runs_per_lane=config.queue.max_concurrent_runs_per_lane,
++        max_depth_per_lane=config.queue.max_depth_per_lane,
++        terminal_retention_seconds=config.queue.terminal_retention_seconds,
++        event_buffer_retention_seconds=config.queue.event_buffer_retention_seconds,
++        event_buffer_capacity=config.queue.event_buffer_capacity,
+     )
+     await queue.start()
+     try:
+diff --git a/tests/test_lane_verification.py b/tests/test_lane_verification.py
+index 5cf0f4f..067e060 100644
+--- a/tests/test_lane_verification.py
++++ b/tests/test_lane_verification.py
+@@ -16,7 +16,7 @@ from kodezart.core.config import AppConfig
+ from kodezart.core.prompt_namespaces import bindings_for
+ from kodezart.types.domain.prompts import PromptKey
+ from tests.fakes import pass_render_variables
+-from tests.prompt_census import PROMPT_FUNCTION_COUNT
++from tests.prompt_census import PROMPT_FUNCTION_NAMES
+ 
+ REPO_ROOT = Path(__file__).resolve().parents[1]
+ EXAMPLE = REPO_ROOT / "docs" / "operation.example.toml"
+@@ -61,7 +61,7 @@ def test_claude_opus_completeness_check_passes_at_the_full_census() -> None:
+     """Loading succeeds only because the default set supplies every key."""
+     registry = default_registry()
+     table = registry.resolution_table()
+-    assert len(table) == PROMPT_FUNCTION_COUNT
++    assert {key.value for key in table} == PROMPT_FUNCTION_NAMES
+     assert set(table) == set(PromptKey)
+ 
+ 
+@@ -72,22 +72,26 @@ def test_claude_opus_completeness_check_passes_at_the_full_census() -> None:
+ 
+ def test_every_writer_in_the_corrected_inventory_names_the_gate() -> None:
+     """V-3: the five-writer inventory routes through the gate."""
+-    workflow = (
+-        REPO_ROOT / "src" / "kodezart" / "chains" / "ralph_workflow.py"
++    workflow = "\n".join(
++        (REPO_ROOT / "src" / "kodezart" / "chains" / name).read_text(encoding="utf-8")
++        for name in ("fire_specification.py", "fire_implementation.py")
++    )
++    delivery = (
++        REPO_ROOT / "src" / "kodezart" / "chains" / "authored_publication.py"
+     ).read_text(encoding="utf-8")
+     persister = (
+         REPO_ROOT / "src" / "kodezart" / "adapters" / "git_change_persister.py"
+     ).read_text(encoding="utf-8")
+ 
+-    for writer in (
+-        "destination=OutboundDestination.BRANCH_NAME",
+-        "destination=OutboundDestination.ARTIFACT_TICKET_JSON",
+-        "destination=OutboundDestination.ARTIFACT_CRITERIA_JSON",
+-        "destination=OutboundDestination.PR_TITLE",
+-        "destination=OutboundDestination.PR_BODY",
+-        "destination=OutboundDestination.PR_COMMENT",
++    for writer, owner in (
++        ("destination=OutboundDestination.BRANCH_NAME", workflow),
++        ("destination=OutboundDestination.ARTIFACT_TICKET_JSON", workflow),
++        ("destination=OutboundDestination.ARTIFACT_CRITERIA_JSON", workflow),
++        ("destination=OutboundDestination.PR_TITLE", delivery),
++        ("destination=OutboundDestination.PR_BODY", delivery),
++        ("destination=OutboundDestination.PR_COMMENT", delivery),
+     ):
+-        assert writer in workflow, f"{writer} does not route through the gate"
++        assert writer in owner, f"{writer} does not route through the gate"
+ 
+     assert "OutboundDestination.COMMIT_MESSAGE," in persister
+     assert "OutboundDestination.COMMIT_MESSAGE_DIVERGENCE_REPLAY," in persister
+@@ -96,6 +100,7 @@ def test_every_writer_in_the_corrected_inventory_names_the_gate() -> None:
+     # the event vocabulary and the error's writer field are typed rather
+     # than prose. A bare string at a gate call site is the defect.
+     assert "writer_name=" not in workflow
++    assert "writer_name=" not in delivery
+     assert "writer_name=" not in persister
+ 
+ 

@@ -1,0 +1,1480 @@
+[
+  {
+    "path": "src/kodezart/adapters/_mcp_mapping.py",
+    "changed": [
+      "prompt_with_knowledge_map"
+    ],
+    "exact_donor": [
+      "prompt_with_knowledge_map"
+    ],
+    "custom": [],
+    "duplicate_names": 5
+  },
+  {
+    "path": "src/kodezart/adapters/asyncio_job_queue.py",
+    "changed": [
+      "AsyncioJobQueue._run_job"
+    ],
+    "exact_donor": [
+      "AsyncioJobQueue._run_job"
+    ],
+    "custom": [],
+    "duplicate_names": 22
+  },
+  {
+    "path": "src/kodezart/adapters/claude_agent_executor.py",
+    "changed": [
+      "ClaudeAgentExecutor.__init__",
+      "ClaudeAgentExecutor.stream"
+    ],
+    "exact_donor": [
+      "ClaudeAgentExecutor.__init__",
+      "ClaudeAgentExecutor.stream"
+    ],
+    "custom": [],
+    "duplicate_names": 2
+  },
+  {
+    "path": "src/kodezart/adapters/claude_client_executor.py",
+    "changed": [
+      "ClaudeClientExecutor.__init__",
+      "ClaudeClientExecutor.stream"
+    ],
+    "exact_donor": [
+      "ClaudeClientExecutor.__init__",
+      "ClaudeClientExecutor.stream"
+    ],
+    "custom": [],
+    "duplicate_names": 5
+  },
+  {
+    "path": "src/kodezart/adapters/git_change_persister.py",
+    "changed": [
+      "GitChangePersister.persist",
+      "GitChangePersister._persist_dirty"
+    ],
+    "exact_donor": [
+      "GitChangePersister.persist",
+      "GitChangePersister._persist_dirty"
+    ],
+    "custom": [],
+    "duplicate_names": 6
+  },
+  {
+    "path": "src/kodezart/adapters/git_worktree_provider.py",
+    "changed": [
+      "GitWorktreeProvider.__init__",
+      "GitWorktreeProvider.acquire",
+      "GitWorktreeProvider.capture",
+      "GitWorktreeProvider.resume"
+    ],
+    "exact_donor": [
+      "GitWorktreeProvider.__init__",
+      "GitWorktreeProvider.acquire",
+      "GitWorktreeProvider.capture",
+      "GitWorktreeProvider.resume"
+    ],
+    "custom": [],
+    "duplicate_names": 8
+  },
+  {
+    "path": "src/kodezart/adapters/github_api.py",
+    "changed": [
+      "GitHubAPIClient.__init__",
+      "GitHubAPIClient._request_with_retry",
+      "GitHubAPIClient._parsed_with_retry",
+      "GitHubAPIClient._fetch_check_runs",
+      "GitHubAPIClient.wait_for_checks",
+      "GitHubAPIClient._rerun_context",
+      "GitHubAPIClient._remember_rerun",
+      "GitHubAPIClient._rerun_error",
+      "GitHubAPIClient._terminal_checks",
+      "GitHubAPIClient._attempt_jobs",
+      "GitHubAPIClient.rerun_checks",
+      "GitHubAPIClient._dispatch_rerun",
+      "GitHubAPIClient._rerun_observation",
+      "GitHubAPIClient._wait_for_rerun",
+      "GitHubAPIClient.checks_declared",
+      "GitHubAPIClient._completed_watch"
+    ],
+    "exact_donor": [
+      "GitHubAPIClient.__init__",
+      "GitHubAPIClient._request_with_retry",
+      "GitHubAPIClient._parsed_with_retry",
+      "GitHubAPIClient._fetch_check_runs",
+      "GitHubAPIClient.wait_for_checks",
+      "GitHubAPIClient._rerun_context",
+      "GitHubAPIClient._remember_rerun",
+      "GitHubAPIClient._rerun_error",
+      "GitHubAPIClient._terminal_checks",
+      "GitHubAPIClient._attempt_jobs",
+      "GitHubAPIClient.rerun_checks",
+      "GitHubAPIClient._dispatch_rerun",
+      "GitHubAPIClient._rerun_observation",
+      "GitHubAPIClient._wait_for_rerun",
+      "GitHubAPIClient.checks_declared",
+      "GitHubAPIClient._completed_watch"
+    ],
+    "custom": [],
+    "duplicate_names": 26
+  },
+  {
+    "path": "src/kodezart/adapters/github_types.py",
+    "changed": [],
+    "exact_donor": [],
+    "custom": [],
+    "duplicate_names": 0
+  },
+  {
+    "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "changed": [
+      "LinearMcpTracker.__init__",
+      "LinearMcpTracker.read_fire_spec",
+      "LinearMcpTracker.reset_criterion_pending"
+    ],
+    "exact_donor": [
+      "LinearMcpTracker.read_fire_spec",
+      "LinearMcpTracker.reset_criterion_pending"
+    ],
+    "custom": [
+      "LinearMcpTracker.__init__"
+    ],
+    "duplicate_names": 136
+  },
+  {
+    "path": "src/kodezart/adapters/subprocess_git_service.py",
+    "changed": [
+      "SubprocessGitService.validate_repo",
+      "SubprocessGitService.remote_branch_sha",
+      "SubprocessGitService._run_output",
+      "SubprocessGitService._run",
+      "SubprocessGitService._run_with_exit_codes",
+      "SubprocessGitService.worktree_identity",
+      "SubprocessGitService._identity_git",
+      "SubprocessGitService._worktree_identity"
+    ],
+    "exact_donor": [
+      "SubprocessGitService.validate_repo",
+      "SubprocessGitService.remote_branch_sha",
+      "SubprocessGitService._run_output",
+      "SubprocessGitService._run",
+      "SubprocessGitService._run_with_exit_codes",
+      "SubprocessGitService.worktree_identity",
+      "SubprocessGitService._identity_git",
+      "SubprocessGitService._worktree_identity"
+    ],
+    "custom": [],
+    "duplicate_names": 34
+  },
+  {
+    "path": "src/kodezart/chains/authored_checks.py",
+    "changed": [
+      "AuthoredChecks.__init__",
+      "AuthoredChecks.available",
+      "AuthoredChecks.monitor_ci"
+    ],
+    "exact_donor": [
+      "AuthoredChecks.__init__",
+      "AuthoredChecks.available",
+      "AuthoredChecks.monitor_ci"
+    ],
+    "custom": [],
+    "duplicate_names": 3
+  },
+  {
+    "path": "src/kodezart/chains/authored_delivery.py",
+    "changed": [
+      "AuthoredDeliveryCoordinator.__init__",
+      "AuthoredDeliveryCoordinator.run",
+      "AuthoredDeliveryCoordinator._build_delivery_graph",
+      "AuthoredDeliveryCoordinator._route_after_fire",
+      "AuthoredDeliveryCoordinator._delivery_remediation_node",
+      "AuthoredDeliveryCoordinator._route_after_ci",
+      "AuthoredDeliveryCoordinator._route_after_pr",
+      "AuthoredDeliveryCoordinator._authored_complete_node"
+    ],
+    "exact_donor": [
+      "AuthoredDeliveryCoordinator.__init__",
+      "AuthoredDeliveryCoordinator.run",
+      "AuthoredDeliveryCoordinator._build_delivery_graph",
+      "AuthoredDeliveryCoordinator._route_after_fire",
+      "AuthoredDeliveryCoordinator._delivery_remediation_node",
+      "AuthoredDeliveryCoordinator._route_after_ci",
+      "AuthoredDeliveryCoordinator._route_after_pr",
+      "AuthoredDeliveryCoordinator._authored_complete_node"
+    ],
+    "custom": [],
+    "duplicate_names": 8
+  },
+  {
+    "path": "src/kodezart/chains/authored_publication.py",
+    "changed": [
+      "AuthoredPublication.__init__",
+      "AuthoredPublication.available",
+      "AuthoredPublication.open_stalled_pr",
+      "AuthoredPublication.open_pr",
+      "AuthoredPublication.comment_failure"
+    ],
+    "exact_donor": [
+      "AuthoredPublication.__init__",
+      "AuthoredPublication.available",
+      "AuthoredPublication.open_stalled_pr",
+      "AuthoredPublication.open_pr",
+      "AuthoredPublication.comment_failure"
+    ],
+    "custom": [],
+    "duplicate_names": 5
+  },
+  {
+    "path": "src/kodezart/chains/criteria.py",
+    "changed": [
+      "TrackerCriteria.__init__",
+      "TrackerCriteria.read_owed_criteria",
+      "TrackerCriteria._read_owed_criteria",
+      "TrackerCriteria.read_spec",
+      "TrackerCriteria.read_current",
+      "current_native_criteria",
+      "revalidate_criteria",
+      "require_current_native_snapshot"
+    ],
+    "exact_donor": [
+      "TrackerCriteria.__init__",
+      "TrackerCriteria.read_owed_criteria",
+      "TrackerCriteria._read_owed_criteria",
+      "TrackerCriteria.read_spec",
+      "TrackerCriteria.read_current",
+      "current_native_criteria",
+      "revalidate_criteria",
+      "require_current_native_snapshot"
+    ],
+    "custom": [],
+    "duplicate_names": 8
+  },
+  {
+    "path": "src/kodezart/chains/fire_consolidation.py",
+    "changed": [
+      "resolve_workflow_cwd",
+      "FireConsolidation.__init__",
+      "FireConsolidation.merge_to_feature",
+      "FireConsolidation.land_best_iteration",
+      "FireConsolidation.cleanup_backups"
+    ],
+    "exact_donor": [
+      "resolve_workflow_cwd",
+      "FireConsolidation.__init__",
+      "FireConsolidation.merge_to_feature",
+      "FireConsolidation.land_best_iteration",
+      "FireConsolidation.cleanup_backups"
+    ],
+    "custom": [],
+    "duplicate_names": 5
+  },
+  {
+    "path": "src/kodezart/chains/fire_implementation.py",
+    "changed": [
+      "FireImplementation.__init__",
+      "FireImplementation.persists_artifacts",
+      "FireImplementation.run_quality_gate",
+      "FireImplementation.run_ralph_loop",
+      "FireImplementation.persist_ticket",
+      "FireImplementation.persist_artifacts"
+    ],
+    "exact_donor": [
+      "FireImplementation.__init__",
+      "FireImplementation.persists_artifacts",
+      "FireImplementation.run_quality_gate",
+      "FireImplementation.run_ralph_loop",
+      "FireImplementation.persist_ticket",
+      "FireImplementation.persist_artifacts"
+    ],
+    "custom": [],
+    "duplicate_names": 6
+  },
+  {
+    "path": "src/kodezart/chains/fire_remediation.py",
+    "changed": [
+      "FireRemediation.__init__",
+      "FireRemediation.rounds_remain",
+      "FireRemediation.remediate",
+      "FireRemediation.remediation_entry",
+      "FireRemediation.failure_evidence",
+      "FireRemediation.draft_remediation"
+    ],
+    "exact_donor": [
+      "FireRemediation.__init__",
+      "FireRemediation.rounds_remain",
+      "FireRemediation.remediate",
+      "FireRemediation.remediation_entry",
+      "FireRemediation.failure_evidence",
+      "FireRemediation.draft_remediation"
+    ],
+    "custom": [],
+    "duplicate_names": 6
+  },
+  {
+    "path": "src/kodezart/chains/fire_review.py",
+    "changed": [
+      "FireReview.__init__",
+      "FireReview.review_against_ticket"
+    ],
+    "exact_donor": [
+      "FireReview.__init__",
+      "FireReview.review_against_ticket"
+    ],
+    "custom": [],
+    "duplicate_names": 2
+  },
+  {
+    "path": "src/kodezart/chains/fire_specification.py",
+    "changed": [
+      "FireSpecification.__init__",
+      "FireSpecification.resolve_visibility",
+      "FireSpecification.generate_branch",
+      "FireSpecification.generate_ticket",
+      "FireSpecification.generate_criteria",
+      "FireSpecification.validate_criteria"
+    ],
+    "exact_donor": [
+      "FireSpecification.__init__",
+      "FireSpecification.resolve_visibility",
+      "FireSpecification.generate_branch",
+      "FireSpecification.generate_ticket",
+      "FireSpecification.generate_criteria",
+      "FireSpecification.validate_criteria"
+    ],
+    "custom": [],
+    "duplicate_names": 6
+  },
+  {
+    "path": "src/kodezart/chains/native_amendment.py",
+    "changed": [
+      "AmendmentActions.judge_claim",
+      "AmendmentActions.apply_judgment",
+      "AmendmentActions.require_current",
+      "NativeAmendmentGraph.__init__",
+      "NativeAmendmentGraph._judge",
+      "NativeAmendmentGraph._write_back",
+      "NativeAmendmentGraph._next",
+      "NativeAmendmentGraph._complete",
+      "NativeAmendmentGraph.run"
+    ],
+    "exact_donor": [
+      "AmendmentActions.judge_claim",
+      "AmendmentActions.apply_judgment",
+      "AmendmentActions.require_current",
+      "NativeAmendmentGraph.__init__",
+      "NativeAmendmentGraph._judge",
+      "NativeAmendmentGraph._write_back",
+      "NativeAmendmentGraph._next",
+      "NativeAmendmentGraph._complete",
+      "NativeAmendmentGraph.run"
+    ],
+    "custom": [],
+    "duplicate_names": 9
+  },
+  {
+    "path": "src/kodezart/chains/native_execution.py",
+    "changed": [
+      "NativeExecutionActions.prepare",
+      "NativeExecutionActions.write",
+      "NativeExecutionActions.reconcile",
+      "NativeExecutionActions.persist",
+      "NativeExecutionGraph.__init__",
+      "NativeExecutionGraph._invoke",
+      "NativeExecutionGraph._next",
+      "NativeExecutionGraph._prepare",
+      "NativeExecutionGraph._write",
+      "NativeExecutionGraph._reconcile",
+      "NativeExecutionGraph._persist"
+    ],
+    "exact_donor": [
+      "NativeExecutionActions.prepare",
+      "NativeExecutionActions.write",
+      "NativeExecutionActions.reconcile",
+      "NativeExecutionActions.persist",
+      "NativeExecutionGraph.__init__",
+      "NativeExecutionGraph._invoke",
+      "NativeExecutionGraph._next",
+      "NativeExecutionGraph._prepare",
+      "NativeExecutionGraph._write",
+      "NativeExecutionGraph._reconcile",
+      "NativeExecutionGraph._persist"
+    ],
+    "custom": [],
+    "duplicate_names": 11
+  },
+  {
+    "path": "src/kodezart/chains/ralph_loop.py",
+    "changed": [
+      "RalphLoop.__init__",
+      "RalphLoop.run",
+      "RalphLoop._build_graph",
+      "RalphLoop._execute_node",
+      "RalphLoop._evaluate_node",
+      "RalphLoop._native_ref",
+      "RalphLoop._route_after_execute",
+      "RalphLoop._should_continue"
+    ],
+    "exact_donor": [
+      "RalphLoop.__init__",
+      "RalphLoop.run",
+      "RalphLoop._build_graph",
+      "RalphLoop._execute_node",
+      "RalphLoop._evaluate_node",
+      "RalphLoop._native_ref",
+      "RalphLoop._route_after_execute",
+      "RalphLoop._should_continue"
+    ],
+    "custom": [],
+    "duplicate_names": 8
+  },
+  {
+    "path": "src/kodezart/chains/ralph_workflow.py",
+    "changed": [
+      "RalphWorkflowEngine.__init__",
+      "RalphWorkflowEngine.run",
+      "RalphWorkflowEngine._composition",
+      "RalphWorkflowEngine._build_graph",
+      "RalphWorkflowEngine._route_after_validation",
+      "RalphWorkflowEngine._route_after_merge",
+      "RalphWorkflowEngine._route_after_review",
+      "RalphWorkflowEngine._merge_to_feature",
+      "RalphWorkflowEngine._land_best_iteration",
+      "RalphWorkflowEngine._complete_node",
+      "RalphWorkflowEngine.prepare",
+      "RalphWorkflowEngine._route_entry"
+    ],
+    "exact_donor": [
+      "RalphWorkflowEngine.__init__",
+      "RalphWorkflowEngine.run",
+      "RalphWorkflowEngine._composition",
+      "RalphWorkflowEngine._build_graph",
+      "RalphWorkflowEngine._route_after_validation",
+      "RalphWorkflowEngine._route_after_merge",
+      "RalphWorkflowEngine._route_after_review",
+      "RalphWorkflowEngine._merge_to_feature",
+      "RalphWorkflowEngine._land_best_iteration",
+      "RalphWorkflowEngine._complete_node",
+      "RalphWorkflowEngine.prepare",
+      "RalphWorkflowEngine._route_entry"
+    ],
+    "custom": [],
+    "duplicate_names": 12
+  },
+  {
+    "path": "src/kodezart/chains/remediation.py",
+    "changed": [
+      "RemediationChain.__init__",
+      "RemediationChain.run"
+    ],
+    "exact_donor": [
+      "RemediationChain.__init__",
+      "RemediationChain.run"
+    ],
+    "custom": [],
+    "duplicate_names": 2
+  },
+  {
+    "path": "src/kodezart/chains/scope_walker.py",
+    "changed": [
+      "_read_tree",
+      "read_scope_ready",
+      "_filter_reason",
+      "unreachable_criteria"
+    ],
+    "exact_donor": [
+      "_read_tree",
+      "read_scope_ready",
+      "_filter_reason",
+      "unreachable_criteria"
+    ],
+    "custom": [],
+    "duplicate_names": 4
+  },
+  {
+    "path": "src/kodezart/chains/ticket_generation.py",
+    "changed": [
+      "TicketGenerationLoop.run",
+      "TicketGenerationLoop._create_node",
+      "TicketGenerationLoop._review_node"
+    ],
+    "exact_donor": [
+      "TicketGenerationLoop.run",
+      "TicketGenerationLoop._create_node",
+      "TicketGenerationLoop._review_node"
+    ],
+    "custom": [],
+    "duplicate_names": 8
+  },
+  {
+    "path": "src/kodezart/composition/engine.py",
+    "changed": [
+      "OriginRoutedWorkflowEngine.__init__",
+      "OriginRoutedWorkflowEngine.run",
+      "build_workflow_engine"
+    ],
+    "exact_donor": [
+      "OriginRoutedWorkflowEngine.__init__",
+      "OriginRoutedWorkflowEngine.run"
+    ],
+    "custom": [
+      "build_workflow_engine"
+    ],
+    "duplicate_names": 5
+  },
+  {
+    "path": "src/kodezart/composition/forge.py",
+    "changed": [
+      "build_forge_client"
+    ],
+    "exact_donor": [
+      "build_forge_client"
+    ],
+    "custom": [],
+    "duplicate_names": 1
+  },
+  {
+    "path": "src/kodezart/composition/tracker.py",
+    "changed": [
+      "build_tracker"
+    ],
+    "exact_donor": [
+      "build_tracker"
+    ],
+    "custom": [],
+    "duplicate_names": 5
+  },
+  {
+    "path": "src/kodezart/composition/workspace.py",
+    "changed": [
+      "build_git_stack"
+    ],
+    "exact_donor": [
+      "build_git_stack"
+    ],
+    "custom": [],
+    "duplicate_names": 1
+  },
+  {
+    "path": "src/kodezart/core/config.py",
+    "changed": [],
+    "exact_donor": [],
+    "custom": [],
+    "duplicate_names": 13
+  },
+  {
+    "path": "src/kodezart/core/node_sessions.py",
+    "changed": [
+      "NodeSessionObserver.__init__",
+      "NodeSessionObserver.observe",
+      "NodeSessionObserver.require_valid"
+    ],
+    "exact_donor": [
+      "NodeSessionObserver.__init__",
+      "NodeSessionObserver.observe",
+      "NodeSessionObserver.require_valid"
+    ],
+    "custom": [],
+    "duplicate_names": 3
+  },
+  {
+    "path": "src/kodezart/core/protocols.py",
+    "changed": [
+      "GitService.worktree_identity",
+      "AgentExecutor.stream",
+      "WorkspaceProvider.capture",
+      "WorkspaceProvider.resume",
+      "ChangePersister.persist",
+      "CIMonitor.wait_for_checks",
+      "CIMonitor.rerun_checks",
+      "CIMonitor.checks_declared",
+      "TrackerContextReader.list_issue_assets",
+      "TrackerContextReader.read_document",
+      "TrackerPort.read_fire_spec",
+      "TrackerPort.reset_criterion_pending",
+      "AgentRunner.stream",
+      "AgentRunner.stream_workflow",
+      "AgentRunner.stream_in_workspace",
+      "NativeWriteGuard.holder",
+      "NativeWriteGuard.begin",
+      "NativeWriteGuard.snapshot",
+      "NativeWriteGuard.restore",
+      "NativeWriteGuard.judge",
+      "NativeWriteGuard.require_current",
+      "NativeWriteGuard.require_publishable",
+      "NativeWriteGuard.require_unchanged_head",
+      "FireCriteriaReader.read_current",
+      "FireCriteriaSource.read_spec",
+      "QualityGate.run",
+      "TicketGenerator.run",
+      "Remediator.run",
+      "WorkflowEngine.run"
+    ],
+    "exact_donor": [
+      "GitService.worktree_identity",
+      "AgentExecutor.stream",
+      "WorkspaceProvider.capture",
+      "WorkspaceProvider.resume",
+      "ChangePersister.persist",
+      "CIMonitor.wait_for_checks",
+      "CIMonitor.rerun_checks",
+      "CIMonitor.checks_declared",
+      "TrackerContextReader.list_issue_assets",
+      "TrackerContextReader.read_document",
+      "TrackerPort.read_fire_spec",
+      "TrackerPort.reset_criterion_pending",
+      "AgentRunner.stream",
+      "AgentRunner.stream_workflow",
+      "AgentRunner.stream_in_workspace",
+      "NativeWriteGuard.holder",
+      "NativeWriteGuard.begin",
+      "NativeWriteGuard.snapshot",
+      "NativeWriteGuard.restore",
+      "NativeWriteGuard.judge",
+      "NativeWriteGuard.require_current",
+      "NativeWriteGuard.require_publishable",
+      "NativeWriteGuard.require_unchanged_head",
+      "FireCriteriaReader.read_current",
+      "FireCriteriaSource.read_spec",
+      "QualityGate.run",
+      "TicketGenerator.run",
+      "Remediator.run",
+      "WorkflowEngine.run"
+    ],
+    "custom": [],
+    "duplicate_names": 144
+  },
+  {
+    "path": "src/kodezart/core/stream_drain.py",
+    "changed": [
+      "drain"
+    ],
+    "exact_donor": [
+      "drain"
+    ],
+    "custom": [],
+    "duplicate_names": 1
+  },
+  {
+    "path": "src/kodezart/domain/accept_gate.py",
+    "changed": [
+      "is_graded",
+      "ungraded",
+      "_failures",
+      "accept_verdict",
+      "gate_cleared",
+      "flagged_items"
+    ],
+    "exact_donor": [
+      "is_graded",
+      "ungraded",
+      "_failures",
+      "accept_verdict",
+      "gate_cleared",
+      "flagged_items"
+    ],
+    "custom": [],
+    "duplicate_names": 8
+  },
+  {
+    "path": "src/kodezart/domain/amendment.py",
+    "changed": [
+      "NativeAmendmentRefusalError.__init__",
+      "AmendmentRequiresWriteError.__init__",
+      "AmendmentWriteBackRefusalError.__init__",
+      "upheld_reason",
+      "repeated_upheld"
+    ],
+    "exact_donor": [
+      "NativeAmendmentRefusalError.__init__",
+      "AmendmentRequiresWriteError.__init__",
+      "AmendmentWriteBackRefusalError.__init__",
+      "upheld_reason",
+      "repeated_upheld"
+    ],
+    "custom": [],
+    "duplicate_names": 5
+  },
+  {
+    "path": "src/kodezart/domain/authored_outcome.py",
+    "changed": [
+      "classify_authored_outcome"
+    ],
+    "exact_donor": [
+      "classify_authored_outcome"
+    ],
+    "custom": [],
+    "duplicate_names": 1
+  },
+  {
+    "path": "src/kodezart/domain/criteria.py",
+    "changed": [
+      "mint_criterion_id",
+      "mint_criteria",
+      "build_artifact"
+    ],
+    "exact_donor": [
+      "mint_criterion_id",
+      "mint_criteria",
+      "build_artifact"
+    ],
+    "custom": [],
+    "duplicate_names": 3
+  },
+  {
+    "path": "src/kodezart/domain/criteria_feasibility.py",
+    "changed": [
+      "FindingRef.criterion_id",
+      "ContradictionRefs.criterion_ids",
+      "grounded_finding",
+      "minimal_conflicting_subsets",
+      "reconcile",
+      "reconcile_findings",
+      "sweep"
+    ],
+    "exact_donor": [
+      "FindingRef.criterion_id",
+      "ContradictionRefs.criterion_ids",
+      "grounded_finding",
+      "minimal_conflicting_subsets",
+      "reconcile",
+      "reconcile_findings",
+      "sweep"
+    ],
+    "custom": [],
+    "duplicate_names": 17
+  },
+  {
+    "path": "src/kodezart/domain/criteria_grading.py",
+    "changed": [
+      "grade_iteration"
+    ],
+    "exact_donor": [
+      "grade_iteration"
+    ],
+    "custom": [],
+    "duplicate_names": 1
+  },
+  {
+    "path": "src/kodezart/domain/criterion_evidence.py",
+    "changed": [
+      "render_evidence_field",
+      "_unique_object",
+      "parse_criterion_evidence"
+    ],
+    "exact_donor": [
+      "render_evidence_field",
+      "_unique_object",
+      "parse_criterion_evidence"
+    ],
+    "custom": [],
+    "duplicate_names": 3
+  },
+  {
+    "path": "src/kodezart/domain/dispatch.py",
+    "changed": [
+      "clause_in_scope",
+      "clause_recorded_repository",
+      "clause_approved"
+    ],
+    "exact_donor": [
+      "clause_in_scope",
+      "clause_recorded_repository",
+      "clause_approved"
+    ],
+    "custom": [],
+    "duplicate_names": 13
+  },
+  {
+    "path": "src/kodezart/domain/errors.py",
+    "changed": [
+      "CheckObservationError.__init__",
+      "CriterionResolutionError.__init__",
+      "EmptyFireCriteriaError.__init__",
+      "FireSpecEntryError.__init__",
+      "ScopePlanRefusalError.__init__",
+      "ScopeSupersessionReadError.__init__",
+      "ScopedExecutionUnavailableError.__init__",
+      "PRTrackerIdentityError.__init__"
+    ],
+    "exact_donor": [
+      "CheckObservationError.__init__",
+      "CriterionResolutionError.__init__",
+      "EmptyFireCriteriaError.__init__",
+      "FireSpecEntryError.__init__",
+      "ScopePlanRefusalError.__init__",
+      "ScopeSupersessionReadError.__init__",
+      "ScopedExecutionUnavailableError.__init__",
+      "PRTrackerIdentityError.__init__"
+    ],
+    "custom": [],
+    "duplicate_names": 39
+  },
+  {
+    "path": "src/kodezart/domain/fire_spec.py",
+    "changed": [
+      "replace_criterion_fields",
+      "tracker_spec_from_issues",
+      "require_fire_entry"
+    ],
+    "exact_donor": [
+      "replace_criterion_fields",
+      "tracker_spec_from_issues",
+      "require_fire_entry"
+    ],
+    "custom": [],
+    "duplicate_names": 6
+  },
+  {
+    "path": "src/kodezart/domain/gap.py",
+    "changed": [
+      "in_gap",
+      "compute_gap"
+    ],
+    "exact_donor": [
+      "in_gap",
+      "compute_gap"
+    ],
+    "custom": [],
+    "duplicate_names": 2
+  },
+  {
+    "path": "src/kodezart/domain/issue_tree.py",
+    "changed": [
+      "index_issue_tree",
+      "open_criteria",
+      "SubtreeClosure.__init__",
+      "SubtreeClosure.criteria",
+      "SubtreeClosure.gap",
+      "SubtreeClosure.is_closed"
+    ],
+    "exact_donor": [
+      "index_issue_tree",
+      "open_criteria",
+      "SubtreeClosure.__init__",
+      "SubtreeClosure.criteria",
+      "SubtreeClosure.gap",
+      "SubtreeClosure.is_closed"
+    ],
+    "custom": [],
+    "duplicate_names": 6
+  },
+  {
+    "path": "src/kodezart/domain/outcome.py",
+    "changed": [
+      "classify_outcome"
+    ],
+    "exact_donor": [
+      "classify_outcome"
+    ],
+    "custom": [],
+    "duplicate_names": 1
+  },
+  {
+    "path": "src/kodezart/domain/pr_body.py",
+    "changed": [
+      "append_tracker_issue",
+      "require_tracker_issue"
+    ],
+    "exact_donor": [
+      "append_tracker_issue",
+      "require_tracker_issue"
+    ],
+    "custom": [],
+    "duplicate_names": 3
+  },
+  {
+    "path": "src/kodezart/domain/prompt_variables.py",
+    "changed": [
+      "execution_criteria_variables",
+      "tracker_checks_section"
+    ],
+    "exact_donor": [
+      "execution_criteria_variables",
+      "tracker_checks_section"
+    ],
+    "custom": [],
+    "duplicate_names": 4
+  },
+  {
+    "path": "src/kodezart/domain/stall_report.py",
+    "changed": [
+      "stall_pr_body"
+    ],
+    "exact_donor": [
+      "stall_pr_body"
+    ],
+    "custom": [],
+    "duplicate_names": 4
+  },
+  {
+    "path": "src/kodezart/domain/ticket.py",
+    "changed": [
+      "format_fire_spec"
+    ],
+    "exact_donor": [
+      "format_fire_spec"
+    ],
+    "custom": [],
+    "duplicate_names": 2
+  },
+  {
+    "path": "src/kodezart/domain/workflow_state.py",
+    "changed": [
+      "validated_artifact",
+      "validated_criteria",
+      "original_fire_spec",
+      "current_fire_spec",
+      "current_ticket"
+    ],
+    "exact_donor": [
+      "validated_artifact",
+      "validated_criteria",
+      "original_fire_spec",
+      "current_fire_spec",
+      "current_ticket"
+    ],
+    "custom": [],
+    "duplicate_names": 5
+  },
+  {
+    "path": "src/kodezart/main.py",
+    "changed": [
+      "lifespan"
+    ],
+    "exact_donor": [],
+    "custom": [
+      "lifespan"
+    ],
+    "duplicate_names": 2
+  },
+  {
+    "path": "src/kodezart/services/agent_service.py",
+    "changed": [
+      "AgentService.stream",
+      "AgentService.stream_in_workspace",
+      "AgentService.stream_workflow",
+      "AgentService._run_in_workspace"
+    ],
+    "exact_donor": [
+      "AgentService.stream",
+      "AgentService.stream_in_workspace",
+      "AgentService.stream_workflow",
+      "AgentService._run_in_workspace"
+    ],
+    "custom": [],
+    "duplicate_names": 5
+  },
+  {
+    "path": "src/kodezart/services/amendment_writeback.py",
+    "changed": [
+      "AmendmentWriteAuthority.require_current",
+      "AmendmentWriteAuthority.observe_archive",
+      "AmendmentWriteAuthority.observe_criterion",
+      "AmendmentWriteAuthority.observe_ruling",
+      "AmendmentWriteAuthority.observe_decision",
+      "_ExactEvidenceGate.__init__",
+      "_ExactEvidenceGate.gate",
+      "_Step.write",
+      "AmendmentWriteBack.__init__",
+      "AmendmentWriteBack._author",
+      "AmendmentWriteBack._gate_exact",
+      "AmendmentWriteBack._verify",
+      "AmendmentWriteBack.apply",
+      "AmendmentWriteBack._escalate"
+    ],
+    "exact_donor": [
+      "AmendmentWriteAuthority.require_current",
+      "AmendmentWriteAuthority.observe_archive",
+      "AmendmentWriteAuthority.observe_criterion",
+      "AmendmentWriteAuthority.observe_ruling",
+      "AmendmentWriteAuthority.observe_decision",
+      "_ExactEvidenceGate.__init__",
+      "_ExactEvidenceGate.gate",
+      "_Step.write",
+      "AmendmentWriteBack.__init__",
+      "AmendmentWriteBack._author",
+      "AmendmentWriteBack._gate_exact",
+      "AmendmentWriteBack._verify",
+      "AmendmentWriteBack.apply",
+      "AmendmentWriteBack._escalate"
+    ],
+    "custom": [],
+    "duplicate_names": 14
+  },
+  {
+    "path": "src/kodezart/services/base_resolver.py",
+    "changed": [
+      "BaseResolver._input_for",
+      "BaseResolver._nearest_deliverable_ref"
+    ],
+    "exact_donor": [
+      "BaseResolver._input_for",
+      "BaseResolver._nearest_deliverable_ref"
+    ],
+    "custom": [],
+    "duplicate_names": 8
+  },
+  {
+    "path": "src/kodezart/services/check_classification.py",
+    "changed": [
+      "classify_red_checks"
+    ],
+    "exact_donor": [
+      "classify_red_checks"
+    ],
+    "custom": [],
+    "duplicate_names": 1
+  },
+  {
+    "path": "src/kodezart/services/criterion_sources.py",
+    "changed": [
+      "resolve_criterion"
+    ],
+    "exact_donor": [
+      "resolve_criterion"
+    ],
+    "custom": [],
+    "duplicate_names": 1
+  },
+  {
+    "path": "src/kodezart/services/fire_context.py",
+    "changed": [
+      "FireContextAssembler.__init__",
+      "FireContextAssembler._admit"
+    ],
+    "exact_donor": [
+      "FireContextAssembler.__init__",
+      "FireContextAssembler._admit"
+    ],
+    "custom": [],
+    "duplicate_names": 4
+  },
+  {
+    "path": "src/kodezart/services/fire_dispatcher.py",
+    "changed": [
+      "FireDispatcher.run_pass",
+      "FireDispatcher._claim_and_enqueue",
+      "FireDispatcher.launch",
+      "FireDispatcher.record_run_outcome",
+      "FireDispatcher._exclude",
+      "FireDispatcher.standing_exclusion",
+      "FireDispatcher._team_exclusion",
+      "FireDispatcher._memory_exclusion",
+      "FireDispatcher._backoff_exclusion",
+      "FireDispatcher._route_exclusion",
+      "FireDispatcher._approval_exclusion",
+      "FireDispatcher._open_exclusion",
+      "FireDispatcher._blocker_exclusion",
+      "FireDispatcher._in_flight_exclusion",
+      "FireDispatcher._delivery_exclusion",
+      "FireDispatcher._still_stands",
+      "FireDispatcher._live_blocker_of"
+    ],
+    "exact_donor": [
+      "FireDispatcher.run_pass",
+      "FireDispatcher._claim_and_enqueue",
+      "FireDispatcher.launch",
+      "FireDispatcher.record_run_outcome",
+      "FireDispatcher._exclude",
+      "FireDispatcher.standing_exclusion",
+      "FireDispatcher._team_exclusion",
+      "FireDispatcher._memory_exclusion",
+      "FireDispatcher._backoff_exclusion",
+      "FireDispatcher._route_exclusion",
+      "FireDispatcher._approval_exclusion",
+      "FireDispatcher._open_exclusion",
+      "FireDispatcher._blocker_exclusion",
+      "FireDispatcher._in_flight_exclusion",
+      "FireDispatcher._delivery_exclusion",
+      "FireDispatcher._still_stands",
+      "FireDispatcher._live_blocker_of"
+    ],
+    "custom": [],
+    "duplicate_names": 28
+  },
+  {
+    "path": "src/kodezart/services/native_amendments.py",
+    "changed": [
+      "NativeAmendments.__init__",
+      "NativeAmendments.for_writer",
+      "NativeAmendments._read_authority",
+      "_NativeWriterGuard.__init__",
+      "_NativeWriterGuard.holder",
+      "_NativeWriterGuard.begin",
+      "_NativeWriterGuard.snapshot",
+      "_NativeWriterGuard.restore",
+      "_NativeWriterGuard.require_current",
+      "_NativeWriterGuard.require_publishable",
+      "_NativeWriterGuard._require_current_at_head",
+      "_NativeWriterGuard.require_unchanged_head",
+      "_NativeWriterGuard._require_head",
+      "_NativeWriterGuard._judge_claim",
+      "_NativeWriterGuard.judge",
+      "_WriterActions.__init__",
+      "_WriterActions.require_current",
+      "_WriterActions.observe_archive",
+      "_WriterActions.judge_claim",
+      "_WriterActions.apply_judgment",
+      "_WriterActions.observe_criterion",
+      "_WriterActions.observe_ruling",
+      "_WriterActions.observe_decision"
+    ],
+    "exact_donor": [
+      "NativeAmendments.__init__",
+      "NativeAmendments.for_writer",
+      "NativeAmendments._read_authority",
+      "_NativeWriterGuard.__init__",
+      "_NativeWriterGuard.holder",
+      "_NativeWriterGuard.begin",
+      "_NativeWriterGuard.snapshot",
+      "_NativeWriterGuard.restore",
+      "_NativeWriterGuard.require_current",
+      "_NativeWriterGuard.require_publishable",
+      "_NativeWriterGuard._require_current_at_head",
+      "_NativeWriterGuard.require_unchanged_head",
+      "_NativeWriterGuard._require_head",
+      "_NativeWriterGuard._judge_claim",
+      "_NativeWriterGuard.judge",
+      "_WriterActions.__init__",
+      "_WriterActions.require_current",
+      "_WriterActions.observe_archive",
+      "_WriterActions.judge_claim",
+      "_WriterActions.apply_judgment",
+      "_WriterActions.observe_criterion",
+      "_WriterActions.observe_ruling",
+      "_WriterActions.observe_decision"
+    ],
+    "custom": [],
+    "duplicate_names": 23
+  },
+  {
+    "path": "src/kodezart/services/native_execution.py",
+    "changed": [
+      "NativeExecution.__init__",
+      "NativeExecution._restore",
+      "NativeExecution._resume_workspace",
+      "NativeExecution.prepare",
+      "NativeExecution.write",
+      "NativeExecution.reconcile",
+      "NativeExecution.persist",
+      "NativeExecution.stream"
+    ],
+    "exact_donor": [
+      "NativeExecution.__init__",
+      "NativeExecution._restore",
+      "NativeExecution._resume_workspace",
+      "NativeExecution.prepare",
+      "NativeExecution.write",
+      "NativeExecution.reconcile",
+      "NativeExecution.persist",
+      "NativeExecution.stream"
+    ],
+    "custom": [],
+    "duplicate_names": 8
+  },
+  {
+    "path": "src/kodezart/services/scope_dispatcher.py",
+    "changed": [
+      "ScopeDispatcher.__init__",
+      "ScopeDispatcher.run_pass",
+      "ScopeDispatcher.record_run_outcome"
+    ],
+    "exact_donor": [
+      "ScopeDispatcher.__init__",
+      "ScopeDispatcher.run_pass",
+      "ScopeDispatcher.record_run_outcome"
+    ],
+    "custom": [],
+    "duplicate_names": 3
+  },
+  {
+    "path": "src/kodezart/services/scope_membership.py",
+    "changed": [
+      "read_scope_members",
+      "read_member_subtrees"
+    ],
+    "exact_donor": [
+      "read_scope_members",
+      "read_member_subtrees"
+    ],
+    "custom": [],
+    "duplicate_names": 2
+  },
+  {
+    "path": "src/kodezart/services/scope_planning.py",
+    "changed": [
+      "read_scope_plan"
+    ],
+    "exact_donor": [
+      "read_scope_plan"
+    ],
+    "custom": [],
+    "duplicate_names": 1
+  },
+  {
+    "path": "src/kodezart/services/scope_resolution.py",
+    "changed": [
+      "resolve_scope"
+    ],
+    "exact_donor": [
+      "resolve_scope"
+    ],
+    "custom": [],
+    "duplicate_names": 1
+  },
+  {
+    "path": "src/kodezart/types/domain/accept.py",
+    "changed": [],
+    "exact_donor": [],
+    "custom": [],
+    "duplicate_names": 0
+  },
+  {
+    "path": "src/kodezart/types/domain/agent.py",
+    "changed": [],
+    "exact_donor": [],
+    "custom": [],
+    "duplicate_names": 3
+  },
+  {
+    "path": "src/kodezart/types/domain/amendment.py",
+    "changed": [
+      "NativeWriterOutput.unique_subjects",
+      "BaseCitation.repository_relative",
+      "UpheldJudgment.subject",
+      "UpheldJudgment.same_subject",
+      "UpheldAmendment.verified_publication",
+      "AmendedAmendment.subject",
+      "AmendedAmendment.same_verified_subject",
+      "AmendmentReport.unique_subjects",
+      "AmendmentReport.upheld"
+    ],
+    "exact_donor": [
+      "NativeWriterOutput.unique_subjects",
+      "BaseCitation.repository_relative",
+      "UpheldJudgment.subject",
+      "UpheldJudgment.same_subject",
+      "UpheldAmendment.verified_publication",
+      "AmendedAmendment.subject",
+      "AmendedAmendment.same_verified_subject",
+      "AmendmentReport.unique_subjects",
+      "AmendmentReport.upheld"
+    ],
+    "custom": [],
+    "duplicate_names": 9
+  },
+  {
+    "path": "src/kodezart/types/domain/amendment_write.py",
+    "changed": [],
+    "exact_donor": [],
+    "custom": [],
+    "duplicate_names": 0
+  },
+  {
+    "path": "src/kodezart/types/domain/branch.py",
+    "changed": [],
+    "exact_donor": [],
+    "custom": [],
+    "duplicate_names": 7
+  },
+  {
+    "path": "src/kodezart/types/domain/check_observation.py",
+    "changed": [
+      "ObservedChecks.coherent_verdict"
+    ],
+    "exact_donor": [
+      "ObservedChecks.coherent_verdict"
+    ],
+    "custom": [],
+    "duplicate_names": 1
+  },
+  {
+    "path": "src/kodezart/types/domain/criteria.py",
+    "changed": [
+      "FindingEvidence._verdict_carries_its_grounds"
+    ],
+    "exact_donor": [
+      "FindingEvidence._verdict_carries_its_grounds"
+    ],
+    "custom": [],
+    "duplicate_names": 2
+  },
+  {
+    "path": "src/kodezart/types/domain/criterion_evidence.py",
+    "changed": [],
+    "exact_donor": [],
+    "custom": [],
+    "duplicate_names": 0
+  },
+  {
+    "path": "src/kodezart/types/domain/criterion_ref.py",
+    "changed": [],
+    "exact_donor": [],
+    "custom": [],
+    "duplicate_names": 0
+  },
+  {
+    "path": "src/kodezart/types/domain/delivery.py",
+    "changed": [
+      "CheckRedObservation.checks_passed",
+      "CheckRedObservation.checks_summary"
+    ],
+    "exact_donor": [
+      "CheckRedObservation.checks_passed",
+      "CheckRedObservation.checks_summary"
+    ],
+    "custom": [],
+    "duplicate_names": 2
+  },
+  {
+    "path": "src/kodezart/types/domain/dispatch.py",
+    "changed": [],
+    "exact_donor": [],
+    "custom": [],
+    "duplicate_names": 6
+  },
+  {
+    "path": "src/kodezart/types/domain/fire.py",
+    "changed": [
+      "FireContext.render"
+    ],
+    "exact_donor": [
+      "FireContext.render"
+    ],
+    "custom": [],
+    "duplicate_names": 2
+  },
+  {
+    "path": "src/kodezart/types/domain/fire_spec.py",
+    "changed": [],
+    "exact_donor": [],
+    "custom": [],
+    "duplicate_names": 0
+  },
+  {
+    "path": "src/kodezart/types/domain/github.py",
+    "changed": [],
+    "exact_donor": [],
+    "custom": [],
+    "duplicate_names": 0
+  },
+  {
+    "path": "src/kodezart/types/domain/native_execution.py",
+    "changed": [
+      "PreparedNativeExecution._original_head",
+      "_WrittenNativeExecution._actual_output",
+      "_ReconciledNativeExecution._same_claims",
+      "ReconciledNativeExecution._no_upheld_departure",
+      "RefusedNativeExecution._has_upheld_departure",
+      "PersistedNativeExecution._actual_receipt",
+      "UnchangedNativeExecution._no_refused_departure"
+    ],
+    "exact_donor": [
+      "PreparedNativeExecution._original_head",
+      "_WrittenNativeExecution._actual_output",
+      "_ReconciledNativeExecution._same_claims",
+      "ReconciledNativeExecution._no_upheld_departure",
+      "RefusedNativeExecution._has_upheld_departure",
+      "PersistedNativeExecution._actual_receipt",
+      "UnchangedNativeExecution._no_refused_departure"
+    ],
+    "custom": [],
+    "duplicate_names": 7
+  },
+  {
+    "path": "src/kodezart/types/domain/node_session.py",
+    "changed": [
+      "NodeInvocation._existing_fire",
+      "NodeSessionObservationError.__init__"
+    ],
+    "exact_donor": [
+      "NodeInvocation._existing_fire",
+      "NodeSessionObservationError.__init__"
+    ],
+    "custom": [],
+    "duplicate_names": 2
+  },
+  {
+    "path": "src/kodezart/types/domain/operation.py",
+    "changed": [],
+    "exact_donor": [],
+    "custom": [],
+    "duplicate_names": 12
+  },
+  {
+    "path": "src/kodezart/types/domain/outcome.py",
+    "changed": [],
+    "exact_donor": [],
+    "custom": [],
+    "duplicate_names": 0
+  },
+  {
+    "path": "src/kodezart/types/domain/prompts.py",
+    "changed": [],
+    "exact_donor": [],
+    "custom": [],
+    "duplicate_names": 4
+  },
+  {
+    "path": "src/kodezart/types/domain/ralph_outcome.py",
+    "changed": [
+      "_EvaluatedRalphOutcome._same_roster",
+      "NativeEvaluatedRalphOutcome._same_commit",
+      "RefusedRalphOutcome._actual_refusal"
+    ],
+    "exact_donor": [
+      "_EvaluatedRalphOutcome._same_roster",
+      "NativeEvaluatedRalphOutcome._same_commit",
+      "RefusedRalphOutcome._actual_refusal"
+    ],
+    "custom": [],
+    "duplicate_names": 3
+  },
+  {
+    "path": "src/kodezart/types/domain/remediation.py",
+    "changed": [],
+    "exact_donor": [],
+    "custom": [],
+    "duplicate_names": 0
+  },
+  {
+    "path": "src/kodezart/types/domain/run_event.py",
+    "changed": [],
+    "exact_donor": [],
+    "custom": [],
+    "duplicate_names": 0
+  },
+  {
+    "path": "src/kodezart/types/domain/scope_ready.py",
+    "changed": [],
+    "exact_donor": [],
+    "custom": [],
+    "duplicate_names": 0
+  },
+  {
+    "path": "src/kodezart/types/domain/trajectory.py",
+    "changed": [],
+    "exact_donor": [],
+    "custom": [],
+    "duplicate_names": 0
+  },
+  {
+    "path": "src/kodezart/types/domain/workflow.py",
+    "changed": [
+      "RalphLoopContext._criteria_match_source"
+    ],
+    "exact_donor": [
+      "RalphLoopContext._criteria_match_source"
+    ],
+    "custom": [],
+    "duplicate_names": 3
+  },
+  {
+    "path": "src/kodezart/types/domain/workspace.py",
+    "changed": [],
+    "exact_donor": [],
+    "custom": [],
+    "duplicate_names": 0
+  }
+]

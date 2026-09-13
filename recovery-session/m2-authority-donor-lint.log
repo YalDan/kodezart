@@ -1,0 +1,9 @@
+Using CPython 3.12.13
+Creating virtual environment at: .venv
+   Building kodezart @ file:///private/tmp/kodezart-v03-m2-authority-donor-integration
+warning: `build_system.requires = ["uv-build>=0.10.9,<0.11.0"]` does not contain the current uv version 0.11.6
+      Built kodezart @ file:///private/tmp/kodezart-v03-m2-authority-donor-integration
+Installed 174 packages in 2.12s
+All checks passed!
+Would reformat: src/kodezart/adapters/linear_mcp_tracker.py
+1 file would be reformatted, 803 files already formatted

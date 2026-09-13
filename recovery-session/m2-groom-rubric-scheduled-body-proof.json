@@ -1,0 +1,35 @@
+{
+  "base": "e99c9d105bdf5d20fec8b976dce58156b7c4fb72",
+  "scheduled_bodies": [
+    {
+      "path": "src/kodezart/prompts/sets/claude-opus/grooming_pass.md",
+      "unchanged": true,
+      "sha256": "e263d2ac2a329f53fc3397c6a246788f68cdc7be5bfcb06329d30727b88711c9"
+    },
+    {
+      "path": "src/kodezart/prompts/sets/claude-opus/ticket_review.md",
+      "unchanged": true,
+      "sha256": "2ffde456fc8867cf00883fbf6d3cfcaab3fd3e5700273f4020bb03005709fccd"
+    },
+    {
+      "path": "src/kodezart/prompts/sets/claude-opus/criteria_validation.md",
+      "unchanged": true,
+      "sha256": "7224c76c7257f1c4f72dfde6b40f7cbc6c90ced069eb5c385590bc9e7ea7c5ca"
+    },
+    {
+      "path": "src/kodezart/prompts/sets/anthropic_v5/grooming_pass.md",
+      "unchanged": true,
+      "sha256": "d062949cbf543b78fdfbcb287514cd6bee59fab9730cde6a363a9c85beebb67e"
+    },
+    {
+      "path": "src/kodezart/prompts/sets/anthropic_v5/ticket_review.md",
+      "unchanged": true,
+      "sha256": "f74d7f6a4abc71c39e5fd9127134b0ef9cd7b57df0bf5b4349257130bd300f0e"
+    },
+    {
+      "path": "src/kodezart/prompts/sets/anthropic_v5/criteria_validation.md",
+      "unchanged": true,
+      "sha256": "2fae020d9eae3ce95f09e356f2503bc9d035cc664dc356bf5be958a02e214713"
+    }
+  ]
+}

@@ -1,0 +1,37 @@
+.F                                                                       [100%]
+=================================== FAILURES ===================================
+_____ test_alarm_damage_seen_by_universal_writer_is_not_overwritten[True] ______
+
+damage_after_initial_read = True
+
+    @pytest.mark.parametrize("damage_after_initial_read", [False, True])
+    async def test_alarm_damage_seen_by_universal_writer_is_not_overwritten(
+        damage_after_initial_read,
+    ):
+        boundary = ChangingRecordBoundary()
+        port = boundary.adapter()
+        value = alarm()
+        await store(port, value)
+        existing = next(
+            comment
+            for comment in await port.list_comments(issue_key=APPROVED_ISSUE)
+            if comment.body.startswith(address(value).marker)
+        )
+        async with RunSurfaceLease(
+            tracker=port,
+            job_id=JOB,
+            surfaces=frozenset({address(value)}),
+            lease_seconds=DURATION,
+        ):
+            boundary.comment_id = existing.comment_key
+            boundary.damaged_body = existing.body + "\nexternal damage"
+            boundary.arm = damage_after_initial_read
+            if damage_after_initial_read:
+>               with pytest.raises(TrackerProtocolError):
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E               Failed: DID NOT RAISE <class 'kodezart.core.errors.TrackerProtocolError'>
+
+tests/tracker/test_alarm_independent.py:66: Failed
+=========================== short test summary info ============================
+FAILED tests/tracker/test_alarm_independent.py::test_alarm_damage_seen_by_universal_writer_is_not_overwritten[True]
+1 failed, 1 passed in 0.40s

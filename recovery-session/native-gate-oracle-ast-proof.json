@@ -1,0 +1,19 @@
+{
+  "preserved_functions": [
+    "_module_source",
+    "_add_node_calls",
+    "_is_floored",
+    "_assert_wiring",
+    "test_every_retrying_node_uses_its_own_floor_and_policy",
+    "test_removing_any_actual_node_floor_is_detected",
+    "test_wrong_or_unpaired_dependencies_cannot_satisfy_the_guard",
+    "test_correct_owner_and_unretried_terminal_are_valid"
+  ],
+  "changed_existing_functions": [
+    "test_every_production_graph_with_registered_nodes_is_checked"
+  ],
+  "added_functions": [
+    "_assert_nonretrying",
+    "test_nonretrying_graphs_do_not_gain_automatic_replay"
+  ]
+}

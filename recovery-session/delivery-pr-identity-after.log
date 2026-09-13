@@ -1,0 +1,131 @@
+..F..................................................................    [100%]
+=================================== FAILURES ===================================
+_ test_actual_native_graph_delivers_and_only_work_defect_reenters_fire[True-1-ci_passed] _
+
+red = True, rounds = 1, outcome = <WorkflowOutcome.ci_passed: 'ci_passed'>
+
+    @pytest.mark.parametrize(
+        "red,rounds,outcome",
+        [
+            (False, 0, WorkflowOutcome.ci_passed),
+            (True, 0, WorkflowOutcome.ci_failed_fix_budget_exhausted),
+            (True, 1, WorkflowOutcome.ci_passed),
+        ],
+    )
+    async def test_actual_native_graph_delivers_and_only_work_defect_reenters_fire(
+        red, rounds, outcome
+    ):
+        lane, state, config, wire, forge, executor, tracker = composed(
+            red=red, rounds=rounds
+        )
+        try:
+            assert isinstance(state["delivery"], PendingLaneDelivery)
+>           reports, events, final = await run(lane, state, config)
+                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/chains/test_native_delivery.py:213: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/chains/test_native_delivery.py:185: in run
+    async for _, mode, payload in lane.graph.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/native_delivery.py:98: in _deliver
+    result = await self._delivery.deliver(
+src/kodezart/chains/lane_delivery.py:141: in deliver
+    await self._require_pr_identity(pr, state, context)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.chains.lane_delivery.LaneDeliveryCoordinator object at 0x10ed54980>
+pr = LanePR(url='https://github.com/owner/repo/pull/17', number=17, state='open')
+state = {'accept_verdict': <AcceptVerdict.accepted: 'accepted'>, 'acceptance_criteria': [], 'best_iteration_sha': None, 'criteria_infeasible': False, ...}
+context = ExecutionContext(prompt='Implement the requested behavior', repo_path='/tmp/fire', repo_url='https://github.com/owner/...base_branch='main', base_role=None), permission_mode=<PermissionMode.UNATTENDED: 'unattended'>, allowed_tools=['Bash'])
+
+    async def _require_pr_identity(
+        self, pr: LanePR, state: WorkflowState, context: ExecutionContext
+    ) -> None:
+        repo_url = context.repo_url
+        if repo_url is None:
+            raise ValueError("PR identity requires its repository")
+        observed = await self._pr_state_reader.read_pr_state(
+            repo_url=repo_url, pr_number=pr.number
+        )
+        canonical = resolve_repo_url(repo_url, self._git_base_url)
+        if (
+            observed.number != pr.number
+            or observed.url != pr.url
+            or resolve_repo_url(observed.head_repo_url, self._git_base_url) != canonical
+            or resolve_repo_url(observed.base_repo_url, self._git_base_url) != canonical
+            or observed.head_branch != state["feature_branch"]
+            or observed.head_sha != state["feature_tip_sha"]
+            or observed.base_branch != context.base_branch
+            or observed.lifecycle is not PRLifecycle.OPEN
+        ):
+>           raise PRStateReadError(
+                "The native PR does not match the lane's open head, SHA and dispatch base"
+            )
+E           kodezart.domain.errors.PRStateReadError: The native PR does not match the lane's open head, SHA and dispatch base
+E           During task with name 'deliver' and id '2c5a08a4-0884-4e88-272c-bc208b7583f9'
+
+src/kodezart/chains/lane_delivery.py:246: PRStateReadError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 15:45:59 [info     ] repo_visibility_resolved       repo_url=https://github.com/owner/repo.git visibility=unknown
+2026-09-12 15:45:59 [info     ] scope_base_resolved            base_branch=main base_role=None input_count=0
+2026-09-12 15:45:59 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 15:45:59 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 15:45:59 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=branch_name
+2026-09-12 15:45:59 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:45:59 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:45:59 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:45:59 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:45:59 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 15:45:59 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=ralph_evaluator stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 15:45:59 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:45:59 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:45:59 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 15:45:59 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=post_merge_review stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 15:45:59 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:45:59 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:45:59 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:45:59 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 15:45:59 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=pr_description stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 15:45:59 [info     ] outbound_content_gated         categories=[] content_digest=eb122d7b8735eaeed5d4d2e20e2197a7332385519bb8aea3e476efbbb03973b9 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=pr_title
+2026-09-12 15:45:59 [info     ] outbound_content_gated         categories=[] content_digest=67ea6610ea7acff978f8bc9bfd466e5e33f2fa503f68961b4548c20b172578db failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=pr_body
+2026-09-12 15:45:59 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:45:59 [info     ] ci_runs_observed               count=1 ref=kodezart/test-branch-a8bd74f5
+2026-09-12 15:45:59 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:45:59 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:45:59 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 15:45:59 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=remediation_ticket stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 15:45:59 [info     ] remediation_ticket_drafted     base_ref=kodezart/test-branch-a8bd74f5 entry=ci_failure native=True round_index=0
+2026-09-12 15:45:59 [info     ] remediation_round_opened       base_ref=kodezart/test-branch-a8bd74f5 entry=ci_failure round_index=0 rounds_remaining=0
+2026-09-12 15:45:59 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:45:59 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:45:59 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:45:59 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:45:59 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 15:45:59 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=ralph_evaluator stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 15:45:59 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:45:59 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:45:59 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 15:45:59 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=post_merge_review stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 15:45:59 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:45:59 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:45:59 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+=========================== short test summary info ============================
+FAILED tests/chains/test_native_delivery.py::test_actual_native_graph_delivers_and_only_work_defect_reenters_fire[True-1-ci_passed]
+1 failed, 68 passed in 4.23s

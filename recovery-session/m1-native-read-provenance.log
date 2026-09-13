@@ -1,0 +1,6 @@
+fatal: path 'tests/tracker/native_read_fixtures.py' exists on disk, but not in '7892ca1a47adbcfd91fbcfb1e580dfc86f066a99'
+fatal: path 'tests/tracker/test_criterion_family_aliases.py' exists on disk, but not in '7892ca1a47adbcfd91fbcfb1e580dfc86f066a99'
+fatal: path 'tests/tracker/test_criterion_family_identity.py' exists on disk, but not in '7892ca1a47adbcfd91fbcfb1e580dfc86f066a99'
+fatal: path 'tests/tracker/test_native_read_configuration.py' exists on disk, but not in '7892ca1a47adbcfd91fbcfb1e580dfc86f066a99'
+fatal: path 'tests/tracker/test_native_read_constructor.py' exists on disk, but not in '7892ca1a47adbcfd91fbcfb1e580dfc86f066a99'
+fec7f28292975f0b4635a06ba84e4e35fdc3c2e8 28 files mapped

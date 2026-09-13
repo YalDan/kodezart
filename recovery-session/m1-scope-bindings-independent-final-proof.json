@@ -1,0 +1,27 @@
+{
+  "candidate": "ddb8cdef33f90f30aecc4343e36c2293bdf39a27",
+  "tree": "5ed89888cb982ee2972f5a79e25da681b4323eeb",
+  "parent": "2bc237577da7a3db3101e67c324eea0eaa6e6abd",
+  "requested_donor": "da39c439898aec1233aa8b6157b35e961df1e453",
+  "map_donor": "36083f83f42c03240ebb5861fe284da2c9f04180",
+  "verdict": "accept bounded extraction",
+  "reviewer_source_authorship": false,
+  "independent_execution": [
+    "175 passed in 2.93s",
+    "5 passed in 3.17s",
+    "61 passed in 1.65s"
+  ],
+  "author_full_gate_only": "3866 passed, 16 skipped in 432.31s",
+  "comment": "https://linear.app/duckburg/issue/KOD-73#comment-42a78db8-5aeb-4bf3-b4ac-36b67ab44c40",
+  "clean_status": "",
+  "files": {
+    "m1-scope-bindings-independent-review.md": "c183c5ecc058b78c2929fbb8578a09aaf8ab63e21bd9ef9b801d56ee65452961",
+    "m1-scope-bindings-independent-provenance.json": "b68a14189d078c1476d2c9b5eba8353c048c9d2dcb2c893007b093e88ff4ff33",
+    "m1-scope-bindings-independent-source-proof.json": "63b3d8015cac105a3832ab78449e53211a40a35aeba2fbef499ae81b1c79c60f",
+    "m1-scope-bindings-independent-oracle-proof.json": "ec0e661384c1e997bee87fec8377d8b528205a3c0418731c64666de3c242cee1",
+    "test_m1_scope_bindings_independent.py": "8fca1cdc1861e71a0443b6a91de6ddc17aecf72099a9d662d5e393846eede503",
+    "m1-scope-bindings-independent-selected.log": "d0a51f10e9f736460fcf522039d6819cb6fc1a291d781234abb8aaf63b381a3f",
+    "m1-scope-bindings-independent-probes.log": "da93f3612cf08b0fe592779c6ece1832d4bd2cba459c7b4dff27ed905ccf86d4",
+    "m1-scope-bindings-independent-census.log": "2e20f5c331f3b7588d803d5f08fb4e195995897e05db8797fd657a6dff8e9936"
+  }
+}

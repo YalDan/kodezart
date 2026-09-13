@@ -1,0 +1,871 @@
+...................F...FFF.............................................. [  8%]
+................................................................F....... [ 17%]
+........................................................................ [ 26%]
+...........................F.........F........F......................... [ 34%]
+........................................................................ [ 43%]
+........................................................................ [ 52%]
+........................................................................ [ 61%]
+........................................................................ [ 69%]
+........................................................................ [ 78%]
+...F.................................................................... [ 87%]
+..................................................F.......F...F.F....... [ 96%]
+........FF....F...........F......                                        [100%]
+=================================== FAILURES ===================================
+_________ test_alarm_parser_reads_the_same_final_snapshot_as_the_lease _________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a22a090>
+
+    async def test_alarm_parser_reads_the_same_final_snapshot_as_the_lease(monkeypatch):
+        from kodezart.core.errors import TrackerProtocolError
+        from kodezart.services.run_surface_lease import RunSurfaceLease
+>       from tests.tracker.test_run_alarm_records import (
+            DURATION,
+            JOB,
+            Boundary,
+            address,
+            alarm,
+            store,
+        )
+E       ModuleNotFoundError: No module named 'tests.tracker.test_run_alarm_records'
+
+tests/tracker/test_comment_expected.py:205: ModuleNotFoundError
+_____ test_known_unissued_retry_revalidates_changed_expected_comment[body] _____
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x109d52870>
+change = 'body'
+
+    @pytest.mark.parametrize("change", ["body", "lease", "unchanged"])
+    async def test_known_unissued_retry_revalidates_changed_expected_comment(
+        monkeypatch, change
+    ):
+        server = fixture_server()
+        tracker = LinearMcpTracker(
+            marker_prefixes=fixture.MARKER_PREFIXES,
+            issue_labels={
+                "criterion": "acceptance-condition",
+>               fixture.FIRE_STAGE_KEY: fixture.FIRE_STAGE_LABEL,
+                ^^^^^^^^^^^^^^^^^^^^^^
+            },
+            criteria_stage_label_key=fixture.FIRE_STAGE_KEY,
+            scope_labels={"approved": fixture.FIRE_SCOPE_LABEL},
+            caller=server,
+            queue_state_labels=fixture.QUEUE_STATE_LABELS,
+            workflow_state_names=fixture.WORKFLOW_STATE_NAMES,
+            team_identifiers=fixture.TEAM_IDENTIFIERS,
+            retry=RetryPolicy(attempts=2, initial_delay=0),
+            clock=fixture.FixtureClock(),
+            ledger=SelfWriteLedger(),
+        )
+E       AttributeError: module 'tests.tracker.conftest' has no attribute 'FIRE_STAGE_KEY'
+
+tests/tracker/test_comment_expected_independent.py:57: AttributeError
+____ test_known_unissued_retry_revalidates_changed_expected_comment[lease] _____
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a08bef0>
+change = 'lease'
+
+    @pytest.mark.parametrize("change", ["body", "lease", "unchanged"])
+    async def test_known_unissued_retry_revalidates_changed_expected_comment(
+        monkeypatch, change
+    ):
+        server = fixture_server()
+        tracker = LinearMcpTracker(
+            marker_prefixes=fixture.MARKER_PREFIXES,
+            issue_labels={
+                "criterion": "acceptance-condition",
+>               fixture.FIRE_STAGE_KEY: fixture.FIRE_STAGE_LABEL,
+                ^^^^^^^^^^^^^^^^^^^^^^
+            },
+            criteria_stage_label_key=fixture.FIRE_STAGE_KEY,
+            scope_labels={"approved": fixture.FIRE_SCOPE_LABEL},
+            caller=server,
+            queue_state_labels=fixture.QUEUE_STATE_LABELS,
+            workflow_state_names=fixture.WORKFLOW_STATE_NAMES,
+            team_identifiers=fixture.TEAM_IDENTIFIERS,
+            retry=RetryPolicy(attempts=2, initial_delay=0),
+            clock=fixture.FixtureClock(),
+            ledger=SelfWriteLedger(),
+        )
+E       AttributeError: module 'tests.tracker.conftest' has no attribute 'FIRE_STAGE_KEY'
+
+tests/tracker/test_comment_expected_independent.py:57: AttributeError
+__ test_known_unissued_retry_revalidates_changed_expected_comment[unchanged] ___
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a25cb60>
+change = 'unchanged'
+
+    @pytest.mark.parametrize("change", ["body", "lease", "unchanged"])
+    async def test_known_unissued_retry_revalidates_changed_expected_comment(
+        monkeypatch, change
+    ):
+        server = fixture_server()
+        tracker = LinearMcpTracker(
+            marker_prefixes=fixture.MARKER_PREFIXES,
+            issue_labels={
+                "criterion": "acceptance-condition",
+>               fixture.FIRE_STAGE_KEY: fixture.FIRE_STAGE_LABEL,
+                ^^^^^^^^^^^^^^^^^^^^^^
+            },
+            criteria_stage_label_key=fixture.FIRE_STAGE_KEY,
+            scope_labels={"approved": fixture.FIRE_SCOPE_LABEL},
+            caller=server,
+            queue_state_labels=fixture.QUEUE_STATE_LABELS,
+            workflow_state_names=fixture.WORKFLOW_STATE_NAMES,
+            team_identifiers=fixture.TEAM_IDENTIFIERS,
+            retry=RetryPolicy(attempts=2, initial_delay=0),
+            clock=fixture.FixtureClock(),
+            ledger=SelfWriteLedger(),
+        )
+E       AttributeError: module 'tests.tracker.conftest' has no attribute 'FIRE_STAGE_KEY'
+
+tests/tracker/test_comment_expected_independent.py:57: AttributeError
+________ test_empty_log_does_not_disguise_an_unconfigured_marker_reader ________
+
+    async def test_empty_log_does_not_disguise_an_unconfigured_marker_reader():
+        operation = OperationConfig(operation_name="fixture", workspace="fixture")
+        server = fixture_server()
+        config = AppConfig()
+        tracker, _ = build_tracker(
+            backend=config.tracker.backend,
+            retry=RetryPolicy(
+                attempts=config.tracker.max_retries + 1,
+                initial_delay=config.tracker.retry_backoff_factor,
+            ),
+            operation=operation,
+            caller=server,
+        )
+        for read in (
+            tracker.active_claim,
+            tracker.work_refs,
+            tracker.read_base_spec,
+            tracker.recorded_repository,
+        ):
+>           with pytest.raises(OperationMemberAbsentError, match="marker_prefixes"):
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           Failed: DID NOT RAISE <class 'kodezart.types.domain.operation.OperationMemberAbsentError'>
+
+tests/tracker/test_marker_configuration.py:163: Failed
+______ TestConfiguredMappings.test_each_principal_contributes_a_user_ref _______
+
+self = <tests.tracker.test_tracker_boot.TestConfiguredMappings object at 0x109f00fb0>
+
+    def test_each_principal_contributes_a_user_ref(self) -> None:
+        refs = configured_mappings(operation_config())
+        users = {ref.identifier for ref in refs if ref.kind is MappingKind.USER}
+>       assert users == {APPROVER, BYSTANDER}
+E       AssertionError: assert {'fixture-age...re-bystander'} == {'fixture-app...re-bystander'}
+E         
+E         Extra items in the left set:
+E         'fixture-agent'
+E         Use -v to get more diff
+
+tests/tracker/test_tracker_boot.py:176: AssertionError
+____________ TestBootValidation.test_validation_is_tracker_agnostic ____________
+
+self = <tests.tracker.test_tracker_boot.TestBootValidation object at 0x109f23d40>
+
+    async def test_validation_is_tracker_agnostic(self) -> None:
+        """The same check runs over any port implementation."""
+        bad = MappingRef(
+            kind=MappingKind.TEAM,
+            name="engineering",
+            identifier=TEAM_IDENTIFIERS["engineering"],
+        )
+        # The double resolves against what its workspace KNOWS, exactly as a
+        # real one does, so the fixture names everything the config declares
+        # except the team identifier under test.
+        resolvable = [
+            APPROVER,
+            BYSTANDER,
+            *QUEUE_STATE_LABELS.values(),
+            *WORKFLOW_STATE_NAMES.values(),
+        ]
+        with pytest.raises(TrackerBootValidationError) as caught:
+            await validate_tracker_mappings(
+                tracker=FakeTrackerPort(known_identifiers=resolvable),
+                config=operation_config(),
+            )
+>       assert caught.value.unresolved == (bad.describe(),)
+E       assert ("user 'fixtu...ixture-team'") == ("team 'engin...xture-team'",)
+E         
+E         At index 0 diff: "user 'fixture-agent' -> 'fixture-agent'" != "team 'engineering' -> 'fixture-team'"
+E         Left contains one more item: "team 'engineering' -> 'fixture-team'"
+E         Use -v to get more diff
+
+tests/tracker/test_tracker_boot.py:391: AssertionError
+_ TestQueueVocabularyPerDeclaredTeam.test_one_member_on_two_boards_reconciles_rather_than_colliding _
+
+self = <tests.tracker.test_tracker_boot.TestQueueVocabularyPerDeclaredTeam object at 0x109f5a330>
+
+    async def test_one_member_on_two_boards_reconciles_rather_than_colliding(
+        self,
+    ) -> None:
+        """The failed boot, through the shipped reconciliation, succeeding.
+    
+        Two refs of one kind naming one label are a self-contradiction only
+        within one container; across two they are the two definitions the
+        operation needs, so the guard reads the container as part of what a
+        ref claims.
+        """
+        vocabulary = list(QUEUE_STATE_LABELS.values())
+        server = self._server(dict.fromkeys(self.TWO_TEAMS.values(), vocabulary))
+    
+>       reconciliation = await reconcile_tracker_mappings(
+            tracker=self._tracker(server),
+            config=self._config(self.TWO_TEAMS),
+        )
+
+tests/tracker/test_tracker_boot.py:630: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/services/tracker_boot.py:302: in reconcile_tracker_mappings
+    await validate_tracker_mappings(tracker=tracker, config=reconciled)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    async def validate_tracker_mappings(
+        *,
+        tracker: TrackerPort,
+        config: OperationConfig,
+    ) -> None:
+        """Resolve every configured mapping; raise naming EVERY failure at once."""
+        refs: Sequence[MappingRef] = configured_mappings(config)
+        unresolved = await tracker.resolve_mappings(refs=refs)
+        if unresolved:
+>           raise TrackerBootValidationError(
+                "operation config names tracker entities the workspace does not resolve",
+                unresolved=[ref.describe() for ref in unresolved],
+            )
+E           kodezart.core.errors.TrackerBootValidationError: operation config names tracker entities the workspace does not resolve (user 'fixture-agent' -> 'fixture-agent')
+
+src/kodezart/services/tracker_boot.py:220: TrackerBootValidationError
+_______ test_composed_outcome_comment_is_held_by_the_actual_queue_job_id _______
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a794ec0>
+
+    async def test_composed_outcome_comment_is_held_by_the_actual_queue_job_id(monkeypatch):
+        monkeypatch.setenv("KODEZART_TRACKER__SURFACE_LEASE_SECONDS", str(DURATION))
+        monkeypatch.setenv("KODEZART_DISPATCH_HOLDER", "separate-deployment")
+        config = AppConfig()
+        engine = _CompletedEngine()
+        queue = build_job_queue(config=config, workflow_engine=engine)
+        board = _Board()
+        tracker = board.tracker()
+        gate = PassThroughGate()
+        built = await build_dispatch_passes(
+            recorder=RunRecorder(records={}, sinks={}),
+            config=config,
+            operation=operation_config(),
+            tracker=tracker,
+            ledger=board.ledger,
+            delivery=FakeDeliveryProbe(),
+            queue=queue,
+            registry=queue,
+            gate=gate,
+            git=FakeGitService(),
+            cache=FakeRepoCache(),
+            integration_workspace_dir=INTEGRATION_DIR,
+        )
+        await queue.start()
+        try:
+            record = await queue.submit(
+                lane="fixture",
+>               request=WorkflowRequest(
+                    prompt="Run the fixture",
+                    repo_path=None,
+                    repo_url=None,
+                    base_spec=BaseSpec(inputs=(), base_branch="trunk"),
+                    permission_mode="bypassPermissions",
+                    allowed_tools=[],
+                ),
+            )
+E           pydantic_core._pydantic_core.ValidationError: 1 validation error for WorkflowRequest
+E             Value error, Either repoPath or repoUrl must be provided [type=value_error, input_value={'prompt': 'Run the fixtu...s', 'allowed_tools': []}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.12/v/value_error
+
+tests/services/test_run_surface_lease.py:162: ValidationError
+----------------------------- Captured stderr call -----------------------------
+--- Logging error ---
+Traceback (most recent call last):
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/logging/__init__.py", line 1163, in emit
+    stream.write(msg + self.terminator)
+ValueError: I/O operation on closed file.
+Call stack:
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1032, in _bootstrap
+    self._bootstrap_inner()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 93, in _worker
+    work_item.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 216, in info
+    return self._proxy_to_logger("info", event, *args, **kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 280, in _proxy_to_logger
+    return super()._proxy_to_logger(method_name, event=event, **event_kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/_base.py", line 223, in _proxy_to_logger
+    return getattr(self._logger, method_name)(*args, **kw)
+Message: {'lanes': 1, 'abandoned': 0, 'outcome': 'shutdown_abandoned', 'event': 'job_queue_stopped', 'level': 'info', 'logger': 'kodezart.adapters.asyncio_job_queue', 'timestamp': '2026-09-12T18:36:48.219237Z'}
+Arguments: ()
+------------------------------ Captured log call -------------------------------
+INFO     kodezart.adapters.asyncio_job_queue:asyncio_job_queue.py:199 {'lanes': 1, 'abandoned': 0, 'outcome': 'shutdown_abandoned', 'event': 'job_queue_stopped', 'level': 'info', 'logger': 'kodezart.adapters.asyncio_job_queue', 'timestamp': '2026-09-12T18:36:48.219237Z'}
+____ test_only_explicit_receipts_are_subtracted[before-unconfigured-label] _____
+
+foreign = 'unconfigured-label', position = 'before'
+
+    @pytest.mark.parametrize(
+        "foreign",
+        [
+            "body",
+            "state",
+            "title",
+            "priority",
+            "unconfigured-label",
+            "unknown-field",
+            "old-comment-edit",
+            "old-comment-delete",
+        ],
+    )
+    @pytest.mark.parametrize("position", ["before", "after"])
+    async def test_only_explicit_receipts_are_subtracted(
+        foreign: str, position: str
+    ) -> None:
+        server = _server()
+        old = await server.call_tool(
+            name="save_comment", arguments={"issueId": ISSUE, "body": "principal original"}
+        )
+        assert isinstance(old, Mapping)
+        boundary = NativeBoundary(server)
+        ledger = SelfWriteLedger()
+        tracker = _tracker(boundary, ledger)
+        gate = _gate(tracker, ledger)
+        assert (await gate.delta()).changed == (ISSUE,)
+    
+        async def principal() -> None:
+            if foreign in {"body", "state", "title", "unconfigured-label"}:
+                field, value = {
+                    "body": ("description", "principal body"),
+                    "state": ("state", DONE_STATE),
+                    "title": ("title", "principal title"),
+                    "unconfigured-label": ("addLabels", ["not-an-operation-label"]),
+                }[foreign]
+                await server.call_tool(
+                    name="save_issue", arguments={"id": ISSUE, field: value}
+                )
+            elif foreign == "priority":
+                server.issues[ISSUE].priority_raw = 3
+                server._moved(ISSUE)
+            elif foreign == "unknown-field":
+                boundary.extra = "principal new value"
+                server._moved(ISSUE)
+            else:
+                await server.call_tool(
+                    name="save_comment"
+                    if foreign == "old-comment-edit"
+                    else "delete_comment",
+                    arguments={"id": old["id"], "body": "principal revised"},
+                )
+    
+        if position == "before":
+            await principal()
+        await tracker.post_comment(issue_key=ISSUE, body="our comment")
+        if position == "after":
+            await principal()
+>       assert (await gate.delta()).changed == (ISSUE,)
+E       AssertionError: assert () == ('FIX-1',)
+E         
+E         Right contains one more item: 'FIX-1'
+E         Use -v to get more diff
+
+tests/adapters/test_self_write_replay.py:132: AssertionError
+----------------------------- Captured stderr call -----------------------------
+--- Logging error ---
+Traceback (most recent call last):
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/logging/__init__.py", line 1163, in emit
+    stream.write(msg + self.terminator)
+ValueError: I/O operation on closed file.
+Call stack:
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1032, in _bootstrap
+    self._bootstrap_inner()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 93, in _worker
+    work_item.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 216, in info
+    return self._proxy_to_logger("info", event, *args, **kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 280, in _proxy_to_logger
+    return super()._proxy_to_logger(method_name, event=event, **event_kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/_base.py", line 223, in _proxy_to_logger
+    return getattr(self._logger, method_name)(*args, **kw)
+Message: {'signals': ['approved_changed'], 'changed': ['FIX-1'], 'unanswerable': [], 'mark': '2026-09-01T17:55:01+00:00', 'event': 'pass_gate_delta', 'level': 'info', 'logger': 'kodezart.services.pass_gate', 'timestamp': '2026-09-12T18:36:49.420303Z'}
+Arguments: ()
+--- Logging error ---
+Traceback (most recent call last):
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/logging/__init__.py", line 1163, in emit
+    stream.write(msg + self.terminator)
+ValueError: I/O operation on closed file.
+Call stack:
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1032, in _bootstrap
+    self._bootstrap_inner()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 93, in _worker
+    work_item.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 216, in info
+    return self._proxy_to_logger("info", event, *args, **kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 280, in _proxy_to_logger
+    return super()._proxy_to_logger(method_name, event=event, **event_kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/_base.py", line 223, in _proxy_to_logger
+    return getattr(self._logger, method_name)(*args, **kw)
+Message: {'signals': ['approved_changed'], 'unanswerable': [], 'mark': '2026-09-01T17:55:03+00:00', 'event': 'pass_gate_no_delta', 'level': 'info', 'logger': 'kodezart.services.pass_gate', 'timestamp': '2026-09-12T18:36:49.423779Z'}
+Arguments: ()
+------------------------------ Captured log call -------------------------------
+INFO     kodezart.services.pass_gate:pass_gate.py:177 {'signals': ['approved_changed'], 'changed': ['FIX-1'], 'unanswerable': [], 'mark': '2026-09-01T17:55:01+00:00', 'event': 'pass_gate_delta', 'level': 'info', 'logger': 'kodezart.services.pass_gate', 'timestamp': '2026-09-12T18:36:49.420303Z'}
+INFO     kodezart.services.pass_gate:pass_gate.py:169 {'signals': ['approved_changed'], 'unanswerable': [], 'mark': '2026-09-01T17:55:03+00:00', 'event': 'pass_gate_no_delta', 'level': 'info', 'logger': 'kodezart.services.pass_gate', 'timestamp': '2026-09-12T18:36:49.423779Z'}
+_____ test_only_explicit_receipts_are_subtracted[after-unconfigured-label] _____
+
+foreign = 'unconfigured-label', position = 'after'
+
+    @pytest.mark.parametrize(
+        "foreign",
+        [
+            "body",
+            "state",
+            "title",
+            "priority",
+            "unconfigured-label",
+            "unknown-field",
+            "old-comment-edit",
+            "old-comment-delete",
+        ],
+    )
+    @pytest.mark.parametrize("position", ["before", "after"])
+    async def test_only_explicit_receipts_are_subtracted(
+        foreign: str, position: str
+    ) -> None:
+        server = _server()
+        old = await server.call_tool(
+            name="save_comment", arguments={"issueId": ISSUE, "body": "principal original"}
+        )
+        assert isinstance(old, Mapping)
+        boundary = NativeBoundary(server)
+        ledger = SelfWriteLedger()
+        tracker = _tracker(boundary, ledger)
+        gate = _gate(tracker, ledger)
+        assert (await gate.delta()).changed == (ISSUE,)
+    
+        async def principal() -> None:
+            if foreign in {"body", "state", "title", "unconfigured-label"}:
+                field, value = {
+                    "body": ("description", "principal body"),
+                    "state": ("state", DONE_STATE),
+                    "title": ("title", "principal title"),
+                    "unconfigured-label": ("addLabels", ["not-an-operation-label"]),
+                }[foreign]
+                await server.call_tool(
+                    name="save_issue", arguments={"id": ISSUE, field: value}
+                )
+            elif foreign == "priority":
+                server.issues[ISSUE].priority_raw = 3
+                server._moved(ISSUE)
+            elif foreign == "unknown-field":
+                boundary.extra = "principal new value"
+                server._moved(ISSUE)
+            else:
+                await server.call_tool(
+                    name="save_comment"
+                    if foreign == "old-comment-edit"
+                    else "delete_comment",
+                    arguments={"id": old["id"], "body": "principal revised"},
+                )
+    
+        if position == "before":
+            await principal()
+        await tracker.post_comment(issue_key=ISSUE, body="our comment")
+        if position == "after":
+            await principal()
+>       assert (await gate.delta()).changed == (ISSUE,)
+E       AssertionError: assert () == ('FIX-1',)
+E         
+E         Right contains one more item: 'FIX-1'
+E         Use -v to get more diff
+
+tests/adapters/test_self_write_replay.py:132: AssertionError
+----------------------------- Captured stderr call -----------------------------
+--- Logging error ---
+Traceback (most recent call last):
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/logging/__init__.py", line 1163, in emit
+    stream.write(msg + self.terminator)
+ValueError: I/O operation on closed file.
+Call stack:
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1032, in _bootstrap
+    self._bootstrap_inner()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 93, in _worker
+    work_item.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 216, in info
+    return self._proxy_to_logger("info", event, *args, **kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 280, in _proxy_to_logger
+    return super()._proxy_to_logger(method_name, event=event, **event_kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/_base.py", line 223, in _proxy_to_logger
+    return getattr(self._logger, method_name)(*args, **kw)
+Message: {'signals': ['approved_changed'], 'changed': ['FIX-1'], 'unanswerable': [], 'mark': '2026-09-01T17:55:01+00:00', 'event': 'pass_gate_delta', 'level': 'info', 'logger': 'kodezart.services.pass_gate', 'timestamp': '2026-09-12T18:36:49.631859Z'}
+Arguments: ()
+--- Logging error ---
+Traceback (most recent call last):
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/logging/__init__.py", line 1163, in emit
+    stream.write(msg + self.terminator)
+ValueError: I/O operation on closed file.
+Call stack:
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1032, in _bootstrap
+    self._bootstrap_inner()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 93, in _worker
+    work_item.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 216, in info
+    return self._proxy_to_logger("info", event, *args, **kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 280, in _proxy_to_logger
+    return super()._proxy_to_logger(method_name, event=event, **event_kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/_base.py", line 223, in _proxy_to_logger
+    return getattr(self._logger, method_name)(*args, **kw)
+Message: {'signals': ['approved_changed'], 'unanswerable': [], 'mark': '2026-09-01T17:55:03+00:00', 'event': 'pass_gate_no_delta', 'level': 'info', 'logger': 'kodezart.services.pass_gate', 'timestamp': '2026-09-12T18:36:49.637762Z'}
+Arguments: ()
+------------------------------ Captured log call -------------------------------
+INFO     kodezart.services.pass_gate:pass_gate.py:177 {'signals': ['approved_changed'], 'changed': ['FIX-1'], 'unanswerable': [], 'mark': '2026-09-01T17:55:01+00:00', 'event': 'pass_gate_delta', 'level': 'info', 'logger': 'kodezart.services.pass_gate', 'timestamp': '2026-09-12T18:36:49.631859Z'}
+INFO     kodezart.services.pass_gate:pass_gate.py:169 {'signals': ['approved_changed'], 'unanswerable': [], 'mark': '2026-09-01T17:55:03+00:00', 'event': 'pass_gate_no_delta', 'level': 'info', 'logger': 'kodezart.services.pass_gate', 'timestamp': '2026-09-12T18:36:49.637762Z'}
+_______ test_issue_receipts_never_copy_unwritten_response_fields[False] ________
+
+foreign = False
+
+    @pytest.mark.parametrize("foreign", [False, True])
+    async def test_issue_receipts_never_copy_unwritten_response_fields(
+        foreign: bool,
+    ) -> None:
+        server = _server()
+        ledger = SelfWriteLedger()
+        tracker = _tracker(server, ledger)
+        gate = _gate(tracker, ledger)
+        await gate.delta()
+        if foreign:
+            await server.call_tool(
+                name="save_issue",
+                arguments={"id": ISSUE, "description": "principal before our state write"},
+            )
+        await tracker.set_workflow_state(issue_key=ISSUE, stage=LifecycleStage.DONE)
+        await tracker.post_comment(issue_key=ISSUE, body="our later comment")
+>       assert (await gate.delta()).changed == ((ISSUE,) if foreign else ())
+E       AssertionError: assert ('FIX-1',) == ()
+E         
+E         Left contains one more item: 'FIX-1'
+E         Use -v to get more diff
+
+tests/adapters/test_self_write_replay.py:152: AssertionError
+----------------------------- Captured stderr call -----------------------------
+--- Logging error ---
+Traceback (most recent call last):
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/logging/__init__.py", line 1163, in emit
+    stream.write(msg + self.terminator)
+ValueError: I/O operation on closed file.
+Call stack:
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1032, in _bootstrap
+    self._bootstrap_inner()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 93, in _worker
+    work_item.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 216, in info
+    return self._proxy_to_logger("info", event, *args, **kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 280, in _proxy_to_logger
+    return super()._proxy_to_logger(method_name, event=event, **event_kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/_base.py", line 223, in _proxy_to_logger
+    return getattr(self._logger, method_name)(*args, **kw)
+Message: {'signals': ['approved_changed'], 'changed': ['FIX-1'], 'unanswerable': [], 'mark': '2026-09-01T17:55:00+00:00', 'event': 'pass_gate_delta', 'level': 'info', 'logger': 'kodezart.services.pass_gate', 'timestamp': '2026-09-12T18:36:49.729583Z'}
+Arguments: ()
+--- Logging error ---
+Traceback (most recent call last):
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/logging/__init__.py", line 1163, in emit
+    stream.write(msg + self.terminator)
+ValueError: I/O operation on closed file.
+Call stack:
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1032, in _bootstrap
+    self._bootstrap_inner()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 93, in _worker
+    work_item.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 216, in info
+    return self._proxy_to_logger("info", event, *args, **kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 280, in _proxy_to_logger
+    return super()._proxy_to_logger(method_name, event=event, **event_kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/_base.py", line 223, in _proxy_to_logger
+    return getattr(self._logger, method_name)(*args, **kw)
+Message: {'signals': ['approved_changed'], 'changed': ['FIX-1'], 'unanswerable': [], 'mark': '2026-09-01T17:55:02+00:00', 'event': 'pass_gate_delta', 'level': 'info', 'logger': 'kodezart.services.pass_gate', 'timestamp': '2026-09-12T18:36:49.735212Z'}
+Arguments: ()
+------------------------------ Captured log call -------------------------------
+INFO     kodezart.services.pass_gate:pass_gate.py:177 {'signals': ['approved_changed'], 'changed': ['FIX-1'], 'unanswerable': [], 'mark': '2026-09-01T17:55:00+00:00', 'event': 'pass_gate_delta', 'level': 'info', 'logger': 'kodezart.services.pass_gate', 'timestamp': '2026-09-12T18:36:49.729583Z'}
+INFO     kodezart.services.pass_gate:pass_gate.py:177 {'signals': ['approved_changed'], 'changed': ['FIX-1'], 'unanswerable': [], 'mark': '2026-09-01T17:55:02+00:00', 'event': 'pass_gate_delta', 'level': 'info', 'logger': 'kodezart.services.pass_gate', 'timestamp': '2026-09-12T18:36:49.735212Z'}
+________ test_mixed_declared_issue_fields_and_comment_churn_stay_quiet _________
+
+    async def test_mixed_declared_issue_fields_and_comment_churn_stay_quiet() -> None:
+        server = _server()
+        ledger = SelfWriteLedger()
+        tracker = _tracker(server, ledger)
+        gate = _gate(tracker, ledger)
+        await gate.delta()
+        await tracker.update_issue(issue_key=ISSUE, title="our title", body="our body")
+        await tracker.set_queue_state(issue_key=ISSUE, state=QueueState.PROPOSED)
+        await tracker.set_queue_state(issue_key=ISSUE, state=QueueState.APPROVED)
+>       await tracker.set_issue_classification(issue_key=ISSUE, classification="criterion")
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'LinearMcpTracker' object has no attribute 'set_issue_classification'
+
+tests/adapters/test_self_write_replay.py:164: AttributeError
+----------------------------- Captured stderr call -----------------------------
+--- Logging error ---
+Traceback (most recent call last):
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/logging/__init__.py", line 1163, in emit
+    stream.write(msg + self.terminator)
+ValueError: I/O operation on closed file.
+Call stack:
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1032, in _bootstrap
+    self._bootstrap_inner()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 93, in _worker
+    work_item.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 216, in info
+    return self._proxy_to_logger("info", event, *args, **kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 280, in _proxy_to_logger
+    return super()._proxy_to_logger(method_name, event=event, **event_kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/_base.py", line 223, in _proxy_to_logger
+    return getattr(self._logger, method_name)(*args, **kw)
+Message: {'signals': ['approved_changed'], 'changed': ['FIX-1'], 'unanswerable': [], 'mark': '2026-09-01T17:55:00+00:00', 'event': 'pass_gate_delta', 'level': 'info', 'logger': 'kodezart.services.pass_gate', 'timestamp': '2026-09-12T18:36:49.807232Z'}
+Arguments: ()
+------------------------------ Captured log call -------------------------------
+INFO     kodezart.services.pass_gate:pass_gate.py:177 {'signals': ['approved_changed'], 'changed': ['FIX-1'], 'unanswerable': [], 'mark': '2026-09-01T17:55:00+00:00', 'event': 'pass_gate_delta', 'level': 'info', 'logger': 'kodezart.services.pass_gate', 'timestamp': '2026-09-12T18:36:49.807232Z'}
+____ test_label_addition_never_claims_other_labels_from_the_response[False] ____
+
+foreign = False
+
+    @pytest.mark.parametrize("foreign", [False, True])
+    async def test_label_addition_never_claims_other_labels_from_the_response(
+        foreign: bool,
+    ) -> None:
+        server = _server()
+        ledger = SelfWriteLedger()
+        tracker = _tracker(server, ledger)
+        gate = _gate(tracker, ledger)
+        await gate.delta()
+        if foreign:
+            await server.call_tool(
+                name="save_issue", arguments={"id": ISSUE, "addLabels": ["principal label"]}
+            )
+>       await tracker.set_issue_classification(issue_key=ISSUE, classification="criterion")
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'LinearMcpTracker' object has no attribute 'set_issue_classification'
+
+tests/adapters/test_self_write_replay.py:439: AttributeError
+----------------------------- Captured stderr call -----------------------------
+--- Logging error ---
+Traceback (most recent call last):
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/logging/__init__.py", line 1163, in emit
+    stream.write(msg + self.terminator)
+ValueError: I/O operation on closed file.
+Call stack:
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1032, in _bootstrap
+    self._bootstrap_inner()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 93, in _worker
+    work_item.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 216, in info
+    return self._proxy_to_logger("info", event, *args, **kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 280, in _proxy_to_logger
+    return super()._proxy_to_logger(method_name, event=event, **event_kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/_base.py", line 223, in _proxy_to_logger
+    return getattr(self._logger, method_name)(*args, **kw)
+Message: {'signals': ['approved_changed'], 'changed': ['FIX-1'], 'unanswerable': [], 'mark': '2026-09-01T17:55:00+00:00', 'event': 'pass_gate_delta', 'level': 'info', 'logger': 'kodezart.services.pass_gate', 'timestamp': '2026-09-12T18:36:50.164857Z'}
+Arguments: ()
+------------------------------ Captured log call -------------------------------
+INFO     kodezart.services.pass_gate:pass_gate.py:177 {'signals': ['approved_changed'], 'changed': ['FIX-1'], 'unanswerable': [], 'mark': '2026-09-01T17:55:00+00:00', 'event': 'pass_gate_delta', 'level': 'info', 'logger': 'kodezart.services.pass_gate', 'timestamp': '2026-09-12T18:36:50.164857Z'}
+____ test_label_addition_never_claims_other_labels_from_the_response[True] _____
+
+foreign = True
+
+    @pytest.mark.parametrize("foreign", [False, True])
+    async def test_label_addition_never_claims_other_labels_from_the_response(
+        foreign: bool,
+    ) -> None:
+        server = _server()
+        ledger = SelfWriteLedger()
+        tracker = _tracker(server, ledger)
+        gate = _gate(tracker, ledger)
+        await gate.delta()
+        if foreign:
+            await server.call_tool(
+                name="save_issue", arguments={"id": ISSUE, "addLabels": ["principal label"]}
+            )
+>       await tracker.set_issue_classification(issue_key=ISSUE, classification="criterion")
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'LinearMcpTracker' object has no attribute 'set_issue_classification'
+
+tests/adapters/test_self_write_replay.py:439: AttributeError
+----------------------------- Captured stderr call -----------------------------
+--- Logging error ---
+Traceback (most recent call last):
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/logging/__init__.py", line 1163, in emit
+    stream.write(msg + self.terminator)
+ValueError: I/O operation on closed file.
+Call stack:
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1032, in _bootstrap
+    self._bootstrap_inner()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 93, in _worker
+    work_item.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 216, in info
+    return self._proxy_to_logger("info", event, *args, **kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 280, in _proxy_to_logger
+    return super()._proxy_to_logger(method_name, event=event, **event_kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/_base.py", line 223, in _proxy_to_logger
+    return getattr(self._logger, method_name)(*args, **kw)
+Message: {'signals': ['approved_changed'], 'changed': ['FIX-1'], 'unanswerable': [], 'mark': '2026-09-01T17:55:00+00:00', 'event': 'pass_gate_delta', 'level': 'info', 'logger': 'kodezart.services.pass_gate', 'timestamp': '2026-09-12T18:36:50.232919Z'}
+Arguments: ()
+------------------------------ Captured log call -------------------------------
+INFO     kodezart.services.pass_gate:pass_gate.py:177 {'signals': ['approved_changed'], 'changed': ['FIX-1'], 'unanswerable': [], 'mark': '2026-09-01T17:55:00+00:00', 'event': 'pass_gate_delta', 'level': 'info', 'logger': 'kodezart.services.pass_gate', 'timestamp': '2026-09-12T18:36:50.232919Z'}
+_________ test_no_document_names_a_config_variable_that_does_not_exist _________
+
+    def test_no_document_names_a_config_variable_that_does_not_exist() -> None:
+        """``extra='forbid'`` makes a documented-but-absent variable a boot failure."""
+        shipped = _shipped_config_variables()
+        for path in (CONFIGURATION_DOC, API_DOC, README, ENV_EXAMPLE):
+>           assert _config_variables_named_in(path) - shipped == set(), path.name
+E           AssertionError: configuration.md
+E           assert {'KODEZART_TRACKER__'} == set()
+E             
+E             Extra items in the left set:
+E             'KODEZART_TRACKER__'
+E             Use -v to get more diff
+
+tests/docs/test_documented_surface.py:118: AssertionError
+_ test_the_tracker_server_name_has_exactly_the_consumers_its_description_claims _
+
+    def test_the_tracker_server_name_has_exactly_the_consumers_its_description_claims() -> (
+        None
+    ):
+        """The field's description says two consumers — factory and record sink.
+    
+        An earlier claim — a consumer in session attachment — was contradicted
+        by exactly this derivation and corrected; the tracker-side record sink
+        then became a real second reader (KOD-170), and the description names
+        it.  A reader appearing or vanishing makes this red until the
+        description tells the truth again.
+        """
+>       assert _attribute_reads_of("server_name") == [
+            "src/kodezart/composition/records.py",
+            "src/kodezart/composition/tracker.py",
+        ]
+E       AssertionError: assert ['src/kodezar...ords.py', ...] == ['src/kodezar...n/tracker.py']
+E         
+E         At index 0 diff: 'src/kodezart/adapters/_mcp_mapping.py' != 'src/kodezart/composition/records.py'
+E         Left contains 6 more items, first extra item: 'src/kodezart/adapters/http_mcp_tool_caller.py'
+E         Use -v to get more diff
+
+tests/docs/test_documented_surface.py:266: AssertionError
+=========================== short test summary info ============================
+FAILED tests/tracker/test_comment_expected.py::test_alarm_parser_reads_the_same_final_snapshot_as_the_lease
+FAILED tests/tracker/test_comment_expected_independent.py::test_known_unissued_retry_revalidates_changed_expected_comment[body]
+FAILED tests/tracker/test_comment_expected_independent.py::test_known_unissued_retry_revalidates_changed_expected_comment[lease]
+FAILED tests/tracker/test_comment_expected_independent.py::test_known_unissued_retry_revalidates_changed_expected_comment[unchanged]
+FAILED tests/tracker/test_marker_configuration.py::test_empty_log_does_not_disguise_an_unconfigured_marker_reader
+FAILED tests/tracker/test_tracker_boot.py::TestConfiguredMappings::test_each_principal_contributes_a_user_ref
+FAILED tests/tracker/test_tracker_boot.py::TestBootValidation::test_validation_is_tracker_agnostic
+FAILED tests/tracker/test_tracker_boot.py::TestQueueVocabularyPerDeclaredTeam::test_one_member_on_two_boards_reconciles_rather_than_colliding
+FAILED tests/services/test_run_surface_lease.py::test_composed_outcome_comment_is_held_by_the_actual_queue_job_id
+FAILED tests/adapters/test_self_write_replay.py::test_only_explicit_receipts_are_subtracted[before-unconfigured-label]
+FAILED tests/adapters/test_self_write_replay.py::test_only_explicit_receipts_are_subtracted[after-unconfigured-label]
+FAILED tests/adapters/test_self_write_replay.py::test_issue_receipts_never_copy_unwritten_response_fields[False]
+FAILED tests/adapters/test_self_write_replay.py::test_mixed_declared_issue_fields_and_comment_churn_stay_quiet
+FAILED tests/adapters/test_self_write_replay.py::test_label_addition_never_claims_other_labels_from_the_response[False]
+FAILED tests/adapters/test_self_write_replay.py::test_label_addition_never_claims_other_labels_from_the_response[True]
+FAILED tests/docs/test_documented_surface.py::test_no_document_names_a_config_variable_that_does_not_exist
+FAILED tests/docs/test_documented_surface.py::test_the_tracker_server_name_has_exactly_the_consumers_its_description_claims
+17 failed, 808 passed in 24.45s

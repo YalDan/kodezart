@@ -1,0 +1,9 @@
+Using CPython 3.12.13
+Creating virtual environment at: .venv
+   Building kodezart @ file:///private/tmp/kodezart-v03-m4-classification-root-review
+warning: `build_system.requires = ["uv-build>=0.10.9,<0.11.0"]` does not contain the current uv version 0.11.6
+      Built kodezart @ file:///private/tmp/kodezart-v03-m4-classification-root-review
+Installed 174 packages in 2.26s
+........................................................................ [ 96%]
+...                                                                      [100%]
+75 passed in 11.51s

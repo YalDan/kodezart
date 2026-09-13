@@ -1,0 +1,300 @@
+...............F..................F.....................FF......FFF....  [100%]
+=================================== FAILURES ===================================
+_______________ test_a_dispatched_schema_carries_its_constraints _______________
+
+    def test_a_dispatched_schema_carries_its_constraints() -> None:
+        """The dispatched schema says what the response is judged by.
+    
+        ``CriteriaValidationOutput`` carries both kinds the stripper deleted: a
+        pattern on a criterion id and a length bound on its sibling. Either one
+        vanishing from the wire again fails this.
+        """
+        definitions = WIRE_SCHEMAS["CRITERIA_VALIDATION_SCHEMA"]["$defs"]
+        assert isinstance(definitions, dict)
+        contradiction = definitions["Contradiction"]
+        assert isinstance(contradiction, dict)
+        properties = contradiction["properties"]
+        assert isinstance(properties, dict)
+    
+        criterion_ids = properties["criterionIds"]
+        assert isinstance(criterion_ids, dict)
+        item = criterion_ids["items"]
+        assert isinstance(item, dict)
+>       assert item["pattern"] == CRITERION_ID_PATTERN
+E       AssertionError: assert '\\S' == '^AC-[1-9][0-9]*$'
+E         
+E         - ^AC-[1-9][0-9]*$
+E         + \S
+
+tests/types/test_wire_schemas.py:263: AssertionError
+_____________ test_every_dispatch_site_sends_the_models_own_schema _____________
+
+    def test_every_dispatch_site_sends_the_models_own_schema() -> None:
+        """Every site names a roster schema; none filters or builds its own."""
+        offenders: list[str] = []
+        for path, source in source_files().items():
+            forwarded = audit_forwarding_lines(source, relative_path=path)
+            for line_number, line in enumerate(
+                source.splitlines(),
+                start=1,
+            ):
+                for argument in SCHEMA_ARGUMENT.findall(line):
+                    if not is_rostered_argument(argument) and not (
+                        argument == "output_schema" and line_number in forwarded
+                    ):
+                        offenders.append(
+                            f"src/kodezart/{path}:{line_number} sends {argument}"
+                        )
+>       assert offenders == []
+E       AssertionError: assert ['src/kodezar...sends schema'] == []
+E         
+E         Left contains one more item: 'src/kodezart/chains/remediation.py:96 sends schema'
+E         Use -v to get more diff
+
+tests/types/test_wire_schemas.py:353: AssertionError
+_ test_actual_schema_census_rejects_damaged_source[unrelated_forwarder-test_every_dispatch_site_sends_the_models_own_schema] _
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10c87e5d0>
+damage = 'unrelated_forwarder'
+guard = <function test_every_dispatch_site_sends_the_models_own_schema at 0x10c8c0540>
+
+    @pytest.mark.parametrize(
+        "damage, guard",
+        [
+            (
+                "caller_schema",
+                test_shared_judgment_callers_keep_their_exact_schema_and_forwarding_chain,
+            ),
+            (
+                "bridge_schema",
+                test_shared_judgment_callers_keep_their_exact_schema_and_forwarding_chain,
+            ),
+            ("unrelated_forwarder", test_every_dispatch_site_sends_the_models_own_schema),
+            ("filter", test_every_dispatch_site_sends_the_models_own_schema),
+            ("missing_schema", test_every_dispatch_site_is_accounted_for),
+            ("empty_tree", test_every_dispatch_site_is_accounted_for),
+        ],
+    )
+    def test_actual_schema_census_rejects_damaged_source(monkeypatch, damage, guard):
+        sources = source_files()
+>       guard()  # The complete current source passes the same guard first.
+        ^^^^^^^
+
+tests/types/test_wire_schemas.py:466: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def test_every_dispatch_site_sends_the_models_own_schema() -> None:
+        """Every site names a roster schema; none filters or builds its own."""
+        offenders: list[str] = []
+        for path, source in source_files().items():
+            forwarded = audit_forwarding_lines(source, relative_path=path)
+            for line_number, line in enumerate(
+                source.splitlines(),
+                start=1,
+            ):
+                for argument in SCHEMA_ARGUMENT.findall(line):
+                    if not is_rostered_argument(argument) and not (
+                        argument == "output_schema" and line_number in forwarded
+                    ):
+                        offenders.append(
+                            f"src/kodezart/{path}:{line_number} sends {argument}"
+                        )
+>       assert offenders == []
+E       AssertionError: assert ['src/kodezar...sends schema'] == []
+E         
+E         Left contains one more item: 'src/kodezart/chains/remediation.py:96 sends schema'
+E         Use -v to get more diff
+
+tests/types/test_wire_schemas.py:353: AssertionError
+_ test_actual_schema_census_rejects_damaged_source[filter-test_every_dispatch_site_sends_the_models_own_schema] _
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10c893620>
+damage = 'filter'
+guard = <function test_every_dispatch_site_sends_the_models_own_schema at 0x10c8c0540>
+
+    @pytest.mark.parametrize(
+        "damage, guard",
+        [
+            (
+                "caller_schema",
+                test_shared_judgment_callers_keep_their_exact_schema_and_forwarding_chain,
+            ),
+            (
+                "bridge_schema",
+                test_shared_judgment_callers_keep_their_exact_schema_and_forwarding_chain,
+            ),
+            ("unrelated_forwarder", test_every_dispatch_site_sends_the_models_own_schema),
+            ("filter", test_every_dispatch_site_sends_the_models_own_schema),
+            ("missing_schema", test_every_dispatch_site_is_accounted_for),
+            ("empty_tree", test_every_dispatch_site_is_accounted_for),
+        ],
+    )
+    def test_actual_schema_census_rejects_damaged_source(monkeypatch, damage, guard):
+        sources = source_files()
+>       guard()  # The complete current source passes the same guard first.
+        ^^^^^^^
+
+tests/types/test_wire_schemas.py:466: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def test_every_dispatch_site_sends_the_models_own_schema() -> None:
+        """Every site names a roster schema; none filters or builds its own."""
+        offenders: list[str] = []
+        for path, source in source_files().items():
+            forwarded = audit_forwarding_lines(source, relative_path=path)
+            for line_number, line in enumerate(
+                source.splitlines(),
+                start=1,
+            ):
+                for argument in SCHEMA_ARGUMENT.findall(line):
+                    if not is_rostered_argument(argument) and not (
+                        argument == "output_schema" and line_number in forwarded
+                    ):
+                        offenders.append(
+                            f"src/kodezart/{path}:{line_number} sends {argument}"
+                        )
+>       assert offenders == []
+E       AssertionError: assert ['src/kodezar...sends schema'] == []
+E         
+E         Left contains one more item: 'src/kodezart/chains/remediation.py:96 sends schema'
+E         Use -v to get more diff
+
+tests/types/test_wire_schemas.py:353: AssertionError
+___________ test_the_minting_function_is_the_only_construction_site ____________
+
+    def test_the_minting_function_is_the_only_construction_site() -> None:
+        """Nothing outside the minting module may call `CriterionId(...)`.
+    
+        Two construction sites is two places that know the `AC-n` shape, and
+        the second one is how a value that never passed the format check
+        acquires the type that says it did.
+        """
+        offenders: list[str] = []
+        for path in Path("src").rglob("*.py"):
+            tree = ast.parse(path.read_text())
+            for node in ast.walk(tree):
+                if (
+                    isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Name)
+                    and node.func.id == "CriterionId"
+                    and path != _MINTING_MODULE
+                ):
+                    offenders.append(f"{path}:{node.lineno}")
+>       assert offenders == []
+E       AssertionError: assert ['src/kodezar...teria.py:122'] == []
+E         
+E         Left contains one more item: 'src/kodezart/chains/criteria.py:122'
+E         Use -v to get more diff
+
+tests/domain/test_criterion_identity.py:140: AssertionError
+___ test_a_malformed_element_of_an_identity_list_fails_closed[contradiction] ___
+
+record = <class 'kodezart.types.domain.criteria.Contradiction'>
+field = 'criterionIds'
+payload = {'criterionIds': ['banana', 'AC-99'], 'explanation': 'conflict'}
+
+    @pytest.mark.parametrize(
+        ("record", "field", "payload"),
+        [
+            (
+                Contradiction,
+                "criterionIds",
+                {"criterionIds": ["banana", "AC-99"], "explanation": "conflict"},
+            ),
+            (
+                IterationGrade,
+                "missingIds",
+                {
+                    "results": [
+                        {
+                            "criterionId": "AC-1",
+                            "criterion": "c",
+                            "passed": True,
+                            "reasoning": "r",
+                        }
+                    ],
+                    "missingIds": ["not-an-id"],
+                    "dispatchedCount": 1,
+                    "passedCount": 1,
+                    "verdict": "accepted",
+                },
+            ),
+        ],
+        ids=["contradiction", "iteration-grade"],
+    )
+    def test_a_malformed_element_of_an_identity_list_fails_closed(
+        record: type[BaseModel],
+        field: str,
+        payload: dict[str, object],
+    ) -> None:
+        """The pattern is on the ELEMENT, so the list cannot smuggle one in.
+    
+        ``Field(min_length=...)`` constrains the list; the members went
+        unchecked, so a payload naming ``banana`` validated and the id reached
+        the regenerator's prompt and the pre-loop halt intact.
+        """
+>       with pytest.raises(ValidationError) as excinfo:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'pydantic_core._pydantic_core.ValidationError'>
+
+tests/domain/test_criterion_identity.py:183: Failed
+__ test_a_malformed_element_of_an_identity_list_fails_closed[iteration-grade] __
+
+record = <class 'kodezart.types.domain.grading.IterationGrade'>
+field = 'missingIds'
+payload = {'dispatchedCount': 1, 'missingIds': ['not-an-id'], 'passedCount': 1, 'results': [{'criterion': 'c', 'criterionId': 'AC-1', 'passed': True, 'reasoning': 'r'}], ...}
+
+    @pytest.mark.parametrize(
+        ("record", "field", "payload"),
+        [
+            (
+                Contradiction,
+                "criterionIds",
+                {"criterionIds": ["banana", "AC-99"], "explanation": "conflict"},
+            ),
+            (
+                IterationGrade,
+                "missingIds",
+                {
+                    "results": [
+                        {
+                            "criterionId": "AC-1",
+                            "criterion": "c",
+                            "passed": True,
+                            "reasoning": "r",
+                        }
+                    ],
+                    "missingIds": ["not-an-id"],
+                    "dispatchedCount": 1,
+                    "passedCount": 1,
+                    "verdict": "accepted",
+                },
+            ),
+        ],
+        ids=["contradiction", "iteration-grade"],
+    )
+    def test_a_malformed_element_of_an_identity_list_fails_closed(
+        record: type[BaseModel],
+        field: str,
+        payload: dict[str, object],
+    ) -> None:
+        """The pattern is on the ELEMENT, so the list cannot smuggle one in.
+    
+        ``Field(min_length=...)`` constrains the list; the members went
+        unchecked, so a payload naming ``banana`` validated and the id reached
+        the regenerator's prompt and the pre-loop halt intact.
+        """
+>       with pytest.raises(ValidationError) as excinfo:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'pydantic_core._pydantic_core.ValidationError'>
+
+tests/domain/test_criterion_identity.py:183: Failed
+=========================== short test summary info ============================
+FAILED tests/types/test_wire_schemas.py::test_a_dispatched_schema_carries_its_constraints
+FAILED tests/types/test_wire_schemas.py::test_every_dispatch_site_sends_the_models_own_schema
+FAILED tests/types/test_wire_schemas.py::test_actual_schema_census_rejects_damaged_source[unrelated_forwarder-test_every_dispatch_site_sends_the_models_own_schema]
+FAILED tests/types/test_wire_schemas.py::test_actual_schema_census_rejects_damaged_source[filter-test_every_dispatch_site_sends_the_models_own_schema]
+FAILED tests/domain/test_criterion_identity.py::test_the_minting_function_is_the_only_construction_site
+FAILED tests/domain/test_criterion_identity.py::test_a_malformed_element_of_an_identity_list_fails_closed[contradiction]
+FAILED tests/domain/test_criterion_identity.py::test_a_malformed_element_of_an_identity_list_fails_closed[iteration-grade]
+7 failed, 64 passed in 17.43s

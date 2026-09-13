@@ -1,0 +1,144 @@
+E501 Line too long (103 > 88)
+  --> tests/integration/test_audit_runtime_types.py:23:89
+   |
+22 | SCOPE = ScopeRef(kind=ScopeKind.ISSUE, key="actual-native-scope")
+23 | SURFACE = WritableSurface(kind=SurfaceKind.MARKER_COMMENT, ref=SCOPE, marker="[audit:lane:occurrence]")
+   |                                                                                         ^^^^^^^^^^^^^^^
+   |
+
+E501 Line too long (268 > 88)
+  --> tests/integration/test_audit_runtime_types.py:27:89
+   |
+26 | …
+27 | … "native-child", "verdict": verdict, "evidence": "Actual source observation."}, "head_sha": "a" * 40, "record_ref": "actual-native-comment", "check": "Current Check"}, "mandate": None})
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+
+E501 Line too long (141 > 88)
+  --> tests/integration/test_audit_runtime_types.py:32:89
+   |
+30 | …an_authorized_artifact():
+31 | …nverifiable"):
+32 | …ClaimPublication(detector="current_check", report=claim("unverifiable")), escalation_refs=())
+   |                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+
+E501 Line too long (121 > 88)
+  --> tests/integration/test_audit_runtime_types.py:38:89
+   |
+36 | def test_escalation_references_are_real_nonblank_distinct_values(refs):
+37 |     with pytest.raises(ValidationError):
+38 |         AuditPublishedArtifact(publication=AuditClaimPublication(detector="forge", report=claim()), escalation_refs=refs)
+   |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+
+E501 Line too long (125 > 88)
+  --> tests/integration/test_audit_runtime_types.py:43:89
+   |
+41 | def test_detector_union_is_closed_and_does_not_accept_ordinal_removal_claims():
+42 |     with pytest.raises(ValidationError):
+43 |         TypeAdapter(AuditPublication).validate_python({"kind": "claim", "detector": "detector_removal:0", "report": claim()})
+   |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+
+E501 Line too long (115 > 88)
+  --> tests/integration/test_audit_runtime_types.py:46:89
+   |
+46 | @pytest.mark.parametrize("field,value", [("ref", "branch-name"), ("preceding_round", 0), ("preceding_round", 1.5)])
+   |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+47 | def test_repair_input_requires_exact_commit_and_actual_positive_round(field, value):
+48 |     data = {"surface": SURFACE, "ref": "a" * 40, "preceding_round": 1, "finding": WriteBackFinding(verdict="unverifiable", evidence="A…
+   |
+
+E501 Line too long (161 > 88)
+  --> tests/integration/test_audit_runtime_types.py:48:89
+   |
+46 | …ame"), ("preceding_round", 0), ("preceding_round", 1.5)])
+47 | …itive_round(field, value):
+48 | …g_round": 1, "finding": WriteBackFinding(verdict="unverifiable", evidence="A source was unavailable.")}
+   |                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+49 | …
+50 | …
+   |
+
+E501 Line too long (92 > 88)
+  --> tests/integration/test_audit_runtime_types.py:55:89
+   |
+54 | def test_unverifiable_received_repair_input_is_preserved_without_inventing_artifact():
+55 |     finding = WriteBackFinding(verdict="unverifiable", evidence="A source was unavailable.")
+   |                                                                                         ^^^^
+56 |     received = AuditRepairInput(surface=SURFACE, ref="a" * 40, preceding_round=1, finding=finding)
+57 |     assert received.finding == finding
+   |
+
+E501 Line too long (98 > 88)
+  --> tests/integration/test_audit_runtime_types.py:56:89
+   |
+54 | def test_unverifiable_received_repair_input_is_preserved_without_inventing_artifact():
+55 |     finding = WriteBackFinding(verdict="unverifiable", evidence="A source was unavailable.")
+56 |     received = AuditRepairInput(surface=SURFACE, ref="a" * 40, preceding_round=1, finding=finding)
+   |                                                                                         ^^^^^^^^^^
+57 |     assert received.finding == finding
+58 |     assert "artifact" not in received.model_dump()
+   |
+
+E501 Line too long (141 > 88)
+  --> tests/integration/test_audit_runtime_types.py:64:89
+   |
+62 | …ublication_receipt():
+63 | …
+64 | …), coverage=AuditCoverageResult(scope=SCOPE, observed_at=FIXTURE_NOW, full=True, covered=()))
+   |                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+
+E501 Line too long (116 > 88)
+  --> tests/integration/test_audit_runtime_types.py:69:89
+   |
+67 | def test_report_cannot_borrow_another_run_kind():
+68 |     with pytest.raises(ValidationError):
+69 |         AuditRunReport(identity=RunIdentity(kind=RunKind.GROOMING, name="audit", started_at=FIXTURE_NOW), scopes=())
+   |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+
+E501 Line too long (91 > 88)
+   --> tests/integration/test_audit_scheduler.py:224:89
+    |
+224 | @pytest.mark.parametrize("configuration", ["complete", "missing_policy", "missing_roster"])
+    |                                                                                         ^^^
+225 | async def test_actual_main_lifespan_registers_and_executes_audit(tmp_path, monkeypatch, configuration):
+226 |     from kodezart import main
+    |
+
+E501 Line too long (103 > 88)
+   --> tests/integration/test_audit_scheduler.py:225:89
+    |
+224 | @pytest.mark.parametrize("configuration", ["complete", "missing_policy", "missing_roster"])
+225 | async def test_actual_main_lifespan_registers_and_executes_audit(tmp_path, monkeypatch, configuration):
+    |                                                                                         ^^^^^^^^^^^^^^^
+226 |     from kodezart import main
+227 |     from kodezart.composition.records import BuiltRecorder
+    |
+
+E501 Line too long (98 > 88)
+   --> tests/integration/test_audit_scheduler.py:314:89
+    |
+312 |         config = AppConfig.model_validate({**config.model_dump(), "write_back": None})
+313 |     elif configuration == "missing_roster":
+314 |         operation = OperationConfig.model_validate({**operation.model_dump(), "audit_scopes": ()})
+    |                                                                                         ^^^^^^^^^^
+315 |     app = main.create_app()
+316 |     app.state.config = config
+    |
+
+E501 Line too long (110 > 88)
+   --> tests/integration/test_audit_scheduler.py:321:89
+    |
+319 |             async with app.router.lifespan_context(app):
+320 |                 pytest.fail("partial audit configuration reached queue startup")
+321 |         assert raised.value.missing == ("write_back" if configuration == "missing_policy" else "audit_scopes")
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^
+322 |         assert not hasattr(app.state, "job_queue")
+323 |         return
+    |
+
+Found 16 errors (1 fixed, 15 remaining).

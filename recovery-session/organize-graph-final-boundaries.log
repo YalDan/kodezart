@@ -1,0 +1,74 @@
+...F......                                                               [100%]
+=================================== FAILURES ===================================
+_ test_final_split_observation_after_refreshed_identity_is_authoritative[labels] _
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10e4044a0>
+change = 'labels'
+
+    @pytest.mark.parametrize(
+        "change", [None, "body", "relations", "labels", "team", "expiry"]
+    )
+    async def test_final_split_observation_after_refreshed_identity_is_authoritative(
+        monkeypatch, change
+    ):
+        board, tracker = fixture()
+        snapshot = await expected(tracker)
+        original = board.call_tool
+        after_state = False
+        source_reads = 0
+        injected = False
+    
+        async def call_tool(*, name, arguments):
+            nonlocal after_state, source_reads, injected
+            if name == "list_issue_statuses":
+                after_state = True
+            if after_state and name == "get_issue" and arguments["id"] == CLAIMED_ISSUE:
+                source_reads += 1
+                # Graph snapshot, identity scan's detail, then final source read.
+                if source_reads == 3:
+                    injected = True
+                    source = board.server.issues[CLAIMED_ISSUE]
+                    if change == "body":
+                        source.description = "A different current source specification"
+                    elif change == "relations":
+                        source.relations.append(("relatedTo", "peer"))
+                    elif change == "labels":
+                        source.labels.append("New native classification")
+                    elif change == "team":
+                        source.team = "another-native-team"
+                    elif change == "expiry":
+                        board.advance(400)
+            return await original(name=name, arguments=arguments)
+    
+        async with RunSurfaceLease(
+            tracker=tracker,
+            job_id="actual-job",
+            surfaces=frozenset({address(CLAIMED_ISSUE, SurfaceKind.ISSUE_SPLIT_SET)}),
+            lease_seconds=321.5,
+        ):
+            monkeypatch.setattr(board, "call_tool", call_tool)
+            error = None
+            try:
+                await tracker.create_split_if_absent(
+                    source_key=CLAIMED_ISSUE,
+                    deliverable_key="final-current",
+                    title="Prepared child",
+                    body="Prepared specification",
+                    holder="actual-job",
+                    expected=snapshot,
+                )
+            except (OrganizeWriteRefusalError, SurfaceLeaseError) as exc:
+                error = exc
+            assert injected
+            writes = [args for name, args in board.calls if name == "save_issue"]
+            if change is None:
+                assert error is None
+                assert len(writes) == 1
+            else:
+>               assert error is not None
+E               assert None is not None
+
+tests/tracker/test_organize_graph_final_boundary.py:72: AssertionError
+=========================== short test summary info ============================
+FAILED tests/tracker/test_organize_graph_final_boundary.py::test_final_split_observation_after_refreshed_identity_is_authoritative[labels]
+1 failed, 9 passed in 1.17s

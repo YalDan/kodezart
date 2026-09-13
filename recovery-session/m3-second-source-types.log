@@ -1,0 +1,4 @@
+src/kodezart/adapters/asyncio_job_queue.py:290: error: Missing named argument "scope" for "run" of "WorkflowEngine"  [call-arg]
+src/kodezart/composition/engine.py:319: error: Argument "ci_monitor" to "AuthoredChecks" has incompatible type "GitHubAPIClient | None"; expected "CIMonitor | None"  [arg-type]
+src/kodezart/main.py:148: error: Missing named argument "repositories" for "build_workflow_engine"  [call-arg]
+Found 3 errors in 3 files (checked 255 source files)

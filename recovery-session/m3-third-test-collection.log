@@ -1,0 +1,9 @@
+ImportError while loading conftest '/private/tmp/kodezart-v03-m3-plan-walk/tests/conftest.py'.
+tests/conftest.py:15: in <module>
+    from tests.fakes import (
+tests/fakes.py:1789: in <module>
+    class FakeCIMonitor:
+tests/fakes.py:1824: in FakeCIMonitor
+    def _attempt_context(self) -> dict[tuple[str, str], _FakeCIObservation]:
+                                                        ^^^^^^^^^^^^^^^^^^
+E   NameError: name '_FakeCIObservation' is not defined

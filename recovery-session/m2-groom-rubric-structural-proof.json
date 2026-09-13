@@ -1,0 +1,43 @@
+{
+  "base": "e99c9d105bdf5d20fec8b976dce58156b7c4fb72",
+  "original_test_oracles": [
+    {
+      "path": "tests/chains/test_organize_owner.py",
+      "count": 65,
+      "identical": true
+    },
+    {
+      "path": "tests/domain/test_organize.py",
+      "count": 59,
+      "identical": true
+    },
+    {
+      "path": "tests/integration/test_organize_scheduler.py",
+      "count": 22,
+      "identical": true
+    }
+  ],
+  "owner_changed_functions": [
+    "_request"
+  ],
+  "set_metadata": [
+    {
+      "set": "claude-opus",
+      "original_metadata_identical": true,
+      "rubric_keys": [
+        "criteria_validation",
+        "grooming_pass",
+        "ticket_review"
+      ]
+    },
+    {
+      "set": "anthropic_v5",
+      "original_metadata_identical": true,
+      "rubric_keys": [
+        "criteria_validation",
+        "grooming_pass",
+        "ticket_review"
+      ]
+    }
+  ]
+}

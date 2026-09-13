@@ -1,0 +1,2 @@
+src/kodezart/services/scope_runtime.py:43: error: Need type annotation for "_NATIVE_PROGRESS"  [var-annotated]
+Found 1 error in 1 file (checked 3 source files)

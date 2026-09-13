@@ -1,0 +1,34 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_______ test_cancellation_after_delta_observation_rearms_before_dispatch _______
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10c0c0290>
+
+    async def test_cancellation_after_delta_observation_rearms_before_dispatch(monkeypatch):
+        entered = asyncio.Event()
+        blocked = asyncio.Event()
+        tracker = FakeTrackerPort(issues=[make_tracker_issue("K-1")])
+        tick, gate, dispatcher = failing_tick(tracker)
+    
+        async def delayed_log(*args, **kwargs):
+            entered.set()
+            await blocked.wait()
+    
+        monkeypatch.setattr(gate._log, "ainfo", delayed_log)
+        task = asyncio.create_task(tick.run(TICK_STARTED_AT))
+        await asyncio.wait_for(entered.wait(), timeout=5)
+        assert gate.mark(PassSignal.approved_changed, container=TEAM_KEYS[0]) is not None
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert dispatcher.calls == 0
+>       assert gate.mark(PassSignal.approved_changed, container=TEAM_KEYS[0]) is None
+E       AssertionError: assert datetime.datetime(2026, 1, 1, 0, 0, tzinfo=datetime.timezone.utc) is None
+E        +  where datetime.datetime(2026, 1, 1, 0, 0, tzinfo=datetime.timezone.utc) = mark(<PassSignal.approved_changed: 'approved_changed'>, container='engineering')
+E        +    where mark = <kodezart.services.pass_gate.PassGate object at 0x10bd70da0>.mark
+E        +    and   <PassSignal.approved_changed: 'approved_changed'> = PassSignal.approved_changed
+
+../kodezart-recovery-session/test_dispatch_delta_cancel_independent.py:34: AssertionError
+=========================== short test summary info ============================
+FAILED ::test_cancellation_after_delta_observation_rearms_before_dispatch - A...
+1 failed in 3.06s

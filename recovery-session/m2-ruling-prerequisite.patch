@@ -1,0 +1,1972 @@
+diff --git a/src/kodezart/adapters/subprocess_git_source_reader.py b/src/kodezart/adapters/subprocess_git_source_reader.py
+new file mode 100644
+index 0000000..d04ab8a
+--- /dev/null
++++ b/src/kodezart/adapters/subprocess_git_source_reader.py
+@@ -0,0 +1,156 @@
++"""Read exact Git source objects without worktree changes or content filters."""
++
++import asyncio
++import os
++import re
++import signal
++from pathlib import PurePosixPath
++
++from kodezart.core.owned_tasks import finish_owned
++from kodezart.domain.errors import GitSourceReadError
++from kodezart.types.domain.assertion_drift import GitSourceBlob
++
++_OBJECT_ID = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})")
++
++
++class SubprocessGitSourceReader:
++    """A local object reader; fetching and source protection belong to callers."""
++
++    async def resolve_commit(self, *, cwd: str, ref: str) -> str:
++        if not ref or "\x00" in ref:
++            raise GitSourceReadError(
++                ref=ref, path=None, reason="invalid commit reference"
++            )
++        output = await self._command(
++            cwd=cwd,
++            ref=ref,
++            path=None,
++            args=("rev-parse", "--verify", "--end-of-options", f"{ref}^{{commit}}"),
++        )
++        try:
++            sha = output.decode("ascii").strip()
++        except UnicodeError as exc:
++            raise GitSourceReadError(
++                ref=ref, path=None, reason="invalid object identity"
++            ) from exc
++        if _OBJECT_ID.fullmatch(sha) is None:
++            raise GitSourceReadError(
++                ref=ref, path=None, reason="incomplete object identity"
++            )
++        return sha
++
++    async def read_source(
++        self, *, cwd: str, commit_sha: str, path: str
++    ) -> GitSourceBlob:
++        source = await self.find_source(cwd=cwd, commit_sha=commit_sha, path=path)
++        if source is None:
++            raise GitSourceReadError(
++                ref=commit_sha, path=path, reason="source path is missing or ambiguous"
++            )
++        return source
++
++    async def find_source(
++        self, *, cwd: str, commit_sha: str, path: str
++    ) -> GitSourceBlob | None:
++        canonical = PurePosixPath(path)
++        if (
++            _OBJECT_ID.fullmatch(commit_sha) is None
++            or not path
++            or canonical.is_absolute()
++            or str(canonical) != path
++            or ".." in canonical.parts
++            or "\x00" in path
++        ):
++            raise GitSourceReadError(
++                ref=commit_sha, path=path, reason="invalid source address"
++            )
++        if await self.resolve_commit(cwd=cwd, ref=commit_sha) != commit_sha:
++            raise GitSourceReadError(
++                ref=commit_sha, path=path, reason="the source address is not a commit"
++            )
++        listing = await self._command(
++            cwd=cwd,
++            ref=commit_sha,
++            path=path,
++            args=("ls-tree", "-z", "--full-tree", commit_sha, "--", path),
++        )
++        if not listing:
++            return None
++        records = listing.split(b"\x00")
++        if len(records) != 2 or records[-1] != b"":
++            raise GitSourceReadError(
++                ref=commit_sha, path=path, reason="source path is missing or ambiguous"
++            )
++        try:
++            metadata, returned_path = records[0].split(b"\t", 1)
++            mode, kind, identity = metadata.split(b" ")
++            blob_sha = identity.decode("ascii")
++        except (ValueError, UnicodeError) as exc:
++            raise GitSourceReadError(
++                ref=commit_sha, path=path, reason="invalid tree entry"
++            ) from exc
++        if (
++            returned_path != path.encode("utf-8")
++            or mode not in {b"100644", b"100755"}
++            or kind != b"blob"
++            or _OBJECT_ID.fullmatch(blob_sha) is None
++        ):
++            raise GitSourceReadError(
++                ref=commit_sha, path=path, reason="source is not the exact regular file"
++            )
++        content = await self._command(
++            cwd=cwd,
++            ref=commit_sha,
++            path=path,
++            args=("cat-file", "blob", blob_sha),
++        )
++        return GitSourceBlob(
++            commit_sha=commit_sha, path=path, blob_sha=blob_sha, content=content
++        )
++
++    async def _command(
++        self, *, cwd: str, ref: str, path: str | None, args: tuple[str, ...]
++    ) -> bytes:
++        try:
++            return await self._owned_command(cwd=cwd, ref=ref, path=path, args=args)
++        except OSError as exc:
++            raise GitSourceReadError(ref=ref, path=path, reason=str(exc)) from exc
++
++    async def _owned_command(
++        self, *, cwd: str, ref: str, path: str | None, args: tuple[str, ...]
++    ) -> bytes:
++        spawning = asyncio.create_task(
++            asyncio.create_subprocess_exec(
++                "git",
++                "--no-replace-objects",
++                "--literal-pathspecs",
++                *args,
++                cwd=cwd,
++                stdout=asyncio.subprocess.PIPE,
++                stderr=asyncio.subprocess.PIPE,
++                start_new_session=True,
++            )
++        )
++        communication: asyncio.Task[tuple[bytes, bytes]] | None = None
++        try:
++            process = await asyncio.shield(spawning)
++            communication = asyncio.create_task(process.communicate())
++            output, error = await asyncio.shield(communication)
++        except BaseException:
++            process, _ = await finish_owned(spawning)
++            try:
++                os.killpg(process.pid, signal.SIGKILL)
++            except ProcessLookupError:
++                pass
++            if communication is None:
++                communication = asyncio.create_task(process.communicate())
++            await finish_owned(communication)
++            raise
++        if process.returncode != 0:
++            raise GitSourceReadError(
++                ref=ref,
++                path=path,
++                reason=error.decode("utf-8", errors="replace").strip()
++                or "Git object read failed",
++            )
++        return output
+diff --git a/src/kodezart/core/protocols.py b/src/kodezart/core/protocols.py
+index 2dc0234..b104548 100644
+--- a/src/kodezart/core/protocols.py
++++ b/src/kodezart/core/protocols.py
+@@ -5,6 +5,7 @@ from typing import Protocol, runtime_checkable
+ 
+ from kodezart.core.prompt_rendering import PromptTemplate
+ from kodezart.types.domain.agent import AgentEvent
++from kodezart.types.domain.assertion_drift import GitSourceBlob
+ from kodezart.types.domain.branch import BaseSpec, WorkRef
+ from kodezart.types.domain.consolidation import (
+     ChangesetDigest,
+@@ -1378,3 +1379,31 @@ class OutboundContentGate(Protocol):
+         saying so.
+         """
+         ...
++
++
++class GitSourceReader(Protocol):
++    """Read pinned Git objects without checking out or running repository code."""
++
++    async def resolve_commit(self, *, cwd: str, ref: str) -> str:
++        """Resolve a commit-ish once to its complete immutable object identity."""
++        ...
++
++    async def read_source(
++        self, *, cwd: str, commit_sha: str, path: str
++    ) -> GitSourceBlob:
++        """Read exact regular-file bytes; missing/unsupported objects refuse."""
++        ...
++
++    async def find_source(
++        self, *, cwd: str, commit_sha: str, path: str
++    ) -> GitSourceBlob | None:
++        """Return None only for a successfully read, absent path at that commit."""
++        ...
++
++
++class TrackerCommentReader(Protocol):
++    """Read complete native comments without granting a writer."""
++
++    async def list_comments(self, *, issue_key: str) -> Sequence[TrackerComment]:
++        """Every comment on the issue, oldest first."""
++        ...
+diff --git a/src/kodezart/domain/agent.py b/src/kodezart/domain/agent.py
+index df7f3ec..2da1ba7 100644
+--- a/src/kodezart/domain/agent.py
++++ b/src/kodezart/domain/agent.py
+@@ -1,7 +1,25 @@
+ """Pure domain logic for agent operations — no I/O, no side effects."""
+ 
++import hashlib
++import json
+ import uuid
+ 
++from kodezart.types.domain.agent import RulingId
++
++
++def mint_ruling_id(*, issue_ref: str, question: str) -> RulingId:
++    """Name an exact issue/question pair, independently of its answer or run.
++
++    JSON framing preserves component boundaries; no normalization folds
++    distinct issue keys or reworded questions into an existing ruling.
++    """
++    if not issue_ref.strip() or not question.strip():
++        raise ValueError("a ruling requires a nonempty issue reference and question")
++    framed = json.dumps(
++        (issue_ref, question), ensure_ascii=False, separators=(",", ":")
++    ).encode("utf-8")
++    return RulingId(hashlib.sha256(framed).hexdigest())
++
+ 
+ def generate_workspace_id() -> str:
+     """Generate a unique 32-character hex identifier for workspace isolation."""
+diff --git a/src/kodezart/domain/errors.py b/src/kodezart/domain/errors.py
+index e356347..1609792 100644
+--- a/src/kodezart/domain/errors.py
++++ b/src/kodezart/domain/errors.py
+@@ -421,3 +421,28 @@ class CriterionReadError(Exception):
+         self.issue_key = issue_key
+         self.reason = reason
+         super().__init__(f"criteria of {issue_key!r} could not be read: {reason}")
++
++
++class GitSourceReadError(Exception):
++    """The requested immutable repository object cannot supply source bytes."""
++
++    def __init__(self, *, ref: str, path: str | None, reason: str) -> None:
++        self.ref = ref
++        self.path = path
++        self.reason = reason
++        super().__init__(f"source {ref!r}:{path!r} could not be read: {reason}")
++
++
++class RulingRecordReadError(Exception):
++    """The addressed issue's ruling records are unreadable or ambiguous."""
++
++    def __init__(self, *, issue_key: str, lane_key: str | None, reason: str) -> None:
++        self.issue_key = issue_key
++        self.lane_key = lane_key
++        self.reason = reason
++        region = (
++            "across its recorded lanes" if lane_key is None else f"for {lane_key!r}"
++        )
++        super().__init__(
++            f"rulings on {issue_key!r} {region} could not be read: {reason}"
++        )
+diff --git a/src/kodezart/domain/rulings.py b/src/kodezart/domain/rulings.py
+new file mode 100644
+index 0000000..3728810
+--- /dev/null
++++ b/src/kodezart/domain/rulings.py
+@@ -0,0 +1,79 @@
++"""The configured comment representation of a pinned fire-time ruling."""
++
++import json
++from collections.abc import Mapping
++
++from kodezart.domain.agent import mint_ruling_id
++from kodezart.domain.comment_markers import compose_comment_marker
++from kodezart.domain.tracker_writes import marked_comment_body
++from kodezart.types.domain.agent import Ruling, RulingId
++
++
++def ruling_marker(
++    *, ruling_id: RulingId, lane_key: str, marker_prefixes: Mapping[str, str]
++) -> str:
++    """Use the question identity as the occurrence key within its lane."""
++    return compose_comment_marker(
++        prefixes=marker_prefixes,
++        purpose="ruling",
++        lane=lane_key,
++        occurrence_key=ruling_id,
++    )
++
++
++def render_ruling(
++    *, ruling: Ruling, lane_key: str, marker_prefixes: Mapping[str, str]
++) -> str:
++    """Render every required field, including authorship, in the pinned text."""
++    _require_identity(ruling)
++    marker = ruling_marker(
++        ruling_id=ruling.ruling_id,
++        lane_key=lane_key,
++        marker_prefixes=marker_prefixes,
++    )
++    return marked_comment_body(
++        marker=marker,
++        body="```json\n"
++        + ruling.model_dump_json(
++            by_alias=True,
++            indent=2,
++            exclude={"protected_tests"} if ruling.protected_tests is None else set(),
++        )
++        + "\n```",
++    )
++
++
++def parse_ruling(
++    *, body: str, lane_key: str, marker_prefixes: Mapping[str, str]
++) -> Ruling:
++    """Decode the complete record without guessing authorship from prose."""
++    marker, separator, payload = body.partition("\n```json\n")
++    if not separator or not payload.endswith("\n```"):
++        raise ValueError("the ruling comment framing is invalid")
++    payload = payload[: -len("\n```")]
++    json.loads(payload, object_pairs_hook=_unique_object)
++    ruling = Ruling.model_validate_json(payload, strict=True)
++    _require_identity(ruling)
++    if marker != ruling_marker(
++        ruling_id=ruling.ruling_id,
++        lane_key=lane_key,
++        marker_prefixes=marker_prefixes,
++    ):
++        raise ValueError("the ruling marker does not match its lane and identity")
++    return ruling
++
++
++def _require_identity(ruling: Ruling) -> None:
++    if ruling.ruling_id != mint_ruling_id(
++        issue_ref=ruling.issue_ref, question=ruling.question
++    ):
++        raise ValueError("the ruling identity does not address its exact question")
++
++
++def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
++    fields: dict[str, object] = {}
++    for key, value in pairs:
++        if key in fields:
++            raise ValueError(f"duplicate ruling field {key!r}")
++        fields[key] = value
++    return fields
+diff --git a/src/kodezart/services/ruling_records.py b/src/kodezart/services/ruling_records.py
+new file mode 100644
+index 0000000..cb35719
+--- /dev/null
++++ b/src/kodezart/services/ruling_records.py
+@@ -0,0 +1,137 @@
++"""Enumerate full ruling artifacts from the owning tracker comments."""
++
++from urllib.parse import unquote
++
++from pydantic import ValidationError
++
++from kodezart.core.errors import (
++    TrackerAccessDeniedError,
++    TrackerProtocolError,
++    TrackerUnavailableError,
++)
++from kodezart.core.protocols import TrackerCommentReader
++from kodezart.domain.comment_markers import (
++    compose_comment_marker,
++    configured_marker_prefix,
++)
++from kodezart.domain.errors import RulingRecordReadError, TransientAPIError
++from kodezart.domain.rulings import parse_ruling
++from kodezart.types.domain.agent import Ruling, RulingId
++from kodezart.types.domain.operation import OperationConfig
++from kodezart.types.domain.tracker import TrackerComment
++
++
++class RulingRecordReader:
++    """A fresh full read preserves native addresses and never borrows authorship."""
++
++    def __init__(
++        self, *, tracker: TrackerCommentReader, operation: OperationConfig
++    ) -> None:
++        self._tracker = tracker
++        self._prefixes = dict(operation.marker_prefixes)
++
++    async def read_all(
++        self, *, issue_key: str, lane_key: str
++    ) -> tuple[tuple[TrackerComment, Ruling], ...]:
++        """Return the lane's current ruling occurrences, or a confirmed empty set.
++
++        Other comment purposes and other lanes do not belong to this query.
++        A malformed occurrence inside the addressed namespace refuses the
++        observation; an unreadable or duplicate record cannot become absence.
++        """
++        return await self._read(issue_key=issue_key, lane_key=lane_key)
++
++    async def read_issue(
++        self, *, issue_key: str
++    ) -> tuple[tuple[TrackerComment, Ruling], ...]:
++        """Read every canonical ruling occurrence on this issue across actual lanes.
++
++        Lane identities come only from configured native marker components.
++        The issue key, current fire subject and caller job imply no lane.
++        Duplicate question or comment identities across lanes refuse the read.
++        """
++        return await self._read(issue_key=issue_key, lane_key=None)
++
++    async def _read(
++        self, *, issue_key: str, lane_key: str | None
++    ) -> tuple[tuple[TrackerComment, Ruling], ...]:
++        prefix = configured_marker_prefix(self._prefixes, purpose="ruling")
++        lane_marker = (
++            compose_comment_marker(
++                prefixes=self._prefixes, purpose="ruling", lane=lane_key
++            )
++            if lane_key is not None
++            else None
++        )
++
++        def refusal(reason: str) -> RulingRecordReadError:
++            return RulingRecordReadError(
++                issue_key=issue_key, lane_key=lane_key, reason=reason
++            )
++
++        if not issue_key.strip():
++            raise refusal("the owning issue key must be nonempty")
++        try:
++            comments = await self._tracker.list_comments(issue_key=issue_key)
++        except (
++            TrackerUnavailableError,
++            TrackerAccessDeniedError,
++            TrackerProtocolError,
++            TransientAPIError,
++            ValidationError,
++        ) as exc:
++            raise refusal("the tracker comment read failed or was incomplete") from exc
++        results: list[tuple[TrackerComment, Ruling]] = []
++        identities: set[RulingId] = set()
++        comment_keys: set[str] = set()
++        for comment in comments:
++            if comment.issue_key != issue_key:
++                raise refusal("the listing contains a comment from another issue")
++            first_line = comment.body.partition("\n")[0]
++            observed_lane = lane_key
++            if lane_marker is not None:
++                if first_line != lane_marker and not first_line.startswith(
++                    f"{lane_marker[:-1]}:"
++                ):
++                    continue
++            else:
++                if first_line != f"[{prefix}]" and not first_line.startswith(
++                    f"[{prefix}:"
++                ):
++                    continue
++                components = first_line[1:-1].split(":")
++                if (
++                    not first_line.endswith("]")
++                    or len(components) != 3
++                    or not components[1]
++                    or not components[2]
++                ):
++                    raise refusal("a ruling marker has malformed lane components")
++                try:
++                    observed_lane = unquote(components[1], errors="strict")
++                except UnicodeError as exc:
++                    raise refusal(
++                        "a ruling marker has malformed lane encoding"
++                    ) from exc
++                if not observed_lane.strip():
++                    raise refusal("a ruling marker has an empty lane identity")
++            if observed_lane is None:
++                raise refusal("a selected ruling has no observed lane identity")
++            if comment.reply_to is not None:
++                raise refusal("a ruling record must be its own comment, not a reply")
++            try:
++                ruling = parse_ruling(
++                    body=comment.body,
++                    lane_key=observed_lane,
++                    marker_prefixes=self._prefixes,
++                )
++            except ValueError as exc:
++                raise refusal(f"a ruling record is malformed: {exc}") from exc
++            if ruling.issue_ref != issue_key:
++                raise refusal("the ruling names a different owning issue")
++            if ruling.ruling_id in identities or comment.comment_key in comment_keys:
++                raise refusal("several ruling records share an identity or native key")
++            identities.add(ruling.ruling_id)
++            comment_keys.add(comment.comment_key)
++            results.append((comment, ruling))
++        return tuple(results)
+diff --git a/src/kodezart/types/domain/agent.py b/src/kodezart/types/domain/agent.py
+index e6c9f0b..f7b8497 100644
+--- a/src/kodezart/types/domain/agent.py
++++ b/src/kodezart/types/domain/agent.py
+@@ -1,16 +1,18 @@
+ """Agent event domain models for SSE streaming."""
+ 
+ from enum import StrEnum
+-from typing import Literal
++from typing import Annotated, Literal, Self
+ 
+ from pydantic import (
+     ConfigDict,
+     Field,
+     field_validator,
++    model_validator,
+ )
+ 
+ from kodezart.types.base import CamelCaseModel
+ from kodezart.types.domain.accept import AcceptVerdict, SherlockFlag
++from kodezart.types.domain.assertion_drift import ProtectedTestRef
+ from kodezart.types.domain.branch import BaseInput, WorkRefRole
+ from kodezart.types.domain.ci import CIStatus
+ from kodezart.types.domain.consolidation import ConsolidationStatus
+@@ -28,6 +30,7 @@ from kodezart.types.domain.gating import RepoVisibility
+ from kodezart.types.domain.outcome import WorkflowOutcome
+ from kodezart.types.domain.persist import ArtifactPersistStatus
+ from kodezart.types.domain.remediation import RemediationEntry
++from kodezart.types.domain.ruling_id import RulingId as RulingId
+ from kodezart.types.domain.ticket_review import TicketApproval, TicketReviewMode
+ from kodezart.types.domain.trajectory import LoopTrajectory
+ from kodezart.types.domain.write_back import WriteBackFinding
+@@ -967,3 +970,101 @@ WIRE_SCHEMAS: dict[str, dict[str, object]] = {
+     "DRAFT_CRITIQUE_SCHEMA": DRAFT_CRITIQUE_SCHEMA,
+     "WRITE_BACK_SCHEMA": WRITE_BACK_SCHEMA,
+ }
++
++
++class RulingAuthor(StrEnum):
++    """Authorship explicitly recorded by the ruling artifact's producer."""
++
++    MACHINE = "machine"
++    PRINCIPAL = "principal"
++
++
++class RulingClass(StrEnum):
++    """The four defects a fire-time ruling may resolve."""
++
++    PIN_READING = "pin_reading"
++    PIN_ARTIFACT = "pin_artifact"
++    REGROUND_PREMISE = "reground_premise"
++    RESOLVE_CONTRADICTION = "resolve_contradiction"
++
++
++class RulingProtectedTestRef(ProtectedTestRef):
++    """A native ruling designation retains the canonical typed owner identity."""
++
++    source_ref: RulingId = Field(min_length=1, pattern=r"\S")
++
++
++class Ruling(CamelCaseModel):
++    """One pinned answer, with explicit authorship and its stable question key."""
++
++    model_config = ConfigDict(frozen=True)
++
++    ruling_id: RulingId = Field(
++        min_length=1, pattern=r"\S", description="The harness-minted ruling identity."
++    )
++    issue_ref: str = Field(
++        min_length=1, pattern=r"\S", description="The owning tracker's issue key."
++    )
++    question: str = Field(
++        min_length=1, pattern=r"\S", description="The exact question being ruled on."
++    )
++    ruling_class: RulingClass = Field(
++        description="Which of the four permitted defects this ruling resolves."
++    )
++    resolution: str = Field(
++        min_length=1, pattern=r"\S", description="The pinned answer the fire consumes."
++    )
++    rejected_alternative: Annotated[str, Field(min_length=1, pattern=r"\S")] | None = (
++        Field(description="The losing reading or contradiction, or explicit absence.")
++    )
++    repo_evidence: tuple[Annotated[str, Field(min_length=1, pattern=r"\S")], ...] = (
++        Field(
++            description="Repository evidence references supporting the pinned answer."
++        )
++    )
++    authored_by: RulingAuthor = Field(
++        description="Explicit machine or principal authorship, independent of account."
++    )
++    protected_tests: tuple[RulingProtectedTestRef, ...] | None = Field(
++        default=None,
++        description=(
++            "Tests explicitly designated as encoding this ruling. Each source_ref "
++            "is this ruling's identity. Null means designation was not recorded; "
++            "an empty list explicitly declares no protected tests."
++        ),
++    )
++
++    @model_validator(mode="after")
++    def name_rejected_reading(self) -> Self:
++        if (
++            self.ruling_class
++            in {
++                RulingClass.PIN_READING,
++                RulingClass.RESOLVE_CONTRADICTION,
++            }
++            and self.rejected_alternative is None
++        ):
++            raise ValueError("this ruling class must name its rejected alternative")
++        return self
++
++    @model_validator(mode="after")
++    def own_protected_tests(self) -> Self:
++        if self.protected_tests is None:
++            return self
++        addresses = set()
++        for reference in self.protected_tests:
++            if reference.source_ref != self.ruling_id:
++                raise ValueError("a protected test must name its owning ruling")
++            address = (reference.path, reference.qualified_name)
++            if address in addresses:
++                raise ValueError("duplicate protected test in one ruling")
++            addresses.add(address)
++        return self
++
++
++class RulingOutput(CamelCaseModel):
++    """The complete structured result of a fire-time ruling session."""
++
++    rulings: list[Ruling] = Field(
++        description="One answer per ruled question; an empty list means no rulings."
++    )
+diff --git a/src/kodezart/types/domain/assertion_drift.py b/src/kodezart/types/domain/assertion_drift.py
+new file mode 100644
+index 0000000..f04a7de
+--- /dev/null
++++ b/src/kodezart/types/domain/assertion_drift.py
+@@ -0,0 +1,43 @@
++"""Source-owned protected-test addresses and exact Git source objects."""
++
++from pathlib import PurePosixPath
++from typing import Self
++
++from pydantic import ConfigDict, Field, model_validator
++
++from kodezart.types.base import CamelCaseModel
++
++
++class ProtectedTestRef(CamelCaseModel):
++    """A test explicitly named by its owning ruling, never inferred from prose."""
++
++    model_config = ConfigDict(frozen=True)
++
++    source_ref: str = Field(min_length=1, pattern=r"\S")
++    path: str = Field(min_length=1)
++    qualified_name: str = Field(min_length=1)
++
++    @model_validator(mode="after")
++    def canonical_reference(self) -> Self:
++        path = PurePosixPath(self.path)
++        if (
++            path.is_absolute()
++            or str(path) != self.path
++            or ".." in path.parts
++            or "\x00" in self.path
++            or path.suffix != ".py"
++            or not all(part.isidentifier() for part in self.qualified_name.split("."))
++        ):
++            raise ValueError("a protected Python test needs a canonical path and name")
++        return self
++
++
++class GitSourceBlob(CamelCaseModel):
++    """Exact bytes of a regular file from one immutable commit object."""
++
++    model_config = ConfigDict(frozen=True)
++
++    commit_sha: str = Field(min_length=1)
++    path: str = Field(min_length=1)
++    blob_sha: str = Field(min_length=1)
++    content: bytes
+diff --git a/src/kodezart/types/domain/ruling_id.py b/src/kodezart/types/domain/ruling_id.py
+new file mode 100644
+index 0000000..f3cb59d
+--- /dev/null
++++ b/src/kodezart/types/domain/ruling_id.py
+@@ -0,0 +1,5 @@
++"""The stable ruling identity shared by records and amendment claims."""
++
++from typing import NewType
++
++RulingId = NewType("RulingId", str)
+diff --git a/tests/domain/test_ruling_identity.py b/tests/domain/test_ruling_identity.py
+new file mode 100644
+index 0000000..a3ec21e
+--- /dev/null
++++ b/tests/domain/test_ruling_identity.py
+@@ -0,0 +1,99 @@
++"""Ruling identity has one typed mint and no answer-dependent component."""
++
++from pathlib import Path
++
++import pytest
++
++from kodezart.domain.agent import mint_ruling_id
++from tests.identity_guards import construction_sites as _construction_sites
++from tests.identity_guards import invalid_ruling_fields as _bare_ruling_fields
++
++SOURCE_ROOT = Path(__file__).parents[2] / "src" / "kodezart"
++
++
++def test_one_minting_site_and_no_bare_string_model_addresses() -> None:
++    sites = []
++    bare = []
++    for path in SOURCE_ROOT.rglob("*.py"):
++        source = path.read_text()
++        sites.extend((path, line) for line in _construction_sites(source))
++        if "types" in path.parts:
++            bare.extend((path, line) for line in _bare_ruling_fields(source))
++    assert len(sites) == 1, sites
++    assert sites[0][0] == SOURCE_ROOT / "domain" / "agent.py"
++    assert bare == []
++
++
++@pytest.mark.parametrize(
++    "source",
++    [
++        "RulingId('copy')",
++        "from module import RulingId as RuleKey\nRuleKey('copy')",
++        "module.RulingId('copy')",
++    ],
++)
++def test_site_guard_detects_aliases_and_qualified_constructors(source: str) -> None:
++    assert len(_construction_sites(source)) == 1
++
++
++@pytest.mark.parametrize("annotation", ["str", "str | None", "tuple[str, ...]"])
++def test_address_guard_rejects_bare_strings_inside_containers(annotation: str) -> None:
++    assert _bare_ruling_fields(f"class Record:\n    ruling_id: {annotation}")
++    assert not _bare_ruling_fields("class Record:\n    ruling_id: RulingId")
++
++
++@pytest.mark.parametrize(
++    "source",
++    [
++        'class Record:\n    ruling_id: "str"',
++        'class Record:\n    ruling_ids: "tuple[str, ...]"',
++        "from builtins import str as Text\nclass Record:\n    ruling_id: Text",
++        "import builtins\nclass Record:\n    ruling_ref: builtins.str",
++        "import builtins as primitives\nclass Record:\n    ruling_ref: primitives.str",
++        'from builtins import str as Text\nclass Record:\n    ruling_id: "Text | None"',
++    ],
++)
++def test_address_guard_rejects_quoted_and_aliased_builtin_annotations(source):
++    assert _bare_ruling_fields(source)
++
++
++@pytest.mark.parametrize(
++    "annotation",
++    ['"RulingId"', 'tuple["RulingId", ...]', 'Annotated[RulingId, "str"]'],
++)
++def test_address_guard_keeps_typed_forward_references_and_metadata(annotation):
++    assert not _bare_ruling_fields(f"class Record:\n    ruling_id: {annotation}")
++
++
++def test_exact_pair_is_stable_and_component_boundaries_are_distinct() -> None:
++    value = mint_ruling_id(issue_ref="EXT/42", question="Which reading applies?")
++    assert value == mint_ruling_id(
++        issue_ref="EXT/42", question="Which reading applies?"
++    )
++    assert mint_ruling_id(issue_ref="a", question="bc") != mint_ruling_id(
++        issue_ref="ab", question="c"
++    )
++
++
++@pytest.mark.parametrize(
++    "issue,question",
++    [
++        ("OTHER", "Question"),
++        ("ISSUE", "question"),
++        ("ISSUE", "Question "),
++        ("ISSUE", "Quéstion"),
++    ],
++)
++def test_identity_preserves_each_exact_input(issue: str, question: str) -> None:
++    assert mint_ruling_id(issue_ref=issue, question=question) != mint_ruling_id(
++        issue_ref="ISSUE", question="Question"
++    )
++
++
++@pytest.mark.parametrize(
++    "issue,question",
++    [("", "question"), (" \n", "question"), ("issue", ""), ("issue", "\t ")],
++)
++def test_missing_identity_inputs_refuse(issue: str, question: str) -> None:
++    with pytest.raises(ValueError):
++        mint_ruling_id(issue_ref=issue, question=question)
+diff --git a/tests/domain/test_ruling_protected_tests.py b/tests/domain/test_ruling_protected_tests.py
+new file mode 100644
+index 0000000..ecbfef1
+--- /dev/null
++++ b/tests/domain/test_ruling_protected_tests.py
+@@ -0,0 +1,158 @@
++"""Explicit ruling designation preserves unknown, empty and named protection."""
++
++import json
++import subprocess
++import sys
++from typing import get_type_hints
++
++import pytest
++from pydantic import ValidationError
++
++from kodezart.domain.rulings import parse_ruling, render_ruling
++from kodezart.types.domain.agent import Ruling, RulingId, RulingProtectedTestRef
++from tests.domain.test_rulings import LANE, PREFIXES, ruling_data
++
++
++def designated(**changes):
++    data = ruling_data()
++    reference = {
++        "source_ref": data["ruling_id"],
++        "path": "tests/test_contract.py",
++        "qualified_name": "TestContract.test_expected_value",
++    }
++    data["protected_tests"] = (RulingProtectedTestRef(**{**reference, **changes}),)
++    return data
++
++
++def round_trip(data):
++    value = Ruling.model_validate(data)
++    text = render_ruling(ruling=value, lane_key=LANE, marker_prefixes=PREFIXES)
++    return value, text, parse_ruling(body=text, lane_key=LANE, marker_prefixes=PREFIXES)
++
++
++@pytest.mark.parametrize("explicit_null", [False, True])
++def test_unknown_designation_preserves_the_original_generic_record_bytes(explicit_null):
++    data = ruling_data()
++    if explicit_null:
++        data["protected_tests"] = None
++    value, text, decoded = round_trip(data)
++    old_fields = {
++        "rulingId": data["ruling_id"],
++        "issueRef": data["issue_ref"],
++        "question": data["question"],
++        "rulingClass": data["ruling_class"],
++        "resolution": data["resolution"],
++        "rejectedAlternative": data["rejected_alternative"],
++        "repoEvidence": list(data["repo_evidence"]),
++        "authoredBy": data["authored_by"],
++    }
++    assert text.split("\n```json\n")[1] == (
++        json.dumps(old_fields, ensure_ascii=False, indent=2) + "\n```"
++    )
++    assert decoded == value and decoded.protected_tests is None
++
++
++@pytest.mark.parametrize("references", [(), None])
++def test_explicit_empty_is_distinct_from_unknown_on_wire(references):
++    value, text, decoded = round_trip(ruling_data(protected_tests=references))
++    assert decoded.protected_tests == references
++    assert ('"protectedTests": []' in text) is (references == ())
++    assert value == decoded
++
++
++def test_protected_names_round_trip_in_the_owning_ruling_without_new_identity():
++    value, text, decoded = round_trip(designated())
++    assert decoded == value
++    assert decoded.protected_tests[0].source_ref == value.ruling_id
++    assert '"protectedTests"' in text
++    with pytest.raises(ValidationError, match="frozen"):
++        decoded.protected_tests[0].path = "tests/other.py"
++    with pytest.raises(ValidationError, match="frozen"):
++        decoded.protected_tests = ()
++
++
++def test_native_explicit_null_is_unknown_not_empty():
++    _, text, _ = round_trip(ruling_data(protected_tests=()))
++    decoded = parse_ruling(
++        body=text.replace('"protectedTests": []', '"protectedTests": null'),
++        lane_key=LANE,
++        marker_prefixes=PREFIXES,
++    )
++    assert decoded.protected_tests is None
++
++
++def test_reference_to_another_ruling_is_rejected():
++    with pytest.raises(ValidationError, match="owning ruling"):
++        Ruling.model_validate(designated(source_ref="another-ruling"))
++
++
++def test_repeated_test_address_cannot_duplicate_one_rulings_protection():
++    data = designated()
++    data["protected_tests"] *= 2
++    with pytest.raises(ValidationError, match="duplicate protected test"):
++        Ruling.model_validate(data)
++
++
++@pytest.mark.parametrize(
++    "change",
++    [
++        lambda text: text.replace(
++            '"sourceRef":', '"sourceRef": "foreign", "sourceRef":'
++        ),
++        lambda text: text.replace(
++            '"sourceRef":', '"inventedOwner": true, "sourceRef":'
++        ),
++        lambda text: text.replace("tests/test_contract.py", "../test_contract.py"),
++        lambda text: text.replace("TestContract.test_expected_value", "test-value"),
++        lambda text: text.replace(
++            '"protectedTests": [', '"protectedTests": {}, "protectedTests": ['
++        ),
++    ],
++)
++def test_invalid_native_designation_refuses_instead_of_losing_protection(change):
++    _, text, _ = round_trip(designated())
++    with pytest.raises(ValueError):
++        parse_ruling(body=change(text), lane_key=LANE, marker_prefixes=PREFIXES)
++
++
++def test_native_designation_has_a_typed_ruling_owner():
++    assert get_type_hints(RulingProtectedTestRef)["source_ref"] is RulingId
++
++
++def test_mypy_preserves_reader_identity_and_refuses_a_plain_string_owner(tmp_path):
++    program = """from kodezart.domain.agent import mint_ruling_id
++from kodezart.types.domain.agent import Ruling, RulingId, RulingProtectedTestRef
++
++def recorded_owner(ruling: Ruling) -> RulingId:
++    if not ruling.protected_tests:
++        raise ValueError("No designated test")
++    return ruling.protected_tests[0].source_ref
++
++reference = RulingProtectedTestRef(
++    source_ref=mint_ruling_id(issue_ref="external/issue", question="Exact question"),
++    path="tests/test_contract.py",
++    qualified_name="test_contract",
++)
++"""
++    path = tmp_path / "ruling_designation_typecheck.py"
++
++    def typecheck(text):
++        path.write_text(text)
++        return subprocess.run(
++            [sys.executable, "-m", "mypy", "--strict", str(path)],
++            capture_output=True,
++            text=True,
++            check=False,
++        )
++
++    accepted = typecheck(program)
++    assert accepted.returncode == 0, accepted.stdout + accepted.stderr
++    refused = typecheck(
++        program.replace(
++            'mint_ruling_id(issue_ref="external/issue", question="Exact question")',
++            '"an untyped ruling address"',
++        )
++    )
++    assert refused.returncode == 1, refused.stdout + refused.stderr
++    assert 'Argument "source_ref"' in refused.stdout
++    assert 'incompatible type "str"; expected "RulingId"' in refused.stdout
+diff --git a/tests/domain/test_rulings.py b/tests/domain/test_rulings.py
+new file mode 100644
+index 0000000..9438968
+--- /dev/null
++++ b/tests/domain/test_rulings.py
+@@ -0,0 +1,139 @@
++"""Pinned ruling text retains required authorship and exact question identity."""
++
++import json
++
++import pytest
++from pydantic import ValidationError
++
++from kodezart.domain.agent import mint_ruling_id
++from kodezart.domain.rulings import parse_ruling, render_ruling, ruling_marker
++from kodezart.types.domain.agent import Ruling, RulingAuthor, RulingClass, RulingOutput
++from kodezart.types.domain.operation import OperationMemberAbsentError
++
++PREFIXES = {"ruling": "fixture-pinned", "decision": "fixture-answer"}
++LANE = "lane:café/alpha"
++
++
++def ruling_data(**changes):
++    fields = {
++        "issue_ref": "EXT/42",
++        "question": "Which interpretation applies?\nKeep exact bytes.",
++        "ruling_class": "pin_reading",
++        "resolution": "Use the observable reading.",
++        "rejected_alternative": "The reading that cannot terminate.",
++        "repo_evidence": ("src/one.py:12 — existing behavior", "HEAD:path/二.py"),
++        "authored_by": "machine",
++    }
++    fields.update(changes)
++    fields.setdefault(
++        "ruling_id",
++        mint_ruling_id(issue_ref=fields["issue_ref"], question=fields["question"]),
++    )
++    return fields
++
++
++def render(data=None):
++    return render_ruling(
++        ruling=Ruling.model_validate(ruling_data() if data is None else data),
++        lane_key=LANE,
++        marker_prefixes=PREFIXES,
++    )
++
++
++@pytest.mark.parametrize("author", list(RulingAuthor))
++@pytest.mark.parametrize("kind", list(RulingClass))
++async def test_closed_model_and_pinned_text_round_trip_every_author_and_class(
++    author, kind
++):
++    original = Ruling.model_validate(ruling_data(authored_by=author, ruling_class=kind))
++    body = render_ruling(ruling=original, lane_key=LANE, marker_prefixes=PREFIXES)
++    parsed = parse_ruling(body=body, lane_key=LANE, marker_prefixes=PREFIXES)
++    assert parsed == original
++    assert json.loads(body.split("\n```json\n")[1][:-4])["authoredBy"] == author
++    assert body.splitlines()[0] == ruling_marker(
++        ruling_id=original.ruling_id, lane_key=LANE, marker_prefixes=PREFIXES
++    )
++    assert "fixture-pinned:lane%3Acaf%C3%A9%2Falpha:" in body
++    assert RulingOutput(rulings=[parsed]).rulings == [original]
++    with pytest.raises(ValidationError, match="frozen"):
++        parsed.authored_by = RulingAuthor.PRINCIPAL
++
++
++@pytest.mark.parametrize("field", list(ruling_data()))
++def test_every_ruling_field_is_required(field):
++    data = ruling_data()
++    del data[field]
++    with pytest.raises(ValidationError):
++        Ruling.model_validate(data)
++
++
++@pytest.mark.parametrize("author", [None, "", "operator", "MACHINE", 1])
++def test_no_account_or_unknown_author_substitutes_for_the_required_enum(author):
++    with pytest.raises(ValidationError):
++        Ruling.model_validate(ruling_data(authored_by=author))
++
++
++@pytest.mark.parametrize("kind", list(RulingClass))
++def test_rejected_alternative_is_explicit_and_required_for_a_losing_reading(kind):
++    data = ruling_data(ruling_class=kind, rejected_alternative=None)
++    if kind in {RulingClass.PIN_READING, RulingClass.RESOLVE_CONTRADICTION}:
++        with pytest.raises(ValidationError, match="rejected alternative"):
++            Ruling.model_validate(data)
++    else:
++        assert Ruling.model_validate(data).rejected_alternative is None
++
++
++@pytest.mark.parametrize(
++    "change",
++    [
++        lambda body: body.replace('"authoredBy": "machine"', '"authoredBy": null'),
++        lambda body: body.replace('"authoredBy": "machine"', '"authoredBy": "other"'),
++        lambda body: body.replace(
++            '"authoredBy": "machine"',
++            '"authoredBy": "machine", "authoredBy": "principal"',
++        ),
++        lambda body: body.replace(
++            '"authoredBy": "machine"', '"authoredBy": "machine", "extra": true'
++        ),
++        lambda body: body.replace("Which interpretation", "A different interpretation"),
++        lambda body: body.replace("fixture-pinned", "fixture-answer", 1),
++        lambda body: body.replace("lane%3Acaf%C3%A9%2Falpha", "other", 1),
++        lambda body: "quoted\n" + body,
++        lambda body: body + "\nextra text",
++        lambda body: body[:-4],
++    ],
++)
++def test_damaged_or_ambiguous_text_refuses(change):
++    with pytest.raises(ValueError):
++        parse_ruling(body=change(render()), lane_key=LANE, marker_prefixes=PREFIXES)
++
++
++def test_answer_amendment_retains_question_address_but_a_new_question_does_not():
++    first = Ruling.model_validate(ruling_data())
++    amended = Ruling.model_validate(
++        ruling_data(resolution="A corrected pinned answer.")
++    )
++    second = Ruling.model_validate(ruling_data(question="Another exact question?"))
++    assert first.ruling_id == amended.ruling_id
++    assert first.ruling_id != second.ruling_id
++    assert (
++        render(ruling_data()).splitlines()[0]
++        == render(ruling_data(resolution="Changed")).splitlines()[0]
++    )
++
++
++def test_renderer_refuses_an_unrelated_minted_id():
++    invalid = Ruling.model_validate(
++        ruling_data(ruling_id=mint_ruling_id(issue_ref="other", question="elsewhere"))
++    )
++    with pytest.raises(ValueError, match="exact question"):
++        render_ruling(ruling=invalid, lane_key=LANE, marker_prefixes=PREFIXES)
++
++
++def test_absent_ruling_purpose_cannot_borrow_the_decision_reply_prefix():
++    with pytest.raises(OperationMemberAbsentError, match="ruling"):
++        render_ruling(
++            ruling=Ruling.model_validate(ruling_data()),
++            lane_key=LANE,
++            marker_prefixes={"decision": "fixture-answer"},
++        )
+diff --git a/tests/git_source_fixtures.py b/tests/git_source_fixtures.py
+new file mode 100644
+index 0000000..c49ce94
+--- /dev/null
++++ b/tests/git_source_fixtures.py
+@@ -0,0 +1,40 @@
++"""Real Git fixture helpers shared by immutable source boundary tests."""
++
++import subprocess
++
++import pytest
++
++PATH = "tests/test_contract.py"
++
++
++def git(cwd, *args):
++    return (
++        subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True)
++        .stdout.decode()
++        .strip()
++    )
++
++
++def source(value):
++    return (
++        f"def implementation():\n    return {value}\n\n"
++        f"def test_contract():\n    assert implementation() == {value}\n"
++    )
++
++
++def commit(repo, body):
++    (repo / PATH).write_text(body)
++    git(repo, "add", "--all")
++    git(repo, "commit", "-qm", "fixture source")
++    return git(repo, "rev-parse", "HEAD")
++
++
++@pytest.fixture
++def repo(tmp_path):
++    repo = tmp_path / "repo"
++    repo.mkdir()
++    git(repo, "init", "-q")
++    git(repo, "config", "user.name", "Fixture")
++    git(repo, "config", "user.email", "fixture@example.invalid")
++    (repo / "tests").mkdir()
++    return repo
+diff --git a/tests/identity_guards.py b/tests/identity_guards.py
+new file mode 100644
+index 0000000..4bc93ca
+--- /dev/null
++++ b/tests/identity_guards.py
+@@ -0,0 +1,181 @@
++"""Shared static checks for explicit identity construction and model addresses."""
++
++import ast
++
++
++def construction_sites(source: str, *, identity: str = "RulingId") -> tuple[int, ...]:
++    tree = ast.parse(source)
++    constructors = {identity}
++    for node in ast.walk(tree):
++        if isinstance(node, ast.ImportFrom):
++            constructors.update(
++                alias.asname or alias.name
++                for alias in node.names
++                if alias.name == identity
++            )
++
++    def is_constructor(node: ast.AST) -> bool:
++        return (isinstance(node, ast.Name) and node.id in constructors) or (
++            isinstance(node, ast.Attribute) and node.attr == identity
++        )
++
++    # Assignment aliases can precede their source alias in another function.
++    # Resolve the finite set before counting calls; never execute source.
++    changed = True
++    while changed:
++        previous = set(constructors)
++        for node in ast.walk(tree):
++            if isinstance(node, ast.Assign) and is_constructor(node.value):
++                constructors.update(
++                    target.id for target in node.targets if isinstance(target, ast.Name)
++                )
++            elif (
++                isinstance(node, ast.AnnAssign)
++                and node.value is not None
++                and isinstance(node.target, ast.Name)
++                and is_constructor(node.value)
++            ):
++                constructors.add(node.target.id)
++        changed = constructors != previous
++    return tuple(
++        node.lineno
++        for node in ast.walk(tree)
++        if isinstance(node, ast.Call) and is_constructor(node.func)
++    )
++
++
++def invalid_ruling_fields(source: str) -> tuple[int, ...]:
++    tree = ast.parse(source)
++    parents = {
++        id(child): parent
++        for parent in ast.walk(tree)
++        for child in ast.iter_child_nodes(parent)
++    }
++
++    def scope_of(node: ast.AST) -> tuple[str, ...]:
++        scope = []
++        while id(node) in parents:
++            node = parents[id(node)]
++            if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
++                scope.append(node.name)
++        return tuple(reversed(scope))
++
++    identities = {"RulingId"}
++    aliases: dict[str, tuple[ast.expr, tuple[str, ...]]] = {}
++
++    def qualified(name: str, scope: tuple[str, ...]) -> str:
++        return ".".join((*scope, name))
++
++    for node in ast.walk(tree):
++        scope = scope_of(node)
++        if isinstance(node, ast.ImportFrom):
++            identities.update(
++                qualified(alias.asname or alias.name, scope)
++                for alias in node.names
++                if alias.name == "RulingId"
++            )
++            for alias in node.names:
++                if alias.asname == "RulingId" and alias.name != "RulingId":
++                    aliases[qualified("RulingId", scope)] = (
++                        ast.Name(id=alias.name),
++                        scope,
++                    )
++        elif isinstance(node, ast.Assign):
++            for target in node.targets:
++                if isinstance(target, ast.Name):
++                    aliases[qualified(target.id, scope)] = node.value, scope
++        elif isinstance(node, ast.AnnAssign) and node.value is not None:
++            if isinstance(node.target, ast.Name):
++                aliases[qualified(node.target.id, scope)] = node.value, scope
++
++    def lookup(name: str, scope: tuple[str, ...]) -> str | None:
++        for length in range(len(scope), -1, -1):
++            key = qualified(name, scope[:length])
++            if key in aliases or key in identities:
++                return key
++        return None
++
++    def typed(
++        node: ast.AST,
++        scope: tuple[str, ...],
++        visited: frozenset[str] = frozenset(),
++    ) -> tuple[bool, bool]:
++        """Return whether an identity is present and every address leaf is typed."""
++        if isinstance(node, (ast.Name, ast.Attribute)):
++            if isinstance(node, ast.Attribute):
++                owner = lookup(ast.unparse(node.value), scope)
++                if owner is not None and owner in aliases:
++                    if owner in visited:
++                        return False, False
++                    value, binding_scope = aliases[owner]
++                    return typed(
++                        ast.Attribute(value=value, attr=node.attr),
++                        binding_scope,
++                        visited | {owner},
++                    )
++            name = ast.unparse(node)
++            key = lookup(name, scope)
++            if key is not None and key in aliases and key not in visited:
++                value, binding_scope = aliases[key]
++                if (
++                    key == "RulingId"
++                    and isinstance(value, ast.Call)
++                    and isinstance(value.func, ast.Name)
++                    and value.func.id == "NewType"
++                    and value.args
++                    and isinstance(value.args[0], ast.Constant)
++                    and value.args[0].value == "RulingId"
++                ):
++                    return True, True
++                return typed(value, binding_scope, visited | {key})
++            if key in identities and key not in aliases:
++                return True, True
++            if (
++                key is None
++                and isinstance(node, ast.Attribute)
++                and node.attr == "RulingId"
++            ):
++                return True, True
++            return False, False
++        if isinstance(node, ast.Constant):
++            if node.value is None or node.value is Ellipsis:
++                return False, True
++            if isinstance(node.value, str):
++                try:
++                    return typed(
++                        ast.parse(node.value, mode="eval").body, scope, visited
++                    )
++                except SyntaxError:
++                    pass
++            return False, False
++        if isinstance(node, ast.Subscript):
++            container_name = (
++                node.value.id
++                if isinstance(node.value, ast.Name)
++                else node.value.attr
++                if isinstance(node.value, ast.Attribute)
++                else None
++            )
++            if container_name == "Annotated" and isinstance(node.slice, ast.Tuple):
++                return typed(node.slice.elts[0], scope, visited)
++            return typed(node.slice, scope, visited)
++        children = (
++            node.elts
++            if isinstance(node, ast.Tuple)
++            else [node.left, node.right]
++            if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr)
++            else []
++        )
++        results = [typed(child, scope, visited) for child in children]
++        return any(present for present, _ in results), bool(results) and all(
++            valid for _, valid in results
++        )
++
++    return tuple(
++        node.lineno
++        for node in ast.walk(tree)
++        if isinstance(node, ast.AnnAssign)
++        and isinstance(node.target, ast.Name)
++        and node.target.id in {"ruling_id", "ruling_ids", "ruling_ref", "ruling_refs"}
++        and typed(node.annotation, scope_of(node)) != (True, True)
++    )
+diff --git a/tests/services/test_git_source_lookup.py b/tests/services/test_git_source_lookup.py
+new file mode 100644
+index 0000000..2dbb0b1
+--- /dev/null
++++ b/tests/services/test_git_source_lookup.py
+@@ -0,0 +1,44 @@
++"""Optional immutable source lookup separates measured absence from read failure."""
++
++import pytest
++
++from kodezart.adapters.subprocess_git_source_reader import SubprocessGitSourceReader
++from kodezart.domain.errors import GitSourceReadError
++from tests.git_source_fixtures import PATH, commit, git, source
++from tests.git_source_fixtures import repo as repo
++
++
++async def test_actual_deleted_file_is_absent_only_at_the_selected_revision(repo):
++    reader = SubprocessGitSourceReader()
++    baseline = commit(repo, source(1))
++    (repo / PATH).unlink()
++    git(repo, "add", "--all")
++    git(repo, "commit", "-qm", "Delete source")
++    head = git(repo, "rev-parse", "HEAD")
++    before = await reader.find_source(cwd=str(repo), commit_sha=baseline, path=PATH)
++    assert before.content == source(1).encode()
++    assert before.commit_sha == baseline and before.path == PATH
++    assert await reader.find_source(cwd=str(repo), commit_sha=head, path=PATH) is None
++    with pytest.raises(GitSourceReadError, match="missing"):
++        await reader.read_source(cwd=str(repo), commit_sha=head, path=PATH)
++
++
++@pytest.mark.parametrize("damage", ["missing-commit", "directory", "symlink", "path"])
++async def test_unreadable_or_unsupported_objects_are_never_missing(repo, damage):
++    reader = SubprocessGitSourceReader()
++    baseline = commit(repo, source(1))
++    path = PATH
++    if damage == "missing-commit":
++        baseline = "0" * 40
++    elif damage == "directory":
++        path = "tests"
++    elif damage == "path":
++        path = "../outside.py"
++    else:
++        (repo / "link").symlink_to(PATH)
++        git(repo, "add", "link")
++        git(repo, "commit", "-qm", "Add symlink")
++        baseline = git(repo, "rev-parse", "HEAD")
++        path = "link"
++    with pytest.raises(GitSourceReadError):
++        await reader.find_source(cwd=str(repo), commit_sha=baseline, path=path)
+diff --git a/tests/tracker/comment_page_fixtures.py b/tests/tracker/comment_page_fixtures.py
+new file mode 100644
+index 0000000..7419b1b
+--- /dev/null
++++ b/tests/tracker/comment_page_fixtures.py
+@@ -0,0 +1,38 @@
++"""Measured comment-page fixtures shared by tracker record readers."""
++
++from collections.abc import Mapping
++
++from tests.fakes import FakeLinearMcpServer, FakeMcpComment
++from tests.tracker.conftest import APPROVED_ISSUE, FIXTURE_NOW, fixture_server
++
++
++class CommentPageServer(FakeLinearMcpServer):
++    def __init__(self, pages: Mapping[str | None, Mapping[str, object]]):
++        source = fixture_server()
++        super().__init__(
++            issues=list(source.issues.values()),
++            actor="fixture-author",
++            comment_clock=lambda: FIXTURE_NOW,
++        )
++        self.pages = pages
++
++    def _tool_list_comments(self, arguments: Mapping[str, object]):
++        cursor = arguments.get("cursor")
++        assert cursor is None or isinstance(cursor, str)
++        page = dict(self.pages[cursor])
++        if cursor is None:
++            page["comments"] = [
++                *page["comments"],
++                *(c.wire() for c in self.comments if c.body.startswith("```")),
++            ]
++        return page
++
++
++def comment(key: str, body: str) -> FakeMcpComment:
++    return FakeMcpComment(
++        id=key,
++        issue_id=APPROVED_ISSUE,
++        body=body,
++        author="fixture-author",
++        created_at=FIXTURE_NOW,
++    )
+diff --git a/tests/tracker/test_issue_ruling_records.py b/tests/tracker/test_issue_ruling_records.py
+new file mode 100644
+index 0000000..6a1d3eb
+--- /dev/null
++++ b/tests/tracker/test_issue_ruling_records.py
+@@ -0,0 +1,125 @@
++"""Issue-wide ruling reads discover native lane markers without guessing lanes."""
++
++from datetime import timedelta
++
++import pytest
++
++from kodezart.domain.errors import RulingRecordReadError
++from kodezart.domain.rulings import render_ruling
++from kodezart.types.domain.agent import Ruling
++from tests.domain.test_rulings import PREFIXES, ruling_data
++from tests.tracker.comment_page_fixtures import CommentPageServer, comment
++from tests.tracker.conftest import APPROVED_ISSUE, linear_over_fake_mcp
++from tests.tracker.test_ruling_records import reader
++
++
++async def seed_lane(tracker, lane, *, question="Which interpretation applies?"):
++    value = Ruling.model_validate(
++        ruling_data(issue_ref=APPROVED_ISSUE, question=question)
++    )
++    body = render_ruling(ruling=value, lane_key=lane, marker_prefixes=PREFIXES)
++    stored = await tracker.post_comment(issue_key=APPROVED_ISSUE, body=body)
++    return stored, value
++
++
++async def test_issue_wide_read_retains_actual_different_lane_occurrences(
++    tracker,
++    tracker_writes,
++):
++    first = await seed_lane(tracker, "old:lane/café")
++    second = await seed_lane(tracker, "current%lane", question="Another actual choice?")
++    before = tracker_writes()
++    assert await reader(tracker).read_issue(issue_key=APPROVED_ISSUE) == (first, second)
++    assert await reader(tracker).read_all(
++        issue_key=APPROVED_ISSUE, lane_key="current%lane"
++    ) == (second,)
++    assert tracker_writes() == before
++
++
++async def test_same_question_under_two_lanes_is_ambiguous_not_two_rulings(tracker):
++    await seed_lane(tracker, "first")
++    await seed_lane(tracker, "second")
++    with pytest.raises(RulingRecordReadError, match="share an identity") as caught:
++        await reader(tracker).read_issue(issue_key=APPROVED_ISSUE)
++    assert caught.value.lane_key is None
++
++
++@pytest.mark.parametrize(
++    "marker",
++    [
++        "[fixture-pinned:]",
++        "[fixture-pinned:lane]",
++        "[fixture-pinned:%ZZ:key]",
++        "[fixture-pinned:lane%2fone:key]",
++    ],
++)
++async def test_malformed_owned_lane_component_is_not_silent_absence(tracker, marker):
++    await tracker.post_comment(issue_key=APPROVED_ISSUE, body=marker + "\nnot a ruling")
++    with pytest.raises(RulingRecordReadError) as caught:
++        await reader(tracker).read_issue(issue_key=APPROVED_ISSUE)
++    assert caught.value.lane_key is None
++
++
++async def test_ordinary_comment_and_other_namespace_remain_unselected(tracker):
++    await tracker.post_comment(
++        issue_key=APPROVED_ISSUE,
++        body="ordinary source\n[fixture-pinned:lane:key]",
++    )
++    await tracker.post_comment(
++        issue_key=APPROVED_ISSUE, body="[another-prefix:lane:key]\nother record"
++    )
++    assert await reader(tracker).read_issue(issue_key=APPROVED_ISSUE) == ()
++
++
++async def test_native_pages_retain_historical_lane_and_current_native_provenance():
++    first = Ruling.model_validate(ruling_data(issue_ref=APPROVED_ISSUE))
++    second = Ruling.model_validate(
++        ruling_data(issue_ref=APPROVED_ISSUE, question="A later choice?")
++    )
++    bodies = [
++        render_ruling(ruling=value, lane_key=lane, marker_prefixes=PREFIXES)
++        for value, lane in ((first, "historical:lane/café"), (second, "current%lane"))
++    ]
++    previous = comment("old-native-record", bodies[0])
++    current = comment("new-native-record", bodies[1])
++    current.created_at = previous.created_at + timedelta(seconds=1)
++    server = CommentPageServer(
++        {
++            None: {
++                "comments": [previous.wire()],
++                "hasNextPage": True,
++                "cursor": "next",
++            },
++            "next": {
++                "comments": [current.wire()],
++                "hasNextPage": False,
++            },
++        }
++    )
++    rows = await reader(linear_over_fake_mcp(server)).read_issue(
++        issue_key=APPROVED_ISSUE
++    )
++    assert tuple(value for _, value in rows) == (first, second)
++    assert tuple(row.comment_key for row, _ in rows) == (
++        "old-native-record",
++        "new-native-record",
++    )
++    assert tuple(row.body for row, _ in rows) == tuple(bodies)
++
++
++@pytest.mark.parametrize("defect", ["reply", "noncanonical-lane", "foreign-owner"])
++async def test_full_valid_payload_cannot_override_native_provenance(defect):
++    value = Ruling.model_validate(
++        ruling_data(
++            issue_ref="another-issue" if defect == "foreign-owner" else APPROVED_ISSUE
++        )
++    )
++    body = render_ruling(ruling=value, lane_key="lane/actual", marker_prefixes=PREFIXES)
++    if defect == "noncanonical-lane":
++        body = body.replace("lane%2Factual", "lane%2factual", 1)
++    row = comment("actual-native-record", body)
++    if defect == "reply":
++        row.parent_id = "actual-native-parent-comment"
++    server = CommentPageServer({None: {"comments": [row.wire()], "hasNextPage": False}})
++    with pytest.raises(RulingRecordReadError):
++        await reader(linear_over_fake_mcp(server)).read_issue(issue_key=APPROVED_ISSUE)
+diff --git a/tests/tracker/test_ruling_reader_independent.py b/tests/tracker/test_ruling_reader_independent.py
+new file mode 100644
+index 0000000..06ad019
+--- /dev/null
++++ b/tests/tracker/test_ruling_reader_independent.py
+@@ -0,0 +1,182 @@
++"""Independent native-boundary probes for the issue-wide ruling reader."""
++
++import asyncio
++
++import pytest
++
++from kodezart.core.errors import TrackerProtocolError, TrackerUnavailableError
++from kodezart.domain.errors import RulingRecordReadError
++from kodezart.domain.rulings import render_ruling
++from kodezart.types.domain.agent import Ruling
++from tests.domain.test_rulings import PREFIXES, ruling_data
++from tests.tracker.comment_page_fixtures import CommentPageServer, comment
++from tests.tracker.conftest import APPROVED_ISSUE, linear_over_fake_mcp
++from tests.tracker.test_ruling_records import reader
++
++
++def native_row(key="native-one", lane="historical:lane/é", **changes):
++    value = Ruling.model_validate(ruling_data(issue_ref=APPROVED_ISSUE, **changes))
++    body = render_ruling(ruling=value, lane_key=lane, marker_prefixes=PREFIXES)
++    return comment(key, body).wire(), value
++
++
++def two_pages(first, second, **last):
++    return CommentPageServer(
++        {
++            None: {"comments": first, "hasNextPage": True, "cursor": "next"},
++            "next": {"comments": second, "hasNextPage": False, **last},
++        }
++    )
++
++
++@pytest.mark.parametrize("lane", ["historical:lane/é", "literal%2F", "[]\n:?#"])
++async def test_actual_encoded_lane_and_native_author_survive_cold_read(lane):
++    row, value = native_row(lane=lane)
++    row["author"] = None
++    server = two_pages([], [row])
++    observed = await reader(linear_over_fake_mcp(server)).read_issue(
++        issue_key=APPROVED_ISSUE
++    )
++    assert len(observed) == 1
++    native, actual = observed[0]
++    assert actual == value
++    assert native.body == row["body"]
++    assert native.comment_key == row["id"]
++    assert native.author_key is None
++    assert native.issue_key == APPROVED_ISSUE
++    assert server.tool_calls("list_comments") == [
++        {"issueId": APPROVED_ISSUE},
++        {"issueId": APPROVED_ISSUE, "cursor": "next"},
++    ]
++    assert not server.tool_calls("save_comment")
++    assert not server.tool_calls("save_issue")
++
++
++async def test_identical_page_overlap_is_one_native_record():
++    row, value = native_row()
++    server = two_pages([row], [row])
++    observed = await reader(linear_over_fake_mcp(server)).read_issue(
++        issue_key=APPROVED_ISSUE
++    )
++    assert tuple(ruling for _, ruling in observed) == (value,)
++
++
++@pytest.mark.parametrize("same_question", [True, False])
++async def test_conflicting_native_key_across_pages_is_refused(same_question):
++    first, _ = native_row()
++    second, _ = native_row(
++        resolution="A conflicting answer.",
++        **({} if same_question else {"question": "A different exact question?"}),
++    )
++    server = two_pages([first], [second])
++    with pytest.raises(RulingRecordReadError) as caught:
++        await reader(linear_over_fake_mcp(server)).read_issue(issue_key=APPROVED_ISSUE)
++    assert caught.value.lane_key is None
++    assert not server.tool_calls("save_comment")
++
++
++async def test_missing_native_reply_metadata_cannot_assert_top_level_record():
++    row, _ = native_row()
++    del row["parentId"]
++    server = two_pages([], [row])
++    with pytest.raises(RulingRecordReadError) as caught:
++        await reader(linear_over_fake_mcp(server)).read_issue(issue_key=APPROVED_ISSUE)
++    assert caught.value.lane_key is None
++
++
++@pytest.mark.parametrize("cursor", [None, "next"])
++async def test_later_page_cannot_advance_refuses_with_unknown_lane(cursor):
++    row, _ = native_row()
++    server = two_pages([row], [], hasNextPage=True, cursor=cursor)
++    with pytest.raises(RulingRecordReadError) as caught:
++        await reader(linear_over_fake_mcp(server)).read_issue(issue_key=APPROVED_ISSUE)
++    assert caught.value.issue_key == APPROVED_ISSUE
++    assert caught.value.lane_key is None
++    assert isinstance(caught.value.__cause__, TrackerProtocolError)
++
++
++async def test_later_page_damage_refuses_without_partial_result():
++    first, _ = native_row()
++    second, _ = native_row("native-two", question="A second question?")
++    second["body"] = second["body"].split("\n", 1)[0] + "\nmalformed"
++    server = two_pages([first], [second])
++    with pytest.raises(RulingRecordReadError):
++        await reader(linear_over_fake_mcp(server)).read_issue(issue_key=APPROVED_ISSUE)
++    assert len(server.tool_calls("list_comments")) == 2
++
++
++@pytest.mark.parametrize("same_lane", [True, False])
++async def test_duplicate_question_later_page_is_not_reconciled_by_answer(same_lane):
++    first, _ = native_row(lane="lane-one")
++    second, _ = native_row(
++        "native-two",
++        lane="lane-one" if same_lane else "lane-two",
++        resolution="A conflicting answer.",
++    )
++    server = two_pages([first], [second])
++    with pytest.raises(RulingRecordReadError, match="share an identity"):
++        await reader(linear_over_fake_mcp(server)).read_issue(issue_key=APPROVED_ISSUE)
++
++
++class CancelledPageServer(CommentPageServer):
++    def _tool_list_comments(self, arguments):
++        if arguments.get("cursor") == "next":
++            raise asyncio.CancelledError()
++        return super()._tool_list_comments(arguments)
++
++
++async def test_cancellation_during_second_native_page_propagates():
++    row, _ = native_row()
++    server = CancelledPageServer(
++        {None: {"comments": [row], "hasNextPage": True, "cursor": "next"}}
++    )
++    with pytest.raises(asyncio.CancelledError):
++        await reader(linear_over_fake_mcp(server)).read_issue(issue_key=APPROVED_ISSUE)
++    assert not server.tool_calls("save_comment")
++
++
++async def test_backend_outage_retains_typed_cause_and_unknown_lane():
++    server = CommentPageServer({None: {"comments": [], "hasNextPage": False}})
++    server._tool_errors["list_comments"] = "unreachable"
++    with pytest.raises(RulingRecordReadError) as caught:
++        await reader(linear_over_fake_mcp(server)).read_issue(issue_key=APPROVED_ISSUE)
++    assert caught.value.lane_key is None
++    assert caught.value.issue_key == APPROVED_ISSUE
++    assert isinstance(caught.value.__cause__, TrackerUnavailableError)
++
++
++async def test_read_all_keeps_explicit_lane_boundary_with_other_lane_damage():
++    row, value = native_row(lane="actual-lane")
++    damage = comment("native-two", "[fixture-pinned:other-lane:bad]\nmalformed")
++    server = two_pages([row], [damage.wire()])
++    ruling_reader = reader(linear_over_fake_mcp(server))
++    actual = await ruling_reader.read_all(
++        issue_key=APPROVED_ISSUE, lane_key="actual-lane"
++    )
++    assert tuple(ruling for _, ruling in actual) == (value,)
++    with pytest.raises(RulingRecordReadError):
++        await ruling_reader.read_issue(issue_key=APPROVED_ISSUE)
++
++
++@pytest.mark.parametrize(
++    "defect", ["conflicting-answer", "conflicting-question", "missing-reply"]
++)
++async def test_inherited_explicit_lane_boundary_refuses_ambiguous_native_record(defect):
++    first, _ = native_row()
++    if defect == "missing-reply":
++        del first["parentId"]
++        server = two_pages([], [first])
++    else:
++        second, _ = native_row(
++            resolution="A conflicting answer.",
++            **(
++                {"question": "Another question?"}
++                if defect == "conflicting-question"
++                else {}
++            ),
++        )
++        server = two_pages([first], [second])
++    with pytest.raises(RulingRecordReadError):
++        await reader(linear_over_fake_mcp(server)).read_all(
++            issue_key=APPROVED_ISSUE, lane_key="historical:lane/é"
++        )
+diff --git a/tests/tracker/test_ruling_records.py b/tests/tracker/test_ruling_records.py
+new file mode 100644
+index 0000000..3ecbb6f
+--- /dev/null
++++ b/tests/tracker/test_ruling_records.py
+@@ -0,0 +1,215 @@
++"""Ruling occurrences survive replay and cold reads through both tracker ports."""
++
++import asyncio
++from unittest.mock import AsyncMock
++
++import pytest
++
++from kodezart.core.errors import TrackerUnavailableError
++from kodezart.domain.errors import RulingRecordReadError
++from kodezart.domain.rulings import render_ruling
++from kodezart.services.ruling_records import RulingRecordReader
++from kodezart.types.domain.agent import Ruling, RulingAuthor
++from kodezart.types.domain.operation import OperationConfig, OperationMemberAbsentError
++from kodezart.types.domain.tracker import TrackerComment
++from tests.domain.test_rulings import LANE, PREFIXES, ruling_data
++from tests.fakes import FakeTrackerPort
++from tests.tracker.comment_page_fixtures import CommentPageServer, comment
++from tests.tracker.conftest import APPROVED_ISSUE, CLAIMED_ISSUE, linear_over_fake_mcp
++from tests.tracker.lease_fixtures import leased_comment
++
++OPERATION = OperationConfig(
++    operation_name="fixture", workspace="fixture", marker_prefixes=PREFIXES
++)
++ADDRESS = {"issue_key": APPROVED_ISSUE, "lane_key": LANE}
++
++
++async def seed(tracker, **changes):
++    ruling = Ruling.model_validate(ruling_data(issue_ref=APPROVED_ISSUE, **changes))
++    body = render_ruling(ruling=ruling, lane_key=LANE, marker_prefixes=PREFIXES)
++    marker, content = body.split("\n", 1)
++    stored = await leased_comment(
++        tracker, target=APPROVED_ISSUE, marker=marker, body=content
++    )
++    return stored, ruling
++
++
++def reader(tracker):
++    return RulingRecordReader(tracker=tracker, operation=OPERATION)
++
++
++@pytest.mark.parametrize("author", list(RulingAuthor))
++async def test_same_pair_replays_one_record_and_two_questions_keep_two(
++    tracker, tracker_writes, author
++):
++    first, original = await seed(tracker, authored_by=author)
++    repeated, replay = await seed(tracker, authored_by=author)
++    other, other_ruling = await seed(
++        tracker, question="A second question?", authored_by=author
++    )
++    assert first.comment_key == repeated.comment_key
++    assert original.ruling_id == replay.ruling_id
++    assert other.comment_key != first.comment_key
++    assert other_ruling.ruling_id != original.ruling_id
++    before = tracker_writes()
++    observed = await reader(tracker).read_all(**ADDRESS)
++    assert observed == ((repeated, replay), (other, other_ruling))
++    assert all(value.authored_by is author for _, value in observed)
++    assert tracker_writes() == before
++
++
++async def test_amended_answer_edits_same_native_record_and_cold_reader_observes_it(
++    tracker, server
++):
++    first, original = await seed(tracker)
++    updated, amended = await seed(tracker, resolution="A corrected answer.")
++    assert updated.comment_key == first.comment_key
++    assert amended.ruling_id == original.ruling_id
++    if isinstance(tracker, FakeTrackerPort):
++        persisted = tuple(row.model_dump_json() for row in tracker.comments)
++        tracker = FakeTrackerPort()
++        tracker.comments = [
++            TrackerComment.model_validate_json(row) for row in persisted
++        ]
++    else:
++        tracker = linear_over_fake_mcp(server)
++    assert await reader(tracker).read_all(**ADDRESS) == ((updated, amended),)
++
++
++async def test_successful_empty_and_other_comment_namespaces_are_not_rulings(tracker):
++    assert await reader(tracker).read_all(**ADDRESS) == ()
++    for body in (
++        "[fixture-answer:lane%3Acaf%C3%A9%2Falpha:decision]\nAn escalation reply.",
++        "[fixture-pinned:another-lane:occurrence]\nNot this lane.",
++        "ordinary prose\n[fixture-pinned:lane%3Acaf%C3%A9%2Falpha:occurrence]",
++    ):
++        await tracker.post_comment(issue_key=APPROVED_ISSUE, body=body)
++    assert await reader(tracker).read_all(**ADDRESS) == ()
++
++
++async def test_duplicate_marker_comments_refuse_instead_of_counting_twice(tracker):
++    first, _ = await seed(tracker)
++    await tracker.post_comment(issue_key=APPROVED_ISSUE, body=first.body)
++    with pytest.raises(RulingRecordReadError, match="share an identity"):
++        await reader(tracker).read_all(**ADDRESS)
++
++
++@pytest.mark.parametrize(
++    "mode", ["foreign-native-owner", "foreign-record-owner", "reply", "native-key"]
++)
++async def test_conflicting_native_and_record_identity_refuse(
++    tracker, monkeypatch, mode
++):
++    first, _ = await seed(tracker)
++    if mode == "foreign-record-owner":
++        ruling = Ruling.model_validate(ruling_data(issue_ref=CLAIMED_ISSUE))
++        body = render_ruling(ruling=ruling, lane_key=LANE, marker_prefixes=PREFIXES)
++        comments = (first.model_copy(update={"body": body}),)
++    elif mode == "native-key":
++        second, _ = await seed(tracker, question="Different question")
++        comments = (first, second.model_copy(update={"comment_key": first.comment_key}))
++    else:
++        field, value = (
++            ("issue_key", CLAIMED_ISSUE)
++            if mode == "foreign-native-owner"
++            else ("reply_to", "parent")
++        )
++        comments = (first.model_copy(update={field: value}),)
++    monkeypatch.setattr(tracker, "list_comments", AsyncMock(return_value=comments))
++    with pytest.raises(RulingRecordReadError):
++        await reader(tracker).read_all(**ADDRESS)
++
++
++@pytest.mark.parametrize(
++    "mode",
++    [
++        "missing-author",
++        "unknown-author",
++        "duplicate-field",
++        "bad-key",
++        "missing-occurrence",
++        "bad-json",
++    ],
++)
++async def test_owned_namespace_damage_cannot_become_an_empty_projection(tracker, mode):
++    first, _ = await seed(tracker)
++    if mode == "missing-author":
++        body = first.body.replace(',\n  "authoredBy": "machine"', "")
++    elif mode == "unknown-author":
++        body = first.body.replace('"authoredBy": "machine"', '"authoredBy": "account"')
++    elif mode == "duplicate-field":
++        body = first.body.replace(
++            '"authoredBy": "machine"',
++            '"authoredBy": "machine", "authoredBy": "principal"',
++        )
++    elif mode == "bad-key":
++        body = first.body.replace("Which interpretation", "Changed question")
++    elif mode == "missing-occurrence":
++        body = "[fixture-pinned:lane%3Acaf%C3%A9%2Falpha]\n```json\n{}\n```"
++    else:
++        body = first.body.split("\n")[0] + "\nmalformed"
++    marker, content = body.split("\n", 1)
++    await leased_comment(tracker, target=APPROVED_ISSUE, marker=marker, body=content)
++    with pytest.raises(RulingRecordReadError, match="malformed") as raised:
++        await reader(tracker).read_all(**ADDRESS)
++    assert raised.value.__cause__ is not None
++
++
++async def test_missing_configuration_refuses_without_listing(tracker, monkeypatch):
++    listing = AsyncMock()
++    monkeypatch.setattr(tracker, "list_comments", listing)
++    missing = OperationConfig(operation_name="fixture", workspace="fixture")
++    with pytest.raises(OperationMemberAbsentError, match="ruling"):
++        await RulingRecordReader(tracker=tracker, operation=missing).read_all(**ADDRESS)
++    listing.assert_not_called()
++
++
++async def test_unreachable_native_listing_retains_typed_cause(
++    tracker, server, monkeypatch
++):
++    if isinstance(tracker, FakeTrackerPort):
++        monkeypatch.setattr(
++            tracker,
++            "list_comments",
++            AsyncMock(side_effect=TrackerUnavailableError("unreachable")),
++        )
++    else:
++        server._tool_errors["list_comments"] = "unreachable"
++    with pytest.raises(RulingRecordReadError, match="read failed") as raised:
++        await reader(tracker).read_all(**ADDRESS)
++    assert raised.value.__cause__ is not None
++
++
++async def test_cancellation_is_not_reported_as_empty_history(tracker, monkeypatch):
++    monkeypatch.setattr(
++        tracker, "list_comments", AsyncMock(side_effect=asyncio.CancelledError())
++    )
++    with pytest.raises(asyncio.CancelledError):
++        await reader(tracker).read_all(**ADDRESS)
++
++
++async def test_native_reader_exhausts_pages_before_declaring_the_occurrence_set():
++    first = Ruling.model_validate(ruling_data(issue_ref=APPROVED_ISSUE))
++    second = Ruling.model_validate(
++        ruling_data(issue_ref=APPROVED_ISSUE, question="Second question")
++    )
++    values = [
++        render_ruling(ruling=value, lane_key=LANE, marker_prefixes=PREFIXES)
++        for value in (first, second)
++    ]
++    server = CommentPageServer(
++        {
++            None: {
++                "comments": [comment("first", values[0]).wire()],
++                "hasNextPage": True,
++                "cursor": "next",
++            },
++            "next": {
++                "comments": [comment("second", values[1]).wire()],
++                "hasNextPage": False,
++            },
++        }
++    )
++    actual = await reader(linear_over_fake_mcp(server)).read_all(**ADDRESS)
++    assert tuple(value for _, value in actual) == (first, second)
++    assert tuple(row.comment_key for row, _ in actual) == ("first", "second")

@@ -1,0 +1,16 @@
+
+==================================== ERRORS ====================================
+________ ERROR collecting tests/tracker/test_native_approval_aliases.py ________
+ImportError while importing test module '/private/tmp/kodezart-v03-m1-scope-bindings-extraction/tests/tracker/test_native_approval_aliases.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/tracker/test_native_approval_aliases.py:7: in <module>
+    from tests.tracker.conftest import FIRE_ENTRY_LABELS
+E   ImportError: cannot import name 'FIRE_ENTRY_LABELS' from 'tests.tracker.conftest' (/private/tmp/kodezart-v03-m1-scope-bindings-extraction/tests/tracker/conftest.py)
+=========================== short test summary info ============================
+ERROR tests/tracker/test_native_approval_aliases.py
+!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+1 error in 2.25s

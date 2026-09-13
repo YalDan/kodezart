@@ -1,0 +1,11 @@
+[
+  {
+    "path": "tests/domain/test_amendment.py",
+    "symbol": "test_actual_scope_egress_roundtrips_required_nulls_and_rejects_bad_native_reports",
+    "parent": null,
+    "donor_lines": [
+      153,
+      167
+    ]
+  }
+]

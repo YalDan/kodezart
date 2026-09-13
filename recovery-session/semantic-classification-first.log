@@ -1,0 +1,164 @@
+F....................................................................... [ 45%]
+........................................................................ [ 90%]
+................                                                         [100%]
+=================================== FAILURES ===================================
+____ test_escalation_label_write_requires_current_grant_after_waits[expiry] ____
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10e741790>
+change = 'expiry'
+
+    @pytest.mark.parametrize(
+        "change", ["expiry", "withdrawal", "retry", "unchanged", "retry_unchanged"]
+    )
+    async def test_escalation_label_write_requires_current_grant_after_waits(
+        monkeypatch, change
+    ):
+        board = _Board()
+        tracker = tracker_over(
+            board.server,
+            caller=board,
+            max_retries=2,
+            clock=lambda: board.now,
+            issue_labels={"decision": "decision-needed"},
+        )
+        writer = LaneEscalationWriter(
+            tracker=tracker,
+            gate=PassThroughGate(),
+            surface_lease_seconds=900,
+            operation=OperationConfig(
+                operation_name="fixture",
+                workspace="fixture",
+                marker_prefixes={"escalation": "escalation"},
+                issue_labels={"decision": "decision-needed"},
+            ),
+        )
+        actual = board.call_tool
+        recorded = False
+        altered = False
+        attempts = 0
+    
+        async def call(*, name, arguments):
+            nonlocal recorded, altered, attempts
+            if name == "save_comment" and str(arguments.get("body", "")).startswith(
+                "[escalation:"
+            ):
+                recorded = True
+            if (
+                name == "get_issue"
+                and recorded
+                and not altered
+                and change in {"expiry", "withdrawal"}
+            ):
+                altered = True
+                if change == "expiry":
+                    board.now = max(
+                        c.updated_at for c in board.server.comments
+                    ) + timedelta(seconds=901)
+                else:
+                    board.server.comments[:] = [
+                        c for c in board.server.comments if "kind: lease\n" not in c.body
+                    ]
+            if name == "save_issue" and "addLabels" in arguments:
+                attempts += 1
+                if change.startswith("retry") and attempts == 1:
+                    altered = True
+                    if change == "retry":
+                        board.server.comments[:] = [
+                            c
+                            for c in board.server.comments
+                            if "kind: lease\n" not in c.body
+                        ]
+                    raise McpTransportError("not sent", server_name="fixture")
+            return await actual(name=name, arguments=arguments)
+    
+        monkeypatch.setattr(board, "call_tool", call)
+    
+        async def publish():
+            return await writer.raise_escalation(
+                lane_key="actual-lane",
+                job_id="actual-parent-job",
+                visibility=RepoVisibility.PUBLIC,
+                escalation=LaneEscalation(
+                    issue_id=CLAIMED_ISSUE,
+                    escalation_key="measured-cost",
+                    raised_by="actual-parent-job",
+                    question="Resolve measured cost",
+                    interim_reading="UPHELD",
+                    interim_basis="Actual measured cost",
+                    raised_at_sha="a" * 40,
+                ),
+            )
+    
+        if change in {"unchanged", "retry_unchanged"}:
+            await publish()
+            assert "decision-needed" in board.server.issues[CLAIMED_ISSUE].labels
+            assert attempts == (2 if change == "retry_unchanged" else 1)
+        else:
+            with pytest.raises(SurfaceLeaseError):
+>               await publish()
+
+tests/tracker/test_classification_authority.py:107: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/tracker/test_classification_authority.py:86: in publish
+    return await writer.raise_escalation(
+src/kodezart/services/lane_escalation.py:137: in raise_escalation
+    await settle(
+src/kodezart/core/owned_tasks.py:25: in settle
+    result, cancelled = await finish_owned(asyncio.create_task(operation))
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/owned_tasks.py:12: in finish_owned
+    return await asyncio.shield(task), cancelled
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/adapters/linear_mcp_tracker.py:2171: in set_issue_classification
+    receipt = await self._retry_call(_TOOL_SAVE_ISSUE, attempt)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/adapters/linear_mcp_tracker.py:4172: in _retry_call
+    return await invoke()
+           ^^^^^^^^^^^^^^
+src/kodezart/adapters/linear_mcp_tracker.py:2156: in attempt
+    current = await self.read_issue(issue_key=issue_key)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/adapters/linear_mcp_tracker.py:1002: in read_issue
+    return self._to_issue(await self._read_issue_wire(issue_key))
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/adapters/linear_mcp_tracker.py:4098: in _read_issue_wire
+    payload = await self._call(
+src/kodezart/adapters/linear_mcp_tracker.py:4150: in _call
+    return await self._retry_call(tool, attempt)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/adapters/linear_mcp_tracker.py:4172: in _retry_call
+    return await invoke()
+           ^^^^^^^^^^^^^^
+src/kodezart/adapters/linear_mcp_tracker.py:4148: in attempt
+    return await self._send(tool, arguments)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/adapters/linear_mcp_tracker.py:4158: in _send
+    return await self._caller.call_tool(name=tool, arguments=arguments)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    async def call(*, name, arguments):
+        nonlocal recorded, altered, attempts
+        if name == "save_comment" and str(arguments.get("body", "")).startswith(
+            "[escalation:"
+        ):
+            recorded = True
+        if (
+            name == "get_issue"
+            and recorded
+            and not altered
+            and change in {"expiry", "withdrawal"}
+        ):
+            altered = True
+            if change == "expiry":
+>               board.now = max(
+                    c.updated_at for c in board.server.comments
+                ) + timedelta(seconds=901)
+E               TypeError: '>' not supported between instances of 'NoneType' and 'datetime.datetime'
+
+tests/tracker/test_classification_authority.py:63: TypeError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 19:44:40 [info     ] outbound_content_gated         categories=[] content_digest=a4650de89444accce04130ab6ada172c672bfd6ec0a1e5ee3ca7136e26918a98 failure=None hits=[] surface=tracker verdict=clean visibility=public writer=tracker_comment
+=========================== short test summary info ============================
+FAILED tests/tracker/test_classification_authority.py::test_escalation_label_write_requires_current_grant_after_waits[expiry]
+1 failed, 159 passed in 13.26s

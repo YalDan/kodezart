@@ -1,0 +1,10 @@
+   Building kodezart @ file:///private/tmp/kodezart-v03-m4-tracker-lifecycle
+warning: `build_system.requires = ["uv-build>=0.10.9,<0.11.0"]` does not contain the current uv version 0.11.6
+      Built kodezart @ file:///private/tmp/kodezart-v03-m4-tracker-lifecycle
+Uninstalled 1 package in 3ms
+Installed 1 package in 9ms
+........................................................................ [ 30%]
+........................................................................ [ 61%]
+........................................................................ [ 92%]
+..................                                                       [100%]
+234 passed in 66.36s (0:01:06)

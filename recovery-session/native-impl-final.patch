@@ -1,0 +1,2616 @@
+diff --git a/src/kodezart/chains/authored_delivery.py b/src/kodezart/chains/authored_delivery.py
+index 4c374c8..109f172 100644
+--- a/src/kodezart/chains/authored_delivery.py
++++ b/src/kodezart/chains/authored_delivery.py
+@@ -14,7 +14,7 @@ from kodezart.domain.accept_gate import (
+ )
+ from kodezart.domain.authored_outcome import classify_authored_outcome
+ from kodezart.domain.workflow_state import (
+-    original_ticket,
++    original_fire_spec,
+     validated_criteria,
+ )
+ from kodezart.types.domain.agent import (
+@@ -213,7 +213,7 @@ class AuthoredDeliveryCoordinator:
+         request = RemediationRequest(
+             entry=RemediationEntry.ci_failure,
+             round_index=state["remediation_rounds_used"],
+-            original_ticket=original_ticket(state),
++            original_spec=original_fire_spec(state),
+             work_branch=state["feature_branch"],
+             work_base_ref=state["work_base_ref"],
+             pr_url=state["pr_url"],
+diff --git a/src/kodezart/chains/criteria.py b/src/kodezart/chains/criteria.py
+index c843bb2..5d9641d 100644
+--- a/src/kodezart/chains/criteria.py
++++ b/src/kodezart/chains/criteria.py
+@@ -1,12 +1,22 @@
+-"""The tracker-native criteria stage a fire runs before its loop."""
++"""Capture native subjects and read current obligations at fire barriers."""
+ 
+ from langchain_core.runnables import RunnableConfig
+ 
+ from kodezart.core.logging import BoundLogger, get_logger
+-from kodezart.core.protocols import TrackerPort
+-from kodezart.domain.errors import InvalidFireCriterionError
++from kodezart.core.protocols import FireCriteriaReader, FireCriteriaSource, TrackerPort
++from kodezart.domain.errors import (
++    FireSpecEntryError,
++    InvalidFireCriterionError,
++    TransientAPIError,
++)
+ from kodezart.domain.fire_spec import criterion_check
+ from kodezart.services.scope_membership import read_scope_members
++from kodezart.types.domain.criteria import (
++    CriterionId,
++    TrackerCriterion,
++    TrackerCriterionSet,
++)
++from kodezart.types.domain.fire_spec import TrackerSpec
+ from kodezart.types.domain.scope import ScopeKind, ScopeRef
+ from kodezart.types.domain.tracker import TrackerIssue, WorkflowStateKind
+ from kodezart.types.domain.workflow import WorkflowState
+@@ -21,7 +31,7 @@ OWED_CRITERION_STATE = WorkflowStateKind.UNSTARTED
+ 
+ 
+ class TrackerCriteria:
+-    """A fire's criteria, read from the tracker at head, before the loop.
++    """A fire's criteria, read from the tracker at each execution barrier.
+ 
+     The spec read IS the source: ``read_fire_spec`` establishes the
+     subject's admission and lists its criterion sub-issues, and nothing a
+@@ -52,7 +62,13 @@ class TrackerCriteria:
+         what a previous run claimed, never part of what this one is
+         graded against.
+         """
+-        spec = await self._tracker.read_fire_spec(issue_key=issue_key)
++        spec = await self.read_spec(issue_key=issue_key)
++        current = await self.read_current(spec=spec)
++        return {criterion.id: criterion.text for criterion in current.criteria}
++
++    async def _read_owed_criteria(self, spec: TrackerSpec) -> dict[str, str]:
++        """Refresh current criterion Checks without recapturing the subject."""
++        issue_key = spec.subject
+         subtree = await read_scope_members(
+             tracker=self._tracker,
+             scope=ScopeRef(kind=ScopeKind.ISSUE, key=issue_key),
+@@ -83,25 +99,67 @@ class TrackerCriteria:
+         )
+         return owed
+ 
+-    async def revalidate_criteria(
+-        self,
+-        state: WorkflowState,
+-        config: RunnableConfig,
+-    ) -> dict[str, object]:
+-        """Re-read what this fire owes, at head, before the loop node runs.
+-
+-        A barrier node: what it establishes is that every criterion the
+-        fire is about still states a Check the run can be graded against.
+-        It writes no run state — the loop's own criterion identity is the
+-        sub-issue key under the 2026-09-08 ruling, and the models that
+-        carry identity into the loop are not this lane's surface — so a
+-        criterion that has lost its Check stops the fire HERE rather than
+-        after a loop has spent its budget on it.
+-        """
+-        _ = config
+-        issue_key = state["issue_key"]
+-        if issue_key is None:
+-            msg = "A tracker-native fire carries its subject as issue_key"
+-            raise ValueError(msg)
+-        await self.read_owed_criteria(issue_key=issue_key)
+-        return {}
++    async def read_spec(self, *, issue_key: str) -> TrackerSpec:
++        """Capture the admitted subject; an outage is never cached authority."""
++        try:
++            return await self._tracker.read_fire_spec(issue_key=issue_key)
++        except (ConnectionError, TimeoutError, TransientAPIError) as exc:
++            raise FireSpecEntryError(
++                issue_key=issue_key,
++                reason="the tracker subject spec could not be read",
++            ) from exc
++
++    async def read_current(self, *, spec: TrackerSpec) -> TrackerCriterionSet:
++        """Refresh obligations without replacing the captured subject text."""
++        try:
++            owed = await self._read_owed_criteria(spec)
++        except (ConnectionError, TimeoutError, TransientAPIError) as exc:
++            raise FireSpecEntryError(
++                issue_key=spec.subject,
++                reason="current tracker criteria could not be read",
++            ) from exc
++        if not owed:
++            raise FireSpecEntryError(
++                issue_key=spec.subject,
++                reason="the subtree has no Todo criteria to execute",
++            )
++        return TrackerCriterionSet(
++            criteria=[
++                TrackerCriterion(id=CriterionId(key), text=check)
++                for key, check in owed.items()
++            ],
++        )
++
++
++async def current_native_criteria(
++    *, spec: TrackerSpec, reader: FireCriteriaReader | None
++) -> TrackerCriterionSet:
++    """Require live authority at the consuming node, including on replay."""
++    if reader is None:
++        raise FireSpecEntryError(
++            issue_key=spec.subject,
++            reason="the current tracker criteria reader is not configured",
++        )
++    return await reader.read_current(spec=spec)
++
++
++async def revalidate_criteria(
++    state: WorkflowState,
++    config: RunnableConfig,
++    *,
++    source: FireCriteriaSource,
++) -> dict[str, object]:
++    """Capture the subject once and carry current Checks into shared state."""
++    _ = config
++    issue_key = state["issue_key"]
++    if issue_key is None:
++        raise ValueError("A tracker-native fire carries its subject as issue_key")
++    spec = state["fire_spec"]
++    if spec is None:
++        spec = await source.read_spec(issue_key=issue_key)
++    if not isinstance(spec, TrackerSpec) or spec.subject != issue_key:
++        raise ValueError("The native fire spec must match its addressed subject")
++    return {
++        "fire_spec": spec,
++        "criterion_set": await source.read_current(spec=spec),
++    }
+diff --git a/src/kodezart/chains/fire_implementation.py b/src/kodezart/chains/fire_implementation.py
+index 7b9f83a..9c3d4d6 100644
+--- a/src/kodezart/chains/fire_implementation.py
++++ b/src/kodezart/chains/fire_implementation.py
+@@ -3,10 +3,12 @@
+ from langchain_core.runnables import RunnableConfig
+ from langgraph.config import get_stream_writer
+ 
++from kodezart.chains.criteria import current_native_criteria
+ from kodezart.core.logging import BoundLogger, get_logger
+ from kodezart.core.outbound_write import gated_write
+ from kodezart.core.protocols import (
+     ArtifactPersister,
++    FireCriteriaReader,
+     OutboundContentGate,
+     PromptSetProvider,
+     QualityGate,
+@@ -16,6 +18,7 @@ from kodezart.domain.accept_gate import (
+ )
+ from kodezart.domain.ticket import format_fire_spec
+ from kodezart.domain.workflow_state import (
++    current_fire_spec,
+     current_ticket,
+     validated_artifact,
+     validated_criteria,
+@@ -27,9 +30,11 @@ from kodezart.types.domain.agent import (
+ )
+ from kodezart.types.domain.branch import BaseSpec
+ from kodezart.types.domain.criteria import (
+-    ValidatedCriterion,
++    ExecutionCriterion,
++    TrackerCriterion,
++    TrackerCriterionSet,
+ )
+-from kodezart.types.domain.fire_spec import AuthoredSpec
++from kodezart.types.domain.fire_spec import TrackerSpec
+ from kodezart.types.domain.gating import (
+     ContentClass,
+     OutboundDestination,
+@@ -37,6 +42,7 @@ from kodezart.types.domain.gating import (
+     WriterShape,
+ )
+ from kodezart.types.domain.prompts import PromptKey
++from kodezart.types.domain.remediation import RemediationPlan
+ from kodezart.types.domain.run_records import RunIdentity
+ from kodezart.types.domain.session import AllowedTools, PermissionMode
+ from kodezart.types.domain.workflow import (
+@@ -55,8 +61,10 @@ class FireImplementation:
+         prompts: PromptSetProvider,
+         artifact_persister: ArtifactPersister | None,
+         gate: OutboundContentGate,
++        criteria_reader: FireCriteriaReader | None = None,
+     ) -> None:
+         self._quality_gate = quality_gate
++        self._criteria_reader = criteria_reader
+         self._prompts = prompts
+         self._artifact_persister = artifact_persister
+         self._gate = gate
+@@ -79,7 +87,8 @@ class FireImplementation:
+         work_base_ref: str,
+         permission_mode: PermissionMode,
+         allowed_tools: AllowedTools,
+-        acceptance_criteria: list[ValidatedCriterion],
++        acceptance_criteria: list[ExecutionCriterion],
++        tracker_spec: TrackerSpec | None = None,
+         cache_key: str,
+         run_identity: RunIdentity | None = None,
+         repo_visibility: RepoVisibility,
+@@ -98,6 +107,7 @@ class FireImplementation:
+             permission_mode=permission_mode,
+             allowed_tools=allowed_tools,
+             acceptance_criteria=acceptance_criteria,
++            tracker_spec=tracker_spec,
+             cache_key=cache_key,
+             run_identity=run_identity,
+             repo_visibility=repo_visibility,
+@@ -125,11 +135,23 @@ class FireImplementation:
+         """
+         ctx = ExecutionContext.from_configurable(config)
+ 
+-        ticket = current_ticket(state)
++        spec = current_fire_spec(state)
++        criterion_set = state["criterion_set"]
++        if isinstance(spec, TrackerSpec):
++            criterion_set = await current_native_criteria(
++                spec=spec,
++                reader=self._criteria_reader,
++            )
++        criteria = validated_criteria({**state, "criterion_set": criterion_set})
++
++        task_md = format_fire_spec(spec)
++        remediation = state["remediation_ticket"]
++        if isinstance(remediation, RemediationPlan):
++            task_md += "\n\n## Remediation\n" + remediation.instructions
+ 
+         implementation_prompt = self._prompts.template_for(
+             PromptKey.IMPLEMENTATION,
+-        ).render({"task_md": format_fire_spec(AuthoredSpec(ticket=ticket))})
++        ).render({"task_md": task_md})
+ 
+         last_iteration_event = await self.run_quality_gate(
+             prompt=implementation_prompt,
+@@ -141,18 +163,32 @@ class FireImplementation:
+             work_base_ref=state["work_base_ref"],
+             permission_mode=ctx.permission_mode,
+             allowed_tools=ctx.allowed_tools,
+-            acceptance_criteria=validated_criteria(state),
++            acceptance_criteria=criteria,
++            tracker_spec=spec if isinstance(spec, TrackerSpec) else None,
+             cache_key=ctx.cache_key,
+             run_identity=ctx.run_identity,
+             repo_visibility=state["repo_visibility"],
+         )
+ 
++        if isinstance(spec, TrackerSpec):
++            # The gate reconciles result text to its dispatched Check snapshot.
++            # Preserve that final iteration's snapshot for failure evidence;
++            # later execution/review still rereads the tracker at its barrier.
++            criterion_set = TrackerCriterionSet(
++                criteria=[
++                    TrackerCriterion(id=result.criterion_id, text=result.criterion)
++                    for result in last_iteration_event.evaluation.criteria_results
++                ],
++            )
++            criteria = list(criterion_set.criteria)
++
+         # feature_tip_sha is left None here; merge_to_feature sets it
+         # from the merger's outcome.feature_tip_sha (canonical, post-push).
+         return {
++            "criterion_set": criterion_set,
+             "accept_verdict": last_iteration_event.verdict,
+             "flagged_items": flagged_items(
+-                validated_criteria(state),
++                criteria,
+                 last_iteration_event.evaluation.sherlock_flags,
+             ),
+             # A SUM, not a replacement: a remediation round runs its own
+diff --git a/src/kodezart/chains/fire_remediation.py b/src/kodezart/chains/fire_remediation.py
+index 9152867..dabf9a7 100644
+--- a/src/kodezart/chains/fire_remediation.py
++++ b/src/kodezart/chains/fire_remediation.py
+@@ -9,14 +9,16 @@ from kodezart.core.protocols import (
+ )
+ from kodezart.domain.agent import generate_ralph_branch_name
+ from kodezart.domain.workflow_state import (
+-    original_ticket,
++    original_fire_spec,
+     validated_criteria,
+ )
+ from kodezart.types.domain.accept import AcceptVerdict
+ from kodezart.types.domain.agent import (
++    TicketDraftOutput,
+     WorkflowRemediationEvent,
+ )
+-from kodezart.types.domain.remediation import RemediationEntry
++from kodezart.types.domain.fire_spec import TrackerSpec
++from kodezart.types.domain.remediation import RemediationEntry, RemediationPlan
+ from kodezart.types.domain.workflow import (
+     ExecutionContext,
+     RemediationRequest,
+@@ -58,7 +60,7 @@ class FireRemediation:
+         request = RemediationRequest(
+             entry=entry,
+             round_index=state["remediation_rounds_used"],
+-            original_ticket=original_ticket(state),
++            original_spec=original_fire_spec(state),
+             work_branch=state["feature_branch"],
+             work_base_ref=work_base_ref,
+             total_iterations=state["total_iterations"],
+@@ -134,6 +136,12 @@ class FireRemediation:
+             msg = "Remediator did not emit a WorkflowRemediationEvent."
+             raise RuntimeError(msg)
+ 
++        native = isinstance(request.original_spec, TrackerSpec)
++        if (native and not isinstance(remediation_event.ticket, RemediationPlan)) or (
++            not native and not isinstance(remediation_event.ticket, TicketDraftOutput)
++        ):
++            raise TypeError("The remediation output must match the fire spec arm")
++
+         await self._log.ainfo(
+             "remediation_round_opened",
+             entry=entry.value,
+@@ -149,7 +157,7 @@ class FireRemediation:
+             "remediation_entry": entry,
+             "ralph_branch": generate_ralph_branch_name(state["feature_branch"]),
+             "acceptance_criteria": [],
+-            "criteria_artifact": None,
++            "criterion_set": None,
+             "criteria_validation": None,
+             "criteria_regeneration_rounds": 0,
+             "accept_verdict": AcceptVerdict.rejected,
+diff --git a/src/kodezart/chains/fire_review.py b/src/kodezart/chains/fire_review.py
+index 2367e9d..508d66e 100644
+--- a/src/kodezart/chains/fire_review.py
++++ b/src/kodezart/chains/fire_review.py
+@@ -3,12 +3,14 @@
+ from langchain_core.runnables import RunnableConfig
+ from langgraph.config import get_stream_writer
+ 
++from kodezart.chains.criteria import current_native_criteria
+ from kodezart.chains.fire_consolidation import resolve_workflow_cwd
+ from kodezart.core.constants import EVAL_PERMISSION_MODE
+ from kodezart.core.errors import soft_failure
+ from kodezart.core.logging import BoundLogger, get_logger
+ from kodezart.core.protocols import (
+     AgentRunner,
++    FireCriteriaReader,
+     GitService,
+     PromptSetProvider,
+     RepoCache,
+@@ -23,8 +25,12 @@ from kodezart.domain.accept_gate import (
+ )
+ from kodezart.domain.criteria_grading import grade_iteration
+ from kodezart.domain.fan_in import fan_in_report, require_permutation
+-from kodezart.domain.prompt_variables import changeset_variables
++from kodezart.domain.prompt_variables import (
++    changeset_variables,
++    execution_criteria_variables,
++)
+ from kodezart.domain.workflow_state import (
++    current_fire_spec,
+     validated_criteria,
+ )
+ from kodezart.types.domain.agent import (
+@@ -35,6 +41,7 @@ from kodezart.types.domain.agent import (
+ from kodezart.types.domain.criteria import (
+     FanInReport,
+ )
++from kodezart.types.domain.fire_spec import TrackerSpec
+ from kodezart.types.domain.prompts import PromptKey
+ from kodezart.types.domain.session import SessionType, ToolPreset
+ from kodezart.types.domain.skills import SkillsSelection
+@@ -57,8 +64,10 @@ class FireReview:
+         git: GitService,
+         cache: RepoCache,
+         fan_in_max_attempts: int,
++        criteria_reader: FireCriteriaReader | None = None,
+     ) -> None:
+         self._service = service
++        self._criteria_reader = criteria_reader
+         self._prompts = prompts
+         self._skills = skills
+         self._git = git
+@@ -84,6 +93,14 @@ class FireReview:
+             )
+             raise RuntimeError(msg)
+ 
++        spec = current_fire_spec(state)
++        criterion_set = state["criterion_set"]
++        if isinstance(spec, TrackerSpec):
++            criterion_set = await current_native_criteria(
++                spec=spec,
++                reader=self._criteria_reader,
++            )
++        criteria = validated_criteria({**state, "criterion_set": criterion_set})
+         ctx = ExecutionContext.from_configurable(config)
+         writer = get_stream_writer()
+         cwd = await resolve_workflow_cwd(ctx, self._cache)
+@@ -94,7 +111,7 @@ class FireReview:
+         )
+         prompt = self._prompts.template_for(PromptKey.POST_MERGE_REVIEW).render(
+             {
+-                "criteria": validated_criteria(state),
++                **execution_criteria_variables(criteria),
+                 **changeset_variables(changeset),
+             },
+         )
+@@ -139,7 +156,6 @@ class FireReview:
+                 result_event.structured_output,
+             )
+ 
+-        criteria = validated_criteria(state)
+         output, unresolved, attempts = await until_permutation(
+             dispatch=review,
+             check=lambda candidate: require_permutation(
+@@ -190,6 +206,7 @@ class FireReview:
+         # promises them to.  They are appended, not substituted: the loop's
+         # flagged items describe the work, these describe the review of it.
+         return {
++            "criterion_set": criterion_set,
+             "review_passed": passed,
+             "review_feedback": feedback,
+             "flagged_items": [
+diff --git a/src/kodezart/chains/fire_specification.py b/src/kodezart/chains/fire_specification.py
+index 7cea102..9b3738e 100644
+--- a/src/kodezart/chains/fire_specification.py
++++ b/src/kodezart/chains/fire_specification.py
+@@ -54,6 +54,7 @@ from kodezart.types.domain.agent import (
+ from kodezart.types.domain.criteria import (
+     CriteriaValidationOutput,
+ )
++from kodezart.types.domain.fire_spec import AuthoredSpec
+ from kodezart.types.domain.gating import (
+     ContentClass,
+     OutboundDestination,
+@@ -243,7 +244,7 @@ class FireSpecification:
+             msg = "Ticket generator did not emit a WorkflowTicketEvent."
+             raise RuntimeError(msg)
+ 
+-        return {"ticket": ticket_event.ticket}
++        return {"fire_spec": AuthoredSpec(ticket=ticket_event.ticket)}
+ 
+     async def generate_criteria(
+         self,
+@@ -436,7 +437,7 @@ class FireSpecification:
+ 
+         return {
+             "criteria_validation": validation,
+-            "criteria_artifact": build_artifact(criteria, validation),
++            "criterion_set": build_artifact(criteria, validation),
+             "criteria_regeneration_rounds": (
+                 rounds_used if bound_exhausted or not targets else rounds_used + 1
+             ),
+diff --git a/src/kodezart/chains/ralph_loop.py b/src/kodezart/chains/ralph_loop.py
+index 2af34f3..a41ccdc 100644
+--- a/src/kodezart/chains/ralph_loop.py
++++ b/src/kodezart/chains/ralph_loop.py
+@@ -10,12 +10,14 @@ from langgraph.config import get_stream_writer
+ from langgraph.graph import END, START, StateGraph
+ from langgraph.types import RetryPolicy
+ 
++from kodezart.chains.criteria import current_native_criteria
+ from kodezart.core.constants import EVAL_PERMISSION_MODE
+ from kodezart.core.errors import soft_failure
+ from kodezart.core.logging import BoundLogger, get_logger
+ from kodezart.core.node_sessions import NodeSessionObserver
+ from kodezart.core.protocols import (
+     AgentRunner,
++    FireCriteriaReader,
+     GitService,
+     PromptSetProvider,
+     RepoCache,
+@@ -26,7 +28,10 @@ from kodezart.core.stream_drain import drain
+ from kodezart.domain.accept_gate import gate_cleared
+ from kodezart.domain.criteria_grading import grade_iteration
+ from kodezart.domain.fan_in import fan_in_report, require_permutation
+-from kodezart.domain.prompt_variables import changeset_variables
++from kodezart.domain.prompt_variables import (
++    changeset_variables,
++    execution_criteria_variables,
++)
+ from kodezart.domain.thread_id import ralph_thread_id
+ from kodezart.domain.trajectory import fold_trajectory
+ from kodezart.types.domain.accept import AcceptVerdict
+@@ -38,7 +43,8 @@ from kodezart.types.domain.agent import (
+     WorkflowIterationEvent,
+ )
+ from kodezart.types.domain.branch import BaseSpec
+-from kodezart.types.domain.criteria import FanInReport, ValidatedCriterion
++from kodezart.types.domain.criteria import ExecutionCriterion, FanInReport
++from kodezart.types.domain.fire_spec import TrackerSpec
+ from kodezart.types.domain.gating import RepoVisibility
+ from kodezart.types.domain.node_session import NodeInvocation
+ from kodezart.types.domain.prompts import PromptKey
+@@ -76,8 +82,10 @@ class RalphLoop:
+         retry_initial_interval: float,
+         delay_floor_for: DelayFloor,
+         fan_in_max_attempts: int,
++        criteria_reader: FireCriteriaReader | None = None,
+     ) -> None:
+         self._service = service
++        self._criteria_reader = criteria_reader
+         self._max_iterations = max_iterations
+         self._plateau_window = plateau_window
+         self._fan_in_max_attempts = fan_in_max_attempts
+@@ -113,7 +121,8 @@ class RalphLoop:
+         work_base_ref: str,
+         permission_mode: PermissionMode,
+         allowed_tools: AllowedTools,
+-        acceptance_criteria: list[ValidatedCriterion],
++        acceptance_criteria: list[ExecutionCriterion],
++        tracker_spec: TrackerSpec | None = None,
+         cache_key: str,
+         run_identity: RunIdentity | None = None,
+         repo_visibility: RepoVisibility,
+@@ -136,6 +145,7 @@ class RalphLoop:
+             ralph_branch=ralph_branch,
+             work_base_ref=work_base_ref,
+             acceptance_criteria=acceptance_criteria,
++            tracker_spec=tracker_spec,
+             repo_visibility=repo_visibility,
+         )
+         configurable: dict[str, object] = ctx.model_dump()
+@@ -204,6 +214,14 @@ class RalphLoop:
+         config: RunnableConfig,
+     ) -> dict[str, object]:
+         ctx = RalphLoopContext.from_configurable(config)
++        native_criteria = (
++            None
++            if ctx.tracker_spec is None
++            else await current_native_criteria(
++                spec=ctx.tracker_spec,
++                reader=self._criteria_reader,
++            )
++        )
+         writer = get_stream_writer()
+         iteration = state["iteration"] + 1
+         is_first = iteration == 1
+@@ -217,6 +235,12 @@ class RalphLoop:
+                 },
+             )
+ 
++        if native_criteria is not None:
++            prompt += "\n\n## Current tracker Checks\n" + "\n\n".join(
++                f"### {criterion.id}\n{criterion.text}"
++                for criterion in native_criteria.criteria
++            )
++
+         commit_sha: str | None = None
+         async for event in self._service.stream_workflow(
+             prompt=prompt,
+@@ -250,6 +274,13 @@ class RalphLoop:
+         config: RunnableConfig,
+     ) -> dict[str, object]:
+         ctx = RalphLoopContext.from_configurable(config)
++        criteria: list[ExecutionCriterion] = ctx.acceptance_criteria
++        if ctx.tracker_spec is not None:
++            snapshot = await current_native_criteria(
++                spec=ctx.tracker_spec,
++                reader=self._criteria_reader,
++            )
++            criteria = list(snapshot.criteria)
+         writer = get_stream_writer()
+         cwd = (
+             ctx.repo_path
+@@ -266,7 +297,7 @@ class RalphLoop:
+         )
+         eval_prompt = self._prompts.template_for(PromptKey.EVALUATION).render(
+             {
+-                "criteria": ctx.acceptance_criteria,
++                **execution_criteria_variables(criteria),
+                 **changeset_variables(changeset),
+             },
+         )
+@@ -347,13 +378,13 @@ class RalphLoop:
+         output, unresolved, attempts = await until_permutation(
+             dispatch=evaluate,
+             check=lambda candidate: require_permutation(
+-                grade_iteration(ctx.acceptance_criteria, candidate),
++                grade_iteration(criteria, candidate),
+             ),
+             max_attempts=self._fan_in_max_attempts,
+             site="ralph_evaluator",
+             log=self._log,
+         )
+-        grade = grade_iteration(ctx.acceptance_criteria, output)
++        grade = grade_iteration(criteria, output)
+         fan_in: FanInReport | None = None
+         if unresolved is not None:
+             # The bound is spent: grade what came back against the
+diff --git a/src/kodezart/chains/ralph_workflow.py b/src/kodezart/chains/ralph_workflow.py
+index 547d2df..284d3ab 100644
+--- a/src/kodezart/chains/ralph_workflow.py
++++ b/src/kodezart/chains/ralph_workflow.py
+@@ -1,6 +1,7 @@
+ """Assemble and run the shared fire graph from its concrete phases."""
+ 
+ from collections.abc import AsyncIterator
++from functools import partial
+ 
+ from langchain_core.runnables import RunnableConfig
+ from langgraph.checkpoint.base import BaseCheckpointSaver
+@@ -9,12 +10,13 @@ from langgraph.graph import END, START, StateGraph
+ from langgraph.graph.state import CompiledStateGraph
+ from langgraph.types import RetryPolicy
+ 
+-from kodezart.chains.criteria import TrackerCriteria
++from kodezart.chains.criteria import revalidate_criteria
+ from kodezart.chains.fire_consolidation import FireConsolidation
+ from kodezart.chains.fire_implementation import FireImplementation
+ from kodezart.chains.fire_remediation import FireRemediation
+ from kodezart.chains.fire_review import FireReview
+ from kodezart.chains.fire_specification import FireSpecification
++from kodezart.core.protocols import FireCriteriaSource
+ from kodezart.core.retry import DelayFloor, RetryFloor, should_retry
+ from kodezart.domain.accept_gate import (
+     gate_cleared,
+@@ -73,7 +75,7 @@ class RalphWorkflowEngine:
+         retry_max_attempts: int,
+         retry_initial_interval: float,
+         delay_floor_for: DelayFloor,
+-        criteria: TrackerCriteria | None = None,
++        criteria: FireCriteriaSource | None = None,
+     ) -> None:
+         self.specification = specification
+         self.implementation = implementation
+@@ -165,7 +167,7 @@ class RalphWorkflowEngine:
+     def _build_graph(
+         self,
+         *,
+-        criteria: TrackerCriteria | None,
++        criteria: FireCriteriaSource | None,
+     ) -> StateGraph[WorkflowState, None, WorkflowState, WorkflowState]:
+         """One node set; *criteria* selects the tracker-native composition.
+ 
+@@ -207,7 +209,7 @@ class RalphWorkflowEngine:
+         else:
+             graph.add_node(
+                 "revalidate_criteria",
+-                self.floor(criteria.revalidate_criteria),
++                self.floor(partial(revalidate_criteria, source=criteria)),
+                 retry_policy=self.retry,
+             )
+         graph.add_node(
+@@ -444,9 +446,9 @@ class RalphWorkflowEngine:
+             "feature_branch": "",
+             "ralph_branch": "",
+             "work_base_ref": base_spec.base_branch,
+-            "ticket": None,
++            "fire_spec": None,
+             "acceptance_criteria": [],
+-            "criteria_artifact": None,
++            "criterion_set": None,
+             "criteria_validation": None,
+             "criteria_regeneration_rounds": 0,
+             "criteria_infeasible": False,
+diff --git a/src/kodezart/chains/remediation.py b/src/kodezart/chains/remediation.py
+index 41ea703..5e59dd3 100644
+--- a/src/kodezart/chains/remediation.py
++++ b/src/kodezart/chains/remediation.py
+@@ -18,13 +18,15 @@ from kodezart.core.stream_drain import drain
+ from kodezart.domain.remediation import done_work_summary
+ from kodezart.domain.ticket import format_fire_spec
+ from kodezart.types.domain.agent import (
++    REMEDIATION_SCHEMA,
+     TICKET_DRAFT_SCHEMA,
+     AgentEvent,
+     TicketDraftOutput,
+     WorkflowRemediationEvent,
+ )
+-from kodezart.types.domain.fire_spec import AuthoredSpec
++from kodezart.types.domain.fire_spec import TrackerSpec
+ from kodezart.types.domain.prompts import PromptKey
++from kodezart.types.domain.remediation import RemediationPlan
+ from kodezart.types.domain.run_records import RunIdentity
+ from kodezart.types.domain.session import SessionType, ToolPreset
+ from kodezart.types.domain.skills import SkillsSelection
+@@ -66,14 +68,13 @@ class RemediationChain:
+         """Draft one remediation ticket for *request*."""
+         prompt = self._prompts.template_for(PromptKey.REMEDIATION_TICKET).render(
+             {
+-                "original_ticket": format_fire_spec(
+-                    AuthoredSpec(ticket=request.original_ticket)
+-                ),
++                "original_ticket": format_fire_spec(request.original_spec),
+                 "done_work": done_work_summary(request),
+                 "failure_evidence": request.failure_evidence,
+             },
+         )
+ 
++        native = isinstance(request.original_spec, TrackerSpec)
+         result_event, rate_limit_rejected = await drain(
+             self._service.stream(
+                 prompt=prompt,
+@@ -92,7 +93,7 @@ class RemediationChain:
+                 ),
+                 output_format={
+                     "type": "json_schema",
+-                    "schema": TICKET_DRAFT_SCHEMA,
++                    "schema": REMEDIATION_SCHEMA if native else TICKET_DRAFT_SCHEMA,
+                 },
+                 cache_key=cache_key,
+             ),
+@@ -108,13 +109,17 @@ class RemediationChain:
+                 rate_limit_rejected=rate_limit_rejected,
+             )
+ 
+-        ticket = TicketDraftOutput.model_validate(result_event.structured_output)
++        ticket = (
++            RemediationPlan.model_validate(result_event.structured_output)
++            if native
++            else TicketDraftOutput.model_validate(result_event.structured_output)
++        )
+         await self._log.ainfo(
+             "remediation_ticket_drafted",
+             entry=request.entry.value,
+             round_index=request.round_index,
+             base_ref=request.work_base_ref,
+-            title=ticket.title,
++            native=native,
+         )
+         yield WorkflowRemediationEvent(
+             entry=request.entry,
+diff --git a/src/kodezart/composition/engine.py b/src/kodezart/composition/engine.py
+index e96f9b9..b9abd56 100644
+--- a/src/kodezart/composition/engine.py
++++ b/src/kodezart/composition/engine.py
+@@ -27,6 +27,7 @@ from kodezart.core.logging import BoundLogger, get_logger
+ from kodezart.core.protocols import (
+     ArtifactPersister,
+     BranchMerger,
++    FireCriteriaSource,
+     GitService,
+     OutboundContentGate,
+     PromptSetProvider,
+@@ -171,6 +172,7 @@ def build_workflow_engine(
+     gate: OutboundContentGate,
+     github_api: GitHubAPIClient | None,
+     checkpointer: BaseCheckpointSaver[str] | None,
++    criteria: FireCriteriaSource | None = None,
+ ) -> OriginRoutedWorkflowEngine:
+     """The engine, with the loops and the remediation component it runs.
+ 
+@@ -184,8 +186,11 @@ def build_workflow_engine(
+     answers the narrow protocols used by specification, publication and
+     checks; each receives the same selected adapter.
+     """
++    # Authored construction needs no tracker. Native entry refuses without
++    # this capability, and each consumer independently requires its reader.
+     delay_floor_for = rate_limit_delay_floor(config)
+     ralph_loop = RalphLoop(
++        criteria_reader=criteria,
+         service=agent_service,
+         max_iterations=config.max_iterations,
+         plateau_window=config.loop_plateau_window,
+@@ -220,6 +225,7 @@ def build_workflow_engine(
+     def arm(forge: GitHubAPIClient | None) -> AuthoredDeliveryCoordinator:
+         return AuthoredDeliveryCoordinator(
+             fire=RalphWorkflowEngine(
++                criteria=criteria,
+                 specification=FireSpecification(
+                     service=agent_service,
+                     ticket_generator=ticket_generator,
+@@ -231,6 +237,7 @@ def build_workflow_engine(
+                     fan_in_max_attempts=config.fan_in_max_attempts,
+                 ),
+                 implementation=FireImplementation(
++                    criteria_reader=criteria,
+                     quality_gate=ralph_loop,
+                     prompts=prompts,
+                     artifact_persister=artifact_persister,
+@@ -244,6 +251,7 @@ def build_workflow_engine(
+                     ref_publisher=ref_publisher if forge is not None else None,
+                 ),
+                 review=FireReview(
++                    criteria_reader=criteria,
+                     service=agent_service,
+                     prompts=prompts,
+                     skills=skills,
+diff --git a/src/kodezart/core/prompt_namespaces.py b/src/kodezart/core/prompt_namespaces.py
+index 19052a0..55ce77d 100644
+--- a/src/kodezart/core/prompt_namespaces.py
++++ b/src/kodezart/core/prompt_namespaces.py
+@@ -27,6 +27,7 @@ SET_FRAGMENT_NAMES: frozenset[str] = frozenset({"skills_reference"})
+ PER_CALL_VARIABLE_NAMES: frozenset[str] = frozenset(
+     {
+         "tracker_criteria",
++        "swept_criteria",
+         "task",
+         "task_md",
+         "task_description",
+diff --git a/src/kodezart/core/protocols.py b/src/kodezart/core/protocols.py
+index 93aa498..03db6c8 100644
+--- a/src/kodezart/core/protocols.py
++++ b/src/kodezart/core/protocols.py
+@@ -14,7 +14,7 @@ from kodezart.types.domain.consolidation import (
+     ChangesetDigest,
+     ConsolidationOutcome,
+ )
+-from kodezart.types.domain.criteria import ValidatedCriterion
++from kodezart.types.domain.criteria import ExecutionCriterion, TrackerCriterionSet
+ from kodezart.types.domain.dispatch import DispatchReport, PassSignal
+ from kodezart.types.domain.escalation import EscalationResolution
+ from kodezart.types.domain.fire_spec import TrackerSpec
+@@ -1411,6 +1411,28 @@ class GitAuth(Protocol):
+         ...
+ 
+ 
++@runtime_checkable
++class FireCriteriaReader(Protocol):
++    """Read current native obligations against the run's frozen subject spec.
++
++    This is a runtime dependency. Checkpoints carry the spec and criterion
++    data only; transport failures refuse instead of returning cached Checks.
++    """
++
++    async def read_current(self, *, spec: TrackerSpec) -> TrackerCriterionSet:
++        """Return one complete current Check snapshot or a typed refusal."""
++        ...
++
++
++@runtime_checkable
++class FireCriteriaSource(FireCriteriaReader, Protocol):
++    """Capture an admitted native subject once and refresh its obligations."""
++
++    async def read_spec(self, *, issue_key: str) -> TrackerSpec:
++        """Capture tracker-authored subject data or raise a typed refusal."""
++        ...
++
++
+ @runtime_checkable
+ class QualityGate(Protocol):
+     """Iterates agent work until acceptance criteria pass or max iterations.
+@@ -1433,7 +1455,8 @@ class QualityGate(Protocol):
+         work_base_ref: str,
+         permission_mode: PermissionMode,
+         allowed_tools: AllowedTools,
+-        acceptance_criteria: list[ValidatedCriterion],
++        acceptance_criteria: list[ExecutionCriterion],
++        tracker_spec: TrackerSpec | None = None,
+         cache_key: str,
+         run_identity: RunIdentity | None = None,
+         repo_visibility: RepoVisibility,
+diff --git a/src/kodezart/domain/accept_gate.py b/src/kodezart/domain/accept_gate.py
+index 01e704c..c3dbec8 100644
+--- a/src/kodezart/domain/accept_gate.py
++++ b/src/kodezart/domain/accept_gate.py
+@@ -11,22 +11,32 @@ from collections.abc import Sequence
+ from kodezart.domain.errors import UngroundedVerdictError
+ from kodezart.types.domain.accept import AcceptVerdict, FlaggedItem, SherlockFlag
+ from kodezart.types.domain.agent import CriterionResult
+-from kodezart.types.domain.criteria import CriterionVerdict, ValidatedCriterion
++from kodezart.types.domain.criteria import (
++    CriterionVerdict,
++    ExecutionCriterion,
++    ValidatedCriterion,
++)
+ 
+ 
+-def is_graded(criterion: ValidatedCriterion) -> bool:
++def is_graded(criterion: ExecutionCriterion) -> bool:
+     """Whether this criterion's demonstration was possible at all.
+ 
+     An ``unverifiable`` criterion is never a pass and never a fail, and
+     there is no third seat, so it takes none: not in the numerator, not in
+     the denominator.
+     """
+-    return criterion.feasibility.verdict is not CriterionVerdict.unverifiable
++    return not isinstance(criterion, ValidatedCriterion) or (
++        criterion.feasibility.verdict is not CriterionVerdict.unverifiable
++    )
+ 
+ 
+-def ungraded(criteria: Sequence[ValidatedCriterion]) -> list[ValidatedCriterion]:
++def ungraded(criteria: Sequence[ExecutionCriterion]) -> list[ValidatedCriterion]:
+     """The criteria the sweep left with no possible demonstration."""
+-    return [criterion for criterion in criteria if not is_graded(criterion)]
++    return [
++        criterion
++        for criterion in criteria
++        if isinstance(criterion, ValidatedCriterion) and not is_graded(criterion)
++    ]
+ 
+ 
+ def named_resource(criterion: ValidatedCriterion) -> str:
+@@ -44,9 +54,9 @@ def named_resource(criterion: ValidatedCriterion) -> str:
+ 
+ 
+ def _failures(
+-    criteria: Sequence[ValidatedCriterion],
++    criteria: Sequence[ExecutionCriterion],
+     results: Sequence[CriterionResult],
+-) -> list[ValidatedCriterion]:
++) -> list[ExecutionCriterion]:
+     """Every GRADED criterion that did not pass.
+ 
+     An id with no result did not pass — the same fail-closed denominator
+@@ -62,7 +72,7 @@ def _failures(
+ 
+ 
+ def accept_verdict(
+-    criteria: Sequence[ValidatedCriterion],
++    criteria: Sequence[ExecutionCriterion],
+     results: Sequence[CriterionResult],
+ ) -> AcceptVerdict:
+     """The three-state verdict for one evaluation pass.
+@@ -103,7 +113,7 @@ def sherlock_items(sherlock_flags: Sequence[SherlockFlag]) -> list[FlaggedItem]:
+ 
+ 
+ def flagged_items(
+-    criteria: Sequence[ValidatedCriterion],
++    criteria: Sequence[ExecutionCriterion],
+     sherlock_flags: Sequence[SherlockFlag],
+ ) -> list[FlaggedItem]:
+     """Everything a flagged run owes its reader, in one ordered list.
+diff --git a/src/kodezart/domain/criteria.py b/src/kodezart/domain/criteria.py
+index 28f44f7..c017fd9 100644
+--- a/src/kodezart/domain/criteria.py
++++ b/src/kodezart/domain/criteria.py
+@@ -1,6 +1,7 @@
+-"""Criterion identity — the ``AC-n`` scheme minted once, harness-side.
++"""Authored criterion identity — the ``AC-n`` scheme minted harness-side.
+ 
+-Identity is assigned at generation time, never by a model.  The sweep, the
++Authored identity is assigned at generation time, never by a model.
++Native execution instead carries each tracker key without minting.  The sweep, the
+ persisted artifact, evaluator dispatch and grading, and the re-injected
+ feedback text all key off these ids and never off criterion text: a
+ model-echoed string can drift.
+@@ -23,8 +24,8 @@ from kodezart.types.domain.criteria import (
+ def mint_criterion_id(index: int) -> CriterionId:
+     """The identity of the criterion at 1-based *index*.
+ 
+-    The single construction site for a ``CriterionId``, so no other surface
+-    knows the ``AC-n`` shape and none may invent one.  The prefix is the
++    The single authored minting site, so no other surface knows the
++    ``AC-n`` shape and none may invent one.  The prefix is the
+     one the format pattern is built from, so a minted id always matches it.
+     """
+     if index < 1:
+diff --git a/src/kodezart/domain/criteria_grading.py b/src/kodezart/domain/criteria_grading.py
+index 2972978..5161f4a 100644
+--- a/src/kodezart/domain/criteria_grading.py
++++ b/src/kodezart/domain/criteria_grading.py
+@@ -45,7 +45,7 @@ from kodezart.types.domain.agent import AcceptanceCriteriaOutput, CriterionResul
+ from kodezart.types.domain.criteria import (
+     CriterionFailure,
+     CriterionId,
+-    ValidatedCriterion,
++    ExecutionCriterion,
+ )
+ from kodezart.types.domain.grading import IterationGrade
+ 
+@@ -61,7 +61,7 @@ DUPLICATE_RESULT_REASONING = (
+ 
+ 
+ def grade_iteration(
+-    criteria: Sequence[ValidatedCriterion],
++    criteria: Sequence[ExecutionCriterion],
+     output: AcceptanceCriteriaOutput,
+ ) -> IterationGrade:
+     """Reconcile *output* against *criteria* and grade fail-closed."""
+diff --git a/src/kodezart/domain/prompt_variables.py b/src/kodezart/domain/prompt_variables.py
+index 244e974..8972b50 100644
+--- a/src/kodezart/domain/prompt_variables.py
++++ b/src/kodezart/domain/prompt_variables.py
+@@ -3,6 +3,7 @@
+ from collections.abc import Sequence
+ 
+ from kodezart.types.domain.consolidation import ChangesetDigest
++from kodezart.types.domain.criteria import ExecutionCriterion, ValidatedCriterion
+ from kodezart.types.domain.organize import AdmissionResult
+ 
+ 
+@@ -55,3 +56,18 @@ def organize_variables(
+         ),
+         "defect_classes": tuple(defect_classes),
+     }
++
++
++def execution_criteria_variables(
++    criteria: Sequence[ExecutionCriterion],
++) -> dict[str, object]:
++    """Render each entry source without claiming a sweep on tracker Checks."""
++    return {
++        "criteria": list(criteria),
++        "swept_criteria": True
++        if any(isinstance(c, ValidatedCriterion) for c in criteria)
++        else None,
++        "tracker_criteria": True
++        if any(not isinstance(c, ValidatedCriterion) for c in criteria)
++        else None,
++    }
+diff --git a/src/kodezart/domain/stall_report.py b/src/kodezart/domain/stall_report.py
+index 2ea86ca..70d2328 100644
+--- a/src/kodezart/domain/stall_report.py
++++ b/src/kodezart/domain/stall_report.py
+@@ -15,7 +15,7 @@ produced, so the note cannot disagree with the run it describes.
+ 
+ from collections.abc import Sequence
+ 
+-from kodezart.types.domain.criteria import CriterionId, ValidatedCriterion
++from kodezart.types.domain.criteria import CriterionId, ExecutionCriterion
+ from kodezart.types.domain.trajectory import LoopTrajectory
+ 
+ DO_NOT_MERGE_PREFIX = "[do-not-merge]"
+@@ -34,7 +34,7 @@ def stall_pr_title(ticket_title: str) -> str:
+ 
+ def stall_pr_body(
+     trajectory: LoopTrajectory,
+-    criteria: Sequence[ValidatedCriterion],
++    criteria: Sequence[ExecutionCriterion],
+     *,
+     landed_commit: str,
+ ) -> str:
+diff --git a/src/kodezart/domain/workflow_state.py b/src/kodezart/domain/workflow_state.py
+index 64859f5..2d373d8 100644
+--- a/src/kodezart/domain/workflow_state.py
++++ b/src/kodezart/domain/workflow_state.py
+@@ -1,56 +1,49 @@
+-"""Read access to the criteria a run has already swept — one accessor.
+-
+-Every surface downstream of ``validate_criteria`` — the loop, the review,
+-the fix round and the pull-request body — reads criteria through here, so
+-no consumer can pick up the pre-sweep list and dispatch a criterion
+-without the verdict the sweep computed for it.  Beside the state it reads
+-rather than inside the engine, because the invariant belongs to
+-``WorkflowState``, not to the class that happens to hold the nodes.
+-"""
++"""Read the one subject and criterion set held by either fire composition."""
+ 
+ from kodezart.types.domain.agent import TicketDraftOutput
+-from kodezart.types.domain.criteria import CriteriaArtifact, ValidatedCriterion
++from kodezart.types.domain.criteria import CriteriaArtifact, ExecutionCriterion
++from kodezart.types.domain.fire_spec import AuthoredSpec, FireSpec
+ from kodezart.types.domain.workflow import WorkflowState
+ 
+ 
+ def validated_artifact(state: WorkflowState) -> CriteriaArtifact:
+-    """The post-sweep criteria document. Raises if the sweep has not run."""
+-    artifact = state["criteria_artifact"]
+-    if artifact is None:
+-        msg = "Criteria are read after the sweep; state['criteria_artifact'] is None."
+-        raise RuntimeError(msg)
++    """The authored post-sweep document; native Checks are never an artifact."""
++    artifact = state["criterion_set"]
++    if not isinstance(artifact, CriteriaArtifact):
++        raise RuntimeError("An authored artifact requires a completed criteria sweep")
+     return artifact
+ 
+ 
+-def validated_criteria(state: WorkflowState) -> list[ValidatedCriterion]:
+-    """The criteria as validated — identity, text, class, verdict."""
+-    return validated_artifact(state).criteria
++def validated_criteria(state: WorkflowState) -> list[ExecutionCriterion]:
++    """The criteria established by the selected composition's entry barrier."""
++    criterion_set = state["criterion_set"]
++    if criterion_set is None:
++        raise RuntimeError("Criteria are read after the entry barrier")
++    return list(criterion_set.criteria)
+ 
+ 
+-def current_ticket(state: WorkflowState) -> TicketDraftOutput:
+-    """The ticket the run is serving right now.
+-
+-    A remediation round replaces what the loop is working on without
+-    erasing what the run is ABOUT: the original stays put, because the
+-    next round's evidence is meaningless without it.  One accessor, so no
+-    surface can read the original where it should be reading the round's
+-    ticket — which would silently re-run the whole original ticket, the
+-    exact failure the remediation prompt is written to avoid.
+-    """
++def original_fire_spec(state: WorkflowState) -> FireSpec:
++    """The subject captured at entry, preserved across remediation rounds."""
++    spec = state["fire_spec"]
++    if spec is None:
++        raise RuntimeError("The fire spec is read after its entry stage")
++    return spec
++
++
++def current_fire_spec(state: WorkflowState) -> FireSpec:
++    """Use an authored remediation ticket only on the authored composition."""
++    spec = original_fire_spec(state)
+     remediation = state["remediation_ticket"]
+-    if remediation is not None:
+-        return remediation
+-    ticket = state["ticket"]
+-    if ticket is None:
+-        msg = "The ticket is read after generation; state['ticket'] is None."
+-        raise RuntimeError(msg)
+-    return ticket
+-
+-
+-def original_ticket(state: WorkflowState) -> TicketDraftOutput:
+-    """The ticket the RUN is about, never a round's replacement for it."""
+-    ticket = state["ticket"]
+-    if ticket is None:
+-        msg = "The ticket is read after generation; state['ticket'] is None."
+-        raise RuntimeError(msg)
+-    return ticket
++    if isinstance(spec, AuthoredSpec) and remediation is not None:
++        if not isinstance(remediation, TicketDraftOutput):
++            raise RuntimeError("An authored remediation requires an authored ticket")
++        return AuthoredSpec(ticket=remediation)
++    return spec
++
++
++def current_ticket(state: WorkflowState) -> TicketDraftOutput:
++    """The current authored ticket, for authored generation and persistence."""
++    spec = current_fire_spec(state)
++    if not isinstance(spec, AuthoredSpec):
++        raise RuntimeError("An authored ticket is unavailable on the tracker arm")
++    return spec.ticket
+diff --git a/src/kodezart/prompts/sets/claude-opus/evaluation.md b/src/kodezart/prompts/sets/claude-opus/evaluation.md
+index c60d829..4643b1c 100644
+--- a/src/kodezart/prompts/sets/claude-opus/evaluation.md
++++ b/src/kodezart/prompts/sets/claude-opus/evaluation.md
+@@ -70,13 +70,13 @@ If you catch yourself writing "deferred to follow-up" without having applied the
+ 
+ ── ACCEPTANCE CRITERIA TO EVALUATE ──
+ 
+-Each criterion arrives carrying the feasibility verdict the pre-loop sweep computed for it. The verdict is not advice — it tells you what a pass can even mean for that criterion:
++{{#if swept_criteria}}Each criterion arrives carrying the feasibility verdict the pre-loop sweep computed for it. The verdict is not advice — it tells you what a pass can even mean for that criterion:
+ 
+ - `feasible` — grade it normally against the changeset.
+-- `unverifiable` — the criterion is sound and its DEMONSTRATION is blocked by a resource this runner does not have; the blocking resource is named on the line. Do not treat the absence as an implementation defect, and do not mark it passed on the grounds that the code looks right. Report it as not passed with the named resource as the reasoning: an unestablished claim is never a pass.
++- `unverifiable` — the criterion is sound and its DEMONSTRATION is blocked by a resource this runner does not have; the blocking resource is named on the line. Do not treat the absence as an implementation defect, and do not mark it passed on the grounds that the code looks right. Report it as not passed with the named resource as the reasoning: an unestablished claim is never a pass.{{/if}}{{#if tracker_criteria}}These criteria are live tracker Checks, identified by their exact sub-issue keys. Evaluate every Check against the changeset; no authored feasibility verdict is implied.{{/if}}
+ 
+ {{#each criteria}}
+-{{this.id}} [{{this.feasibility.verdict}}]{{#if this.feasibility.missing_resource}} [blocked on: {{this.feasibility.missing_resource}}]{{/if}} {{this.text}}{{/each}}
++{{this.id}}{{#if this.feasibility}} [{{this.feasibility.verdict}}]{{/if}}{{#if this.feasibility.missing_resource}} [blocked on: {{this.feasibility.missing_resource}}]{{/if}} {{this.text}}{{/each}}
+ 
+ ── CHANGESET TO EVALUATE ──
+ 
+diff --git a/src/kodezart/prompts/sets/claude-opus/post_merge_review.md b/src/kodezart/prompts/sets/claude-opus/post_merge_review.md
+index c60d829..4643b1c 100644
+--- a/src/kodezart/prompts/sets/claude-opus/post_merge_review.md
++++ b/src/kodezart/prompts/sets/claude-opus/post_merge_review.md
+@@ -70,13 +70,13 @@ If you catch yourself writing "deferred to follow-up" without having applied the
+ 
+ ── ACCEPTANCE CRITERIA TO EVALUATE ──
+ 
+-Each criterion arrives carrying the feasibility verdict the pre-loop sweep computed for it. The verdict is not advice — it tells you what a pass can even mean for that criterion:
++{{#if swept_criteria}}Each criterion arrives carrying the feasibility verdict the pre-loop sweep computed for it. The verdict is not advice — it tells you what a pass can even mean for that criterion:
+ 
+ - `feasible` — grade it normally against the changeset.
+-- `unverifiable` — the criterion is sound and its DEMONSTRATION is blocked by a resource this runner does not have; the blocking resource is named on the line. Do not treat the absence as an implementation defect, and do not mark it passed on the grounds that the code looks right. Report it as not passed with the named resource as the reasoning: an unestablished claim is never a pass.
++- `unverifiable` — the criterion is sound and its DEMONSTRATION is blocked by a resource this runner does not have; the blocking resource is named on the line. Do not treat the absence as an implementation defect, and do not mark it passed on the grounds that the code looks right. Report it as not passed with the named resource as the reasoning: an unestablished claim is never a pass.{{/if}}{{#if tracker_criteria}}These criteria are live tracker Checks, identified by their exact sub-issue keys. Evaluate every Check against the changeset; no authored feasibility verdict is implied.{{/if}}
+ 
+ {{#each criteria}}
+-{{this.id}} [{{this.feasibility.verdict}}]{{#if this.feasibility.missing_resource}} [blocked on: {{this.feasibility.missing_resource}}]{{/if}} {{this.text}}{{/each}}
++{{this.id}}{{#if this.feasibility}} [{{this.feasibility.verdict}}]{{/if}}{{#if this.feasibility.missing_resource}} [blocked on: {{this.feasibility.missing_resource}}]{{/if}} {{this.text}}{{/each}}
+ 
+ ── CHANGESET TO EVALUATE ──
+ 
+diff --git a/src/kodezart/types/domain/agent.py b/src/kodezart/types/domain/agent.py
+index a82c71a..1941d39 100644
+--- a/src/kodezart/types/domain/agent.py
++++ b/src/kodezart/types/domain/agent.py
+@@ -23,7 +23,6 @@ from kodezart.types.domain.branch import BaseInput, WorkRefRole
+ from kodezart.types.domain.ci import CIStatus
+ from kodezart.types.domain.consolidation import ConsolidationStatus
+ from kodezart.types.domain.criteria import (
+-    CRITERION_ID_PATTERN,
+     ContractCorrection,
+     CriteriaValidation,
+     CriteriaValidationOutput,
+@@ -41,7 +40,7 @@ from kodezart.types.domain.node_session import NodeInvocation
+ from kodezart.types.domain.organize import AdmissionJudgment
+ from kodezart.types.domain.outcome import WorkflowOutcome
+ from kodezart.types.domain.persist import ArtifactPersistStatus
+-from kodezart.types.domain.remediation import RemediationEntry
++from kodezart.types.domain.remediation import RemediationEntry, RemediationPlan
+ from kodezart.types.domain.run_event import RunEventKind
+ from kodezart.types.domain.session import SessionFailureKind
+ from kodezart.types.domain.ticket_review import TicketApproval, TicketReviewMode
+@@ -580,7 +579,8 @@ class CriterionResult(CamelCaseModel):
+     model_config = ConfigDict(frozen=True, populate_by_name=True)
+ 
+     criterion_id: CriterionId = Field(
+-        pattern=CRITERION_ID_PATTERN,
++        min_length=1,
++        pattern=r"\S",
+         description=(
+             "The dispatched criterion's id, echoed exactly. Return one result "
+             "per dispatched id and invent none."
+@@ -928,7 +928,7 @@ class WorkflowRemediationEvent(AgentEvent):
+     type: Literal["workflow_remediation"] = "workflow_remediation"
+     entry: RemediationEntry
+     round_index: int
+-    ticket: TicketDraftOutput
++    ticket: TicketDraftOutput | RemediationPlan
+     base_ref: str
+ 
+ 
+@@ -1091,6 +1091,7 @@ CRITERIA_VALIDATION_SCHEMA: dict[str, object] = (
+ )
+ # Schema for structured ticket draft output
+ TICKET_DRAFT_SCHEMA: dict[str, object] = TicketDraftOutput.model_json_schema()
++REMEDIATION_SCHEMA: dict[str, object] = RemediationPlan.model_json_schema()
+ # Schema for structured ticket review output
+ TICKET_REVIEW_SCHEMA: dict[str, object] = TicketReviewOutput.model_json_schema()
+ PR_DESCRIPTION_SCHEMA: dict[str, object] = PRDescriptionOutput.model_json_schema()
+@@ -1118,6 +1119,7 @@ WIRE_SCHEMAS: dict[str, dict[str, object]] = {
+     "GENERATED_CRITERIA_SCHEMA": GENERATED_CRITERIA_SCHEMA,
+     "CRITERIA_VALIDATION_SCHEMA": CRITERIA_VALIDATION_SCHEMA,
+     "TICKET_DRAFT_SCHEMA": TICKET_DRAFT_SCHEMA,
++    "REMEDIATION_SCHEMA": REMEDIATION_SCHEMA,
+     "TICKET_REVIEW_SCHEMA": TICKET_REVIEW_SCHEMA,
+     "PR_DESCRIPTION_SCHEMA": PR_DESCRIPTION_SCHEMA,
+     "CONTENT_AUDIT_SCHEMA": CONTENT_AUDIT_SCHEMA,
+diff --git a/src/kodezart/types/domain/criteria.py b/src/kodezart/types/domain/criteria.py
+index 67c4eda..f44a3bf 100644
+--- a/src/kodezart/types/domain/criteria.py
++++ b/src/kodezart/types/domain/criteria.py
+@@ -1,7 +1,8 @@
+ """Typed shapes for the acceptance-criteria lifecycle.
+ 
+-A criterion carries a stable identity (``AC-n``, minted at generation
+-time) and — after the sweep — a three-state verdict with its evidence.
++A criterion carries a stable identity: authored ``AC-n`` minted at generation
++time, or the exact native tracker key. Authored criteria additionally carry
++a three-state sweep verdict with its evidence.
+ 
+ ``infeasible`` and ``unverifiable`` differ in WHERE THE FAULT LIES: an
+ ``infeasible`` criterion is at fault in its own text and is routed to an
+@@ -32,15 +33,12 @@ CRITERION_ID_PATTERN = rf"^{CRITERION_ID_PREFIX}[1-9][0-9]*$"
+ #:
+ #: A ``NewType``: a constrained alias stays ``str`` to the type checker, so
+ #: a union discriminating one minted identity from another collapses and
+-#: admits any loose string.  Only the minting function constructs one.
++#: admits any loose string. Authored minting and native key capture construct it.
+ CriterionId = NewType("CriterionId", str)
+ 
+-#: A criterion identity carried INSIDE a list, format-checked per element.
+-#:
+-#: ``list[CriterionId]`` constrained nothing — the ``NewType`` validates as
+-#: ``str`` and a field ``min_length`` constrains the LIST, not its members —
+-#: so ``criterionIds: ["banana"]`` round-tripped intact.
+-CriterionIdItem = Annotated[CriterionId, Field(pattern=CRITERION_ID_PATTERN)]
++#: Shared identity constraints apply per element, preserving exact tracker
++#: keys while refusing blank identities. AC-n is an authored minting rule.
++CriterionIdItem = Annotated[CriterionId, Field(min_length=1, pattern=r"\S")]
+ 
+ 
+ class CriterionVerdict(StrEnum):
+@@ -223,7 +221,7 @@ class GeneratedCriterion(CamelCaseModel):
+ 
+     model_config = ConfigDict(frozen=True, populate_by_name=True)
+ 
+-    id: CriterionId = Field(pattern=CRITERION_ID_PATTERN)
++    id: CriterionId = Field(min_length=1, pattern=r"\S")
+     text: str = Field(min_length=1)
+ 
+ 
+@@ -463,11 +461,31 @@ class ValidatedCriterion(CamelCaseModel):
+ 
+     model_config = ConfigDict(frozen=True, populate_by_name=True)
+ 
+-    id: CriterionId = Field(pattern=CRITERION_ID_PATTERN)
++    id: CriterionId = Field(min_length=1, pattern=r"\S")
+     text: str = Field(min_length=1)
+     feasibility: CriterionFeasibility
+ 
+ 
++class TrackerCriterion(CamelCaseModel):
++    """A live tracker obligation, without an invented authored sweep verdict."""
++
++    model_config = ConfigDict(frozen=True, populate_by_name=True, extra="forbid")
++
++    id: CriterionId = Field(min_length=1, pattern=r"\S")
++    text: str = Field(min_length=1)
++
++
++ExecutionCriterion = ValidatedCriterion | TrackerCriterion
++
++
++class TrackerCriterionSet(CamelCaseModel):
++    """The current Checks read at the native fire's execution barrier."""
++
++    model_config = ConfigDict(frozen=True, populate_by_name=True, extra="forbid")
++
++    criteria: list[TrackerCriterion] = Field(min_length=1)
++
++
+ class CriteriaArtifact(CamelCaseModel):
+     """The ``.kodezart/criteria.json`` document.
+ 
+@@ -493,7 +511,7 @@ class CriterionFailure(CamelCaseModel):
+ 
+     model_config = ConfigDict(frozen=True, populate_by_name=True)
+ 
+-    criterion_id: CriterionId = Field(pattern=CRITERION_ID_PATTERN)
++    criterion_id: CriterionId = Field(min_length=1, pattern=r"\S")
+     text: str = Field(min_length=1)
+     reasoning: str = Field(min_length=1)
+ 
+diff --git a/src/kodezart/types/domain/remediation.py b/src/kodezart/types/domain/remediation.py
+index 7c522ba..fd2f4ff 100644
+--- a/src/kodezart/types/domain/remediation.py
++++ b/src/kodezart/types/domain/remediation.py
+@@ -13,6 +13,10 @@ to ask with.
+ 
+ from enum import StrEnum
+ 
++from pydantic import ConfigDict, Field
++
++from kodezart.types.base import CamelCaseModel
++
+ 
+ class RemediationEntry(StrEnum):
+     """The failure route a remediation round is answering."""
+@@ -20,3 +24,18 @@ class RemediationEntry(StrEnum):
+     ci_failure = "ci_failure"
+     review_failure = "review_failure"
+     loop_not_accepted = "loop_not_accepted"
++
++
++class RemediationPlan(CamelCaseModel):
++    """Targeted repair instructions under an unchanged tracker subject and Checks."""
++
++    model_config = ConfigDict(frozen=True, extra="forbid")
++
++    instructions: str = Field(
++        min_length=1,
++        description=(
++            "Targeted remediation in Markdown: the root cause, its evidence, and "
++            "the changes needed within the original subject. Preserve the tracker "
++            "Checks; do not author a replacement ticket or acceptance criteria."
++        ),
++    )
+diff --git a/src/kodezart/types/domain/trajectory.py b/src/kodezart/types/domain/trajectory.py
+index b3810b8..6559e8d 100644
+--- a/src/kodezart/types/domain/trajectory.py
++++ b/src/kodezart/types/domain/trajectory.py
+@@ -18,7 +18,7 @@ from kodezart.types.domain.criteria import CriterionId
+ class IterationRecord(CamelCaseModel):
+     """One iteration's contribution to the loop's progress memory.
+ 
+-    ``failing_criterion_ids`` carries minted ``CriterionId`` values, not
++    ``failing_criterion_ids`` carries exact ``CriterionId`` values, not
+     the evaluator's echo of a criterion's text: a plateau is a claim that
+     the SAME criteria keep failing, and text a model re-renders each
+     iteration cannot carry that claim.  ``commit_sha`` is that
+diff --git a/src/kodezart/types/domain/workflow.py b/src/kodezart/types/domain/workflow.py
+index 52bb8be..f80d841 100644
+--- a/src/kodezart/types/domain/workflow.py
++++ b/src/kodezart/types/domain/workflow.py
+@@ -3,7 +3,7 @@
+ from typing import NotRequired, Self, TypedDict
+ 
+ from langchain_core.runnables import RunnableConfig
+-from pydantic import ConfigDict, Field
++from pydantic import ConfigDict, Field, model_validator
+ 
+ from kodezart.types.base import CamelCaseModel
+ from kodezart.types.domain.accept import AcceptVerdict, FlaggedItem
+@@ -14,12 +14,15 @@ from kodezart.types.domain.criteria import (
+     CriteriaArtifact,
+     CriteriaValidation,
+     CriterionFailure,
++    ExecutionCriterion,
+     GeneratedCriterion,
+-    ValidatedCriterion,
++    TrackerCriterion,
++    TrackerCriterionSet,
+ )
+ from kodezart.types.domain.delivery import CheckRedClass
++from kodezart.types.domain.fire_spec import FireSpec, TrackerSpec
+ from kodezart.types.domain.gating import RepoVisibility
+-from kodezart.types.domain.remediation import RemediationEntry
++from kodezart.types.domain.remediation import RemediationEntry, RemediationPlan
+ from kodezart.types.domain.run_records import RunIdentity
+ from kodezart.types.domain.scope import ScopeRef
+ from kodezart.types.domain.session import AllowedTools, PermissionMode
+@@ -124,13 +127,13 @@ class RemediationRequest(CamelCaseModel):
+ 
+     entry: RemediationEntry
+     round_index: int = Field(ge=0)
+-    original_ticket: TicketDraftOutput
++    original_spec: FireSpec
+     work_branch: str = Field(min_length=1)
+     work_base_ref: str = Field(min_length=1)
+     pr_url: str | None = None
+     total_iterations: int = Field(ge=0)
+     trajectory: LoopTrajectory | None = None
+-    criteria: list[ValidatedCriterion]
++    criteria: list[ExecutionCriterion]
+     failure_evidence: str = Field(min_length=1)
+ 
+ 
+@@ -148,9 +151,21 @@ class RalphLoopContext(ExecutionContext):
+     feature_branch: str = Field(min_length=1)
+     ralph_branch: str = Field(min_length=1)
+     work_base_ref: str = Field(min_length=1)
+-    acceptance_criteria: list[ValidatedCriterion] = Field(min_length=1)
++    acceptance_criteria: list[ExecutionCriterion] = Field(min_length=1)
++    tracker_spec: TrackerSpec | None = None
+     repo_visibility: RepoVisibility
+ 
++    @model_validator(mode="after")
++    def _criteria_match_source(self) -> Self:
++        """A native checkpoint cannot fall back to the authored cached arm."""
++        native = self.tracker_spec is not None
++        if any(
++            isinstance(criterion, TrackerCriterion) != native
++            for criterion in self.acceptance_criteria
++        ):
++            raise ValueError("Loop criteria must match the frozen subject source")
++        return self
++
+ 
+ # ---------------------------------------------------------------------------
+ # TypedDict state schemas (mutable, for LangGraph node communication)
+@@ -229,9 +244,9 @@ class WorkflowState(TypedDict):
+     feature_branch: str
+     ralph_branch: str
+     work_base_ref: str
+-    ticket: TicketDraftOutput | None
++    fire_spec: FireSpec | None
+     acceptance_criteria: list[GeneratedCriterion]
+-    criteria_artifact: CriteriaArtifact | None
++    criterion_set: CriteriaArtifact | TrackerCriterionSet | None
+     criteria_validation: CriteriaValidation | None
+     criteria_regeneration_rounds: int
+     criteria_infeasible: bool
+@@ -246,7 +261,7 @@ class WorkflowState(TypedDict):
+     review_passed: bool
+     review_feedback: str | None
+     remediation_rounds_used: int
+-    remediation_ticket: TicketDraftOutput | None
++    remediation_ticket: TicketDraftOutput | RemediationPlan | None
+     remediation_entry: RemediationEntry | None
+     best_iteration_sha: str | None
+     repo_url: str | None
+diff --git a/tests/chains/test_fire_spec_prompt_consumers.py b/tests/chains/test_fire_spec_prompt_consumers.py
+index 7ed363f..4780596 100644
+--- a/tests/chains/test_fire_spec_prompt_consumers.py
++++ b/tests/chains/test_fire_spec_prompt_consumers.py
+@@ -78,13 +78,13 @@ async def capture_prompts(family, ticket, monkeypatch):
+     )
+     state = {
+         "issue_key": "subject/42",
+-        "ticket": ticket,
++        "fire_spec": AuthoredSpec(ticket=ticket),
+         "remediation_ticket": None,
+         "feature_branch": "feature",
+         "ralph_branch": "loop",
+         "work_base_ref": "selected-base",
+         "feature_tip_sha": "a" * 40,
+-        "criteria_artifact": CriteriaArtifact(
++        "criterion_set": CriteriaArtifact(
+             criteria=make_criteria("Recorded criterion"),
+             conjunction=ConjunctionVerdict(satisfiable=True),
+         ),
+@@ -97,7 +97,9 @@ async def capture_prompts(family, ticket, monkeypatch):
+     await engine.publication.open_pr(state, config)
+ 
+     fix_runner = FakeAgentRunner([_ticket_result()])
+-    request = _request().model_copy(update={"original_ticket": ticket})
++    request = _request().model_copy(
++        update={"original_spec": AuthoredSpec(ticket=ticket)}
++    )
+     _ = [
+         event
+         async for event in _chain(fix_runner, provider).run(
+diff --git a/tests/chains/test_native_fire.py b/tests/chains/test_native_fire.py
+index d596af2..c9c8334 100644
+--- a/tests/chains/test_native_fire.py
++++ b/tests/chains/test_native_fire.py
+@@ -8,6 +8,8 @@ for it.
+ """
+ 
+ import pytest
++from langgraph.checkpoint.memory import InMemorySaver
++from pydantic import ValidationError
+ 
+ from kodezart.chains.criteria import TrackerCriteria
+ from kodezart.chains.fire_consolidation import FireConsolidation
+@@ -15,18 +17,38 @@ from kodezart.chains.fire_implementation import FireImplementation
+ from kodezart.chains.fire_remediation import FireRemediation
+ from kodezart.chains.fire_review import FireReview
+ from kodezart.chains.fire_specification import FireSpecification
++from kodezart.chains.ralph_loop import RalphLoop
+ from kodezart.chains.ralph_workflow import RalphWorkflowEngine
++from kodezart.chains.remediation import RemediationChain
++from kodezart.core.protocols import QualityGate
+ from kodezart.domain.errors import (
+     FireSpecEntryError,
+     InvalidFireCriterionError,
+     ScopedExecutionUnavailableError,
+ )
++from kodezart.domain.thread_id import workflow_thread_id
++from kodezart.domain.workflow_state import validated_criteria
+ from kodezart.services.agent_service import AgentService
++from kodezart.types.domain.accept import AcceptVerdict
++from kodezart.types.domain.agent import (
++    AcceptanceCriteriaOutput,
++    ResultEvent,
++    TicketDraftOutput,
++    WorkflowCompleteEvent,
++    WorkflowIterationEvent,
++    WorkflowRemediationEvent,
++    WorkflowReviewEvent,
++)
+ from kodezart.types.domain.branch import trunk_base
++from kodezart.types.domain.criteria import TrackerCriterion, TrackerCriterionSet
+ from kodezart.types.domain.fire_spec import TrackerSpec
++from kodezart.types.domain.gating import RepoVisibility
+ from kodezart.types.domain.operation import ScopeLabel
++from kodezart.types.domain.outcome import WorkflowOutcome
++from kodezart.types.domain.remediation import RemediationPlan
+ from kodezart.types.domain.scope import ScopeKind, ScopeRef
+ from kodezart.types.domain.session import PermissionMode
++from kodezart.types.domain.ticket_review import TicketReviewMode
+ from kodezart.types.domain.tracker import WorkflowStateKind
+ from tests.fakes import (
+     SUPPRESS_ALL_SKILLS,
+@@ -41,7 +63,6 @@ from tests.fakes import (
+     FakeTrackerPort,
+     FakeWorkspaceProvider,
+     PassThroughGate,
+-    make_passing_evaluation,
+     make_prompt_provider,
+     make_tracker_issue,
+     no_delay_floor,
+@@ -73,12 +94,11 @@ GENERATION_NODES = frozenset(
+ 
+ 
+ def criterion_body(key: str) -> str:
+-    """A criterion sub-issue on the board's own four-row template."""
++    """A criterion sub-issue on the board's own criterion template."""
+     return (
+         f"**Check:** the check {key} states\n"
+         f"**Do:** the build {key} names\n"
+-        f"**Evidence:** the evidence {key} recorded\n"
+-        "**Class:** hard"
++        f"**Evidence:** the evidence {key} recorded"
+     )
+ 
+ 
+@@ -147,18 +167,38 @@ def tracker(
+ def engine(
+     *,
+     criteria: TrackerCriteria | None,
+-    quality_gate: FakeQualityGate | None = None,
++    quality_gate: QualityGate | None = None,
++    executor: FakeAgentExecutor | None = None,
++    real_loop: bool = False,
++    remediation_rounds: int = 0,
++    max_iterations: int = 1,
++    checkpointer=None,
+ ) -> RalphWorkflowEngine:
+     """The fire engine, wired the way composition wires it, plus the stage."""
+     service = AgentService(
+         git_base_url="https://github.com",
+-        executor=FakeAgentExecutor(events=[]),
++        executor=executor or FakeAgentExecutor(events=[]),
+         workspace=FakeWorkspaceProvider(),
+         persister=FakeChangePersister(),
+     )
+     prompts = make_prompt_provider()
+     gate = PassThroughGate()
+     git = FakeGitService(remote_branch_shas={"main": "b" * 40})
++    if real_loop:
++        quality_gate = RalphLoop(
++            service=service,
++            max_iterations=max_iterations,
++            criteria_reader=criteria,
++            plateau_window=2,
++            git=git,
++            cache=FakeRepoCache(),
++            prompts=prompts,
++            skills=SUPPRESS_ALL_SKILLS,
++            retry_max_attempts=1,
++            retry_initial_interval=0,
++            delay_floor_for=no_delay_floor,
++            fan_in_max_attempts=1,
++        )
+     return RalphWorkflowEngine(
+         specification=FireSpecification(
+             service=service,
+@@ -171,10 +211,11 @@ def engine(
+             fan_in_max_attempts=2,
+         ),
+         implementation=FireImplementation(
++            criteria_reader=criteria,
+             quality_gate=quality_gate
+             or FakeQualityGate(
+                 events=[],
+-                evaluation=make_passing_evaluation(),
++                evaluation=AcceptanceCriteriaOutput.model_validate(native_evaluation()),
+                 last_commit_sha="a" * 40,
+             ),
+             prompts=prompts,
+@@ -191,6 +232,7 @@ def engine(
+             ref_publisher=None,
+         ),
+         review=FireReview(
++            criteria_reader=criteria,
+             service=service,
+             prompts=prompts,
+             skills=SUPPRESS_ALL_SKILLS,
+@@ -198,7 +240,17 @@ def engine(
+             cache=FakeRepoCache(),
+             fan_in_max_attempts=2,
+         ),
+-        remediation=FireRemediation(remediator=None, remediation_max_rounds=0),
++        remediation=FireRemediation(
++            remediator=(
++                RemediationChain(
++                    service=service, prompts=prompts, skills=SUPPRESS_ALL_SKILLS
++                )
++                if remediation_rounds
++                else None
++            ),
++            remediation_max_rounds=remediation_rounds,
++        ),
++        checkpointer=checkpointer,
+         git_base_url="https://github.com",
+         retry_max_attempts=1,
+         retry_initial_interval=0,
+@@ -207,8 +259,9 @@ def engine(
+     )
+ 
+ 
+-async def drive(fire: RalphWorkflowEngine, *, scope: ScopeRef | None) -> None:
+-    async for _ in fire.run(
++async def drive(fire: RalphWorkflowEngine, *, scope: ScopeRef | None):
++    events = []
++    async for event in fire.run(
+         prompt="Implement the requested behavior",
+         issue_key=None,
+         repo_path="/tmp/fire",
+@@ -219,7 +272,8 @@ async def drive(fire: RalphWorkflowEngine, *, scope: ScopeRef | None) -> None:
+         allowed_tools=["Bash"],
+         cache_key="native-fire",
+     ):
+-        pass
++        events.append(event)
++    return events
+ 
+ 
+ def reachable(fire_graph, *, without: str) -> set[str]:
+@@ -292,7 +346,7 @@ def test_the_loop_is_unreachable_without_the_pre_loop_step() -> None:
+ async def test_a_criterion_that_lost_its_check_stops_the_fire_before_the_loop() -> None:
+     gate = FakeQualityGate(
+         events=[],
+-        evaluation=make_passing_evaluation(),
++        evaluation=AcceptanceCriteriaOutput.model_validate(native_evaluation()),
+         last_commit_sha="a" * 40,
+     )
+     port = tracker(bodies={NESTED_OWED: "**Do:** a body that states no check"})
+@@ -307,6 +361,24 @@ async def test_a_criterion_that_lost_its_check_stops_the_fire_before_the_loop()
+     assert gate.calls == []
+ 
+ 
++async def test_valid_native_fire_reaches_shared_execution_with_tracker_checks() -> None:
++    gate = FakeQualityGate(
++        events=[],
++        evaluation=AcceptanceCriteriaOutput.model_validate(native_evaluation()),
++        last_commit_sha="a" * 40,
++    )
++    fire = engine(criteria=TrackerCriteria(tracker=tracker()), quality_gate=gate)
++
++    await drive(fire, scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
++
++    assert len(gate.calls) == 1
++    assert {c.id: c.text for c in gate.calls[0]["acceptance_criteria"]} == {
++        DIRECT_OWED: check_of(DIRECT_OWED),
++        NESTED_OWED: check_of(NESTED_OWED),
++        DIRECT_OWED_TOO: check_of(DIRECT_OWED_TOO),
++    }
++
++
+ async def test_an_unwired_engine_still_refuses_an_addressed_run() -> None:
+     fire = engine(criteria=None)
+     with pytest.raises(ScopedExecutionUnavailableError, match="scope entry pipeline"):
+@@ -432,3 +504,584 @@ async def test_a_criterion_the_fire_does_not_owe_is_not_revalidated() -> None:
+     owed = await stage.read_owed_criteria(issue_key=SUBJECT)
+ 
+     assert set(owed) == {DIRECT_OWED, NESTED_OWED, DIRECT_OWED_TOO}
++
++
++OWED_KEYS = (DIRECT_OWED, DIRECT_OWED_TOO, NESTED_OWED)
++
++
++def native_evaluation(*, failed: bool = False, checks=None):
++    selected = checks or {key: check_of(key) for key in OWED_KEYS}
++    return {
++        "criteriaResults": [
++            {
++                "criterionId": key,
++                "criterion": "an evaluator echo",
++                "passed": not failed,
++                "reasoning": "Observed the selected check.",
++            }
++            for key in selected
++        ]
++    }
++
++
++class NativeExecutor(FakeAgentExecutor):
++    """Only the agent boundary is scripted; all execution consumers are real."""
++
++    def __init__(self, evaluations, *, on_remediation=None):
++        super().__init__(events=[])
++        self.evaluations = list(evaluations)
++        self.on_remediation = on_remediation
++        self.schema_calls = []
++        self.execution_prompts = []
++        self.evaluation_prompts = []
++        self.remediation_prompts = []
++        self.on_evaluation = None
++
++    async def stream(self, **kwargs):
++        output_format = kwargs.get("output_format")
++        properties = (output_format or {}).get("schema", {}).get("properties", {})
++        self.schema_calls.append(properties)
++        if "criteriaResults" in properties:
++            assert self.evaluations, "Unexpected extra evaluation"
++            self.evaluation_prompts.append(kwargs["prompt"])
++            output = self.evaluations.pop(0)
++            if self.on_evaluation is not None:
++                self.on_evaluation(len(self.evaluation_prompts))
++        elif "instructions" in properties:
++            self.remediation_prompts.append(kwargs["prompt"])
++            if self.on_remediation is not None:
++                self.on_remediation()
++            output = {"instructions": "Repair only the observed failing behavior."}
++        elif output_format is None:
++            self.execution_prompts.append(kwargs["prompt"])
++            output = None
++        else:
++            assert "requiredChanges" not in properties
++            assert "criteria" not in properties
++            assert "findings" not in properties
++            async for event in super().stream(**kwargs):
++                yield event
++            return
++        yield ResultEvent(
++            subtype="result",
++            duration_ms=1,
++            duration_api_ms=1,
++            is_error=False,
++            num_turns=1,
++            session_id="native-session",
++            structured_output=output,
++        )
++
++
++class CountingTracker(FakeTrackerPort):
++    def __init__(self):
++        source = tracker()
++        super().__init__(
++            issues=list(source.issues.values()),
++            criteria_stage_label_key=STAGE_KEY,
++            scope_label_members=source.scope_label_members,
++        )
++        self.spec_reads = 0
++        self.unavailable = False
++
++    async def read_fire_spec(self, *, issue_key):
++        self.spec_reads += 1
++        return await super().read_fire_spec(issue_key=issue_key)
++
++    async def scope_issues(self, *, ref):
++        if self.unavailable:
++            raise ConnectionError("tracker unavailable")
++        return await super().scope_issues(ref=ref)
++
++
++def no_authored_ticket(*args, **kwargs):
++    raise AssertionError("Native execution constructed an authored ticket")
++
++
++async def test_native_graph_executes_and_reviews_exact_checks(monkeypatch):
++    port = CountingTracker()
++    executor = NativeExecutor([native_evaluation(), native_evaluation()])
++    saver = InMemorySaver()
++    fire = engine(
++        criteria=TrackerCriteria(tracker=port),
++        executor=executor,
++        real_loop=True,
++        checkpointer=saver,
++    )
++    monkeypatch.setattr(TicketDraftOutput, "__init__", no_authored_ticket)
++
++    events = await drive(fire, scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
++
++    iteration = next(e for e in events if isinstance(e, WorkflowIterationEvent))
++    review = next(e for e in events if isinstance(e, WorkflowReviewEvent))
++    terminal = next(e for e in events if isinstance(e, WorkflowCompleteEvent))
++    assert iteration.verdict is AcceptVerdict.accepted
++    assert review.passed
++    assert terminal.outcome is WorkflowOutcome.handed_off_for_delivery
++    assert port.spec_reads == 1
++    assert not executor.evaluations
++    for evaluated in (iteration.evaluation, review.evaluation):
++        assert {c.criterion_id: c.criterion for c in evaluated.criteria_results} == {
++            key: check_of(key) for key in OWED_KEYS
++        }
++    saved = fire.native_graph.get_state(
++        {"configurable": {"thread_id": workflow_thread_id("native-fire")}}
++    ).values
++    # The actual checkpoint retains the native partition and its provenance.
++    assert isinstance(saved["fire_spec"], TrackerSpec)
++    assert isinstance(saved["criterion_set"], TrackerCriterionSet)
++    assert all(isinstance(c, TrackerCriterion) for c in validated_criteria(saved))
++    assert saved["fire_spec"].subject == SUBJECT
++    assert saved["fire_spec"].read_at_version
++    assert saved["criteria_validation"] is None
++    assert fire.implementation._artifact_persister.persist_calls == []
++    assert "the subject's own text" in executor.execution_prompts[0]
++
++
++async def test_native_remediation_refreshes_checks_without_recapturing_subject(
++    monkeypatch,
++):
++    port = CountingTracker()
++    changed_check = "changed Check with  spaces and `code`"
++
++    def amend():
++        issue = port.issues[DIRECT_OWED]
++        port.issues[DIRECT_OWED] = issue.model_copy(
++            update={
++                "body": f"**Check:** {changed_check}\n**Do:** repair\n**Evidence:** —"
++            }
++        )
++        port.issues[SUBJECT] = port.issues[SUBJECT].model_copy(
++            update={"body": "a later subject text"}
++        )
++
++    executor = NativeExecutor(
++        [native_evaluation(failed=True), native_evaluation(), native_evaluation()],
++        on_remediation=amend,
++    )
++    fire = engine(
++        criteria=TrackerCriteria(tracker=port),
++        executor=executor,
++        real_loop=True,
++        remediation_rounds=1,
++    )
++    monkeypatch.setattr(TicketDraftOutput, "__init__", no_authored_ticket)
++
++    events = await drive(fire, scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
++
++    iterations = [e for e in events if isinstance(e, WorkflowIterationEvent)]
++    assert len(iterations) == 2
++    assert iterations[0].verdict is AcceptVerdict.rejected
++    assert iterations[1].verdict is AcceptVerdict.accepted
++    assert iterations[0].trajectory.never_passed_ids == list(OWED_KEYS)
++    assert iterations[1].evaluation.criteria_results[0].criterion == changed_check
++    remediation = next(e for e in events if isinstance(e, WorkflowRemediationEvent))
++    assert isinstance(remediation.ticket, RemediationPlan)
++    assert "Repair only" in executor.execution_prompts[1]
++    assert "the subject's own text" in executor.execution_prompts[1]
++    assert "a later subject text" not in executor.execution_prompts[1]
++    assert port.spec_reads == 1
++    assert not executor.evaluations
++
++
++@pytest.mark.parametrize("failure", ["missing-check", "outage"])
++async def test_native_remediation_cannot_bypass_tracker_revalidation(failure):
++    port = CountingTracker()
++
++    def break_tracker():
++        if failure == "outage":
++            port.unavailable = True
++        else:
++            port.issues[NESTED_OWED] = port.issues[NESTED_OWED].model_copy(
++                update={"body": "**Do:** no Check"}
++            )
++
++    executor = NativeExecutor(
++        [native_evaluation(failed=True)], on_remediation=break_tracker
++    )
++    fire = engine(
++        criteria=TrackerCriteria(tracker=port),
++        executor=executor,
++        real_loop=True,
++        remediation_rounds=1,
++    )
++
++    error = FireSpecEntryError if failure == "outage" else InvalidFireCriterionError
++    with pytest.raises(error):
++        await drive(fire, scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
++
++    assert len(executor.execution_prompts) == 1
++    assert port.spec_reads == 1
++
++
++@pytest.mark.parametrize("identity", ["", " ", "\t\n"])
++async def test_execution_result_rejects_blank_tracker_identity(identity):
++    with pytest.raises(ValidationError):
++        AcceptanceCriteriaOutput.model_validate(
++            {
++                "criteriaResults": [
++                    {
++                        "criterionId": identity,
++                        "criterion": "a Check",
++                        "passed": True,
++                        "reasoning": "evidence",
++                    }
++                ]
++            }
++        )
++
++
++def change_tracker(port, change):
++    if change == "outage":
++        port.unavailable = True
++        return
++    issue = port.issues[NESTED_OWED]
++    update = {"body": "**Check:** changed live Check with  spaces\n**Do:** repair"}
++    if change == "missing-check":
++        update = {"body": "**Do:** the Check disappeared"}
++    elif change == "state":
++        update = {"state_kind": WorkflowStateKind.COMPLETED, "state_name": "Done"}
++    port.issues[NESTED_OWED] = issue.model_copy(update=update)
++    port.issues[SUBJECT] = port.issues[SUBJECT].model_copy(
++        update={"body": "later subject text must not replace frozen subject"}
++    )
++
++
++@pytest.mark.parametrize(
++    "change", ["changed-check", "state", "missing-check", "outage"]
++)
++async def test_native_inner_iterations_read_current_checks(change):
++    port = CountingTracker()
++    remaining = {key: check_of(key) for key in OWED_KEYS if key != NESTED_OWED}
++    executor = NativeExecutor(
++        [
++            native_evaluation(failed=True),
++            native_evaluation(checks=remaining if change == "state" else None),
++            native_evaluation(checks=remaining if change == "state" else None),
++        ]
++    )
++    executor.on_evaluation = lambda count: (
++        change_tracker(port, change) if count == 1 else None
++    )
++    fire = engine(
++        criteria=TrackerCriteria(tracker=port),
++        executor=executor,
++        real_loop=True,
++        max_iterations=2,
++    )
++    if change in {"missing-check", "outage"}:
++        error = FireSpecEntryError if change == "outage" else InvalidFireCriterionError
++        with pytest.raises(error):
++            await drive(fire, scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
++        assert len(executor.execution_prompts) == 1
++        return
++    events = await drive(fire, scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
++    iterations = [
++        event for event in events if isinstance(event, WorkflowIterationEvent)
++    ]
++    assert len(iterations) == 2
++    assert iterations[-1].iteration == 2
++    # The tracker changed during dispatch; this result still answers the
++    # snapshot that dispatch saw, while the next iteration gets fresh Checks.
++    assert iterations[0].evaluation.criteria_results[-1].criterion == check_of(
++        NESTED_OWED
++    )
++    assert iterations[-1].verdict is AcceptVerdict.accepted
++    answers = {
++        result.criterion_id: result.criterion
++        for result in iterations[-1].evaluation.criteria_results
++    }
++    if change == "state":
++        assert NESTED_OWED not in answers
++        assert check_of(NESTED_OWED) not in executor.evaluation_prompts[1]
++    else:
++        assert answers[NESTED_OWED] == "changed live Check with  spaces"
++        assert "changed live Check with  spaces" in executor.evaluation_prompts[1]
++        assert "changed live Check with  spaces" in executor.execution_prompts[1]
++    assert port.spec_reads == 1
++    assert all(
++        "the subject's own text" in prompt for prompt in executor.execution_prompts
++    )
++    assert all(
++        "later subject text" not in prompt for prompt in executor.execution_prompts
++    )
++
++
++@pytest.mark.parametrize("barrier", ["run_ralph_loop", "review_against_ticket"])
++@pytest.mark.parametrize(
++    "change", ["changed-check", "state", "missing-check", "outage"]
++)
++async def test_native_fresh_engine_resume_reads_current_checks(barrier, change):
++    port = CountingTracker()
++    saver = InMemorySaver()
++    executor = NativeExecutor([native_evaluation()])
++    fire = engine(
++        criteria=TrackerCriteria(tracker=port),
++        executor=executor,
++        real_loop=True,
++        checkpointer=saver,
++    )
++    initial, config = fire.prepare(
++        prompt="Implement the requested behavior",
++        issue_key=None,
++        repo_path="/tmp/fire",
++        repo_url="https://github.com/owner/repo",
++        base_spec=trunk_base("main"),
++        scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT),
++        permission_mode=PermissionMode.UNATTENDED,
++        allowed_tools=["Bash"],
++        cache_key="native-fire",
++    )
++    async for _ in fire.native_graph.astream(
++        initial, config=config, interrupt_before=[barrier]
++    ):
++        pass
++    paused = fire.native_graph.get_state(config)
++    assert paused.next == (barrier,)
++    frozen = paused.values["fire_spec"]
++    change_tracker(port, change)
++    remaining = {key: check_of(key) for key in OWED_KEYS if key != NESTED_OWED}
++    resumed_executor = NativeExecutor(
++        [
++            native_evaluation(checks=remaining if change == "state" else None),
++            native_evaluation(checks=remaining if change == "state" else None),
++        ]
++    )
++    resumed = engine(
++        criteria=TrackerCriteria(tracker=port),
++        executor=resumed_executor,
++        real_loop=True,
++        checkpointer=saver,
++    )
++    if change in {"missing-check", "outage"}:
++        error = FireSpecEntryError if change == "outage" else InvalidFireCriterionError
++        with pytest.raises(error):
++            async for _ in resumed.native_graph.astream(
++                None, config=config, stream_mode="custom"
++            ):
++                pass
++        assert resumed_executor.execution_prompts == []
++        assert resumed_executor.evaluation_prompts == []
++        return
++    events = [
++        event
++        async for event in resumed.native_graph.astream(
++            None, config=config, stream_mode="custom"
++        )
++    ]
++    review = next(event for event in events if isinstance(event, WorkflowReviewEvent))
++    assert review.passed
++    answers = {
++        result.criterion_id: result.criterion
++        for result in review.evaluation.criteria_results
++    }
++    if change == "state":
++        assert NESTED_OWED not in answers
++    else:
++        assert answers[NESTED_OWED] == "changed live Check with  spaces"
++    saved = resumed.native_graph.get_state(config).values
++    assert saved["fire_spec"] == frozen
++    assert isinstance(saved["criterion_set"], TrackerCriterionSet)
++    assert port.spec_reads == 1
++    assert resumed.implementation._artifact_persister.persist_calls == []
++
++
++@pytest.mark.parametrize("barrier", ["execute", "evaluate"])
++@pytest.mark.parametrize(
++    "change", ["changed-check", "state", "missing-check", "outage"]
++)
++async def test_native_inner_checkpoint_resume_requires_current_checks(barrier, change):
++    from kodezart.types.domain.workflow import RalphLoopContext
++
++    port = CountingTracker()
++    source = TrackerCriteria(tracker=port)
++    spec = await source.read_spec(issue_key=SUBJECT)
++    snapshot = await source.read_current(spec=spec)
++    saver = InMemorySaver()
++    original = engine(criteria=source, executor=NativeExecutor([]), real_loop=True)
++    loop = original.implementation._quality_gate
++    graph = loop._build_graph().compile(checkpointer=saver)
++    context = RalphLoopContext(
++        prompt=spec.body,
++        repo_path="/tmp/fire",
++        repo_url=None,
++        cache_key="inner-resume",
++        base_spec=trunk_base("main"),
++        permission_mode=PermissionMode.UNATTENDED,
++        allowed_tools=["Bash"],
++        feature_branch="feature",
++        ralph_branch="ralph",
++        work_base_ref="main",
++        acceptance_criteria=snapshot.criteria,
++        tracker_spec=spec,
++        repo_visibility=RepoVisibility.UNKNOWN,
++    )
++    config = {"configurable": {**context.model_dump(), "thread_id": "inner-resume"}}
++    initial = {
++        "iteration": 0,
++        "verdict": AcceptVerdict.rejected,
++        "pending_failures": [],
++        "iteration_records": [],
++    }
++    async for _ in graph.astream(initial, config=config, interrupt_before=[barrier]):
++        pass
++    assert graph.get_state(config).next == (barrier,)
++    change_tracker(port, change)
++    remaining = {key: check_of(key) for key in OWED_KEYS if key != NESTED_OWED}
++    executor = NativeExecutor(
++        [native_evaluation(checks=remaining if change == "state" else None)]
++    )
++    fresh = engine(
++        criteria=TrackerCriteria(tracker=port), executor=executor, real_loop=True
++    )
++    replay = fresh.implementation._quality_gate._build_graph().compile(
++        checkpointer=saver
++    )
++    if change in {"missing-check", "outage"}:
++        error = FireSpecEntryError if change == "outage" else InvalidFireCriterionError
++        with pytest.raises(error):
++            async for _ in replay.astream(None, config=config, stream_mode="custom"):
++                pass
++        assert executor.execution_prompts == []
++        assert executor.evaluation_prompts == []
++        return
++    events = [
++        event
++        async for event in replay.astream(None, config=config, stream_mode="custom")
++    ]
++    iteration = next(
++        event for event in events if isinstance(event, WorkflowIterationEvent)
++    )
++    assert iteration.verdict is AcceptVerdict.accepted
++    answers = {
++        result.criterion_id: result.criterion
++        for result in iteration.evaluation.criteria_results
++    }
++    if change == "state":
++        assert NESTED_OWED not in answers
++    else:
++        assert answers[NESTED_OWED] == "changed live Check with  spaces"
++    assert port.spec_reads == 1
++
++
++async def test_production_constructor_wires_native_source_to_shared_consumers(
++    monkeypatch,
++):
++    from kodezart.composition.engine import build_workflow_engine
++    from kodezart.core.config import AppConfig
++    from tests.fakes import FakeRefPublisher
++
++    port = CountingTracker()
++    source = TrackerCriteria(tracker=port)
++    executor = NativeExecutor([native_evaluation(), native_evaluation()])
++    workspace = FakeWorkspaceProvider()
++    service = AgentService(
++        git_base_url="https://github.com",
++        executor=executor,
++        workspace=workspace,
++        persister=FakeChangePersister(),
++    )
++    artifacts = FakeArtifactPersister()
++    router = build_workflow_engine(
++        config=AppConfig(
++            ticket_review_mode=TicketReviewMode.REVIEWED,
++            max_iterations=1,
++            retry_max_attempts=1,
++            retry_initial_interval=0.1,
++        ),
++        repositories=(),
++        agent_service=service,
++        git=FakeGitService(remote_branch_shas={"main": "b" * 40}),
++        cache=FakeRepoCache(),
++        workspace=workspace,
++        merger=FakeBranchMerger(),
++        artifact_persister=artifacts,
++        ref_publisher=FakeRefPublisher(),
++        prompts=make_prompt_provider(),
++        skills=SUPPRESS_ALL_SKILLS,
++        gate=PassThroughGate(),
++        github_api=None,
++        checkpointer=InMemorySaver(),
++        criteria=source,
++    )
++    monkeypatch.setattr(TicketDraftOutput, "__init__", no_authored_ticket)
++    # Direct fire proves constructor capability only. The outer public scope
++    # router still refuses scoped jobs until its separate production slice.
++    fire = router.arm_for(None).fire
++    events = await drive(fire, scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
++    terminal = next(
++        event for event in events if isinstance(event, WorkflowCompleteEvent)
++    )
++    assert terminal.outcome is WorkflowOutcome.handed_off_for_delivery
++    assert port.spec_reads == 1
++    assert artifacts.persist_calls == []
++
++
++@pytest.mark.parametrize("consumer", ["implementation", "review", "loop"])
++async def test_native_consumer_without_runtime_reader_refuses(consumer):
++    port = CountingTracker()
++    executor = NativeExecutor([native_evaluation(), native_evaluation()])
++    fire = engine(
++        criteria=TrackerCriteria(tracker=port), executor=executor, real_loop=True
++    )
++    target = {
++        "implementation": fire.implementation,
++        "review": fire.review,
++        "loop": fire.implementation._quality_gate,
++    }[consumer]
++    target._criteria_reader = None
++    with pytest.raises(FireSpecEntryError, match="reader is not configured"):
++        await drive(fire, scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
++    assert len(executor.execution_prompts) == (1 if consumer == "review" else 0)
++
++
++async def test_native_loop_without_frozen_spec_cannot_use_cached_criteria():
++    source = TrackerCriteria(tracker=CountingTracker())
++    spec = await source.read_spec(issue_key=SUBJECT)
++    snapshot = await source.read_current(spec=spec)
++    executor = NativeExecutor([])
++    fire = engine(criteria=source, executor=executor, real_loop=True)
++    with pytest.raises(ValidationError, match="frozen subject source"):
++        async for _ in fire.implementation._quality_gate.run(
++            prompt=spec.body,
++            repo_path="/tmp/fire",
++            repo_url=None,
++            cache_key="missing-spec",
++            base_spec=trunk_base("main"),
++            permission_mode=PermissionMode.UNATTENDED,
++            allowed_tools=["Bash"],
++            feature_branch="feature",
++            ralph_branch="ralph",
++            work_base_ref="main",
++            acceptance_criteria=snapshot.criteria,
++            repo_visibility=RepoVisibility.UNKNOWN,
++        ):
++            pass
++    assert executor.execution_prompts == []
++    assert executor.evaluation_prompts == []
++
++
++async def test_native_remediation_receives_the_final_inner_evaluation_snapshot():
++    port = CountingTracker()
++    executor = NativeExecutor(
++        [
++            native_evaluation(failed=True),
++            native_evaluation(failed=True),
++            native_evaluation(),
++            native_evaluation(),
++        ]
++    )
++    executor.on_evaluation = lambda count: (
++        change_tracker(port, "changed-check") if count == 1 else None
++    )
++    fire = engine(
++        criteria=TrackerCriteria(tracker=port),
++        executor=executor,
++        real_loop=True,
++        max_iterations=2,
++        remediation_rounds=1,
++    )
++    await drive(fire, scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
++    assert len(executor.remediation_prompts) == 1
++    assert "changed live Check with  spaces" in executor.remediation_prompts[0]
++    assert check_of(NESTED_OWED) not in executor.remediation_prompts[0]
+diff --git a/tests/chains/test_ralph_workflow.py b/tests/chains/test_ralph_workflow.py
+index e81c292..8a1b89c 100644
+--- a/tests/chains/test_ralph_workflow.py
++++ b/tests/chains/test_ralph_workflow.py
+@@ -2029,7 +2029,7 @@ def test_route_after_ci_no_pr_number_routes_complete() -> None:
+         "issue_key": None,
+         "feature_branch": "kodezart/test",
+         "ralph_branch": "kodezart/test-ralph-abc",
+-        "ticket": None,
++        "fire_spec": None,
+         "acceptance_criteria": [],
+         "accepted": True,
+         "total_iterations": 1,
+@@ -3382,7 +3382,7 @@ async def test_review_against_ticket_raises_when_review_shas_missing() -> None:
+         "issue_key": None,
+         "feature_branch": "kodezart/test",
+         "ralph_branch": "kodezart/test-ralph-abc",
+-        "ticket": None,
++        "fire_spec": None,
+         "acceptance_criteria": ["Tests pass"],
+         "accepted": True,
+         "total_iterations": 1,
+@@ -4467,7 +4467,7 @@ async def test_the_round_carries_the_original_ticket_not_its_own_replacement() -
+ 
+     assert len(remediator.calls) == 2
+     first, second = remediator.calls
+-    assert first.original_ticket == second.original_ticket
++    assert first.original_spec == second.original_spec
+     assert second.round_index == 1
+ 
+ 
+diff --git a/tests/chains/test_remediation.py b/tests/chains/test_remediation.py
+index 8f3e5bf..c6cb0d0 100644
+--- a/tests/chains/test_remediation.py
++++ b/tests/chains/test_remediation.py
+@@ -11,6 +11,7 @@ from kodezart.types.domain.agent import (
+     ResultEvent,
+     WorkflowRemediationEvent,
+ )
++from kodezart.types.domain.fire_spec import AuthoredSpec
+ from kodezart.types.domain.remediation import RemediationEntry
+ from kodezart.types.domain.trajectory import IterationRecord
+ from kodezart.types.domain.workflow import RemediationRequest
+@@ -58,7 +59,7 @@ def _request(
+     return RemediationRequest(
+         entry=entry,
+         round_index=round_index,
+-        original_ticket=make_ticket_draft(title=_ORIGINAL_TITLE),
++        original_spec=AuthoredSpec(ticket=make_ticket_draft(title=_ORIGINAL_TITLE)),
+         work_branch="kodezart/widget-12345678",
+         work_base_ref="kodezart/widget-12345678",
+         pr_url=pr_url,
+diff --git a/tests/domain/test_criterion_identity.py b/tests/domain/test_criterion_identity.py
+index b3e3104..41baf29 100644
+--- a/tests/domain/test_criterion_identity.py
++++ b/tests/domain/test_criterion_identity.py
+@@ -119,13 +119,8 @@ def test_every_field_named_for_a_criterion_id_annotates_the_identity() -> None:
+     assert offenders == []
+ 
+ 
+-def test_the_minting_function_is_the_only_construction_site() -> None:
+-    """Nothing outside the minting module may call `CriterionId(...)`.
+-
+-    Two construction sites is two places that know the `AC-n` shape, and
+-    the second one is how a value that never passed the format check
+-    acquires the type that says it did.
+-    """
++def test_identity_construction_is_authored_mint_or_exact_tracker_key() -> None:
++    """Authored IDs are minted; the native reader carries the exact source key."""
+     offenders: list[str] = []
+     for path in Path("src").rglob("*.py"):
+         tree = ast.parse(path.read_text())
+@@ -134,10 +129,21 @@ def test_the_minting_function_is_the_only_construction_site() -> None:
+                 isinstance(node, ast.Call)
+                 and isinstance(node.func, ast.Name)
+                 and node.func.id == "CriterionId"
+-                and path != _MINTING_MODULE
++                and path
++                not in {_MINTING_MODULE, Path("src/kodezart/chains/criteria.py")}
+             ):
+                 offenders.append(f"{path}:{node.lineno}")
+     assert offenders == []
++    source = Path("src/kodezart/chains/criteria.py").read_text()
++    native_calls = [
++        node
++        for node in ast.walk(ast.parse(source))
++        if isinstance(node, ast.Call)
++        and isinstance(node.func, ast.Name)
++        and node.func.id == "CriterionId"
++    ]
++    assert len(native_calls) == 1
++    assert ast.unparse(native_calls[0]) == "CriterionId(key)"
+ 
+ 
+ @pytest.mark.parametrize(
+@@ -146,7 +152,7 @@ def test_the_minting_function_is_the_only_construction_site() -> None:
+         (
+             Contradiction,
+             "criterionIds",
+-            {"criterionIds": ["banana", "AC-99"], "explanation": "conflict"},
++            {"criterionIds": [" ", "AC-99"], "explanation": "conflict"},
+         ),
+         (
+             IterationGrade,
+@@ -160,7 +166,7 @@ def test_the_minting_function_is_the_only_construction_site() -> None:
+                         "reasoning": "r",
+                     }
+                 ],
+-                "missingIds": ["not-an-id"],
++                "missingIds": ["\t\n"],
+                 "dispatchedCount": 1,
+                 "passedCount": 1,
+                 "verdict": "accepted",
+@@ -174,12 +180,7 @@ def test_a_malformed_element_of_an_identity_list_fails_closed(
+     field: str,
+     payload: dict[str, object],
+ ) -> None:
+-    """The pattern is on the ELEMENT, so the list cannot smuggle one in.
+-
+-    ``Field(min_length=...)`` constrains the list; the members went
+-    unchecked, so a payload naming ``banana`` validated and the id reached
+-    the regenerator's prompt and the pre-loop halt intact.
+-    """
++    """Nonblank identity applies to each element, for either source arm."""
+     with pytest.raises(ValidationError) as excinfo:
+         record.model_validate(payload)
+     locations = [error["loc"] for error in excinfo.value.errors()]
+@@ -211,3 +212,9 @@ def test_authored_pattern_requires_authored_identity_even_on_native_shape():
+         Annotated[CriterionRef, Field(pattern=CRITERION_ID_PATTERN)],
+         (CriterionId,),
+     )
++
++
++@pytest.mark.parametrize("key", ["fire/native-key", "KOD-815", "AC-1"])
++def test_shared_identity_lists_preserve_nonblank_native_or_authored_keys(key):
++    record = Contradiction(criterion_ids=[key, "another/key"], explanation="conflict")
++    assert record.criterion_ids[0] == key
+diff --git a/tests/domain/test_outcome.py b/tests/domain/test_outcome.py
+index 767ceed..7159b56 100644
+--- a/tests/domain/test_outcome.py
++++ b/tests/domain/test_outcome.py
+@@ -36,10 +36,10 @@ def _state(
+         issue_key=None,
+         feature_branch="kodezart/x-12345678",
+         ralph_branch="kodezart/x-12345678-ralph-abcdef01",
+-        ticket=None,
++        fire_spec=None,
+         acceptance_criteria=make_criteria("Tests pass"),
+         criteria_validation=None,
+-        criteria_artifact=None,
++        criterion_set=None,
+         criteria_regeneration_rounds=0,
+         criteria_infeasible=criteria_infeasible,
+         accept_verdict=verdict,
+diff --git a/tests/fakes.py b/tests/fakes.py
+index 7c0e4b4..3150d1b 100644
+--- a/tests/fakes.py
++++ b/tests/fakes.py
+@@ -91,6 +91,7 @@ from kodezart.types.domain.criteria import (
+     CriterionFeasibility,
+     CriterionVerdict,
+     DraftedCriterion,
++    ExecutionCriterion,
+     GeneratedCriterion,
+     ValidatedCriterion,
+ )
+@@ -1529,7 +1530,8 @@ class FakeQualityGate:
+         work_base_ref: str,
+         permission_mode: PermissionMode,
+         allowed_tools: list[str],
+-        acceptance_criteria: list[ValidatedCriterion],
++        acceptance_criteria: list[ExecutionCriterion],
++        tracker_spec: TrackerSpec | None = None,
+         cache_key: str,
+         run_identity: RunIdentity | None = None,
+         repo_visibility: RepoVisibility = RepoVisibility.UNKNOWN,
+diff --git a/tests/prompts/test_prompt_wiring.py b/tests/prompts/test_prompt_wiring.py
+index 1c3100b..e64745c 100644
+--- a/tests/prompts/test_prompt_wiring.py
++++ b/tests/prompts/test_prompt_wiring.py
+@@ -27,7 +27,10 @@ from kodezart.core.prompt_rendering import (
+ from kodezart.core.protocols import PromptProvider
+ from kodezart.domain.criteria import mint_criteria
+ from kodezart.domain.criteria_prompt import render_validation_findings
+-from kodezart.domain.prompt_variables import changeset_variables
++from kodezart.domain.prompt_variables import (
++    changeset_variables,
++    execution_criteria_variables,
++)
+ from kodezart.domain.ticket import format_ticket_as_task
+ from kodezart.types.domain.agent import FileChange, TicketDraftOutput
+ from kodezart.types.domain.consolidation import ChangesetDigest
+@@ -176,19 +179,22 @@ RENDER_CASES: dict[str, tuple[PromptKey, dict[str, object]]] = {
+     "implementation": (PromptKey.IMPLEMENTATION, {"task_md": TASK_MD}),
+     "evaluation": (
+         PromptKey.EVALUATION,
+-        {"criteria": CRITERIA, **changeset_variables(DIGEST)},
++        {**execution_criteria_variables(CRITERIA), **changeset_variables(DIGEST)},
+     ),
+     "post_merge_review": (
+         PromptKey.POST_MERGE_REVIEW,
+-        {"criteria": CRITERIA, **changeset_variables(DIGEST)},
++        {**execution_criteria_variables(CRITERIA), **changeset_variables(DIGEST)},
+     ),
+     "evaluation__empty_changeset": (
+         PromptKey.EVALUATION,
+-        {"criteria": CRITERIA, **changeset_variables(EMPTY_DIGEST)},
++        {**execution_criteria_variables(CRITERIA), **changeset_variables(EMPTY_DIGEST)},
+     ),
+     "evaluation__no_file_paths": (
+         PromptKey.EVALUATION,
+-        {"criteria": CRITERIA, **changeset_variables(NO_FILES_DIGEST)},
++        {
++            **execution_criteria_variables(CRITERIA),
++            **changeset_variables(NO_FILES_DIGEST),
++        },
+     ),
+     "iteration_feedback": (
+         PromptKey.ITERATION_FEEDBACK,
+diff --git a/tests/types/test_wire_schemas.py b/tests/types/test_wire_schemas.py
+index 9c1e561..deb46e4 100644
+--- a/tests/types/test_wire_schemas.py
++++ b/tests/types/test_wire_schemas.py
+@@ -18,7 +18,7 @@ from collections import Counter
+ from pathlib import Path
+ 
+ import pytest
+-from pydantic import BaseModel, ValidationError
++from pydantic import BaseModel, TypeAdapter, ValidationError
+ 
+ from kodezart.types.domain.agent import (
+     WIRE_SCHEMAS,
+@@ -41,9 +41,10 @@ from kodezart.types.domain.audit import (
+ from kodezart.types.domain.audit_detection_removal import DetectorRemovalJudgment
+ from kodezart.types.domain.audit_overclaim import AuditOverclaimJudgment
+ from kodezart.types.domain.criteria import (
+-    CRITERION_ID_PATTERN,
++    CriterionIdItem,
+ )
+ from kodezart.types.domain.organize import AdmissionJudgment
++from kodezart.types.domain.remediation import RemediationPlan
+ from tests.types.schema_nodes import DEFS, schema_nodes
+ 
+ REPO_ROOT = Path(__file__).resolve().parents[2]
+@@ -75,6 +76,7 @@ WIRE_MODELS: dict[str, type[BaseModel]] = {
+     "GENERATED_CRITERIA_SCHEMA": GeneratedCriteriaOutput,
+     "CRITERIA_VALIDATION_SCHEMA": CriteriaValidationOutput,
+     "TICKET_DRAFT_SCHEMA": TicketDraftOutput,
++    "REMEDIATION_SCHEMA": RemediationPlan,
+     "TICKET_REVIEW_SCHEMA": TicketReviewOutput,
+     "PR_DESCRIPTION_SCHEMA": PRDescriptionOutput,
+     "CONTENT_AUDIT_SCHEMA": ContentAuditOutput,
+@@ -260,7 +262,7 @@ def test_a_dispatched_schema_carries_its_constraints() -> None:
+     assert isinstance(criterion_ids, dict)
+     item = criterion_ids["items"]
+     assert isinstance(item, dict)
+-    assert item["pattern"] == CRITERION_ID_PATTERN
++    assert item == TypeAdapter(CriterionIdItem).json_schema()
+ 
+     explanation = properties["explanation"]
+     assert isinstance(explanation, dict)
+@@ -506,3 +508,65 @@ def test_the_undispatched_critique_model_is_only_declared_in_the_model_module():
+         and node.id in {"DRAFT_CRITIQUE_SCHEMA", "DraftCritiqueOutput"}
+     }
+     assert owners == {"types/domain/agent.py"}
++
++
++def test_remediation_dispatch_and_validation_select_the_same_registered_model():
++    source = source_files()["chains/remediation.py"]
++    calls = scoped_calls(source)
++    dispatches = [
++        keyword.value
++        for scope, call in calls
++        if scope == ("RemediationChain", "run")
++        and ast.unparse(call.func) == "self._service.stream"
++        for keyword in call.keywords
++        if keyword.arg == "output_format"
++    ]
++    assert len(dispatches) == 1
++    schema = [
++        value
++        for key, value in zip(dispatches[0].keys, dispatches[0].values, strict=True)
++        if isinstance(key, ast.Constant) and key.value == "schema"
++    ]
++    assert len(schema) == 1
++    assert ast.unparse(schema[0]) == (
++        "REMEDIATION_SCHEMA if native else TICKET_DRAFT_SCHEMA"
++    )
++    assignments = {
++        target.id: ast.unparse(node.value)
++        for node in ast.walk(ast.parse(source))
++        if isinstance(node, ast.Assign)
++        for target in node.targets
++        if isinstance(target, ast.Name)
++    }
++    assert assignments["native"] == "isinstance(request.original_spec, TrackerSpec)"
++    assert assignments["ticket"] == (
++        "RemediationPlan.model_validate(result_event.structured_output) if native "
++        "else TicketDraftOutput.model_validate(result_event.structured_output)"
++    )
++
++
++@pytest.mark.parametrize(
++    "old,new",
++    [
++        ("REMEDIATION_SCHEMA if native", "TICKET_DRAFT_SCHEMA if native"),
++        ("else TICKET_DRAFT_SCHEMA", "else REMEDIATION_SCHEMA"),
++        (
++            "REMEDIATION_SCHEMA if native",
++            "sanitize_schema(REMEDIATION_SCHEMA) if native",
++        ),
++        ("isinstance(request.original_spec, TrackerSpec)", "True"),
++        (
++            "if native\n            else TicketDraftOutput.model_validate",
++            "if not native\n            else TicketDraftOutput.model_validate",
++        ),
++    ],
++)
++def test_actual_remediation_schema_audit_rejects_damaged_source(monkeypatch, old, new):
++    test_remediation_dispatch_and_validation_select_the_same_registered_model()
++    sources = source_files()
++    path = "chains/remediation.py"
++    assert sources[path].count(old) == 1
++    sources[path] = sources[path].replace(old, new)
++    monkeypatch.setattr(sys.modules[__name__], "source_files", lambda: sources)
++    with pytest.raises(AssertionError):
++        test_remediation_dispatch_and_validation_select_the_same_registered_model()

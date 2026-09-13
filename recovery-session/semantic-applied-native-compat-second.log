@@ -1,0 +1,830 @@
+...FFFF.......FFFF...FFFF................FFFF.F......................... [ 66%]
+....................................                                     [100%]
+=================================== FAILURES ===================================
+_____ test_a_criterion_that_lost_its_check_stops_the_fire_before_the_loop ______
+
+    async def test_a_criterion_that_lost_its_check_stops_the_fire_before_the_loop() -> None:
+        gate = FakeQualityGate(
+            events=[],
+            evaluation=AcceptanceCriteriaOutput.model_validate(
+                native_evaluation(reconciled=True)
+            ),
+            last_commit_sha="a" * 40,
+        )
+        port = tracker(bodies={NESTED_OWED: "**Do:** a body that states no check"})
+        fire = engine(criteria=TrackerCriteria(tracker=port), quality_gate=gate)
+    
+        with pytest.raises(InvalidFireCriterionError) as caught:
+>           await drive(fire, scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
+
+tests/chains/test_native_fire.py:387: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+fire = <kodezart.chains.ralph_workflow.RalphWorkflowEngine object at 0x10d15e8a0>
+
+    async def drive(fire: RalphWorkflowEngine, *, scope: ScopeRef | None):
+        events = []
+>       async for event in fire.run(
+            prompt="Implement the requested behavior",
+            issue_key=None,
+            repo_path="/tmp/fire",
+            repo_url="https://github.com/owner/repo",
+            base_spec=trunk_base("main"),
+            scope=scope,
+            permission_mode=PermissionMode.UNATTENDED,
+            allowed_tools=["Bash"],
+            cache_key="native-fire",
+            surface_holder="native-fire",
+        ):
+E       TypeError: RalphWorkflowEngine.run() got an unexpected keyword argument 'surface_holder'
+
+tests/chains/test_native_fire.py:292: TypeError
+_____ test_valid_native_fire_reaches_shared_execution_with_tracker_checks ______
+
+    async def test_valid_native_fire_reaches_shared_execution_with_tracker_checks() -> None:
+        gate = FakeQualityGate(
+            events=[],
+            evaluation=AcceptanceCriteriaOutput.model_validate(
+                native_evaluation(reconciled=True)
+            ),
+            last_commit_sha="a" * 40,
+        )
+        fire = engine(criteria=TrackerCriteria(tracker=tracker()), quality_gate=gate)
+    
+>       await drive(fire, scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
+
+tests/chains/test_native_fire.py:405: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+fire = <kodezart.chains.ralph_workflow.RalphWorkflowEngine object at 0x10d0e8380>
+
+    async def drive(fire: RalphWorkflowEngine, *, scope: ScopeRef | None):
+        events = []
+>       async for event in fire.run(
+            prompt="Implement the requested behavior",
+            issue_key=None,
+            repo_path="/tmp/fire",
+            repo_url="https://github.com/owner/repo",
+            base_spec=trunk_base("main"),
+            scope=scope,
+            permission_mode=PermissionMode.UNATTENDED,
+            allowed_tools=["Bash"],
+            cache_key="native-fire",
+            surface_holder="native-fire",
+        ):
+E       TypeError: RalphWorkflowEngine.run() got an unexpected keyword argument 'surface_holder'
+
+tests/chains/test_native_fire.py:292: TypeError
+____________ test_an_unwired_engine_still_refuses_an_addressed_run _____________
+
+    async def test_an_unwired_engine_still_refuses_an_addressed_run() -> None:
+        fire = engine(criteria=None)
+        with pytest.raises(ScopedExecutionUnavailableError, match="scope entry pipeline"):
+>           await drive(fire, scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
+
+tests/chains/test_native_fire.py:418: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+fire = <kodezart.chains.ralph_workflow.RalphWorkflowEngine object at 0x10d11baa0>
+
+    async def drive(fire: RalphWorkflowEngine, *, scope: ScopeRef | None):
+        events = []
+>       async for event in fire.run(
+            prompt="Implement the requested behavior",
+            issue_key=None,
+            repo_path="/tmp/fire",
+            repo_url="https://github.com/owner/repo",
+            base_spec=trunk_base("main"),
+            scope=scope,
+            permission_mode=PermissionMode.UNATTENDED,
+            allowed_tools=["Bash"],
+            cache_key="native-fire",
+            surface_holder="native-fire",
+        ):
+E       TypeError: RalphWorkflowEngine.run() got an unexpected keyword argument 'surface_holder'
+
+tests/chains/test_native_fire.py:292: TypeError
+____________________ test_a_container_address_is_not_a_fire ____________________
+
+    async def test_a_container_address_is_not_a_fire() -> None:
+        fire = engine(criteria=TrackerCriteria(tracker=tracker()))
+        with pytest.raises(ScopedExecutionUnavailableError, match="addressed to one issue"):
+>           await drive(fire, scope=ScopeRef(kind=ScopeKind.PROJECT, key="a-project"))
+
+tests/chains/test_native_fire.py:424: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+fire = <kodezart.chains.ralph_workflow.RalphWorkflowEngine object at 0x10cfb4980>
+
+    async def drive(fire: RalphWorkflowEngine, *, scope: ScopeRef | None):
+        events = []
+>       async for event in fire.run(
+            prompt="Implement the requested behavior",
+            issue_key=None,
+            repo_path="/tmp/fire",
+            repo_url="https://github.com/owner/repo",
+            base_spec=trunk_base("main"),
+            scope=scope,
+            permission_mode=PermissionMode.UNATTENDED,
+            allowed_tools=["Bash"],
+            cache_key="native-fire",
+            surface_holder="native-fire",
+        ):
+E       TypeError: RalphWorkflowEngine.run() got an unexpected keyword argument 'surface_holder'
+
+tests/chains/test_native_fire.py:292: TypeError
+_____________ test_native_graph_executes_and_reviews_exact_checks ______________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10d0eafc0>
+
+    async def test_native_graph_executes_and_reviews_exact_checks(monkeypatch):
+        port = CountingTracker()
+        executor = NativeExecutor([native_evaluation(), native_evaluation()])
+        saver = InMemorySaver()
+        fire = engine(
+            criteria=TrackerCriteria(tracker=port),
+            executor=executor,
+            real_loop=True,
+            checkpointer=saver,
+        )
+        monkeypatch.setattr(TicketDraftOutput, "__init__", no_authored_ticket)
+    
+>       events = await drive(fire, scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/chains/test_native_fire.py:677: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+fire = <kodezart.chains.ralph_workflow.RalphWorkflowEngine object at 0x10cfb4ad0>
+
+    async def drive(fire: RalphWorkflowEngine, *, scope: ScopeRef | None):
+        events = []
+>       async for event in fire.run(
+            prompt="Implement the requested behavior",
+            issue_key=None,
+            repo_path="/tmp/fire",
+            repo_url="https://github.com/owner/repo",
+            base_spec=trunk_base("main"),
+            scope=scope,
+            permission_mode=PermissionMode.UNATTENDED,
+            allowed_tools=["Bash"],
+            cache_key="native-fire",
+            surface_holder="native-fire",
+        ):
+E       TypeError: RalphWorkflowEngine.run() got an unexpected keyword argument 'surface_holder'
+
+tests/chains/test_native_fire.py:292: TypeError
+_____ test_native_remediation_refreshes_checks_without_recapturing_subject _____
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10cfb4f80>
+
+    async def test_native_remediation_refreshes_checks_without_recapturing_subject(
+        monkeypatch,
+    ):
+        port = CountingTracker()
+        changed_check = "changed Check with  spaces and `code`"
+    
+        def amend():
+            issue = port.issues[DIRECT_OWED]
+            port.issues[DIRECT_OWED] = issue.model_copy(
+                update={
+                    "body": f"**Check:** {changed_check}\n**Do:** repair\n**Evidence:** —"
+                }
+            )
+            port.issues[SUBJECT] = port.issues[SUBJECT].model_copy(
+                update={"body": "a later subject text"}
+            )
+    
+        executor = NativeExecutor(
+            [native_evaluation(failed=True), native_evaluation(), native_evaluation()],
+            on_remediation=amend,
+        )
+        fire = engine(
+            criteria=TrackerCriteria(tracker=port),
+            executor=executor,
+            real_loop=True,
+            remediation_rounds=1,
+        )
+        monkeypatch.setattr(TicketDraftOutput, "__init__", no_authored_ticket)
+    
+>       events = await drive(fire, scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/chains/test_native_fire.py:734: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+fire = <kodezart.chains.ralph_workflow.RalphWorkflowEngine object at 0x10d0e9850>
+
+    async def drive(fire: RalphWorkflowEngine, *, scope: ScopeRef | None):
+        events = []
+>       async for event in fire.run(
+            prompt="Implement the requested behavior",
+            issue_key=None,
+            repo_path="/tmp/fire",
+            repo_url="https://github.com/owner/repo",
+            base_spec=trunk_base("main"),
+            scope=scope,
+            permission_mode=PermissionMode.UNATTENDED,
+            allowed_tools=["Bash"],
+            cache_key="native-fire",
+            surface_holder="native-fire",
+        ):
+E       TypeError: RalphWorkflowEngine.run() got an unexpected keyword argument 'surface_holder'
+
+tests/chains/test_native_fire.py:292: TypeError
+__ test_native_remediation_cannot_bypass_tracker_revalidation[missing-check] ___
+
+failure = 'missing-check'
+
+    @pytest.mark.parametrize("failure", ["missing-check", "outage"])
+    async def test_native_remediation_cannot_bypass_tracker_revalidation(failure):
+        port = CountingTracker()
+    
+        def break_tracker():
+            if failure == "outage":
+                port.unavailable = True
+            else:
+                port.issues[NESTED_OWED] = port.issues[NESTED_OWED].model_copy(
+                    update={"body": "**Do:** no Check"}
+                )
+    
+        executor = NativeExecutor(
+            [native_evaluation(failed=True)], on_remediation=break_tracker
+        )
+        fire = engine(
+            criteria=TrackerCriteria(tracker=port),
+            executor=executor,
+            real_loop=True,
+            remediation_rounds=1,
+        )
+    
+        error = FireSpecEntryError if failure == "outage" else InvalidFireCriterionError
+        with pytest.raises(error):
+>           await drive(fire, scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
+
+tests/chains/test_native_fire.py:775: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+fire = <kodezart.chains.ralph_workflow.RalphWorkflowEngine object at 0x10d196180>
+
+    async def drive(fire: RalphWorkflowEngine, *, scope: ScopeRef | None):
+        events = []
+>       async for event in fire.run(
+            prompt="Implement the requested behavior",
+            issue_key=None,
+            repo_path="/tmp/fire",
+            repo_url="https://github.com/owner/repo",
+            base_spec=trunk_base("main"),
+            scope=scope,
+            permission_mode=PermissionMode.UNATTENDED,
+            allowed_tools=["Bash"],
+            cache_key="native-fire",
+            surface_holder="native-fire",
+        ):
+E       TypeError: RalphWorkflowEngine.run() got an unexpected keyword argument 'surface_holder'
+
+tests/chains/test_native_fire.py:292: TypeError
+______ test_native_remediation_cannot_bypass_tracker_revalidation[outage] ______
+
+failure = 'outage'
+
+    @pytest.mark.parametrize("failure", ["missing-check", "outage"])
+    async def test_native_remediation_cannot_bypass_tracker_revalidation(failure):
+        port = CountingTracker()
+    
+        def break_tracker():
+            if failure == "outage":
+                port.unavailable = True
+            else:
+                port.issues[NESTED_OWED] = port.issues[NESTED_OWED].model_copy(
+                    update={"body": "**Do:** no Check"}
+                )
+    
+        executor = NativeExecutor(
+            [native_evaluation(failed=True)], on_remediation=break_tracker
+        )
+        fire = engine(
+            criteria=TrackerCriteria(tracker=port),
+            executor=executor,
+            real_loop=True,
+            remediation_rounds=1,
+        )
+    
+        error = FireSpecEntryError if failure == "outage" else InvalidFireCriterionError
+        with pytest.raises(error):
+>           await drive(fire, scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
+
+tests/chains/test_native_fire.py:775: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+fire = <kodezart.chains.ralph_workflow.RalphWorkflowEngine object at 0x10d11a270>
+
+    async def drive(fire: RalphWorkflowEngine, *, scope: ScopeRef | None):
+        events = []
+>       async for event in fire.run(
+            prompt="Implement the requested behavior",
+            issue_key=None,
+            repo_path="/tmp/fire",
+            repo_url="https://github.com/owner/repo",
+            base_spec=trunk_base("main"),
+            scope=scope,
+            permission_mode=PermissionMode.UNATTENDED,
+            allowed_tools=["Bash"],
+            cache_key="native-fire",
+            surface_holder="native-fire",
+        ):
+E       TypeError: RalphWorkflowEngine.run() got an unexpected keyword argument 'surface_holder'
+
+tests/chains/test_native_fire.py:292: TypeError
+_______ test_native_inner_iterations_read_current_checks[changed-check] ________
+
+change = 'changed-check'
+
+    @pytest.mark.parametrize(
+        "change", ["changed-check", "state", "missing-check", "outage"]
+    )
+    async def test_native_inner_iterations_read_current_checks(change):
+        port = CountingTracker()
+        remaining = {key: check_of(key) for key in OWED_KEYS if key != NESTED_OWED}
+        executor = NativeExecutor(
+            [
+                native_evaluation(failed=True),
+                native_evaluation(checks=remaining if change == "state" else None),
+                native_evaluation(checks=remaining if change == "state" else None),
+            ]
+        )
+        executor.on_evaluation = lambda count: (
+            change_tracker(port, change) if count == 1 else None
+        )
+        fire = engine(
+            criteria=TrackerCriteria(tracker=port),
+            executor=executor,
+            real_loop=True,
+            max_iterations=2,
+        )
+        if change in {"missing-check", "outage"}:
+            error = FireSpecEntryError if change == "outage" else InvalidFireCriterionError
+            with pytest.raises(error):
+                await drive(fire, scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
+            assert len(executor.execution_prompts) == 1
+            return
+>       events = await drive(fire, scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/chains/test_native_fire.py:842: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+fire = <kodezart.chains.ralph_workflow.RalphWorkflowEngine object at 0x10d135a00>
+
+    async def drive(fire: RalphWorkflowEngine, *, scope: ScopeRef | None):
+        events = []
+>       async for event in fire.run(
+            prompt="Implement the requested behavior",
+            issue_key=None,
+            repo_path="/tmp/fire",
+            repo_url="https://github.com/owner/repo",
+            base_spec=trunk_base("main"),
+            scope=scope,
+            permission_mode=PermissionMode.UNATTENDED,
+            allowed_tools=["Bash"],
+            cache_key="native-fire",
+            surface_holder="native-fire",
+        ):
+E       TypeError: RalphWorkflowEngine.run() got an unexpected keyword argument 'surface_holder'
+
+tests/chains/test_native_fire.py:292: TypeError
+___________ test_native_inner_iterations_read_current_checks[state] ____________
+
+change = 'state'
+
+    @pytest.mark.parametrize(
+        "change", ["changed-check", "state", "missing-check", "outage"]
+    )
+    async def test_native_inner_iterations_read_current_checks(change):
+        port = CountingTracker()
+        remaining = {key: check_of(key) for key in OWED_KEYS if key != NESTED_OWED}
+        executor = NativeExecutor(
+            [
+                native_evaluation(failed=True),
+                native_evaluation(checks=remaining if change == "state" else None),
+                native_evaluation(checks=remaining if change == "state" else None),
+            ]
+        )
+        executor.on_evaluation = lambda count: (
+            change_tracker(port, change) if count == 1 else None
+        )
+        fire = engine(
+            criteria=TrackerCriteria(tracker=port),
+            executor=executor,
+            real_loop=True,
+            max_iterations=2,
+        )
+        if change in {"missing-check", "outage"}:
+            error = FireSpecEntryError if change == "outage" else InvalidFireCriterionError
+            with pytest.raises(error):
+                await drive(fire, scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
+            assert len(executor.execution_prompts) == 1
+            return
+>       events = await drive(fire, scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/chains/test_native_fire.py:842: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+fire = <kodezart.chains.ralph_workflow.RalphWorkflowEngine object at 0x10cf66cc0>
+
+    async def drive(fire: RalphWorkflowEngine, *, scope: ScopeRef | None):
+        events = []
+>       async for event in fire.run(
+            prompt="Implement the requested behavior",
+            issue_key=None,
+            repo_path="/tmp/fire",
+            repo_url="https://github.com/owner/repo",
+            base_spec=trunk_base("main"),
+            scope=scope,
+            permission_mode=PermissionMode.UNATTENDED,
+            allowed_tools=["Bash"],
+            cache_key="native-fire",
+            surface_holder="native-fire",
+        ):
+E       TypeError: RalphWorkflowEngine.run() got an unexpected keyword argument 'surface_holder'
+
+tests/chains/test_native_fire.py:292: TypeError
+_______ test_native_inner_iterations_read_current_checks[missing-check] ________
+
+change = 'missing-check'
+
+    @pytest.mark.parametrize(
+        "change", ["changed-check", "state", "missing-check", "outage"]
+    )
+    async def test_native_inner_iterations_read_current_checks(change):
+        port = CountingTracker()
+        remaining = {key: check_of(key) for key in OWED_KEYS if key != NESTED_OWED}
+        executor = NativeExecutor(
+            [
+                native_evaluation(failed=True),
+                native_evaluation(checks=remaining if change == "state" else None),
+                native_evaluation(checks=remaining if change == "state" else None),
+            ]
+        )
+        executor.on_evaluation = lambda count: (
+            change_tracker(port, change) if count == 1 else None
+        )
+        fire = engine(
+            criteria=TrackerCriteria(tracker=port),
+            executor=executor,
+            real_loop=True,
+            max_iterations=2,
+        )
+        if change in {"missing-check", "outage"}:
+            error = FireSpecEntryError if change == "outage" else InvalidFireCriterionError
+            with pytest.raises(error):
+>               await drive(fire, scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
+
+tests/chains/test_native_fire.py:839: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+fire = <kodezart.chains.ralph_workflow.RalphWorkflowEngine object at 0x10d02a660>
+
+    async def drive(fire: RalphWorkflowEngine, *, scope: ScopeRef | None):
+        events = []
+>       async for event in fire.run(
+            prompt="Implement the requested behavior",
+            issue_key=None,
+            repo_path="/tmp/fire",
+            repo_url="https://github.com/owner/repo",
+            base_spec=trunk_base("main"),
+            scope=scope,
+            permission_mode=PermissionMode.UNATTENDED,
+            allowed_tools=["Bash"],
+            cache_key="native-fire",
+            surface_holder="native-fire",
+        ):
+E       TypeError: RalphWorkflowEngine.run() got an unexpected keyword argument 'surface_holder'
+
+tests/chains/test_native_fire.py:292: TypeError
+___________ test_native_inner_iterations_read_current_checks[outage] ___________
+
+change = 'outage'
+
+    @pytest.mark.parametrize(
+        "change", ["changed-check", "state", "missing-check", "outage"]
+    )
+    async def test_native_inner_iterations_read_current_checks(change):
+        port = CountingTracker()
+        remaining = {key: check_of(key) for key in OWED_KEYS if key != NESTED_OWED}
+        executor = NativeExecutor(
+            [
+                native_evaluation(failed=True),
+                native_evaluation(checks=remaining if change == "state" else None),
+                native_evaluation(checks=remaining if change == "state" else None),
+            ]
+        )
+        executor.on_evaluation = lambda count: (
+            change_tracker(port, change) if count == 1 else None
+        )
+        fire = engine(
+            criteria=TrackerCriteria(tracker=port),
+            executor=executor,
+            real_loop=True,
+            max_iterations=2,
+        )
+        if change in {"missing-check", "outage"}:
+            error = FireSpecEntryError if change == "outage" else InvalidFireCriterionError
+            with pytest.raises(error):
+>               await drive(fire, scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
+
+tests/chains/test_native_fire.py:839: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+fire = <kodezart.chains.ralph_workflow.RalphWorkflowEngine object at 0x10cfe5490>
+
+    async def drive(fire: RalphWorkflowEngine, *, scope: ScopeRef | None):
+        events = []
+>       async for event in fire.run(
+            prompt="Implement the requested behavior",
+            issue_key=None,
+            repo_path="/tmp/fire",
+            repo_url="https://github.com/owner/repo",
+            base_spec=trunk_base("main"),
+            scope=scope,
+            permission_mode=PermissionMode.UNATTENDED,
+            allowed_tools=["Bash"],
+            cache_key="native-fire",
+            surface_holder="native-fire",
+        ):
+E       TypeError: RalphWorkflowEngine.run() got an unexpected keyword argument 'surface_holder'
+
+tests/chains/test_native_fire.py:292: TypeError
+_____ test_production_constructor_wires_native_source_to_shared_consumers ______
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10d07ca40>
+
+    async def test_production_constructor_wires_native_source_to_shared_consumers(
+        monkeypatch,
+    ):
+        from kodezart.composition.engine import build_workflow_engine
+        from kodezart.core.config import AppConfig
+        from tests.fakes import FakeRefPublisher
+    
+        monkeypatch.setattr(
+            "kodezart.composition.engine.SubprocessGitSourceReader",
+            NativeSourceReader,
+        )
+    
+        port = CountingTracker()
+        source = TrackerCriteria(tracker=port)
+        executor = NativeExecutor([native_evaluation(), native_evaluation()])
+        workspace = FakeWorkspaceProvider()
+        service = AgentService(
+            git_base_url="https://github.com",
+            executor=executor,
+            workspace=workspace,
+            persister=FakeChangePersister(),
+        )
+        artifacts = FakeArtifactPersister()
+        router = build_workflow_engine(
+            operation=native_operation(),
+            scope_tracker=port,
+            config=AppConfig(
+                write_back=WriteBackSettings(max_verify_rounds=2),
+                ticket_review_mode=TicketReviewMode.REVIEWED,
+                max_iterations=1,
+                retry_max_attempts=1,
+                retry_initial_interval=0.1,
+            ),
+            repositories=(),
+            agent_service=service,
+            git=FakeGitService(remote_branch_shas={"main": "b" * 40}),
+            cache=FakeRepoCache(),
+            workspace=workspace,
+            merger=FakeBranchMerger(),
+            artifact_persister=artifacts,
+            ref_publisher=FakeRefPublisher(),
+            prompts=make_prompt_provider(),
+            skills=SUPPRESS_ALL_SKILLS,
+            gate=PassThroughGate(),
+            github_api=None,
+            checkpointer=InMemorySaver(),
+            criteria=source,
+        )
+        monkeypatch.setattr(TicketDraftOutput, "__init__", no_authored_ticket)
+        # Direct fire proves constructor capability. The scope wrapper has its own
+        # production-route tests; only the immutable Git adapter is doubled here.
+        fire = router.arm_for(None).fire
+>       events = await drive(fire, scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/chains/test_native_fire.py:1085: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+fire = <kodezart.chains.ralph_workflow.RalphWorkflowEngine object at 0x10d08c650>
+
+    async def drive(fire: RalphWorkflowEngine, *, scope: ScopeRef | None):
+        events = []
+>       async for event in fire.run(
+            prompt="Implement the requested behavior",
+            issue_key=None,
+            repo_path="/tmp/fire",
+            repo_url="https://github.com/owner/repo",
+            base_spec=trunk_base("main"),
+            scope=scope,
+            permission_mode=PermissionMode.UNATTENDED,
+            allowed_tools=["Bash"],
+            cache_key="native-fire",
+            surface_holder="native-fire",
+        ):
+E       TypeError: RalphWorkflowEngine.run() got an unexpected keyword argument 'surface_holder'
+
+tests/chains/test_native_fire.py:292: TypeError
+_____ test_native_consumer_without_runtime_reader_refuses[implementation] ______
+
+consumer = 'implementation'
+
+    @pytest.mark.parametrize("consumer", ["implementation", "review", "loop"])
+    async def test_native_consumer_without_runtime_reader_refuses(consumer):
+        port = CountingTracker()
+        executor = NativeExecutor([native_evaluation(), native_evaluation()])
+        fire = engine(
+            criteria=TrackerCriteria(tracker=port), executor=executor, real_loop=True
+        )
+        target = {
+            "implementation": fire.implementation,
+            "review": fire.review,
+            "loop": fire.implementation._quality_gate,
+        }[consumer]
+        target._criteria_reader = None
+        with pytest.raises(FireSpecEntryError, match="reader is not configured"):
+>           await drive(fire, scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
+
+tests/chains/test_native_fire.py:1108: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+fire = <kodezart.chains.ralph_workflow.RalphWorkflowEngine object at 0x10cffc4a0>
+
+    async def drive(fire: RalphWorkflowEngine, *, scope: ScopeRef | None):
+        events = []
+>       async for event in fire.run(
+            prompt="Implement the requested behavior",
+            issue_key=None,
+            repo_path="/tmp/fire",
+            repo_url="https://github.com/owner/repo",
+            base_spec=trunk_base("main"),
+            scope=scope,
+            permission_mode=PermissionMode.UNATTENDED,
+            allowed_tools=["Bash"],
+            cache_key="native-fire",
+            surface_holder="native-fire",
+        ):
+E       TypeError: RalphWorkflowEngine.run() got an unexpected keyword argument 'surface_holder'
+
+tests/chains/test_native_fire.py:292: TypeError
+_________ test_native_consumer_without_runtime_reader_refuses[review] __________
+
+consumer = 'review'
+
+    @pytest.mark.parametrize("consumer", ["implementation", "review", "loop"])
+    async def test_native_consumer_without_runtime_reader_refuses(consumer):
+        port = CountingTracker()
+        executor = NativeExecutor([native_evaluation(), native_evaluation()])
+        fire = engine(
+            criteria=TrackerCriteria(tracker=port), executor=executor, real_loop=True
+        )
+        target = {
+            "implementation": fire.implementation,
+            "review": fire.review,
+            "loop": fire.implementation._quality_gate,
+        }[consumer]
+        target._criteria_reader = None
+        with pytest.raises(FireSpecEntryError, match="reader is not configured"):
+>           await drive(fire, scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
+
+tests/chains/test_native_fire.py:1108: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+fire = <kodezart.chains.ralph_workflow.RalphWorkflowEngine object at 0x10d029d00>
+
+    async def drive(fire: RalphWorkflowEngine, *, scope: ScopeRef | None):
+        events = []
+>       async for event in fire.run(
+            prompt="Implement the requested behavior",
+            issue_key=None,
+            repo_path="/tmp/fire",
+            repo_url="https://github.com/owner/repo",
+            base_spec=trunk_base("main"),
+            scope=scope,
+            permission_mode=PermissionMode.UNATTENDED,
+            allowed_tools=["Bash"],
+            cache_key="native-fire",
+            surface_holder="native-fire",
+        ):
+E       TypeError: RalphWorkflowEngine.run() got an unexpected keyword argument 'surface_holder'
+
+tests/chains/test_native_fire.py:292: TypeError
+__________ test_native_consumer_without_runtime_reader_refuses[loop] ___________
+
+consumer = 'loop'
+
+    @pytest.mark.parametrize("consumer", ["implementation", "review", "loop"])
+    async def test_native_consumer_without_runtime_reader_refuses(consumer):
+        port = CountingTracker()
+        executor = NativeExecutor([native_evaluation(), native_evaluation()])
+        fire = engine(
+            criteria=TrackerCriteria(tracker=port), executor=executor, real_loop=True
+        )
+        target = {
+            "implementation": fire.implementation,
+            "review": fire.review,
+            "loop": fire.implementation._quality_gate,
+        }[consumer]
+        target._criteria_reader = None
+        with pytest.raises(FireSpecEntryError, match="reader is not configured"):
+>           await drive(fire, scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
+
+tests/chains/test_native_fire.py:1108: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+fire = <kodezart.chains.ralph_workflow.RalphWorkflowEngine object at 0x10d0298e0>
+
+    async def drive(fire: RalphWorkflowEngine, *, scope: ScopeRef | None):
+        events = []
+>       async for event in fire.run(
+            prompt="Implement the requested behavior",
+            issue_key=None,
+            repo_path="/tmp/fire",
+            repo_url="https://github.com/owner/repo",
+            base_spec=trunk_base("main"),
+            scope=scope,
+            permission_mode=PermissionMode.UNATTENDED,
+            allowed_tools=["Bash"],
+            cache_key="native-fire",
+            surface_holder="native-fire",
+        ):
+E       TypeError: RalphWorkflowEngine.run() got an unexpected keyword argument 'surface_holder'
+
+tests/chains/test_native_fire.py:292: TypeError
+_____ test_native_remediation_receives_the_final_inner_evaluation_snapshot _____
+
+    async def test_native_remediation_receives_the_final_inner_evaluation_snapshot():
+        port = CountingTracker()
+        executor = NativeExecutor(
+            [
+                native_evaluation(failed=True),
+                native_evaluation(failed=True),
+                native_evaluation(),
+                native_evaluation(),
+            ]
+        )
+        executor.on_evaluation = lambda count: (
+            change_tracker(port, "changed-check") if count == 1 else None
+        )
+        fire = engine(
+            criteria=TrackerCriteria(tracker=port),
+            executor=executor,
+            real_loop=True,
+            max_iterations=2,
+            remediation_rounds=1,
+        )
+>       await drive(fire, scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
+
+tests/chains/test_native_fire.py:1158: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+fire = <kodezart.chains.ralph_workflow.RalphWorkflowEngine object at 0x10ce53c50>
+
+    async def drive(fire: RalphWorkflowEngine, *, scope: ScopeRef | None):
+        events = []
+>       async for event in fire.run(
+            prompt="Implement the requested behavior",
+            issue_key=None,
+            repo_path="/tmp/fire",
+            repo_url="https://github.com/owner/repo",
+            base_spec=trunk_base("main"),
+            scope=scope,
+            permission_mode=PermissionMode.UNATTENDED,
+            allowed_tools=["Bash"],
+            cache_key="native-fire",
+            surface_holder="native-fire",
+        ):
+E       TypeError: RalphWorkflowEngine.run() got an unexpected keyword argument 'surface_holder'
+
+tests/chains/test_native_fire.py:292: TypeError
+=========================== short test summary info ============================
+FAILED tests/chains/test_native_fire.py::test_a_criterion_that_lost_its_check_stops_the_fire_before_the_loop
+FAILED tests/chains/test_native_fire.py::test_valid_native_fire_reaches_shared_execution_with_tracker_checks
+FAILED tests/chains/test_native_fire.py::test_an_unwired_engine_still_refuses_an_addressed_run
+FAILED tests/chains/test_native_fire.py::test_a_container_address_is_not_a_fire
+FAILED tests/chains/test_native_fire.py::test_native_graph_executes_and_reviews_exact_checks
+FAILED tests/chains/test_native_fire.py::test_native_remediation_refreshes_checks_without_recapturing_subject
+FAILED tests/chains/test_native_fire.py::test_native_remediation_cannot_bypass_tracker_revalidation[missing-check]
+FAILED tests/chains/test_native_fire.py::test_native_remediation_cannot_bypass_tracker_revalidation[outage]
+FAILED tests/chains/test_native_fire.py::test_native_inner_iterations_read_current_checks[changed-check]
+FAILED tests/chains/test_native_fire.py::test_native_inner_iterations_read_current_checks[state]
+FAILED tests/chains/test_native_fire.py::test_native_inner_iterations_read_current_checks[missing-check]
+FAILED tests/chains/test_native_fire.py::test_native_inner_iterations_read_current_checks[outage]
+FAILED tests/chains/test_native_fire.py::test_production_constructor_wires_native_source_to_shared_consumers
+FAILED tests/chains/test_native_fire.py::test_native_consumer_without_runtime_reader_refuses[implementation]
+FAILED tests/chains/test_native_fire.py::test_native_consumer_without_runtime_reader_refuses[review]
+FAILED tests/chains/test_native_fire.py::test_native_consumer_without_runtime_reader_refuses[loop]
+FAILED tests/chains/test_native_fire.py::test_native_remediation_receives_the_final_inner_evaluation_snapshot
+17 failed, 91 passed in 67.43s (0:01:07)

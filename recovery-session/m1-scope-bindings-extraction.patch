@@ -1,0 +1,2774 @@
+diff --git a/docs/configuration.md b/docs/configuration.md
+index 1eea738..f06ec17 100644
+--- a/docs/configuration.md
++++ b/docs/configuration.md
+@@ -361,3 +361,18 @@ Terminal outcome comments require `marker_prefixes.run_outcome` in the operation
+ configuration. The writer validates this purpose at construction, acquires the
+ marker surface under the actual queue job id, renews after content gating, and
+ releases after settlement. Fire-claim renewal remains separately configured.
++
++### Scope admission labels
++
++`[scope_labels]` maps `triage`, `proposed`, and `approved` to tracker label
++names. An absent or empty table is valid; a populated table requires all
++three keys and may include additional keys. Templates receive the mapping
++through `scope_labels`, or `scope_labels_absent` when no mapping is declared.
++
++Tracker bootstrap creates missing definitions in the issue, project, and
++initiative namespaces and reads them back. It preserves existing definitions
++and does not apply approval to an entity. A conflicting team-scoped issue
++label is refused. Native approval reads use current issue ancestry and the
++addressed issue's project and initiative ancestry; a milestone inherits its
++project's approval. An absent approved-label mapping refuses the approval
++read at use. These primitives do not yet add scoped HTTP workflow submission.
+diff --git a/docs/cutover_mapping.md b/docs/cutover_mapping.md
+index 8af45bd..03f6d30 100644
+--- a/docs/cutover_mapping.md
++++ b/docs/cutover_mapping.md
+@@ -14,6 +14,7 @@ live with the cutover work itself.
+ | Deciding which items a pass touches | `PromptKey.FIRE_PREP_PASS` template, resolved through `PromptProvider` |
+ | Grooming open work into actionable shape | `PromptKey.GROOMING_PASS` template, resolved through `PromptProvider` |
+ | Who may approve | `OperationConfig.principals` — the APPROVER role, never a name |
++| Scope admission labels | `OperationConfig.scope_labels`; native label reads and workspace bootstrap |
+ | Queue and lifecycle vocabulary | `OperationConfig.queue_states` / `workflow_states` |
+ | Which repositories a pass may act on, and how they are verified | `OperationConfig.repos` |
+ | What counts as a mention of the operation | `OperationConfig.agent_identities` |
+@@ -122,3 +123,4 @@ registries.
+ | OperationConfig field | Actual native consumer |
+ | --- | --- |
+ | issue_labels | composition/tracker.py::build_tracker |
++| scope_labels | composition/tracker.py::build_tracker |
+diff --git a/docs/operation.example.toml b/docs/operation.example.toml
+index 5ee8fe9..b1d51c8 100644
+--- a/docs/operation.example.toml
++++ b/docs/operation.example.toml
+@@ -118,6 +118,14 @@ approved = "queue:approved"
+ done = "queue:done"
+ decision = "queue:decision"
+ 
++# Scope admission is separate from the issue queue. Names are configurable;
++# an omitted or empty mapping is valid, and a populated mapping must include
++# all three semantic members. Additional keys remain available to templates.
++[scope_labels]
++triage = "scope:triage"
++proposed = "scope:proposed"
++approved = "scope:approved"
++
+ # Lifecycle states, validated exactly parallel to queue_states.
+ # Stable comment identity prefixes; preserve these when adopting existing records.
+ [marker_prefixes]
+diff --git a/src/kodezart/adapters/linear_mcp_tracker.py b/src/kodezart/adapters/linear_mcp_tracker.py
+index b344f10..a03e650 100644
+--- a/src/kodezart/adapters/linear_mcp_tracker.py
++++ b/src/kodezart/adapters/linear_mcp_tracker.py
+@@ -47,7 +47,10 @@ from kodezart.adapters.linear_mcp_types import (
+     LinearWireModel,
+ )
+ from kodezart.adapters.linear_scope_reader import SCOPE_READ_TOOLS, LinearScopeReader
+-from kodezart.adapters.linear_scope_types import LinearScopeIssuesWire
++from kodezart.adapters.linear_scope_types import (
++    LinearApprovalIssueWire,
++    LinearScopeIssuesWire,
++)
+ from kodezart.adapters.pagination import cursor_pages
+ from kodezart.core.backoff import RetryPolicy
+ from kodezart.core.errors import (
+@@ -65,11 +68,13 @@ from kodezart.core.protocols import McpToolCaller, McpToolResult
+ from kodezart.domain.errors import (
+     CriterionReadError,
+     DuplicateWorkRefError,
++    ScopeReadError,
+     SurfaceLeaseError,
+     SurfaceWriteAttributionError,
+     TransientAPIError,
+ )
+ from kodezart.domain.git_url import extract_owner_repo
++from kodezart.domain.scope_approval import resolve_execution_approval
+ from kodezart.domain.surface_lease import (
+     live_conflict,
+     one_ownership,
+@@ -88,6 +93,7 @@ from kodezart.types.domain.operation import (
+     LifecycleStage,
+     OperationMemberAbsentError,
+     QueueState,
++    ScopeLabel,
+ )
+ from kodezart.types.domain.scope import ScopeContainer, ScopeKind, ScopeRef
+ from kodezart.types.domain.self_writes import (
+@@ -135,8 +141,21 @@ _TOOL_GET_USER = "get_user"
+ _TOOL_LIST_TEAMS = "list_teams"
+ _TOOL_LIST_ISSUE_LABELS = "list_issue_labels"
+ _TOOL_CREATE_ISSUE_LABEL = "create_issue_label"
++_TOOL_LIST_PROJECT_LABELS = "list_project_labels"
++_TOOL_SAVE_PROJECT_LABEL = "save_project_label"
++_TOOL_LIST_INITIATIVE_LABELS = "list_initiative_labels"
++_TOOL_CREATE_INITIATIVE_LABEL = "create_initiative_label"
+ _TOOL_LIST_ISSUE_STATUSES = "list_issue_statuses"
+ 
++#: One configured scope label has a separate native definition per kind.
++#: Project creation uses the connected app's declared save tool with no id;
++#: its availability to the deployment's service credential is unverified.
++_SCOPE_LABEL_CREATORS: Final[dict[str, str]] = {
++    _TOOL_LIST_ISSUE_LABELS: _TOOL_CREATE_ISSUE_LABEL,
++    _TOOL_LIST_PROJECT_LABELS: _TOOL_SAVE_PROJECT_LABEL,
++    _TOOL_LIST_INITIATIVE_LABELS: _TOOL_CREATE_INITIATIVE_LABEL,
++}
++
+ #: The tools that change nothing on the board.  A call the server may have
+ #: performed is made again only if performing it twice is the same as once
+ #: (KOD-305): these are, and every other tool is a write.
+@@ -154,6 +173,8 @@ _READ_TOOLS: Final[frozenset[str]] = frozenset(
+         _TOOL_GET_USER,
+         _TOOL_LIST_TEAMS,
+         _TOOL_LIST_ISSUE_LABELS,
++        _TOOL_LIST_PROJECT_LABELS,
++        _TOOL_LIST_INITIATIVE_LABELS,
+         _TOOL_LIST_ISSUE_STATUSES,
+     },
+ )
+@@ -745,6 +766,7 @@ class LinearMcpTracker:
+         caller: McpToolCaller,
+         queue_state_labels: Mapping[str, str],
+         issue_labels: Mapping[str, str],
++        scope_labels: Mapping[str, str],
+         workflow_state_names: Mapping[LifecycleStage, str],
+         team_identifiers: Mapping[str, str],
+         marker_prefixes: Mapping[str, str],
+@@ -754,6 +776,7 @@ class LinearMcpTracker:
+     ) -> None:
+         self._caller: McpToolCaller = caller
+         self._issue_labels = dict(issue_labels)
++        self._scope_labels = dict(scope_labels)
+         self._markers = LinearMarkers(marker_prefixes)
+         self._retry = retry
+         self._clock: Callable[[], datetime] = clock
+@@ -1491,6 +1514,9 @@ class LinearMcpTracker:
+         unresolved: list[MappingRef] = []
+         divergent: list[str] = []
+         for ref in refs:
++            if ref.kind is MappingKind.SCOPE_LABEL and ref.scope is not None:
++                unresolved.append(ref)
++                continue
+             if ref.kind is MappingKind.WORKFLOW_STATE:
+                 if states_by_team is None:
+                     states_by_team = await self._workflow_states_by_team()
+@@ -1577,6 +1603,11 @@ class LinearMcpTracker:
+         """
+         outcomes: list[MappingOutcome] = []
+         definitions = await self._label_definitions()
++        scope_definitions = (
++            await self._scope_label_definitions(definitions)
++            if any(ref.kind is MappingKind.SCOPE_LABEL for ref in refs)
++            else {}
++        )
+         documents = (
+             await self._document_definitions()
+             if any(ref.kind is MappingKind.DOCUMENT for ref in refs)
+@@ -1591,6 +1622,11 @@ class LinearMcpTracker:
+             if ref.kind is MappingKind.DOCUMENT:
+                 outcomes.append(await self._ensure_document(ref, documents))
+                 continue
++            if ref.kind is MappingKind.SCOPE_LABEL:
++                outcomes.append(
++                    await self._ensure_scope_label(ref, definitions, scope_definitions),
++                )
++                continue
+             identifier = ref.identifier
+             if identifier is None:
+                 raise TrackerEnsureConflictError(
+@@ -1645,6 +1681,70 @@ class LinearMcpTracker:
+             )
+         return tuple(outcomes)
+ 
++    async def _scope_label_definitions(
++        self,
++        issue_definitions: _LabelListings,
++    ) -> dict[str, set[str]]:
++        """Keep native namespaces apart: one label id cannot stand for all."""
++        return {
++            tool: (
++                issue_definitions.workspace
++                if tool == _TOOL_LIST_ISSUE_LABELS
++                else {entry.name for entry in await self._label_entries({}, tool=tool)}
++            )
++            for tool in _SCOPE_LABEL_CREATORS
++        }
++
++    async def _ensure_scope_label(
++        self,
++        ref: MappingRef,
++        issues: _LabelListings,
++        definitions: dict[str, set[str]],
++    ) -> MappingOutcome:
++        """Create missing definitions only; never apply approval to an entity.
++
++        Scope labels are workspace-level, including the issue namespace.
++        A declared team's own copy is refused before any namespace write:
++        preserving it and adding a workspace copy would leave issue writes
++        ambiguous. Undeclared teams remain unobservable, as for queue labels.
++
++        Create replies were not captured by the connected-app measurement.
++        Resolve the name through a fresh listing instead of inventing a
++        write-response schema or treating a successful call as readback.
++        """
++        identifier = ref.identifier
++        if identifier is None or ref.scope is not None:
++            raise TrackerEnsureConflictError(
++                "a scope label requires its configured identifier and workspace scope",
++                entry=ref.describe(),
++            )
++        held = issues.teams_holding(identifier)
++        if held:
++            raise TrackerEnsureConflictError(
++                "a workspace scope label conflicts with an existing team label; "
++                f"found {', '.join(repr(team) for team in held)}",
++                entry=ref.describe(),
++            )
++        action = EnsureAction.ADOPTED
++        for tool, creator in _SCOPE_LABEL_CREATORS.items():
++            names = definitions[tool]
++            if identifier in names:
++                continue
++            await self._call(creator, {"name": identifier})
++            observed = {
++                entry.name for entry in await self._label_entries({}, tool=tool)
++            }
++            if identifier not in observed:
++                raise TrackerProtocolError(
++                    "the created scope label is absent from its namespace readback",
++                    tool=tool,
++                    detail=ref.describe(),
++                )
++            names.clear()
++            names.update(observed)
++            action = EnsureAction.CREATED
++        return MappingOutcome(ref=ref, action=action, identifier=identifier)
++
+     async def _ensure_document(
+         self,
+         ref: MappingRef,
+@@ -1766,11 +1866,30 @@ class LinearMcpTracker:
+     async def _label_entries(
+         self,
+         arguments: Mapping[str, object],
++        *,
++        tool: str = _TOOL_LIST_ISSUE_LABELS,
+     ) -> Sequence[LinearLabelWire]:
+-        """One label listing, scoped by *arguments* or not scoped at all."""
+-        tool = _MAPPING_TOOL_BY_KIND[MappingKind.QUEUE_STATE]
+-        payload = await self._call(tool, arguments)
+-        return self._validate(LinearLabelListWire, payload, tool).labels
++        """Every page of one label namespace, preserving the listing scope."""
++        entries: list[LinearLabelWire] = []
++
++        async def read(
++            request: Mapping[str, object],
++        ) -> tuple[LinearLabelListWire, bool, str | None]:
++            payload = await self._call(tool, request)
++            listing = self._validate(LinearLabelListWire, payload, tool)
++            return listing, listing.has_next_page, listing.cursor
++
++        async for listing in cursor_pages(
++            read,
++            arguments=arguments,
++            refusal=lambda cursor: TrackerProtocolError(
++                "label pagination did not provide a new continuation cursor",
++                tool=tool,
++                detail=f"cursor={cursor!r}",
++            ),
++        ):
++            entries.extend(listing.labels)
++        return entries
+ 
+     async def _team_listing(self) -> Sequence[LinearTeamWire]:
+         """Every team the workspace holds, with the UUID it is addressed by."""
+@@ -1842,6 +1961,13 @@ class LinearMcpTracker:
+                 return frozenset(await self._document_definitions())
+             case MappingKind.QUEUE_STATE | MappingKind.ISSUE_LABEL:
+                 return (await self._label_definitions()).names()
++            case MappingKind.SCOPE_LABEL:
++                issues = await self._label_definitions()
++                definitions = await self._scope_label_definitions(issues)
++                shared = set.intersection(*definitions.values())
++                return frozenset(
++                    name for name in shared if not issues.teams_holding(name)
++                )
+             case MappingKind.USER:
+                 return frozenset(
+                     identity
+@@ -2102,6 +2228,82 @@ class LinearMcpTracker:
+             created_at=wire.created_at,
+         )
+ 
++    def _scope_label_members(self, labels: Sequence[str]) -> frozenset[ScopeLabel]:
++        return frozenset(
++            member
++            for member in ScopeLabel
++            if self._scope_labels.get(member.value) in labels
++        )
++
++    async def _read_scope_issue(
++        self, issue_key: str
++    ) -> tuple[TrackerIssue, frozenset[ScopeLabel]]:
++        payload = await self._call(
++            _TOOL_GET_ISSUE, {"id": issue_key, "includeRelations": True}
++        )
++        wire = self._validate(LinearApprovalIssueWire, payload, _TOOL_GET_ISSUE)
++        issue = self._to_issue(wire)
++        if not wire.matches_requested(issue_key):
++            raise ScopeReadError(
++                "scope label identity changed",
++                ref=ScopeRef(kind=ScopeKind.ISSUE, key=issue_key),
++            )
++        return issue, self._scope_label_members(wire.labels)
++
++    async def read_scope_labels(self, *, ref: ScopeRef) -> frozenset[ScopeLabel]:
++        if ref.kind is ScopeKind.ISSUE:
++            _, members = await self._read_scope_issue(ref.key)
++            return members
++        reader = LinearScopeReader(call=self._call, read_issue=self.read_issue)
++        if ref.kind is ScopeKind.MILESTONE:
++            await reader.container_metadata(ref=ref)
++            return frozenset()
++        labels, _ = await reader.labels_parent(ref=ref)
++        return self._scope_label_members(tuple(labels))
++
++    async def execution_approved(self, *, issue_key: str) -> bool:
++        """Resolve configured label presence through fresh native ancestry."""
++        _, approved = await self._read_execution_approval(issue_key=issue_key)
++        return approved
++
++    async def _read_execution_approval(
++        self, *, issue_key: str
++    ) -> tuple[TrackerIssue, bool]:
++        label = self._scope_labels.get(ScopeLabel.APPROVED.value)
++        if not label:
++            raise OperationMemberAbsentError(
++                missing=f"scope_labels.{ScopeLabel.APPROVED.value}",
++                stops="cannot resolve scope approval",
++            )
++        reader = LinearScopeReader(call=self._call, read_issue=self.read_issue)
++
++        async def hydrate(key: str) -> tuple[TrackerIssue, bool]:
++            issue, members = await self._read_scope_issue(key)
++            return issue, ScopeLabel.APPROVED in members
++
++        subject = await hydrate(issue_key)
++        canonical_key = subject[0].issue_key
++
++        async def read_issue(key: str) -> tuple[TrackerIssue, bool]:
++            return subject if key == canonical_key else await hydrate(key)
++
++        async def read_container(ref: ScopeRef) -> tuple[bool, ScopeRef | None]:
++            return await reader.approval_parent(ref=ref, approved_label=label)
++
++        approved = await resolve_execution_approval(
++            issue_key=canonical_key,
++            read_issue=read_issue,
++            read_container=read_container,
++        )
++        return subject[0], approved
++
++    async def project_milestones(
++        self, *, project_key: str
++    ) -> tuple[ScopeContainer, ...]:
++        return await LinearScopeReader(
++            call=self._call, read_issue=self.read_issue
++        ).project_milestones(project_key=project_key)
++
+     async def scope_issues(self, *, ref: ScopeRef) -> Sequence[TrackerIssue]:
+         """Resolve live container membership or an issue's whole subtree."""
+         return await LinearScopeReader(
+diff --git a/src/kodezart/adapters/linear_mcp_types.py b/src/kodezart/adapters/linear_mcp_types.py
+index 77769eb..3bdcc81 100644
+--- a/src/kodezart/adapters/linear_mcp_types.py
++++ b/src/kodezart/adapters/linear_mcp_types.py
+@@ -335,14 +335,17 @@ class LinearLabelWire(LinearNamedWire):
+ 
+ 
+ class LinearLabelListWire(LinearWireModel):
+-    """The ``list_issue_labels`` envelope — the array is keyed ``labels``.
++    """The issue, project and initiative label-definition list envelope.
+ 
+-    Each list tool names its array after ITSELF; there is no shared
+-    envelope key across them, so there is one model per tool here and no
+-    invented common one.
++    All three connected-app reads returned ``labels`` and ``hasNextPage``
++    on 2026-09-07. The project read was empty; populated project entries
++    and service-credential availability still need deployment verification.
++    A continued page must carry a cursor; the reader refuses its absence.
+     """
+ 
+     labels: list[LinearLabelWire]
++    has_next_page: bool
++    cursor: str | None = None
+ 
+ 
+ class LinearTeamWire(LinearNamedWire):
+diff --git a/src/kodezart/adapters/linear_scope_reader.py b/src/kodezart/adapters/linear_scope_reader.py
+index 2535fd6..f0c311f 100644
+--- a/src/kodezart/adapters/linear_scope_reader.py
++++ b/src/kodezart/adapters/linear_scope_reader.py
+@@ -120,6 +120,51 @@ class LinearScopeReader:
+             raise ScopeReadError("container approval identity changed", ref=ref)
+         return frozenset(labels), parent
+ 
++    async def project_milestones(
++        self, *, project_key: str
++    ) -> tuple[ScopeContainer, ...]:
++        ref = ScopeRef(kind=ScopeKind.PROJECT, key=project_key)
++        project = await self._project(project_key)
++        if project.id != project_key:
++            raise ScopeReadError(
++                "project milestone lookup returned another identity", ref=ref
++            )
++        # This tool explicitly returns all milestones and has no cursor input.
++        listed = await self._read(
++            LinearScopeMilestonesWire, _TOOL_LIST_MILESTONES, {"project": project.id}
++        )
++        keys = [item.id for item in listed.milestones]
++        if len(set(keys)) != len(keys):
++            raise ScopeReadError("project milestones repeat a native identity", ref=ref)
++        milestones: list[ScopeContainer] = []
++        for key in sorted(keys):
++            current = await self._read(
++                LinearScopeMetadataWire,
++                _TOOL_GET_MILESTONE,
++                {"project": project.id, "query": key},
++            )
++            if current.id != key:
++                raise ScopeReadError(
++                    "milestone detail returned another identity", ref=ref
++                )
++            milestones.append(
++                ScopeContainer(
++                    ref=ScopeRef(kind=ScopeKind.MILESTONE, key=key),
++                    name=current.name,
++                    description=current.description or "",
++                    url=None,
++                    parent=ref,
++                )
++            )
++        repeated = await self._read(
++            LinearScopeMilestonesWire, _TOOL_LIST_MILESTONES, {"project": project.id}
++        )
++        if sorted(item.id for item in repeated.milestones) != sorted(keys):
++            raise ScopeReadError(
++                "project milestone membership changed while reading", ref=ref
++            )
++        return tuple(milestones)
++
+     async def container_metadata(self, *, ref: ScopeRef) -> ScopeContainer:
+         if ref.kind is ScopeKind.ISSUE:
+             raise ScopeReadError(
+diff --git a/src/kodezart/adapters/linear_scope_types.py b/src/kodezart/adapters/linear_scope_types.py
+index 31f9401..9c816c2 100644
+--- a/src/kodezart/adapters/linear_scope_types.py
++++ b/src/kodezart/adapters/linear_scope_types.py
+@@ -7,7 +7,10 @@ explicit here and is refused by the adapter's metadata capability.
+ 
+ from pydantic import Field
+ 
+-from kodezart.adapters.linear_mcp_types import LinearIssueDetailWire, LinearWireModel
++from kodezart.adapters.linear_mcp_types import (
++    LinearAddressedIssueWire,
++    LinearWireModel,
++)
+ 
+ 
+ class LinearScopeIdentityWire(LinearWireModel):
+@@ -63,7 +66,7 @@ class LinearScopeInitiativeWire(LinearScopeMetadataWire):
+     sub_initiatives: list[LinearScopeIdentityWire]
+ 
+ 
+-class LinearApprovalIssueWire(LinearIssueDetailWire):
++class LinearApprovalIssueWire(LinearAddressedIssueWire):
+     """An approval read requires reported labels and issue parentage."""
+ 
+     labels: list[str]
+diff --git a/src/kodezart/composition/tracker.py b/src/kodezart/composition/tracker.py
+index ccd49c9..e89fb63 100644
+--- a/src/kodezart/composition/tracker.py
++++ b/src/kodezart/composition/tracker.py
+@@ -113,6 +113,7 @@ def build_tracker(
+                 caller=caller,
+                 queue_state_labels=operation.queue_states,
+                 issue_labels=operation.issue_labels,
++                scope_labels=operation.scope_labels,
+                 workflow_state_names=operation.workflow_states,
+                 marker_prefixes=operation.marker_prefixes,
+                 team_identifiers={
+diff --git a/src/kodezart/core/prompt_namespaces.py b/src/kodezart/core/prompt_namespaces.py
+index a968d06..6d828de 100644
+--- a/src/kodezart/core/prompt_namespaces.py
++++ b/src/kodezart/core/prompt_namespaces.py
+@@ -117,6 +117,13 @@ def operation_bindings(config: OperationConfig) -> dict[str, object]:
+         "operation_name": config.operation_name,
+         "workspace": config.workspace,
+     }
++    _bind_absentable(
++        bindings,
++        "scope_labels",
++        dict(config.scope_labels),
++        absent=not config.scope_labels,
++    )
++
+     _bind_absentable(
+         bindings,
+         "queue_states",
+diff --git a/src/kodezart/core/protocols.py b/src/kodezart/core/protocols.py
+index c877c0d..32d6375 100644
+--- a/src/kodezart/core/protocols.py
++++ b/src/kodezart/core/protocols.py
+@@ -26,6 +26,7 @@ from kodezart.types.domain.operation import (
+     LifecycleStage,
+     QueueState,
+     RecordDestination,
++    ScopeLabel,
+ )
+ from kodezart.types.domain.persist import ArtifactPersistStatus, PersistResult
+ from kodezart.types.domain.prompts import PromptKey
+@@ -881,6 +882,26 @@ class TrackerPort(TrackerCriteriaReader, Protocol):
+         """
+         ...
+ 
++    async def read_scope_labels(self, *, ref: ScopeRef) -> frozenset[ScopeLabel]:
++        """Read configured labels on this exact scope, without approval cascade."""
++        ...
++
++    async def execution_approved(self, *, issue_key: str) -> bool:
++        """Resolve the configured scope approval label from current ancestry.
++
++        Check the issue and parent issues, then its own project and initiative
++        ancestry. Milestone members use their project approval. Label presence
++        decides; there is no approval-actor carrier. Every call reads again,
++        and missing or unreadable ancestry raises instead of returning false.
++        """
++        ...
++
++    async def project_milestones(
++        self, *, project_key: str
++    ) -> tuple[ScopeContainer, ...]:
++        """Read all native project milestones without selection policy."""
++        ...
++
+     async def scope_issues(self, *, ref: ScopeRef) -> Sequence[TrackerIssue]:
+         """All issues in the scope, with their relations and parent fields.
+ 
+diff --git a/src/kodezart/domain/scope_approval.py b/src/kodezart/domain/scope_approval.py
+new file mode 100644
+index 0000000..f8d3462
+--- /dev/null
++++ b/src/kodezart/domain/scope_approval.py
+@@ -0,0 +1,67 @@
++"""Fresh approval arithmetic over explicit issue ancestry and membership."""
++
++from collections.abc import Awaitable, Callable
++
++from kodezart.domain.errors import ScopeReadError
++from kodezart.types.domain.scope import ScopeKind, ScopeRef
++from kodezart.types.domain.tracker import TrackerIssue
++
++type ReadIssueApproval = Callable[[str], Awaitable[tuple[TrackerIssue, bool]]]
++type ReadContainerApproval = Callable[
++    [ScopeRef], Awaitable[tuple[bool, ScopeRef | None]]
++]
++
++
++async def resolve_execution_approval(
++    *,
++    issue_key: str,
++    read_issue: ReadIssueApproval,
++    read_container: ReadContainerApproval,
++) -> bool:
++    """Read issue ancestors, then the addressed issue's container ancestors.
++
++    Container membership remains independent of issue parent edges. A
++    parent issue's explicit approval covers its descendants across projects;
++    its project label covers that project's actual members. Milestones add
++    no label level: their project supplies container approval.
++    """
++    requested = ScopeRef(kind=ScopeKind.ISSUE, key=issue_key)
++    seen: set[ScopeRef] = set()
++    key: str | None = issue_key
++    project: str | None = None
++    while key is not None:
++        ref = ScopeRef(kind=ScopeKind.ISSUE, key=key)
++        if ref in seen:
++            raise ScopeReadError("issue parent cycle", ref=requested)
++        seen.add(ref)
++        issue, approved = await read_issue(key)
++        if issue.issue_key != key:
++            raise ScopeReadError("issue approval identity changed", ref=requested)
++        if key == issue_key:
++            project = issue.project_id
++            if issue.milestone_key is not None and project is None:
++                raise ScopeReadError(
++                    "milestone member has no owning project", ref=requested
++                )
++            if issue.project is not None and project is None:
++                raise ScopeReadError(
++                    "project membership has no canonical key", ref=requested
++                )
++        if approved:
++            return True
++        key = issue.parent_key
++
++    ancestor = (
++        ScopeRef(kind=ScopeKind.PROJECT, key=project) if project is not None else None
++    )
++    while ancestor is not None:
++        if ancestor in seen:
++            raise ScopeReadError("container parent cycle", ref=requested)
++        seen.add(ancestor)
++        approved, parent = await read_container(ancestor)
++        if parent is not None and parent.kind is not ScopeKind.INITIATIVE:
++            raise ScopeReadError("invalid approval container parent", ref=ancestor)
++        if approved:
++            return True
++        ancestor = parent
++    return False
+diff --git a/src/kodezart/services/scope_resolution.py b/src/kodezart/services/scope_resolution.py
+new file mode 100644
+index 0000000..5a38686
+--- /dev/null
++++ b/src/kodezart/services/scope_resolution.py
+@@ -0,0 +1,15 @@
++"""The shared entry read for every producer of a scoped workflow."""
++
++from kodezart.core.protocols import TrackerPort
++from kodezart.types.domain.scope import ResolvedScope, ScopeRef
++
++
++async def resolve_scope(*, ref: ScopeRef, tracker: TrackerPort) -> ResolvedScope:
++    """Resolve current membership through the tracker port.
++
++    The adapter resolves container membership and issue descendants. The
++    graph receives the resulting issues unchanged: relations and parent
++    fields carry topology; issue prose and branch names do not.
++    """
++    issues = await tracker.scope_issues(ref=ref)
++    return ResolvedScope(ref=ref, issues=tuple(issues))
+diff --git a/src/kodezart/services/tracker_boot.py b/src/kodezart/services/tracker_boot.py
+index e597cf5..abf6877 100644
+--- a/src/kodezart/services/tracker_boot.py
++++ b/src/kodezart/services/tracker_boot.py
+@@ -78,6 +78,10 @@ def configured_mappings(config: OperationConfig) -> tuple[MappingRef, ...]:
+         MappingRef(kind=MappingKind.QUEUE_STATE, name=name, identifier=identifier)
+         for name, identifier in sorted(config.queue_states.items())
+     )
++    refs.extend(
++        MappingRef(kind=MappingKind.SCOPE_LABEL, name=name, identifier=identifier)
++        for name, identifier in sorted(config.scope_labels.items())
++    )
+     refs.extend(
+         MappingRef(kind=MappingKind.ISSUE_LABEL, name=name, identifier=identifier)
+         for name, identifier in sorted(config.issue_labels.items())
+@@ -146,6 +150,22 @@ def _issue_label_refs(
+     )
+ 
+ 
++def _scope_label_refs(
++    config: OperationConfig,
++    _containers: tuple[str | None, ...],
++) -> tuple[MappingRef, ...]:
++    """One workspace ref per scope label, shared across container kinds.
++
++    An initiative and a project have no issue-team namespace. The adapter
++    instates the same configured name in each native label namespace;
++    creating team copies would make the issue spelling ambiguous.
++    """
++    return tuple(
++        MappingRef(kind=MappingKind.SCOPE_LABEL, name=name, identifier=identifier)
++        for name, identifier in sorted(config.scope_labels.items())
++    )
++
++
+ def _document_refs(
+     config: OperationConfig,
+     _containers: tuple[str | None, ...],
+@@ -185,6 +205,7 @@ OWNED_REF_BUILDERS: dict[
+ ] = {
+     "documents": _document_refs,
+     "queue_states": _queue_state_refs,
++    "scope_labels": _scope_label_refs,
+     "issue_labels": _issue_label_refs,
+ }
+ 
+diff --git a/src/kodezart/types/domain/operation.py b/src/kodezart/types/domain/operation.py
+index 49cff94..f9b0418 100644
+--- a/src/kodezart/types/domain/operation.py
++++ b/src/kodezart/types/domain/operation.py
+@@ -413,6 +413,18 @@ def _check_chain_failures(steps: Sequence[CheckStep]) -> list[str]:
+     return failures
+ 
+ 
++class ScopeLabel(StrEnum):
++    """Scope admission vocabulary, resolved separately from the issue queue.
++
++    The operation maps each semantic member to its tracker label. Queue
++    writes continue to address only ``QueueState`` and its own mapping.
++    """
++
++    TRIAGE = "triage"
++    PROPOSED = "proposed"
++    APPROVED = "approved"
++
++
+ class OperationConfig(OperationModel):
+     """The whole operation configuration, validated structurally at load.
+ 
+@@ -460,6 +472,13 @@ class OperationConfig(OperationModel):
+         """Collect EVERY structural failure into one error, never the first."""
+         failures: list[str] = []
+ 
++        if self.scope_labels:
++            for scope_label in ScopeLabel:
++                if scope_label.value not in self.scope_labels:
++                    failures.append(
++                        f"scope_labels is missing required key {scope_label.value!r}"
++                    )
++
+         if self.principals:
+             approvers = [
+                 p for p in self.principals if PrincipalRole.APPROVER in p.roles
+@@ -748,6 +767,8 @@ class OperationConfig(OperationModel):
+ 
+     marker_prefixes: dict[str, str] = Field(default_factory=dict)
+ 
++    scope_labels: dict[str, str] = Field(default_factory=dict)
++
+ 
+ #: Which class every declared field belongs to, and therefore what boot does
+ #: with it.  A fixed partition in the MODEL rather than a per-field flag,
+@@ -782,6 +803,7 @@ FIELD_OWNERSHIP: dict[str, ConfigOwnership] = {
+     "teams": ConfigOwnership.EXTERNAL,
+     "queue_states": ConfigOwnership.OWNED,
+     "issue_labels": ConfigOwnership.OWNED,
++    "scope_labels": ConfigOwnership.OWNED,
+     "workflow_states": ConfigOwnership.EXTERNAL,
+     "marker_prefixes": ConfigOwnership.LOCAL,
+     "repos": ConfigOwnership.LOCAL,
+diff --git a/src/kodezart/types/domain/tracker.py b/src/kodezart/types/domain/tracker.py
+index 42ea987..6360867 100644
+--- a/src/kodezart/types/domain/tracker.py
++++ b/src/kodezart/types/domain/tracker.py
+@@ -119,6 +119,7 @@ class MappingKind(StrEnum):
+     USER = "user"
+     TEAM = "team"
+     QUEUE_STATE = "queue_state"
++    SCOPE_LABEL = "scope_label"
+     ISSUE_LABEL = "issue_label"
+     WORKFLOW_STATE = "workflow_state"
+     DOCUMENT = "document"
+@@ -131,7 +132,12 @@ class MappingKind(StrEnum):
+ #: a ref outside this set is ``TrackerEnsureConflictError`` everywhere, which
+ #: is what keeps an adapter and a test double from disagreeing about it.
+ INSTATABLE_MAPPING_KINDS: frozenset[MappingKind] = frozenset(
+-    {MappingKind.QUEUE_STATE, MappingKind.ISSUE_LABEL, MappingKind.DOCUMENT},
++    {
++        MappingKind.QUEUE_STATE,
++        MappingKind.SCOPE_LABEL,
++        MappingKind.ISSUE_LABEL,
++        MappingKind.DOCUMENT,
++    },
+ )
+ 
+ 
+diff --git a/tests/adapters/test_tracker_self_writes.py b/tests/adapters/test_tracker_self_writes.py
+index 86dc431..7ab30e4 100644
+--- a/tests/adapters/test_tracker_self_writes.py
++++ b/tests/adapters/test_tracker_self_writes.py
+@@ -62,6 +62,7 @@ def _server() -> FakeLinearMcpServer:
+ 
+ def _tracker(server: McpToolCaller, ledger: SelfWriteLedger) -> LinearMcpTracker:
+     return LinearMcpTracker(
++        scope_labels={},
+         issue_labels={},
+         marker_prefixes=MARKER_PREFIXES,
+         caller=server,
+@@ -170,6 +171,7 @@ async def test_a_read_back_that_fails_does_not_fail_the_write_it_recorded() -> N
+     server = _server()
+     ledger = SelfWriteLedger()
+     tracker = LinearMcpTracker(
++        scope_labels={},
+         issue_labels={},
+         marker_prefixes=MARKER_PREFIXES,
+         caller=_ReadBackGone(server),
+diff --git a/tests/domain/test_scope_label_config.py b/tests/domain/test_scope_label_config.py
+new file mode 100644
+index 0000000..9aed8f2
+--- /dev/null
++++ b/tests/domain/test_scope_label_config.py
+@@ -0,0 +1,120 @@
++"""Scope-label configuration stays open and validates every required member."""
++
++import json
++from pathlib import Path
++
++import pytest
++from pydantic import ValidationError
++
++from kodezart.adapters.toml_operation_config import load_operation_config
++from kodezart.core.errors import OperationConfigError
++from kodezart.types.domain.operation import OperationConfig
++
++SCOPE_LABELS = {
++    "triage": "needs a scope assessment",
++    "proposed": "scope ready for a decision",
++    "approved": "authorized implementation",
++}
++
++
++def _write_config(tmp_path: Path, labels: dict[str, str] | None) -> Path:
++    lines = [
++        'operation_name = "fixture"',
++        'workspace = "fixture-workspace"',
++    ]
++    if labels is not None:
++        lines.extend(("", "[scope_labels]"))
++        lines.extend(
++            f"{json.dumps(key)} = {json.dumps(value)}"
++            for key, value in sorted(labels.items())
++        )
++    path = tmp_path / "operation.toml"
++    path.write_text("\n".join(lines), encoding="utf-8")
++    return path
++
++
++@pytest.mark.parametrize("labels", [None, {}], ids=["absent", "empty"])
++def test_absent_or_empty_scope_labels_load(
++    tmp_path: Path,
++    labels: dict[str, str] | None,
++) -> None:
++    config = load_operation_config(_write_config(tmp_path, labels))
++
++    assert config.scope_labels == {}
++    assert config.queue_states == {}
++
++
++def test_configured_scope_label_names_are_preserved_on_load(tmp_path: Path) -> None:
++    config = load_operation_config(_write_config(tmp_path, SCOPE_LABELS))
++
++    assert config.scope_labels == SCOPE_LABELS
++    assert config.queue_states == {}
++    assert config.model_dump()["scope_labels"] == SCOPE_LABELS
++
++
++def test_scope_labels_accept_an_additional_configuration_member(tmp_path: Path) -> None:
++    labels = {**SCOPE_LABELS, "paused": "awaiting scope maintenance"}
++    config = load_operation_config(_write_config(tmp_path, labels))
++
++    assert config.scope_labels == labels
++    assert config.model_dump()["scope_labels"] == labels
++
++
++@pytest.mark.parametrize("missing", ["triage", "proposed", "approved"])
++def test_each_missing_scope_label_is_a_typed_load_error(
++    tmp_path: Path,
++    missing: str,
++) -> None:
++    labels = {key: value for key, value in SCOPE_LABELS.items() if key != missing}
++
++    with pytest.raises(OperationConfigError) as caught:
++        load_operation_config(_write_config(tmp_path, labels))
++
++    assert len(caught.value.failures) == 1
++    assert (
++        f"scope_labels is missing required key {missing!r}" in caught.value.failures[0]
++    )
++
++
++def test_populated_mapping_reports_every_missing_scope_label(tmp_path: Path) -> None:
++    with pytest.raises(OperationConfigError) as caught:
++        load_operation_config(
++            _write_config(tmp_path, {"paused": "awaiting scope maintenance"}),
++        )
++
++    assert len(caught.value.failures) == len(SCOPE_LABELS)
++    for member in SCOPE_LABELS:
++        assert any(
++            f"scope_labels is missing required key {member!r}" in failure
++            for failure in caught.value.failures
++        )
++
++
++def test_scope_and_queue_structure_failures_are_reported_together() -> None:
++    with pytest.raises(ValidationError) as caught:
++        OperationConfig(
++            operation_name="fixture",
++            workspace="fixture-workspace",
++            scope_labels={"triage": SCOPE_LABELS["triage"]},
++            queue_states={"triage": "needs issue assessment"},
++        )
++
++    message = str(caught.value)
++    assert "scope_labels is missing required key 'proposed'" in message
++    assert "scope_labels is missing required key 'approved'" in message
++    assert "queue_states is missing required key 'approved'" in message
++
++
++def test_scope_label_values_remain_strings() -> None:
++    with pytest.raises(ValidationError) as caught:
++        OperationConfig.model_validate(
++            {
++                "operation_name": "fixture",
++                "workspace": "fixture-workspace",
++                "scope_labels": {**SCOPE_LABELS, "approved": 1},
++            },
++        )
++
++    (failure,) = caught.value.errors()
++    assert failure["loc"] == ("scope_labels", "approved")
++    assert failure["type"] == "string_type"
+diff --git a/tests/domain/test_scope_labels.py b/tests/domain/test_scope_labels.py
+new file mode 100644
+index 0000000..27caaa6
+--- /dev/null
++++ b/tests/domain/test_scope_labels.py
+@@ -0,0 +1,36 @@
++"""Scope admission and issue queue state have independent vocabularies."""
++
++import pytest
++
++from kodezart.types.domain.operation import QueueState, ScopeLabel
++
++
++@pytest.mark.parametrize("member", ["triage", "proposed", "approved"])
++def test_scope_admission_has_its_own_type(member: str) -> None:
++    scope_member = ScopeLabel(member)
++    queue_member = QueueState(member)
++    assert type(scope_member) is ScopeLabel
++    assert type(queue_member) is QueueState
++    assert not isinstance(scope_member, QueueState)
++    assert not isinstance(queue_member, ScopeLabel)
++
++
++@pytest.mark.parametrize("member", ["done", "decision", "scope:approved"])
++def test_scope_labels_refuse_queue_only_and_vendor_members(member: str) -> None:
++    with pytest.raises(ValueError):
++        ScopeLabel(member)
++
++
++def test_existing_issue_queue_vocabulary_is_preserved() -> None:
++    assert {member.value for member in QueueState} == {
++        "triage",
++        "proposed",
++        "approved",
++        "done",
++        "decision",
++    }
++    assert {member.value for member in ScopeLabel} == {
++        "triage",
++        "proposed",
++        "approved",
++    }
+diff --git a/tests/fakes.py b/tests/fakes.py
+index bbb0f9f..ef5f77d 100644
+--- a/tests/fakes.py
++++ b/tests/fakes.py
+@@ -45,6 +45,7 @@ from kodezart.domain.errors import (
+     TransientAPIError,
+     WorkspaceError,
+ )
++from kodezart.domain.scope_approval import resolve_execution_approval
+ from kodezart.domain.surface_lease import live_conflict, surface_address
+ from kodezart.domain.tracker_writes import (
+     comment_under_marker,
+@@ -98,6 +99,7 @@ from kodezart.types.domain.operation import (
+     LifecycleStage,
+     QueueState,
+     RecordDestination,
++    ScopeLabel,
+ )
+ from kodezart.types.domain.persist import ArtifactPersistStatus, PersistResult
+ from kodezart.types.domain.prompts import PromptKey
+@@ -2280,6 +2282,9 @@ class FakeLinearMcpServer:
+         users: Sequence[str] = (),
+         teams: Sequence[str] = (),
+         labels: Sequence[str] = (),
++        project_labels: Sequence[str] = (),
++        initiative_labels: Sequence[str] = (),
++        label_page_size: int | None = None,
+         team_labels: Mapping[str, Sequence[str]] | None = None,
+         statuses: Mapping[str, Sequence[str]] | None = None,
+         state_types: Mapping[str, str] | None = None,
+@@ -2306,6 +2311,9 @@ class FakeLinearMcpServer:
+         #: name is unique per CONTAINER and not per workspace: two boards
+         #: routinely carry their own copy of one queue member (KOD-167).
+         self.labels: list[str] = list(labels)
++        self.project_labels: list[str] = list(project_labels)
++        self.initiative_labels: list[str] = list(initiative_labels)
++        self.label_page_size = label_page_size
+         self.team_labels: dict[str, list[str]] = {
+             container: list(names) for container, names in (team_labels or {}).items()
+         }
+@@ -2717,7 +2725,75 @@ class FakeLinearMcpServer:
+                 self._label_entry(name, container)
+                 for name in self.team_labels.get(container, [])
+             )
+-        return {"labels": entries, "hasNextPage": False}
++        return self._label_page(entries, arguments)
++
++    def _label_page(
++        self,
++        entries: Sequence[Mapping[str, object]],
++        arguments: Mapping[str, object],
++    ) -> Mapping[str, object]:
++        """Synthetic continuation pages under the declared list contract."""
++        name = arguments.get("name")
++        selected = [entry for entry in entries if name is None or entry["name"] == name]
++        start = int(str(arguments.get("cursor", 0)))
++        size = self.label_page_size
++        limit = arguments.get("limit")
++        if isinstance(limit, int):
++            size = limit if size is None else min(size, limit)
++        end = len(selected) if size is None else start + size
++        more = end < len(selected)
++        result: dict[str, object] = {
++            "labels": selected[start:end],
++            "hasNextPage": more,
++        }
++        if more:
++            result["cursor"] = str(end)
++        return result
++
++    def _tool_list_project_labels(
++        self,
++        arguments: Mapping[str, object],
++    ) -> Mapping[str, object]:
++        return self._label_page(
++            [self._label_entry(name, "project") for name in self.project_labels],
++            arguments,
++        )
++
++    def _tool_list_initiative_labels(
++        self,
++        arguments: Mapping[str, object],
++    ) -> Mapping[str, object]:
++        return self._label_page(
++            [self._label_entry(name, "initiative") for name in self.initiative_labels],
++            arguments,
++        )
++
++    def _tool_save_project_label(
++        self,
++        arguments: Mapping[str, object],
++    ) -> Mapping[str, object]:
++        """Creation only: the adapter has no reason to update a definition."""
++        if "id" in arguments:
++            msg = "scope mapping must preserve existing project label definitions"
++            raise AssertionError(msg)
++        name = str(arguments["name"])
++        if name in self.project_labels:
++            msg = f"fake project label namespace already carries {name!r}"
++            raise LookupError(msg)
++        self.project_labels.append(name)
++        # Deliberately no guessed create response; the adapter must re-list.
++        return {}
++
++    def _tool_create_initiative_label(
++        self,
++        arguments: Mapping[str, object],
++    ) -> Mapping[str, object]:
++        name = str(arguments["name"])
++        if name in self.initiative_labels:
++            msg = f"fake initiative label namespace already carries {name!r}"
++            raise LookupError(msg)
++        self.initiative_labels.append(name)
++        return {}
+ 
+     def _label_entry(self, name: str, container: str | None) -> Mapping[str, object]:
+         """One label entry, its id distinct per CONTAINER rather than per name.
+@@ -2910,10 +2986,12 @@ class FakeTrackerPort:
+         issues: Sequence[TrackerIssue] = (),
+         scope_containers: Sequence[ScopeContainer] = (),
+         scope_memberships: Mapping[ScopeRef, Sequence[str]] | None = None,
++        scope_label_members: Mapping[ScopeRef, frozenset[ScopeLabel]] | None = None,
+         assets: Mapping[str, Sequence[TrackerAsset]] | None = None,
+         documents: Mapping[str, str] | None = None,
+         document_titles: Mapping[str, str] | None = None,
+         known_identifiers: Sequence[str] = (),
++        scope_label_identifiers: Sequence[str] = (),
+         recorded_work_refs: Mapping[str, Sequence[WorkRef]] | None = None,
+         recorded_base_specs: Mapping[str, BaseSpec] | None = None,
+         recorded_repositories: Mapping[str, str] | None = None,
+@@ -2931,6 +3009,7 @@ class FakeTrackerPort:
+         self.scope_memberships: dict[ScopeRef, tuple[str, ...]] = {
+             ref: tuple(keys) for ref, keys in (scope_memberships or {}).items()
+         }
++        self.scope_label_members = dict(scope_label_members or {})
+         self.recorded_work_refs: dict[str, list[WorkRef]] = {
+             key: list(value) for key, value in (recorded_work_refs or {}).items()
+         }
+@@ -2972,6 +3051,7 @@ class FakeTrackerPort:
+         #: so what a consumer spends on reads is only visible as a list of
+         #: them (KOD-173).
+         self.issue_reads: list[str] = []
++        self.issue_writes: list[tuple[str, str | None, str | None]] = []
+         #: Every claim this double GRANTED, in order — kept past the release
+         #: that deletes the claim itself, so a claim/release pair spent and
+         #: undone is still visible as the write it was (KOD-173).
+@@ -2999,6 +3079,8 @@ class FakeTrackerPort:
+         #: one of them would leave the other untestable.
+         self.document_titles: dict[str, str] = dict(document_titles or {})
+         self.known_identifiers: set[str] = set(known_identifiers)
++        #: Scope definitions must exist in all native namespaces.
++        self.scope_label_identifiers: set[str] = set(scope_label_identifiers)
+         #: Every container each INSTATED value is defined in, ``None`` being
+         #: the workspace itself.  A SET per value, because one name is
+         #: defined once per container and a two-board operation carries its
+@@ -3006,7 +3088,8 @@ class FakeTrackerPort:
+         #: knows about is workspace-level, which is what a listing carrying
+         #: no container field reports.
+         self.mapping_containers: dict[str, set[str | None]] = {
+-            identifier: {None} for identifier in self.known_identifiers
++            identifier: {None}
++            for identifier in self.known_identifiers | self.scope_label_identifiers
+         }
+         self._clock: Callable[[], datetime] = clock
+         self._sequence: int = 0
+@@ -3152,6 +3235,7 @@ class FakeTrackerPort:
+         title: str | None = None,
+         body: str | None = None,
+     ) -> TrackerIssue:
++        self.issue_writes.append((issue_key, title, body))
+         issue = self.issues[issue_key]
+         updated = issue.model_copy(
+             update={
+@@ -3365,9 +3449,23 @@ class FakeTrackerPort:
+         refs: Sequence[MappingRef],
+     ) -> Sequence[MappingRef]:
+         await asyncio.sleep(0)
+-        return tuple(
+-            ref for ref in refs if ref.identifier not in self.known_identifiers
+-        )
++        unresolved: list[MappingRef] = []
++        for ref in refs:
++            if ref.kind is MappingKind.SCOPE_LABEL:
++                identifier = ref.identifier
++                if (
++                    identifier is None
++                    or identifier not in self.scope_label_identifiers
++                    or ref.scope is not None
++                    or any(
++                        container is not None
++                        for container in self.mapping_containers.get(identifier, set())
++                    )
++                ):
++                    unresolved.append(ref)
++            elif ref.identifier not in self.known_identifiers:
++                unresolved.append(ref)
++        return tuple(unresolved)
+ 
+     async def ensure_mappings(
+         self,
+@@ -3394,6 +3492,9 @@ class FakeTrackerPort:
+             if ref.kind is MappingKind.DOCUMENT:
+                 outcomes.append(self._ensure_document(ref))
+                 continue
++            if ref.kind is MappingKind.SCOPE_LABEL:
++                outcomes.append(self._ensure_scope_label(ref))
++                continue
+             identifier = ref.identifier
+             if identifier is None:
+                 raise TrackerEnsureConflictError(
+@@ -3439,6 +3540,34 @@ class FakeTrackerPort:
+             )
+         return tuple(outcomes)
+ 
++    def _ensure_scope_label(self, ref: MappingRef) -> MappingOutcome:
++        identifier = ref.identifier
++        if identifier is None or ref.scope is not None:
++            raise TrackerEnsureConflictError(
++                "a scope label requires its configured identifier and workspace scope",
++                entry=ref.describe(),
++            )
++        held = sorted(
++            repr(container)
++            for container in self.mapping_containers.get(identifier, set())
++            if container is not None
++        )
++        if held:
++            raise TrackerEnsureConflictError(
++                "a workspace scope label conflicts with an existing team label; "
++                f"found {', '.join(held)}",
++                entry=ref.describe(),
++            )
++        action = (
++            EnsureAction.ADOPTED
++            if identifier in self.scope_label_identifiers
++            else EnsureAction.CREATED
++        )
++        self.scope_label_identifiers.add(identifier)
++        self.known_identifiers.add(identifier)
++        self.mapping_containers.setdefault(identifier, set()).add(None)
++        return MappingOutcome(ref=ref, action=action, identifier=identifier)
++
+     def _ensure_document(self, ref: MappingRef) -> MappingOutcome:
+         """The document arm of the ensure contract, held identically here.
+ 
+@@ -3534,6 +3663,73 @@ class FakeTrackerPort:
+                 current = selected[current].parent_key
+         return tuple(selected.values())
+ 
++    async def project_milestones(
++        self, *, project_key: str
++    ) -> tuple[ScopeContainer, ...]:
++        ref = ScopeRef(kind=ScopeKind.PROJECT, key=project_key)
++        project = await self.container_metadata(ref=ref)
++        if project.ref != ref:
++            raise ScopeReadError("project identity changed", ref=ref)
++        return tuple(
++            sorted(
++                [
++                    await self.container_metadata(ref=key)
++                    for key, value in self.scope_containers.items()
++                    if key.kind is ScopeKind.MILESTONE and value.parent == ref
++                ],
++                key=lambda value: value.ref.key,
++            )
++        )
++
++    async def execution_approved(self, *, issue_key: str) -> bool:
++        _, approved = await self._read_execution_approval(issue_key=issue_key)
++        return approved
++
++    async def _read_execution_approval(
++        self, *, issue_key: str
++    ) -> tuple[TrackerIssue, bool]:
++        async def hydrate(key: str) -> tuple[TrackerIssue, bool]:
++            ref = ScopeRef(kind=ScopeKind.ISSUE, key=key)
++            if key not in self.issues:
++                raise ScopeReadError("issue is missing", ref=ref)
++            return (
++                await self.read_issue(issue_key=key),
++                ScopeLabel.APPROVED in self.scope_label_members.get(ref, frozenset()),
++            )
++
++        subject = await hydrate(issue_key)
++
++        async def read_issue(key: str) -> tuple[TrackerIssue, bool]:
++            return subject if key == issue_key else await hydrate(key)
++
++        async def read_container(ref: ScopeRef) -> tuple[bool, ScopeRef | None]:
++            await asyncio.sleep(0)
++            if ref not in self.scope_containers:
++                raise ScopeReadError("container is missing", ref=ref)
++            container = self.scope_containers[ref]
++            if container.ref != ref:
++                raise ScopeReadError("container approval identity changed", ref=ref)
++            return (
++                ScopeLabel.APPROVED in self.scope_label_members.get(ref, frozenset()),
++                container.parent,
++            )
++
++        approved = await resolve_execution_approval(
++            issue_key=issue_key,
++            read_issue=read_issue,
++            read_container=read_container,
++        )
++        return subject[0], approved
++
++    async def read_scope_labels(self, *, ref: ScopeRef) -> frozenset[ScopeLabel]:
++        if ref.kind is ScopeKind.ISSUE:
++            issue = await self.read_issue(issue_key=ref.key)
++            if issue.issue_key != ref.key:
++                raise ScopeReadError("scope label identity changed", ref=ref)
++        else:
++            await self.container_metadata(ref=ref)
++        return self.scope_label_members.get(ref, frozenset())
++
+     async def container_metadata(self, *, ref: ScopeRef) -> ScopeContainer:
+         if ref.kind is ScopeKind.ISSUE:
+             raise ScopeReadError(
+diff --git a/tests/prompts/test_operation_config.py b/tests/prompts/test_operation_config.py
+index 0cc82df..e6f59d0 100644
+--- a/tests/prompts/test_operation_config.py
++++ b/tests/prompts/test_operation_config.py
+@@ -137,6 +137,7 @@ def test_all_fields_are_present_with_the_stated_types() -> None:
+         "agent_identities",
+         "teams",
+         "queue_states",
++        "scope_labels",
+         "issue_labels",
+         "workflow_states",
+         "marker_prefixes",
+@@ -152,6 +153,7 @@ def test_all_fields_are_present_with_the_stated_types() -> None:
+     assert isinstance(config.operation_name, str)
+     assert isinstance(config.workspace, str)
+     assert isinstance(config.queue_states, dict)
++    assert isinstance(config.scope_labels, dict)
+     assert set(config.workflow_states) == set(LifecycleStage)
+     assert config.initiatives[0].target_date == date(2026, 12, 31)
+     assert config.repos[0].checks
+@@ -325,6 +327,7 @@ def test_no_label_or_status_literal_lives_in_source() -> None:
+     src = REPO_ROOT / "src" / "kodezart"
+     labels = {
+         *example_config().queue_states.values(),
++        *example_config().scope_labels.values(),
+         *example_config().workflow_states.values(),
+     }
+     for path in src.rglob("*.py"):
+@@ -634,7 +637,10 @@ def test_placeholder_mapping_is_total_in_both_directions() -> None:
+     # Direction 2 — read off the MODEL, never off the table's own rows, so
+     # the mapping can no longer be checked against what it was derived from.
+     native = dict(markdown_rows("## Native OperationConfig consumers"))
+-    assert native == {"issue_labels": "composition/tracker.py::build_tracker"}
++    assert native == {
++        "issue_labels": "composition/tracker.py::build_tracker",
++        "scope_labels": "composition/tracker.py::build_tracker",
++    }
+     assert set(mapped).isdisjoint(native)
+     assert set(mapped.values()) | set(native) == set(OperationConfig.model_fields)
+ 
+diff --git a/tests/prompts/test_scope_label_bindings.py b/tests/prompts/test_scope_label_bindings.py
+new file mode 100644
+index 0000000..b82cfc7
+--- /dev/null
++++ b/tests/prompts/test_scope_label_bindings.py
+@@ -0,0 +1,49 @@
++"""Scope admission names reach prompts through the operation configuration."""
++
++import pytest
++
++from kodezart.core.errors import PromptRenderError
++from kodezart.core.prompt_namespaces import operation_bindings
++from kodezart.core.prompt_rendering import render_template
++from kodezart.types.domain.operation import OperationConfig
++
++
++def test_configured_scope_names_and_extra_members_reach_the_render() -> None:
++    config = OperationConfig(
++        operation_name="fixture",
++        workspace="fixture-workspace",
++        scope_labels={
++            "triage": "assess scope",
++            "proposed": "await authorization",
++            "approved": "authorized scope",
++            "paused": "await maintenance",
++        },
++    )
++
++    rendered = render_template(
++        "{{scope_labels.approved}} / {{scope_labels.paused}}",
++        operation_bindings(config),
++    )
++
++    assert rendered == "authorized scope / await maintenance"
++
++
++def test_absent_scope_mapping_has_an_explicit_render_arm() -> None:
++    config = OperationConfig(operation_name="fixture", workspace="fixture-workspace")
++
++    rendered = render_template(
++        "{{#if scope_labels}}{{scope_labels.approved}}{{/if}}"
++        "{{#if scope_labels_absent}}scope admission is not configured{{/if}}",
++        operation_bindings(config),
++    )
++
++    assert rendered == "scope admission is not configured"
++
++
++def test_using_an_absent_scope_member_refuses_with_its_name() -> None:
++    config = OperationConfig(operation_name="fixture", workspace="fixture-workspace")
++
++    with pytest.raises(PromptRenderError) as caught:
++        render_template("{{scope_labels.approved}}", operation_bindings(config))
++
++    assert caught.value.missing == ("scope_labels.approved",)
+diff --git a/tests/services/test_scope_resolution.py b/tests/services/test_scope_resolution.py
+new file mode 100644
+index 0000000..17f1f1b
+--- /dev/null
++++ b/tests/services/test_scope_resolution.py
+@@ -0,0 +1,71 @@
++"""The shared resolver preserves the tracker's scope and structural edges."""
++
++from collections.abc import Sequence
++
++import pytest
++
++from kodezart.core.errors import TrackerProtocolError
++from kodezart.services.scope_resolution import resolve_scope
++from kodezart.types.domain.scope import ScopeKind, ScopeRef
++from kodezart.types.domain.tracker import IssueRelationKind, TrackerIssue
++from tests.fakes import FakeTrackerPort, make_tracker_issue
++
++
++class ScopeFixtureTracker(FakeTrackerPort):
++    """An explicitly resolved port answer, independent of adapter arithmetic."""
++
++    def __init__(self, *, ref: ScopeRef, issues: Sequence[TrackerIssue]) -> None:
++        super().__init__(issues=issues)
++        self.ref = ref
++        self.resolved_issues = list(issues)
++
++    async def scope_issues(self, *, ref: ScopeRef) -> Sequence[TrackerIssue]:
++        assert ref == self.ref
++        return self.resolved_issues
++
++
++@pytest.mark.parametrize("kind", tuple(ScopeKind))
++async def test_each_entry_kind_preserves_membership_and_structural_edges(
++    kind: ScopeKind,
++) -> None:
++    ref = ScopeRef(kind=kind, key="ENG-1" if kind is ScopeKind.ISSUE else "scope")
++    root = make_tracker_issue("ENG-1")
++    child = make_tracker_issue(
++        "ENG-2",
++        parent_key="ENG-1",
++        blocked_by=("ENG-3",),
++        body="Parent: ENG-98; blockedBy: ENG-99; branch: feature/ENG-100",
++    )
++    tracker = ScopeFixtureTracker(ref=ref, issues=(root, child))
++
++    resolved = await resolve_scope(ref=ref, tracker=tracker)
++
++    assert resolved.ref == ref
++    assert resolved.issues == (root, child)
++    assert resolved.issues[1].parent_key == "ENG-1"
++    assert tuple(
++        (edge.kind, edge.issue_key) for edge in resolved.issues[1].relations
++    ) == ((IssueRelationKind.BLOCKED_BY, "ENG-3"),)
++
++    tracker.resolved_issues.clear()
++    assert resolved.issues == (root, child)
++
++
++async def test_scope_read_failure_does_not_turn_into_an_empty_scope() -> None:
++    error = TrackerProtocolError(
++        "scope read failed",
++        tool="fixture-scope-read",
++        detail="requested membership is unavailable",
++    )
++
++    class FailingTracker(FakeTrackerPort):
++        async def scope_issues(self, *, ref: ScopeRef) -> Sequence[TrackerIssue]:
++            raise error
++
++    with pytest.raises(TrackerProtocolError) as caught:
++        await resolve_scope(
++            ref=ScopeRef(kind=ScopeKind.PROJECT, key="scope"),
++            tracker=FailingTracker(),
++        )
++
++    assert caught.value is error
+diff --git a/tests/tracker/conftest.py b/tests/tracker/conftest.py
+index d4f3952..7a5aa17 100644
+--- a/tests/tracker/conftest.py
++++ b/tests/tracker/conftest.py
+@@ -240,10 +240,12 @@ def fixture_server(
+ def linear_over_fake_mcp(
+     server: FakeLinearMcpServer,
+     *,
++    scope_labels: Mapping[str, str] | None = None,
+     clock: Callable[[], datetime] = _frozen_now,
+ ) -> TrackerPort:
+     """The shipped Linear adapter, dialing the in-process fake MCP server."""
+     return LinearMcpTracker(
++        scope_labels=scope_labels if scope_labels is not None else {},
+         issue_labels={},
+         marker_prefixes=MARKER_PREFIXES,
+         caller=server,
+diff --git a/tests/tracker/connected_app_label_contract.py b/tests/tracker/connected_app_label_contract.py
+new file mode 100644
+index 0000000..2e349cb
+--- /dev/null
++++ b/tests/tracker/connected_app_label_contract.py
+@@ -0,0 +1,70 @@
++"""Label contracts observed through the connected app on 2026-09-07.
++
++This is NOT a fresh capture using the operation's service credential.
++That credential was unavailable. In particular, ``save_project_label``
++was absent from the 2026-08-25 service roster; service-authenticated boot
++still needs verification. These declarations establish a real public
++contract for implementation and synthetic conformance, not deployment
++compatibility. No create calls or entity assignments were performed.
++
++Read envelopes below are captures, with identifiers replaced by fixture
++identifiers. The project response was empty: neither a populated project
++entry nor a create-response shape was measured by this exercise.
++"""
++
++from collections.abc import Mapping
++
++CONNECTED_APP_LABEL_ARGUMENTS: Mapping[str, frozenset[str]] = {
++    "list_issue_labels": frozenset({"cursor", "limit", "name", "orderBy", "team"}),
++    "list_project_labels": frozenset({"cursor", "limit", "name", "orderBy"}),
++    "list_initiative_labels": frozenset({"cursor", "limit", "name", "orderBy"}),
++    "create_issue_label": frozenset(
++        {"name", "color", "description", "isGroup", "parent", "teamId"},
++    ),
++    "create_initiative_label": frozenset(
++        {"name", "color", "description", "isGroup", "parent"},
++    ),
++    "save_project_label": frozenset(
++        {"id", "name", "color", "description", "isGroup", "parent"},
++    ),
++}
++
++CONNECTED_APP_LABEL_REQUIRED: Mapping[str, frozenset[str]] = {
++    "list_issue_labels": frozenset(),
++    "list_project_labels": frozenset(),
++    "list_initiative_labels": frozenset(),
++    "create_issue_label": frozenset({"name"}),
++    "create_initiative_label": frozenset({"name"}),
++    "save_project_label": frozenset(),
++}
++
++CONNECTED_APP_LABEL_TOOLS = frozenset(CONNECTED_APP_LABEL_ARGUMENTS)
++
++CONNECTED_ISSUE_LABELS: Mapping[str, object] = {
++    "labels": [
++        {
++            "id": "captured-issue-label",
++            "name": "scope:approved",
++            "color": "#f7c8c1",
++            "description": None,
++        },
++    ],
++    "hasNextPage": False,
++}
++
++CONNECTED_INITIATIVE_LABELS: Mapping[str, object] = {
++    "labels": [
++        {
++            "id": "captured-initiative-label",
++            "name": "scope:approved",
++            "color": "#f7c8c1",
++            "description": "sanitized captured description",
++        },
++    ],
++    "hasNextPage": False,
++}
++
++CONNECTED_PROJECT_LABELS: Mapping[str, object] = {
++    "labels": [],
++    "hasNextPage": False,
++}
+diff --git a/tests/tracker/native_read_fixtures.py b/tests/tracker/native_read_fixtures.py
+index 246c5f5..0f18c34 100644
+--- a/tests/tracker/native_read_fixtures.py
++++ b/tests/tracker/native_read_fixtures.py
+@@ -20,6 +20,7 @@ LABELS = {
+ def tracker_over(server, *, issue_labels=None):
+     return LinearMcpTracker(
+         caller=server,
++        scope_labels={},
+         issue_labels=LABELS if issue_labels is None else issue_labels,
+         marker_prefixes=MARKER_PREFIXES,
+         queue_state_labels=QUEUE_STATE_LABELS,
+diff --git a/tests/tracker/test_comment_expected_independent.py b/tests/tracker/test_comment_expected_independent.py
+index bb1d4fe..303c086 100644
+--- a/tests/tracker/test_comment_expected_independent.py
++++ b/tests/tracker/test_comment_expected_independent.py
+@@ -51,6 +51,7 @@ async def test_known_unissued_retry_revalidates_changed_expected_comment(
+ ):
+     server = fixture_server()
+     tracker = LinearMcpTracker(
++        scope_labels={},
+         issue_labels={},
+         marker_prefixes=fixture.MARKER_PREFIXES,
+         caller=server,
+diff --git a/tests/tracker/test_linear_mcp_tracker.py b/tests/tracker/test_linear_mcp_tracker.py
+index 660629c..a3d5997 100644
+--- a/tests/tracker/test_linear_mcp_tracker.py
++++ b/tests/tracker/test_linear_mcp_tracker.py
+@@ -81,6 +81,7 @@ def tracker_over(
+     kwargs: dict[str, object] = {
+         "caller": server,
+         "issue_labels": {},
++        "scope_labels": {},
+         "marker_prefixes": MARKER_PREFIXES,
+         "queue_state_labels": QUEUE_STATE_LABELS,
+         "workflow_state_names": WORKFLOW_STATE_NAMES,
+diff --git a/tests/tracker/test_linear_tool_arguments.py b/tests/tracker/test_linear_tool_arguments.py
+index a3723f8..5e7aa53 100644
+--- a/tests/tracker/test_linear_tool_arguments.py
++++ b/tests/tracker/test_linear_tool_arguments.py
+@@ -42,6 +42,10 @@ from tests.tracker.conftest import (
+     fixture_server,
+     linear_over_fake_mcp,
+ )
++from tests.tracker.connected_app_label_contract import (
++    CONNECTED_APP_LABEL_ARGUMENTS,
++    CONNECTED_APP_LABEL_REQUIRED,
++)
+ 
+ 
+ @dataclass(frozen=True)
+@@ -290,6 +294,20 @@ LIVE_INPUT_SCHEMAS: Mapping[str, ToolSchema] = {
+ KNOWN_UNMET_REQUIREMENTS: Mapping[str, frozenset[str]] = {}
+ 
+ 
++#: Original service capture plus separately measured connected-app label
++#: declarations. The latter do not establish service credential access.
++DECLARED_INPUT_SCHEMAS: Mapping[str, ToolSchema] = {
++    **LIVE_INPUT_SCHEMAS,
++    **{
++        tool: ToolSchema(
++            properties=properties,
++            required=CONNECTED_APP_LABEL_REQUIRED[tool],
++        )
++        for tool, properties in CONNECTED_APP_LABEL_ARGUMENTS.items()
++    },
++}
++
++
+ async def sent_arguments() -> Mapping[str, set[str]]:
+     """Every argument key the adapter hands the transport, by tool.
+ 
+@@ -358,6 +376,11 @@ async def sent_arguments() -> Mapping[str, set[str]]:
+                 identifier="queue:brand-new",
+                 scope="fixture-team",
+             ),
++            MappingRef(
++                kind=MappingKind.SCOPE_LABEL,
++                name="approved",
++                identifier="scope:brand-new",
++            ),
+             MappingRef(
+                 kind=MappingKind.DOCUMENT,
+                 name="a document nobody holds",
+@@ -380,7 +403,7 @@ async def test_the_sweep_reaches_every_tool_the_adapter_names(
+     sent: Mapping[str, set[str]],
+ ) -> None:
+     """A vacuous sweep would pass every assertion below it."""
+-    assert set(sent) == set(LIVE_INPUT_SCHEMAS)
++    assert set(sent) == set(DECLARED_INPUT_SCHEMAS)
+ 
+ 
+ async def test_every_argument_key_is_a_declared_property(
+@@ -388,9 +411,9 @@ async def test_every_argument_key_is_a_declared_property(
+ ) -> None:
+     """The check that would have caught the boot failure before sending it."""
+     undeclared: dict[str, Sequence[str]] = {
+-        tool: sorted(keys - LIVE_INPUT_SCHEMAS[tool].properties)
++        tool: sorted(keys - DECLARED_INPUT_SCHEMAS[tool].properties)
+         for tool, keys in sorted(sent.items())
+-        if keys - LIVE_INPUT_SCHEMAS[tool].properties
++        if keys - DECLARED_INPUT_SCHEMAS[tool].properties
+     }
+     assert undeclared == {}
+ 
+@@ -406,9 +429,9 @@ async def test_every_required_argument_is_sent(
+     a new omission fails here instead of on the workspace.
+     """
+     unmet = {
+-        tool: LIVE_INPUT_SCHEMAS[tool].required - keys
++        tool: DECLARED_INPUT_SCHEMAS[tool].required - keys
+         for tool, keys in sorted(sent.items())
+-        if LIVE_INPUT_SCHEMAS[tool].required - keys
++        if DECLARED_INPUT_SCHEMAS[tool].required - keys
+     }
+     assert unmet == {}
+     assert KNOWN_UNMET_REQUIREMENTS == {}
+diff --git a/tests/tracker/test_linear_tool_roster.py b/tests/tracker/test_linear_tool_roster.py
+index 61c0ca9..c65de2f 100644
+--- a/tests/tracker/test_linear_tool_roster.py
++++ b/tests/tracker/test_linear_tool_roster.py
+@@ -1,4 +1,4 @@
+-"""Nothing under ``src/`` calls a tool the live server does not have (KOD-144).
++"""Every tracker tool has a measured public declaration (KOD-144, KOD-379).
+ 
+ The roster below is the vendor server's whole advertised tool list, probed
+ on 2026-08-25 with the operation's own credential: sixty names, and
+@@ -12,11 +12,18 @@ A green suite over a fake is exactly what let a dead tool call ship, so
+ this module asserts against the roster rather than against any double.
+ The roster is a capture: it changes when the server does, and only a fresh
+ probe may change it.
++
++The separately attributed September connected-app label declarations
++extend the known contract. They do not prove that the operation's service
++credential can call the newer project-label creator. The August capture
++below stays unchanged; deployment compatibility remains unverified.
+ """
+ 
+ import re
+ from pathlib import Path
+ 
++from tests.tracker.connected_app_label_contract import CONNECTED_APP_LABEL_TOOLS
++
+ #: Every tool the live server advertises. Measured, not documented.
+ LIVE_TOOL_ROSTER: frozenset[str] = frozenset(
+     {
+@@ -120,13 +127,14 @@ def test_the_server_offers_no_issue_history_tool() -> None:
+ KNOWLEDGE_TOOL_MODULES = frozenset({"notion_record_sink.py"})
+ 
+ 
+-def test_every_tracker_tool_this_process_names_exists_on_the_server() -> None:
++def test_every_tracker_tool_has_a_measured_public_declaration() -> None:
+     named = named_tools()
+     assert named, "no _TOOL_* constant was found under src/"
+     absent = {
+         tool: module
+         for tool, module in named.items()
+-        if module not in KNOWLEDGE_TOOL_MODULES and tool not in LIVE_TOOL_ROSTER
++        if module not in KNOWLEDGE_TOOL_MODULES
++        and tool not in LIVE_TOOL_ROSTER | CONNECTED_APP_LABEL_TOOLS
+     }
+     assert absent == {}
+ 
+diff --git a/tests/tracker/test_linear_wire_shapes.py b/tests/tracker/test_linear_wire_shapes.py
+index 0dd5f18..5345023 100644
+--- a/tests/tracker/test_linear_wire_shapes.py
++++ b/tests/tracker/test_linear_wire_shapes.py
+@@ -358,6 +358,7 @@ class CaptureCaller:
+ 
+ def tracker_over(caller: CaptureCaller) -> LinearMcpTracker:
+     return LinearMcpTracker(
++        scope_labels={},
+         issue_labels={},
+         marker_prefixes=MARKER_PREFIXES,
+         caller=caller,
+diff --git a/tests/tracker/test_milestone_approval.py b/tests/tracker/test_milestone_approval.py
+new file mode 100644
+index 0000000..2e779df
+--- /dev/null
++++ b/tests/tracker/test_milestone_approval.py
+@@ -0,0 +1,59 @@
++"""A milestone scope uses its project approval and has no label level."""
++
++import pytest
++
++from kodezart.domain.errors import ScopeReadError
++from kodezart.services.scope_resolution import resolve_scope
++from kodezart.types.domain.operation import ScopeLabel
++from tests.tracker.test_scope_approval import (
++    APPROVAL_LABELS,
++    PARENT,
++    ApprovalFixture,
++    approval,
++)
++from tests.tracker.test_scope_reads import MILESTONE, PROJECT, ROOT, _container
++
++__all__ = ["approval"]
++
++
++async def test_actual_milestone_scope_uses_current_project_approval(
++    approval: ApprovalFixture,
++) -> None:
++    approval.fake.scope_containers[MILESTONE] = _container(MILESTONE, PROJECT)
++    approval.fake.scope_memberships[MILESTONE] = (ROOT.key, PARENT.key)
++    resolved = await resolve_scope(ref=MILESTONE, tracker=approval.tracker)
++    assert resolved.ref == MILESTONE
++    assert {issue.issue_key for issue in resolved.issues} == {ROOT.key, PARENT.key}
++
++    approval.server.calls.clear()
++    for expected in (False, True, False):
++        approval.labels(PROJECT, *([ScopeLabel.APPROVED] if expected else []))
++        for issue in resolved.issues:
++            assert (
++                await approval.tracker.execution_approved(issue_key=issue.issue_key)
++                is expected
++            )
++    assert all("milestone" not in tool for tool, _ in approval.server.calls)
++    assert not approval.fake.issue_writes
++
++
++async def test_a_milestone_label_cannot_approve_its_project_or_members(
++    approval: ApprovalFixture,
++) -> None:
++    # Deliberately inject a label into the fake's backing data. There is no
++    # adapter call that can read or write a label on this kind of object.
++    approval.fake.scope_label_members[MILESTONE] = frozenset({ScopeLabel.APPROVED})
++    approval.server.milestones[PROJECT.key][0]["labels"] = [APPROVAL_LABELS["approved"]]
++    assert await approval.tracker.execution_approved(issue_key=ROOT.key) is False
++    assert all("milestone" not in tool for tool, _ in approval.server.calls)
++
++
++async def test_milestone_membership_without_reported_project_refuses(
++    approval: ApprovalFixture,
++) -> None:
++    approval.server.issue_detail_updates[ROOT.key] = {"projectId": None}
++    approval.fake.issues[ROOT.key] = approval.fake.issues[ROOT.key].model_copy(
++        update={"project_id": None}
++    )
++    with pytest.raises(ScopeReadError, match="owning project"):
++        await approval.tracker.execution_approved(issue_key=ROOT.key)
+diff --git a/tests/tracker/test_native_approval_aliases.py b/tests/tracker/test_native_approval_aliases.py
+new file mode 100644
+index 0000000..dc56715
+--- /dev/null
++++ b/tests/tracker/test_native_approval_aliases.py
+@@ -0,0 +1,61 @@
++"""Actual approval reads normalize only a reported native UUID."""
++
++import pytest
++
++from kodezart.domain.errors import ScopeReadError
++from tests.fakes import FakeLinearMcpServer, FakeMcpIssue
++from tests.tracker.test_linear_mcp_tracker import tracker_over
++
++NATIVE_UUID = "00000000-0000-4000-8000-000000000073"
++OTHER_UUID = "00000000-0000-4000-8000-000000000074"
++
++
++class ApprovalAliasServer(FakeLinearMcpServer):
++    def __init__(self, *, reported_uuid):
++        super().__init__(
++            issues=[
++                FakeMcpIssue(id="ROOT-1", labels=["execution-consent"]),
++                FakeMcpIssue(
++                    id="CHECK-1",
++                    parent_id="ROOT-1",
++                    labels=["acceptance-condition"],
++                    description="**Check:** Native membership remains current.",
++                ),
++            ]
++        )
++        self.reported_uuid = reported_uuid
++
++    def _tool_get_issue(self, arguments):
++        payload = dict(
++            super()._tool_get_issue(
++                {**arguments, "id": "ROOT-1"}
++                if arguments["id"] == NATIVE_UUID
++                else arguments
++            )
++        )
++        if arguments["id"] == NATIVE_UUID and self.reported_uuid is not None:
++            payload["uuid"] = self.reported_uuid
++        return payload
++
++
++@pytest.mark.parametrize("requested", ["ROOT-1", NATIVE_UUID])
++async def test_actual_entry_preserves_reported_alias_with_one_subject_read(requested):
++    server = ApprovalAliasServer(reported_uuid=NATIVE_UUID)
++    tracker = tracker_over(server, scope_labels={"approved": "execution-consent"})
++    assert await tracker.execution_approved(issue_key=requested) is True
++    assert [
++        call
++        for call in server.tool_calls("get_issue")
++        if call["id"] in {requested, "ROOT-1"}
++    ] == [{"id": requested, "includeRelations": True}]
++    assert server.tool_calls("save_issue") == []
++
++
++@pytest.mark.parametrize("reported_uuid", [None, OTHER_UUID])
++async def test_actual_entry_refuses_foreign_subject_before_membership(reported_uuid):
++    server = ApprovalAliasServer(reported_uuid=reported_uuid)
++    tracker = tracker_over(server, scope_labels={"approved": "execution-consent"})
++    with pytest.raises(ScopeReadError):
++        await tracker.execution_approved(issue_key=NATIVE_UUID)
++    assert server.tool_calls("list_issues") == []
++    assert server.tool_calls("save_issue") == []
+diff --git a/tests/tracker/test_project_milestones.py b/tests/tracker/test_project_milestones.py
+new file mode 100644
+index 0000000..7cdfd7c
+--- /dev/null
++++ b/tests/tracker/test_project_milestones.py
+@@ -0,0 +1,53 @@
++"""Native milestone listing preserves complete, stable container identity."""
++
++import pytest
++
++
++async def test_project_milestones_expose_complete_native_identities_and_descriptions():
++    from tests.tracker.conftest import linear_over_fake_mcp
++    from tests.tracker.test_scope_reads import MILESTONE, PROJECT, ScopeMcpServer
++
++    server = ScopeMcpServer()
++    tracker = linear_over_fake_mcp(server)
++    milestones = await tracker.project_milestones(project_key=PROJECT.key)
++    assert {item.ref.key for item in milestones} == {
++        row["id"] for row in server.milestones[PROJECT.key]
++    }
++    assert all(item.parent == PROJECT and item.url is None for item in milestones)
++    assert (
++        next(item for item in milestones if item.ref == MILESTONE).description
++        == f"Complete description of {MILESTONE.key}"
++    )
++
++
++@pytest.mark.parametrize("fault", ["duplicate", "wrong_detail", "changed_membership"])
++async def test_project_milestone_incomplete_identity_evidence_refuses(
++    monkeypatch, fault
++):
++    from kodezart.domain.errors import ScopeReadError
++    from tests.tracker.conftest import linear_over_fake_mcp
++    from tests.tracker.test_scope_reads import PROJECT, ScopeMcpServer
++
++    server = ScopeMcpServer()
++    original = server.call_tool
++    calls = 0
++
++    async def call_tool(*, name, arguments):
++        nonlocal calls
++        result = await original(name=name, arguments=arguments)
++        if name == "list_milestones":
++            calls += 1
++            if fault == "duplicate":
++                result = {
++                    **result,
++                    "milestones": [*result["milestones"], result["milestones"][0]],
++                }
++            if fault == "changed_membership" and calls == 2:
++                result = {**result, "milestones": []}
++        if name == "get_milestone" and fault == "wrong_detail":
++            result = {**result, "id": "another-native-id"}
++        return result
++
++    monkeypatch.setattr(server, "call_tool", call_tool)
++    with pytest.raises(ScopeReadError):
++        await linear_over_fake_mcp(server).project_milestones(project_key=PROJECT.key)
+diff --git a/tests/tracker/test_scope_approval.py b/tests/tracker/test_scope_approval.py
+new file mode 100644
+index 0000000..4d846cd
+--- /dev/null
++++ b/tests/tracker/test_scope_approval.py
+@@ -0,0 +1,392 @@
++"""Approval conformance over live label presence and current ancestry."""
++
++import asyncio
++from collections.abc import Mapping
++from dataclasses import dataclass
++
++import pytest
++
++from kodezart.composition.tracker import build_tracker
++from kodezart.core.backoff import RetryPolicy
++from kodezart.core.config import AppConfig
++from kodezart.core.errors import (
++    TrackerProtocolError,
++    TrackerUnavailableError,
++)
++from kodezart.core.protocols import McpToolResult, TrackerPort
++from kodezart.domain.errors import ScopeReadError
++from kodezart.types.domain.operation import OperationMemberAbsentError, ScopeLabel
++from kodezart.types.domain.scope import ScopeKind, ScopeRef
++from tests.fakes import FakeTrackerPort
++from tests.tracker.conftest import linear_over_fake_mcp
++from tests.tracker.test_scope_reads import (
++    INITIATIVE,
++    OTHER_PROJECT,
++    PROJECT,
++    ROOT,
++    ScopeMcpIssue,
++    ScopeMcpServer,
++    _container,
++    _domain_issue,
++    _initiative,
++    _project,
++)
++from tests.tracker.test_scope_tool_arguments import SCOPE_INPUT_SCHEMAS
++from tests.tracker.test_tracker_boot import operation_config
++
++APPROVAL_LABELS = {member.value: f"admission/{member.value}" for member in ScopeLabel}
++CHILD = ScopeRef(kind=ScopeKind.ISSUE, key="FIX-3")
++PARENT = ScopeRef(kind=ScopeKind.ISSUE, key="FIX-2")
++OTHER = ScopeRef(kind=ScopeKind.PROJECT, key=OTHER_PROJECT)
++OUTER = ScopeRef(kind=ScopeKind.INITIATIVE, key="outer-initiative")
++
++
++@dataclass
++class ApprovalFixture:
++    tracker: TrackerPort
++    server: ScopeMcpServer
++    fake: FakeTrackerPort
++
++    def labels(self, ref: ScopeRef, *members: ScopeLabel) -> None:
++        labels = [APPROVAL_LABELS[member.value] for member in members]
++        if ref.kind is ScopeKind.ISSUE:
++            self.server.issues[ref.key].labels = labels
++        elif ref.kind is ScopeKind.PROJECT:
++            self.server.projects[ref.key]["labels"] = labels
++        else:
++            assert ref.kind is ScopeKind.INITIATIVE
++            self.server.initiatives[ref.key]["labels"] = labels
++        self.fake.scope_label_members[ref] = frozenset(members)
++
++    def parent(self, key: str, parent: str | None) -> None:
++        self.server.issues[key].parent_id = parent
++        self.fake.issues[key] = self.fake.issues[key].model_copy(
++            update={"parent_key": parent}
++        )
++
++    def project(self, key: str, project: str | None) -> None:
++        self.server.issue_detail_updates[key] = {
++            "project": project,
++            "projectId": project,
++            "projectMilestone": None,
++        }
++        self.fake.issues[key] = self.fake.issues[key].model_copy(
++            update={"project": project, "project_id": project, "milestone_key": None}
++        )
++
++
++@pytest.fixture(params=["linear", "fake"])
++def approval(request: pytest.FixtureRequest) -> ApprovalFixture:
++    server = ScopeMcpServer()
++    issues = []
++    for native in server.issues.values():
++        assert isinstance(native, ScopeMcpIssue)
++        issues.append(
++            _domain_issue(native).model_copy(
++                update={
++                    "project_id": native.project_key,
++                    "milestone_key": native.milestone_key,
++                }
++            )
++        )
++    fake = FakeTrackerPort(
++        issues=issues,
++        scope_containers=[
++            _container(PROJECT, INITIATIVE),
++            _container(OTHER, INITIATIVE),
++            _container(INITIATIVE),
++        ],
++    )
++    tracker = (
++        linear_over_fake_mcp(server, scope_labels=APPROVAL_LABELS)
++        if request.param == "linear"
++        else fake
++    )
++    return ApprovalFixture(tracker=tracker, server=server, fake=fake)
++
++
++@pytest.mark.parametrize("ref", [CHILD, PARENT, ROOT, OTHER, INITIATIVE])
++async def test_approval_at_each_real_ancestor_admits_deepest_issue(
++    approval: ApprovalFixture, ref: ScopeRef
++) -> None:
++    approval.labels(ref, ScopeLabel.APPROVED)
++
++    assert await approval.tracker.execution_approved(issue_key=CHILD.key) is True
++    assert not approval.fake.issue_writes
++    assert not approval.fake.queue_writes
++    assert not approval.fake.comment_writes
++    assert not approval.fake.claim_writes
++    for tool, arguments in approval.server.calls:
++        assert tool in {"get_issue", "get_project", "get_initiative"}
++        schema = SCOPE_INPUT_SCHEMAS[tool]
++        assert set(arguments) <= schema.properties
++        assert schema.required <= set(arguments)
++
++
++@pytest.mark.parametrize("member", [None, ScopeLabel.TRIAGE, ScopeLabel.PROPOSED])
++async def test_absent_approval_or_another_meta_member_is_not_approval(
++    approval: ApprovalFixture, member: ScopeLabel | None
++) -> None:
++    if member is not None:
++        for ref in (CHILD, PARENT, ROOT, OTHER, INITIATIVE):
++            approval.labels(ref, member)
++    assert await approval.tracker.execution_approved(issue_key=CHILD.key) is False
++
++
++async def test_current_reparenting_and_revocation_need_no_copied_label(
++    approval: ApprovalFixture,
++) -> None:
++    approval.labels(ROOT, ScopeLabel.APPROVED)
++    approval.parent(CHILD.key, None)
++    assert await approval.tracker.execution_approved(issue_key=CHILD.key) is False
++    approval.parent(CHILD.key, PARENT.key)
++    assert await approval.tracker.execution_approved(issue_key=CHILD.key) is True
++    approval.labels(ROOT)
++    assert await approval.tracker.execution_approved(issue_key=CHILD.key) is False
++    assert approval.server.issues[CHILD.key].labels == []
++    assert not approval.fake.issue_writes
++
++
++async def test_container_label_removal_is_visible_on_the_same_adapter(
++    approval: ApprovalFixture,
++) -> None:
++    approval.labels(INITIATIVE, ScopeLabel.APPROVED)
++    assert await approval.tracker.execution_approved(issue_key=CHILD.key) is True
++    approval.labels(INITIATIVE)
++    assert await approval.tracker.execution_approved(issue_key=CHILD.key) is False
++
++
++async def test_issue_parent_project_does_not_replace_child_membership(
++    approval: ApprovalFixture,
++) -> None:
++    approval.labels(PROJECT, ScopeLabel.APPROVED)
++    assert await approval.tracker.execution_approved(issue_key=CHILD.key) is False
++    assert await approval.tracker.execution_approved(issue_key=PARENT.key) is True
++    approval.project(CHILD.key, PROJECT.key)
++    assert await approval.tracker.execution_approved(issue_key=CHILD.key) is True
++
++
++async def test_issue_without_container_can_be_unapproved_or_inherit_issue_label(
++    approval: ApprovalFixture,
++) -> None:
++    approval.project(CHILD.key, None)
++    assert await approval.tracker.execution_approved(issue_key=CHILD.key) is False
++    approval.labels(ROOT, ScopeLabel.APPROVED)
++    assert await approval.tracker.execution_approved(issue_key=CHILD.key) is True
++
++
++async def test_reported_project_without_canonical_key_refuses(
++    approval: ApprovalFixture,
++) -> None:
++    approval.project(CHILD.key, None)
++    approval.server.issue_detail_updates[CHILD.key]["project"] = "Reported project"
++    approval.fake.issues[CHILD.key] = approval.fake.issues[CHILD.key].model_copy(
++        update={"project": "Reported project"}
++    )
++    with pytest.raises(ScopeReadError, match="canonical key"):
++        await approval.tracker.execution_approved(issue_key=CHILD.key)
++
++
++@pytest.mark.parametrize("omitted", [False, True])
++async def test_native_no_project_retains_omitted_and_null_compatibility(
++    omitted: bool,
++) -> None:
++    class UnassignedServer(ScopeMcpServer):
++        def _tool_get_issue(
++            self, arguments: Mapping[str, object]
++        ) -> Mapping[str, object]:
++            result = dict(super()._tool_get_issue(arguments))
++            for field in ("project", "projectId", "projectMilestone"):
++                if omitted:
++                    result.pop(field)
++                else:
++                    result[field] = None
++            return result
++
++    tracker = linear_over_fake_mcp(UnassignedServer(), scope_labels=APPROVAL_LABELS)
++    assert await tracker.execution_approved(issue_key=CHILD.key) is False
++
++
++async def test_nested_initiative_is_read_and_reparenting_changes_next_resolution(
++    approval: ApprovalFixture,
++) -> None:
++    approval.server.initiatives[OUTER.key] = _initiative(OUTER, [])
++    approval.fake.scope_containers[OUTER] = _container(OUTER)
++    approval.labels(OUTER, ScopeLabel.APPROVED)
++    assert await approval.tracker.execution_approved(issue_key=CHILD.key) is False
++    approval.server.initiatives[INITIATIVE.key]["parentInitiatives"] = [
++        {"id": OUTER.key}
++    ]
++    approval.fake.scope_containers[INITIATIVE] = _container(INITIATIVE, OUTER)
++    assert await approval.tracker.execution_approved(issue_key=CHILD.key) is True
++
++
++@pytest.mark.parametrize("layer", ["issue", "container"])
++async def test_cyclic_ancestry_is_not_a_negative_answer(
++    approval: ApprovalFixture, layer: str
++) -> None:
++    if layer == "issue":
++        approval.parent(ROOT.key, CHILD.key)
++    else:
++        approval.server.initiatives[INITIATIVE.key]["parentInitiatives"] = [
++            {"id": INITIATIVE.key}
++        ]
++        approval.fake.scope_containers[INITIATIVE] = _container(INITIATIVE, INITIATIVE)
++    with pytest.raises(ScopeReadError, match="cycle"):
++        await approval.tracker.execution_approved(issue_key=CHILD.key)
++
++
++@pytest.mark.parametrize("layer", ["issue", "project", "initiative"])
++async def test_missing_ancestry_refuses_instead_of_returning_false(
++    approval: ApprovalFixture, layer: str
++) -> None:
++    if layer == "issue":
++        del approval.server.issues[ROOT.key]
++        del approval.fake.issues[ROOT.key]
++    elif layer == "project":
++        del approval.server.projects[OTHER.key]
++        del approval.fake.scope_containers[OTHER]
++    else:
++        del approval.server.initiatives[INITIATIVE.key]
++        del approval.fake.scope_containers[INITIATIVE]
++    with pytest.raises((ScopeReadError, TrackerUnavailableError)):
++        await approval.tracker.execution_approved(issue_key=CHILD.key)
++
++
++@pytest.mark.parametrize("ref", [CHILD, OTHER, INITIATIVE])
++async def test_returned_identity_must_match_the_address(
++    approval: ApprovalFixture, ref: ScopeRef
++) -> None:
++    if ref.kind is ScopeKind.ISSUE:
++        approval.server.issue_detail_updates[ref.key] = {"id": "impostor"}
++        approval.fake.issues[ref.key] = approval.fake.issues[ref.key].model_copy(
++            update={"issue_key": "impostor"}
++        )
++    else:
++        collection = (
++            approval.server.projects
++            if ref.kind is ScopeKind.PROJECT
++            else approval.server.initiatives
++        )
++        collection[ref.key]["id"] = "impostor"
++        approval.fake.scope_containers[ref] = _container(
++            ScopeRef(kind=ref.kind, key="impostor")
++        )
++    with pytest.raises(ScopeReadError, match="identity"):
++        await approval.tracker.execution_approved(issue_key=CHILD.key)
++
++
++async def test_unmapped_approval_refuses_before_any_native_read() -> None:
++    server = ScopeMcpServer()
++    with pytest.raises(OperationMemberAbsentError, match=r"scope_labels\.approved"):
++        await linear_over_fake_mcp(server, scope_labels={}).execution_approved(
++            issue_key=CHILD.key
++        )
++    assert server.calls == []
++
++
++async def test_actual_composition_passes_the_remapped_scope_vocabulary() -> None:
++    server = ScopeMcpServer()
++    server.initiatives[INITIATIVE.key]["labels"] = [APPROVAL_LABELS["approved"]]
++    config = AppConfig()
++    tracker, _ = build_tracker(
++        backend=config.tracker.backend,
++        retry=RetryPolicy(
++            attempts=config.tracker.max_retries + 1,
++            initial_delay=config.tracker.retry_backoff_factor,
++        ),
++        operation=operation_config().model_copy(
++            update={"scope_labels": APPROVAL_LABELS}
++        ),
++        caller=server,
++    )
++    assert await tracker.execution_approved(issue_key=CHILD.key) is True
++
++
++@pytest.mark.parametrize("member", ["queue:approved", "scope:approved", "approved"])
++async def test_unconfigured_names_never_substitute_for_configured_approval(
++    member: str,
++) -> None:
++    server = ScopeMcpServer()
++    server.issues[CHILD.key].labels = [member]
++    server.initiatives[INITIATIVE.key]["labels"] = [member]
++    tracker = linear_over_fake_mcp(server, scope_labels=APPROVAL_LABELS)
++    assert await tracker.execution_approved(issue_key=CHILD.key) is False
++
++
++@pytest.mark.parametrize("field", ["labels", "parentId"])
++async def test_issue_membership_omission_is_not_an_empty_answer(field: str) -> None:
++    class OmittedServer(ScopeMcpServer):
++        def _tool_get_issue(
++            self, arguments: Mapping[str, object]
++        ) -> Mapping[str, object]:
++            result = dict(super()._tool_get_issue(arguments))
++            result.pop(field)
++            return result
++
++    tracker = linear_over_fake_mcp(OmittedServer(), scope_labels=APPROVAL_LABELS)
++    with pytest.raises(TrackerProtocolError):
++        await tracker.execution_approved(issue_key=CHILD.key)
++
++
++@pytest.mark.parametrize("layer", ["issue", "project", "initiative"])
++@pytest.mark.parametrize("labels", [None, "approved", [None]])
++async def test_unreadable_native_labels_do_not_become_absence(
++    layer: str, labels: object
++) -> None:
++    server = ScopeMcpServer()
++    if layer == "issue":
++        server.issue_detail_updates[CHILD.key] = {"labels": labels}
++    elif layer == "project":
++        server.projects[OTHER.key]["labels"] = labels
++    else:
++        server.initiatives[INITIATIVE.key]["labels"] = labels
++    with pytest.raises(TrackerProtocolError):
++        await linear_over_fake_mcp(
++            server, scope_labels=APPROVAL_LABELS
++        ).execution_approved(issue_key=CHILD.key)
++
++
++@pytest.mark.parametrize("layer", ["project", "initiative"])
++async def test_omitted_native_labels_refuse(layer: str) -> None:
++    server = ScopeMcpServer()
++    row = (
++        server.projects[OTHER.key]
++        if layer == "project"
++        else server.initiatives[INITIATIVE.key]
++    )
++    del row["labels"]
++    with pytest.raises(TrackerProtocolError):
++        await linear_over_fake_mcp(
++            server, scope_labels=APPROVAL_LABELS
++        ).execution_approved(issue_key=CHILD.key)
++
++
++async def test_multiple_container_parents_refuse_even_with_an_approval_label() -> None:
++    server = ScopeMcpServer()
++    server.projects[OTHER.key] = _project(OTHER, [INITIATIVE, OUTER])
++    server.projects[OTHER.key]["labels"] = [APPROVAL_LABELS["approved"]]
++    with pytest.raises(ScopeReadError, match="multiple parents"):
++        await linear_over_fake_mcp(
++            server, scope_labels=APPROVAL_LABELS
++        ).execution_approved(issue_key=CHILD.key)
++
++
++@pytest.mark.parametrize("tool", ["get_issue", "get_project", "get_initiative"])
++async def test_native_cancellation_propagates_without_answer_or_write(
++    tool: str,
++) -> None:
++    class CanceledServer(ScopeMcpServer):
++        async def call_tool(
++            self, *, name: str, arguments: Mapping[str, object]
++        ) -> McpToolResult:
++            if name == tool:
++                raise asyncio.CancelledError
++            return await super().call_tool(name=name, arguments=arguments)
++
++    server = CanceledServer()
++    with pytest.raises(asyncio.CancelledError):
++        await linear_over_fake_mcp(
++            server, scope_labels=APPROVAL_LABELS
++        ).execution_approved(issue_key=CHILD.key)
++    assert all(name.startswith("get_") for name, _ in server.calls)
+diff --git a/tests/tracker/test_scope_label_mappings.py b/tests/tracker/test_scope_label_mappings.py
+new file mode 100644
+index 0000000..8c51258
+--- /dev/null
++++ b/tests/tracker/test_scope_label_mappings.py
+@@ -0,0 +1,341 @@
++"""Scope labels are instated without granting approval (KOD-378, KOD-379)."""
++
++from collections.abc import Mapping
++from itertools import product
++
++import pytest
++
++from kodezart.adapters.linear_mcp_types import LinearLabelListWire
++from kodezart.core.errors import (
++    TrackerEnsureConflictError,
++    TrackerProtocolError,
++    TrackerUnavailableError,
++)
++from kodezart.core.protocols import TrackerPort
++from kodezart.services.tracker_boot import (
++    configured_mappings,
++    owned_mappings,
++    reconcile_tracker_mappings,
++)
++from kodezart.types.domain.operation import TeamEntry
++from kodezart.types.domain.tracker import EnsureAction, MappingKind, MappingRef
++from tests.fakes import FakeLinearMcpServer
++from tests.tracker.conftest import (
++    APPROVED_ISSUE,
++    CLAIMED_ISSUE,
++    fixture_server,
++    linear_over_fake_mcp,
++)
++from tests.tracker.connected_app_label_contract import (
++    CONNECTED_APP_LABEL_TOOLS,
++    CONNECTED_INITIATIVE_LABELS,
++    CONNECTED_ISSUE_LABELS,
++    CONNECTED_PROJECT_LABELS,
++)
++from tests.tracker.test_linear_tool_roster import LIVE_TOOL_ROSTER
++from tests.tracker.test_tracker_boot import operation_config
++
++SCOPE_LABELS = {
++    "triage": "custom:scope-intake",
++    "proposed": "custom:scope-draft",
++    "approved": "custom:scope-authorized",
++    "paused": "custom:scope-paused",
++}
++APPROVAL = MappingRef(
++    kind=MappingKind.SCOPE_LABEL,
++    name="approved",
++    identifier=SCOPE_LABELS["approved"],
++)
++LABEL_CREATORS = frozenset(
++    {"create_issue_label", "save_project_label", "create_initiative_label"},
++)
++
++
++def test_scope_mappings_are_owned_once_regardless_of_declared_teams() -> None:
++    config = operation_config().model_copy(
++        update={
++            "scope_labels": dict(SCOPE_LABELS),
++            "teams": {
++                "one": TeamEntry(name="First", key="ONE"),
++                "two": TeamEntry(name="Second", key="TWO"),
++            },
++        },
++    )
++    expected = tuple(
++        MappingRef(kind=MappingKind.SCOPE_LABEL, name=name, identifier=identifier)
++        for name, identifier in sorted(SCOPE_LABELS.items())
++    )
++    assert (
++        tuple(
++            ref
++            for ref in configured_mappings(config)
++            if ref.kind is MappingKind.SCOPE_LABEL
++        )
++        == expected
++    )
++    assert (
++        tuple(
++            ref for ref in owned_mappings(config) if ref.kind is MappingKind.SCOPE_LABEL
++        )
++        == expected
++    )
++
++
++async def test_scope_instate_and_repeat_preserve_issue_approval(
++    tracker: TrackerPort,
++) -> None:
++    before = {
++        key: await tracker.read_issue(issue_key=key)
++        for key in (CLAIMED_ISSUE, APPROVED_ISSUE)
++    }
++    assert await tracker.resolve_mappings(refs=[APPROVAL]) == (APPROVAL,)
++    (created,) = await tracker.ensure_mappings(refs=[APPROVAL])
++    assert created.ref == APPROVAL
++    assert created.identifier == SCOPE_LABELS["approved"]
++    assert created.action is EnsureAction.CREATED
++    assert await tracker.resolve_mappings(refs=[APPROVAL]) == ()
++    (adopted,) = await tracker.ensure_mappings(refs=[APPROVAL])
++    assert adopted.action is EnsureAction.ADOPTED
++    assert {key: await tracker.read_issue(issue_key=key) for key in before} == before
++
++
++async def test_scope_labels_boot_with_configured_custom_and_extra_names(
++    tracker: TrackerPort,
++) -> None:
++    config = operation_config().model_copy(
++        update={"scope_labels": dict(SCOPE_LABELS), "documents": {}},
++    )
++    result = await reconcile_tracker_mappings(tracker=tracker, config=config)
++    assert result.config.scope_labels == SCOPE_LABELS
++    assert {
++        outcome.ref.identifier
++        for outcome in result.outcomes
++        if outcome.ref.kind is MappingKind.SCOPE_LABEL
++        and outcome.action is EnsureAction.CREATED
++    } == set(SCOPE_LABELS.values())
++    assert (
++        await tracker.resolve_mappings(
++            refs=[
++                ref
++                for ref in configured_mappings(config)
++                if ref.kind is MappingKind.SCOPE_LABEL
++            ],
++        )
++        == ()
++    )
++    repeated = await reconcile_tracker_mappings(tracker=tracker, config=result.config)
++    assert repeated.config == result.config
++    assert all(outcome.action is EnsureAction.ADOPTED for outcome in repeated.outcomes)
++
++
++@pytest.mark.parametrize("identifier", [None, SCOPE_LABELS["approved"]])
++async def test_scope_refs_cannot_request_a_team_copy(
++    tracker: TrackerPort,
++    identifier: str | None,
++) -> None:
++    ref = MappingRef(
++        kind=MappingKind.SCOPE_LABEL,
++        name="approved",
++        identifier=identifier,
++        scope="fixture-team",
++    )
++    with pytest.raises(TrackerEnsureConflictError, match="workspace scope"):
++        await tracker.ensure_mappings(refs=[ref])
++    assert await tracker.resolve_mappings(refs=[ref]) == (ref,)
++
++
++async def test_scope_ref_requires_an_identifier(tracker: TrackerPort) -> None:
++    ref = MappingRef(kind=MappingKind.SCOPE_LABEL, name="approved")
++    with pytest.raises(TrackerEnsureConflictError, match="identifier"):
++        await tracker.ensure_mappings(refs=[ref])
++
++
++async def test_team_queue_label_does_not_resolve_a_workspace_scope_label(
++    tracker: TrackerPort,
++) -> None:
++    queue = APPROVAL.model_copy(
++        update={"kind": MappingKind.QUEUE_STATE, "scope": "fixture-team"},
++    )
++    await tracker.ensure_mappings(refs=[queue])
++    assert await tracker.resolve_mappings(refs=[APPROVAL]) == (APPROVAL,)
++    with pytest.raises(TrackerEnsureConflictError, match="fixture-team"):
++        await tracker.ensure_mappings(refs=[APPROVAL])
++
++
++@pytest.mark.parametrize(
++    ("issue", "project", "initiative"), product((False, True), repeat=3)
++)
++async def test_only_missing_native_namespaces_are_created(
++    *,
++    issue: bool,
++    project: bool,
++    initiative: bool,
++) -> None:
++    name = SCOPE_LABELS["approved"]
++    server = fixture_server()
++    original = {key: tuple(entity.labels) for key, entity in server.issues.items()}
++    if issue:
++        server.labels.append(name)
++    if project:
++        server.project_labels.append(name)
++    if initiative:
++        server.initiative_labels.append(name)
++    tracker = linear_over_fake_mcp(server)
++    assert await tracker.resolve_mappings(refs=[APPROVAL]) == (
++        () if issue and project and initiative else (APPROVAL,)
++    )
++    (outcome,) = await tracker.ensure_mappings(refs=[APPROVAL])
++    expected = {
++        tool
++        for tool, exists in (
++            ("create_issue_label", issue),
++            ("save_project_label", project),
++            ("create_initiative_label", initiative),
++        )
++        if not exists
++    }
++    writes = [(tool, args) for tool, args in server.calls if tool in LABEL_CREATORS]
++    assert {tool for tool, _ in writes} == expected
++    assert len(writes) == len(expected)
++    assert all(args == {"name": name} for _, args in writes)
++    assert outcome.action is (
++        EnsureAction.CREATED if expected else EnsureAction.ADOPTED
++    )
++    assert all(
++        name in names
++        for names in (server.labels, server.project_labels, server.initiative_labels)
++    )
++    assert {
++        key: tuple(entity.labels) for key, entity in server.issues.items()
++    } == original
++    assert all(
++        tool in LABEL_CREATORS or tool.startswith("list_") for tool, _ in server.calls
++    )
++    server.calls.clear()
++    await tracker.ensure_mappings(refs=[APPROVAL])
++    assert all(tool.startswith("list_") for tool, _ in server.calls)
++
++
++async def test_label_definition_pagination_prevents_duplicate_creation() -> None:
++    name = SCOPE_LABELS["approved"]
++    server = fixture_server()
++    server.label_page_size = 1
++    server.labels.extend(["another-issue-label", name])
++    server.project_labels.extend(["another-project-label", name])
++    server.initiative_labels.extend(["another-initiative-label", name])
++    tracker = linear_over_fake_mcp(server)
++    (outcome,) = await tracker.ensure_mappings(refs=[APPROVAL])
++    assert outcome.action is EnsureAction.ADOPTED
++    assert all(tool.startswith("list_") for tool, _ in server.calls)
++    for tool in ("list_issue_labels", "list_project_labels", "list_initiative_labels"):
++        assert any("cursor" in args for args in server.tool_calls(tool))
++
++
++@pytest.mark.parametrize("workspace_copy", [False, True])
++@pytest.mark.parametrize("page_size", [None, 1])
++async def test_team_collision_refuses_all_namespace_writes(
++    workspace_copy: bool,
++    page_size: int | None,
++) -> None:
++    name = SCOPE_LABELS["approved"]
++    server = fixture_server()
++    server.label_page_size = page_size
++    server.team_labels["fixture-team-id"] = [name]
++    if workspace_copy:
++        server.labels.append(name)
++    tracker = linear_over_fake_mcp(server)
++    with pytest.raises(TrackerEnsureConflictError, match="fixture-team"):
++        await tracker.ensure_mappings(refs=[APPROVAL])
++    assert all(tool.startswith("list_") for tool, _ in server.calls)
++    assert server.team_labels["fixture-team-id"] == [name]
++    assert server.project_labels == server.initiative_labels == []
++    if page_size is not None:
++        assert any(
++            args.get("team") == "fixture-team" and "cursor" in args
++            for args in server.tool_calls("list_issue_labels")
++        )
++
++
++async def test_unavailable_project_creator_is_a_typed_failure_without_fallback() -> (
++    None
++):
++    server = fixture_server(scope_refusals={"save_project_label": "Unknown tool"})
++    tracker = linear_over_fake_mcp(server)
++    with pytest.raises(TrackerUnavailableError, match="save_project_label"):
++        await tracker.ensure_mappings(refs=[APPROVAL])
++    assert server.tool_calls("save_project_label") == [
++        {"name": SCOPE_LABELS["approved"]}
++    ]
++    assert server.project_labels == server.initiative_labels == []
++    assert all(
++        tool in LABEL_CREATORS or tool.startswith("list_") for tool, _ in server.calls
++    )
++
++
++class MissingReadbackServer(FakeLinearMcpServer):
++    project_write_visible = False
++
++    def _tool_save_project_label(
++        self, arguments: Mapping[str, object]
++    ) -> Mapping[str, object]:
++        if self.project_write_visible:
++            return super()._tool_save_project_label(arguments)
++        return {}
++
++
++async def test_missing_readback_fails_and_a_later_boot_completes_missing_labels() -> (
++    None
++):
++    server = MissingReadbackServer(teams=["fixture-team"])
++    with pytest.raises(TrackerProtocolError, match="readback"):
++        await linear_over_fake_mcp(server).ensure_mappings(refs=[APPROVAL])
++    assert server.labels == [SCOPE_LABELS["approved"]]
++    assert server.project_labels == server.initiative_labels == []
++
++    server.project_write_visible = True
++    server.calls.clear()
++    (recovered,) = await linear_over_fake_mcp(server).ensure_mappings(refs=[APPROVAL])
++    assert recovered.action is EnsureAction.CREATED
++    assert [tool for tool, _ in server.calls if tool in LABEL_CREATORS] == [
++        "save_project_label",
++        "create_initiative_label",
++    ]
++    assert all(
++        tool in LABEL_CREATORS or tool.startswith("list_") for tool, _ in server.calls
++    )
++
++
++class BrokenCursorServer(FakeLinearMcpServer):
++    continuation_cursor: str | None = None
++
++    def _tool_list_project_labels(
++        self, arguments: Mapping[str, object]
++    ) -> Mapping[str, object]:
++        response: dict[str, object] = {"labels": [], "hasNextPage": True}
++        if self.continuation_cursor is not None:
++            response["cursor"] = self.continuation_cursor
++        return response
++
++
++@pytest.mark.parametrize("cursor", [None, "repeated"])
++async def test_a_truncated_namespace_cannot_be_treated_as_absence(
++    cursor: str | None,
++) -> None:
++    server = BrokenCursorServer(teams=["fixture-team"])
++    server.continuation_cursor = cursor
++    with pytest.raises(TrackerProtocolError, match="continuation cursor"):
++        await linear_over_fake_mcp(server).ensure_mappings(refs=[APPROVAL])
++    assert all(tool.startswith("list_") for tool, _ in server.calls)
++    assert len(server.tool_calls("list_project_labels")) == (1 if cursor is None else 2)
++
++
++def test_connected_read_captures_do_not_claim_service_creator_validation() -> None:
++    issue = LinearLabelListWire.model_validate(CONNECTED_ISSUE_LABELS)
++    initiative = LinearLabelListWire.model_validate(CONNECTED_INITIATIVE_LABELS)
++    project = LinearLabelListWire.model_validate(CONNECTED_PROJECT_LABELS)
++    assert issue.labels[0].name == initiative.labels[0].name
++    assert issue.labels[0].id != initiative.labels[0].id
++    assert project.labels == []
++    assert not any(page.has_next_page for page in (issue, initiative, project))
++    assert "save_project_label" in CONNECTED_APP_LABEL_TOOLS
++    assert "save_project_label" not in LIVE_TOOL_ROSTER
+diff --git a/tests/tracker/test_scope_tool_arguments.py b/tests/tracker/test_scope_tool_arguments.py
+new file mode 100644
+index 0000000..c9f326d
+--- /dev/null
++++ b/tests/tracker/test_scope_tool_arguments.py
+@@ -0,0 +1,76 @@
++"""Scope calls respect the connected-app declarations read on 2026-09-07.
++
++These declarations supplement the August service capture. Exercising them
++over a double checks request construction, not service-credential access.
++"""
++
++from tests.tracker.conftest import linear_over_fake_mcp
++from tests.tracker.test_linear_tool_arguments import LIVE_INPUT_SCHEMAS, ToolSchema
++from tests.tracker.test_scope_reads import (
++    INITIATIVE,
++    MILESTONE,
++    PROJECT,
++    ROOT,
++    ScopeMcpServer,
++)
++
++SCOPE_INPUT_SCHEMAS = {
++    "get_issue": LIVE_INPUT_SCHEMAS["get_issue"],
++    "list_issues": LIVE_INPUT_SCHEMAS["list_issues"],
++    "get_project": ToolSchema(
++        frozenset({"query", "includeMembers", "includeMilestones", "includeResources"}),
++        frozenset({"query"}),
++    ),
++    "get_initiative": ToolSchema(
++        frozenset({"query", "includeProjects", "includeSubInitiatives"}),
++        frozenset({"query"}),
++    ),
++    "get_milestone": ToolSchema(
++        frozenset({"project", "query"}), frozenset({"project", "query"})
++    ),
++    "list_milestones": ToolSchema(frozenset({"project"}), frozenset({"project"})),
++    "list_projects": ToolSchema(
++        frozenset(
++            {
++                "createdAt",
++                "cursor",
++                "fields",
++                "includeArchived",
++                "includeMembers",
++                "includeMilestones",
++                "initiative",
++                "label",
++                "limit",
++                "member",
++                "orderBy",
++                "query",
++                "state",
++                "team",
++                "updatedAt",
++            }
++        ),
++        frozenset(),
++    ),
++}
++
++
++async def test_scope_reads_send_declared_arguments_on_every_call() -> None:
++    server = ScopeMcpServer()
++    tracker = linear_over_fake_mcp(server)
++    for ref in (ROOT, PROJECT, MILESTONE, INITIATIVE):
++        await tracker.scope_issues(ref=ref)
++    for ref in (PROJECT, INITIATIVE):
++        await tracker.container_metadata(ref=ref)
++    milestone = await tracker.container_metadata(ref=MILESTONE)
++    assert milestone.ref == MILESTONE and milestone.url is None
++
++    assert {tool for tool, _ in server.calls} == set(SCOPE_INPUT_SCHEMAS)
++    for tool, arguments in server.calls:
++        schema = SCOPE_INPUT_SCHEMAS[tool]
++        assert set(arguments) <= schema.properties, (tool, arguments)
++        assert schema.required <= set(arguments), (tool, arguments)
++        if tool in {"list_projects", "list_issues"}:
++            maximum = 50 if tool == "list_projects" else 250
++            assert 1 <= arguments["limit"] <= maximum
++            assert arguments["includeArchived"] is True
++    assert any("cursor" in arguments for _, arguments in server.calls)
+diff --git a/tests/tracker/test_tracker_boot.py b/tests/tracker/test_tracker_boot.py
+index 7042113..6e773c6 100644
+--- a/tests/tracker/test_tracker_boot.py
++++ b/tests/tracker/test_tracker_boot.py
+@@ -164,6 +164,11 @@ class TestConfiguredMappings:
+             {
+                 **operation_config().model_dump(),
+                 "issue_labels": {"criterion": "Configured Check"},
++                "scope_labels": {
++                    "triage": "scope:triage",
++                    "proposed": "scope:proposed",
++                    "approved": "scope:approved",
++                },
+             }
+         )
+         refs = (*configured_mappings(config), *owned_mappings(config))
+@@ -578,6 +583,7 @@ class TestQueueVocabularyPerDeclaredTeam:
+ 
+     def _tracker(self, server: FakeLinearMcpServer) -> TrackerPort:
+         return LinearMcpTracker(
++            scope_labels={},
+             issue_labels={},
+             marker_prefixes=MARKER_PREFIXES,
+             caller=server,
+@@ -704,6 +710,7 @@ class TestWorkflowStatesResolvePerTeam:
+ 
+     def _tracker(self, server: FakeLinearMcpServer) -> TrackerPort:
+         return LinearMcpTracker(
++            scope_labels={},
+             issue_labels={},
+             marker_prefixes=MARKER_PREFIXES,
+             caller=server,

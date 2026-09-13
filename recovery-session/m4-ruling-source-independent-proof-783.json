@@ -1,0 +1,564 @@
+{
+  "source": "783edbfa4ebcb6c6dfa7ad8209ccf69fa095e477",
+  "tree": "44f56fd6edf8e456de5768ead6f304429c8dfb31",
+  "base": "139391d86b4dcd5ef953ef019903fdc044221e23",
+  "donor": "36083f83f42c03240ebb5861fe284da2c9f04180",
+  "source_diff_empty": true,
+  "files": [
+    {
+      "path": "src/kodezart/adapters/subprocess_git_source_reader.py",
+      "sha256": "793280ae5e329cb536734eae7534664133065586a7574256c3c9a0b05c17a993",
+      "donor_bytes_equal": true,
+      "definitions": [
+        {
+          "name": "SubprocessGitSourceReader",
+          "donor_ast_equal": true
+        }
+      ],
+      "existing_changed": []
+    },
+    {
+      "path": "src/kodezart/core/protocols.py",
+      "sha256": "f86c86c5a708a4f64b2338f7f4fdf6e2cc48ee2e7ac34503d109f17935e379a5",
+      "donor_bytes_equal": false,
+      "definitions": [
+        {
+          "name": "GitSourceReader",
+          "donor_ast_equal": false
+        },
+        {
+          "name": "TrackerCommentReader",
+          "donor_ast_equal": false
+        }
+      ],
+      "existing_changed": []
+    },
+    {
+      "path": "src/kodezart/domain/agent.py",
+      "sha256": "6ae893667e8ebff6f345b00d3da697c0675ccbe95c249107f400195e3be29617",
+      "donor_bytes_equal": true,
+      "definitions": [
+        {
+          "name": "mint_ruling_id",
+          "donor_ast_equal": true
+        }
+      ],
+      "existing_changed": []
+    },
+    {
+      "path": "src/kodezart/domain/errors.py",
+      "sha256": "b9a1d52a5aa1b0855694f69d56fdf4562add478810d4ff827531cb9cc1382276",
+      "donor_bytes_equal": false,
+      "definitions": [
+        {
+          "name": "GitSourceReadError",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "RulingRecordReadError",
+          "donor_ast_equal": true
+        }
+      ],
+      "existing_changed": []
+    },
+    {
+      "path": "src/kodezart/domain/rulings.py",
+      "sha256": "42a979abc960feb979f6bca048ad57b2e8e281e9b2a5e03edd051c78231d95ca",
+      "donor_bytes_equal": true,
+      "definitions": [
+        {
+          "name": "ruling_marker",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "render_ruling",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "parse_ruling",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "_require_identity",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "_unique_object",
+          "donor_ast_equal": true
+        }
+      ],
+      "existing_changed": []
+    },
+    {
+      "path": "src/kodezart/services/ruling_records.py",
+      "sha256": "83d5aa68573a643fcfbe66ac996e6161bbaa3fa91b11677ee53d13a397bbc1c2",
+      "donor_bytes_equal": true,
+      "definitions": [
+        {
+          "name": "RulingRecordReader",
+          "donor_ast_equal": true
+        }
+      ],
+      "existing_changed": []
+    },
+    {
+      "path": "src/kodezart/types/domain/agent.py",
+      "sha256": "5373d4e51707765c6428cb4bfb880ddb2ffe766ff4323b137de4effc6e7b9d8d",
+      "donor_bytes_equal": false,
+      "definitions": [
+        {
+          "name": "RulingAuthor",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "RulingClass",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "RulingProtectedTestRef",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "Ruling",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "RulingOutput",
+          "donor_ast_equal": true
+        }
+      ],
+      "existing_changed": []
+    },
+    {
+      "path": "src/kodezart/types/domain/assertion_drift.py",
+      "sha256": "766de0f6a409c3ceb9381175344df6b1f17916ad47eab54b19ba1e5a168b1b3d",
+      "donor_bytes_equal": false,
+      "definitions": [
+        {
+          "name": "ProtectedTestRef",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "GitSourceBlob",
+          "donor_ast_equal": true
+        }
+      ],
+      "existing_changed": []
+    },
+    {
+      "path": "src/kodezart/types/domain/ruling_id.py",
+      "sha256": "545fc8b1f333b9d4ed7b374d31e5da7e0a076fd5b47e71068346bdfd61fcdfac",
+      "donor_bytes_equal": true,
+      "definitions": [],
+      "existing_changed": []
+    },
+    {
+      "path": "tests/domain/test_ruling_identity.py",
+      "sha256": "ec28016fc4372b8092235696a85bc6a1db2203b77877d5a05859db9afbd81211",
+      "donor_bytes_equal": true,
+      "definitions": [
+        {
+          "name": "test_one_minting_site_and_no_bare_string_model_addresses",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "test_site_guard_detects_aliases_and_qualified_constructors",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "test_address_guard_rejects_bare_strings_inside_containers",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "test_address_guard_rejects_quoted_and_aliased_builtin_annotations",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "test_address_guard_keeps_typed_forward_references_and_metadata",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "test_exact_pair_is_stable_and_component_boundaries_are_distinct",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "test_identity_preserves_each_exact_input",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "test_missing_identity_inputs_refuse",
+          "donor_ast_equal": true
+        }
+      ],
+      "existing_changed": [],
+      "test_assertions_equal": true
+    },
+    {
+      "path": "tests/domain/test_ruling_protected_tests.py",
+      "sha256": "1355a607d0b1d33f5f461cf736d323d486aca54ba3bd4a3112f39abc2f6593cd",
+      "donor_bytes_equal": true,
+      "definitions": [
+        {
+          "name": "designated",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "round_trip",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "test_unknown_designation_preserves_the_original_generic_record_bytes",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "test_explicit_empty_is_distinct_from_unknown_on_wire",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "test_protected_names_round_trip_in_the_owning_ruling_without_new_identity",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "test_native_explicit_null_is_unknown_not_empty",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "test_reference_to_another_ruling_is_rejected",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "test_repeated_test_address_cannot_duplicate_one_rulings_protection",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "test_invalid_native_designation_refuses_instead_of_losing_protection",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "test_native_designation_has_a_typed_ruling_owner",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "test_mypy_preserves_reader_identity_and_refuses_a_plain_string_owner",
+          "donor_ast_equal": true
+        }
+      ],
+      "existing_changed": [],
+      "test_assertions_equal": true
+    },
+    {
+      "path": "tests/domain/test_rulings.py",
+      "sha256": "f7d357c90780a6c7bfcdb9102d1ade692fad2c8a73d0992c65c141dcea967842",
+      "donor_bytes_equal": true,
+      "definitions": [
+        {
+          "name": "ruling_data",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "render",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "test_closed_model_and_pinned_text_round_trip_every_author_and_class",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "test_every_ruling_field_is_required",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "test_no_account_or_unknown_author_substitutes_for_the_required_enum",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "test_rejected_alternative_is_explicit_and_required_for_a_losing_reading",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "test_damaged_or_ambiguous_text_refuses",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "test_answer_amendment_retains_question_address_but_a_new_question_does_not",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "test_renderer_refuses_an_unrelated_minted_id",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "test_absent_ruling_purpose_cannot_borrow_the_decision_reply_prefix",
+          "donor_ast_equal": true
+        }
+      ],
+      "existing_changed": [],
+      "test_assertions_equal": true
+    },
+    {
+      "path": "tests/git_source_fixtures.py",
+      "sha256": "05c556c9fe19d511b091562c66af55781df1a1222cf19d8a15e03e1f51c05f28",
+      "donor_bytes_equal": false,
+      "definitions": [
+        {
+          "name": "git",
+          "donor_ast_equal": false
+        },
+        {
+          "name": "source",
+          "donor_ast_equal": false
+        },
+        {
+          "name": "commit",
+          "donor_ast_equal": false
+        },
+        {
+          "name": "repo",
+          "donor_ast_equal": false
+        }
+      ],
+      "existing_changed": []
+    },
+    {
+      "path": "tests/identity_guards.py",
+      "sha256": "da1674eeddcf524ad3f4a908655b8cfa41cb32694f166d43c4f85595e32cf639",
+      "donor_bytes_equal": true,
+      "definitions": [
+        {
+          "name": "construction_sites",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "invalid_ruling_fields",
+          "donor_ast_equal": true
+        }
+      ],
+      "existing_changed": [],
+      "test_assertions_equal": true
+    },
+    {
+      "path": "tests/services/test_git_source_lookup.py",
+      "sha256": "0cd6a07e3c4bc7cd1a92fc45a3e19dfa66d708a53aa4dadf94a1ccb02d2fcce4",
+      "donor_bytes_equal": false,
+      "definitions": [
+        {
+          "name": "test_actual_deleted_file_is_absent_only_at_the_selected_revision",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "test_unreadable_or_unsupported_objects_are_never_missing",
+          "donor_ast_equal": true
+        }
+      ],
+      "existing_changed": [],
+      "test_assertions_equal": true
+    },
+    {
+      "path": "tests/tracker/comment_page_fixtures.py",
+      "sha256": "d5e86d6aee5b4c6b6aed2a8c5e27a178dcb8cf882e142e762344d9183ac32017",
+      "donor_bytes_equal": false,
+      "definitions": [
+        {
+          "name": "CommentPageServer",
+          "donor_ast_equal": false
+        },
+        {
+          "name": "comment",
+          "donor_ast_equal": false
+        }
+      ],
+      "existing_changed": []
+    },
+    {
+      "path": "tests/tracker/test_issue_ruling_records.py",
+      "sha256": "ce0e295473a8e1e10b8be58b31bfd945a608fc70516cb954a13b23daa0a6e8b8",
+      "donor_bytes_equal": false,
+      "definitions": [
+        {
+          "name": "seed_lane",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "test_issue_wide_read_retains_actual_different_lane_occurrences",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "test_same_question_under_two_lanes_is_ambiguous_not_two_rulings",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "test_malformed_owned_lane_component_is_not_silent_absence",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "test_ordinary_comment_and_other_namespace_remain_unselected",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "test_native_pages_retain_historical_lane_and_current_native_provenance",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "test_full_valid_payload_cannot_override_native_provenance",
+          "donor_ast_equal": true
+        }
+      ],
+      "existing_changed": [],
+      "test_assertions_equal": true
+    },
+    {
+      "path": "tests/tracker/test_ruling_reader_independent.py",
+      "sha256": "3df371ab1a5c0902d891ef46181a39e14d5c5559fb5c47060624c75c165ed4a7",
+      "donor_bytes_equal": false,
+      "definitions": [
+        {
+          "name": "native_row",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "two_pages",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "test_actual_encoded_lane_and_native_author_survive_cold_read",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "test_identical_page_overlap_is_one_native_record",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "test_conflicting_native_key_across_pages_is_refused",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "test_missing_native_reply_metadata_cannot_assert_top_level_record",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "test_later_page_cannot_advance_refuses_with_unknown_lane",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "test_later_page_damage_refuses_without_partial_result",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "test_duplicate_question_later_page_is_not_reconciled_by_answer",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "CancelledPageServer",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "test_cancellation_during_second_native_page_propagates",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "test_backend_outage_retains_typed_cause_and_unknown_lane",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "test_read_all_keeps_explicit_lane_boundary_with_other_lane_damage",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "test_inherited_explicit_lane_boundary_refuses_ambiguous_native_record",
+          "donor_ast_equal": true
+        }
+      ],
+      "existing_changed": [],
+      "test_assertions_equal": true
+    },
+    {
+      "path": "tests/tracker/test_ruling_records.py",
+      "sha256": "1ee0d7fc210ae7719a3e66688b81968ef753ec0ce46ed8453e34b886cf0c9a0a",
+      "donor_bytes_equal": false,
+      "definitions": [
+        {
+          "name": "seed",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "reader",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "test_same_pair_replays_one_record_and_two_questions_keep_two",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "test_amended_answer_edits_same_native_record_and_cold_reader_observes_it",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "test_successful_empty_and_other_comment_namespaces_are_not_rulings",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "test_duplicate_marker_comments_refuse_instead_of_counting_twice",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "test_conflicting_native_and_record_identity_refuse",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "test_owned_namespace_damage_cannot_become_an_empty_projection",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "test_missing_configuration_refuses_without_listing",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "test_unreachable_native_listing_retains_typed_cause",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "test_cancellation_is_not_reported_as_empty_history",
+          "donor_ast_equal": true
+        },
+        {
+          "name": "test_native_reader_exhausts_pages_before_declaring_the_occurrence_set",
+          "donor_ast_equal": true
+        }
+      ],
+      "existing_changed": [],
+      "test_assertions_equal": true
+    }
+  ],
+  "fixtures": {
+    "tests/git_source_fixtures.py": {
+      "donor_source": "tests/services/test_assertion_drift.py",
+      "definitions": {
+        "git": true,
+        "source": true,
+        "commit": true,
+        "repo": true
+      }
+    },
+    "tests/tracker/comment_page_fixtures.py": {
+      "donor_source": "tests/tracker/test_comment_pages.py",
+      "definitions": {
+        "CommentPageServer": true,
+        "comment": true
+      }
+    }
+  },
+  "protocol_omissions": {
+    "GitSourceReader": {
+      "only_removed_decorators": [
+        "runtime_checkable"
+      ],
+      "otherwise_ast_exact": true
+    },
+    "TrackerCommentReader": {
+      "only_removed_decorators": [
+        "runtime_checkable"
+      ],
+      "otherwise_ast_exact": true
+    }
+  }
+}

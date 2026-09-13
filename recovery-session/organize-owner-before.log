@@ -1,0 +1,100 @@
+Using CPython 3.12.13
+Creating virtual environment at: .venv
+   Building kodezart @ file:///private/tmp/kodezart-v03-recovery-organize-owner
+warning: `build_system.requires = ["uv-build>=0.10.9,<0.11.0"]` does not contain the current uv version 0.11.6
+      Built kodezart @ file:///private/tmp/kodezart-v03-recovery-organize-owner
+Installed 174 packages in 1.12s
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+__________ test_source_identity_is_checked_before_any_session[assess] __________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10e62b5f0>
+method = 'assess'
+
+    @pytest.mark.parametrize("method", ["assess", "verify"])
+    async def test_source_identity_is_checked_before_any_session(monkeypatch, method):
+        port = tracker()
+        original = port.read_issue_revision
+    
+        async def wrong_revision(*, issue_key):
+            value = await original(issue_key=issue_key)
+            return value.model_copy(update={"issue": issue("another", "wrong source")})
+    
+        monkeypatch.setattr(port, "read_issue_revision", wrong_revision)
+        executor = RecordingExecutor([result()])
+        boundary = consumer(port, executor, RecordingWorkspace())
+        with pytest.raises(OrganizeAdmissionIdentityError):
+>           await getattr(boundary, method)(request())
+
+tests/chains/test_organize_owner.py:30: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/chains/organize.py:52: in assess
+    return await self._judge(
+src/kodezart/chains/organize.py:86: in _judge
+    criteria = await self._tracker.read_criteria(issue_key=subject.issue_key)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/fakes.py:3647: in read_criteria
+    _, criteria = await self._read_criterion_family(issue_key=issue_key)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <tests.fakes.FakeTrackerPort object at 0x10e62bf50>
+
+    async def _read_criterion_family(
+        self, *, issue_key: str, subject: TrackerIssue | None = None
+    ) -> tuple[TrackerIssue, tuple[TrackerIssue, ...]]:
+        if issue_key not in self.issues:
+>           raise CriterionReadError(
+                issue_key=issue_key, reason="parent issue is absent"
+            )
+E           kodezart.domain.errors.CriterionReadError: criteria of 'another' could not be read: parent issue is absent
+
+tests/fakes.py:3670: CriterionReadError
+__________ test_source_identity_is_checked_before_any_session[verify] __________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10e62e2d0>
+method = 'verify'
+
+    @pytest.mark.parametrize("method", ["assess", "verify"])
+    async def test_source_identity_is_checked_before_any_session(monkeypatch, method):
+        port = tracker()
+        original = port.read_issue_revision
+    
+        async def wrong_revision(*, issue_key):
+            value = await original(issue_key=issue_key)
+            return value.model_copy(update={"issue": issue("another", "wrong source")})
+    
+        monkeypatch.setattr(port, "read_issue_revision", wrong_revision)
+        executor = RecordingExecutor([result()])
+        boundary = consumer(port, executor, RecordingWorkspace())
+        with pytest.raises(OrganizeAdmissionIdentityError):
+>           await getattr(boundary, method)(request())
+
+tests/chains/test_organize_owner.py:30: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/chains/organize.py:58: in verify
+    return await self._judge(
+src/kodezart/chains/organize.py:86: in _judge
+    criteria = await self._tracker.read_criteria(issue_key=subject.issue_key)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/fakes.py:3647: in read_criteria
+    _, criteria = await self._read_criterion_family(issue_key=issue_key)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <tests.fakes.FakeTrackerPort object at 0x10e62ecc0>
+
+    async def _read_criterion_family(
+        self, *, issue_key: str, subject: TrackerIssue | None = None
+    ) -> tuple[TrackerIssue, tuple[TrackerIssue, ...]]:
+        if issue_key not in self.issues:
+>           raise CriterionReadError(
+                issue_key=issue_key, reason="parent issue is absent"
+            )
+E           kodezart.domain.errors.CriterionReadError: criteria of 'another' could not be read: parent issue is absent
+
+tests/fakes.py:3670: CriterionReadError
+=========================== short test summary info ============================
+FAILED tests/chains/test_organize_owner.py::test_source_identity_is_checked_before_any_session[assess]
+FAILED tests/chains/test_organize_owner.py::test_source_identity_is_checked_before_any_session[verify]
+2 failed in 1.65s

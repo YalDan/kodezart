@@ -1,0 +1,161 @@
+E501 Line too long (129 > 88)
+  --> tests/chains/test_organize_graph_independent.py:18:89
+   |
+16 |             yield result(structured_output={
+17 |                 "kind": "split", "issue_id": CLAIMED_ISSUE,
+18 |                 "children": [{"deliverable_key": "independent", "title": "Split child", "body": "Prepared child specification"}],
+   |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+19 |             })
+20 |             return
+   |
+
+E501 Line too long (124 > 88)
+  --> tests/chains/test_organize_graph_independent.py:37:89
+   |
+35 |             if reads == 2:
+36 |                 injected = True
+37 |                 board.server.issues[CLAIMED_ISSUE].description = "The current source no longer asks for the authored child."
+   |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+38 |         return await original_call(name=name, arguments=arguments)
+   |
+
+E501 Line too long (98 > 88)
+  --> tests/chains/test_organize_graph_independent.py:48:89
+   |
+46 |         error = exc
+47 |     assert injected
+48 |     assert [args for name, args in board.calls if name == "save_issue" and "id" not in args] == []
+   |                                                                                         ^^^^^^^^^^
+49 |     assert error is not None
+50 |     assert not board.grants()
+   |
+
+E501 Line too long (103 > 88)
+  --> tests/tracker/test_organize_graph_independent.py:54:89
+   |
+52 |         assert reads >= 6
+53 |         if expire:
+54 |             assert saves(board) == [], "save was issued after the final awaited read expired ownership"
+   |                                                                                         ^^^^^^^^^^^^^^^
+55 |             assert error is not None
+56 |         else:
+   |
+
+E501 Line too long (91 > 88)
+  --> tests/tracker/test_organize_graph_independent.py:63:89
+   |
+62 | @pytest.mark.parametrize("change", [None, "body", "priority", "parent", "expiry"])
+63 | async def test_split_final_observed_source_is_checked_before_creation(monkeypatch, change):
+   |                                                                                         ^^^
+64 |     board, tracker = fixture()
+65 |     snapshot = await expected(tracker)
+   |
+
+E501 Line too long (102 > 88)
+  --> tests/tracker/test_organize_graph_independent.py:83:89
+   |
+81 |                 source = board.server.issues[CLAIMED_ISSUE]
+82 |                 if change == "body":
+83 |                     source.description = "Current specification changed while awaiting the final read"
+   |                                                                                         ^^^^^^^^^^^^^^
+84 |                 elif change == "priority":
+85 |                     source.priority_raw = 1
+   |
+
+E501 Line too long (104 > 88)
+   --> tests/tracker/test_organize_graph_independent.py:113:89
+    |
+111 |         assert injected, "the actual separate final source read was not reached"
+112 |         if change is not None:
+113 |             assert saves(board) == [], "creation used a final source observation that no longer matched"
+    |                                                                                         ^^^^^^^^^^^^^^^^
+114 |             assert error is not None
+115 |         else:
+    |
+
+E501 Line too long (89 > 88)
+   --> tests/tracker/test_organize_graph_independent.py:121:89
+    |
+121 | async def test_split_identity_appearing_during_state_read_is_not_duplicated(monkeypatch):
+    |                                                                                         ^
+122 |     board, tracker = fixture()
+123 |     surface = address(CLAIMED_ISSUE, SurfaceKind.ISSUE_SPLIT_SET)
+    |
+
+E501 Line too long (96 > 88)
+   --> tests/tracker/test_organize_graph_independent.py:125:89
+    |
+123 |     surface = address(CLAIMED_ISSUE, SurfaceKind.ISSUE_SPLIT_SET)
+124 |     async with RunSurfaceLease(
+125 |         tracker=tracker, job_id="actual-job", surfaces=frozenset({surface}), lease_seconds=321.5
+    |                                                                                         ^^^^^^^^
+126 |     ):
+127 |         child = await tracker.create_split_if_absent(
+    |
+
+E501 Line too long (96 > 88)
+   --> tests/tracker/test_organize_graph_independent.py:147:89
+    |
+146 |     async with RunSurfaceLease(
+147 |         tracker=tracker, job_id="actual-job", surfaces=frozenset({surface}), lease_seconds=321.5
+    |                                                                                         ^^^^^^^^
+148 |     ):
+149 |         monkeypatch.setattr(board, "call_tool", call_tool)
+    |
+
+E501 Line too long (91 > 88)
+   --> tests/tracker/test_organize_graph_independent.py:151:89
+    |
+149 |         monkeypatch.setattr(board, "call_tool", call_tool)
+150 |         returned = await tracker.create_split_if_absent(
+151 |             source_key=CLAIMED_ISSUE, deliverable_key="stable", title="Must not overwrite",
+    |                                                                                         ^^^
+152 |             body="Must not overwrite", holder="actual-job", expected=snapshot,
+153 |         )
+    |
+
+E501 Line too long (116 > 88)
+   --> tests/tracker/test_organize_graph_independent.py:155:89
+    |
+153 |         )
+154 |         assert injected
+155 |         assert saves(board) == [], "a stable split identity that appeared during awaited preparation was duplicated"
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+156 |         assert returned.issue_key == child.issue_key
+157 |     assert board.grants() == []
+    |
+
+E501 Line too long (104 > 88)
+   --> tests/tracker/test_organize_graph_independent.py:187:89
+    |
+185 |     monkeypatch.setattr(server, "_tool_save_issue", save)
+186 |     tracker = linear_over_fake_mcp(server)
+187 |     snapshot = tuple([graph_snapshot(await tracker.read_issue(issue_key=key)) for key in server.issues])
+    |                                                                                         ^^^^^^^^^^^^^^^^
+188 |     original = server.call_tool
+189 |     read_milestone = False
+    |
+
+E501 Line too long (106 > 88)
+   --> tests/tracker/test_organize_graph_independent.py:204:89
+    |
+203 |     async with RunSurfaceLease(
+204 |         tracker=tracker, job_id="actual-job", surfaces=frozenset({address(ROOT.key)}), lease_seconds=321.5
+    |                                                                                         ^^^^^^^^^^^^^^^^^^
+205 |     ):
+206 |         monkeypatch.setattr(server, "call_tool", call_tool)
+    |
+
+E501 Line too long (112 > 88)
+   --> tests/tracker/test_organize_graph_independent.py:218:89
+    |
+216 |         if move:
+217 |             assert injected
+218 |             assert writes == [], "a milestone moved to another project while awaiting holder proof was assigned"
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^
+219 |             assert error is not None
+220 |         else:
+    |
+
+Found 18 errors (3 fixed, 15 remaining).
+2 files reformatted

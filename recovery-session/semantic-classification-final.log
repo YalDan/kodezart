@@ -1,0 +1,99 @@
+......F................................................................. [ 44%]
+........................................................................ [ 88%]
+..................                                                       [100%]
+=================================== FAILURES ===================================
+__ test_actual_label_readback_failure_cannot_resend_completed_write[missing] ___
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10b0abd70>
+failure = 'missing'
+
+    @pytest.mark.parametrize("failure", ["outage", "missing"])
+    async def test_actual_label_readback_failure_cannot_resend_completed_write(
+        monkeypatch, failure
+    ):
+        board = _Board()
+        tracker = tracker_over(
+            board.server,
+            caller=board,
+            max_retries=2,
+            clock=lambda: board.now,
+            issue_labels={"decision": "decision-needed"},
+        )
+        surface = WritableSurface(
+            kind=SurfaceKind.ISSUE_LABEL_SET,
+            ref=ScopeRef(kind=ScopeKind.ISSUE, key=CLAIMED_ISSUE),
+        )
+        async with RunSurfaceLease(
+            tracker=tracker, job_id="job", lease_seconds=900, surfaces=frozenset({surface})
+        ):
+            actual = board.call_tool
+            writes = 0
+    
+            async def call(*, name, arguments):
+                nonlocal writes
+                if name == "get_issue" and writes and failure == "outage":
+                    raise McpTransportError("read unavailable", server_name="fixture")
+                result = await actual(name=name, arguments=arguments)
+                if name == "save_issue" and "addLabels" in arguments:
+                    writes += 1
+                    if failure == "missing":
+                        board.server.issues[CLAIMED_ISSUE].labels.remove("decision-needed")
+                return result
+    
+            monkeypatch.setattr(board, "call_tool", call)
+            with pytest.raises(
+                TrackerUnavailableError if failure == "outage" else IssueLabelReadError
+            ):
+>               await tracker.set_issue_classification(
+                    issue_key=CLAIMED_ISSUE, classification="decision", holder="job"
+                )
+
+tests/tracker/test_classification_authority.py:154: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10b16f5f0>
+
+    async def set_issue_classification(
+        self, *, issue_key: str, classification: str, holder: str | None = None
+    ) -> TrackerIssue:
+        if classification not in self._issue_labels:
+            raise OperationMemberAbsentError(
+                missing=f"issue_labels[{classification!r}]",
+                stops="this issue classification cannot be written",
+            )
+        surface = WritableSurface(
+            kind=SurfaceKind.ISSUE_LABEL_SET,
+            ref=ScopeRef(kind=ScopeKind.ISSUE, key=issue_key),
+        )
+    
+        async def attempt() -> TrackerIssue:
+            current = await self.read_issue(issue_key=issue_key)
+            if current.issue_key != issue_key:
+                raise IssueLabelReadError("classification read returned another issue")
+            if holder is not None:
+                await self._require_surface_holder(surface=surface, holder=holder)
+            if classification in current.issue_labels:
+                return current
+            payload = await self._send(
+                _TOOL_SAVE_ISSUE,
+                {"id": issue_key, "addLabels": [self._issue_labels[classification]]},
+            )
+            return self._saved_issue(
+                payload, written={"addLabels": [self._issue_labels[classification]]}
+            )
+    
+        receipt = await self._retry_call(_TOOL_SAVE_ISSUE, attempt)
+        if holder is None:
+            return receipt
+        # This read is outside the mutation retry. Failure cannot resend a
+        # classification that the server already accepted.
+        current = await self.read_issue(issue_key=issue_key)
+        if current.issue_key != issue_key or classification not in current.issue_labels:
+>           raise IssueLabelReadError("the granted classification did not read back")
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           TypeError: IssueLabelReadError.__init__() takes 1 positional argument but 2 were given
+
+src/kodezart/adapters/linear_mcp_tracker.py:2178: TypeError
+=========================== short test summary info ============================
+FAILED tests/tracker/test_classification_authority.py::test_actual_label_readback_failure_cannot_resend_completed_write[missing]
+1 failed, 161 passed in 6.28s

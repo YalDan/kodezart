@@ -1,0 +1,50 @@
+E501 Line too long (97 > 88)
+   --> src/kodezart/types/domain/audit_runtime.py:147:89
+    |
+146 |     model_config = ConfigDict(frozen=True, extra="forbid")
+147 |     surface: WritableSurface = Field(description="Full address of the interrupted writing step.")
+    |                                                                                         ^^^^^^^^^
+148 |     ref: str = Field(pattern=r"^[0-9a-f]{40}$", description="Actual immutable commit passed to the canonical verifier.")
+149 |     preceding_round: int = Field(ge=1, strict=True, description="Actual ordinal of the prior judgment supplied to this repair.")
+    |
+
+E501 Line too long (120 > 88)
+   --> src/kodezart/types/domain/audit_runtime.py:148:89
+    |
+146 |     model_config = ConfigDict(frozen=True, extra="forbid")
+147 |     surface: WritableSurface = Field(description="Full address of the interrupted writing step.")
+148 |     ref: str = Field(pattern=r"^[0-9a-f]{40}$", description="Actual immutable commit passed to the canonical verifier.")
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+149 |     preceding_round: int = Field(ge=1, strict=True, description="Actual ordinal of the prior judgment supplied to this repair.")
+150 |     finding: WriteBackFinding = Field(description="The exact received repair input; not a new judgment or completed result.")
+    |
+
+E501 Line too long (128 > 88)
+   --> src/kodezart/types/domain/audit_runtime.py:149:89
+    |
+147 |     surface: WritableSurface = Field(description="Full address of the interrupted writing step.")
+148 |     ref: str = Field(pattern=r"^[0-9a-f]{40}$", description="Actual immutable commit passed to the canonical verifier.")
+149 |     preceding_round: int = Field(ge=1, strict=True, description="Actual ordinal of the prior judgment supplied to this repair.")
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+150 |     finding: WriteBackFinding = Field(description="The exact received repair input; not a new judgment or completed result.")
+    |
+
+E501 Line too long (125 > 88)
+   --> src/kodezart/types/domain/audit_runtime.py:150:89
+    |
+148 |     ref: str = Field(pattern=r"^[0-9a-f]{40}$", description="Actual immutable commit passed to the canonical verifier.")
+149 |     preceding_round: int = Field(ge=1, strict=True, description="Actual ordinal of the prior judgment supplied to this repair.")
+150 |     finding: WriteBackFinding = Field(description="The exact received repair input; not a new judgment or completed result.")
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+
+E501 Line too long (174 > 88)
+   --> src/kodezart/types/domain/audit_runtime.py:158:89
+    |
+156 | …
+157 | …1)
+158 | …), description="Received repair inputs for attempts interrupted before a completed WriteBackResult existed.")
+    |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+
+Found 15 errors (10 fixed, 5 remaining).

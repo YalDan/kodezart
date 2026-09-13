@@ -1,0 +1,47 @@
+.F.F.                                                                    [100%]
+=================================== FAILURES ===================================
+_______ test_a_split_artifact_never_pairs_identity_with_another_body[2] ________
+
+change_at = 2
+
+    @pytest.mark.parametrize("change_at", [None, 2, 3])
+    async def test_a_split_artifact_never_pairs_identity_with_another_body(change_at):
+        server = NativeSplitServer(change_at=change_at)
+        tracker = tracker_over(server)
+        try:
+            artifact = await read_tracker_artifact(tracker=tracker, surface=SURFACE)
+        except (TrackerProtocolError, OrganizeWriteRefusalError, WriteBackReadError):
+            assert server.injected
+            return
+        rows = json.loads(artifact.content)
+        assert len(rows) == 1
+        row = rows[0]
+        identity = IssueIdentity.model_validate(row["identity"])
+>       assert identity == CARRIER.decode(row["body"], issue_key=row["issue_key"])
+E       AssertionError: assert IssueIdentity...'replacement') == IssueIdentity...ey='original')
+E         
+E         Use -v to get more diff
+
+tests/tracker/test_artifact_split_identity_independent.py:71: AssertionError
+_______ test_a_foreign_identity_read_cannot_supply_the_split_receipt[2] ________
+
+foreign_at = 2
+
+    @pytest.mark.parametrize("foreign_at", [2, 3])
+    async def test_a_foreign_identity_read_cannot_supply_the_split_receipt(foreign_at):
+        server = NativeSplitServer(foreign_at=foreign_at)
+        tracker = tracker_over(server)
+        try:
+            artifact = await read_tracker_artifact(tracker=tracker, surface=SURFACE)
+        except (TrackerProtocolError, OrganizeWriteRefusalError, WriteBackReadError):
+            assert server.injected
+            return
+        if server.injected:
+>           pytest.fail("foreign native identity response became a valid split artifact")
+E           Failed: foreign native identity response became a valid split artifact
+
+tests/tracker/test_artifact_split_identity_independent.py:87: Failed
+=========================== short test summary info ============================
+FAILED tests/tracker/test_artifact_split_identity_independent.py::test_a_split_artifact_never_pairs_identity_with_another_body[2]
+FAILED tests/tracker/test_artifact_split_identity_independent.py::test_a_foreign_identity_read_cannot_supply_the_split_receipt[2]
+2 failed, 3 passed in 2.24s

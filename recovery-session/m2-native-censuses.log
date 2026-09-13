@@ -1,0 +1,16 @@
+
+==================================== ERRORS ====================================
+______________ ERROR collecting tests/types/test_wire_schemas.py _______________
+ImportError while importing test module '/private/tmp/kodezart-v03-m2-organize-boundaries/tests/types/test_wire_schemas.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/types/test_wire_schemas.py:38: in <module>
+    from kodezart.types.domain.organize import OrganizeAdmissionResult
+E   ImportError: cannot import name 'OrganizeAdmissionResult' from 'kodezart.types.domain.organize' (/private/tmp/kodezart-v03-m2-organize-boundaries/src/kodezart/types/domain/organize.py)
+=========================== short test summary info ============================
+ERROR tests/types/test_wire_schemas.py
+!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+1 error in 1.41s

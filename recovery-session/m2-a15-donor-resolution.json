@@ -1,0 +1,10 @@
+{
+  "donor": "1a83163",
+  "source": "a15b334",
+  "baseline_method_AST_equal": true,
+  "accepted_symbols": [
+    "_CriterionCreation",
+    "LinearMcpTracker.create_criterion_if_absent"
+  ],
+  "other_source_preserved": true
+}

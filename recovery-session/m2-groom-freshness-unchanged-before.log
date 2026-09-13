@@ -1,0 +1,120 @@
+FFFF.                                                                    [100%]
+=================================== FAILURES ===================================
+_____ test_dynamic_rubric_uses_repaired_body_at_fresh_verify[claude-opus] ______
+
+prompt_set = 'claude-opus'
+
+    @pytest.mark.parametrize("prompt_set", ["claude-opus", "anthropic_v5"])
+    async def test_dynamic_rubric_uses_repaired_body_at_fresh_verify(prompt_set):
+        executor = RepairThenStop()
+        owner, board, _, _ = build(
+            prompt_set=prompt_set,
+            executor=executor,
+            body="Original vague activity.",
+            changes={
+                PromptKey.GROOMING_PASS: {
+                    "rubric_body": "Grade this current goal: {{issue_body}}"
+                }
+            },
+        )
+        with pytest.raises(NoStructuredOutputError):
+            await run_owner(owner)
+        assert board.server.issues[CLAIMED_ISSUE].description == (
+            "Fresh measurable goal after repair."
+        )
+        verify = executor.calls[-1]
+        assert (
+            "<issue_body>\nFresh measurable goal after repair.\n</issue_body>"
+            in (verify["prompt"])
+        )
+>       assert (
+            "<mandate_rubric>\nGrade this current goal: "
+            "Fresh measurable goal after repair.\n</mandate_rubric>" in verify["prompt"]
+        )
+E       AssertionError: assert '<mandate_rubric>\nGrade this current goal: Fresh measurable goal after repair.\n</mandate_rubric>' in '── SKILLS AVAILABLE FOR THIS ROLE ──\nLoad each skill below when its subject matter is in play; ignore the ones that ...list. Inspect the whole rubric and report\nnew classes as well as surviving ones.\n<defect_classes>\n</defect_classes>'
+
+tests/chains/test_groom_independent_review.py:75: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-13 02:37:45 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-13 02:37:45 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 02:37:45 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 02:37:45 [info     ] outbound_content_gated         categories=[] content_digest=9340922041ba8f7c71ab5ec02903d92fcfb53b77062ed9693ede04f325d4e31b failure=None hits=[] surface=tracker verdict=clean visibility=private writer=tracker_description
+2026-09-13 02:37:45 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 02:37:45 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_verify resumed_session_id=None session_id=None
+2026-09-13 02:37:45 [info     ] stream_drained                 duration_api_ms=None duration_ms=None event_count=0 events={} has_structured_output=False is_error=None num_turns=None rate_limit_rejected=False result_event_observed=False result_tail=None session_id=None site=organize_verify stop_reason=None subtype=None total_cost_usd=None usage=None
+_____ test_dynamic_rubric_uses_repaired_body_at_fresh_verify[anthropic_v5] _____
+
+prompt_set = 'anthropic_v5'
+
+    @pytest.mark.parametrize("prompt_set", ["claude-opus", "anthropic_v5"])
+    async def test_dynamic_rubric_uses_repaired_body_at_fresh_verify(prompt_set):
+        executor = RepairThenStop()
+        owner, board, _, _ = build(
+            prompt_set=prompt_set,
+            executor=executor,
+            body="Original vague activity.",
+            changes={
+                PromptKey.GROOMING_PASS: {
+                    "rubric_body": "Grade this current goal: {{issue_body}}"
+                }
+            },
+        )
+        with pytest.raises(NoStructuredOutputError):
+            await run_owner(owner)
+        assert board.server.issues[CLAIMED_ISSUE].description == (
+            "Fresh measurable goal after repair."
+        )
+        verify = executor.calls[-1]
+        assert (
+            "<issue_body>\nFresh measurable goal after repair.\n</issue_body>"
+            in (verify["prompt"])
+        )
+>       assert (
+            "<mandate_rubric>\nGrade this current goal: "
+            "Fresh measurable goal after repair.\n</mandate_rubric>" in verify["prompt"]
+        )
+E       AssertionError: assert '<mandate_rubric>\nGrade this current goal: Fresh measurable goal after repair.\n</mandate_rubric>' in 'Adversarially verify the current issue against the supplied mandate rubric.\nWork alone. Return the requested structu...Ultrathink. Deeper reasoning is requested for this work — reason as thoroughly\nas the task warrants before you act.\n'
+
+tests/chains/test_groom_independent_review.py:75: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-13 02:37:46 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-13 02:37:46 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 02:37:46 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 02:37:46 [info     ] outbound_content_gated         categories=[] content_digest=9340922041ba8f7c71ab5ec02903d92fcfb53b77062ed9693ede04f325d4e31b failure=None hits=[] surface=tracker verdict=clean visibility=private writer=tracker_description
+2026-09-13 02:37:46 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 02:37:46 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_verify resumed_session_id=None session_id=None
+2026-09-13 02:37:46 [info     ] stream_drained                 duration_api_ms=None duration_ms=None event_count=0 events={} has_structured_output=False is_error=None num_turns=None rate_limit_rejected=False result_event_observed=False result_tail=None session_id=None site=organize_verify stop_reason=None subtype=None total_cost_usd=None usage=None
+_ test_factory_rejects_native_binding_shapes_that_cannot_render[{{refusal_evidence}}] _
+
+body = '{{refusal_evidence}}'
+
+    @pytest.mark.parametrize(
+        "body",
+        ["{{refusal_evidence}}", "{{#each issue_body}}{{this}}{{/each}}"],
+    )
+    def test_factory_rejects_native_binding_shapes_that_cannot_render(body):
+>       with pytest.raises(PromptResolutionError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'kodezart.core.errors.PromptResolutionError'>
+
+tests/chains/test_groom_independent_review.py:86: Failed
+_ test_factory_rejects_native_binding_shapes_that_cannot_render[{{#each issue_body}}{{this}}{{/each}}] _
+
+body = '{{#each issue_body}}{{this}}{{/each}}'
+
+    @pytest.mark.parametrize(
+        "body",
+        ["{{refusal_evidence}}", "{{#each issue_body}}{{this}}{{/each}}"],
+    )
+    def test_factory_rejects_native_binding_shapes_that_cannot_render(body):
+>       with pytest.raises(PromptResolutionError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'kodezart.core.errors.PromptResolutionError'>
+
+tests/chains/test_groom_independent_review.py:86: Failed
+=========================== short test summary info ============================
+FAILED tests/chains/test_groom_independent_review.py::test_dynamic_rubric_uses_repaired_body_at_fresh_verify[claude-opus]
+FAILED tests/chains/test_groom_independent_review.py::test_dynamic_rubric_uses_repaired_body_at_fresh_verify[anthropic_v5]
+FAILED tests/chains/test_groom_independent_review.py::test_factory_rejects_native_binding_shapes_that_cannot_render[{{refusal_evidence}}]
+FAILED tests/chains/test_groom_independent_review.py::test_factory_rejects_native_binding_shapes_that_cannot_render[{{#each issue_body}}{{this}}{{/each}}]
+4 failed, 1 passed in 4.38s

@@ -1,0 +1,60 @@
+.......F............................                                     [100%]
+=================================== FAILURES ===================================
+___________ test_generic_read_requires_explicit_native_linkage[True] ___________
+
+reported = True
+
+    @pytest.mark.parametrize("reported", [True, False])
+    async def test_generic_read_requires_explicit_native_linkage(reported):
+        escalation, _ = records()
+        assert escalation["parentId"] is None
+        if not reported:
+            escalation.pop("parentId")
+        server = CommentPageServer({None: {"comments": [escalation], "hasNextPage": False}})
+        tracker = linear_over_fake_mcp(server)
+        if reported:
+            comments = await tracker.list_comments(issue_key=APPROVED_ISSUE)
+            assert len(comments) == 1
+>           assert comments[0].parent_comment_key is None
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/tracker/test_escalation_resolution_boundary.py:91: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = TrackerComment(comment_key='question', issue_key='FIX-2', author_key='fixture-author', body='[fixture-escalation:lane%...\nHistorical prose and SHA 0000000.', created_at=datetime.datetime(2026, 3, 1, 12, 0, tzinfo=TzInfo(0)), reply_to=None)
+item = 'parent_comment_key'
+
+    def __getattr__(self, item: str) -> Any:
+        private_attributes = object.__getattribute__(self, '__private_attributes__')
+        if item in private_attributes:
+            attribute = private_attributes[item]
+            if hasattr(attribute, '__get__'):
+                return attribute.__get__(self, type(self))  # type: ignore
+    
+            try:
+                # Note: self.__pydantic_private__ cannot be None if self.__private_attributes__ has items
+                return self.__pydantic_private__[item]  # type: ignore
+            except KeyError as exc:
+                raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}') from exc
+        else:
+            # `__pydantic_extra__` can fail to be set if the model is not yet fully initialized.
+            # See `BaseModel.__repr_args__` for more details
+            try:
+                pydantic_extra = object.__getattribute__(self, '__pydantic_extra__')
+            except AttributeError:
+                pydantic_extra = None
+    
+            if pydantic_extra and item in pydantic_extra:
+                return pydantic_extra[item]
+            else:
+                if hasattr(self.__class__, item):
+                    return super().__getattribute__(item)  # Raises AttributeError if appropriate
+                else:
+                    # this is the current error
+>                   raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}')
+E                   AttributeError: 'TrackerComment' object has no attribute 'parent_comment_key'
+
+.venv/lib/python3.12/site-packages/pydantic/main.py:1026: AttributeError
+=========================== short test summary info ============================
+FAILED tests/tracker/test_escalation_resolution_boundary.py::test_generic_read_requires_explicit_native_linkage[True]
+1 failed, 35 passed in 0.96s

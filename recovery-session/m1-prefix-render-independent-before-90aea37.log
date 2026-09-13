@@ -1,0 +1,97 @@
+FFF                                                                      [100%]
+=================================== FAILURES ===================================
+_ test_actual_staging_prompt_renders_configured_native_repository_marker[claude-opus-fire_prep_pass] _
+
+prompt_set = 'claude-opus', key = <PromptKey.FIRE_PREP_PASS: 'fire_prep_pass'>
+
+    @pytest.mark.parametrize(
+        ("prompt_set", "key"),
+        [
+            ("claude-opus", PromptKey.FIRE_PREP_PASS),
+            ("claude-opus", PromptKey.GROOMING_PASS),
+            ("anthropic_v5", PromptKey.FIRE_PREP_PASS),
+        ],
+    )
+    def test_actual_staging_prompt_renders_configured_native_repository_marker(
+        prompt_set, key
+    ):
+        raw = raw_example()
+        for team in raw["teams"].values():
+            team.pop("repository", None)
+        if len(raw["repos"]) == 1:
+            raw["repos"].append(
+                {**raw["repos"][0], "url": "https://example.invalid/fixture/second"}
+            )
+        raw["marker_prefixes"]["repository"] = "independent-repository-marker"
+        operation = OperationConfig.model_validate(raw)
+        registry = load_registry(default_set=prompt_set, bindings=bindings_for(operation))
+        rendered = registry.template_for(key).render(pass_render_variables(key))
+>       assert '<!-- independent-repository-marker url="..." -->' in rendered
+E       assert '<!-- independent-repository-marker url="..." -->' in '<role>\nYou are the fire-prep engine for the example-operation engineering operation — a project manager and architec...n empty run is a finding, and a gap in the log cannot be told apart from a run that never happened.\n</notion_logging>'
+
+../kodezart-recovery-session/m1-marker-independent-probes/test_m1_marker_prefix_independent.py:35: AssertionError
+_ test_actual_staging_prompt_renders_configured_native_repository_marker[claude-opus-grooming_pass] _
+
+prompt_set = 'claude-opus', key = <PromptKey.GROOMING_PASS: 'grooming_pass'>
+
+    @pytest.mark.parametrize(
+        ("prompt_set", "key"),
+        [
+            ("claude-opus", PromptKey.FIRE_PREP_PASS),
+            ("claude-opus", PromptKey.GROOMING_PASS),
+            ("anthropic_v5", PromptKey.FIRE_PREP_PASS),
+        ],
+    )
+    def test_actual_staging_prompt_renders_configured_native_repository_marker(
+        prompt_set, key
+    ):
+        raw = raw_example()
+        for team in raw["teams"].values():
+            team.pop("repository", None)
+        if len(raw["repos"]) == 1:
+            raw["repos"].append(
+                {**raw["repos"][0], "url": "https://example.invalid/fixture/second"}
+            )
+        raw["marker_prefixes"]["repository"] = "independent-repository-marker"
+        operation = OperationConfig.model_validate(raw)
+        registry = load_registry(default_set=prompt_set, bindings=bindings_for(operation))
+        rendered = registry.template_for(key).render(pass_render_variables(key))
+>       assert '<!-- independent-repository-marker url="..." -->' in rendered
+E       assert '<!-- independent-repository-marker url="..." -->' in '<role>\nYou are the project-management grooming pass for the example-operation delivery operation — you own the corre... an empty pass is a finding, and\na gap in the log is indistinguishable from a pass that never ran.\n</notion_logging>'
+
+../kodezart-recovery-session/m1-marker-independent-probes/test_m1_marker_prefix_independent.py:35: AssertionError
+_ test_actual_staging_prompt_renders_configured_native_repository_marker[anthropic_v5-fire_prep_pass] _
+
+prompt_set = 'anthropic_v5', key = <PromptKey.FIRE_PREP_PASS: 'fire_prep_pass'>
+
+    @pytest.mark.parametrize(
+        ("prompt_set", "key"),
+        [
+            ("claude-opus", PromptKey.FIRE_PREP_PASS),
+            ("claude-opus", PromptKey.GROOMING_PASS),
+            ("anthropic_v5", PromptKey.FIRE_PREP_PASS),
+        ],
+    )
+    def test_actual_staging_prompt_renders_configured_native_repository_marker(
+        prompt_set, key
+    ):
+        raw = raw_example()
+        for team in raw["teams"].values():
+            team.pop("repository", None)
+        if len(raw["repos"]) == 1:
+            raw["repos"].append(
+                {**raw["repos"][0], "url": "https://example.invalid/fixture/second"}
+            )
+        raw["marker_prefixes"]["repository"] = "independent-repository-marker"
+        operation = OperationConfig.model_validate(raw)
+        registry = load_registry(default_set=prompt_set, bindings=bindings_for(operation))
+        rendered = registry.template_for(key).render(pass_render_variables(key))
+>       assert '<!-- independent-repository-marker url="..." -->' in rendered
+E       assert '<!-- independent-repository-marker url="..." -->' in 'Prepare the tracker for the next fire in operation example-operation.\n\nThe teams this operation declares, and the r...Ultrathink. Deeper reasoning is requested for this work — reason as thoroughly\nas the task warrants before you act.\n'
+
+../kodezart-recovery-session/m1-marker-independent-probes/test_m1_marker_prefix_independent.py:35: AssertionError
+=========================== short test summary info ============================
+FAILED ::test_actual_staging_prompt_renders_configured_native_repository_marker[claude-opus-fire_prep_pass]
+FAILED ::test_actual_staging_prompt_renders_configured_native_repository_marker[claude-opus-grooming_pass]
+FAILED ::test_actual_staging_prompt_renders_configured_native_repository_marker[anthropic_v5-fire_prep_pass]
+3 failed in 5.23s

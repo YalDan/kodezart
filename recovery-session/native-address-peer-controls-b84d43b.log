@@ -1,0 +1,268 @@
+.....F..F..                                                              [100%]
+=================================== FAILURES ===================================
+__ test_alias_does_not_default_missing_approval_identity_fields[labels-spec] ___
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10d288440>
+shape = <class 'kodezart.adapters.linear_scope_types.LinearApprovalIssueWire'>
+payload = {'assignee': None, 'attachments': [], 'createdAt': '2026-01-01T00:00:00+00:00', 'description': '', ...}
+tool = 'get_issue'
+
+    def _validate[WireT: LinearWireModel](
+        self,
+        shape: type[WireT],
+        payload: McpToolResult,
+        tool: str,
+    ) -> WireT:
+        try:
+>           return shape.model_validate(payload)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 1 validation error for LinearApprovalIssueWire
+E           labels
+E             Field required [type=missing, input_value={'id': 'ROOT-1', 'title':...4000-8000-000000000073'}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.12/v/missing
+
+src/kodezart/adapters/linear_mcp_tracker.py:4364: ValidationError
+
+The above exception was the direct cause of the following exception:
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10d288440>
+
+    async def read_fire_spec(self, *, issue_key: str) -> TrackerSpec:
+        if self._criteria_stage_label_key is not None and not self._issue_labels.get(
+            self._criteria_stage_label_key
+        ):
+            raise OperationMemberAbsentError(
+                missing=f"issue_labels.{self._criteria_stage_label_key}",
+                stops="cannot establish criteria-stage completion at fire entry",
+            )
+        try:
+>           subject, approved = await self._read_execution_approval(issue_key=issue_key)
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+src/kodezart/adapters/linear_mcp_tracker.py:1893: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/adapters/linear_mcp_tracker.py:1205: in _read_execution_approval
+    subject = await hydrate(issue_key)
+              ^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/adapters/linear_mcp_tracker.py:1202: in hydrate
+    issue, members = await self._read_scope_issue(key)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/adapters/linear_mcp_tracker.py:1170: in _read_scope_issue
+    wire = self._validate(LinearApprovalIssueWire, payload, _TOOL_GET_ISSUE)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10d288440>
+shape = <class 'kodezart.adapters.linear_scope_types.LinearApprovalIssueWire'>
+payload = {'assignee': None, 'attachments': [], 'createdAt': '2026-01-01T00:00:00+00:00', 'description': '', ...}
+tool = 'get_issue'
+
+    def _validate[WireT: LinearWireModel](
+        self,
+        shape: type[WireT],
+        payload: McpToolResult,
+        tool: str,
+    ) -> WireT:
+        try:
+            return shape.model_validate(payload)
+        except ValidationError as exc:
+>           raise TrackerProtocolError(
+                "tracker response does not match its declared shape",
+                tool=tool,
+                detail=str(exc),
+            ) from exc
+E           kodezart.core.errors.TrackerProtocolError: tracker response does not match its declared shape (tool: get_issue; 1 validation error for LinearApprovalIssueWire
+E           labels
+E             Field required [type=missing, input_value={'id': 'ROOT-1', 'title':...4000-8000-000000000073'}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.12/v/missing)
+
+src/kodezart/adapters/linear_mcp_tracker.py:4366: TrackerProtocolError
+
+The above exception was the direct cause of the following exception:
+
+entry = 'spec', field = 'labels'
+
+    @pytest.mark.parametrize("entry", ["approval", "spec", "labels"])
+    @pytest.mark.parametrize("field", ["labels", "parentId"])
+    async def test_alias_does_not_default_missing_approval_identity_fields(entry, field):
+        class Missing(ApprovalAliasServer):
+            def _tool_get_issue(self, arguments):
+                payload = super()._tool_get_issue(arguments)
+                if arguments["id"] == NATIVE_UUID:
+                    payload.pop(field)
+                return payload
+    
+        server = Missing(reported_uuid=NATIVE_UUID)
+        tracker = tracker_over(server)
+        with pytest.raises(TrackerProtocolError):
+>           await enter(tracker, entry, NATIVE_UUID)
+
+tests/tracker/test_address_identity_peer.py:57: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/tracker/test_address_identity_peer.py:20: in enter
+    return await tracker.read_fire_spec(issue_key=key)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10d288440>
+
+    async def read_fire_spec(self, *, issue_key: str) -> TrackerSpec:
+        if self._criteria_stage_label_key is not None and not self._issue_labels.get(
+            self._criteria_stage_label_key
+        ):
+            raise OperationMemberAbsentError(
+                missing=f"issue_labels.{self._criteria_stage_label_key}",
+                stops="cannot establish criteria-stage completion at fire entry",
+            )
+        try:
+            subject, approved = await self._read_execution_approval(issue_key=issue_key)
+            require_fire_entry(
+                subject=subject,
+                approved=approved,
+                criteria_stage_label_key=self._criteria_stage_label_key,
+            )
+            _, criteria = await self._read_criterion_family(
+                issue_key=subject.issue_key, subject=subject
+            )
+        except (TrackerUnavailableError, TrackerProtocolError) as exc:
+>           raise CriterionReadError(
+                issue_key=issue_key, reason="the tracker read failed or was incomplete"
+            ) from exc
+E           kodezart.domain.errors.CriterionReadError: criteria of '00000000-0000-4000-8000-000000000073' could not be read: the tracker read failed or was incomplete
+
+src/kodezart/adapters/linear_mcp_tracker.py:1903: CriterionReadError
+_ test_alias_does_not_default_missing_approval_identity_fields[parentId-spec] __
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10d28a7b0>
+shape = <class 'kodezart.adapters.linear_scope_types.LinearApprovalIssueWire'>
+payload = {'assignee': None, 'attachments': [], 'createdAt': '2026-01-01T00:00:00+00:00', 'description': '', ...}
+tool = 'get_issue'
+
+    def _validate[WireT: LinearWireModel](
+        self,
+        shape: type[WireT],
+        payload: McpToolResult,
+        tool: str,
+    ) -> WireT:
+        try:
+>           return shape.model_validate(payload)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 1 validation error for LinearApprovalIssueWire
+E           parentId
+E             Field required [type=missing, input_value={'id': 'ROOT-1', 'title':...4000-8000-000000000073'}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.12/v/missing
+
+src/kodezart/adapters/linear_mcp_tracker.py:4364: ValidationError
+
+The above exception was the direct cause of the following exception:
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10d28a7b0>
+
+    async def read_fire_spec(self, *, issue_key: str) -> TrackerSpec:
+        if self._criteria_stage_label_key is not None and not self._issue_labels.get(
+            self._criteria_stage_label_key
+        ):
+            raise OperationMemberAbsentError(
+                missing=f"issue_labels.{self._criteria_stage_label_key}",
+                stops="cannot establish criteria-stage completion at fire entry",
+            )
+        try:
+>           subject, approved = await self._read_execution_approval(issue_key=issue_key)
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+src/kodezart/adapters/linear_mcp_tracker.py:1893: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/adapters/linear_mcp_tracker.py:1205: in _read_execution_approval
+    subject = await hydrate(issue_key)
+              ^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/adapters/linear_mcp_tracker.py:1202: in hydrate
+    issue, members = await self._read_scope_issue(key)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/adapters/linear_mcp_tracker.py:1170: in _read_scope_issue
+    wire = self._validate(LinearApprovalIssueWire, payload, _TOOL_GET_ISSUE)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10d28a7b0>
+shape = <class 'kodezart.adapters.linear_scope_types.LinearApprovalIssueWire'>
+payload = {'assignee': None, 'attachments': [], 'createdAt': '2026-01-01T00:00:00+00:00', 'description': '', ...}
+tool = 'get_issue'
+
+    def _validate[WireT: LinearWireModel](
+        self,
+        shape: type[WireT],
+        payload: McpToolResult,
+        tool: str,
+    ) -> WireT:
+        try:
+            return shape.model_validate(payload)
+        except ValidationError as exc:
+>           raise TrackerProtocolError(
+                "tracker response does not match its declared shape",
+                tool=tool,
+                detail=str(exc),
+            ) from exc
+E           kodezart.core.errors.TrackerProtocolError: tracker response does not match its declared shape (tool: get_issue; 1 validation error for LinearApprovalIssueWire
+E           parentId
+E             Field required [type=missing, input_value={'id': 'ROOT-1', 'title':...4000-8000-000000000073'}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.12/v/missing)
+
+src/kodezart/adapters/linear_mcp_tracker.py:4366: TrackerProtocolError
+
+The above exception was the direct cause of the following exception:
+
+entry = 'spec', field = 'parentId'
+
+    @pytest.mark.parametrize("entry", ["approval", "spec", "labels"])
+    @pytest.mark.parametrize("field", ["labels", "parentId"])
+    async def test_alias_does_not_default_missing_approval_identity_fields(entry, field):
+        class Missing(ApprovalAliasServer):
+            def _tool_get_issue(self, arguments):
+                payload = super()._tool_get_issue(arguments)
+                if arguments["id"] == NATIVE_UUID:
+                    payload.pop(field)
+                return payload
+    
+        server = Missing(reported_uuid=NATIVE_UUID)
+        tracker = tracker_over(server)
+        with pytest.raises(TrackerProtocolError):
+>           await enter(tracker, entry, NATIVE_UUID)
+
+tests/tracker/test_address_identity_peer.py:57: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/tracker/test_address_identity_peer.py:20: in enter
+    return await tracker.read_fire_spec(issue_key=key)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10d28a7b0>
+
+    async def read_fire_spec(self, *, issue_key: str) -> TrackerSpec:
+        if self._criteria_stage_label_key is not None and not self._issue_labels.get(
+            self._criteria_stage_label_key
+        ):
+            raise OperationMemberAbsentError(
+                missing=f"issue_labels.{self._criteria_stage_label_key}",
+                stops="cannot establish criteria-stage completion at fire entry",
+            )
+        try:
+            subject, approved = await self._read_execution_approval(issue_key=issue_key)
+            require_fire_entry(
+                subject=subject,
+                approved=approved,
+                criteria_stage_label_key=self._criteria_stage_label_key,
+            )
+            _, criteria = await self._read_criterion_family(
+                issue_key=subject.issue_key, subject=subject
+            )
+        except (TrackerUnavailableError, TrackerProtocolError) as exc:
+>           raise CriterionReadError(
+                issue_key=issue_key, reason="the tracker read failed or was incomplete"
+            ) from exc
+E           kodezart.domain.errors.CriterionReadError: criteria of '00000000-0000-4000-8000-000000000073' could not be read: the tracker read failed or was incomplete
+
+src/kodezart/adapters/linear_mcp_tracker.py:1903: CriterionReadError
+=========================== short test summary info ============================
+FAILED tests/tracker/test_address_identity_peer.py::test_alias_does_not_default_missing_approval_identity_fields[labels-spec]
+FAILED tests/tracker/test_address_identity_peer.py::test_alias_does_not_default_missing_approval_identity_fields[parentId-spec]
+2 failed, 9 passed in 2.22s

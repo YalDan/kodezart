@@ -1,0 +1,42 @@
+E501 Line too long (97 > 88)
+   --> tests/tracker/test_classification_authority.py:118:89
+    |
+117 | @pytest.mark.parametrize("failure", ["outage", "missing"])
+118 | async def test_actual_label_readback_failure_cannot_resend_completed_write(monkeypatch, failure):
+    |                                                                                         ^^^^^^^^^
+119 |     board = _Board()
+120 |     tracker = tracker_over(board.server, caller=board, max_retries=2,
+    |
+
+E501 Line too long (97 > 88)
+   --> tests/tracker/test_classification_authority.py:121:89
+    |
+119 |     board = _Board()
+120 |     tracker = tracker_over(board.server, caller=board, max_retries=2,
+121 |                            clock=lambda: board.now, issue_labels={"decision": "decision-needed"})
+    |                                                                                         ^^^^^^^^^
+122 |     surface = WritableSurface(kind=SurfaceKind.ISSUE_LABEL_SET,
+123 |                               ref=ScopeRef(kind=ScopeKind.ISSUE, key=CLAIMED_ISSUE))
+    |
+
+E501 Line too long (100 > 88)
+   --> tests/tracker/test_classification_authority.py:141:89
+    |
+140 |         monkeypatch.setattr(board, "call_tool", call)
+141 |         with pytest.raises(TrackerUnavailableError if failure == "outage" else IssueLabelReadError):
+    |                                                                                         ^^^^^^^^^^^^
+142 |             await tracker.set_issue_classification(issue_key=CLAIMED_ISSUE, classification="decision", holder="job")
+143 |         assert writes == 1
+    |
+
+E501 Line too long (116 > 88)
+   --> tests/tracker/test_classification_authority.py:142:89
+    |
+140 |         monkeypatch.setattr(board, "call_tool", call)
+141 |         with pytest.raises(TrackerUnavailableError if failure == "outage" else IssueLabelReadError):
+142 |             await tracker.set_issue_classification(issue_key=CLAIMED_ISSUE, classification="decision", holder="job")
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+143 |         assert writes == 1
+    |
+
+Found 4 errors.

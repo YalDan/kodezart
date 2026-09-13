@@ -1,0 +1,637 @@
+..FFFFFFFF...FF...........                                               [100%]
+=================================== FAILURES ===================================
+_ test_quote_exists_but_semantic_ground_is_false_upholds_before_commit[unsatisfiable_at_base-claude-opus] _
+
+repository = (PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1824/test_quote_exists_but_semantic0/repo'), '7783d75aa1952496dfa7d99b57ca87fb4e8a8487')
+prompt_set = 'claude-opus'
+ground = <AmendmentGround.UNSATISFIABLE_AT_BASE: 'unsatisfiable_at_base'>
+
+    @pytest.mark.parametrize("prompt_set", ["claude-opus", "anthropic_v5"])
+    @pytest.mark.parametrize("ground", list(AmendmentGround))
+    async def test_quote_exists_but_semantic_ground_is_false_upholds_before_commit(
+        repository,
+        prompt_set,
+        ground,
+    ):
+        executor = Executor(ground=ground)
+        service, guard, workspace, _ = await build(
+            repository, executor, prompt_set=prompt_set
+        )
+        events = await drive(service, guard, repository)
+        report = next(
+            event.report for event in events if isinstance(event, NativeAmendmentEvent)
+        )
+        assert report.upheld[0].reason is UpheldReason.GROUND_NOT_REPRODUCED
+        assert not any(isinstance(event, ResultEvent) for event in events)
+>       assert len(executor.calls) == 2
+E       assert 3 == 2
+E        +  where 3 = len([{'agents': (), 'allowed_tools': <ToolPreset.IMPLEMENTATION: 'implementation'>, 'cwd': '/var/folders/lv/b1m7q5dj1yd5gn...ct's claims hold, are refuted, or remain unverifiable against checked evidence."}}, ...}, 'type': 'json_schema'}, ...}])
+E        +    where [{'agents': (), 'allowed_tools': <ToolPreset.IMPLEMENTATION: 'implementation'>, 'cwd': '/var/folders/lv/b1m7q5dj1yd5gn...ct's claims hold, are refuted, or remain unverifiable against checked evidence."}}, ...}, 'type': 'json_schema'}, ...}] = <tests.services.test_native_amendments.Executor object at 0x10e474aa0>.calls
+
+tests/services/test_native_amendments.py:294: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 19:43:05 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:05 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-7c4ed085bd724d02b88dc97c378859e6 workspace_id=7c4ed085bd724d02b88dc97c378859e6
+2026-09-12 19:43:06 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:06 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:06 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:07 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:07 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-e6aa1b718b744a83bb5b7c466427f0f0 workspace_id=e6aa1b718b744a83bb5b7c466427f0f0
+2026-09-12 19:43:07 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=amendment_judge stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:43:08 [info     ] workspace_released             workspace_id=e6aa1b718b744a83bb5b7c466427f0f0
+2026-09-12 19:43:08 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:08 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:09 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:09 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:10 [info     ] outbound_content_gated         categories=[] content_digest=ff5d9a23e3c48e2665a55fc904af74ae9b320b6e19d3a68bb2ddf6f6ccfc45dc failure=None hits=[] surface=tracker verdict=clean visibility=public writer=tracker_comment
+2026-09-12 19:43:10 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:10 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-ec617438e8bd40c4b5cb539da39984de workspace_id=ec617438e8bd40c4b5cb539da39984de
+2026-09-12 19:43:10 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:43:11 [info     ] workspace_released             workspace_id=ec617438e8bd40c4b5cb539da39984de
+2026-09-12 19:43:11 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:11 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:12 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:12 [warning  ] workspace_release_unclean      branch_name=native-test path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-7c4ed085bd724d02b88dc97c378859e6 workspace_id=7c4ed085bd724d02b88dc97c378859e6
+2026-09-12 19:43:12 [info     ] workspace_released             workspace_id=7c4ed085bd724d02b88dc97c378859e6
+_ test_quote_exists_but_semantic_ground_is_false_upholds_before_commit[unsatisfiable_at_base-anthropic_v5] _
+
+repository = (PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1824/test_quote_exists_but_semantic1/repo'), '751c8033256ef1f2a072199e78f1a1c9c51e414e')
+prompt_set = 'anthropic_v5'
+ground = <AmendmentGround.UNSATISFIABLE_AT_BASE: 'unsatisfiable_at_base'>
+
+    @pytest.mark.parametrize("prompt_set", ["claude-opus", "anthropic_v5"])
+    @pytest.mark.parametrize("ground", list(AmendmentGround))
+    async def test_quote_exists_but_semantic_ground_is_false_upholds_before_commit(
+        repository,
+        prompt_set,
+        ground,
+    ):
+        executor = Executor(ground=ground)
+        service, guard, workspace, _ = await build(
+            repository, executor, prompt_set=prompt_set
+        )
+        events = await drive(service, guard, repository)
+        report = next(
+            event.report for event in events if isinstance(event, NativeAmendmentEvent)
+        )
+        assert report.upheld[0].reason is UpheldReason.GROUND_NOT_REPRODUCED
+        assert not any(isinstance(event, ResultEvent) for event in events)
+>       assert len(executor.calls) == 2
+E       assert 3 == 2
+E        +  where 3 = len([{'agents': (), 'allowed_tools': <ToolPreset.IMPLEMENTATION: 'implementation'>, 'cwd': '/var/folders/lv/b1m7q5dj1yd5gn...ct's claims hold, are refuted, or remain unverifiable against checked evidence."}}, ...}, 'type': 'json_schema'}, ...}])
+E        +    where [{'agents': (), 'allowed_tools': <ToolPreset.IMPLEMENTATION: 'implementation'>, 'cwd': '/var/folders/lv/b1m7q5dj1yd5gn...ct's claims hold, are refuted, or remain unverifiable against checked evidence."}}, ...}, 'type': 'json_schema'}, ...}] = <tests.services.test_native_amendments.Executor object at 0x10e4785c0>.calls
+
+tests/services/test_native_amendments.py:294: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 19:43:14 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:14 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-7e3ad49b54264d2eba7c9ecc2beedfbf workspace_id=7e3ad49b54264d2eba7c9ecc2beedfbf
+2026-09-12 19:43:14 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:15 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:15 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:15 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:16 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-4b62310665484b12a368c26c05f05eb9 workspace_id=4b62310665484b12a368c26c05f05eb9
+2026-09-12 19:43:16 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=amendment_judge stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:43:17 [info     ] workspace_released             workspace_id=4b62310665484b12a368c26c05f05eb9
+2026-09-12 19:43:17 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:17 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:17 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:18 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:18 [info     ] outbound_content_gated         categories=[] content_digest=f44afba8fc1bb51bcb85ba9c9925f8f5364dd50da475e89b6059c8af8bed17d8 failure=None hits=[] surface=tracker verdict=clean visibility=public writer=tracker_comment
+2026-09-12 19:43:18 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:18 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-cdb2bc8d41864b649efd29f5ea05ac98 workspace_id=cdb2bc8d41864b649efd29f5ea05ac98
+2026-09-12 19:43:18 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:43:19 [info     ] workspace_released             workspace_id=cdb2bc8d41864b649efd29f5ea05ac98
+2026-09-12 19:43:19 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:19 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:20 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:20 [warning  ] workspace_release_unclean      branch_name=native-test path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-7e3ad49b54264d2eba7c9ecc2beedfbf workspace_id=7e3ad49b54264d2eba7c9ecc2beedfbf
+2026-09-12 19:43:20 [info     ] workspace_released             workspace_id=7e3ad49b54264d2eba7c9ecc2beedfbf
+_ test_quote_exists_but_semantic_ground_is_false_upholds_before_commit[mutually_unsatisfiable-claude-opus] _
+
+repository = (PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1824/test_quote_exists_but_semantic2/repo'), '5ed5d3d0bf84e2b1ec66bac25b1e78547583807e')
+prompt_set = 'claude-opus'
+ground = <AmendmentGround.MUTUALLY_UNSATISFIABLE: 'mutually_unsatisfiable'>
+
+    @pytest.mark.parametrize("prompt_set", ["claude-opus", "anthropic_v5"])
+    @pytest.mark.parametrize("ground", list(AmendmentGround))
+    async def test_quote_exists_but_semantic_ground_is_false_upholds_before_commit(
+        repository,
+        prompt_set,
+        ground,
+    ):
+        executor = Executor(ground=ground)
+        service, guard, workspace, _ = await build(
+            repository, executor, prompt_set=prompt_set
+        )
+        events = await drive(service, guard, repository)
+        report = next(
+            event.report for event in events if isinstance(event, NativeAmendmentEvent)
+        )
+        assert report.upheld[0].reason is UpheldReason.GROUND_NOT_REPRODUCED
+        assert not any(isinstance(event, ResultEvent) for event in events)
+>       assert len(executor.calls) == 2
+E       assert 3 == 2
+E        +  where 3 = len([{'agents': (), 'allowed_tools': <ToolPreset.IMPLEMENTATION: 'implementation'>, 'cwd': '/var/folders/lv/b1m7q5dj1yd5gn...ct's claims hold, are refuted, or remain unverifiable against checked evidence."}}, ...}, 'type': 'json_schema'}, ...}])
+E        +    where [{'agents': (), 'allowed_tools': <ToolPreset.IMPLEMENTATION: 'implementation'>, 'cwd': '/var/folders/lv/b1m7q5dj1yd5gn...ct's claims hold, are refuted, or remain unverifiable against checked evidence."}}, ...}, 'type': 'json_schema'}, ...}] = <tests.services.test_native_amendments.Executor object at 0x10e4759d0>.calls
+
+tests/services/test_native_amendments.py:294: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 19:43:21 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:22 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-b97cfffdc7114a76bedc175233dc8576 workspace_id=b97cfffdc7114a76bedc175233dc8576
+2026-09-12 19:43:22 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:22 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:23 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:23 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:23 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-865c5bcf2d764c24b4b462356307be46 workspace_id=865c5bcf2d764c24b4b462356307be46
+2026-09-12 19:43:23 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=amendment_judge stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:43:24 [info     ] workspace_released             workspace_id=865c5bcf2d764c24b4b462356307be46
+2026-09-12 19:43:24 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:24 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:25 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:25 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:25 [info     ] outbound_content_gated         categories=[] content_digest=425d0689c1143f69e107d89b03e1ccda49aa344b69c2b5a7190793f86b3b08bf failure=None hits=[] surface=tracker verdict=clean visibility=public writer=tracker_comment
+2026-09-12 19:43:25 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:26 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-e41e6369e4d44b2fb07f9922f505bb39 workspace_id=e41e6369e4d44b2fb07f9922f505bb39
+2026-09-12 19:43:26 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:43:26 [info     ] workspace_released             workspace_id=e41e6369e4d44b2fb07f9922f505bb39
+2026-09-12 19:43:26 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:27 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:27 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:27 [warning  ] workspace_release_unclean      branch_name=native-test path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-b97cfffdc7114a76bedc175233dc8576 workspace_id=b97cfffdc7114a76bedc175233dc8576
+2026-09-12 19:43:28 [info     ] workspace_released             workspace_id=b97cfffdc7114a76bedc175233dc8576
+_ test_quote_exists_but_semantic_ground_is_false_upholds_before_commit[mutually_unsatisfiable-anthropic_v5] _
+
+repository = (PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1824/test_quote_exists_but_semantic3/repo'), 'eba719cd35b8d433462e0a4777bc37da59515435')
+prompt_set = 'anthropic_v5'
+ground = <AmendmentGround.MUTUALLY_UNSATISFIABLE: 'mutually_unsatisfiable'>
+
+    @pytest.mark.parametrize("prompt_set", ["claude-opus", "anthropic_v5"])
+    @pytest.mark.parametrize("ground", list(AmendmentGround))
+    async def test_quote_exists_but_semantic_ground_is_false_upholds_before_commit(
+        repository,
+        prompt_set,
+        ground,
+    ):
+        executor = Executor(ground=ground)
+        service, guard, workspace, _ = await build(
+            repository, executor, prompt_set=prompt_set
+        )
+        events = await drive(service, guard, repository)
+        report = next(
+            event.report for event in events if isinstance(event, NativeAmendmentEvent)
+        )
+        assert report.upheld[0].reason is UpheldReason.GROUND_NOT_REPRODUCED
+        assert not any(isinstance(event, ResultEvent) for event in events)
+>       assert len(executor.calls) == 2
+E       assert 3 == 2
+E        +  where 3 = len([{'agents': (), 'allowed_tools': <ToolPreset.IMPLEMENTATION: 'implementation'>, 'cwd': '/var/folders/lv/b1m7q5dj1yd5gn...ct's claims hold, are refuted, or remain unverifiable against checked evidence."}}, ...}, 'type': 'json_schema'}, ...}])
+E        +    where [{'agents': (), 'allowed_tools': <ToolPreset.IMPLEMENTATION: 'implementation'>, 'cwd': '/var/folders/lv/b1m7q5dj1yd5gn...ct's claims hold, are refuted, or remain unverifiable against checked evidence."}}, ...}, 'type': 'json_schema'}, ...}] = <tests.services.test_native_amendments.Executor object at 0x10e4824e0>.calls
+
+tests/services/test_native_amendments.py:294: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 19:43:29 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:29 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-810b7df9e79542b39362c6f939bb37c8 workspace_id=810b7df9e79542b39362c6f939bb37c8
+2026-09-12 19:43:29 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:29 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:30 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:30 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:30 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-3004c0781518483ab45510acc453b3dc workspace_id=3004c0781518483ab45510acc453b3dc
+2026-09-12 19:43:31 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=amendment_judge stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:43:31 [info     ] workspace_released             workspace_id=3004c0781518483ab45510acc453b3dc
+2026-09-12 19:43:32 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:32 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:32 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:32 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:33 [info     ] outbound_content_gated         categories=[] content_digest=f96c2decee388737460a74bbcc05a0a7ee40949ca924e3adca28fc5be49ec41f failure=None hits=[] surface=tracker verdict=clean visibility=public writer=tracker_comment
+2026-09-12 19:43:33 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:33 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-c70a3712ce4d4782b2270a03ad39cbe9 workspace_id=c70a3712ce4d4782b2270a03ad39cbe9
+2026-09-12 19:43:33 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:43:34 [info     ] workspace_released             workspace_id=c70a3712ce4d4782b2270a03ad39cbe9
+2026-09-12 19:43:34 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:34 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:34 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:35 [warning  ] workspace_release_unclean      branch_name=native-test path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-810b7df9e79542b39362c6f939bb37c8 workspace_id=810b7df9e79542b39362c6f939bb37c8
+2026-09-12 19:43:35 [info     ] workspace_released             workspace_id=810b7df9e79542b39362c6f939bb37c8
+_ test_quote_exists_but_semantic_ground_is_false_upholds_before_commit[premise_false_at_base-claude-opus] _
+
+repository = (PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1824/test_quote_exists_but_semantic4/repo'), 'cea704c3945486e5a8a6435992412ce46ced4c71')
+prompt_set = 'claude-opus'
+ground = <AmendmentGround.PREMISE_FALSE_AT_BASE: 'premise_false_at_base'>
+
+    @pytest.mark.parametrize("prompt_set", ["claude-opus", "anthropic_v5"])
+    @pytest.mark.parametrize("ground", list(AmendmentGround))
+    async def test_quote_exists_but_semantic_ground_is_false_upholds_before_commit(
+        repository,
+        prompt_set,
+        ground,
+    ):
+        executor = Executor(ground=ground)
+        service, guard, workspace, _ = await build(
+            repository, executor, prompt_set=prompt_set
+        )
+        events = await drive(service, guard, repository)
+        report = next(
+            event.report for event in events if isinstance(event, NativeAmendmentEvent)
+        )
+        assert report.upheld[0].reason is UpheldReason.GROUND_NOT_REPRODUCED
+        assert not any(isinstance(event, ResultEvent) for event in events)
+>       assert len(executor.calls) == 2
+E       assert 3 == 2
+E        +  where 3 = len([{'agents': (), 'allowed_tools': <ToolPreset.IMPLEMENTATION: 'implementation'>, 'cwd': '/var/folders/lv/b1m7q5dj1yd5gn...ct's claims hold, are refuted, or remain unverifiable against checked evidence."}}, ...}, 'type': 'json_schema'}, ...}])
+E        +    where [{'agents': (), 'allowed_tools': <ToolPreset.IMPLEMENTATION: 'implementation'>, 'cwd': '/var/folders/lv/b1m7q5dj1yd5gn...ct's claims hold, are refuted, or remain unverifiable against checked evidence."}}, ...}, 'type': 'json_schema'}, ...}] = <tests.services.test_native_amendments.Executor object at 0x10e481b80>.calls
+
+tests/services/test_native_amendments.py:294: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 19:43:36 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:36 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-df82544ffcf445b6b7f4ad0c4072dda7 workspace_id=df82544ffcf445b6b7f4ad0c4072dda7
+2026-09-12 19:43:37 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:37 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:37 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:38 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:38 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-ac3aa6019ba345cea9d8a8cad99e3922 workspace_id=ac3aa6019ba345cea9d8a8cad99e3922
+2026-09-12 19:43:38 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=amendment_judge stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:43:39 [info     ] workspace_released             workspace_id=ac3aa6019ba345cea9d8a8cad99e3922
+2026-09-12 19:43:39 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:39 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:40 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:40 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:40 [info     ] outbound_content_gated         categories=[] content_digest=7b147ca9f9db87adba54cb476a6f560e31c30678a687188dcf0d043495e07760 failure=None hits=[] surface=tracker verdict=clean visibility=public writer=tracker_comment
+2026-09-12 19:43:41 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:41 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-8f141add7b844c789b7ea323eae1cfba workspace_id=8f141add7b844c789b7ea323eae1cfba
+2026-09-12 19:43:41 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:43:42 [info     ] workspace_released             workspace_id=8f141add7b844c789b7ea323eae1cfba
+2026-09-12 19:43:42 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:42 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:42 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:43 [warning  ] workspace_release_unclean      branch_name=native-test path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-df82544ffcf445b6b7f4ad0c4072dda7 workspace_id=df82544ffcf445b6b7f4ad0c4072dda7
+2026-09-12 19:43:43 [info     ] workspace_released             workspace_id=df82544ffcf445b6b7f4ad0c4072dda7
+_ test_quote_exists_but_semantic_ground_is_false_upholds_before_commit[premise_false_at_base-anthropic_v5] _
+
+repository = (PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1824/test_quote_exists_but_semantic5/repo'), '273dd39695aa03d42c1f3dcca3e5567ce1be753e')
+prompt_set = 'anthropic_v5'
+ground = <AmendmentGround.PREMISE_FALSE_AT_BASE: 'premise_false_at_base'>
+
+    @pytest.mark.parametrize("prompt_set", ["claude-opus", "anthropic_v5"])
+    @pytest.mark.parametrize("ground", list(AmendmentGround))
+    async def test_quote_exists_but_semantic_ground_is_false_upholds_before_commit(
+        repository,
+        prompt_set,
+        ground,
+    ):
+        executor = Executor(ground=ground)
+        service, guard, workspace, _ = await build(
+            repository, executor, prompt_set=prompt_set
+        )
+        events = await drive(service, guard, repository)
+        report = next(
+            event.report for event in events if isinstance(event, NativeAmendmentEvent)
+        )
+        assert report.upheld[0].reason is UpheldReason.GROUND_NOT_REPRODUCED
+        assert not any(isinstance(event, ResultEvent) for event in events)
+>       assert len(executor.calls) == 2
+E       assert 3 == 2
+E        +  where 3 = len([{'agents': (), 'allowed_tools': <ToolPreset.IMPLEMENTATION: 'implementation'>, 'cwd': '/var/folders/lv/b1m7q5dj1yd5gn...ct's claims hold, are refuted, or remain unverifiable against checked evidence."}}, ...}, 'type': 'json_schema'}, ...}])
+E        +    where [{'agents': (), 'allowed_tools': <ToolPreset.IMPLEMENTATION: 'implementation'>, 'cwd': '/var/folders/lv/b1m7q5dj1yd5gn...ct's claims hold, are refuted, or remain unverifiable against checked evidence."}}, ...}, 'type': 'json_schema'}, ...}] = <tests.services.test_native_amendments.Executor object at 0x10e2d7200>.calls
+
+tests/services/test_native_amendments.py:294: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 19:43:45 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:45 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-73ef6e25f0ea4dfa9027fb75961641f4 workspace_id=73ef6e25f0ea4dfa9027fb75961641f4
+2026-09-12 19:43:46 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:46 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:47 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:47 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:48 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-0595e1dcb94e4a5b94d8a14eac6bb63b workspace_id=0595e1dcb94e4a5b94d8a14eac6bb63b
+2026-09-12 19:43:48 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=amendment_judge stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:43:49 [info     ] workspace_released             workspace_id=0595e1dcb94e4a5b94d8a14eac6bb63b
+2026-09-12 19:43:49 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:49 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:49 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:50 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:50 [info     ] outbound_content_gated         categories=[] content_digest=d580dfe8b5d595b5778120da1bc9293af6f6c572a9a7d7602a27fa28d56b6990 failure=None hits=[] surface=tracker verdict=clean visibility=public writer=tracker_comment
+2026-09-12 19:43:50 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:50 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-83a1135b2f2b43079d3f09e254e3e1f3 workspace_id=83a1135b2f2b43079d3f09e254e3e1f3
+2026-09-12 19:43:51 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:43:51 [info     ] workspace_released             workspace_id=83a1135b2f2b43079d3f09e254e3e1f3
+2026-09-12 19:43:51 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:52 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:52 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:52 [warning  ] workspace_release_unclean      branch_name=native-test path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-73ef6e25f0ea4dfa9027fb75961641f4 workspace_id=73ef6e25f0ea4dfa9027fb75961641f4
+2026-09-12 19:43:52 [info     ] workspace_released             workspace_id=73ef6e25f0ea4dfa9027fb75961641f4
+_ test_quote_exists_but_semantic_ground_is_false_upholds_before_commit[requires_breaking_house_rule-claude-opus] _
+
+repository = (PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1824/test_quote_exists_but_semantic6/repo'), 'd8ffbcfa9290ac59b85273dc21227e7bb4716d75')
+prompt_set = 'claude-opus'
+ground = <AmendmentGround.REQUIRES_BREAKING_HOUSE_RULE: 'requires_breaking_house_rule'>
+
+    @pytest.mark.parametrize("prompt_set", ["claude-opus", "anthropic_v5"])
+    @pytest.mark.parametrize("ground", list(AmendmentGround))
+    async def test_quote_exists_but_semantic_ground_is_false_upholds_before_commit(
+        repository,
+        prompt_set,
+        ground,
+    ):
+        executor = Executor(ground=ground)
+        service, guard, workspace, _ = await build(
+            repository, executor, prompt_set=prompt_set
+        )
+        events = await drive(service, guard, repository)
+        report = next(
+            event.report for event in events if isinstance(event, NativeAmendmentEvent)
+        )
+        assert report.upheld[0].reason is UpheldReason.GROUND_NOT_REPRODUCED
+        assert not any(isinstance(event, ResultEvent) for event in events)
+>       assert len(executor.calls) == 2
+E       assert 3 == 2
+E        +  where 3 = len([{'agents': (), 'allowed_tools': <ToolPreset.IMPLEMENTATION: 'implementation'>, 'cwd': '/var/folders/lv/b1m7q5dj1yd5gn...ct's claims hold, are refuted, or remain unverifiable against checked evidence."}}, ...}, 'type': 'json_schema'}, ...}])
+E        +    where [{'agents': (), 'allowed_tools': <ToolPreset.IMPLEMENTATION: 'implementation'>, 'cwd': '/var/folders/lv/b1m7q5dj1yd5gn...ct's claims hold, are refuted, or remain unverifiable against checked evidence."}}, ...}, 'type': 'json_schema'}, ...}] = <tests.services.test_native_amendments.Executor object at 0x10e51d250>.calls
+
+tests/services/test_native_amendments.py:294: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 19:43:54 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:54 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-c7a00319f81040968382d67ee08abcb3 workspace_id=c7a00319f81040968382d67ee08abcb3
+2026-09-12 19:43:54 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:55 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:55 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:55 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:56 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-8e623759d8da46649ff881f5be2b1106 workspace_id=8e623759d8da46649ff881f5be2b1106
+2026-09-12 19:43:56 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=amendment_judge stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:43:57 [info     ] workspace_released             workspace_id=8e623759d8da46649ff881f5be2b1106
+2026-09-12 19:43:57 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:57 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:58 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:58 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:58 [info     ] outbound_content_gated         categories=[] content_digest=1ed329c15e0627def86a6e1ccc415bb63bebd210527efc39413d5b8caed34ce7 failure=None hits=[] surface=tracker verdict=clean visibility=public writer=tracker_comment
+2026-09-12 19:43:59 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:43:59 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-be90da87379c4558bb0a28b4f6e97cd1 workspace_id=be90da87379c4558bb0a28b4f6e97cd1
+2026-09-12 19:43:59 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:43:59 [info     ] workspace_released             workspace_id=be90da87379c4558bb0a28b4f6e97cd1
+2026-09-12 19:44:00 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:44:00 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:44:00 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:44:00 [warning  ] workspace_release_unclean      branch_name=native-test path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-c7a00319f81040968382d67ee08abcb3 workspace_id=c7a00319f81040968382d67ee08abcb3
+2026-09-12 19:44:00 [info     ] workspace_released             workspace_id=c7a00319f81040968382d67ee08abcb3
+_ test_quote_exists_but_semantic_ground_is_false_upholds_before_commit[requires_breaking_house_rule-anthropic_v5] _
+
+repository = (PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1824/test_quote_exists_but_semantic7/repo'), '4443baad6baf7a3ea63ee45fba3bae87d2fd0e0c')
+prompt_set = 'anthropic_v5'
+ground = <AmendmentGround.REQUIRES_BREAKING_HOUSE_RULE: 'requires_breaking_house_rule'>
+
+    @pytest.mark.parametrize("prompt_set", ["claude-opus", "anthropic_v5"])
+    @pytest.mark.parametrize("ground", list(AmendmentGround))
+    async def test_quote_exists_but_semantic_ground_is_false_upholds_before_commit(
+        repository,
+        prompt_set,
+        ground,
+    ):
+        executor = Executor(ground=ground)
+        service, guard, workspace, _ = await build(
+            repository, executor, prompt_set=prompt_set
+        )
+        events = await drive(service, guard, repository)
+        report = next(
+            event.report for event in events if isinstance(event, NativeAmendmentEvent)
+        )
+        assert report.upheld[0].reason is UpheldReason.GROUND_NOT_REPRODUCED
+        assert not any(isinstance(event, ResultEvent) for event in events)
+>       assert len(executor.calls) == 2
+E       assert 3 == 2
+E        +  where 3 = len([{'agents': (), 'allowed_tools': <ToolPreset.IMPLEMENTATION: 'implementation'>, 'cwd': '/var/folders/lv/b1m7q5dj1yd5gn...ct's claims hold, are refuted, or remain unverifiable against checked evidence."}}, ...}, 'type': 'json_schema'}, ...}])
+E        +    where [{'agents': (), 'allowed_tools': <ToolPreset.IMPLEMENTATION: 'implementation'>, 'cwd': '/var/folders/lv/b1m7q5dj1yd5gn...ct's claims hold, are refuted, or remain unverifiable against checked evidence."}}, ...}, 'type': 'json_schema'}, ...}] = <tests.services.test_native_amendments.Executor object at 0x10e51c170>.calls
+
+tests/services/test_native_amendments.py:294: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 19:44:02 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:44:02 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-6ebfdb66f143434b8a4ac625c443ef0d workspace_id=6ebfdb66f143434b8a4ac625c443ef0d
+2026-09-12 19:44:02 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:44:03 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:44:03 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:44:03 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:44:04 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-ae9c6f0de01a41a7a84dc8ab426ef4ed workspace_id=ae9c6f0de01a41a7a84dc8ab426ef4ed
+2026-09-12 19:44:04 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=amendment_judge stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:44:05 [info     ] workspace_released             workspace_id=ae9c6f0de01a41a7a84dc8ab426ef4ed
+2026-09-12 19:44:05 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:44:05 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:44:05 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:44:06 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:44:06 [info     ] outbound_content_gated         categories=[] content_digest=e0c606a3e98c75e9f9fc5f92222cfbbab7cdbf24e948652cadd7e781cd9581b4 failure=None hits=[] surface=tracker verdict=clean visibility=public writer=tracker_comment
+2026-09-12 19:44:06 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:44:06 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-4cc2ac990ba74f8ab46186d9f9aa3d73 workspace_id=4cc2ac990ba74f8ab46186d9f9aa3d73
+2026-09-12 19:44:07 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:44:07 [info     ] workspace_released             workspace_id=4cc2ac990ba74f8ab46186d9f9aa3d73
+2026-09-12 19:44:07 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:44:07 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:44:08 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:44:08 [warning  ] workspace_release_unclean      branch_name=native-test path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-6ebfdb66f143434b8a4ac625c443ef0d workspace_id=6ebfdb66f143434b8a4ac625c443ef0d
+2026-09-12 19:44:08 [info     ] workspace_released             workspace_id=6ebfdb66f143434b8a4ac625c443ef0d
+_ test_current_authority_after_awaited_judge_or_commit_message[check-AmendmentJudgment] _
+
+repository = (PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1824/test_current_authority_after_a0/repo'), '321414c76dc310757cdaeec714ac665f54f72d51')
+boundary = 'AmendmentJudgment', change = 'check'
+
+    @pytest.mark.parametrize("boundary", ["AmendmentJudgment", "CommitMessageOutput"])
+    @pytest.mark.parametrize("change", ["check", "outage", "unchanged"])
+    async def test_current_authority_after_awaited_judge_or_commit_message(
+        repository,
+        boundary,
+        change,
+    ):
+        port = tracker()
+    
+        async def mutate(title, payload, kwargs):
+            if title != boundary or change == "unchanged":
+                return
+            if change == "check":
+                port.issues[DIRECT_OWED] = port.issues[DIRECT_OWED].model_copy(
+                    update={"body": "**Check:** amended during await\n**Do:** verify"},
+                )
+            else:
+    
+                async def unavailable(**kwargs):
+                    raise ConnectionError("external tracker outage")
+    
+                port.scope_issues = unavailable
+    
+        executor = Executor(claim=boundary == "AmendmentJudgment", mutate=mutate)
+        service, guard, workspace, _ = await build(repository, executor, port=port)
+        try:
+            if change == "unchanged":
+                events = await drive(service, guard, repository)
+                assert any(isinstance(event, NativeAmendmentEvent) for event in events)
+            else:
+                with pytest.raises((NativeWriteRefusalError, FireSpecEntryError)):
+>                   await drive(service, guard, repository)
+
+tests/services/test_native_amendments.py:398: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/services/test_native_amendments.py:212: in drive
+    return [
+src/kodezart/services/agent_service.py:156: in stream_workflow
+    async for event in self._run_in_workspace(
+src/kodezart/services/agent_service.py:300: in _run_in_workspace
+    report = await native_guard.judge(
+src/kodezart/services/native_amendments.py:460: in judge
+    return await NativeAmendmentGraph(
+src/kodezart/chains/native_amendment.py:92: in run
+    final = await self.graph.ainvoke(initial)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:3184: in ainvoke
+    async for chunk in self.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:304: in atick
+    await arun_with_retry(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/native_amendment.py:67: in _judge
+    await self._actions.require_current()
+src/kodezart/services/native_amendments.py:480: in require_current
+    await self._guard.require_current(
+src/kodezart/services/native_amendments.py:280: in require_current
+    await self._require_current_at_head(
+src/kodezart/services/native_amendments.py:329: in _require_current_at_head
+    require_criterion_source(expected=expected, current=current_issue)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def require_criterion_source(
+        *, expected: TrackerIssue, current: TrackerIssue, pending_replay: bool = False
+    ) -> None:
+        """Preserve every source fact except comment churn and an allowed reset replay."""
+        if "criterion" not in current.issue_labels or current.parent_key is None:
+            raise CriterionReadError(
+                issue_key=expected.issue_key,
+                reason="the native criterion lost its classification or parent",
+            )
+        ignored = {"updated_at"}
+        if pending_replay and current.state_kind is WorkflowStateKind.UNSTARTED:
+            ignored |= {"state_kind", "state_name"}
+        if expected.model_dump(exclude=ignored) != current.model_dump(exclude=ignored):
+>           raise CriterionReadError(
+                issue_key=expected.issue_key,
+                reason="native criterion facts changed before amendment",
+            )
+E           kodezart.domain.errors.CriterionReadError: criteria of 'fire/owed-direct' could not be read: native criterion facts changed before amendment
+E           During task with name 'judge' and id 'adf8255e-f02f-5300-72b2-3f40046ec3e7'
+
+src/kodezart/domain/criterion_amendment.py:20: CriterionReadError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 19:44:28 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:44:28 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-d4c2898d96be4d81bf9f2623133537ea workspace_id=d4c2898d96be4d81bf9f2623133537ea
+2026-09-12 19:44:29 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:44:29 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:44:29 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:44:30 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:44:30 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-18836b5d5f614e62bfd5b25764289ed9 workspace_id=18836b5d5f614e62bfd5b25764289ed9
+2026-09-12 19:44:31 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=amendment_judge stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:44:32 [info     ] workspace_released             workspace_id=18836b5d5f614e62bfd5b25764289ed9
+2026-09-12 19:44:33 [warning  ] workspace_release_unclean      branch_name=native-test path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-d4c2898d96be4d81bf9f2623133537ea workspace_id=d4c2898d96be4d81bf9f2623133537ea
+2026-09-12 19:44:33 [info     ] workspace_released             workspace_id=d4c2898d96be4d81bf9f2623133537ea
+_ test_current_authority_after_awaited_judge_or_commit_message[check-CommitMessageOutput] _
+
+repository = (PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1824/test_current_authority_after_a1/repo'), '756543b26da494a37023393391688cae8a0b5535')
+boundary = 'CommitMessageOutput', change = 'check'
+
+    @pytest.mark.parametrize("boundary", ["AmendmentJudgment", "CommitMessageOutput"])
+    @pytest.mark.parametrize("change", ["check", "outage", "unchanged"])
+    async def test_current_authority_after_awaited_judge_or_commit_message(
+        repository,
+        boundary,
+        change,
+    ):
+        port = tracker()
+    
+        async def mutate(title, payload, kwargs):
+            if title != boundary or change == "unchanged":
+                return
+            if change == "check":
+                port.issues[DIRECT_OWED] = port.issues[DIRECT_OWED].model_copy(
+                    update={"body": "**Check:** amended during await\n**Do:** verify"},
+                )
+            else:
+    
+                async def unavailable(**kwargs):
+                    raise ConnectionError("external tracker outage")
+    
+                port.scope_issues = unavailable
+    
+        executor = Executor(claim=boundary == "AmendmentJudgment", mutate=mutate)
+        service, guard, workspace, _ = await build(repository, executor, port=port)
+        try:
+            if change == "unchanged":
+                events = await drive(service, guard, repository)
+                assert any(isinstance(event, NativeAmendmentEvent) for event in events)
+            else:
+                with pytest.raises((NativeWriteRefusalError, FireSpecEntryError)):
+>                   await drive(service, guard, repository)
+
+tests/services/test_native_amendments.py:398: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/services/test_native_amendments.py:212: in drive
+    return [
+src/kodezart/services/agent_service.py:156: in stream_workflow
+    async for event in self._run_in_workspace(
+src/kodezart/services/agent_service.py:331: in _run_in_workspace
+    persist_result = await self._persister.persist(
+src/kodezart/adapters/git_change_persister.py:102: in persist
+    return await self._persist_dirty(
+src/kodezart/adapters/git_change_persister.py:194: in _persist_dirty
+    await before_commit()
+src/kodezart/services/agent_service.py:310: in before_commit
+    await native_guard.require_current(
+src/kodezart/services/native_amendments.py:280: in require_current
+    await self._require_current_at_head(
+src/kodezart/services/native_amendments.py:329: in _require_current_at_head
+    require_criterion_source(expected=expected, current=current_issue)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def require_criterion_source(
+        *, expected: TrackerIssue, current: TrackerIssue, pending_replay: bool = False
+    ) -> None:
+        """Preserve every source fact except comment churn and an allowed reset replay."""
+        if "criterion" not in current.issue_labels or current.parent_key is None:
+            raise CriterionReadError(
+                issue_key=expected.issue_key,
+                reason="the native criterion lost its classification or parent",
+            )
+        ignored = {"updated_at"}
+        if pending_replay and current.state_kind is WorkflowStateKind.UNSTARTED:
+            ignored |= {"state_kind", "state_name"}
+        if expected.model_dump(exclude=ignored) != current.model_dump(exclude=ignored):
+>           raise CriterionReadError(
+                issue_key=expected.issue_key,
+                reason="native criterion facts changed before amendment",
+            )
+E           kodezart.domain.errors.CriterionReadError: criteria of 'fire/owed-direct' could not be read: native criterion facts changed before amendment
+
+src/kodezart/domain/criterion_amendment.py:20: CriterionReadError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 19:44:36 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:44:36 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-ea03e2ccfd1f4bc3a6416efac45d8172 workspace_id=ea03e2ccfd1f4bc3a6416efac45d8172
+2026-09-12 19:44:37 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:44:38 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:44:38 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:44:39 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:44:39 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:44:40 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=commit_message stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:44:40 [info     ] outbound_content_gated         categories=[] content_digest=1c2258ba30d6edc526796ea21c3fb5396230012aa5082ada3a09885c265fdb2a failure=None hits=[] surface=repository verdict=clean visibility=public writer=commit_message
+2026-09-12 19:44:40 [warning  ] native_writer_workspace_retained workspace_path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-ea03e2ccfd1f4bc3a6416efac45d8172
+2026-09-12 19:44:40 [warning  ] workspace_release_unclean      branch_name=native-test path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-ea03e2ccfd1f4bc3a6416efac45d8172 workspace_id=ea03e2ccfd1f4bc3a6416efac45d8172
+2026-09-12 19:44:40 [info     ] workspace_released             workspace_id=ea03e2ccfd1f4bc3a6416efac45d8172
+=========================== short test summary info ============================
+FAILED tests/services/test_native_amendments.py::test_quote_exists_but_semantic_ground_is_false_upholds_before_commit[unsatisfiable_at_base-claude-opus]
+FAILED tests/services/test_native_amendments.py::test_quote_exists_but_semantic_ground_is_false_upholds_before_commit[unsatisfiable_at_base-anthropic_v5]
+FAILED tests/services/test_native_amendments.py::test_quote_exists_but_semantic_ground_is_false_upholds_before_commit[mutually_unsatisfiable-claude-opus]
+FAILED tests/services/test_native_amendments.py::test_quote_exists_but_semantic_ground_is_false_upholds_before_commit[mutually_unsatisfiable-anthropic_v5]
+FAILED tests/services/test_native_amendments.py::test_quote_exists_but_semantic_ground_is_false_upholds_before_commit[premise_false_at_base-claude-opus]
+FAILED tests/services/test_native_amendments.py::test_quote_exists_but_semantic_ground_is_false_upholds_before_commit[premise_false_at_base-anthropic_v5]
+FAILED tests/services/test_native_amendments.py::test_quote_exists_but_semantic_ground_is_false_upholds_before_commit[requires_breaking_house_rule-claude-opus]
+FAILED tests/services/test_native_amendments.py::test_quote_exists_but_semantic_ground_is_false_upholds_before_commit[requires_breaking_house_rule-anthropic_v5]
+FAILED tests/services/test_native_amendments.py::test_current_authority_after_awaited_judge_or_commit_message[check-AmendmentJudgment]
+FAILED tests/services/test_native_amendments.py::test_current_authority_after_awaited_judge_or_commit_message[check-CommitMessageOutput]
+10 failed, 16 passed in 164.48s (0:02:44)

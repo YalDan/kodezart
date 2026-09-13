@@ -1,0 +1,296 @@
+diff --git a/src/kodezart/services/amendment_writeback.py b/src/kodezart/services/amendment_writeback.py
+index 49da9e9..8092bab 100644
+--- a/src/kodezart/services/amendment_writeback.py
++++ b/src/kodezart/services/amendment_writeback.py
+@@ -88,6 +88,10 @@ class AmendmentWriteAuthority(Protocol):
+         """Re-read live criterion/ruling/HEAD/base facts before the next effect."""
+         ...
+ 
++    async def observe_archive(self, *, artifact: TrackerArtifact) -> None:
++        """Keep the verified historical artifact current through publication."""
++        ...
++
+     async def observe_criterion(
+         self, *, previous: TrackerIssue, body: str, reset: bool
+     ) -> TrackerIssue:
+@@ -427,6 +431,7 @@ class AmendmentWriteBack:
+                 base=judgment.base_sha,
+                 authority=authority,
+             )
++            await authority.observe_archive(artifact=archive_result.artifact)
+             if reason is not None:
+                 publication = RecordedRefusal(record=archive_result)
+                 if reason is UpheldReason.COST_MEASURED_UNECONOMIC:
+diff --git a/src/kodezart/services/native_amendments.py b/src/kodezart/services/native_amendments.py
+index 22c3074..e2e5114 100644
+--- a/src/kodezart/services/native_amendments.py
++++ b/src/kodezart/services/native_amendments.py
+@@ -29,8 +29,10 @@ from kodezart.domain.comment_markers import configured_marker_prefix
+ from kodezart.domain.criterion_amendment import require_criterion_source
+ from kodezart.domain.errors import (
+     CriterionReadError,
++    DuplicateCommentMarkerError,
+     RulingRecordReadError,
+     ScopeReadError,
++    WriteBackReadError,
+ )
+ from kodezart.domain.fire_spec import criterion_check
+ from kodezart.services.amendment_writeback import (
+@@ -43,6 +45,7 @@ from kodezart.services.audit_sessions import judge_in_workspace
+ from kodezart.services.owned_workspace import owned_workspace
+ from kodezart.services.ruling_records import RulingRecordReader
+ from kodezart.services.scope_membership import read_scope_members
++from kodezart.services.tracker_artifacts import read_tracker_artifact
+ from kodezart.types.domain.agent import AMENDMENT_JUDGMENT_SCHEMA, Ruling
+ from kodezart.types.domain.amendment import (
+     AmendmentClaim,
+@@ -53,6 +56,7 @@ from kodezart.types.domain.amendment import (
+     NativeWriterOutput,
+     NativeWriterStart,
+ )
++from kodezart.types.domain.audit import TrackerArtifact
+ from kodezart.types.domain.criteria import (
+     CriterionId,
+     TrackerCriterion,
+@@ -231,6 +235,7 @@ class _NativeWriterGuard:
+         self._rulings: tuple[Ruling, ...] | None = None
+         self._criterion_issues: tuple[TrackerIssue, ...] | None = None
+         self._ruling_records: tuple[tuple[TrackerComment, Ruling], ...] | None = None
++        self._archives: tuple[TrackerArtifact, ...] = ()
+         self._base_sha: str | None = None
+         self._holder, self._visibility = holder, visibility
+ 
+@@ -319,6 +324,28 @@ class _NativeWriterGuard:
+             raise NativeWriteRefusalError(
+                 "Current Checks changed during native writing"
+             )
++        for expected_archive in self._archives:
++            try:
++                current_archive = await read_tracker_artifact(
++                    tracker=owner._tracker, surface=expected_archive.surface
++                )
++            except (
++                TrackerUnavailableError,
++                TrackerAccessDeniedError,
++                TrackerProtocolError,
++                ConnectionError,
++                TimeoutError,
++                ScopeReadError,
++                WriteBackReadError,
++                DuplicateCommentMarkerError,
++            ) as exc:
++                raise NativeWriteRefusalError(
++                    "The verified amendment archive could not be re-read"
++                ) from exc
++            if current_archive != expected_archive:
++                raise NativeWriteRefusalError(
++                    "The verified amendment archive changed during native writing"
++                )
+         if await settle(owner._git.has_replace_refs(workspace_path)):
+             raise NativeWriteRefusalError("Native writing cannot use replacement refs")
+         if (
+@@ -482,6 +509,10 @@ class _WriterActions:
+             workspace_path=self._workspace_path, start=self._start
+         )
+ 
++    async def observe_archive(self, *, artifact: TrackerArtifact) -> None:
++        self._guard._archives = (*self._guard._archives, artifact)
++        await self.require_current()
++
+     async def judge_claim(self, claim: AmendmentClaim) -> AmendmentJudgment:
+         return await self._guard._judge_claim(
+             workspace_path=self._workspace_path, claim=claim
+diff --git a/tests/services/test_native_amendment_archive_independent.py b/tests/services/test_native_amendment_archive_independent.py
+new file mode 100644
+index 0000000..83792f6
+--- /dev/null
++++ b/tests/services/test_native_amendment_archive_independent.py
+@@ -0,0 +1,88 @@
++"""Independent current-history guards at the actual native precommit boundary."""
++
++import pytest
++
++from kodezart.domain.amendment import NativeWriteRefusalError
++from kodezart.types.domain.agent import NativeAmendmentEvent, ResultEvent
++from tests.chains.test_native_fire import DIRECT_DONE, tracker
++from tests.services.test_native_amendments import (
++    Executor,
++    build,
++    cleanup,
++    drive,
++    git,
++    repository,
++)
++
++__all__ = ["repository"]
++
++
++@pytest.mark.parametrize("phase", ["author", "final_judge"])
++@pytest.mark.parametrize("change", ["replace", "delete", "unchanged"])
++async def test_native_amendment_requires_preserved_current_history(
++    repository, phase, change
++):
++    port = tracker()
++    original = port.issues[DIRECT_DONE]
++    original = original.model_copy(
++        update={"body": original.body + "\n**Class:** observed\n"}
++    )
++    port.issues[DIRECT_DONE] = original
++    reached = False
++    judgments = 0
++
++    async def external_principal_edit(title, payload, kwargs):
++        nonlocal reached, judgments
++        if title == "WriteBackFinding":
++            judgments += 1
++        at_boundary = (
++            title == "AmendmentTextOutput"
++            if phase == "author"
++            else (title == "WriteBackFinding" and judgments == 2)
++        )
++        if not at_boundary:
++            return
++        reached = True
++        records = [c for c in port.comments if c.body.startswith("[fixture-amendment:")]
++        assert len(records) == 1
++        archive = records[0]
++        # A principal can edit native tracker content while the automation owns
++        # its advisory grant; this is no second run claiming the same grant.
++        if change == "delete":
++            port.comments.remove(archive)
++        elif change == "replace":
++            port.comments[port.comments.index(archive)] = archive.model_copy(
++                update={
++                    "body": archive.body.partition("\n")[0]
++                    + "\nA principal replaced this historical record."
++                }
++            )
++
++    executor = Executor(
++        reproduced=True,
++        subject={"kind": "criterion", "id": DIRECT_DONE},
++        mutate=external_principal_edit,
++    )
++    service, guard, workspace, _ = await build(repository, executor, port=port)
++    try:
++        if change == "unchanged":
++            events = await drive(service, guard, repository)
++            report = next(
++                e.report for e in events if isinstance(e, NativeAmendmentEvent)
++            )
++            assert report.verdicts[0].verdict == "amended"
++            assert any(isinstance(e, ResultEvent) and e.commit_sha for e in events)
++        else:
++            with pytest.raises(NativeWriteRefusalError):
++                await drive(service, guard, repository)
++            if phase == "author":
++                assert port.issues[DIRECT_DONE] == original
++            assert (
++                await git(
++                    repository[0], "ls-remote", "origin", "refs/heads/native-test"
++                )
++                == ""
++            )
++        assert reached
++    finally:
++        await cleanup(workspace)
+diff --git a/tests/services/test_native_amendment_archive_publication.py b/tests/services/test_native_amendment_archive_publication.py
+new file mode 100644
+index 0000000..b86040f
+--- /dev/null
++++ b/tests/services/test_native_amendment_archive_publication.py
+@@ -0,0 +1,94 @@
++"""Verified amendment history stays live through actual commit and publication."""
++
++import pytest
++
++from kodezart.domain.amendment import NativeWriteRefusalError
++from kodezart.types.domain.agent import ResultEvent
++from tests.chains.test_native_fire import DIRECT_DONE, tracker
++from tests.services.test_native_amendments import (
++    Executor,
++    build,
++    cleanup,
++    drive,
++    git,
++    repository,
++)
++
++__all__ = ["repository"]
++
++
++@pytest.mark.parametrize("phase", ["commit_message", "commit_receipt"])
++@pytest.mark.parametrize("delete", [True, False])
++async def test_archive_survives_commit_message_and_actual_commit_receipt(
++    repository, monkeypatch, phase, delete
++):
++    port = tracker()
++    reached = False
++    committed = []
++
++    def principal_change():
++        nonlocal reached
++        reached = True
++        archives = [
++            comment
++            for comment in port.comments
++            if comment.body.startswith("[fixture-amendment:")
++        ]
++        assert len(archives) == 1
++        if delete:
++            port.comments.remove(archives[0])
++
++    async def answers(title, payload, kwargs):
++        if phase == "commit_message" and title == "CommitMessageOutput":
++            principal_change()
++
++    executor = Executor(
++        reproduced=True,
++        subject={"kind": "criterion", "id": DIRECT_DONE},
++        mutate=answers,
++    )
++    service, guard, workspace, _ = await build(repository, executor, port=port)
++    actual_commit = workspace._git.commit
++
++    async def commit(*args, **kwargs):
++        receipt = await actual_commit(*args, **kwargs)
++        committed.append(receipt)
++        if phase == "commit_receipt":
++            principal_change()
++        return receipt
++
++    monkeypatch.setattr(workspace._git, "commit", commit)
++    try:
++        if delete:
++            with pytest.raises(NativeWriteRefusalError, match="amendment archive"):
++                await drive(service, guard, repository)
++            assert not await git(
++                repository[0], "ls-remote", "origin", "refs/heads/native-test"
++            )
++            assert bool(committed) is (phase == "commit_receipt")
++            if committed:
++                assert (
++                    await git(repository[0], "rev-parse", "native-test") == committed[0]
++                )
++            else:
++                assert (
++                    await git(repository[0], "log", "native-test", "--format=%s", "-1")
++                    == "newer writer starting point"
++                )
++            assert workspace._workspaces, "failed native persistence retains evidence"
++        else:
++            events = await drive(service, guard, repository)
++            assert len(committed) == 1
++            assert any(
++                isinstance(event, ResultEvent) and event.commit_sha == committed[0]
++                for event in events
++            )
++            assert await git(
++                repository[0], "ls-remote", "origin", "refs/heads/native-test"
++            )
++        assert reached
++        assert [
++            call["output_format"]["schema"]["title"] for call in executor.calls
++        ].count("AmendmentJudgment") == 1
++    finally:
++        await cleanup(workspace)

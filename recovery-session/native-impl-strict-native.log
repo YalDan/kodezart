@@ -1,0 +1,431 @@
+.................................FFFFFFFFF...                            [100%]
+=================================== FAILURES ===================================
+_ test_native_inner_checkpoint_resume_requires_current_checks[changed-check-execute] _
+
+barrier = 'execute', change = 'changed-check'
+
+    @pytest.mark.parametrize("barrier", ["execute", "evaluate"])
+    @pytest.mark.parametrize(
+        "change", ["changed-check", "state", "missing-check", "outage"]
+    )
+    async def test_native_inner_checkpoint_resume_requires_current_checks(barrier, change):
+        from kodezart.types.domain.workflow import RalphLoopContext
+    
+        port = CountingTracker()
+        source = TrackerCriteria(tracker=port)
+        spec = await source.read_spec(issue_key=SUBJECT)
+        snapshot = await source.read_current(spec=spec)
+        saver = InMemorySaver()
+        original = engine(criteria=source, executor=NativeExecutor([]), real_loop=True)
+        loop = original.implementation._quality_gate
+        graph = loop._build_graph().compile(checkpointer=saver)
+        context = RalphLoopContext(
+            prompt=spec.body,
+            repo_path="/tmp/fire",
+            repo_url=None,
+            cache_key="inner-resume",
+            base_spec=trunk_base("main"),
+            permission_mode=PermissionMode.UNATTENDED,
+            allowed_tools=["Bash"],
+            feature_branch="feature",
+            ralph_branch="ralph",
+            work_base_ref="main",
+            acceptance_criteria=snapshot.criteria,
+            tracker_spec=spec,
+>           repo_visibility=RepoVisibility.unknown,
+                            ^^^^^^^^^^^^^^^^^^^^^^
+        )
+E       AttributeError: type object 'RepoVisibility' has no attribute 'unknown'
+
+tests/chains/test_native_fire.py:909: AttributeError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 14:20:29 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+_ test_native_inner_checkpoint_resume_requires_current_checks[changed-check-evaluate] _
+
+barrier = 'evaluate', change = 'changed-check'
+
+    @pytest.mark.parametrize("barrier", ["execute", "evaluate"])
+    @pytest.mark.parametrize(
+        "change", ["changed-check", "state", "missing-check", "outage"]
+    )
+    async def test_native_inner_checkpoint_resume_requires_current_checks(barrier, change):
+        from kodezart.types.domain.workflow import RalphLoopContext
+    
+        port = CountingTracker()
+        source = TrackerCriteria(tracker=port)
+        spec = await source.read_spec(issue_key=SUBJECT)
+        snapshot = await source.read_current(spec=spec)
+        saver = InMemorySaver()
+        original = engine(criteria=source, executor=NativeExecutor([]), real_loop=True)
+        loop = original.implementation._quality_gate
+        graph = loop._build_graph().compile(checkpointer=saver)
+        context = RalphLoopContext(
+            prompt=spec.body,
+            repo_path="/tmp/fire",
+            repo_url=None,
+            cache_key="inner-resume",
+            base_spec=trunk_base("main"),
+            permission_mode=PermissionMode.UNATTENDED,
+            allowed_tools=["Bash"],
+            feature_branch="feature",
+            ralph_branch="ralph",
+            work_base_ref="main",
+            acceptance_criteria=snapshot.criteria,
+            tracker_spec=spec,
+>           repo_visibility=RepoVisibility.unknown,
+                            ^^^^^^^^^^^^^^^^^^^^^^
+        )
+E       AttributeError: type object 'RepoVisibility' has no attribute 'unknown'
+
+tests/chains/test_native_fire.py:909: AttributeError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 14:20:29 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+__ test_native_inner_checkpoint_resume_requires_current_checks[state-execute] __
+
+barrier = 'execute', change = 'state'
+
+    @pytest.mark.parametrize("barrier", ["execute", "evaluate"])
+    @pytest.mark.parametrize(
+        "change", ["changed-check", "state", "missing-check", "outage"]
+    )
+    async def test_native_inner_checkpoint_resume_requires_current_checks(barrier, change):
+        from kodezart.types.domain.workflow import RalphLoopContext
+    
+        port = CountingTracker()
+        source = TrackerCriteria(tracker=port)
+        spec = await source.read_spec(issue_key=SUBJECT)
+        snapshot = await source.read_current(spec=spec)
+        saver = InMemorySaver()
+        original = engine(criteria=source, executor=NativeExecutor([]), real_loop=True)
+        loop = original.implementation._quality_gate
+        graph = loop._build_graph().compile(checkpointer=saver)
+        context = RalphLoopContext(
+            prompt=spec.body,
+            repo_path="/tmp/fire",
+            repo_url=None,
+            cache_key="inner-resume",
+            base_spec=trunk_base("main"),
+            permission_mode=PermissionMode.UNATTENDED,
+            allowed_tools=["Bash"],
+            feature_branch="feature",
+            ralph_branch="ralph",
+            work_base_ref="main",
+            acceptance_criteria=snapshot.criteria,
+            tracker_spec=spec,
+>           repo_visibility=RepoVisibility.unknown,
+                            ^^^^^^^^^^^^^^^^^^^^^^
+        )
+E       AttributeError: type object 'RepoVisibility' has no attribute 'unknown'
+
+tests/chains/test_native_fire.py:909: AttributeError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 14:20:30 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+_ test_native_inner_checkpoint_resume_requires_current_checks[state-evaluate] __
+
+barrier = 'evaluate', change = 'state'
+
+    @pytest.mark.parametrize("barrier", ["execute", "evaluate"])
+    @pytest.mark.parametrize(
+        "change", ["changed-check", "state", "missing-check", "outage"]
+    )
+    async def test_native_inner_checkpoint_resume_requires_current_checks(barrier, change):
+        from kodezart.types.domain.workflow import RalphLoopContext
+    
+        port = CountingTracker()
+        source = TrackerCriteria(tracker=port)
+        spec = await source.read_spec(issue_key=SUBJECT)
+        snapshot = await source.read_current(spec=spec)
+        saver = InMemorySaver()
+        original = engine(criteria=source, executor=NativeExecutor([]), real_loop=True)
+        loop = original.implementation._quality_gate
+        graph = loop._build_graph().compile(checkpointer=saver)
+        context = RalphLoopContext(
+            prompt=spec.body,
+            repo_path="/tmp/fire",
+            repo_url=None,
+            cache_key="inner-resume",
+            base_spec=trunk_base("main"),
+            permission_mode=PermissionMode.UNATTENDED,
+            allowed_tools=["Bash"],
+            feature_branch="feature",
+            ralph_branch="ralph",
+            work_base_ref="main",
+            acceptance_criteria=snapshot.criteria,
+            tracker_spec=spec,
+>           repo_visibility=RepoVisibility.unknown,
+                            ^^^^^^^^^^^^^^^^^^^^^^
+        )
+E       AttributeError: type object 'RepoVisibility' has no attribute 'unknown'
+
+tests/chains/test_native_fire.py:909: AttributeError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 14:20:30 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+_ test_native_inner_checkpoint_resume_requires_current_checks[missing-check-execute] _
+
+barrier = 'execute', change = 'missing-check'
+
+    @pytest.mark.parametrize("barrier", ["execute", "evaluate"])
+    @pytest.mark.parametrize(
+        "change", ["changed-check", "state", "missing-check", "outage"]
+    )
+    async def test_native_inner_checkpoint_resume_requires_current_checks(barrier, change):
+        from kodezart.types.domain.workflow import RalphLoopContext
+    
+        port = CountingTracker()
+        source = TrackerCriteria(tracker=port)
+        spec = await source.read_spec(issue_key=SUBJECT)
+        snapshot = await source.read_current(spec=spec)
+        saver = InMemorySaver()
+        original = engine(criteria=source, executor=NativeExecutor([]), real_loop=True)
+        loop = original.implementation._quality_gate
+        graph = loop._build_graph().compile(checkpointer=saver)
+        context = RalphLoopContext(
+            prompt=spec.body,
+            repo_path="/tmp/fire",
+            repo_url=None,
+            cache_key="inner-resume",
+            base_spec=trunk_base("main"),
+            permission_mode=PermissionMode.UNATTENDED,
+            allowed_tools=["Bash"],
+            feature_branch="feature",
+            ralph_branch="ralph",
+            work_base_ref="main",
+            acceptance_criteria=snapshot.criteria,
+            tracker_spec=spec,
+>           repo_visibility=RepoVisibility.unknown,
+                            ^^^^^^^^^^^^^^^^^^^^^^
+        )
+E       AttributeError: type object 'RepoVisibility' has no attribute 'unknown'
+
+tests/chains/test_native_fire.py:909: AttributeError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 14:20:31 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+_ test_native_inner_checkpoint_resume_requires_current_checks[missing-check-evaluate] _
+
+barrier = 'evaluate', change = 'missing-check'
+
+    @pytest.mark.parametrize("barrier", ["execute", "evaluate"])
+    @pytest.mark.parametrize(
+        "change", ["changed-check", "state", "missing-check", "outage"]
+    )
+    async def test_native_inner_checkpoint_resume_requires_current_checks(barrier, change):
+        from kodezart.types.domain.workflow import RalphLoopContext
+    
+        port = CountingTracker()
+        source = TrackerCriteria(tracker=port)
+        spec = await source.read_spec(issue_key=SUBJECT)
+        snapshot = await source.read_current(spec=spec)
+        saver = InMemorySaver()
+        original = engine(criteria=source, executor=NativeExecutor([]), real_loop=True)
+        loop = original.implementation._quality_gate
+        graph = loop._build_graph().compile(checkpointer=saver)
+        context = RalphLoopContext(
+            prompt=spec.body,
+            repo_path="/tmp/fire",
+            repo_url=None,
+            cache_key="inner-resume",
+            base_spec=trunk_base("main"),
+            permission_mode=PermissionMode.UNATTENDED,
+            allowed_tools=["Bash"],
+            feature_branch="feature",
+            ralph_branch="ralph",
+            work_base_ref="main",
+            acceptance_criteria=snapshot.criteria,
+            tracker_spec=spec,
+>           repo_visibility=RepoVisibility.unknown,
+                            ^^^^^^^^^^^^^^^^^^^^^^
+        )
+E       AttributeError: type object 'RepoVisibility' has no attribute 'unknown'
+
+tests/chains/test_native_fire.py:909: AttributeError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 14:20:32 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+_ test_native_inner_checkpoint_resume_requires_current_checks[outage-execute] __
+
+barrier = 'execute', change = 'outage'
+
+    @pytest.mark.parametrize("barrier", ["execute", "evaluate"])
+    @pytest.mark.parametrize(
+        "change", ["changed-check", "state", "missing-check", "outage"]
+    )
+    async def test_native_inner_checkpoint_resume_requires_current_checks(barrier, change):
+        from kodezart.types.domain.workflow import RalphLoopContext
+    
+        port = CountingTracker()
+        source = TrackerCriteria(tracker=port)
+        spec = await source.read_spec(issue_key=SUBJECT)
+        snapshot = await source.read_current(spec=spec)
+        saver = InMemorySaver()
+        original = engine(criteria=source, executor=NativeExecutor([]), real_loop=True)
+        loop = original.implementation._quality_gate
+        graph = loop._build_graph().compile(checkpointer=saver)
+        context = RalphLoopContext(
+            prompt=spec.body,
+            repo_path="/tmp/fire",
+            repo_url=None,
+            cache_key="inner-resume",
+            base_spec=trunk_base("main"),
+            permission_mode=PermissionMode.UNATTENDED,
+            allowed_tools=["Bash"],
+            feature_branch="feature",
+            ralph_branch="ralph",
+            work_base_ref="main",
+            acceptance_criteria=snapshot.criteria,
+            tracker_spec=spec,
+>           repo_visibility=RepoVisibility.unknown,
+                            ^^^^^^^^^^^^^^^^^^^^^^
+        )
+E       AttributeError: type object 'RepoVisibility' has no attribute 'unknown'
+
+tests/chains/test_native_fire.py:909: AttributeError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 14:20:32 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+_ test_native_inner_checkpoint_resume_requires_current_checks[outage-evaluate] _
+
+barrier = 'evaluate', change = 'outage'
+
+    @pytest.mark.parametrize("barrier", ["execute", "evaluate"])
+    @pytest.mark.parametrize(
+        "change", ["changed-check", "state", "missing-check", "outage"]
+    )
+    async def test_native_inner_checkpoint_resume_requires_current_checks(barrier, change):
+        from kodezart.types.domain.workflow import RalphLoopContext
+    
+        port = CountingTracker()
+        source = TrackerCriteria(tracker=port)
+        spec = await source.read_spec(issue_key=SUBJECT)
+        snapshot = await source.read_current(spec=spec)
+        saver = InMemorySaver()
+        original = engine(criteria=source, executor=NativeExecutor([]), real_loop=True)
+        loop = original.implementation._quality_gate
+        graph = loop._build_graph().compile(checkpointer=saver)
+        context = RalphLoopContext(
+            prompt=spec.body,
+            repo_path="/tmp/fire",
+            repo_url=None,
+            cache_key="inner-resume",
+            base_spec=trunk_base("main"),
+            permission_mode=PermissionMode.UNATTENDED,
+            allowed_tools=["Bash"],
+            feature_branch="feature",
+            ralph_branch="ralph",
+            work_base_ref="main",
+            acceptance_criteria=snapshot.criteria,
+            tracker_spec=spec,
+>           repo_visibility=RepoVisibility.unknown,
+                            ^^^^^^^^^^^^^^^^^^^^^^
+        )
+E       AttributeError: type object 'RepoVisibility' has no attribute 'unknown'
+
+tests/chains/test_native_fire.py:909: AttributeError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 14:20:34 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+_____ test_production_constructor_wires_native_source_to_shared_consumers ______
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10b30d640>
+
+    async def test_production_constructor_wires_native_source_to_shared_consumers(
+        monkeypatch,
+    ):
+        from kodezart.composition.engine import build_workflow_engine
+        from kodezart.core.config import AppConfig
+        from tests.fakes import FakeRefPublisher
+    
+        port = CountingTracker()
+        source = TrackerCriteria(tracker=port)
+        executor = NativeExecutor([native_evaluation(), native_evaluation()])
+        workspace = FakeWorkspaceProvider()
+        service = AgentService(
+            git_base_url="https://github.com",
+            executor=executor,
+            workspace=workspace,
+            persister=FakeChangePersister(),
+        )
+        artifacts = FakeArtifactPersister()
+>       router = build_workflow_engine(
+            config=AppConfig(
+                max_iterations=1, retry_max_attempts=1, retry_initial_interval=0.1
+            ),
+            repositories=(),
+            agent_service=service,
+            git=FakeGitService(remote_branch_shas={"main": "b" * 40}),
+            cache=FakeRepoCache(),
+            workspace=workspace,
+            merger=FakeBranchMerger(),
+            artifact_persister=artifacts,
+            ref_publisher=FakeRefPublisher(),
+            prompts=make_prompt_provider(),
+            skills=SUPPRESS_ALL_SKILLS,
+            gate=PassThroughGate(),
+            github_api=None,
+            checkpointer=InMemorySaver(),
+            criteria=source,
+        )
+
+tests/chains/test_native_fire.py:977: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/composition/engine.py:207: in build_workflow_engine
+    ticket_generator = TicketGenerationLoop(
+src/kodezart/chains/ticket_generation.py:142: in __init__
+    _refuse_an_unhonourable_mode(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _refuse_an_unhonourable_mode(
+        *,
+        review_mode: TicketReviewMode,
+        max_reviews: int | None,
+        definitions: Sequence[AgentDefinition],
+    ) -> None:
+        """Raise when the configured mode's guarantee cannot be delivered.
+    
+        Both refusals are one defect wearing two faces: a knob is configured
+        whose effect this composition cannot produce.  Under ``create_only`` a
+        review budget bounds nothing that gets compiled — silently accepting it
+        is how a deployment comes to believe it has two review rounds — and a
+        resolved set with no draft critic leaves the single creator session
+        with nothing checking it while the mode's contract says otherwise.
+        """
+        if review_mode is not TicketReviewMode.CREATE_ONLY:
+            return
+        if max_reviews is not None:
+            msg = (
+                "max_reviews is configured under a ticket review mode that "
+                "compiles no review node for it to bound"
+            )
+            raise TicketReviewModeError(
+                msg,
+                settings=(
+                    f"ticket_review_mode={review_mode.value}",
+                    f"max_reviews={max_reviews}",
+                ),
+            )
+        if not any(definition.name == DRAFT_CRITIC_LENS for definition in definitions):
+            msg = (
+                "the resolved prompt set declares no draft-critic lens, and it is "
+                "the only review a ticket receives under this mode"
+            )
+>           raise TicketReviewModeError(
+                msg,
+                settings=(
+                    f"ticket_review_mode={review_mode.value}",
+                    "prompt_set declares "
+                    + (
+                        ", ".join(definition.name for definition in definitions)
+                        or "no lens at all"
+                    ),
+                ),
+            )
+E           kodezart.core.errors.TicketReviewModeError: the resolved prompt set declares no draft-critic lens, and it is the only review a ticket receives under this mode (ticket_review_mode=create_only, prompt_set declares no lens at all)
+
+src/kodezart/chains/ticket_generation.py:80: TicketReviewModeError
+=========================== short test summary info ============================
+FAILED tests/chains/test_native_fire.py::test_native_inner_checkpoint_resume_requires_current_checks[changed-check-execute]
+FAILED tests/chains/test_native_fire.py::test_native_inner_checkpoint_resume_requires_current_checks[changed-check-evaluate]
+FAILED tests/chains/test_native_fire.py::test_native_inner_checkpoint_resume_requires_current_checks[state-execute]
+FAILED tests/chains/test_native_fire.py::test_native_inner_checkpoint_resume_requires_current_checks[state-evaluate]
+FAILED tests/chains/test_native_fire.py::test_native_inner_checkpoint_resume_requires_current_checks[missing-check-execute]
+FAILED tests/chains/test_native_fire.py::test_native_inner_checkpoint_resume_requires_current_checks[missing-check-evaluate]
+FAILED tests/chains/test_native_fire.py::test_native_inner_checkpoint_resume_requires_current_checks[outage-execute]
+FAILED tests/chains/test_native_fire.py::test_native_inner_checkpoint_resume_requires_current_checks[outage-evaluate]
+FAILED tests/chains/test_native_fire.py::test_production_constructor_wires_native_source_to_shared_consumers
+9 failed, 36 passed in 24.18s

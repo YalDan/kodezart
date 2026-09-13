@@ -1,0 +1,9 @@
+Using CPython 3.12.13
+Creating virtual environment at: .venv
+   Building kodezart @ file:///private/tmp/kodezart-v03-recovery-semantic-amendment
+warning: `build_system.requires = ["uv-build>=0.10.9,<0.11.0"]` does not contain the current uv version 0.11.6
+      Built kodezart @ file:///private/tmp/kodezart-v03-recovery-semantic-amendment
+Installed 174 packages in 956ms
+src/kodezart/domain/amendment.py:39: error: Invalid index type "tuple[str, str, UpheldReason]" for "dict[tuple[Literal['criterion', 'ruling'], CriterionId | RulingId, UpheldReason], CriterionSubject | RulingSubject]"; expected type "tuple[Literal['criterion', 'ruling'], CriterionId | RulingId, UpheldReason]"  [index]
+src/kodezart/services/native_amendments.py:95: error: Need type annotation for "rulings" (hint: "rulings: list[<type>] = ...")  [var-annotated]
+Found 2 errors in 2 files (checked 4 source files)

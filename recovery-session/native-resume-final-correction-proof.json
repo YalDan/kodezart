@@ -1,0 +1,21 @@
+{
+  "source_sha": "3508980103cabbb0b28bfe49571293743b42d561",
+  "tree_sha": "ff7982e4b22b26bc0a401229dcb1ba0680923d92",
+  "prepare_probes": {
+    "cleanup": {
+      "original_sha256": "5cb3958aa9eb20fb24c9f4a059b7663387bf0ae54c832b20b3c4b859b8cc34c3",
+      "rerun_copy_sha256": "5cb3958aa9eb20fb24c9f4a059b7663387bf0ae54c832b20b3c4b859b8cc34c3",
+      "exact_original_bytes": true,
+      "committed_ast_equal": true
+    },
+    "cancel": {
+      "original_sha256": "7659204809b9503ced51ec91b96f36d957fae8dc54764ced7d1e3025ab3b4f32",
+      "rerun_copy_sha256": "7659204809b9503ced51ec91b96f36d957fae8dc54764ced7d1e3025ab3b4f32",
+      "exact_original_bytes": true,
+      "committed_ast_equal": true
+    }
+  },
+  "trajectory_assertions_equal": true,
+  "two_iteration_copy_exact": true,
+  "source_diff_empty": true
+}

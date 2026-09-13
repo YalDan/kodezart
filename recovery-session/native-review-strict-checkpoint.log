@@ -1,0 +1,62 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_____________ test_native_graph_executes_and_reviews_exact_checks ______________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10e3e6cc0>
+
+    async def test_native_graph_executes_and_reviews_exact_checks(monkeypatch):
+        port = CountingTracker()
+        executor = NativeExecutor([native_evaluation(), native_evaluation()])
+        saver = InMemorySaver()
+        fire = engine(
+            criteria=TrackerCriteria(tracker=port),
+            executor=executor,
+            real_loop=True,
+            checkpointer=saver,
+        )
+        monkeypatch.setattr(TicketDraftOutput, "__init__", no_authored_ticket)
+    
+        events = await drive(fire, scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
+    
+        iteration = next(e for e in events if isinstance(e, WorkflowIterationEvent))
+        review = next(e for e in events if isinstance(e, WorkflowReviewEvent))
+        terminal = next(e for e in events if isinstance(e, WorkflowCompleteEvent))
+        assert iteration.verdict is AcceptVerdict.accepted
+        assert review.passed
+        assert terminal.outcome is WorkflowOutcome.handed_off_for_delivery
+        assert port.spec_reads == 1
+        assert not executor.evaluations
+        for evaluated in (iteration.evaluation, review.evaluation):
+            assert {c.criterion_id: c.criterion for c in evaluated.criteria_results} == {
+                key: check_of(key) for key in OWED_KEYS
+            }
+        saved = fire.native_graph.get_state(
+            {"configurable": {"thread_id": workflow_thread_id("native-fire")}}
+        ).values
+        # The actual checkpoint retains the native partition and its provenance.
+        assert isinstance(saved["fire_spec"], TrackerSpec)
+        assert isinstance(saved["criterion_set"], TrackerCriterionSet)
+        assert all(isinstance(c, TrackerCriterion) for c in validated_criteria(saved))
+        assert saved["fire_spec"].subject == SUBJECT
+        assert saved["fire_spec"].read_at_version
+        assert saved["criteria_validation"] is None
+>       assert fire.implementation._artifact_persister.calls == []
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'FakeArtifactPersister' object has no attribute 'calls'
+
+tests/chains/test_native_fire.py:624: AttributeError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 14:03:39 [info     ] repo_visibility_resolved       repo_url=https://github.com/owner/repo.git visibility=unknown
+2026-09-12 14:03:39 [info     ] scope_base_resolved            base_branch=main base_role=None input_count=0
+2026-09-12 14:03:39 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:03:39 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 14:03:39 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=branch_name
+2026-09-12 14:03:39 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 14:03:39 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:03:39 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=ralph_evaluator stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 14:03:40 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:03:40 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=post_merge_review stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 14:03:40 [info     ] backup_cleanup_starting        prefix=kodezart/test-branch-dbeae69c
+=========================== short test summary info ============================
+FAILED tests/chains/test_native_fire.py::test_native_graph_executes_and_reviews_exact_checks
+1 failed in 6.59s

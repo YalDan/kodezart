@@ -1,0 +1,120 @@
+FFF                                                                      [100%]
+=================================== FAILURES ===================================
+________ test_completed_lanes_with_retained_heads_are_checked_together _________
+
+delivery = <tests.chains.test_delivery_coordinator.Fixture object at 0x10a683d40>
+repository = (PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-2031/test_completed_lan...ec6858cbcd6962b7'), UnionLaneHead(lane_key='a', branch='work/a', head_sha='50d1c5d872216e5fd4b75d62633ccb7a697d204c')))
+
+    async def test_completed_lanes_with_retained_heads_are_checked_together(
+        delivery, repository
+    ):
+        delivery.scope.close_every_criterion()
+        delivery.tracker = delivery.scope.tracker()
+        assert (await read_scope_ready(ref=PROJECT, tracker=delivery.tracker)).ready == ()
+        command = (
+            f'{sys.executable} -c "from pathlib import Path; '
+            "assert not (Path('a.txt').exists() and Path('z.txt').exists())\""
+        )
+        checks = pinned.entry(command)
+        delivery.context = delivery.context.model_copy(
+            update={
+                "repo": delivery.context.repo.model_copy(update={"checks": checks.checks})
+            }
+        )
+        author, base, heads = repository
+        for head in heads:
+            alone = await pinned.service(pinned.ObservedGit()).verify(
+                scope_key=PROJECT.key,
+                repo_path=str(author),
+                repo=checks,
+                base_sha=base,
+                lane_heads=(head,),
+            )
+            assert alone.outcome is UnionOutcome.GREEN
+            assert not Path(alone.scratch_path).exists()
+    
+>       result = await delivery.coordinator().verify()
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/chains/test_delivery_coordinator.py:283: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.chains.delivery_coordinator.DeliveryCoordinator object at 0x10a683cb0>
+
+    async def verify(self) -> UnionCompositionResult:
+        """Observe whether the planner's current ready lanes compose.
+    
+        The roster is the ready set in the planner's own order. Nothing
+        here sorts, filters or reverses it, so a lane's position in the
+        composition is the position the planner's ranking gave it.
+        """
+        selection = await read_scope_ready(ref=self._scope, tracker=self._tracker)
+        if not selection.ready:
+>           raise UnionHeadReadError(
+                scope_key=self._scope.key,
+                branch=None,
+                reason="the planner ranked no ready lane to compose",
+            )
+E           kodezart.domain.errors.UnionHeadReadError: Union head observation for 'project-one' refused: the planner ranked no ready lane to compose
+
+src/kodezart/chains/delivery_coordinator.py:69: UnionHeadReadError
+____ test_completed_and_unfinished_retained_lanes_each_participate_once[a] _____
+
+delivery = <tests.chains.test_delivery_coordinator.Fixture object at 0x10a79bf20>
+completed = 'a'
+
+    @pytest.mark.parametrize("completed", OPENED_ORDER)
+    async def test_completed_and_unfinished_retained_lanes_each_participate_once(
+        delivery, completed
+    ):
+        key = f"{completed}-check"
+        delivery.tracker.issues[key] = delivery.tracker.issues[key].model_copy(
+            update={"state_name": "Done", "state_kind": WorkflowStateKind.COMPLETED}
+        )
+        ready = await read_scope_ready(ref=PROJECT, tracker=delivery.tracker)
+        assert tuple(lane.issue.issue_key for lane in ready.ready) == tuple(
+            lane for lane in ("z", "a") if lane != completed
+        )
+    
+        result = await delivery.coordinator().verify()
+    
+>       assert result.composition_order == ("z", "a")
+E       AssertionError: assert ('z',) == ('z', 'a')
+E         
+E         Right contains one more item: 'a'
+E         Use -v to get more diff
+
+tests/chains/test_delivery_coordinator.py:313: AssertionError
+____ test_completed_and_unfinished_retained_lanes_each_participate_once[z] _____
+
+delivery = <tests.chains.test_delivery_coordinator.Fixture object at 0x10a79fd40>
+completed = 'z'
+
+    @pytest.mark.parametrize("completed", OPENED_ORDER)
+    async def test_completed_and_unfinished_retained_lanes_each_participate_once(
+        delivery, completed
+    ):
+        key = f"{completed}-check"
+        delivery.tracker.issues[key] = delivery.tracker.issues[key].model_copy(
+            update={"state_name": "Done", "state_kind": WorkflowStateKind.COMPLETED}
+        )
+        ready = await read_scope_ready(ref=PROJECT, tracker=delivery.tracker)
+        assert tuple(lane.issue.issue_key for lane in ready.ready) == tuple(
+            lane for lane in ("z", "a") if lane != completed
+        )
+    
+        result = await delivery.coordinator().verify()
+    
+>       assert result.composition_order == ("z", "a")
+E       AssertionError: assert ('a',) == ('z', 'a')
+E         
+E         At index 0 diff: 'a' != 'z'
+E         Right contains one more item: 'a'
+E         Use -v to get more diff
+
+tests/chains/test_delivery_coordinator.py:313: AssertionError
+=========================== short test summary info ============================
+FAILED tests/chains/test_delivery_coordinator.py::test_completed_lanes_with_retained_heads_are_checked_together
+FAILED tests/chains/test_delivery_coordinator.py::test_completed_and_unfinished_retained_lanes_each_participate_once[a]
+FAILED tests/chains/test_delivery_coordinator.py::test_completed_and_unfinished_retained_lanes_each_participate_once[z]
+3 failed, 5 deselected in 11.05s

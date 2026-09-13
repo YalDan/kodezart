@@ -1,0 +1,543 @@
+[
+  {
+    "path": "src/kodezart/adapters/github_api.py",
+    "sha256": "f585f1549876ed21087962661d31167ab37ed8c4db3fe75d13c4d4ce36a43fd6",
+    "exact_donor": false
+  },
+  {
+    "path": "src/kodezart/adapters/github_types.py",
+    "sha256": "1ac13f264246204c8678027f783e8b66ae9a02c7bec3a161462d9f75fbf3ee28",
+    "exact_donor": true
+  },
+  {
+    "path": "src/kodezart/adapters/linear_markers.py",
+    "sha256": "4e36a5fdafbd223486fcf8bb2ae8e43377c0bcc6a0eb1b781795f7226fe8283e",
+    "exact_donor": true
+  },
+  {
+    "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "sha256": "609db0014ee6aa7f7d2c49af9388d40b3204467f154544a5902a80eb269920c6",
+    "exact_donor": false
+  },
+  {
+    "path": "src/kodezart/adapters/no_forge_delivery.py",
+    "sha256": "4c816c44288c26c3348e6cc6376c8e078aae643c877134b2b21c588a74808388",
+    "exact_donor": true
+  },
+  {
+    "path": "src/kodezart/adapters/subprocess_check_chain.py",
+    "sha256": "05be47dff9bbad46905920250a238dbd58c7aaf23325c1157f20804d0c312e53",
+    "exact_donor": true
+  },
+  {
+    "path": "src/kodezart/adapters/subprocess_git_service.py",
+    "sha256": "5c58031ec6d44633a8ef8ab463e11892af9c9275465b1a4b1cc9cdd5ceff03aa",
+    "exact_donor": false
+  },
+  {
+    "path": "src/kodezart/chains/delivery_coordinator.py",
+    "sha256": "e7591c2ab484538cff8fa4108f7d5e797219e68de6f6625932ddb1d2c3bd12c1",
+    "exact_donor": true
+  },
+  {
+    "path": "src/kodezart/chains/lane_delivery.py",
+    "sha256": "752cb89081cf6569051d937e73f73b0adcdb00c8dae7d5991b24cd6965fee5fc",
+    "exact_donor": true
+  },
+  {
+    "path": "src/kodezart/chains/native_delivery.py",
+    "sha256": "c5539c4838a38d3ce22bfbb6e80955064c4aad57bb8a5390c3ac566528f78180",
+    "exact_donor": true
+  },
+  {
+    "path": "src/kodezart/composition/delivery.py",
+    "sha256": "02d2e0272a6ba97a29cacd172c204ff112037e6699d2022e32cdc7d28636ff46",
+    "exact_donor": true
+  },
+  {
+    "path": "src/kodezart/composition/engine.py",
+    "sha256": "f0d54e62d8e52edd6bee124ddfa5bc0e0527f2df6b434696a879fec82ac34166",
+    "exact_donor": true
+  },
+  {
+    "path": "src/kodezart/composition/scope_runtime.py",
+    "sha256": "ad1512bcf40347cbf50edf165e489e126b34e7e84e0a1510c755dbeb06e8dcb2",
+    "exact_donor": true
+  },
+  {
+    "path": "src/kodezart/core/config.py",
+    "sha256": "29c97b9d3e2e9fb4c0bfc0bc3660795b24828e3470259668f6ee5adf8c655fb8",
+    "exact_donor": false
+  },
+  {
+    "path": "src/kodezart/core/errors.py",
+    "sha256": "6d5079f85604992b3fabe1d305e53ea67ca98f2e73a3b42b28de741ad69a4f78",
+    "exact_donor": false
+  },
+  {
+    "path": "src/kodezart/core/protocols.py",
+    "sha256": "ad44c3dea7c09777b11aa94c9c454ba8288fe7835a2e27ed2e0f6ccf94de0071",
+    "exact_donor": false
+  },
+  {
+    "path": "src/kodezart/domain/check_chain.py",
+    "sha256": "0a8901fe2b9cba12b3831fcb0861154b12d0985eeaa0de21a455588a2fe5daf6",
+    "exact_donor": true
+  },
+  {
+    "path": "src/kodezart/domain/errors.py",
+    "sha256": "bcff57f52ec94194c4ba6d9de5596b62d4a88e8f17ba52774b617ea5f83be985",
+    "exact_donor": false
+  },
+  {
+    "path": "src/kodezart/handlers/agent_handler.py",
+    "sha256": "6f7556e01b77fc81403c3b571173e3550f1464c40a9e789030494b4c3e439b41",
+    "exact_donor": true
+  },
+  {
+    "path": "src/kodezart/services/lane_reports.py",
+    "sha256": "b4cae56b59aa2fe0cced7d1f35d1f60db06b76915848cff8aafc1897fbe7e87f",
+    "exact_donor": true
+  },
+  {
+    "path": "src/kodezart/services/scope_runtime.py",
+    "sha256": "443fa374392f5a3c9775849317c814603389fd7ac8ec7bbda0dc56d81b79a856",
+    "exact_donor": true
+  },
+  {
+    "path": "src/kodezart/services/union_composition.py",
+    "sha256": "2a1005a36e4700a5f34074d88192fd92113bb1788263a9fcf64c3f9e7534c28c",
+    "exact_donor": true
+  },
+  {
+    "path": "src/kodezart/services/union_identity.py",
+    "sha256": "e7b676c616cf14187ede387905ca6c9ae3fd796f9f66f7dc7f235a0af26ca763",
+    "exact_donor": true
+  },
+  {
+    "path": "src/kodezart/services/union_tick.py",
+    "sha256": "178b1e2930058db10d7ec11a4c47c41b0029fe989b2687aedae06a70775edadc",
+    "exact_donor": true
+  },
+  {
+    "path": "src/kodezart/types/domain/agent.py",
+    "sha256": "9ee3c06db3d67775d55a3960e2046a3d6f92b83ad053ab240eb612d4d28ed824",
+    "exact_donor": false
+  },
+  {
+    "path": "src/kodezart/types/domain/branch.py",
+    "sha256": "4682a0b9e9d4ff0bc9e3268aa4629c6a79cfceed64dcf0a9313afe59a21f2ef2",
+    "exact_donor": false
+  },
+  {
+    "path": "src/kodezart/types/domain/check_chain.py",
+    "sha256": "c8478a12b4b9ba4a661893f96eb84ec23faa5909840d7a54a6dc6da1bfca5955",
+    "exact_donor": true
+  },
+  {
+    "path": "src/kodezart/types/domain/delivery.py",
+    "sha256": "6ac6f3341de70de9bd9e10f4c9d16b6ddebc3885479a1c6918913cebf6fc661d",
+    "exact_donor": true
+  },
+  {
+    "path": "src/kodezart/types/domain/native_delivery.py",
+    "sha256": "267758e959975b96ae5f12513ca6cca0f606310be9c028a48cf6ccce082ae659",
+    "exact_donor": true
+  },
+  {
+    "path": "src/kodezart/types/domain/operation.py",
+    "sha256": "0c6c22ea182381d2a41b6a5ce5c090a9254d326e4c77a0b29cad640367548934",
+    "exact_donor": false
+  },
+  {
+    "path": "src/kodezart/types/domain/pr_state.py",
+    "sha256": "5a527a7d2845ad301f19d97547b924a948e80f4141affe890edf7fccce27843e",
+    "exact_donor": true
+  },
+  {
+    "path": "src/kodezart/types/domain/run_state.py",
+    "sha256": "6900d4a7b4a8fa0396015b736c4f930aec4d003b52681869e4b00e9c82eed52d",
+    "exact_donor": false
+  },
+  {
+    "path": "src/kodezart/types/domain/scope_runtime.py",
+    "sha256": "7786102cf91e86e4089894f8fb4be86c54c8217a4d1d8c4a3e88fc555275ad92",
+    "exact_donor": true
+  },
+  {
+    "path": "src/kodezart/types/domain/scope_terminal.py",
+    "sha256": "02b0ee75091326df33b88499a59296bd93cb3fb1e73db6c3a5797b161b540007",
+    "exact_donor": true
+  },
+  {
+    "path": "src/kodezart/types/domain/union.py",
+    "sha256": "6aa6ef146ec0c8717740af9ce60d213fb735cc939277fa7e4ce2c6a02fa4d5ba",
+    "exact_donor": true
+  },
+  {
+    "path": "src/kodezart/types/domain/union_tick.py",
+    "sha256": "afc95b40cb4d26ffc61e1297f7f1928e7d72ab9c1dd527b95558c0cc113222fe",
+    "exact_donor": true
+  },
+  {
+    "path": "src/kodezart/types/requests/agent.py",
+    "sha256": "52fff7853080b560b816e1833ecd04390c86fdf1134bb19958000ddf5677f709",
+    "exact_donor": true
+  },
+  {
+    "path": "tests/adapters/test_check_chain_cleanup.py",
+    "sha256": "a4dd29f3847f357df03612c54607963e60dcc71b29f05397396356a63cd91bbe",
+    "exact_donor": true,
+    "original_oracles": 14,
+    "current_oracles": 14,
+    "missing_original_oracles": [],
+    "added_oracles": []
+  },
+  {
+    "path": "tests/adapters/test_check_chain_runner.py",
+    "sha256": "f5e915cd801ad8f723e04c473613552c329d693d4a315ab0ccad9f4e9c52ad15",
+    "exact_donor": true,
+    "original_oracles": 31,
+    "current_oracles": 31,
+    "missing_original_oracles": [],
+    "added_oracles": []
+  },
+  {
+    "path": "tests/adapters/test_forge_query.py",
+    "sha256": "4723327ae9aea0f7fc010b8e078e9eaca6fee757f23af79d890c8d4adc838f6a",
+    "exact_donor": false,
+    "original_oracles": 21,
+    "current_oracles": 17,
+    "missing_original_oracles": [
+      "Assert(test=Compare(left=Name(id='requests', ctx=Load()), ops=[Eq()], comparators=[List(elts=[], ctx=Load())]))",
+      "Assert(test=Compare(left=Call(func=Name(id='forge_query_for_origin', ctx=Load()), args=[], keywords=[keyword(arg='client', value=Name(id='client', ctx=Load())), keyword(arg='repo_url', value=Constant(value='file:///srv/bare/project.git'))]), ops=[Is()], comparators=[Constant(value=None)]))",
+      "Assert(test=Compare(left=Call(func=Name(id='forge_query_for_origin', ctx=Load()), args=[], keywords=[keyword(arg='client', value=Constant(value=None)), keyword(arg='repo_url', value=Name(id='REPO', ctx=Load()))]), ops=[Is()], comparators=[Constant(value=None)]))",
+      "Assert(test=Compare(left=Call(func=Name(id='forge_query_for_origin', ctx=Load()), args=[], keywords=[keyword(arg='client', value=Name(id='client', ctx=Load())), keyword(arg='repo_url', value=Name(id='REPO', ctx=Load()))]), ops=[Is()], comparators=[Name(id='client', ctx=Load())]))"
+    ],
+    "added_oracles": []
+  },
+  {
+    "path": "tests/adapters/test_pr_state_reader.py",
+    "sha256": "95dd9b7443159f2c52dc195915de29f243caf1683cce8e40d567d83adecba6ce",
+    "exact_donor": false,
+    "original_oracles": 20,
+    "current_oracles": 20,
+    "missing_original_oracles": [],
+    "added_oracles": []
+  },
+  {
+    "path": "tests/api/v1/test_scope_request_boundary.py",
+    "sha256": "f8066ac0222e326506c94989bb3ea9d767b6a474eb3dcd5477481c0196818466",
+    "exact_donor": true,
+    "original_oracles": 35,
+    "current_oracles": 35,
+    "missing_original_oracles": [],
+    "added_oracles": []
+  },
+  {
+    "path": "tests/chains/test_delivery_coordinator.py",
+    "sha256": "a9d9dec20f6f57dac0e1160e4d3b4e6227c949bc4460a5b872cfef18968a5450",
+    "exact_donor": true,
+    "original_oracles": 50,
+    "current_oracles": 50,
+    "missing_original_oracles": [],
+    "added_oracles": []
+  },
+  {
+    "path": "tests/chains/test_lane_delivery.py",
+    "sha256": "a0f75419715d6410bb8adbee8e10cb2c5b127c28e719daccff3a76eff7f0b69b",
+    "exact_donor": true,
+    "original_oracles": 55,
+    "current_oracles": 55,
+    "missing_original_oracles": [],
+    "added_oracles": []
+  },
+  {
+    "path": "tests/chains/test_native_delivery.py",
+    "sha256": "c051b5ce68185e665b6fa7e19f5f6a47696d6fd70fa7f217d978561904ecf363",
+    "exact_donor": true,
+    "original_oracles": 41,
+    "current_oracles": 41,
+    "missing_original_oracles": [],
+    "added_oracles": []
+  },
+  {
+    "path": "tests/chains/test_ralph_workflow.py",
+    "sha256": "1821ee7c1b1c485568d8975636d670bc6e5f73a873c3c70a83c1e2cfc67c6e5d",
+    "exact_donor": false,
+    "original_oracles": 364,
+    "current_oracles": 364,
+    "missing_original_oracles": [],
+    "added_oracles": []
+  },
+  {
+    "path": "tests/chains/test_union_exit_invariance.py",
+    "sha256": "a38ea80650cefc883c93987a92283797aea92097ba370287d6e65618de51eb3a",
+    "exact_donor": true,
+    "original_oracles": 13,
+    "current_oracles": 13,
+    "missing_original_oracles": [],
+    "added_oracles": []
+  },
+  {
+    "path": "tests/chains/test_union_final_freshness.py",
+    "sha256": "db6f5cef8206710fc48a1300e89898322e332a50321e2921f3bd6f04c9c0a429",
+    "exact_donor": true,
+    "original_oracles": 5,
+    "current_oracles": 5,
+    "missing_original_oracles": [],
+    "added_oracles": []
+  },
+  {
+    "path": "tests/chains/test_union_forge_isolation.py",
+    "sha256": "b19f4161c6957f498f444a13fe3b0499b90c9b00df53a5a2e7e539c6b23eeed2",
+    "exact_donor": true,
+    "original_oracles": 21,
+    "current_oracles": 21,
+    "missing_original_oracles": [],
+    "added_oracles": []
+  },
+  {
+    "path": "tests/chains/test_union_participant_order.py",
+    "sha256": "450310dca26fc8dacb28492cf53b8ad2919e7e60178ddf9d611d231a01282801",
+    "exact_donor": true,
+    "original_oracles": 16,
+    "current_oracles": 16,
+    "missing_original_oracles": [],
+    "added_oracles": []
+  },
+  {
+    "path": "tests/chains/test_union_stage_independence.py",
+    "sha256": "41c615b7a7cca074be78e2d688efdc82a70adab56a5fc4b9d15ca9d35abe4b25",
+    "exact_donor": true,
+    "original_oracles": 3,
+    "current_oracles": 3,
+    "missing_original_oracles": [],
+    "added_oracles": []
+  },
+  {
+    "path": "tests/core/test_delivery_config.py",
+    "sha256": "6ea43f3c1974ff682a139ddbabac673e409f1ff584dc107d902021f4b634679f",
+    "exact_donor": true,
+    "original_oracles": 3,
+    "current_oracles": 3,
+    "missing_original_oracles": [],
+    "added_oracles": []
+  },
+  {
+    "path": "tests/domain/test_amendment.py",
+    "sha256": "7321f24c74f77139ba39a39c1b7dff7929f10e6f8a6034bf9acb374e9067fd17",
+    "exact_donor": false,
+    "original_oracles": 18,
+    "current_oracles": 18,
+    "missing_original_oracles": [],
+    "added_oracles": []
+  },
+  {
+    "path": "tests/domain/test_lane_delivery.py",
+    "sha256": "c7902211e546a2b00b1dc6b086265a2559edc6bccfed213d8721c20cdbd5867c",
+    "exact_donor": true,
+    "original_oracles": 2,
+    "current_oracles": 2,
+    "missing_original_oracles": [],
+    "added_oracles": []
+  },
+  {
+    "path": "tests/domain/test_recorded_landing.py",
+    "sha256": "86aa635d79c4ac21a9ae1208be570238d0f216ffa1759b5d640ff5647a8bbd78",
+    "exact_donor": true,
+    "original_oracles": 22,
+    "current_oracles": 22,
+    "missing_original_oracles": [],
+    "added_oracles": []
+  },
+  {
+    "path": "tests/domain/test_scope_terminal.py",
+    "sha256": "3f6716937a6e19e09dee675bfdd04941517ddc484f25e89f62d6815a6167435d",
+    "exact_donor": true,
+    "original_oracles": 3,
+    "current_oracles": 3,
+    "missing_original_oracles": [],
+    "added_oracles": []
+  },
+  {
+    "path": "tests/domain/test_union.py",
+    "sha256": "91a0e7849a2af6a420d523fdf0f71027c82c08f0b606e19dd51c2fd88199bf3e",
+    "exact_donor": true,
+    "original_oracles": 10,
+    "current_oracles": 10,
+    "missing_original_oracles": [],
+    "added_oracles": []
+  },
+  {
+    "path": "tests/domain/test_union_check_classification.py",
+    "sha256": "d569d1abadae8342a8486065867d851c6c8cb1a195a5eb348634b37cec123561",
+    "exact_donor": true,
+    "original_oracles": 11,
+    "current_oracles": 11,
+    "missing_original_oracles": [],
+    "added_oracles": []
+  },
+  {
+    "path": "tests/domain/test_union_remediation.py",
+    "sha256": "bc0c78d3488183212da546ed084769097b21ddb4aa309f0b87d6942eba4ab70a",
+    "exact_donor": true,
+    "original_oracles": 6,
+    "current_oracles": 6,
+    "missing_original_oracles": [],
+    "added_oracles": []
+  },
+  {
+    "path": "tests/fakes.py",
+    "sha256": "351c62b24bc8fdf921f858516791ae56c79390f95050f9e486abd206f011b879",
+    "exact_donor": false,
+    "original_oracles": 4,
+    "current_oracles": 4,
+    "missing_original_oracles": [],
+    "added_oracles": []
+  },
+  {
+    "path": "tests/git_read_cancellation.py",
+    "sha256": "6e61e4bb292354b0fe315a9a7104f52a8857842636013a7d98e3dc7599de4087",
+    "exact_donor": true,
+    "original_oracles": 3,
+    "current_oracles": 3,
+    "missing_original_oracles": [],
+    "added_oracles": []
+  },
+  {
+    "path": "tests/integration/test_scope_runtime.py",
+    "sha256": "4c87c929171f421b7e3c892ba0b9ca786e14f664a4abe8ee54c9d187ce6a80db",
+    "exact_donor": false,
+    "original_oracles": 105,
+    "current_oracles": 105,
+    "missing_original_oracles": [],
+    "added_oracles": []
+  },
+  {
+    "path": "tests/pr_state_fixture.py",
+    "sha256": "7217aff660fedcc9a77a9596e5ecef06a21f8df3bc9cde475b26f7d8d63afaea",
+    "exact_donor": false
+  },
+  {
+    "path": "tests/services/test_landing_dispatch.py",
+    "sha256": "5037856c80ce433fc2937fe59e92e41c57af5472f27be830f80291c37ccaa768",
+    "exact_donor": true,
+    "original_oracles": 15,
+    "current_oracles": 15,
+    "missing_original_oracles": [],
+    "added_oracles": []
+  },
+  {
+    "path": "tests/services/test_lane_reports.py",
+    "sha256": "76a69c0ce4053e21af1ef76d1b350eca15541ba9205d646a234015bb5e3d154a",
+    "exact_donor": true,
+    "original_oracles": 25,
+    "current_oracles": 25,
+    "missing_original_oracles": [],
+    "added_oracles": []
+  },
+  {
+    "path": "tests/services/test_union_composition.py",
+    "sha256": "038d4ed6274ae58aee2a22b46e6eec31f74b1ea6395a19a5715c6ddb8a740f84",
+    "exact_donor": true,
+    "original_oracles": 77,
+    "current_oracles": 77,
+    "missing_original_oracles": [],
+    "added_oracles": []
+  },
+  {
+    "path": "tests/services/test_union_conflict_remediation.py",
+    "sha256": "09aa84f9fb71364ad34c2a9e5898fe6e3fa082208153a783a9b4de3feb208f62",
+    "exact_donor": true,
+    "original_oracles": 24,
+    "current_oracles": 24,
+    "missing_original_oracles": [],
+    "added_oracles": []
+  },
+  {
+    "path": "tests/services/test_union_replacement_identity.py",
+    "sha256": "487d55aa8e561dc07ba4a38a5e70b2f4827a70660e84de69572bef1c4afdc0ae",
+    "exact_donor": true,
+    "original_oracles": 28,
+    "current_oracles": 28,
+    "missing_original_oracles": [],
+    "added_oracles": []
+  },
+  {
+    "path": "tests/services/test_union_tick.py",
+    "sha256": "38e484b372706ff3ea44dda1f45bd62079366b957950c485d51a3cf4fdcdf046",
+    "exact_donor": true,
+    "original_oracles": 84,
+    "current_oracles": 84,
+    "missing_original_oracles": [],
+    "added_oracles": []
+  },
+  {
+    "path": "tests/test_forge_origin_selection.py",
+    "sha256": "5298502e760479473b9b2193a222b19588b6cf3f839f836f44a3e82ce274ce13",
+    "exact_donor": false,
+    "original_oracles": 49,
+    "current_oracles": 46,
+    "missing_original_oracles": [
+      "Assert(test=Compare(left=Call(func=Name(id='pr_state_reader_for_origin', ctx=Load()), args=[], keywords=[keyword(arg='client', value=Constant(value=None)), keyword(arg='repo_url', value=Name(id='REPO', ctx=Load()))]), ops=[Is()], comparators=[Constant(value=None)]))",
+      "Assert(test=Compare(left=Call(func=Name(id='pr_state_reader_for_origin', ctx=Load()), args=[], keywords=[keyword(arg='client', value=Name(id='client', ctx=Load())), keyword(arg='repo_url', value=Name(id='FILE_ORIGIN', ctx=Load()))]), ops=[Is()], comparators=[Constant(value=None)]))",
+      "Assert(test=Compare(left=Name(id='requests', ctx=Load()), ops=[Eq()], comparators=[List(elts=[], ctx=Load())]))",
+      "Assert(test=Compare(left=Name(id='selected', ctx=Load()), ops=[Is()], comparators=[Name(id='client', ctx=Load())]))",
+      "Assert(test=Compare(left=Attribute(value=Name(id='observed', ctx=Load()), attr='url', ctx=Load()), ops=[Eq()], comparators=[JoinedStr(values=[FormattedValue(value=Name(id='REPO', ctx=Load()), conversion=-1), Constant(value='/pull/7')])]))",
+      "Assert(test=Compare(left=Attribute(value=Name(id='observed', ctx=Load()), attr='head_repo_url', ctx=Load()), ops=[Eq()], comparators=[Name(id='REPO', ctx=Load())]))",
+      "Assert(test=Compare(left=ListComp(elt=Tuple(elts=[Attribute(value=Name(id='request', ctx=Load()), attr='method', ctx=Load()), Attribute(value=Attribute(value=Name(id='request', ctx=Load()), attr='url', ctx=Load()), attr='path', ctx=Load())], ctx=Load()), generators=[comprehension(target=Name(id='request', ctx=Store()), iter=Name(id='requests', ctx=Load()), ifs=[], is_async=0)]), ops=[Eq()], comparators=[List(elts=[Tuple(elts=[Constant(value='GET'), Constant(value='/repos/example/project/pulls/7')], ctx=Load())], ctx=Load())]))"
+    ],
+    "added_oracles": [
+      "Assert(test=Compare(left=Name(id='client', ctx=Load()), ops=[IsNot()], comparators=[Constant(value=None)]))",
+      "Assert(test=Call(func=Name(id='isinstance', ctx=Load()), args=[Name(id='engine', ctx=Load()), Name(id='OriginRoutedWorkflowEngine', ctx=Load())], keywords=[]))",
+      "Assert(test=Compare(left=Call(func=Attribute(value=Name(id='engine', ctx=Load()), attr='arm_for', ctx=Load()), args=[Name(id='FILE_ORIGIN', ctx=Load())], keywords=[]), ops=[IsNot()], comparators=[Call(func=Attribute(value=Name(id='engine', ctx=Load()), attr='arm_for', ctx=Load()), args=[Name(id='FORGE_ORIGIN', ctx=Load())], keywords=[])]))",
+      "Assert(test=Compare(left=Call(func=Attribute(value=Name(id='engine', ctx=Load()), attr='arm_for', ctx=Load()), args=[Constant(value=None)], keywords=[]), ops=[Is()], comparators=[Call(func=Attribute(value=Name(id='engine', ctx=Load()), attr='arm_for', ctx=Load()), args=[Name(id='FORGE_ORIGIN', ctx=Load())], keywords=[])]))"
+    ]
+  },
+  {
+    "path": "tests/tracker/test_landing_ambiguity.py",
+    "sha256": "34e438de90f0eab991fb5893abcf74ec8e495862cc0749c625a35bb6f6f2559a",
+    "exact_donor": true,
+    "original_oracles": 7,
+    "current_oracles": 7,
+    "missing_original_oracles": [],
+    "added_oracles": []
+  },
+  {
+    "path": "tests/tracker/test_landing_base_resolution.py",
+    "sha256": "7dae3a6ce0e1c6731459bbe8983d0a18e6a228241e4fd61544882bdb78a185cc",
+    "exact_donor": true,
+    "original_oracles": 18,
+    "current_oracles": 18,
+    "missing_original_oracles": [],
+    "added_oracles": []
+  },
+  {
+    "path": "tests/tracker/test_native_recorded_landing.py",
+    "sha256": "b4fbe889d1902e62898a1986a9c16faec9687acd30dd215ee204f559c344b40d",
+    "exact_donor": true,
+    "original_oracles": 8,
+    "current_oracles": 8,
+    "missing_original_oracles": [],
+    "added_oracles": []
+  },
+  {
+    "path": "tests/tracker/test_recorded_landing.py",
+    "sha256": "1d70492b06053c919583921e686a1be3b7f0115b62edc0cd6f3acd20e07870b0",
+    "exact_donor": true,
+    "original_oracles": 12,
+    "current_oracles": 12,
+    "missing_original_oracles": [],
+    "added_oracles": []
+  },
+  {
+    "path": "tests/tracker/test_recorded_landing_git.py",
+    "sha256": "f5db458bf50cf039d29e2fc6483934a859eab752769cc52c2ba8d1657d0deae9",
+    "exact_donor": true,
+    "original_oracles": 7,
+    "current_oracles": 7,
+    "missing_original_oracles": [],
+    "added_oracles": []
+  }
+]

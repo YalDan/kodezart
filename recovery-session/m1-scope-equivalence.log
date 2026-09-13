@@ -1,0 +1,24 @@
+candidate ddb8cdef33f90f30aecc4343e36c2293bdf39a27
+changed files 37
+exact donor source files 5
+exact donor adapter helpers 9
+only changed existing adapter methods ['LinearMcpTracker.__init__', 'LinearMcpTracker.resolve_mappings', 'LinearMcpTracker.ensure_mappings', 'LinearMcpTracker._label_entries', 'LinearMcpTracker._identifiers_of']
+required scope_labels Mapping; no source escape hatch added
+patch sha256 00f669001892d5b900d6c48e1c6564c4fc8c928fe1577c91688fae8d476844b9
+M2 overlap:
+src/kodezart/adapters/linear_mcp_tracker.py LinearMcpTracker._scope_label_members exact AST at73cc
+src/kodezart/adapters/linear_mcp_tracker.py LinearMcpTracker._read_scope_issue exact AST at73cc
+src/kodezart/adapters/linear_mcp_tracker.py LinearMcpTracker.read_scope_labels exact AST at73cc
+src/kodezart/adapters/linear_mcp_tracker.py LinearMcpTracker.execution_approved exact AST at73cc
+src/kodezart/adapters/linear_mcp_tracker.py LinearMcpTracker._read_execution_approval exact AST at73cc
+src/kodezart/adapters/linear_mcp_tracker.py LinearMcpTracker.project_milestones exact AST at73cc
+src/kodezart/adapters/linear_scope_reader.py LinearScopeReader.project_milestones exact AST at73cc
+src/kodezart/composition/tracker.py build_tracker exact AST at73cc
+src/kodezart/core/protocols.py TrackerPort.read_scope_labels exact AST at73cc
+src/kodezart/core/protocols.py TrackerPort.execution_approved exact AST at73cc
+src/kodezart/core/protocols.py TrackerPort.project_milestones exact AST at73cc
+src/kodezart/domain/scope_approval.py resolve_execution_approval exact AST at73cc
+src/kodezart/types/domain/operation.py ScopeLabel.TRIAGE exact AST at73cc
+src/kodezart/types/domain/operation.py ScopeLabel.PROPOSED exact AST at73cc
+src/kodezart/types/domain/operation.py ScopeLabel.APPROVED exact AST at73cc
+src/kodezart/types/domain/operation.py OperationConfig.scope_labels exact AST at73cc

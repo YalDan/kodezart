@@ -1,0 +1,17 @@
+HEAD=b714b984112efd8471f73985300864d66a3eb814
+2026-09-12T14:03:43.261165
+
+$ .venv/bin/mypy src
+Success: no issues found in 288 source files
+exit_code=0
+
+$ .venv/bin/ruff check .
+All checks passed!
+exit_code=0
+
+$ .venv/bin/ruff format --check .
+663 files already formatted
+exit_code=0
+
+$ git diff --check 55a87a5..HEAD
+exit_code=0

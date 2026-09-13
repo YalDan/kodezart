@@ -1,0 +1,12 @@
+E501 Line too long (92 > 88)
+   --> src/kodezart/services/run_shape.py:112:89
+    |
+110 |     observation; persistence belongs to a supervisor holding its own lease.
+111 |     """
+112 |     record = read_alarm_value(escalation, EscalationEvidence, AlarmSignal.ESCALATION_AGEING)
+    |                                                                                         ^^^^
+113 |     subject = EscalationSubject(
+114 |         scope_key=scope_key,
+    |
+
+Found 3 errors (2 fixed, 1 remaining).

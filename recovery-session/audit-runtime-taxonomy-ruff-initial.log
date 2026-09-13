@@ -1,0 +1,45 @@
+E501 Line too long (131 > 88)
+   --> tests/tracker/test_audit_evidence_replacements.py:108:89
+    |
+106 | ):
+107 |     build, runner, git, _, _, workspace, *_ = setup
+108 |     error = GitSourceReadError(ref="actual replacement namespace", path=None, reason="the replacement namespace could not be read")
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+109 |     monkeypatch.setattr(
+110 |         git,
+    |
+
+E501 Line too long (90 > 88)
+   --> tests/tracker/test_audit_forge_sweep.py:190:89
+    |
+188 |         target = AUDIT_CLAIM_SCHEMA if failed_arm == "claim" else AUDIT_MANDATE_SCHEMA
+189 |         if kwargs["output_format"]["schema"] == target:
+190 |             raise AgentSDKError(f"unavailable {failed_arm} session", error_kind="fixture")
+    |                                                                                         ^^
+191 |
+192 |     executor.during = failing
+    |
+
+E501 Line too long (106 > 88)
+   --> tests/tracker/test_audit_overclaim_sweep.py:313:89
+    |
+311 |     async def during(kwargs):
+312 |         if kwargs["output_format"]["schema"] == AUDIT_CLAIM_SCHEMA:
+313 |             raise AgentSDKError("Independent current claim session is unavailable.", error_kind="fixture")
+    |                                                                                         ^^^^^^^^^^^^^^^^^^
+314 |         if kwargs["output_format"]["schema"] == AUDIT_MANDATE_SCHEMA:
+315 |             git._remote_branch_shas["ordinary-name"] = "c" * 40
+    |
+
+E501 Line too long (95 > 88)
+   --> tests/tracker/test_audit_terminal_mandate.py:142:89
+    |
+140 |         async def during(kwargs):
+141 |             if kwargs["output_format"]["schema"] == AUDIT_MANDATE_SCHEMA:
+142 |                 raise AgentSDKError("actual mandate session unavailable", error_kind="fixture")
+    |                                                                                         ^^^^^^^
+143 |
+144 |         executor.during = during
+    |
+
+Found 9 errors (5 fixed, 4 remaining).

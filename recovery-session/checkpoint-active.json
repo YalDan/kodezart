@@ -1,0 +1,46 @@
+{
+  "time": "2026-09-13T00:13:00Z",
+  "canonical_published": "1a83163ecdecf962b21d4ea029ccdd31d16a45de",
+  "milestones": {
+    "M1": {
+      "pr": 119,
+      "sha": "ddb8cde"
+    },
+    "M2": {
+      "pr": 121,
+      "published": "37723cd",
+      "local": "e99c9d1",
+      "push": "in_progress"
+    },
+    "M3": {
+      "pr": null,
+      "candidate": "dad63c4",
+      "owner": "milestone_completion",
+      "worktree": "/private/tmp/kodezart-v03-m3-plan-walk",
+      "successor": "/private/tmp/kodezart-v03-m3-plan-walk-census"
+    },
+    "M4": {
+      "pr": 120,
+      "published": "268be40",
+      "local": "c855fb0"
+    },
+    "M5": {
+      "pr": null,
+      "accepted_union": "1a83163"
+    },
+    "M6": {
+      "pr": null
+    },
+    "M7": {
+      "pr": null
+    }
+  },
+  "agents": {
+    "milestone_completion": "M3 extraction/census; high requested",
+    "m2_authority_review": "M3 independent review and shared M4 enum; ultra requested",
+    "native_final_review": "M2 native GROOM; ultra requested"
+  },
+  "effort_effective": "unexposed",
+  "checkpoint": "https://linear.app/duckburg/initiative/kodezart-v03-loop-orchestration-scopes-as-input-the-tracker-as-live-97c2509ef1b8#comment-9bd46080-c0a4-4999-b176-683c21ac8d63",
+  "remaining": "Refer canonical Linear linked milestone obligations; no lane/release acceptance."
+}

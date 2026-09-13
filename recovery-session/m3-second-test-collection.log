@@ -1,0 +1,6 @@
+ImportError while loading conftest '/private/tmp/kodezart-v03-m3-plan-walk/tests/conftest.py'.
+tests/conftest.py:15: in <module>
+    from tests.fakes import (
+tests/fakes.py:87: in <module>
+    from kodezart.types.domain.criteria import (
+E   ImportError: cannot import name 'CriterionClass' from 'kodezart.types.domain.criteria' (/private/tmp/kodezart-v03-m3-plan-walk/src/kodezart/types/domain/criteria.py)

@@ -1,0 +1,84 @@
+.F...................................................................... [ 49%]
+........................................................................ [ 98%]
+..                                                                       [100%]
+=================================== FAILURES ===================================
+_ test_raise_is_durable_before_later_report_failure_and_replay_is_noop[linear] _
+
+port = (<kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10a417a10>, <function port.<locals>.<lambda> at 0x10a464220>, <tests.fakes.FakeLinearMcpServer object at 0x10a4173b0>)
+
+    async def test_raise_is_durable_before_later_report_failure_and_replay_is_noop(port):
+        tracker, writes, server = port
+        gate = PassThroughGate()
+        writer = LaneEscalationWriter(
+            surface_lease_seconds=900.0, tracker=tracker, gate=gate, operation=OPERATION
+        )
+        before = await tracker.read_issue(issue_key=ISSUE)
+    
+        async def node_then_report():
+            await writer.raise_escalation(
+                job_id="fixture-job",
+                lane_key="lane:1",
+                escalation=question(),
+                visibility=RepoVisibility.PUBLIC,
+            )
+            assert "decision" in (await tracker.read_issue(issue_key=ISSUE)).issue_labels
+            assert len(await tracker.list_comments(issue_key=ISSUE)) == 1
+            raise RuntimeError("later stage report failed")
+    
+        with pytest.raises(RuntimeError, match="later stage"):
+            await node_then_report()
+        stored = (await tracker.list_comments(issue_key=ISSUE))[0]
+        assert stored.body.splitlines()[0] == "[open-question:lane%3A1:criterion%3Aalpha]"
+        assert json.loads(stored.body.split("\n", 1)[1]) == question().model_dump(
+            by_alias=True
+        )
+        current = await tracker.read_issue(issue_key=ISSUE)
+        assert current.state_name == before.state_name
+        assert current.queue_states == before.queue_states
+        assert current.body == before.body
+        if server:
+            assert server.issues[ISSUE].labels == [
+                "unrelated",
+                "queue:approved",
+                LABELS["decision"],
+            ]
+            mutation_count = len(server.tool_calls("save_issue")) + len(
+                server.tool_calls("save_comment")
+            )
+        else:
+            mutation_count = writes()
+        replay = await writer.raise_escalation(
+            job_id="fixture-job",
+            lane_key="lane:1",
+            escalation=question(),
+            visibility=RepoVisibility.PUBLIC,
+        )
+        assert replay == stored
+        assert (await tracker.read_issue(issue_key=ISSUE)).model_dump(
+            exclude={"updated_at"}
+        ) == current.model_dump(exclude={"updated_at"})
+        if server:
+>           assert (
+                len(server.tool_calls("save_issue"))
+                + len(
+                    [
+                        call
+                        for call in server.tool_calls("save_comment")
+                        if not str(call.get("body", "")).startswith("```")
+                    ]
+                )
+                == mutation_count
+            )
+E           assert (1 + 1) == 5
+E            +  where 1 = len([{'addLabels': ['Owner decision needed'], 'id': 'work/42'}])
+E            +    where [{'addLabels': ['Owner decision needed'], 'id': 'work/42'}] = tool_calls('save_issue')
+E            +      where tool_calls = <tests.fakes.FakeLinearMcpServer object at 0x10a4173b0>.tool_calls
+E            +  and   1 = len([{'body': '[open-question:lane%3A1:criterion%3Aalpha]\n{"issueId":"work/42","escalationKey":"criterion:alpha","raisedB...ins two contradictory declarations.","raisedAtSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}', 'issueId': 'work/42'}])
+
+tests/tracker/test_lane_escalation.py:124: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 14:36:11 [info     ] outbound_content_gated         categories=[] content_digest=11bcac81d503c85c6aed79002dd7682e9dbc8d0910cfdb523fe2fae4d2b9fc4f failure=None hits=[] surface=tracker verdict=clean visibility=public writer=tracker_comment
+2026-09-12 14:36:11 [info     ] outbound_content_gated         categories=[] content_digest=11bcac81d503c85c6aed79002dd7682e9dbc8d0910cfdb523fe2fae4d2b9fc4f failure=None hits=[] surface=tracker verdict=clean visibility=public writer=tracker_comment
+=========================== short test summary info ============================
+FAILED tests/tracker/test_lane_escalation.py::test_raise_is_durable_before_later_report_failure_and_replay_is_noop[linear]
+1 failed, 145 passed in 2.73s

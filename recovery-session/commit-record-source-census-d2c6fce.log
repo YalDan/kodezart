@@ -1,0 +1,8 @@
+Source SHA: d2c6fceab762191d4e40b23c8cd349ef476e4b12
+LaneRunState constructor calls in src: []
+src/kodezart/types/domain/trajectory.py:18 IterationRecord fields = ['iteration', 'passed_count', 'failing_criterion_ids', 'commit_sha']
+src/kodezart/types/domain/persist.py:36 PersistResult fields = ['commit_sha', 'branch', 'message', 'source']
+src/kodezart/domain/run_event_stream.py:33 LaneRunEvent fields = ['kind', 'lane_key', 'subject_key']
+src/kodezart/types/domain/workflow.py:73 WorkflowContext fields = ['prompt', 'repo_path', 'repo_url', 'cache_key', 'run_identity', 'workspace_path']
+src/kodezart/types/domain/workflow.py:140 RalphLoopContext fields = ['feature_branch', 'ralph_branch', 'work_base_ref', 'acceptance_criteria', 'tracker_spec', 'repo_visibility']
+Characterization only; this is not a completed first-push/tenth-commit test.

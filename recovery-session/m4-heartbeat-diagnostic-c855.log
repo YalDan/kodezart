@@ -1,0 +1,14 @@
+{"issue_key": "K-1", "event": "lifecycle_in_progress", "level": "info", "logger": "kodezart.services.tracker_lifecycle", "timestamp": "2026-09-13T00:26:11.683877Z"}
+{"issue_key": "K-1", "event": "lifecycle_done", "level": "info", "logger": "kodezart.services.tracker_lifecycle", "timestamp": "2026-09-13T00:26:11.685819Z"}
+{"writer": "tracker_comment", "surface": "tracker", "verdict": "clean", "visibility": "public", "categories": [], "failure": null, "content_digest": "fdfd09ada3e6d93a2f2e6c1cc13db95ffcdb0cdb1495ec29b06ab7d0a66a2f97", "hits": [], "event": "outbound_content_gated", "level": "info", "logger": "kodezart.services.tracker_lifecycle", "timestamp": "2026-09-13T00:26:11.687437Z"}
+automatic=True, fake_seconds=405.0
+.{"issue_key": "K-1", "event": "lifecycle_in_progress", "level": "info", "logger": "kodezart.services.tracker_lifecycle", "timestamp": "2026-09-13T00:26:11.711652Z"}
+{"issue_key": "K-1", "event": "lifecycle_done", "level": "info", "logger": "kodezart.services.tracker_lifecycle", "timestamp": "2026-09-13T00:26:11.712595Z"}
+{"writer": "tracker_comment", "surface": "tracker", "verdict": "clean", "visibility": "public", "categories": [], "failure": null, "content_digest": "fdfd09ada3e6d93a2f2e6c1cc13db95ffcdb0cdb1495ec29b06ab7d0a66a2f97", "hits": [], "event": "outbound_content_gated", "level": "info", "logger": "kodezart.services.tracker_lifecycle", "timestamp": "2026-09-13T00:26:11.713318Z"}
+{"issue_key": "K-1", "job_id": "job-0001", "outcome": "ci_passed", "event": "lifecycle_outcome_comment", "level": "info", "logger": "kodezart.services.tracker_lifecycle", "timestamp": "2026-09-13T00:26:11.714389Z"}
+{"issue_key": "K-1", "holder": "pass-a", "event": "claim_released", "level": "info", "logger": "kodezart.services.claim_heartbeat", "timestamp": "2026-09-13T00:26:11.714871Z"}
+{"issue_key": "K-1", "job_id": "job-0001", "run_started": true, "terminal_outcome": true, "event": "lifecycle_watch_finished", "level": "info", "logger": "kodezart.services.lifecycle_watcher", "timestamp": "2026-09-13T00:26:11.715167Z"}
+{"issue_key": "K-1", "job_id": "job-0001", "outcome": "completed", "event": "finished_fire_unknown_to_registry", "level": "error", "logger": "kodezart.services.lifecycle_watcher", "timestamp": "2026-09-13T00:26:11.715699Z"}
+automatic=False, fake_seconds=0.0
+.
+2 passed in 0.31s

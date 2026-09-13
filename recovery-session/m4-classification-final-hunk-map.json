@@ -1,0 +1,108 @@
+[
+  {
+    "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "sha256": "938dfd3275514c81289165d5149ed82d799bee9f2c3b07f55533f940486be31c",
+    "donor_byte_identical": false,
+    "donor_present": true
+  },
+  {
+    "path": "src/kodezart/domain/tracker_writes.py",
+    "sha256": "f9998943047ab44f2d471bca32ae82e806057932387c36dbc7e11ea4aa2f2d05",
+    "donor_byte_identical": false,
+    "donor_present": true
+  },
+  {
+    "path": "src/kodezart/services/lane_escalation.py",
+    "sha256": "56403be1e44cfd8ba5b4251d34923d55e13146832716e4f6cddcf5f1605d532b",
+    "donor_byte_identical": true,
+    "donor_present": true
+  },
+  {
+    "path": "src/kodezart/types/domain/run_state.py",
+    "sha256": "a0410b98fffffea39b106b75c6b1e44f7fd631f4ecd72750435506be29094c2e",
+    "donor_byte_identical": false,
+    "donor_present": true
+  },
+  {
+    "path": "tests/tracker/test_classification_authority.py",
+    "sha256": "8ccf25abf06c4813d0d070822fcd995c4ee3159bd75356d4e6f7e0da458301f7",
+    "donor_byte_identical": true,
+    "donor_present": true
+  },
+  {
+    "path": "tests/tracker/test_criterion_label_independent.py",
+    "sha256": "7abc32364317a7423604a5bad8f974fd5f65a24bc8aa1f892a06f4ae2d800a6a",
+    "donor_byte_identical": true,
+    "donor_present": true
+  },
+  {
+    "path": "tests/tracker/test_criterion_label_surface.py",
+    "sha256": "45f9360d8657eefc01f92930be5ae9812fddc754a5b3d108830ad58fb331939c",
+    "donor_byte_identical": true,
+    "donor_present": true
+  },
+  {
+    "path": "tests/tracker/test_escalation_owned_boundaries.py",
+    "sha256": "172f4f0e7ff9c5ba752752cd3fc4b70fd87f0a90f5c0a8da13b81bea5f726e04",
+    "donor_byte_identical": false,
+    "donor_present": false
+  },
+  {
+    "path": "tests/tracker/test_lane_escalation.py",
+    "sha256": "5fb27f02841a674c6867155379370cff714637ab92fce1e4d5ae59980f977011",
+    "donor_byte_identical": false,
+    "donor_present": true
+  },
+  {
+    "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "set_issue_classification",
+    "extraction_lines": [
+      1194,
+      1248
+    ],
+    "donor_lines": [
+      2292,
+      2346
+    ],
+    "ast_identical": true
+  },
+  {
+    "path": "src/kodezart/domain/tracker_writes.py",
+    "symbol": "classification_surface",
+    "extraction_lines": [
+      11,
+      18
+    ],
+    "donor_lines": [
+      15,
+      22
+    ],
+    "ast_identical": true
+  },
+  {
+    "path": "src/kodezart/services/lane_escalation.py",
+    "symbol": "LaneEscalationWriter",
+    "extraction_lines": [
+      28,
+      151
+    ],
+    "donor_lines": [
+      28,
+      151
+    ],
+    "ast_identical": true
+  },
+  {
+    "path": "src/kodezart/types/domain/run_state.py",
+    "symbol": "LaneEscalation",
+    "extraction_lines": [
+      8,
+      19
+    ],
+    "donor_lines": [
+      21,
+      32
+    ],
+    "ast_identical": true
+  }
+]

@@ -1,0 +1,32 @@
+{
+  "candidate": "0363cc9faa84ef90f61e9db38bc62864f5ee4fa3",
+  "tree": "80442d0d6805d688daedc3dc40855c59554b3b35",
+  "parent": "e99c9d105bdf5d20fec8b976dce58156b7c4fb72",
+  "worktree": "/private/tmp/kodezart-v03-m2-groom-rubric-correction",
+  "status": "",
+  "review_status": "Authored correction pending independent approval",
+  "actual_tests": {
+    "affected": "1229 passed in 131.09s",
+    "clean_old_before": "8 failed, 7 deselected in 2.70s",
+    "static": "483 formatted; Ruff clean; strict mypy 216 source files"
+  },
+  "comments": [
+    "https://linear.app/duckburg/issue/KOD-74#comment-cf6a4ac2-6d0e-4c03-99d4-35eabea4a7c8",
+    "https://linear.app/duckburg/issue/KOD-127#comment-d50546e2-ca7a-4473-ab75-1e68ce751536"
+  ],
+  "artifacts": {
+    "m2-groom-rubric-independent-review.md": "e45be6b84df9cfb8a38cc4ed773407d247f7e2ffe60e2e22aea45207bf817c64",
+    "m2-groom-rubric-author-completion.md": "c2994aedffd741cd6d464679da9c58c9d1b0890d9cc05a3101336959850aff3d",
+    "m2-groom-rubric-provenance.json": "ddda6804f3dfe4586003f8a9c96d33de28231b1a23d1115bdb2352aad6f02255",
+    "m2-groom-rubric-actual-affected.log": "466424d3ea96381e963200f8460dfee9d018d8861769fc1335b3077201a73de8",
+    "m2-groom-rubric-final-static.log": "8e2930881ad6b55c762a1129c7c892de96ee8cdde0a61a6ed4ff88ab5ddf509d",
+    "m2-groom-rubric-final-controls-e99-before.log": "997ecfa7a53254c23d2e070a70f5c1c6778ef2f41bad6c04cae1ee5a7e2633f2",
+    "m2-groom-rubric-scheduled-body-proof.json": "bdb3e25bd4e7bae3c50efe3a2ae87b8b4d15446b5b7ee742dd777cf3836540ee",
+    "m2-groom-rubric-structural-proof.json": "726620b0073551ea83cd3e089b1a0752f50fc2ee764754f2df5e010175a5cd4a",
+    "m2-groom-rubric-frozen-bytes.json": "57880e661af8ff9f1dbe58bb9d73df0f4dd9e0795629e84d21b5390b8f5c1cd8",
+    "test_m2_groom_configured_prompts_independent.py": "f58836da579934c8714504dd79d0667be8c1827a601208c8a24d703dd6c53f1d",
+    "m2-groom-configured-prompts-independent-before-configured.log": "d2bc1915943d43b1b09f935666e1fa16bf08e4da65bdf9f4761d7ffe0f1c6d1b",
+    "m2-groom-wrong-renderable-role-independent.log": "26995b584303f26ec751a817feb6944b671ccb50cb961036b7af54337cd06ec5"
+  },
+  "tested_source_bytes_unchanged_after_commit": true
+}

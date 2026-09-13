@@ -1,0 +1,2 @@
+src/kodezart/services/audit_runtime.py:315: error: Item "AuditTerminalReport" of "AuditClaimReport | AuditTerminalReport" has no attribute "claim"  [union-attr]
+Found 1 error in 1 file (checked 6 source files)

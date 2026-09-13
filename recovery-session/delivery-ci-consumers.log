@@ -1,0 +1,447 @@
+........................................................................ [ 46%]
+.....................FFFFFFFF........FFFF............FF..FFFFFFFF....... [ 92%]
+...........                                                              [100%]
+=================================== FAILURES ===================================
+_ test_only_the_current_completed_criterion_enters_this_check[fake-port-Todo] __
+
+setup = <function setup.<locals>.build at 0x10a281940>
+tracker = <tests.fakes.FakeTrackerPort object at 0x10b2a0c80>, state = 'Todo'
+
+    @pytest.mark.parametrize("state", ["Todo", "In Review", "Canceled"])
+    async def test_only_the_current_completed_criterion_enters_this_check(
+        setup, tracker, state
+    ):
+        await tracker.restore_workflow_state(issue_key=CHILD, state_name=state)
+>       ci, reader = FakeCIMonitor()()
+                     ^^^^^^^^^^^^^^^^^
+E       TypeError: 'FakeCIMonitor' object is not callable
+
+tests/tracker/test_audit_forge.py:202: TypeError
+_ test_only_the_current_completed_criterion_enters_this_check[fake-port-In Review] _
+
+setup = <function setup.<locals>.build at 0x10b29f420>
+tracker = <tests.fakes.FakeTrackerPort object at 0x10b2bd730>
+state = 'In Review'
+
+    @pytest.mark.parametrize("state", ["Todo", "In Review", "Canceled"])
+    async def test_only_the_current_completed_criterion_enters_this_check(
+        setup, tracker, state
+    ):
+        await tracker.restore_workflow_state(issue_key=CHILD, state_name=state)
+>       ci, reader = FakeCIMonitor()()
+                     ^^^^^^^^^^^^^^^^^
+E       TypeError: 'FakeCIMonitor' object is not callable
+
+tests/tracker/test_audit_forge.py:202: TypeError
+_ test_only_the_current_completed_criterion_enters_this_check[fake-port-Canceled] _
+
+setup = <function setup.<locals>.build at 0x10b29f740>
+tracker = <tests.fakes.FakeTrackerPort object at 0x10b2bc2c0>
+state = 'Canceled'
+
+    @pytest.mark.parametrize("state", ["Todo", "In Review", "Canceled"])
+    async def test_only_the_current_completed_criterion_enters_this_check(
+        setup, tracker, state
+    ):
+        await tracker.restore_workflow_state(issue_key=CHILD, state_name=state)
+>       ci, reader = FakeCIMonitor()()
+                     ^^^^^^^^^^^^^^^^^
+E       TypeError: 'FakeCIMonitor' object is not callable
+
+tests/tracker/test_audit_forge.py:202: TypeError
+_ test_only_the_current_completed_criterion_enters_this_check[linear-mcp-Todo] _
+
+setup = <function setup.<locals>.build at 0x10b29fc40>
+tracker = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10b292390>
+state = 'Todo'
+
+    @pytest.mark.parametrize("state", ["Todo", "In Review", "Canceled"])
+    async def test_only_the_current_completed_criterion_enters_this_check(
+        setup, tracker, state
+    ):
+        await tracker.restore_workflow_state(issue_key=CHILD, state_name=state)
+>       ci, reader = FakeCIMonitor()()
+                     ^^^^^^^^^^^^^^^^^
+E       TypeError: 'FakeCIMonitor' object is not callable
+
+tests/tracker/test_audit_forge.py:202: TypeError
+_ test_only_the_current_completed_criterion_enters_this_check[linear-mcp-In Review] _
+
+setup = <function setup.<locals>.build at 0x10b29fec0>
+tracker = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10b2923c0>
+state = 'In Review'
+
+    @pytest.mark.parametrize("state", ["Todo", "In Review", "Canceled"])
+    async def test_only_the_current_completed_criterion_enters_this_check(
+        setup, tracker, state
+    ):
+        await tracker.restore_workflow_state(issue_key=CHILD, state_name=state)
+>       ci, reader = FakeCIMonitor()()
+                     ^^^^^^^^^^^^^^^^^
+E       TypeError: 'FakeCIMonitor' object is not callable
+
+tests/tracker/test_audit_forge.py:202: TypeError
+_ test_only_the_current_completed_criterion_enters_this_check[linear-mcp-Canceled] _
+
+setup = <function setup.<locals>.build at 0x10b29fd80>
+tracker = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10b290f20>
+state = 'Canceled'
+
+    @pytest.mark.parametrize("state", ["Todo", "In Review", "Canceled"])
+    async def test_only_the_current_completed_criterion_enters_this_check(
+        setup, tracker, state
+    ):
+        await tracker.restore_workflow_state(issue_key=CHILD, state_name=state)
+>       ci, reader = FakeCIMonitor()()
+                     ^^^^^^^^^^^^^^^^^
+E       TypeError: 'FakeCIMonitor' object is not callable
+
+tests/tracker/test_audit_forge.py:202: TypeError
+____ test_foreign_recorded_prose_cannot_supply_a_convenient_sha[fake-port] _____
+
+setup = <function setup.<locals>.build at 0x10b29fc40>
+tracker = <tests.fakes.FakeTrackerPort object at 0x10b291910>
+
+    async def test_foreign_recorded_prose_cannot_supply_a_convenient_sha(setup, tracker):
+        await tracker.update_issue(issue_key=CHILD, body=f"**Evidence:** {SHA} test_unit")
+>       ci, reader = FakeCIMonitor()()
+                     ^^^^^^^^^^^^^^^^^
+E       TypeError: 'FakeCIMonitor' object is not callable
+
+tests/tracker/test_audit_forge.py:210: TypeError
+____ test_foreign_recorded_prose_cannot_supply_a_convenient_sha[linear-mcp] ____
+
+setup = <function setup.<locals>.build at 0x10b29f100>
+tracker = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10b2be720>
+
+    async def test_foreign_recorded_prose_cannot_supply_a_convenient_sha(setup, tracker):
+        await tracker.update_issue(issue_key=CHILD, body=f"**Evidence:** {SHA} test_unit")
+>       ci, reader = FakeCIMonitor()()
+                     ^^^^^^^^^^^^^^^^^
+E       TypeError: 'FakeCIMonitor' object is not callable
+
+tests/tracker/test_audit_forge.py:210: TypeError
+_ test_a_callers_earlier_green_rerun_cannot_replace_a_new_red_watch[fake-port-fake] _
+
+setup = <function setup.<locals>.build at 0x10a4ec2c0>, backend = 'fake'
+
+    @pytest.mark.parametrize("backend", ["fake", "github"])
+    async def test_a_callers_earlier_green_rerun_cannot_replace_a_new_red_watch(
+        setup, backend
+    ):
+        if backend == "fake":
+            ci = FakeCIMonitor(
+                passed=False,
+                failed_names=NAMES,
+                rerun_results=[(True, "old green", frozenset())],
+                observed_sha_by_ref={SHA: SHA},
+                check_names=NAMES,
+            )
+            await ci.rerun_checks(repo_url=REPO, ref=SHA)
+>           assert (await ci.wait_for_checks(repo_url=REPO, ref=SHA))[0] is True
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           TypeError: 'ObservedChecks' object is not subscriptable
+
+tests/tracker/test_audit_forge.py:272: TypeError
+_ test_a_callers_earlier_green_rerun_cannot_replace_a_new_red_watch[fake-port-github] _
+
+setup = <function setup.<locals>.build at 0x10a28e2a0>, backend = 'github'
+
+    @pytest.mark.parametrize("backend", ["fake", "github"])
+    async def test_a_callers_earlier_green_rerun_cannot_replace_a_new_red_watch(
+        setup, backend
+    ):
+        if backend == "fake":
+            ci = FakeCIMonitor(
+                passed=False,
+                failed_names=NAMES,
+                rerun_results=[(True, "old green", frozenset())],
+                observed_sha_by_ref={SHA: SHA},
+                check_names=NAMES,
+            )
+            await ci.rerun_checks(repo_url=REPO, ref=SHA)
+            assert (await ci.wait_for_checks(repo_url=REPO, ref=SHA))[0] is True
+            result = await setup(ci, bound=0).observe(REQUEST)
+        else:
+    
+            class TimelineAPI(ActionsAPI):
+                def run(self, run_id, attempt):
+                    row = super().run(run_id, attempt)
+                    row["conclusion"] = "success" if attempt == 2 else "failure"
+                    return row
+    
+                def jobs(self, run_id, attempt):
+                    rows = super().jobs(run_id, attempt)
+                    for row in rows:
+                        row["conclusion"] = "success" if attempt == 2 else "failure"
+                    return rows
+    
+            api = TimelineAPI(names=tuple(sorted(NAMES)))
+            api.latest_checks = True
+            ci = _make_client(api)
+            try:
+                await ci.rerun_checks(repo_url=REPO, ref=SHA)
+>               assert (await ci.wait_for_checks(repo_url=REPO, ref=SHA))[0] is True
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E               TypeError: 'ObservedChecks' object is not subscriptable
+
+tests/tracker/test_audit_forge.py:293: TypeError
+_ test_a_callers_earlier_green_rerun_cannot_replace_a_new_red_watch[linear-mcp-fake] _
+
+setup = <function setup.<locals>.build at 0x10a4ed080>, backend = 'fake'
+
+    @pytest.mark.parametrize("backend", ["fake", "github"])
+    async def test_a_callers_earlier_green_rerun_cannot_replace_a_new_red_watch(
+        setup, backend
+    ):
+        if backend == "fake":
+            ci = FakeCIMonitor(
+                passed=False,
+                failed_names=NAMES,
+                rerun_results=[(True, "old green", frozenset())],
+                observed_sha_by_ref={SHA: SHA},
+                check_names=NAMES,
+            )
+            await ci.rerun_checks(repo_url=REPO, ref=SHA)
+>           assert (await ci.wait_for_checks(repo_url=REPO, ref=SHA))[0] is True
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           TypeError: 'ObservedChecks' object is not subscriptable
+
+tests/tracker/test_audit_forge.py:272: TypeError
+_ test_a_callers_earlier_green_rerun_cannot_replace_a_new_red_watch[linear-mcp-github] _
+
+setup = <function setup.<locals>.build at 0x10a4eca40>, backend = 'github'
+
+    @pytest.mark.parametrize("backend", ["fake", "github"])
+    async def test_a_callers_earlier_green_rerun_cannot_replace_a_new_red_watch(
+        setup, backend
+    ):
+        if backend == "fake":
+            ci = FakeCIMonitor(
+                passed=False,
+                failed_names=NAMES,
+                rerun_results=[(True, "old green", frozenset())],
+                observed_sha_by_ref={SHA: SHA},
+                check_names=NAMES,
+            )
+            await ci.rerun_checks(repo_url=REPO, ref=SHA)
+            assert (await ci.wait_for_checks(repo_url=REPO, ref=SHA))[0] is True
+            result = await setup(ci, bound=0).observe(REQUEST)
+        else:
+    
+            class TimelineAPI(ActionsAPI):
+                def run(self, run_id, attempt):
+                    row = super().run(run_id, attempt)
+                    row["conclusion"] = "success" if attempt == 2 else "failure"
+                    return row
+    
+                def jobs(self, run_id, attempt):
+                    rows = super().jobs(run_id, attempt)
+                    for row in rows:
+                        row["conclusion"] = "success" if attempt == 2 else "failure"
+                    return rows
+    
+            api = TimelineAPI(names=tuple(sorted(NAMES)))
+            api.latest_checks = True
+            ci = _make_client(api)
+            try:
+                await ci.rerun_checks(repo_url=REPO, ref=SHA)
+>               assert (await ci.wait_for_checks(repo_url=REPO, ref=SHA))[0] is True
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E               TypeError: 'ObservedChecks' object is not subscriptable
+
+tests/tracker/test_audit_forge.py:293: TypeError
+__ test_a_missing_repository_declaration_refuses_before_the_forge[fake-port] ___
+
+setup = <function setup.<locals>.build at 0x10a4ed800>
+
+    async def test_a_missing_repository_declaration_refuses_before_the_forge(setup):
+>       ci, reader = FakeCIMonitor()()
+                     ^^^^^^^^^^^^^^^^^
+E       TypeError: 'FakeCIMonitor' object is not callable
+
+tests/tracker/test_audit_forge.py:351: TypeError
+__ test_a_missing_repository_declaration_refuses_before_the_forge[linear-mcp] __
+
+setup = <function setup.<locals>.build at 0x10a4ed300>
+
+    async def test_a_missing_repository_declaration_refuses_before_the_forge(setup):
+>       ci, reader = FakeCIMonitor()()
+                     ^^^^^^^^^^^^^^^^^
+E       TypeError: 'FakeCIMonitor' object is not callable
+
+tests/tracker/test_audit_forge.py:351: TypeError
+_ test_cancellation_does_not_return_a_forge_verdict_or_leave_the_watch_alive[fake-port] _
+
+setup = <function setup.<locals>.build at 0x10a4ec900>
+tracker_writes = <function tracker_writes.<locals>.<lambda> at 0x10a4ed9e0>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10b29bbf0>
+
+    async def test_cancellation_does_not_return_a_forge_verdict_or_leave_the_watch_alive(
+        setup, tracker_writes, monkeypatch
+    ):
+        entered, finished = asyncio.Event(), asyncio.Event()
+>       ci, reader = FakeCIMonitor()()
+                     ^^^^^^^^^^^^^^^^^
+E       TypeError: 'FakeCIMonitor' object is not callable
+
+tests/tracker/test_audit_forge.py:373: TypeError
+_ test_cancellation_does_not_return_a_forge_verdict_or_leave_the_watch_alive[linear-mcp] _
+
+setup = <function setup.<locals>.build at 0x10a4ee160>
+tracker_writes = <function tracker_writes.<locals>.<lambda> at 0x10a4eccc0>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10b29ba70>
+
+    async def test_cancellation_does_not_return_a_forge_verdict_or_leave_the_watch_alive(
+        setup, tracker_writes, monkeypatch
+    ):
+        entered, finished = asyncio.Event(), asyncio.Event()
+>       ci, reader = FakeCIMonitor()()
+                     ^^^^^^^^^^^^^^^^^
+E       TypeError: 'FakeCIMonitor' object is not callable
+
+tests/tracker/test_audit_forge.py:373: TypeError
+_ test_contradictory_or_failed_port_evidence_is_not_a_classified_red[fake-port-status] _
+
+setup = <function setup.<locals>.build at 0x10a4ee480>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a492e70>
+damage = 'status'
+
+    @pytest.mark.parametrize("damage", ["status", "failed-names", "reader-error"])
+    async def test_contradictory_or_failed_port_evidence_is_not_a_classified_red(
+        setup, monkeypatch, damage
+    ):
+        async with forge("fake", "work") as (ci, _):
+            if damage == "failed-names":
+                monkeypatch.setattr(
+                    ci, "failed_check_names", AsyncMock(return_value=frozenset({"foreign"}))
+                )
+            else:
+>               original = reader.observed_checks
+                           ^^^^^^
+E               NameError: name 'reader' is not defined
+
+tests/tracker/test_audit_forge.py:402: NameError
+_ test_contradictory_or_failed_port_evidence_is_not_a_classified_red[fake-port-failed-names] _
+
+setup = <function setup.<locals>.build at 0x10a4ee340>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10b2bca10>
+damage = 'failed-names'
+
+    @pytest.mark.parametrize("damage", ["status", "failed-names", "reader-error"])
+    async def test_contradictory_or_failed_port_evidence_is_not_a_classified_red(
+        setup, monkeypatch, damage
+    ):
+        async with forge("fake", "work") as (ci, _):
+            if damage == "failed-names":
+>               monkeypatch.setattr(
+                    ci, "failed_check_names", AsyncMock(return_value=frozenset({"foreign"}))
+                )
+E               AttributeError: <tests.fakes.FakeCIMonitor object at 0x10b2bd520> has no attribute 'failed_check_names'
+
+tests/tracker/test_audit_forge.py:398: AttributeError
+_ test_contradictory_or_failed_port_evidence_is_not_a_classified_red[fake-port-reader-error] _
+
+setup = <function setup.<locals>.build at 0x10a4ee520>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a38f530>
+damage = 'reader-error'
+
+    @pytest.mark.parametrize("damage", ["status", "failed-names", "reader-error"])
+    async def test_contradictory_or_failed_port_evidence_is_not_a_classified_red(
+        setup, monkeypatch, damage
+    ):
+        async with forge("fake", "work") as (ci, _):
+            if damage == "failed-names":
+                monkeypatch.setattr(
+                    ci, "failed_check_names", AsyncMock(return_value=frozenset({"foreign"}))
+                )
+            else:
+>               original = reader.observed_checks
+                           ^^^^^^
+E               NameError: name 'reader' is not defined
+
+tests/tracker/test_audit_forge.py:402: NameError
+_ test_contradictory_or_failed_port_evidence_is_not_a_classified_red[linear-mcp-status] _
+
+setup = <function setup.<locals>.build at 0x10a4ee660>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10b299760>
+damage = 'status'
+
+    @pytest.mark.parametrize("damage", ["status", "failed-names", "reader-error"])
+    async def test_contradictory_or_failed_port_evidence_is_not_a_classified_red(
+        setup, monkeypatch, damage
+    ):
+        async with forge("fake", "work") as (ci, _):
+            if damage == "failed-names":
+                monkeypatch.setattr(
+                    ci, "failed_check_names", AsyncMock(return_value=frozenset({"foreign"}))
+                )
+            else:
+>               original = reader.observed_checks
+                           ^^^^^^
+E               NameError: name 'reader' is not defined
+
+tests/tracker/test_audit_forge.py:402: NameError
+_ test_contradictory_or_failed_port_evidence_is_not_a_classified_red[linear-mcp-failed-names] _
+
+setup = <function setup.<locals>.build at 0x10a4ec2c0>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a32b110>
+damage = 'failed-names'
+
+    @pytest.mark.parametrize("damage", ["status", "failed-names", "reader-error"])
+    async def test_contradictory_or_failed_port_evidence_is_not_a_classified_red(
+        setup, monkeypatch, damage
+    ):
+        async with forge("fake", "work") as (ci, _):
+            if damage == "failed-names":
+>               monkeypatch.setattr(
+                    ci, "failed_check_names", AsyncMock(return_value=frozenset({"foreign"}))
+                )
+E               AttributeError: <tests.fakes.FakeCIMonitor object at 0x10a32a2d0> has no attribute 'failed_check_names'
+
+tests/tracker/test_audit_forge.py:398: AttributeError
+_ test_contradictory_or_failed_port_evidence_is_not_a_classified_red[linear-mcp-reader-error] _
+
+setup = <function setup.<locals>.build at 0x10a4ec7c0>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10b276300>
+damage = 'reader-error'
+
+    @pytest.mark.parametrize("damage", ["status", "failed-names", "reader-error"])
+    async def test_contradictory_or_failed_port_evidence_is_not_a_classified_red(
+        setup, monkeypatch, damage
+    ):
+        async with forge("fake", "work") as (ci, _):
+            if damage == "failed-names":
+                monkeypatch.setattr(
+                    ci, "failed_check_names", AsyncMock(return_value=frozenset({"foreign"}))
+                )
+            else:
+>               original = reader.observed_checks
+                           ^^^^^^
+E               NameError: name 'reader' is not defined
+
+tests/tracker/test_audit_forge.py:402: NameError
+=========================== short test summary info ============================
+FAILED tests/tracker/test_audit_forge.py::test_only_the_current_completed_criterion_enters_this_check[fake-port-Todo]
+FAILED tests/tracker/test_audit_forge.py::test_only_the_current_completed_criterion_enters_this_check[fake-port-In Review]
+FAILED tests/tracker/test_audit_forge.py::test_only_the_current_completed_criterion_enters_this_check[fake-port-Canceled]
+FAILED tests/tracker/test_audit_forge.py::test_only_the_current_completed_criterion_enters_this_check[linear-mcp-Todo]
+FAILED tests/tracker/test_audit_forge.py::test_only_the_current_completed_criterion_enters_this_check[linear-mcp-In Review]
+FAILED tests/tracker/test_audit_forge.py::test_only_the_current_completed_criterion_enters_this_check[linear-mcp-Canceled]
+FAILED tests/tracker/test_audit_forge.py::test_foreign_recorded_prose_cannot_supply_a_convenient_sha[fake-port]
+FAILED tests/tracker/test_audit_forge.py::test_foreign_recorded_prose_cannot_supply_a_convenient_sha[linear-mcp]
+FAILED tests/tracker/test_audit_forge.py::test_a_callers_earlier_green_rerun_cannot_replace_a_new_red_watch[fake-port-fake]
+FAILED tests/tracker/test_audit_forge.py::test_a_callers_earlier_green_rerun_cannot_replace_a_new_red_watch[fake-port-github]
+FAILED tests/tracker/test_audit_forge.py::test_a_callers_earlier_green_rerun_cannot_replace_a_new_red_watch[linear-mcp-fake]
+FAILED tests/tracker/test_audit_forge.py::test_a_callers_earlier_green_rerun_cannot_replace_a_new_red_watch[linear-mcp-github]
+FAILED tests/tracker/test_audit_forge.py::test_a_missing_repository_declaration_refuses_before_the_forge[fake-port]
+FAILED tests/tracker/test_audit_forge.py::test_a_missing_repository_declaration_refuses_before_the_forge[linear-mcp]
+FAILED tests/tracker/test_audit_forge.py::test_cancellation_does_not_return_a_forge_verdict_or_leave_the_watch_alive[fake-port]
+FAILED tests/tracker/test_audit_forge.py::test_cancellation_does_not_return_a_forge_verdict_or_leave_the_watch_alive[linear-mcp]
+FAILED tests/tracker/test_audit_forge.py::test_contradictory_or_failed_port_evidence_is_not_a_classified_red[fake-port-status]
+FAILED tests/tracker/test_audit_forge.py::test_contradictory_or_failed_port_evidence_is_not_a_classified_red[fake-port-failed-names]
+FAILED tests/tracker/test_audit_forge.py::test_contradictory_or_failed_port_evidence_is_not_a_classified_red[fake-port-reader-error]
+FAILED tests/tracker/test_audit_forge.py::test_contradictory_or_failed_port_evidence_is_not_a_classified_red[linear-mcp-status]
+FAILED tests/tracker/test_audit_forge.py::test_contradictory_or_failed_port_evidence_is_not_a_classified_red[linear-mcp-failed-names]
+FAILED tests/tracker/test_audit_forge.py::test_contradictory_or_failed_port_evidence_is_not_a_classified_red[linear-mcp-reader-error]
+22 failed, 133 passed in 10.26s

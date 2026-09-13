@@ -1,0 +1,550 @@
+Using CPython 3.12.13
+Creating virtual environment at: .venv
+   Building kodezart @ file:///private/tmp/kodezart-v03-recovery-gate-reconciliation
+warning: `build_system.requires = ["uv-build>=0.10.9,<0.11.0"]` does not contain the current uv version 0.11.6
+      Built kodezart @ file:///private/tmp/kodezart-v03-recovery-gate-reconciliation
+Installed 174 packages in 1.16s
+........FFFF.............F.FF                                            [100%]
+=================================== FAILURES ===================================
+___________ test_linear_policy_counts_total_attempts_and_backoff[1] ____________
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10a2f0ec0>
+tool = 'get_issue', arguments = {'id': 'FIX-1', 'includeRelations': True}
+
+    async def _call(
+        self,
+        tool: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        if tool == _TOOL_SAVE_ISSUE:
+            # Every issue write funnels through here, so the refusal is
+            # stated once and no future write path can route around it.
+            refuse_combined_issue_write(arguments)
+        attempt = 0
+        while True:
+            try:
+>               return await self._caller.call_tool(name=tool, arguments=arguments)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+src/kodezart/adapters/linear_mcp_tracker.py:3497: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <tests.fakes.FakeLinearMcpServer object at 0x10a023ce0>
+
+    async def call_tool(
+        self,
+        *,
+        name: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        # Yield to the scheduler at every tool boundary so concurrent callers
+        # genuinely interleave: a claim race that never interleaves proves
+        # nothing about exactly-once semantics.
+        await asyncio.sleep(0)
+        self.calls.append((name, dict(arguments)))
+        served = self._credential_refused_after.get(name)
+        if served is not None and len(self.tool_calls(name)) > served:
+            raise McpCredentialRefusedError(
+                "the MCP server refused the configured credential",
+                server_name="fake-linear",
+                tool_name=name,
+            )
+        remaining = self._transient_failures.get(name, 0)
+        if remaining > 0:
+            self._transient_failures[name] = remaining - 1
+>           raise TransientAPIError(f"fake transient failure on {name}")
+E           kodezart.domain.errors.TransientAPIError: fake transient failure on get_issue
+
+tests/fakes.py:2562: TransientAPIError
+
+The above exception was the direct cause of the following exception:
+
+attempts = 1, waits = []
+
+    @pytest.mark.parametrize("attempts", [1, 3])
+    async def test_linear_policy_counts_total_attempts_and_backoff(attempts, waits):
+        server = fixture_server()
+        server._transient_failures["get_issue"] = 10
+        tracker = tracker_over(
+            server, retry=RetryPolicy(attempts=attempts, initial_delay=0.5, factor=3)
+        )
+        with pytest.raises(TransientAPIError):
+>           await tracker.read_issue(issue_key=CLAIMED_ISSUE)
+
+tests/adapters/test_shared_retry.py:194: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/adapters/linear_mcp_tracker.py:948: in read_issue
+    return self._to_issue(await self._read_issue_wire(issue_key))
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/adapters/linear_mcp_tracker.py:3432: in _read_issue_wire
+    payload = await self._call(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10a2f0ec0>
+tool = 'get_issue', arguments = {'id': 'FIX-1', 'includeRelations': True}
+
+    async def _call(
+        self,
+        tool: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        if tool == _TOOL_SAVE_ISSUE:
+            # Every issue write funnels through here, so the refusal is
+            # stated once and no future write path can route around it.
+            refuse_combined_issue_write(arguments)
+        attempt = 0
+        while True:
+            try:
+                return await self._caller.call_tool(name=tool, arguments=arguments)
+            except McpCredentialRefusedError as exc:
+                # Named once and raised, never retried: the refusal is the
+                # same on every attempt, so a budget spent on it buys the
+                # first answer again and delays the one event an operator
+                # can act on by the whole back-off.
+                await self._log.aerror(
+                    "tracker_credential_refused",
+                    tool=tool,
+                    server_name=exc.server_name,
+                )
+                raise TrackerAccessDeniedError(str(exc)) from exc
+            except (McpTransportError, TransientAPIError) as exc:
+                if attempt + 1 >= self._retry.attempts or not _may_resend(tool, exc):
+>                   raise TrackerUnavailableError(str(exc)) from exc
+E                   kodezart.core.errors.TrackerUnavailableError: fake transient failure on get_issue
+
+src/kodezart/adapters/linear_mcp_tracker.py:3511: TrackerUnavailableError
+___________ test_linear_policy_counts_total_attempts_and_backoff[3] ____________
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10a2f3890>
+tool = 'get_issue', arguments = {'id': 'FIX-1', 'includeRelations': True}
+
+    async def _call(
+        self,
+        tool: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        if tool == _TOOL_SAVE_ISSUE:
+            # Every issue write funnels through here, so the refusal is
+            # stated once and no future write path can route around it.
+            refuse_combined_issue_write(arguments)
+        attempt = 0
+        while True:
+            try:
+>               return await self._caller.call_tool(name=tool, arguments=arguments)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+src/kodezart/adapters/linear_mcp_tracker.py:3497: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <tests.fakes.FakeLinearMcpServer object at 0x10a2f1e50>
+
+    async def call_tool(
+        self,
+        *,
+        name: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        # Yield to the scheduler at every tool boundary so concurrent callers
+        # genuinely interleave: a claim race that never interleaves proves
+        # nothing about exactly-once semantics.
+        await asyncio.sleep(0)
+        self.calls.append((name, dict(arguments)))
+        served = self._credential_refused_after.get(name)
+        if served is not None and len(self.tool_calls(name)) > served:
+            raise McpCredentialRefusedError(
+                "the MCP server refused the configured credential",
+                server_name="fake-linear",
+                tool_name=name,
+            )
+        remaining = self._transient_failures.get(name, 0)
+        if remaining > 0:
+            self._transient_failures[name] = remaining - 1
+>           raise TransientAPIError(f"fake transient failure on {name}")
+E           kodezart.domain.errors.TransientAPIError: fake transient failure on get_issue
+
+tests/fakes.py:2562: TransientAPIError
+
+The above exception was the direct cause of the following exception:
+
+attempts = 3, waits = [0.5, 1.5]
+
+    @pytest.mark.parametrize("attempts", [1, 3])
+    async def test_linear_policy_counts_total_attempts_and_backoff(attempts, waits):
+        server = fixture_server()
+        server._transient_failures["get_issue"] = 10
+        tracker = tracker_over(
+            server, retry=RetryPolicy(attempts=attempts, initial_delay=0.5, factor=3)
+        )
+        with pytest.raises(TransientAPIError):
+>           await tracker.read_issue(issue_key=CLAIMED_ISSUE)
+
+tests/adapters/test_shared_retry.py:194: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/adapters/linear_mcp_tracker.py:948: in read_issue
+    return self._to_issue(await self._read_issue_wire(issue_key))
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/adapters/linear_mcp_tracker.py:3432: in _read_issue_wire
+    payload = await self._call(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10a2f3890>
+tool = 'get_issue', arguments = {'id': 'FIX-1', 'includeRelations': True}
+
+    async def _call(
+        self,
+        tool: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        if tool == _TOOL_SAVE_ISSUE:
+            # Every issue write funnels through here, so the refusal is
+            # stated once and no future write path can route around it.
+            refuse_combined_issue_write(arguments)
+        attempt = 0
+        while True:
+            try:
+                return await self._caller.call_tool(name=tool, arguments=arguments)
+            except McpCredentialRefusedError as exc:
+                # Named once and raised, never retried: the refusal is the
+                # same on every attempt, so a budget spent on it buys the
+                # first answer again and delays the one event an operator
+                # can act on by the whole back-off.
+                await self._log.aerror(
+                    "tracker_credential_refused",
+                    tool=tool,
+                    server_name=exc.server_name,
+                )
+                raise TrackerAccessDeniedError(str(exc)) from exc
+            except (McpTransportError, TransientAPIError) as exc:
+                if attempt + 1 >= self._retry.attempts or not _may_resend(tool, exc):
+>                   raise TrackerUnavailableError(str(exc)) from exc
+E                   kodezart.core.errors.TrackerUnavailableError: fake transient failure on get_issue
+
+src/kodezart/adapters/linear_mcp_tracker.py:3511: TrackerUnavailableError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 15:37:33 [warning  ] tracker_mcp_retry              attempt=0 delay_seconds=0.5 tool=get_issue
+2026-09-12 15:37:33 [warning  ] tracker_mcp_retry              attempt=1 delay_seconds=1.5 tool=get_issue
+____ test_linear_permanent_or_unsafe_retry_refuses_immediately[credential] _____
+
+self = <tests.adapters.test_shared_retry.test_linear_permanent_or_unsafe_retry_refuses_immediately.<locals>.RefusingCaller object at 0x10a2f35f0>
+
+    async def call_tool(self, *, name, arguments):
+        calls.append((name, arguments))
+        if kind == "credential":
+>           raise McpCredentialRefusedError("refused", server_name="fixture")
+E           kodezart.core.errors.McpCredentialRefusedError: refused (fixture)
+
+tests/adapters/test_shared_retry.py:208: McpCredentialRefusedError
+
+The above exception was the direct cause of the following exception:
+
+kind = 'credential', waits = []
+
+    @pytest.mark.parametrize("kind", ["credential", "unanswered_write"])
+    async def test_linear_permanent_or_unsafe_retry_refuses_immediately(kind, waits):
+        server = fixture_server()
+        calls = []
+    
+        class RefusingCaller:
+            async def call_tool(self, *, name, arguments):
+                calls.append((name, arguments))
+                if kind == "credential":
+                    raise McpCredentialRefusedError("refused", server_name="fixture")
+                raise McpCallUnansweredError("lost", server_name="fixture")
+    
+        tracker = tracker_over(server, caller=RefusingCaller(), max_retries=4)
+        expected = (
+            McpCredentialRefusedError if kind == "credential" else McpCallUnansweredError
+        )
+        with pytest.raises(expected):
+>           await tracker.post_comment(issue_key=CLAIMED_ISSUE, body="one mutation")
+
+tests/adapters/test_shared_retry.py:216: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/adapters/linear_mcp_tracker.py:1679: in post_comment
+    payload = await self._call(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10a2f2de0>
+tool = 'save_comment', arguments = {'body': 'one mutation', 'issueId': 'FIX-1'}
+
+    async def _call(
+        self,
+        tool: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        if tool == _TOOL_SAVE_ISSUE:
+            # Every issue write funnels through here, so the refusal is
+            # stated once and no future write path can route around it.
+            refuse_combined_issue_write(arguments)
+        attempt = 0
+        while True:
+            try:
+                return await self._caller.call_tool(name=tool, arguments=arguments)
+            except McpCredentialRefusedError as exc:
+                # Named once and raised, never retried: the refusal is the
+                # same on every attempt, so a budget spent on it buys the
+                # first answer again and delays the one event an operator
+                # can act on by the whole back-off.
+                await self._log.aerror(
+                    "tracker_credential_refused",
+                    tool=tool,
+                    server_name=exc.server_name,
+                )
+>               raise TrackerAccessDeniedError(str(exc)) from exc
+E               kodezart.core.errors.TrackerAccessDeniedError: refused (fixture)
+
+src/kodezart/adapters/linear_mcp_tracker.py:3508: TrackerAccessDeniedError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 15:37:34 [error    ] tracker_credential_refused     server_name=fixture tool=save_comment
+_ test_linear_permanent_or_unsafe_retry_refuses_immediately[unanswered_write] __
+
+self = <tests.adapters.test_shared_retry.test_linear_permanent_or_unsafe_retry_refuses_immediately.<locals>.RefusingCaller object at 0x10a22dbe0>
+
+    async def call_tool(self, *, name, arguments):
+        calls.append((name, arguments))
+        if kind == "credential":
+            raise McpCredentialRefusedError("refused", server_name="fixture")
+>       raise McpCallUnansweredError("lost", server_name="fixture")
+E       kodezart.core.errors.McpCallUnansweredError: lost (fixture)
+
+tests/adapters/test_shared_retry.py:209: McpCallUnansweredError
+
+The above exception was the direct cause of the following exception:
+
+kind = 'unanswered_write', waits = []
+
+    @pytest.mark.parametrize("kind", ["credential", "unanswered_write"])
+    async def test_linear_permanent_or_unsafe_retry_refuses_immediately(kind, waits):
+        server = fixture_server()
+        calls = []
+    
+        class RefusingCaller:
+            async def call_tool(self, *, name, arguments):
+                calls.append((name, arguments))
+                if kind == "credential":
+                    raise McpCredentialRefusedError("refused", server_name="fixture")
+                raise McpCallUnansweredError("lost", server_name="fixture")
+    
+        tracker = tracker_over(server, caller=RefusingCaller(), max_retries=4)
+        expected = (
+            McpCredentialRefusedError if kind == "credential" else McpCallUnansweredError
+        )
+        with pytest.raises(expected):
+>           await tracker.post_comment(issue_key=CLAIMED_ISSUE, body="one mutation")
+
+tests/adapters/test_shared_retry.py:216: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/adapters/linear_mcp_tracker.py:1679: in post_comment
+    payload = await self._call(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10a22dc70>
+tool = 'save_comment', arguments = {'body': 'one mutation', 'issueId': 'FIX-1'}
+
+    async def _call(
+        self,
+        tool: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        if tool == _TOOL_SAVE_ISSUE:
+            # Every issue write funnels through here, so the refusal is
+            # stated once and no future write path can route around it.
+            refuse_combined_issue_write(arguments)
+        attempt = 0
+        while True:
+            try:
+                return await self._caller.call_tool(name=tool, arguments=arguments)
+            except McpCredentialRefusedError as exc:
+                # Named once and raised, never retried: the refusal is the
+                # same on every attempt, so a budget spent on it buys the
+                # first answer again and delays the one event an operator
+                # can act on by the whole back-off.
+                await self._log.aerror(
+                    "tracker_credential_refused",
+                    tool=tool,
+                    server_name=exc.server_name,
+                )
+                raise TrackerAccessDeniedError(str(exc)) from exc
+            except (McpTransportError, TransientAPIError) as exc:
+                if attempt + 1 >= self._retry.attempts or not _may_resend(tool, exc):
+>                   raise TrackerUnavailableError(str(exc)) from exc
+E                   kodezart.core.errors.TrackerUnavailableError: lost (fixture)
+
+src/kodezart/adapters/linear_mcp_tracker.py:3511: TrackerUnavailableError
+_____________ test_composed_tracker_preserves_operator_retry_units _____________
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10a22daf0>
+tool = 'get_issue', arguments = {'id': 'FIX-1', 'includeRelations': True}
+
+    async def _call(
+        self,
+        tool: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        if tool == _TOOL_SAVE_ISSUE:
+            # Every issue write funnels through here, so the refusal is
+            # stated once and no future write path can route around it.
+            refuse_combined_issue_write(arguments)
+        attempt = 0
+        while True:
+            try:
+>               return await self._caller.call_tool(name=tool, arguments=arguments)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+src/kodezart/adapters/linear_mcp_tracker.py:3497: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <tests.fakes.FakeLinearMcpServer object at 0x10a2f6a80>
+
+    async def call_tool(
+        self,
+        *,
+        name: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        # Yield to the scheduler at every tool boundary so concurrent callers
+        # genuinely interleave: a claim race that never interleaves proves
+        # nothing about exactly-once semantics.
+        await asyncio.sleep(0)
+        self.calls.append((name, dict(arguments)))
+        served = self._credential_refused_after.get(name)
+        if served is not None and len(self.tool_calls(name)) > served:
+            raise McpCredentialRefusedError(
+                "the MCP server refused the configured credential",
+                server_name="fake-linear",
+                tool_name=name,
+            )
+        remaining = self._transient_failures.get(name, 0)
+        if remaining > 0:
+            self._transient_failures[name] = remaining - 1
+>           raise TransientAPIError(f"fake transient failure on {name}")
+E           kodezart.domain.errors.TransientAPIError: fake transient failure on get_issue
+
+tests/fakes.py:2562: TransientAPIError
+
+The above exception was the direct cause of the following exception:
+
+waits = [0.5, 1.0]
+
+    async def test_composed_tracker_preserves_operator_retry_units(waits):
+        server = fixture_server()
+        server._transient_failures["get_issue"] = 10
+        config = AppConfig(
+            tracker={"max_retries": 2, "retry_backoff_factor": 0.5},
+        )
+        tracker, _ = build_tracker(
+            backend=config.tracker.backend,
+            retry=RetryPolicy(
+                attempts=config.tracker.max_retries + 1,
+                initial_delay=config.tracker.retry_backoff_factor,
+            ),
+            operation=operation_config(),
+            caller=server,
+        )
+        with pytest.raises(TransientAPIError):
+>           await tracker.read_issue(issue_key=CLAIMED_ISSUE)
+
+tests/adapters/test_shared_retry.py:396: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/adapters/linear_mcp_tracker.py:948: in read_issue
+    return self._to_issue(await self._read_issue_wire(issue_key))
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/adapters/linear_mcp_tracker.py:3432: in _read_issue_wire
+    payload = await self._call(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10a22daf0>
+tool = 'get_issue', arguments = {'id': 'FIX-1', 'includeRelations': True}
+
+    async def _call(
+        self,
+        tool: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        if tool == _TOOL_SAVE_ISSUE:
+            # Every issue write funnels through here, so the refusal is
+            # stated once and no future write path can route around it.
+            refuse_combined_issue_write(arguments)
+        attempt = 0
+        while True:
+            try:
+                return await self._caller.call_tool(name=tool, arguments=arguments)
+            except McpCredentialRefusedError as exc:
+                # Named once and raised, never retried: the refusal is the
+                # same on every attempt, so a budget spent on it buys the
+                # first answer again and delays the one event an operator
+                # can act on by the whole back-off.
+                await self._log.aerror(
+                    "tracker_credential_refused",
+                    tool=tool,
+                    server_name=exc.server_name,
+                )
+                raise TrackerAccessDeniedError(str(exc)) from exc
+            except (McpTransportError, TransientAPIError) as exc:
+                if attempt + 1 >= self._retry.attempts or not _may_resend(tool, exc):
+>                   raise TrackerUnavailableError(str(exc)) from exc
+E                   kodezart.core.errors.TrackerUnavailableError: fake transient failure on get_issue
+
+src/kodezart/adapters/linear_mcp_tracker.py:3511: TrackerUnavailableError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 15:37:35 [warning  ] tracker_mcp_retry              attempt=0 delay_seconds=0.5 tool=get_issue
+2026-09-12 15:37:35 [warning  ] tracker_mcp_retry              attempt=1 delay_seconds=1.0 tool=get_issue
+__________ test_every_shipped_protocol_has_a_row_in_the_protocol_map ___________
+
+    def test_every_shipped_protocol_has_a_row_in_the_protocol_map() -> None:
+        """The doc said "all 12" over a file that defines far more than twelve."""
+>       assert _shipped_protocols() - _documented_protocols() == set()
+E       AssertionError: assert {'FireCriteri...iteriaSource'} == set()
+E         
+E         Extra items in the left set:
+E         'FireCriteriaSource'
+E         'FireCriteriaReader'
+E         Use -v to get more diff
+
+tests/docs/test_documented_surface.py:320: AssertionError
+_ TestPriorityRanking.test_no_module_outside_the_adapter_orders_by_a_raw_priority _
+
+self = <tests.services.test_fire_dispatcher.TestPriorityRanking object at 0x10a113890>
+
+    def test_no_module_outside_the_adapter_orders_by_a_raw_priority(
+        self,
+    ) -> None:
+        """A raw-numeric sort is asserted absent, mechanically.
+    
+        The vendor's numeric encoding is allowed to exist in exactly two
+        modules — the adapter that maps it and the wire shape that declares
+        it.  Anywhere else, priority reaching a sort key, a comparison or a
+        selection is the defect, and ``priority_rank`` — the domain order —
+        is the one way it may.
+        """
+        root = Path(__file__).resolve().parents[2] / "src" / "kodezart"
+        allowed = {
+            root / "adapters" / "linear_mcp_tracker.py",
+            root / "types" / "domain" / "linear_mcp.py",
+        }
+        offenders: list[str] = []
+        for path in sorted(root.rglob("*.py")):
+            if path in allowed:
+                continue
+            for number, line in enumerate(
+                path.read_text().splitlines(),
+                start=1,
+            ):
+                if raw_priority_ordering(line):
+                    offenders.append(f"{path.name}:{number}: {line.strip()}")
+>       assert offenders == []
+E       assert ['linear_mcp_...riority" and'] == []
+E         
+E         Left contains one more item: 'linear_mcp_types.py:41: The numeric encoding is NOT an order: ``0`` means "no priority" and'
+E         Use -v to get more diff
+
+tests/services/test_fire_dispatcher.py:710: AssertionError
+=========================== short test summary info ============================
+FAILED tests/adapters/test_shared_retry.py::test_linear_policy_counts_total_attempts_and_backoff[1]
+FAILED tests/adapters/test_shared_retry.py::test_linear_policy_counts_total_attempts_and_backoff[3]
+FAILED tests/adapters/test_shared_retry.py::test_linear_permanent_or_unsafe_retry_refuses_immediately[credential]
+FAILED tests/adapters/test_shared_retry.py::test_linear_permanent_or_unsafe_retry_refuses_immediately[unanswered_write]
+FAILED tests/adapters/test_shared_retry.py::test_composed_tracker_preserves_operator_retry_units
+FAILED tests/docs/test_documented_surface.py::test_every_shipped_protocol_has_a_row_in_the_protocol_map
+FAILED tests/services/test_fire_dispatcher.py::TestPriorityRanking::test_no_module_outside_the_adapter_orders_by_a_raw_priority
+7 failed, 22 passed in 5.28s

@@ -1,0 +1,4 @@
+src/kodezart/domain/criterion_creation.py:7: error: Skipping analyzing "kodezart.domain.fire_spec": module is installed, but missing library stubs or py.typed marker  [import-untyped]
+src/kodezart/domain/criterion_creation.py:7: note: See https://mypy.readthedocs.io/en/stable/running_mypy.html#missing-imports
+src/kodezart/services/organize_context.py:9: error: Skipping analyzing "kodezart.services.ruling_records": module is installed, but missing library stubs or py.typed marker  [import-untyped]
+Found 2 errors in 2 files (checked 208 source files)

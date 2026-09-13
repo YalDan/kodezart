@@ -1,0 +1,22 @@
+Using CPython 3.12.13
+Creating virtual environment at: .venv
+   Building kodezart @ file:///private/tmp/kodezart-organize-before-proof
+warning: `build_system.requires = ["uv-build>=0.10.9,<0.11.0"]` does not contain the current uv version 0.11.6
+      Built kodezart @ file:///private/tmp/kodezart-organize-before-proof
+Installed 174 packages in 1.50s
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_ test_production_adapter_has_a_creation_capability_that_refuses_unowned_writes _
+
+    async def test_production_adapter_has_a_creation_capability_that_refuses_unowned_writes():
+        server = fixture_server()
+        tracker = tracker_over(server)
+        with pytest.raises(SurfaceLeaseError):
+>           await tracker.create_criterion_if_absent(parent_key=CLAIMED_ISSUE, title="Check bytes", check="Input bytes are retained.", do="Compare the input bytes.", holder="actual-run-id")
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AttributeError: 'LinearMcpTracker' object has no attribute 'create_criterion_if_absent'
+
+../kodezart-recovery-session/test_organize_creation_gap.py:10: AttributeError
+=========================== short test summary info ============================
+FAILED ::test_production_adapter_has_a_creation_capability_that_refuses_unowned_writes
+1 failed in 6.04s

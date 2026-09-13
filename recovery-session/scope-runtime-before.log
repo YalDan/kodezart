@@ -1,0 +1,87 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+______________ test_actual_production_router_reaches_native_scope ______________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10bc83b60>
+
+    async def test_actual_production_router_reaches_native_scope(
+        monkeypatch,
+    ):
+        from kodezart.composition.engine import build_workflow_engine
+        from kodezart.core.config import AppConfig
+        from tests.fakes import FakeRefPublisher
+    
+        port = CountingTracker()
+        source = TrackerCriteria(tracker=port)
+        executor = NativeExecutor([native_evaluation(), native_evaluation()])
+        workspace = FakeWorkspaceProvider()
+        service = AgentService(
+            git_base_url="https://github.com",
+            executor=executor,
+            workspace=workspace,
+            persister=FakeChangePersister(),
+        )
+        artifacts = FakeArtifactPersister()
+        router = build_workflow_engine(
+            config=AppConfig(
+                ticket_review_mode=TicketReviewMode.REVIEWED,
+                max_iterations=1,
+                retry_max_attempts=1,
+                retry_initial_interval=0.1,
+            ),
+            repositories=(),
+            agent_service=service,
+            git=FakeGitService(remote_branch_shas={"main": "b" * 40}),
+            cache=FakeRepoCache(),
+            workspace=workspace,
+            merger=FakeBranchMerger(),
+            artifact_persister=artifacts,
+            ref_publisher=FakeRefPublisher(),
+            prompts=make_prompt_provider(),
+            skills=SUPPRESS_ALL_SKILLS,
+            gate=PassThroughGate(),
+            github_api=None,
+            checkpointer=InMemorySaver(),
+            criteria=source,
+        )
+        monkeypatch.setattr(TicketDraftOutput, "__init__", no_authored_ticket)
+        # Direct fire proves constructor capability only. The outer public scope
+        # router still refuses scoped jobs until its separate production slice.
+        fire = router
+>       events = await drive(fire, scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+../kodezart-recovery-session/scope-production-gap-probe.py:47: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/chains/test_native_fire.py:270: in drive
+    async for event in fire.run(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.composition.engine.OriginRoutedWorkflowEngine object at 0x10bd557c0>
+
+    async def run(
+        self,
+        *,
+        prompt: str,
+        issue_key: str | None = None,
+        run_identity: RunIdentity | None = None,
+        repo_path: str | None,
+        repo_url: str | None,
+        base_spec: BaseSpec,
+        scope: ScopeRef | None,
+        implied_base: BaseSpec | None = None,
+        permission_mode: PermissionMode,
+        allowed_tools: AllowedTools,
+        cache_key: str,
+    ) -> AsyncIterator[AgentEvent]:
+        """Refuse unsupported scopes before any I/O; run authored jobs normally."""
+        if scope is not None:
+>           raise ScopedExecutionUnavailableError(
+                "Scoped graph execution is not implemented", ref=scope
+            )
+E           kodezart.domain.errors.ScopedExecutionUnavailableError: Scoped graph execution is not implemented (scope: issue:fire/subject)
+
+src/kodezart/composition/engine.py:111: ScopedExecutionUnavailableError
+=========================== short test summary info ============================
+FAILED ::test_actual_production_router_reaches_native_scope - kodezart.domain...
+1 failed, 47 deselected in 3.33s

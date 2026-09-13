@@ -1,0 +1,70 @@
+Using CPython 3.12.13
+Creating virtual environment at: .venv
+   Building kodezart @ file:///private/tmp/kodezart-v03-recovery-alarm-payload-fixture
+warning: `build_system.requires = ["uv-build>=0.10.9,<0.11.0"]` does not contain the current uv version 0.11.6
+      Built kodezart @ file:///private/tmp/kodezart-v03-recovery-alarm-payload-fixture
+Installed 174 packages in 1.63s
+FF........................                                               [100%]
+=================================== FAILURES ===================================
+______ test_alarm_payload_contains_exactly_the_declared_six_fields[False] ______
+
+bounded = False
+
+    @pytest.mark.parametrize("bounded", [False, True])
+    def test_alarm_payload_contains_exactly_the_declared_six_fields(bounded):
+        data = alarm_data()
+        if not bounded:
+            data["bound"] = None
+        alarm = RunAlarm.model_validate(data)
+        payload = json.loads(alarm.model_dump_json(by_alias=True))
+        assert set(payload) == {
+            "subject",
+            "signal",
+            "readings",
+            "bound",
+            "raisedAtSha",
+            "raisedBy",
+        }
+>       assert payload["readings"] == [
+            {"sourceRef": "escalation/one", "value": "UNRESOLVED\n", "atSha": "0000000"},
+            {"sourceRef": "count/one", "value": " 004 ", "atSha": None},
+        ]
+E       AssertionError: assert [{'atSha': '0...e': ' 004 '}}] == [{'atSha': '0...ue': ' 004 '}]
+E         
+E         At index 0 diff: {'sourceRef': 'escalation/one', 'value': {'value': 'UNRESOLVED\n', 'kind': 'text'}, 'atSha': '0000000'} != {'sourceRef': 'escalation/one', 'value': 'UNRESOLVED\n', 'atSha': '0000000'}
+E         Use -v to get more diff
+
+tests/domain/test_run_alarm_payload.py:27: AssertionError
+______ test_alarm_payload_contains_exactly_the_declared_six_fields[True] _______
+
+bounded = True
+
+    @pytest.mark.parametrize("bounded", [False, True])
+    def test_alarm_payload_contains_exactly_the_declared_six_fields(bounded):
+        data = alarm_data()
+        if not bounded:
+            data["bound"] = None
+        alarm = RunAlarm.model_validate(data)
+        payload = json.loads(alarm.model_dump_json(by_alias=True))
+        assert set(payload) == {
+            "subject",
+            "signal",
+            "readings",
+            "bound",
+            "raisedAtSha",
+            "raisedBy",
+        }
+>       assert payload["readings"] == [
+            {"sourceRef": "escalation/one", "value": "UNRESOLVED\n", "atSha": "0000000"},
+            {"sourceRef": "count/one", "value": " 004 ", "atSha": None},
+        ]
+E       AssertionError: assert [{'atSha': '0...e': ' 004 '}}] == [{'atSha': '0...ue': ' 004 '}]
+E         
+E         At index 0 diff: {'sourceRef': 'escalation/one', 'value': {'value': 'UNRESOLVED\n', 'kind': 'text'}, 'atSha': '0000000'} != {'sourceRef': 'escalation/one', 'value': 'UNRESOLVED\n', 'atSha': '0000000'}
+E         Use -v to get more diff
+
+tests/domain/test_run_alarm_payload.py:27: AssertionError
+=========================== short test summary info ============================
+FAILED tests/domain/test_run_alarm_payload.py::test_alarm_payload_contains_exactly_the_declared_six_fields[False]
+FAILED tests/domain/test_run_alarm_payload.py::test_alarm_payload_contains_exactly_the_declared_six_fields[True]
+2 failed, 24 passed in 0.47s

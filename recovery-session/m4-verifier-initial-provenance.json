@@ -1,0 +1,67 @@
+[
+  {
+    "destination": "src/kodezart/chains/write_back_verifier.py",
+    "donor": "7892ca1a47adbcfd91fbcfb1e580dfc86f066a99",
+    "whole_file_sha256": "a21d069fe28002c866366a9d68002bc4676d97d7e0ba8a4882033e500547773a"
+  },
+  {
+    "destination": "src/kodezart/types/domain/write_back.py",
+    "donor": "7892ca1a47adbcfd91fbcfb1e580dfc86f066a99",
+    "whole_file_sha256": "cb4e39a2598272c2864f516ead5b732e4971fb76d8e3f1953eed49d99950faa2"
+  },
+  {
+    "destination": "src/kodezart/services/owned_workspace.py",
+    "donor": "7892ca1a47adbcfd91fbcfb1e580dfc86f066a99",
+    "whole_file_sha256": "931ad6e9c8d40a32247b9bb254c1ce6b10572dab3b419fdf9e5a8704ed1add80"
+  },
+  {
+    "destination": "src/kodezart/prompts/sets/claude-opus/write_back_verify.md",
+    "donor": "7892ca1a47adbcfd91fbcfb1e580dfc86f066a99",
+    "whole_file_sha256": "6aa84b889573d1025ee3c3fa5182c3d8f303911924d282e96f2044affc64ba60"
+  },
+  {
+    "destination": "src/kodezart/prompts/sets/anthropic_v5/write_back_verify.md",
+    "donor": "7892ca1a47adbcfd91fbcfb1e580dfc86f066a99",
+    "whole_file_sha256": "6aa84b889573d1025ee3c3fa5182c3d8f303911924d282e96f2044affc64ba60"
+  },
+  {
+    "destination": "tests/chains/test_write_back_verifier.py",
+    "donor": "7892ca1a47adbcfd91fbcfb1e580dfc86f066a99",
+    "whole_file_sha256": "a0daf4b13d6868871f733e27787b18b9bbebe003ccdadf81466f39ce73ca507a"
+  },
+  {
+    "destination": "src/kodezart/services/tracker_artifacts.py",
+    "donor": "7042032",
+    "whole_file_sha256": "9aeaac79dee3764c1bf227479f2000454ea1c5ca29ef797d4c639bce2ed6f5ac"
+  },
+  {
+    "destination": "src/kodezart/types/domain/audit.py",
+    "symbol": "AuditVerdict",
+    "donor": "7892ca1a47adbcfd91fbcfb1e580dfc86f066a99",
+    "sha256": "ba6cef50bd5e79dd0705bfbf213c35178c97163531eed8020d55ad59463f563d"
+  },
+  {
+    "destination": "src/kodezart/types/domain/audit.py",
+    "symbol": "TrackerArtifact",
+    "donor": "7892ca1a47adbcfd91fbcfb1e580dfc86f066a99",
+    "sha256": "61fc6b7a14ccaa11e597b82d8028aa999fb26c88970df1361e1c2e42342a86c1"
+  },
+  {
+    "destination": "src/kodezart/services/audit_sessions.py",
+    "symbol": "judge_in_workspace",
+    "donor": "7042032",
+    "sha256": "fe8533889ee0d36d16f5f10668ab34123ae47d3a019ae5f49336c4151d80d351"
+  },
+  {
+    "destination": "src/kodezart/services/git_observations.py",
+    "symbol": "read_workspace_head",
+    "donor": "7892ca1a47adbcfd91fbcfb1e580dfc86f066a99",
+    "sha256": "d84431ccf2df40fed80b096b71392ffad93f44a02c8b97f53554f34ac42d2d3a"
+  },
+  {
+    "destination": "src/kodezart/domain/errors.py",
+    "symbol": "WriteBackReadError",
+    "donor": "7892ca1a47adbcfd91fbcfb1e580dfc86f066a99",
+    "sha256": "7a962a6486dbd4020c03dce7a1e9ca1096c26ce6ebf59f0ba83e8bb6d76712dc"
+  }
+]

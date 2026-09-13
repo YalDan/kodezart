@@ -1,0 +1,64 @@
+FF...                                                                    [100%]
+=================================== FAILURES ===================================
+__ test_ref_removed_while_pr_content_is_gated_refuses_publication[lane-head] ___
+
+branch = 'lane-head'
+
+    @pytest.mark.parametrize("branch", [HEAD, BASE])
+    async def test_ref_removed_while_pr_content_is_gated_refuses_publication(branch):
+        parts = await setup()
+        owner, _, _, creator, *_ = parts
+    
+        class RefRemoved(PassThroughGate):
+            async def gate(self, **kwargs):
+                owner._git._remote_branch_shas[branch] = None
+                return await super().gate(**kwargs)
+    
+        owner._gate = RefRemoved()
+        error = DeliveryHeadError if branch == HEAD else BaseResolutionError
+>       with pytest.raises(error):
+             ^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'kodezart.domain.errors.DeliveryHeadError'>
+
+tests/chains/test_lane_delivery.py:334: Failed
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 15:40:10 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:40:10 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:40:10 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 15:40:10 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=pr_description stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 15:40:10 [info     ] outbound_content_gated         categories=[] content_digest=eb122d7b8735eaeed5d4d2e20e2197a7332385519bb8aea3e476efbbb03973b9 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=pr_title
+2026-09-12 15:40:10 [info     ] outbound_content_gated         categories=[] content_digest=67ea6610ea7acff978f8bc9bfd466e5e33f2fa503f68961b4548c20b172578db failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=pr_body
+2026-09-12 15:40:10 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+_ test_ref_removed_while_pr_content_is_gated_refuses_publication[blocker-branch] _
+
+branch = 'blocker-branch'
+
+    @pytest.mark.parametrize("branch", [HEAD, BASE])
+    async def test_ref_removed_while_pr_content_is_gated_refuses_publication(branch):
+        parts = await setup()
+        owner, _, _, creator, *_ = parts
+    
+        class RefRemoved(PassThroughGate):
+            async def gate(self, **kwargs):
+                owner._git._remote_branch_shas[branch] = None
+                return await super().gate(**kwargs)
+    
+        owner._gate = RefRemoved()
+        error = DeliveryHeadError if branch == HEAD else BaseResolutionError
+>       with pytest.raises(error):
+             ^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'kodezart.domain.errors.BaseResolutionError'>
+
+tests/chains/test_lane_delivery.py:334: Failed
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 15:40:10 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:40:10 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:40:10 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 15:40:10 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=pr_description stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 15:40:10 [info     ] outbound_content_gated         categories=[] content_digest=eb122d7b8735eaeed5d4d2e20e2197a7332385519bb8aea3e476efbbb03973b9 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=pr_title
+2026-09-12 15:40:10 [info     ] outbound_content_gated         categories=[] content_digest=67ea6610ea7acff978f8bc9bfd466e5e33f2fa503f68961b4548c20b172578db failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=pr_body
+2026-09-12 15:40:10 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+=========================== short test summary info ============================
+FAILED tests/chains/test_lane_delivery.py::test_ref_removed_while_pr_content_is_gated_refuses_publication[lane-head]
+FAILED tests/chains/test_lane_delivery.py::test_ref_removed_while_pr_content_is_gated_refuses_publication[blocker-branch]
+2 failed, 3 passed, 23 deselected in 0.70s

@@ -1,0 +1,94 @@
+--- a/src/kodezart/domain/errors.py
++++ b/src/kodezart/domain/errors.py
+@@ -5,6 +5,15 @@
+ from kodezart.types.domain.gating import ScanFailureKind, ScanHit
+ from kodezart.types.domain.scope import ScopeRef
+ from kodezart.types.domain.surface import WritableSurface
++
++
++class IssueLabelReadError(Exception):
++    """A configured classification cannot establish complete issue membership."""
++
++    def __init__(self, *, classification: str, reason: str) -> None:
++        self.classification = classification
++        self.reason = reason
++        super().__init__(f"issue label {classification!r} could not be read: {reason}")
+ 
+ 
+ class WorkspaceError(Exception):
+--- a/src/kodezart/core/protocols.py
++++ b/src/kodezart/core/protocols.py
+@@ -722,6 +722,20 @@
+         """Set the semantic queue state, replacing any other member."""
+         ...
+ 
++    async def set_issue_classification(
++        self, *, issue_key: str, classification: str, holder: str | None = None
++    ) -> TrackerIssue:
++        """Add one configured semantic classification, reading before writing.
++
++        An already present value writes nothing. Unrelated classifications
++        and all workflow/queue state survive unchanged.
++        A supplied holder must retain the issue's actual classification surface:
++        CRITERION_SUB_ISSUE for criteria, ISSUE_LABEL_SET otherwise, after
++        internal reads and on every known-unsent retry. Re-read its
++        actual classification outside the mutation retry before returning.
++        """
++        ...
++
+     async def post_comment(self, *, issue_key: str, body: str) -> TrackerComment:
+         """Post a comment and return it as stored."""
+         ...
+--- a/tests/fakes.py
++++ b/tests/fakes.py
+@@ -47,6 +47,7 @@
+ )
+ from kodezart.domain.surface_lease import live_conflict, surface_address
+ from kodezart.domain.tracker_writes import (
++    classification_surface,
+     comment_under_marker,
+     marked_comment_body,
+     require_expected_comment,
+@@ -3021,6 +3022,7 @@
+         #: records the stamp it left, so a consumer's gate can tell the
+         #: operation's own churn from a principal's edit (KOD-175).
+         self.self_writes: SelfWriteLedger = SelfWriteLedger()
++        self.classification_writes: list[tuple[str, str]] = []
+ 
+     def _wrote(self, issue_key: str) -> None:
+         """Stamp the issue as a backend would, and remember our own write.
+@@ -3218,6 +3220,34 @@
+         self.queue_writes.append((issue_key, state))
+         issue = self.issues[issue_key]
+         updated = issue.model_copy(update={"queue_states": frozenset({state})})
++        self.issues[issue_key] = updated
++        self._wrote(issue_key)
++        return updated
++
++    async def set_issue_classification(
++        self, *, issue_key: str, classification: str, holder: str | None = None
++    ) -> TrackerIssue:
++        issue = await self.read_issue(issue_key=issue_key)
++        if holder is not None:
++            surface = classification_surface(issue)
++            grant = self.leases.get(surface)
++            owner = (
++                grant.holder
++                if grant is not None and grant.expires_at > self._clock()
++                else None
++            )
++            if not holder.strip() or holder != owner:
++                raise SurfaceLeaseError(
++                    "classification requires the actual issue surface holder",
++                    surface=surface,
++                    current_holder=owner,
++                )
++        if classification in issue.issue_labels:
++            return issue
++        self.classification_writes.append((issue_key, classification))
++        updated = TrackerIssue.model_validate(
++            {**issue.model_dump(), "issue_labels": issue.issue_labels | {classification}}
++        )
+         self.issues[issue_key] = updated
+         self._wrote(issue_key)
+         return updated

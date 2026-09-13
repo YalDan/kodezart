@@ -1,0 +1,33 @@
+{
+  "source_test_commit": "37723cd8c660de5ad959de1f118b93287da48e64",
+  "tree": "965ce3a5833741293a7405cfed50bc6d2ab960ac",
+  "review_tree": "/private/tmp/kodezart-v03-m2-scope-bootstrap-independent",
+  "parents": [
+    "fadf6efe29c7addcc608b22e8345cd9008ce4bab",
+    "268be4057dbcd4d4edb79b35d7e2b60a30f2f3c8"
+  ],
+  "verdict": "accept bounded prerequisite merge; nonblocking duplicate fake initializer cleanup acknowledged",
+  "actual_tests": {
+    "passed": 343,
+    "seconds": 28.41,
+    "exit_code": 0
+  },
+  "clean": true,
+  "runners_settled": true,
+  "own_linear": "https://linear.app/duckburg/issue/KOD-74#comment-3f27e107-c43a-4db2-a9ab-97d70b54ed65",
+  "artifacts": {
+    "/private/tmp/kodezart-recovery-session/m2-scope-bootstrap-independent-review.md": "5d16a47054f01534b93e13d39f06dfb51272985984ac430dbcdd5b9bc2554c62",
+    "/private/tmp/kodezart-recovery-session/m2-scope-bootstrap-independent-provenance.json": "c5dec27274e5eb8362ef50e8cda097002b035a86d34bb7f13d748fe7302474aa",
+    "/private/tmp/kodezart-recovery-session/m2-scope-bootstrap-independent-provenance.log": "5337801ef3556c131491fa317e60bfb078747d8463b581ab9b3b0cd28766a0cd",
+    "/private/tmp/kodezart-recovery-session/m2-scope-bootstrap-independent-selected.log": "c9a7f3563ee1276075627ef4c7557f9101334b94aa85e7e2c1ec9306d18740f7",
+    "/private/tmp/kodezart-recovery-session/m2_scope_merge_independent_audit.py": "f2a62d2d674e13d69ca197121ea3afc06a378a44573ed2b31887bd59985ee765",
+    "/private/tmp/kodezart-recovery-session/m2-scope-bootstrap-resolution.json": "d1fdf1cdeeb03cfca6be7da950136dafc91facc3d1b1d9b62e55730b9011a58e",
+    "/private/tmp/kodezart-recovery-session/m2-scope-bootstrap-conflicts.diff": "23313372b26b64d3e6a6aff4cf4889bc99fed5771c87e187080aaf9cd020ae4c"
+  },
+  "mechanical_successor": {
+    "commit": "9e387b4a830adf87a3cebcbe705c17f1569101c7",
+    "verdict": "accepted; two exact later duplicate constructor initializations deleted",
+    "fresh_test_rerun": false,
+    "own_linear": "https://linear.app/duckburg/issue/KOD-74#comment-352a6ada-441b-4c23-a1f9-111459917693"
+  }
+}

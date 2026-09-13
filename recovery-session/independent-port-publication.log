@@ -1,0 +1,94 @@
+FFFFFFFFFF                                                               [100%]
+=================================== FAILURES ===================================
+_ test_real_recorder_publication_is_never_replayed[McpCallUnansweredError-unanswered-LinearRecordSink-tracker-save_document] _
+async def functions are not natively supported.
+You need to install a suitable plugin for your async framework, for example:
+  - anyio
+  - pytest-asyncio
+  - pytest-tornasync
+  - pytest-trio
+  - pytest-twisted
+_ test_real_recorder_publication_is_never_replayed[McpCallUnansweredError-unanswered-NotionRecordSink-knowledge-API-post-page] _
+async def functions are not natively supported.
+You need to install a suitable plugin for your async framework, for example:
+  - anyio
+  - pytest-asyncio
+  - pytest-tornasync
+  - pytest-trio
+  - pytest-twisted
+_ test_real_recorder_publication_is_never_replayed[McpSessionClosedError-session_closed-LinearRecordSink-tracker-save_document] _
+async def functions are not natively supported.
+You need to install a suitable plugin for your async framework, for example:
+  - anyio
+  - pytest-asyncio
+  - pytest-tornasync
+  - pytest-trio
+  - pytest-twisted
+_ test_real_recorder_publication_is_never_replayed[McpSessionClosedError-session_closed-NotionRecordSink-knowledge-API-post-page] _
+async def functions are not natively supported.
+You need to install a suitable plugin for your async framework, for example:
+  - anyio
+  - pytest-asyncio
+  - pytest-tornasync
+  - pytest-trio
+  - pytest-twisted
+_ test_real_recorder_publication_is_never_replayed[McpCredentialRefusedError-vendor_refused-LinearRecordSink-tracker-save_document] _
+async def functions are not natively supported.
+You need to install a suitable plugin for your async framework, for example:
+  - anyio
+  - pytest-asyncio
+  - pytest-tornasync
+  - pytest-trio
+  - pytest-twisted
+_ test_real_recorder_publication_is_never_replayed[McpCredentialRefusedError-vendor_refused-NotionRecordSink-knowledge-API-post-page] _
+async def functions are not natively supported.
+You need to install a suitable plugin for your async framework, for example:
+  - anyio
+  - pytest-asyncio
+  - pytest-tornasync
+  - pytest-trio
+  - pytest-twisted
+_ test_real_recorder_publication_is_never_replayed[McpTransportError-vendor_refused-LinearRecordSink-tracker-save_document] _
+async def functions are not natively supported.
+You need to install a suitable plugin for your async framework, for example:
+  - anyio
+  - pytest-asyncio
+  - pytest-tornasync
+  - pytest-trio
+  - pytest-twisted
+_ test_real_recorder_publication_is_never_replayed[McpTransportError-vendor_refused-NotionRecordSink-knowledge-API-post-page] _
+async def functions are not natively supported.
+You need to install a suitable plugin for your async framework, for example:
+  - anyio
+  - pytest-asyncio
+  - pytest-tornasync
+  - pytest-trio
+  - pytest-twisted
+_ test_tracker_does_not_translate_programming_or_cancellation[CancelledError] __
+async def functions are not natively supported.
+You need to install a suitable plugin for your async framework, for example:
+  - anyio
+  - pytest-asyncio
+  - pytest-tornasync
+  - pytest-trio
+  - pytest-twisted
+____ test_tracker_does_not_translate_programming_or_cancellation[KeyError] _____
+async def functions are not natively supported.
+You need to install a suitable plugin for your async framework, for example:
+  - anyio
+  - pytest-asyncio
+  - pytest-tornasync
+  - pytest-trio
+  - pytest-twisted
+=========================== short test summary info ============================
+FAILED ../kodezart-recovery-session/test_independent_port_publication.py::test_real_recorder_publication_is_never_replayed[McpCallUnansweredError-unanswered-LinearRecordSink-tracker-save_document]
+FAILED ../kodezart-recovery-session/test_independent_port_publication.py::test_real_recorder_publication_is_never_replayed[McpCallUnansweredError-unanswered-NotionRecordSink-knowledge-API-post-page]
+FAILED ../kodezart-recovery-session/test_independent_port_publication.py::test_real_recorder_publication_is_never_replayed[McpSessionClosedError-session_closed-LinearRecordSink-tracker-save_document]
+FAILED ../kodezart-recovery-session/test_independent_port_publication.py::test_real_recorder_publication_is_never_replayed[McpSessionClosedError-session_closed-NotionRecordSink-knowledge-API-post-page]
+FAILED ../kodezart-recovery-session/test_independent_port_publication.py::test_real_recorder_publication_is_never_replayed[McpCredentialRefusedError-vendor_refused-LinearRecordSink-tracker-save_document]
+FAILED ../kodezart-recovery-session/test_independent_port_publication.py::test_real_recorder_publication_is_never_replayed[McpCredentialRefusedError-vendor_refused-NotionRecordSink-knowledge-API-post-page]
+FAILED ../kodezart-recovery-session/test_independent_port_publication.py::test_real_recorder_publication_is_never_replayed[McpTransportError-vendor_refused-LinearRecordSink-tracker-save_document]
+FAILED ../kodezart-recovery-session/test_independent_port_publication.py::test_real_recorder_publication_is_never_replayed[McpTransportError-vendor_refused-NotionRecordSink-knowledge-API-post-page]
+FAILED ../kodezart-recovery-session/test_independent_port_publication.py::test_tracker_does_not_translate_programming_or_cancellation[CancelledError]
+FAILED ../kodezart-recovery-session/test_independent_port_publication.py::test_tracker_does_not_translate_programming_or_cancellation[KeyError]
+10 failed in 7.35s

@@ -1,0 +1,48 @@
+{
+  "source": "3508980103cabbb0b28bfe49571293743b42d561",
+  "tree": "ff7982e4b22b26bc0a401229dcb1ba0680923d92",
+  "candidate_tracked_diff_empty": true,
+  "review_tracked_diff_empty": true,
+  "identity_probe": {
+    "path": "/private/tmp/kodezart-v03-native-identity-cancel-probe/tests/adapters/test_native_identity_process_probe.py",
+    "sha256": "c3909e3943f8e31015f30aa22d8b46e0cf654a4a03c872fa2e733a975d85bb4f",
+    "execution_log_sha256": "edfc4894d2797b565f6ea68179e1f8c7811863e3beb5b118a4e79deb86ec1e4e",
+    "execution": "retained author diagnostic: 1 failed(identity), 1 passed(source), 1.05s; no test rerun in resumed final review"
+  },
+  "original_prepare_probes": {
+    "cleanup": {
+      "original_sha256": "5cb3958aa9eb20fb24c9f4a059b7663387bf0ae54c832b20b3c4b859b8cc34c3",
+      "rerun_sha256": "5cb3958aa9eb20fb24c9f4a059b7663387bf0ae54c832b20b3c4b859b8cc34c3",
+      "exact_original_bytes": true,
+      "committed_ast_equal": true
+    },
+    "cancel": {
+      "original_sha256": "7659204809b9503ced51ec91b96f36d957fae8dc54764ced7d1e3025ab3b4f32",
+      "rerun_sha256": "7659204809b9503ced51ec91b96f36d957fae8dc54764ced7d1e3025ab3b4f32",
+      "exact_original_bytes": true,
+      "committed_ast_equal": true
+    }
+  },
+  "reviewed_execution_logs": {
+    "native-resume-peer-final-350.log": "d56cdf30f7370b0ec21b7dc09103ce9553e4d76baf28cfa2c08eaf9e64b0bbb4",
+    "native-resume-peer-static-final-350.log": "e7ff7d39811009fa989a2842cf4e7f6dd03370c6fb9d78db046054b8c0f791f7",
+    "native-resume-peer-baseline-4dd7b3e.log": "6e862b73dd13c11f527c95b803ccd3375acc676d132c666d70bf8ed46f23cb86",
+    "native-resume-peer-cancel-a198.log": "ae43685c90fcde78b989b396a7e712d960c6802ff1c4053940b2b0c0ab28025f",
+    "native-resume-peer-receipt-synchronized-a198.log": "54cc28f8f791c49bcc8d79dde0991483aef43b308e47e3cd60995a77ffec88ab",
+    "native-resume-peer-unchanged-effects-corrected-4dd.log": "c36cc2456b7c3b468e46024169b5363ceafba7ff5a0ea74a41e12e150c332562"
+  },
+  "historical_trajectory_snapshot_assertions_equal": false,
+  "trajectory_original_candidate_assertions": {
+    "4dd7b3eb4646bc1490c5bf0b13e079991a63c575": {
+      "assertions_equal": true,
+      "sha256": "c215f48af91eaf0f73058f9fa0580d465c53d8760052451957d5ed866cda82c7",
+      "assertion_count": 5
+    },
+    "a198da394279ebca529928cddfa6ff95de572e85": {
+      "assertions_equal": true,
+      "sha256": "c215f48af91eaf0f73058f9fa0580d465c53d8760052451957d5ed866cda82c7",
+      "assertion_count": 5
+    }
+  },
+  "diagnostic_note": "The earlier frozen trajectory file predates canonical verifier call migration; its old 2-call assertion changed upstream to explicit writer/judge/WriteBackFinding roster. Exact4dd and a198 assertion ASTs are the correct oracle for261/350 fixture-only correction. One read diagnostic used incorrect git cwd /private/tmp and failed; corrected without source mutation."
+}

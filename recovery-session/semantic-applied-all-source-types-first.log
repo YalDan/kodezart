@@ -1,0 +1,2 @@
+src/kodezart/chains/native_amendment.py:92: error: Argument 1 to "ainvoke" of "Pregel" has incompatible type "AmendmentState"; expected "StateT | Command[Any] | None"  [arg-type]
+Found 1 error in 1 file (checked 318 source files)

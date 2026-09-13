@@ -1,0 +1,11 @@
+E501 Line too long (118 > 88)
+  --> src/kodezart/types/domain/operation.py:86:89
+   |
+85 |     Each native or prompt-driven run owns a distinct record kind, including
+86 |     the standing audit and the fire a dispatch starts.  ``records`` is keyed by these values, one declared destination
+   |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+87 |     per kind, so which log a run reports to is configuration rather than a
+88 |     name a session invents — and a key outside this vocabulary is a typo
+   |
+
+Found 1 error.

@@ -1,0 +1,13 @@
+E501 Line too long (97 > 88)
+   --> tests/integration/test_scope_runtime.py:665:89
+    |
+663 |     _ = [event async for event in drive(harness)]
+664 |     origin = "file:///another-repository.git" if change == "repository" else ORIGIN
+665 |     scope = ScopeRef(kind=ScopeKind.PROJECT, key="another-scope") if change == "scope" else SCOPE
+    |                                                                                         ^^^^^^^^^
+666 |     harness.port.scope_memberships[scope] = ("A",)
+667 |     fresh = runtime(port=harness.port, saver=harness.saver, origin=origin)
+    |
+
+Found 2 errors (1 fixed, 1 remaining).
+1 file reformatted

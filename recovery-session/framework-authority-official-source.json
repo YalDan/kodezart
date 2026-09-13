@@ -1,0 +1,34 @@
+[
+  {
+    "package": "fastapi",
+    "version": "0.135.1",
+    "url": "https://raw.githubusercontent.com/fastapi/fastapi/0.135.1/fastapi/routing.py",
+    "local_path": "/private/tmp/kodezart-v03-recovery/.venv/lib/python3.12/site-packages/fastapi/routing.py",
+    "source_sha256": "07c7a5bdf12fa7b0c8cdca6f72d532eebb12d0554060c7827af7b692f4fdb827",
+    "installed_matches_official_tag": true
+  },
+  {
+    "package": "pydantic",
+    "version": "2.12.5",
+    "url": "https://raw.githubusercontent.com/pydantic/pydantic/v2.12.5/pydantic/main.py",
+    "local_path": "/private/tmp/kodezart-v03-recovery/.venv/lib/python3.12/site-packages/pydantic/main.py",
+    "source_sha256": "5994f1c16f358a097be58d34cc72499a8537a82352cbed4a084984b013dfb624",
+    "installed_matches_official_tag": true
+  },
+  {
+    "package": "langgraph",
+    "version": "1.0.10",
+    "url": "https://raw.githubusercontent.com/langchain-ai/langgraph/1.0.10/libs/langgraph/langgraph/pregel/_retry.py",
+    "local_path": "/private/tmp/kodezart-v03-recovery/.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py",
+    "source_sha256": "74aec5c0cb2e56291fdce8ae3a5ecb5ebc1cf05fb23f8823b7c7f349f0520707",
+    "installed_matches_official_tag": true
+  },
+  {
+    "package": "langgraph-checkpoint",
+    "version": "4.0.1",
+    "url": "https://raw.githubusercontent.com/langchain-ai/langgraph/checkpoint%3D%3D4.0.1/libs/checkpoint/langgraph/checkpoint/serde/jsonplus.py",
+    "local_path": "/private/tmp/kodezart-v03-recovery/.venv/lib/python3.12/site-packages/langgraph/checkpoint/serde/jsonplus.py",
+    "source_sha256": "010bdd22d8bc7fa2d41b0610c655d7d0b7a57cefe952bf756fba718bcf789bf5",
+    "installed_matches_official_tag": true
+  }
+]

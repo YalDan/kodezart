@@ -1,0 +1,426 @@
+.F.FFFFF.F                                                               [100%]
+=================================== FAILURES ===================================
+________ test_graph_lease_must_still_hold_after_final_graph_read[True] _________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10f1110a0>
+expire = True
+
+    @pytest.mark.parametrize("expire", [False, True])
+    async def test_graph_lease_must_still_hold_after_final_graph_read(monkeypatch, expire):
+        board, tracker = fixture()
+        snapshot = await expected(tracker)
+        original = board.call_tool
+        reads = 0
+    
+        async def call_tool(*, name, arguments):
+            nonlocal reads
+            result = await original(name=name, arguments=arguments)
+            if name == "get_issue":
+                reads += 1
+                if reads == 6 and expire:
+                    board.advance(400)
+            return result
+    
+        async with RunSurfaceLease(
+            tracker=tracker,
+            job_id="actual-job",
+            surfaces=frozenset({address("child")}),
+            lease_seconds=321.5,
+        ):
+            monkeypatch.setattr(board, "call_tool", call_tool)
+            error = None
+            try:
+                await tracker.update_issue_graph(
+                    issue_key="child",
+                    expected=snapshot,
+                    changes=changes({"kind": "priority", "priority": "urgent"}),
+                    holder="actual-job",
+                )
+            except SurfaceLeaseError as exc:
+                error = exc
+            assert reads >= 6
+            if expire:
+>               assert saves(board) == [], "save was issued after the final awaited read expired ownership"
+E               AssertionError: save was issued after the final awaited read expired ownership
+E               assert [{'id': 'chil...priority': 1}] == []
+E                 
+E                 Left contains one more item: {'id': 'child', 'priority': 1}
+E                 Use -v to get more diff
+
+tests/tracker/test_organize_graph_independent.py:55: AssertionError
+______ test_split_final_observed_source_is_checked_before_creation[body] _______
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10f113350>
+change = 'body'
+
+    @pytest.mark.parametrize("change", [None, "body", "priority", "parent", "expiry"])
+    async def test_split_final_observed_source_is_checked_before_creation(monkeypatch, change):
+        board, tracker = fixture()
+        snapshot = await expected(tracker)
+        original = board.call_tool
+        after_state = False
+        source_reads = 0
+        injected = False
+    
+        async def call_tool(*, name, arguments):
+            nonlocal after_state, source_reads, injected
+            if name == "list_issue_statuses":
+                after_state = True
+            if after_state and name == "get_issue" and arguments["id"] == CLAIMED_ISSUE:
+                source_reads += 1
+                # The first is the source within _read_unchanged_graph; the second
+                # is create_split_if_absent's separate last current-source read.
+                if source_reads == 2:
+                    injected = True
+                    source = board.server.issues[CLAIMED_ISSUE]
+                    if change == "body":
+                        source.description = "Current specification changed while awaiting the final read"
+                    elif change == "priority":
+                        source.priority_raw = 1
+                    elif change == "parent":
+                        source.parent_id = "peer"
+                    elif change == "expiry":
+                        board.advance(400)
+            return await original(name=name, arguments=arguments)
+    
+        async with RunSurfaceLease(
+            tracker=tracker,
+            job_id="actual-job",
+            surfaces=frozenset({address(CLAIMED_ISSUE, SurfaceKind.ISSUE_SPLIT_SET)}),
+            lease_seconds=321.5,
+        ):
+            monkeypatch.setattr(board, "call_tool", call_tool)
+            error = None
+            try:
+                await tracker.create_split_if_absent(
+                    source_key=CLAIMED_ISSUE,
+                    deliverable_key="new-deliverable",
+                    title="Child",
+                    body="Prepared from the original source",
+                    holder="actual-job",
+                    expected=snapshot,
+                )
+            except (OrganizeWriteRefusalError, SurfaceLeaseError) as exc:
+                error = exc
+            assert injected, "the actual separate final source read was not reached"
+            if change is not None:
+>               assert saves(board) == [], "creation used a final source observation that no longer matched"
+E               AssertionError: creation used a final source observation that no longer matched
+E               assert [{'descriptio...e-team', ...}] == []
+E                 
+E                 Left contains one more item: {'description': '<!-- kodezart-issue {"scopeKey":{"kind":"issue","key":"FIX-1"},"deliverableKey":"new-deliverable"} --...nPrepared from the original source', 'parentId': 'FIX-1', 'state': 'fixture-team-Todo-id', 'team': 'fixture-team', ...}
+E                 Use -v to get more diff
+
+tests/tracker/test_organize_graph_independent.py:114: AssertionError
+____ test_split_final_observed_source_is_checked_before_creation[priority] _____
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10f1136e0>
+change = 'priority'
+
+    @pytest.mark.parametrize("change", [None, "body", "priority", "parent", "expiry"])
+    async def test_split_final_observed_source_is_checked_before_creation(monkeypatch, change):
+        board, tracker = fixture()
+        snapshot = await expected(tracker)
+        original = board.call_tool
+        after_state = False
+        source_reads = 0
+        injected = False
+    
+        async def call_tool(*, name, arguments):
+            nonlocal after_state, source_reads, injected
+            if name == "list_issue_statuses":
+                after_state = True
+            if after_state and name == "get_issue" and arguments["id"] == CLAIMED_ISSUE:
+                source_reads += 1
+                # The first is the source within _read_unchanged_graph; the second
+                # is create_split_if_absent's separate last current-source read.
+                if source_reads == 2:
+                    injected = True
+                    source = board.server.issues[CLAIMED_ISSUE]
+                    if change == "body":
+                        source.description = "Current specification changed while awaiting the final read"
+                    elif change == "priority":
+                        source.priority_raw = 1
+                    elif change == "parent":
+                        source.parent_id = "peer"
+                    elif change == "expiry":
+                        board.advance(400)
+            return await original(name=name, arguments=arguments)
+    
+        async with RunSurfaceLease(
+            tracker=tracker,
+            job_id="actual-job",
+            surfaces=frozenset({address(CLAIMED_ISSUE, SurfaceKind.ISSUE_SPLIT_SET)}),
+            lease_seconds=321.5,
+        ):
+            monkeypatch.setattr(board, "call_tool", call_tool)
+            error = None
+            try:
+                await tracker.create_split_if_absent(
+                    source_key=CLAIMED_ISSUE,
+                    deliverable_key="new-deliverable",
+                    title="Child",
+                    body="Prepared from the original source",
+                    holder="actual-job",
+                    expected=snapshot,
+                )
+            except (OrganizeWriteRefusalError, SurfaceLeaseError) as exc:
+                error = exc
+            assert injected, "the actual separate final source read was not reached"
+            if change is not None:
+>               assert saves(board) == [], "creation used a final source observation that no longer matched"
+E               AssertionError: creation used a final source observation that no longer matched
+E               assert [{'descriptio...e-team', ...}] == []
+E                 
+E                 Left contains one more item: {'description': '<!-- kodezart-issue {"scopeKey":{"kind":"issue","key":"FIX-1"},"deliverableKey":"new-deliverable"} --...nPrepared from the original source', 'parentId': 'FIX-1', 'state': 'fixture-team-Todo-id', 'team': 'fixture-team', ...}
+E                 Use -v to get more diff
+
+tests/tracker/test_organize_graph_independent.py:114: AssertionError
+_____ test_split_final_observed_source_is_checked_before_creation[parent] ______
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10f1ea960>
+change = 'parent'
+
+    @pytest.mark.parametrize("change", [None, "body", "priority", "parent", "expiry"])
+    async def test_split_final_observed_source_is_checked_before_creation(monkeypatch, change):
+        board, tracker = fixture()
+        snapshot = await expected(tracker)
+        original = board.call_tool
+        after_state = False
+        source_reads = 0
+        injected = False
+    
+        async def call_tool(*, name, arguments):
+            nonlocal after_state, source_reads, injected
+            if name == "list_issue_statuses":
+                after_state = True
+            if after_state and name == "get_issue" and arguments["id"] == CLAIMED_ISSUE:
+                source_reads += 1
+                # The first is the source within _read_unchanged_graph; the second
+                # is create_split_if_absent's separate last current-source read.
+                if source_reads == 2:
+                    injected = True
+                    source = board.server.issues[CLAIMED_ISSUE]
+                    if change == "body":
+                        source.description = "Current specification changed while awaiting the final read"
+                    elif change == "priority":
+                        source.priority_raw = 1
+                    elif change == "parent":
+                        source.parent_id = "peer"
+                    elif change == "expiry":
+                        board.advance(400)
+            return await original(name=name, arguments=arguments)
+    
+        async with RunSurfaceLease(
+            tracker=tracker,
+            job_id="actual-job",
+            surfaces=frozenset({address(CLAIMED_ISSUE, SurfaceKind.ISSUE_SPLIT_SET)}),
+            lease_seconds=321.5,
+        ):
+            monkeypatch.setattr(board, "call_tool", call_tool)
+            error = None
+            try:
+                await tracker.create_split_if_absent(
+                    source_key=CLAIMED_ISSUE,
+                    deliverable_key="new-deliverable",
+                    title="Child",
+                    body="Prepared from the original source",
+                    holder="actual-job",
+                    expected=snapshot,
+                )
+            except (OrganizeWriteRefusalError, SurfaceLeaseError) as exc:
+                error = exc
+            assert injected, "the actual separate final source read was not reached"
+            if change is not None:
+>               assert saves(board) == [], "creation used a final source observation that no longer matched"
+E               AssertionError: creation used a final source observation that no longer matched
+E               assert [{'descriptio...e-team', ...}] == []
+E                 
+E                 Left contains one more item: {'description': '<!-- kodezart-issue {"scopeKey":{"kind":"issue","key":"FIX-1"},"deliverableKey":"new-deliverable"} --...nPrepared from the original source', 'parentId': 'FIX-1', 'state': 'fixture-team-Todo-id', 'team': 'fixture-team', ...}
+E                 Use -v to get more diff
+
+tests/tracker/test_organize_graph_independent.py:114: AssertionError
+_____ test_split_final_observed_source_is_checked_before_creation[expiry] ______
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10f1136b0>
+change = 'expiry'
+
+    @pytest.mark.parametrize("change", [None, "body", "priority", "parent", "expiry"])
+    async def test_split_final_observed_source_is_checked_before_creation(monkeypatch, change):
+        board, tracker = fixture()
+        snapshot = await expected(tracker)
+        original = board.call_tool
+        after_state = False
+        source_reads = 0
+        injected = False
+    
+        async def call_tool(*, name, arguments):
+            nonlocal after_state, source_reads, injected
+            if name == "list_issue_statuses":
+                after_state = True
+            if after_state and name == "get_issue" and arguments["id"] == CLAIMED_ISSUE:
+                source_reads += 1
+                # The first is the source within _read_unchanged_graph; the second
+                # is create_split_if_absent's separate last current-source read.
+                if source_reads == 2:
+                    injected = True
+                    source = board.server.issues[CLAIMED_ISSUE]
+                    if change == "body":
+                        source.description = "Current specification changed while awaiting the final read"
+                    elif change == "priority":
+                        source.priority_raw = 1
+                    elif change == "parent":
+                        source.parent_id = "peer"
+                    elif change == "expiry":
+                        board.advance(400)
+            return await original(name=name, arguments=arguments)
+    
+        async with RunSurfaceLease(
+            tracker=tracker,
+            job_id="actual-job",
+            surfaces=frozenset({address(CLAIMED_ISSUE, SurfaceKind.ISSUE_SPLIT_SET)}),
+            lease_seconds=321.5,
+        ):
+            monkeypatch.setattr(board, "call_tool", call_tool)
+            error = None
+            try:
+                await tracker.create_split_if_absent(
+                    source_key=CLAIMED_ISSUE,
+                    deliverable_key="new-deliverable",
+                    title="Child",
+                    body="Prepared from the original source",
+                    holder="actual-job",
+                    expected=snapshot,
+                )
+            except (OrganizeWriteRefusalError, SurfaceLeaseError) as exc:
+                error = exc
+            assert injected, "the actual separate final source read was not reached"
+            if change is not None:
+>               assert saves(board) == [], "creation used a final source observation that no longer matched"
+E               AssertionError: creation used a final source observation that no longer matched
+E               assert [{'descriptio...e-team', ...}] == []
+E                 
+E                 Left contains one more item: {'description': '<!-- kodezart-issue {"scopeKey":{"kind":"issue","key":"FIX-1"},"deliverableKey":"new-deliverable"} --...nPrepared from the original source', 'parentId': 'FIX-1', 'state': 'fixture-team-Todo-id', 'team': 'fixture-team', ...}
+E                 Use -v to get more diff
+
+tests/tracker/test_organize_graph_independent.py:114: AssertionError
+______ test_split_identity_appearing_during_state_read_is_not_duplicated _______
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10f1122d0>
+
+    async def test_split_identity_appearing_during_state_read_is_not_duplicated(monkeypatch):
+        board, tracker = fixture()
+        surface = address(CLAIMED_ISSUE, SurfaceKind.ISSUE_SPLIT_SET)
+        async with RunSurfaceLease(
+            tracker=tracker, job_id="actual-job", surfaces=frozenset({surface}), lease_seconds=321.5
+        ):
+            child = await tracker.create_split_if_absent(
+                source_key=CLAIMED_ISSUE, deliverable_key="stable", title="Existing child",
+                body="Existing source-grounded specification", holder="actual-job",
+                expected=await expected(tracker),
+            )
+        native = board.server.issues.pop(child.issue_key)
+        board.calls.clear()
+        snapshot = await expected(tracker)
+        original = board.call_tool
+        injected = False
+    
+        async def call_tool(*, name, arguments):
+            nonlocal injected
+            result = await original(name=name, arguments=arguments)
+            if name == "list_issue_statuses":
+                board.server.issues[child.issue_key] = native
+                injected = True
+            return result
+    
+        async with RunSurfaceLease(
+            tracker=tracker, job_id="actual-job", surfaces=frozenset({surface}), lease_seconds=321.5
+        ):
+            monkeypatch.setattr(board, "call_tool", call_tool)
+            returned = await tracker.create_split_if_absent(
+                source_key=CLAIMED_ISSUE, deliverable_key="stable", title="Must not overwrite",
+                body="Must not overwrite", holder="actual-job", expected=snapshot,
+            )
+            assert injected
+>           assert saves(board) == [], "a stable split identity that appeared during awaited preparation was duplicated"
+E           AssertionError: a stable split identity that appeared during awaited preparation was duplicated
+E           assert [{'descriptio...e-team', ...}] == []
+E             
+E             Left contains one more item: {'description': '<!-- kodezart-issue {"scopeKey":{"kind":"issue","key":"FIX-1"},"deliverableKey":"stable"} -->\n\nMust not overwrite', 'parentId': 'FIX-1', 'state': 'fixture-team-Todo-id', 'team': 'fixture-team', ...}
+E             Use -v to get more diff
+
+tests/tracker/test_organize_graph_independent.py:156: AssertionError
+___________ test_milestone_parent_is_current_after_holder_wait[True] ___________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10f1e8770>
+move = True
+
+    @pytest.mark.parametrize("move", [False, True])
+    async def test_milestone_parent_is_current_after_holder_wait(monkeypatch, move):
+        from tests.tracker.test_scope_reads import OTHER_PROJECT, PROJECT, ROOT, ScopeMcpServer, _milestone
+    
+        server = ScopeMcpServer()
+        server._comment_clock = lambda: FIXTURE_NOW
+        server.issues["FOREIGN-ROOT"] = FakeMcpIssue(id="FOREIGN-ROOT")
+        milestone = _milestone("new-native-milestone")
+        server.milestones[PROJECT.key].append(milestone)
+        original_save = server._tool_save_issue
+        writes = []
+    
+        def save(arguments):
+            writes.append(dict(arguments))
+            result = original_save(arguments)
+            if "milestone" in arguments:
+                server.issues[arguments["id"]].milestone_key = arguments["milestone"]
+            return result
+    
+        monkeypatch.setattr(server, "_tool_save_issue", save)
+        tracker = linear_over_fake_mcp(server)
+        snapshot = tuple([graph_snapshot(await tracker.read_issue(issue_key=key)) for key in server.issues])
+        original = server.call_tool
+        read_milestone = False
+        injected = False
+    
+        async def call_tool(*, name, arguments):
+            nonlocal read_milestone, injected
+            result = await original(name=name, arguments=arguments)
+            if name == "get_milestone" and arguments.get("query") == milestone["id"]:
+                read_milestone = True
+            if name == "list_comments" and read_milestone and move and not injected:
+                server.milestones[PROJECT.key].remove(milestone)
+                server.milestones[OTHER_PROJECT].append(milestone)
+                injected = True
+            return result
+    
+        async with RunSurfaceLease(
+            tracker=tracker, job_id="actual-job", surfaces=frozenset({address(ROOT.key)}), lease_seconds=321.5
+        ):
+            monkeypatch.setattr(server, "call_tool", call_tool)
+            error = None
+            try:
+                await tracker.update_issue_graph(
+                    issue_key=ROOT.key, expected=snapshot,
+                    changes=changes({"kind": "milestone", "milestone_id": milestone["id"]}),
+                    holder="actual-job",
+                )
+            except OrganizeWriteRefusalError as exc:
+                error = exc
+            if move:
+                assert injected
+>               assert writes == [], "a milestone moved to another project while awaiting holder proof was assigned"
+E               AssertionError: a milestone moved to another project while awaiting holder proof was assigned
+E               assert [{'id': 'FIX-...e-milestone'}] == []
+E                 
+E                 Left contains one more item: {'id': 'FIX-1', 'milestone': 'new-native-milestone'}
+E                 Use -v to get more diff
+
+tests/tracker/test_organize_graph_independent.py:213: AssertionError
+=========================== short test summary info ============================
+FAILED tests/tracker/test_organize_graph_independent.py::test_graph_lease_must_still_hold_after_final_graph_read[True]
+FAILED tests/tracker/test_organize_graph_independent.py::test_split_final_observed_source_is_checked_before_creation[body]
+FAILED tests/tracker/test_organize_graph_independent.py::test_split_final_observed_source_is_checked_before_creation[priority]
+FAILED tests/tracker/test_organize_graph_independent.py::test_split_final_observed_source_is_checked_before_creation[parent]
+FAILED tests/tracker/test_organize_graph_independent.py::test_split_final_observed_source_is_checked_before_creation[expiry]
+FAILED tests/tracker/test_organize_graph_independent.py::test_split_identity_appearing_during_state_read_is_not_duplicated
+FAILED tests/tracker/test_organize_graph_independent.py::test_milestone_parent_is_current_after_holder_wait[True]
+7 failed, 3 passed in 0.71s

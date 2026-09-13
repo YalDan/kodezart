@@ -1,0 +1,5 @@
+2026-09-12 14:30:21 [info     ] outbound_content_gated         categories=[] content_digest=dd2e642801251fcb3fed72d62d640c90fa57b9f90b219679c5bb9531e957eba4 failure=None hits=[] surface=tracker verdict=clean visibility=public writer=tracker_comment
+2026-09-12 14:30:23 [info     ] lifecycle_outcome_comment      issue_key=FIX-1 job_id=actual-queue-job-id outcome=review_passed_no_pr_adapter
+REPRODUCED: a save issued under a live lease landed after expiry and successor acquisition; pre-write checks cannot fence a delayed backend save.
+.
+1 passed in 11.84s

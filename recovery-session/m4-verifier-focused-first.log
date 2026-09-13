@@ -1,0 +1,490 @@
+FFFFFFFFFFFF............................................................ [  8%]
+........................................................................ [ 17%]
+......................................................F................. [ 25%]
+........................................................................ [ 34%]
+........................................................................ [ 43%]
+........................................................................ [ 51%]
+..................F..................................................... [ 60%]
+........................................................................ [ 69%]
+........................................................................ [ 77%]
+........................................................................ [ 86%]
+........................................................................ [ 95%]
+........................................                                 [100%]
+=================================== FAILURES ===================================
+______ TestTheRepairRound.test_a_bad_write_back_is_refuted_then_repaired _______
+
+self = <tests.chains.test_write_back_verifier.TestTheRepairRound object at 0x10a6e4fb0>
+
+    async def test_a_bad_write_back_is_refuted_then_repaired(self) -> None:
+>       port = tracker()
+               ^^^^^^^^^
+
+tests/chains/test_write_back_verifier.py:176: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def tracker() -> FakeTrackerPort:
+>       return FakeTrackerPort(
+            issues=[
+                TrackerIssue.model_validate(
+                    {
+                        "issue_key": ISSUE,
+                        "title": "a criterion carrying evidence",
+                        "body": "Check / Do / Evidence",
+                        "priority": IssuePriority.NONE,
+                        "state_name": "Todo",
+                        "state_kind": WorkflowStateKind.UNSTARTED,
+                        "queue_states": [],
+                        "team_key": "engineering",
+                        "created_at": datetime(2026, 1, 1, tzinfo=UTC),
+                        "updated_at": datetime(2026, 1, 1, tzinfo=UTC),
+                        "url": f"https://tracker.invalid/{ISSUE}",
+                    },
+                ),
+            ],
+            marker_prefixes={"evidence": "fixture-evidence"},
+        )
+E       TypeError: FakeTrackerPort.__init__() got an unexpected keyword argument 'marker_prefixes'
+
+tests/chains/test_write_back_verifier.py:144: TypeError
+_ TestTheRepairRound.test_the_repair_round_is_handed_what_the_first_round_found _
+
+self = <tests.chains.test_write_back_verifier.TestTheRepairRound object at 0x10a6d5fd0>
+
+    async def test_the_repair_round_is_handed_what_the_first_round_found(
+        self,
+    ) -> None:
+        """Round one writes with nothing; the repair carries that finding."""
+>       port = tracker()
+               ^^^^^^^^^
+
+tests/chains/test_write_back_verifier.py:197: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def tracker() -> FakeTrackerPort:
+>       return FakeTrackerPort(
+            issues=[
+                TrackerIssue.model_validate(
+                    {
+                        "issue_key": ISSUE,
+                        "title": "a criterion carrying evidence",
+                        "body": "Check / Do / Evidence",
+                        "priority": IssuePriority.NONE,
+                        "state_name": "Todo",
+                        "state_kind": WorkflowStateKind.UNSTARTED,
+                        "queue_states": [],
+                        "team_key": "engineering",
+                        "created_at": datetime(2026, 1, 1, tzinfo=UTC),
+                        "updated_at": datetime(2026, 1, 1, tzinfo=UTC),
+                        "url": f"https://tracker.invalid/{ISSUE}",
+                    },
+                ),
+            ],
+            marker_prefixes={"evidence": "fixture-evidence"},
+        )
+E       TypeError: FakeTrackerPort.__init__() got an unexpected keyword argument 'marker_prefixes'
+
+tests/chains/test_write_back_verifier.py:144: TypeError
+_____ TestTheRepairRound.test_the_artifact_is_re_read_between_every_round ______
+
+self = <tests.chains.test_write_back_verifier.TestTheRepairRound object at 0x10a828200>
+
+    async def test_the_artifact_is_re_read_between_every_round(self) -> None:
+        """Two writes, two reads, and each read is of what then stood."""
+>       port = tracker()
+               ^^^^^^^^^
+
+tests/chains/test_write_back_verifier.py:211: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def tracker() -> FakeTrackerPort:
+>       return FakeTrackerPort(
+            issues=[
+                TrackerIssue.model_validate(
+                    {
+                        "issue_key": ISSUE,
+                        "title": "a criterion carrying evidence",
+                        "body": "Check / Do / Evidence",
+                        "priority": IssuePriority.NONE,
+                        "state_name": "Todo",
+                        "state_kind": WorkflowStateKind.UNSTARTED,
+                        "queue_states": [],
+                        "team_key": "engineering",
+                        "created_at": datetime(2026, 1, 1, tzinfo=UTC),
+                        "updated_at": datetime(2026, 1, 1, tzinfo=UTC),
+                        "url": f"https://tracker.invalid/{ISSUE}",
+                    },
+                ),
+            ],
+            marker_prefixes={"evidence": "fixture-evidence"},
+        )
+E       TypeError: FakeTrackerPort.__init__() got an unexpected keyword argument 'marker_prefixes'
+
+tests/chains/test_write_back_verifier.py:144: TypeError
+_ TestTheRepairRound.test_the_judge_reads_what_landed_not_what_the_step_composed _
+
+self = <tests.chains.test_write_back_verifier.TestTheRepairRound object at 0x10a82a120>
+
+    async def test_the_judge_reads_what_landed_not_what_the_step_composed(
+        self,
+    ) -> None:
+        """The port stores the marker line the step never wrote itself."""
+>       port = tracker()
+               ^^^^^^^^^
+
+tests/chains/test_write_back_verifier.py:228: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def tracker() -> FakeTrackerPort:
+>       return FakeTrackerPort(
+            issues=[
+                TrackerIssue.model_validate(
+                    {
+                        "issue_key": ISSUE,
+                        "title": "a criterion carrying evidence",
+                        "body": "Check / Do / Evidence",
+                        "priority": IssuePriority.NONE,
+                        "state_name": "Todo",
+                        "state_kind": WorkflowStateKind.UNSTARTED,
+                        "queue_states": [],
+                        "team_key": "engineering",
+                        "created_at": datetime(2026, 1, 1, tzinfo=UTC),
+                        "updated_at": datetime(2026, 1, 1, tzinfo=UTC),
+                        "url": f"https://tracker.invalid/{ISSUE}",
+                    },
+                ),
+            ],
+            marker_prefixes={"evidence": "fixture-evidence"},
+        )
+E       TypeError: FakeTrackerPort.__init__() got an unexpected keyword argument 'marker_prefixes'
+
+tests/chains/test_write_back_verifier.py:144: TypeError
+_ TestTheConsumerReadsTheRepair.test_the_next_consumer_reads_the_repaired_artifact _
+
+self = <tests.chains.test_write_back_verifier.TestTheConsumerReadsTheRepair object at 0x10a82a540>
+
+    async def test_the_next_consumer_reads_the_repaired_artifact(self) -> None:
+>       port = tracker()
+               ^^^^^^^^^
+
+tests/chains/test_write_back_verifier.py:246: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def tracker() -> FakeTrackerPort:
+>       return FakeTrackerPort(
+            issues=[
+                TrackerIssue.model_validate(
+                    {
+                        "issue_key": ISSUE,
+                        "title": "a criterion carrying evidence",
+                        "body": "Check / Do / Evidence",
+                        "priority": IssuePriority.NONE,
+                        "state_name": "Todo",
+                        "state_kind": WorkflowStateKind.UNSTARTED,
+                        "queue_states": [],
+                        "team_key": "engineering",
+                        "created_at": datetime(2026, 1, 1, tzinfo=UTC),
+                        "updated_at": datetime(2026, 1, 1, tzinfo=UTC),
+                        "url": f"https://tracker.invalid/{ISSUE}",
+                    },
+                ),
+            ],
+            marker_prefixes={"evidence": "fixture-evidence"},
+        )
+E       TypeError: FakeTrackerPort.__init__() got an unexpected keyword argument 'marker_prefixes'
+
+tests/chains/test_write_back_verifier.py:144: TypeError
+_ TestTheConsumerReadsTheRepair.test_the_repair_replaced_the_defect_rather_than_joining_it _
+
+self = <tests.chains.test_write_back_verifier.TestTheConsumerReadsTheRepair object at 0x10a82a960>
+
+    async def test_the_repair_replaced_the_defect_rather_than_joining_it(
+        self,
+    ) -> None:
+        """One surface, one comment: the defective text is gone, not below."""
+>       port = tracker()
+               ^^^^^^^^^
+
+tests/chains/test_write_back_verifier.py:265: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def tracker() -> FakeTrackerPort:
+>       return FakeTrackerPort(
+            issues=[
+                TrackerIssue.model_validate(
+                    {
+                        "issue_key": ISSUE,
+                        "title": "a criterion carrying evidence",
+                        "body": "Check / Do / Evidence",
+                        "priority": IssuePriority.NONE,
+                        "state_name": "Todo",
+                        "state_kind": WorkflowStateKind.UNSTARTED,
+                        "queue_states": [],
+                        "team_key": "engineering",
+                        "created_at": datetime(2026, 1, 1, tzinfo=UTC),
+                        "updated_at": datetime(2026, 1, 1, tzinfo=UTC),
+                        "url": f"https://tracker.invalid/{ISSUE}",
+                    },
+                ),
+            ],
+            marker_prefixes={"evidence": "fixture-evidence"},
+        )
+E       TypeError: FakeTrackerPort.__init__() got an unexpected keyword argument 'marker_prefixes'
+
+tests/chains/test_write_back_verifier.py:144: TypeError
+_ TestTheRefTheCallerNames.test_a_path_absent_at_the_named_ref_is_refuted_there _
+
+self = <tests.chains.test_write_back_verifier.TestTheRefTheCallerNames object at 0x10a6d54f0>
+
+    async def test_a_path_absent_at_the_named_ref_is_refuted_there(self) -> None:
+        """The same corrected module is not present at the older ref."""
+>       port = tracker()
+               ^^^^^^^^^
+
+tests/chains/test_write_back_verifier.py:283: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def tracker() -> FakeTrackerPort:
+>       return FakeTrackerPort(
+            issues=[
+                TrackerIssue.model_validate(
+                    {
+                        "issue_key": ISSUE,
+                        "title": "a criterion carrying evidence",
+                        "body": "Check / Do / Evidence",
+                        "priority": IssuePriority.NONE,
+                        "state_name": "Todo",
+                        "state_kind": WorkflowStateKind.UNSTARTED,
+                        "queue_states": [],
+                        "team_key": "engineering",
+                        "created_at": datetime(2026, 1, 1, tzinfo=UTC),
+                        "updated_at": datetime(2026, 1, 1, tzinfo=UTC),
+                        "url": f"https://tracker.invalid/{ISSUE}",
+                    },
+                ),
+            ],
+            marker_prefixes={"evidence": "fixture-evidence"},
+        )
+E       TypeError: FakeTrackerPort.__init__() got an unexpected keyword argument 'marker_prefixes'
+
+tests/chains/test_write_back_verifier.py:144: TypeError
+_ TestTheRefTheCallerNames.test_a_write_back_that_already_holds_takes_one_round _
+
+self = <tests.chains.test_write_back_verifier.TestTheRefTheCallerNames object at 0x10a82a8d0>
+
+    async def test_a_write_back_that_already_holds_takes_one_round(self) -> None:
+>       port = tracker()
+               ^^^^^^^^^
+
+tests/chains/test_write_back_verifier.py:298: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def tracker() -> FakeTrackerPort:
+>       return FakeTrackerPort(
+            issues=[
+                TrackerIssue.model_validate(
+                    {
+                        "issue_key": ISSUE,
+                        "title": "a criterion carrying evidence",
+                        "body": "Check / Do / Evidence",
+                        "priority": IssuePriority.NONE,
+                        "state_name": "Todo",
+                        "state_kind": WorkflowStateKind.UNSTARTED,
+                        "queue_states": [],
+                        "team_key": "engineering",
+                        "created_at": datetime(2026, 1, 1, tzinfo=UTC),
+                        "updated_at": datetime(2026, 1, 1, tzinfo=UTC),
+                        "url": f"https://tracker.invalid/{ISSUE}",
+                    },
+                ),
+            ],
+            marker_prefixes={"evidence": "fixture-evidence"},
+        )
+E       TypeError: FakeTrackerPort.__init__() got an unexpected keyword argument 'marker_prefixes'
+
+tests/chains/test_write_back_verifier.py:144: TypeError
+___ TestTheRoundBudget.test_an_unrepaired_write_back_stops_at_its_budget[1] ____
+
+self = <tests.chains.test_write_back_verifier.TestTheRoundBudget object at 0x10a8281d0>
+budget = 1
+
+    @pytest.mark.parametrize("budget", [1, 2, 4])
+    async def test_an_unrepaired_write_back_stops_at_its_budget(
+        self, budget: int
+    ) -> None:
+>       port = tracker()
+               ^^^^^^^^^
+
+tests/chains/test_write_back_verifier.py:321: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def tracker() -> FakeTrackerPort:
+>       return FakeTrackerPort(
+            issues=[
+                TrackerIssue.model_validate(
+                    {
+                        "issue_key": ISSUE,
+                        "title": "a criterion carrying evidence",
+                        "body": "Check / Do / Evidence",
+                        "priority": IssuePriority.NONE,
+                        "state_name": "Todo",
+                        "state_kind": WorkflowStateKind.UNSTARTED,
+                        "queue_states": [],
+                        "team_key": "engineering",
+                        "created_at": datetime(2026, 1, 1, tzinfo=UTC),
+                        "updated_at": datetime(2026, 1, 1, tzinfo=UTC),
+                        "url": f"https://tracker.invalid/{ISSUE}",
+                    },
+                ),
+            ],
+            marker_prefixes={"evidence": "fixture-evidence"},
+        )
+E       TypeError: FakeTrackerPort.__init__() got an unexpected keyword argument 'marker_prefixes'
+
+tests/chains/test_write_back_verifier.py:144: TypeError
+___ TestTheRoundBudget.test_an_unrepaired_write_back_stops_at_its_budget[2] ____
+
+self = <tests.chains.test_write_back_verifier.TestTheRoundBudget object at 0x10a82ac30>
+budget = 2
+
+    @pytest.mark.parametrize("budget", [1, 2, 4])
+    async def test_an_unrepaired_write_back_stops_at_its_budget(
+        self, budget: int
+    ) -> None:
+>       port = tracker()
+               ^^^^^^^^^
+
+tests/chains/test_write_back_verifier.py:321: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def tracker() -> FakeTrackerPort:
+>       return FakeTrackerPort(
+            issues=[
+                TrackerIssue.model_validate(
+                    {
+                        "issue_key": ISSUE,
+                        "title": "a criterion carrying evidence",
+                        "body": "Check / Do / Evidence",
+                        "priority": IssuePriority.NONE,
+                        "state_name": "Todo",
+                        "state_kind": WorkflowStateKind.UNSTARTED,
+                        "queue_states": [],
+                        "team_key": "engineering",
+                        "created_at": datetime(2026, 1, 1, tzinfo=UTC),
+                        "updated_at": datetime(2026, 1, 1, tzinfo=UTC),
+                        "url": f"https://tracker.invalid/{ISSUE}",
+                    },
+                ),
+            ],
+            marker_prefixes={"evidence": "fixture-evidence"},
+        )
+E       TypeError: FakeTrackerPort.__init__() got an unexpected keyword argument 'marker_prefixes'
+
+tests/chains/test_write_back_verifier.py:144: TypeError
+___ TestTheRoundBudget.test_an_unrepaired_write_back_stops_at_its_budget[4] ____
+
+self = <tests.chains.test_write_back_verifier.TestTheRoundBudget object at 0x10a82acf0>
+budget = 4
+
+    @pytest.mark.parametrize("budget", [1, 2, 4])
+    async def test_an_unrepaired_write_back_stops_at_its_budget(
+        self, budget: int
+    ) -> None:
+>       port = tracker()
+               ^^^^^^^^^
+
+tests/chains/test_write_back_verifier.py:321: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def tracker() -> FakeTrackerPort:
+>       return FakeTrackerPort(
+            issues=[
+                TrackerIssue.model_validate(
+                    {
+                        "issue_key": ISSUE,
+                        "title": "a criterion carrying evidence",
+                        "body": "Check / Do / Evidence",
+                        "priority": IssuePriority.NONE,
+                        "state_name": "Todo",
+                        "state_kind": WorkflowStateKind.UNSTARTED,
+                        "queue_states": [],
+                        "team_key": "engineering",
+                        "created_at": datetime(2026, 1, 1, tzinfo=UTC),
+                        "updated_at": datetime(2026, 1, 1, tzinfo=UTC),
+                        "url": f"https://tracker.invalid/{ISSUE}",
+                    },
+                ),
+            ],
+            marker_prefixes={"evidence": "fixture-evidence"},
+        )
+E       TypeError: FakeTrackerPort.__init__() got an unexpected keyword argument 'marker_prefixes'
+
+tests/chains/test_write_back_verifier.py:144: TypeError
+_______ TestTheRoundBudget.test_a_loop_with_no_round_to_spend_is_refused _______
+
+self = <tests.chains.test_write_back_verifier.TestTheRoundBudget object at 0x10a82b2c0>
+
+    async def test_a_loop_with_no_round_to_spend_is_refused(self) -> None:
+>       port = tracker()
+               ^^^^^^^^^
+
+tests/chains/test_write_back_verifier.py:336: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def tracker() -> FakeTrackerPort:
+>       return FakeTrackerPort(
+            issues=[
+                TrackerIssue.model_validate(
+                    {
+                        "issue_key": ISSUE,
+                        "title": "a criterion carrying evidence",
+                        "body": "Check / Do / Evidence",
+                        "priority": IssuePriority.NONE,
+                        "state_name": "Todo",
+                        "state_kind": WorkflowStateKind.UNSTARTED,
+                        "queue_states": [],
+                        "team_key": "engineering",
+                        "created_at": datetime(2026, 1, 1, tzinfo=UTC),
+                        "updated_at": datetime(2026, 1, 1, tzinfo=UTC),
+                        "url": f"https://tracker.invalid/{ISSUE}",
+                    },
+                ),
+            ],
+            marker_prefixes={"evidence": "fixture-evidence"},
+        )
+E       TypeError: FakeTrackerPort.__init__() got an unexpected keyword argument 'marker_prefixes'
+
+tests/chains/test_write_back_verifier.py:144: TypeError
+___________ test_claude_opus_completeness_passes_at_the_full_census ____________
+
+    def test_claude_opus_completeness_passes_at_the_full_census() -> None:
+        """KOD-63's completeness rule obliges the default set to supply both."""
+>       assert len(PromptKey) == PROMPT_FUNCTION_COUNT
+E       assert 19 == 18
+E        +  where 19 = len(PromptKey)
+
+tests/prompts/test_operation_config.py:533: AssertionError
+_________________________ test_the_census_is_the_enum __________________________
+
+    def test_the_census_is_the_enum() -> None:
+        """The shared census and the enum are one number, checked in one place."""
+>       assert len(PromptKey) == PROMPT_FUNCTION_COUNT
+E       assert 19 == 18
+E        +  where 19 = len(PromptKey)
+
+tests/prompts/test_set_completeness.py:38: AssertionError
+=========================== short test summary info ============================
+FAILED tests/chains/test_write_back_verifier.py::TestTheRepairRound::test_a_bad_write_back_is_refuted_then_repaired
+FAILED tests/chains/test_write_back_verifier.py::TestTheRepairRound::test_the_repair_round_is_handed_what_the_first_round_found
+FAILED tests/chains/test_write_back_verifier.py::TestTheRepairRound::test_the_artifact_is_re_read_between_every_round
+FAILED tests/chains/test_write_back_verifier.py::TestTheRepairRound::test_the_judge_reads_what_landed_not_what_the_step_composed
+FAILED tests/chains/test_write_back_verifier.py::TestTheConsumerReadsTheRepair::test_the_next_consumer_reads_the_repaired_artifact
+FAILED tests/chains/test_write_back_verifier.py::TestTheConsumerReadsTheRepair::test_the_repair_replaced_the_defect_rather_than_joining_it
+FAILED tests/chains/test_write_back_verifier.py::TestTheRefTheCallerNames::test_a_path_absent_at_the_named_ref_is_refuted_there
+FAILED tests/chains/test_write_back_verifier.py::TestTheRefTheCallerNames::test_a_write_back_that_already_holds_takes_one_round
+FAILED tests/chains/test_write_back_verifier.py::TestTheRoundBudget::test_an_unrepaired_write_back_stops_at_its_budget[1]
+FAILED tests/chains/test_write_back_verifier.py::TestTheRoundBudget::test_an_unrepaired_write_back_stops_at_its_budget[2]
+FAILED tests/chains/test_write_back_verifier.py::TestTheRoundBudget::test_an_unrepaired_write_back_stops_at_its_budget[4]
+FAILED tests/chains/test_write_back_verifier.py::TestTheRoundBudget::test_a_loop_with_no_round_to_spend_is_refused
+FAILED tests/prompts/test_operation_config.py::test_claude_opus_completeness_passes_at_the_full_census
+FAILED tests/prompts/test_set_completeness.py::test_the_census_is_the_enum - ...
+14 failed, 818 passed in 110.66s (0:01:50)

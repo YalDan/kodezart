@@ -1,0 +1,63 @@
+F
+=================================== FAILURES ===================================
+_ test_every_call_reads_full_tracker_sources_and_dispatches_fresh_at_base[assess-organize_assess-claude-opus] _
+
+set_name = 'claude-opus', method = 'assess'
+key = <PromptKey.ORGANIZE_ASSESS: 'organize_assess'>
+
+    @pytest.mark.parametrize("set_name", [OPUS_SET, V5_SET])
+    @pytest.mark.parametrize(
+        "method,key",
+        [
+            ("assess", PromptKey.ORGANIZE_ASSESS),
+            ("verify", PromptKey.ORGANIZE_VERIFY),
+        ],
+    )
+    async def test_every_call_reads_full_tracker_sources_and_dispatches_fresh_at_base(
+        set_name, method, key
+    ):
+        source = tracker()
+        executor = RecordingExecutor([result()])
+        workspace = RecordingWorkspace()
+        admission = consumer(source, executor, workspace, set_name)
+        before = dict(source.issues)
+    
+        with structlog.testing.capture_logs() as logs:
+            for _ in range(2):
+                verdict = await getattr(admission, method)(request())
+                assert verdict.verdict is AdmissionVerdict.BUILDABLE
+    
+        assert len(executor.calls) == 2
+        for call in executor.calls:
+            prompt = call["prompt"]
+            for body in (
+                source.issues[SUBJECT].body,
+                "First linked body.",
+                "Second linked body.",
+                "First criterion body.",
+                "Second criterion body.",
+                "Apply the selected rubric.",
+                "unsupported-claim",
+                SUBJECT,
+                BASE,
+            ):
+                assert body in prompt
+            for excluded in (
+                "Unrelated issue stays outside the prompt.",
+                "Unlabelled child is not a criterion.",
+                "Author rationale must never be forwarded.",
+                "previous-agent-session",
+            ):
+>               assert excluded not in prompt
+E               assert 'Unlabelled ...a criterion.' not in '── SKILLS A...ect_classes>'
+E                 
+E                 'Unlabelled child is not a criterion.' is contained here:
+E                   ","body":"Unlabelled child is not a criterion.","priority":"none","state_name":"Todo","state_kind":"unstarted","queue_states":[],"issue_labels":[],"team_key":"engineering","project":null,"project_id":null,"milestone_key":null,"relations":[],"parent_key":"subject/42","assignee_key":null,"created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z","url":"https://tracker.invalid/ordinary/child"},{"issue_key":"subject/42","title":"Title for subject/42","body":"Current issue body\nverbatim second line.","p...
+E                 
+E                 ...Full output truncated (39 lines hidden), use '-vv' to show
+
+tests/chains/test_organize.py:264: AssertionError
+=========================== short test summary info ============================
+FAILED tests/chains/test_organize.py::test_every_call_reads_full_tracker_sources_and_dispatches_fresh_at_base[assess-organize_assess-claude-opus]
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed in 0.69s

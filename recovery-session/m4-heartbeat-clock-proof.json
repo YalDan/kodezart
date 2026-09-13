@@ -1,0 +1,66 @@
+{
+  "refs": [
+    "268be4057dbcd4d4edb79b35d7e2b60a30f2f3c8",
+    "c855fb061209a7f20a3d10cd06f13f8476fba7dc",
+    "06214eb4517729bd776ce15616c5180d1c188fa2"
+  ],
+  "critical_blob_parity": {
+    "src/kodezart/services/claim_heartbeat.py": {
+      "268be4057dbcd4d4edb79b35d7e2b60a30f2f3c8": "02f1a171de34aa4fced23c4a5d11c2efb14d2438",
+      "c855fb061209a7f20a3d10cd06f13f8476fba7dc": "02f1a171de34aa4fced23c4a5d11c2efb14d2438",
+      "06214eb4517729bd776ce15616c5180d1c188fa2": "02f1a171de34aa4fced23c4a5d11c2efb14d2438"
+    },
+    "src/kodezart/services/lifecycle_watcher.py": {
+      "268be4057dbcd4d4edb79b35d7e2b60a30f2f3c8": "57f8fb7966ac8bd94314897b11e87fa40beefa84",
+      "c855fb061209a7f20a3d10cd06f13f8476fba7dc": "57f8fb7966ac8bd94314897b11e87fa40beefa84",
+      "06214eb4517729bd776ce15616c5180d1c188fa2": "57f8fb7966ac8bd94314897b11e87fa40beefa84"
+    },
+    "src/kodezart/services/tracker_lifecycle.py": {
+      "268be4057dbcd4d4edb79b35d7e2b60a30f2f3c8": "251fa7cb81b4c3b02ed5be2110c2e1634a7450a2",
+      "c855fb061209a7f20a3d10cd06f13f8476fba7dc": "251fa7cb81b4c3b02ed5be2110c2e1634a7450a2",
+      "06214eb4517729bd776ce15616c5180d1c188fa2": "251fa7cb81b4c3b02ed5be2110c2e1634a7450a2"
+    },
+    "src/kodezart/services/run_surface_lease.py": {
+      "268be4057dbcd4d4edb79b35d7e2b60a30f2f3c8": "8f4ce9a0bc340ec3bc1d6ce1746564364bed3d56",
+      "c855fb061209a7f20a3d10cd06f13f8476fba7dc": "8f4ce9a0bc340ec3bc1d6ce1746564364bed3d56",
+      "06214eb4517729bd776ce15616c5180d1c188fa2": "8f4ce9a0bc340ec3bc1d6ce1746564364bed3d56"
+    },
+    "src/kodezart/core/logging.py": {
+      "268be4057dbcd4d4edb79b35d7e2b60a30f2f3c8": "dcd2449452d1bf4ee078dade0b2d07be2131fe0c",
+      "c855fb061209a7f20a3d10cd06f13f8476fba7dc": "dcd2449452d1bf4ee078dade0b2d07be2131fe0c",
+      "06214eb4517729bd776ce15616c5180d1c188fa2": "dcd2449452d1bf4ee078dade0b2d07be2131fe0c"
+    },
+    "src/kodezart/core/outbound_write.py": {
+      "268be4057dbcd4d4edb79b35d7e2b60a30f2f3c8": "ee6ad6495d30db79858b83563a7844f3491ad50a",
+      "c855fb061209a7f20a3d10cd06f13f8476fba7dc": "ee6ad6495d30db79858b83563a7844f3491ad50a",
+      "06214eb4517729bd776ce15616c5180d1c188fa2": "ee6ad6495d30db79858b83563a7844f3491ad50a"
+    },
+    "src/kodezart/core/owned_tasks.py": {
+      "268be4057dbcd4d4edb79b35d7e2b60a30f2f3c8": "46fd2bbbf3a40eef8d81fedc24dde8cf5e505ff9",
+      "c855fb061209a7f20a3d10cd06f13f8476fba7dc": "46fd2bbbf3a40eef8d81fedc24dde8cf5e505ff9",
+      "06214eb4517729bd776ce15616c5180d1c188fa2": "46fd2bbbf3a40eef8d81fedc24dde8cf5e505ff9"
+    },
+    "tests/fakes.py": {
+      "268be4057dbcd4d4edb79b35d7e2b60a30f2f3c8": "fe0e50c2d79a5d6e90df05a2013e303e2fee4236",
+      "c855fb061209a7f20a3d10cd06f13f8476fba7dc": "fe0e50c2d79a5d6e90df05a2013e303e2fee4236",
+      "06214eb4517729bd776ce15616c5180d1c188fa2": "fe0e50c2d79a5d6e90df05a2013e303e2fee4236"
+    },
+    "uv.lock": {
+      "268be4057dbcd4d4edb79b35d7e2b60a30f2f3c8": "51a85eeaa79ee417b1a7b38e6914cf0dc46209a8",
+      "c855fb061209a7f20a3d10cd06f13f8476fba7dc": "51a85eeaa79ee417b1a7b38e6914cf0dc46209a8",
+      "06214eb4517729bd776ce15616c5180d1c188fa2": "51a85eeaa79ee417b1a7b38e6914cf0dc46209a8"
+    }
+  },
+  "original_control_before_after_identical_sha256": "7c1e58bd498df67bbef315482bbfd417836b01544627ce9e073155caaae56418",
+  "correction_tree": "9c60b78fbb8d602b0b46aa8f402b4e7580606333",
+  "production_edits": false,
+  "diagnostics": {
+    "original_module_c855": "21 passed in1.09s",
+    "original_module_parent268": "21 passed in1.15s",
+    "held_logger_original_clock_c855": "2 paired diagnostics passed;405 fake seconds vs0",
+    "held_logger_original_clock_parent268": "2 paired diagnostics passed;405 fake seconds vs0",
+    "unchanged_new_control_before": "1 failed (unrequested120s advance),1 explicit-expiry passed",
+    "corrected_original_and_new_tests": "25 passed in4.14s"
+  },
+  "full_gate": "pending"
+}

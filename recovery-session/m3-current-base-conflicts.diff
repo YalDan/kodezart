@@ -1,0 +1,71 @@
+diff --cc docs/configuration.md
+index 1452483,e68ba6e..0000000
+--- a/docs/configuration.md
++++ b/docs/configuration.md
+@@@ -458,18 -458,17 +458,35 @@@ The retired flat `write_back_max_verify
+  Deployments without a configured tracker-writing owner can leave the section
+  absent. A configured owner with no verification budget refuses at startup.
+  
+++<<<<<<< HEAD
+ +## Authored check observation bounds
+ +
+ +`KODEZART_DELIVERY_MAX_CONCURRENT_WATCHES` bounds concurrent check watches
+ +(default 4, inclusive range 1–32). `KODEZART_DELIVERY_RED_RERUN_MAX_ATTEMPTS`
+ +bounds same-commit reruns before a red is treated as reproduced (default 1,
+ +inclusive range 0–5). Both settings are consumed by the authored check phase.
+ +Repository declarations can supply ordered `checks`, typed
+ +`runner_environment` prerequisite facts, and `forge_exempt`; absent prerequisite
+ +facts remain unavailable rather than implying capability.
+ +
+ +The CI adapter resolves a rerun ref once, validates complete workflow-attempt
+ +identity, and issues each rerun POST once. Lost responses and partial batches
+ +remain errors. Follow-up observation stays on that same commit and asynchronous
+ +task; old completed checks cannot satisfy a requested new attempt. Attempt
+ +tracking is process-local and does not provide a durable rerun ledger.
+++=======
++ ### Scope admission labels
++ 
++ `[scope_labels]` maps `triage`, `proposed`, and `approved` to tracker label
++ names. An absent or empty table is valid; a populated table requires all
++ three keys and may include additional keys. Templates receive the mapping
++ through `scope_labels`, or `scope_labels_absent` when no mapping is declared.
++ 
++ Tracker bootstrap creates missing definitions in the issue, project, and
++ initiative namespaces and reads them back. It preserves existing definitions
++ and does not apply approval to an entity. A conflicting team-scoped issue
++ label is refused. Native approval reads use current issue ancestry and the
++ addressed issue's project and initiative ancestry; a milestone inherits its
++ project's approval. An absent approved-label mapping refuses the approval
++ read at use. These primitives do not yet add scoped HTTP workflow submission.
+++>>>>>>> cef0dff606500a76d5eb1eb9104a4862f9dbdd35
+diff --cc src/kodezart/types/domain/run_event.py
+index 5f29626,123330c..0000000
+--- a/src/kodezart/types/domain/run_event.py
++++ b/src/kodezart/types/domain/run_event.py
+@@@ -1,4 -1,4 +1,8 @@@
+++<<<<<<< HEAD
+ +"""Shared native run-event names; publication belongs to its actual owner."""
+++=======
++ """The shared run-event vocabulary, owned once."""
+++>>>>>>> cef0dff606500a76d5eb1eb9104a4862f9dbdd35
+  
+  from enum import StrEnum
+  
+diff --cc tests/tracker/native_read_fixtures.py
+index 12d3dd3,0f18c34..0000000
+--- a/tests/tracker/native_read_fixtures.py
++++ b/tests/tracker/native_read_fixtures.py
+@@@ -19,9 -19,8 +19,13 @@@ LABELS = 
+  
+  def tracker_over(server, *, issue_labels=None):
+      return LinearMcpTracker(
+++<<<<<<< HEAD
+ +        criteria_stage_label_key=None,
+ +        scope_labels={},
+++=======
+++>>>>>>> cef0dff606500a76d5eb1eb9104a4862f9dbdd35
+          caller=server,
++         scope_labels={},
+          issue_labels=LABELS if issue_labels is None else issue_labels,
+          marker_prefixes=MARKER_PREFIXES,
+          queue_state_labels=QUEUE_STATE_LABELS,

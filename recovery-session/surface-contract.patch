@@ -1,0 +1,78 @@
+--- a/src/kodezart/core/protocols.py
++++ b/src/kodezart/core/protocols.py
+@@ -1039,7 +1039,7 @@
+         ...
+ 
+     async def upsert_comment(
+-        self, *, target: str, marker: str, body: str
++        self, *, target: str, marker: str, body: str, holder: str | None = None
+     ) -> TrackerComment:
+         """Create or edit the issue comment with *marker* as its first line.
+ 
+@@ -1047,6 +1047,9 @@
+         writes nothing. Several comments under the marker raise
+         ``DuplicateCommentMarkerError`` before any write. Callers compose
+         the marker and serialize concurrent writers to the same target.
++        The writing queue job must hold its marker surface under ``holder``;
++        an absent, expired or different holder raises ``SurfaceLeaseError``
++        carrying the surface and the observed current holder.
+         """
+         ...
+ 
+--- a/tests/fakes.py
++++ b/tests/fakes.py
+@@ -48,6 +48,7 @@
+     RateLimitError,
+     ScopeReadError,
+     SurfaceLeaseError,
++    SurfaceWriteAttributionError,
+     TransientAPIError,
+     WorkspaceError,
+ )
+@@ -136,7 +137,7 @@
+     AgentDefinition,
+     SessionPolicy,
+ )
+-from kodezart.types.domain.surface import SurfaceLease, WritableSurface
++from kodezart.types.domain.surface import SurfaceKind, SurfaceLease, WritableSurface
+ from kodezart.types.domain.ticket_review import TicketApproval, TicketReviewMode
+ from kodezart.types.domain.tracker import (
+     INSTATABLE_MAPPING_KINDS,
+@@ -3872,7 +3873,7 @@
+         return comment
+ 
+     async def upsert_comment(
+-        self, *, target: str, marker: str, body: str
++        self, *, target: str, marker: str, body: str, holder: str | None = None
+     ) -> TrackerComment:
+         content = marked_comment_body(marker=marker, body=body)
+         existing = comment_under_marker(
+@@ -3880,6 +3881,28 @@
+             marker=marker,
+             comments=await self.list_comments(issue_key=target),
+         )
++        surface = WritableSurface(
++            kind=SurfaceKind.MARKER_COMMENT,
++            ref=ScopeRef(kind=ScopeKind.ISSUE, key=target),
++            marker=marker,
++        )
++        if existing is not None and existing.body != content:
++            if existing.author_key not in await self.writer_identity():
++                raise SurfaceWriteAttributionError(
++                    surface=surface, author=existing.author_key
++                )
++        lease = self.leases.get(surface)
++        owner = (
++            lease.holder
++            if lease is not None and lease.expires_at > self._clock()
++            else None
++        )
++        if holder is None or holder != owner:
++            raise SurfaceLeaseError(
++                "the writing job does not hold this live surface",
++                surface=surface,
++                current_holder=owner,
++            )
+         if existing is None:
+             return await self.post_comment(issue_key=target, body=content)
+         if existing.body == content:

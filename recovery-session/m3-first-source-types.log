@@ -1,0 +1,124 @@
+Using CPython 3.12.13
+Creating virtual environment at: .venv
+   Building kodezart @ file:///private/tmp/kodezart-v03-m3-plan-walk
+warning: `build_system.requires = ["uv-build>=0.10.9,<0.11.0"]` does not contain the current uv version 0.11.6
+      Built kodezart @ file:///private/tmp/kodezart-v03-m3-plan-walk
+Installed 174 packages in 1.16s
+src/kodezart/domain/pr_body.py:9: error: Module "kodezart.domain.errors" has no attribute "PRTrackerIdentityError"  [attr-defined]
+src/kodezart/types/domain/agent.py:13: error: Skipping analyzing "kodezart.types.domain.run_event": module is installed, but missing library stubs or py.typed marker  [import-untyped]
+src/kodezart/types/domain/agent.py:13: note: See https://mypy.readthedocs.io/en/stable/running_mypy.html#missing-imports
+src/kodezart/types/domain/agent.py:429: error: Parameter 1 of Literal[...] cannot be of type "Any"  [valid-type]
+src/kodezart/domain/outcome.py:36: error: Returning Any from function declared to return "WorkflowOutcome"  [no-any-return]
+src/kodezart/domain/outcome.py:36: error: "type[WorkflowOutcome]" has no attribute "handed_off_for_delivery"  [attr-defined]
+src/kodezart/domain/authored_outcome.py:15: error: "type[WorkflowOutcome]" has no attribute "handed_off_for_delivery"  [attr-defined]
+src/kodezart/domain/authored_outcome.py:26: error: "type[WorkflowOutcome]" has no attribute "handed_off_for_delivery"  [attr-defined]
+src/kodezart/domain/authored_outcome.py:32: error: Returning Any from function declared to return "WorkflowOutcome"  [no-any-return]
+src/kodezart/domain/authored_outcome.py:32: error: "type[WorkflowOutcome]" has no attribute "ci_no_run_at_ref"  [attr-defined]
+src/kodezart/domain/authored_outcome.py:35: error: Returning Any from function declared to return "WorkflowOutcome"  [no-any-return]
+src/kodezart/domain/authored_outcome.py:35: error: "type[WorkflowOutcome]" has no attribute "ci_failed_environment_prerequisite"  [attr-defined]
+src/kodezart/domain/authored_outcome.py:37: error: Returning Any from function declared to return "WorkflowOutcome"  [no-any-return]
+src/kodezart/domain/authored_outcome.py:37: error: "type[WorkflowOutcome]" has no attribute "ci_failed_unclassified"  [attr-defined]
+src/kodezart/chains/authored_checks.py:106: error: "CIMonitor" has no attribute "checks_declared"  [attr-defined]
+src/kodezart/chains/authored_checks.py:107: error: "RepoEntry" has no attribute "forge_exempt"  [attr-defined]
+src/kodezart/services/base_resolver.py:145: error: "WorkRef" has no attribute "landing"  [attr-defined]
+src/kodezart/services/base_resolver.py:153: error: "WorkRef" has no attribute "landing"  [attr-defined]
+src/kodezart/chains/fire_remediation.py:124: error: Unexpected keyword argument "run_identity" for "run" of "Remediator"  [call-arg]
+src/kodezart/core/protocols.py:1516: note: "run" of "Remediator" defined here
+src/kodezart/adapters/git_worktree_provider.py:17: error: Module "kodezart.domain.errors" has no attribute "GitOperationError"  [attr-defined]
+src/kodezart/adapters/git_worktree_provider.py:17: error: Module "kodezart.domain.errors" has no attribute "GitRepositoryError"  [attr-defined]
+src/kodezart/services/fire_dispatcher.py:398: error: Unexpected keyword argument "criterion_keys" for "DispatchReport"  [call-arg]
+src/kodezart/services/fire_dispatcher.py:449: error: Unexpected keyword argument "criterion_keys" for "DispatchReport"  [call-arg]
+src/kodezart/services/fire_dispatcher.py:505: error: Unexpected keyword argument "criterion_keys" for "DispatchReport"  [call-arg]
+src/kodezart/chains/fire_specification.py:231: error: Unexpected keyword argument "run_identity" for "run" of "TicketGenerator"  [call-arg]
+src/kodezart/core/protocols.py:1495: note: "run" of "TicketGenerator" defined here
+src/kodezart/chains/authored_publication.py:123: error: Argument 2 to "stall_pr_body" has incompatible type "list[ValidatedCriterion | TrackerCriterion]"; expected "Sequence[ValidatedCriterion]"  [arg-type]
+src/kodezart/chains/remediation.py:138: error: Argument "ticket" to "WorkflowRemediationEvent" has incompatible type "RemediationPlan | TicketDraftOutput"; expected "TicketDraftOutput"  [arg-type]
+src/kodezart/chains/fire_implementation.py:103: error: Unexpected keyword argument "tracker_spec" for "run" of "QualityGate"  [call-arg]
+src/kodezart/core/protocols.py:1472: note: "run" of "QualityGate" defined here
+src/kodezart/chains/fire_implementation.py:103: error: Unexpected keyword argument "run_identity" for "run" of "QualityGate"  [call-arg]
+src/kodezart/chains/fire_implementation.py:103: error: Unexpected keyword argument "surface_holder" for "run" of "QualityGate"  [call-arg]
+src/kodezart/chains/fire_implementation.py:113: error: Argument "acceptance_criteria" to "run" of "QualityGate" has incompatible type "list[ValidatedCriterion | TrackerCriterion]"; expected "list[ValidatedCriterion]"  [arg-type]
+src/kodezart/composition/workspace.py:62: error: Argument "git" to "LocalBareRepoCache" has incompatible type "SubprocessGitService"; expected "GitService"  [arg-type]
+src/kodezart/composition/workspace.py:62: note: "SubprocessGitService" is missing following "GitService" protocol member:
+src/kodezart/composition/workspace.py:62: note:     worktree_identity
+src/kodezart/composition/workspace.py:63: error: Unexpected keyword argument "committer_name" for "GitWorktreeProvider"  [call-arg]
+src/kodezart/adapters/git_worktree_provider.py:43: note: "GitWorktreeProvider" defined here
+src/kodezart/composition/workspace.py:63: error: Unexpected keyword argument "committer_email" for "GitWorktreeProvider"  [call-arg]
+src/kodezart/composition/workspace.py:64: error: Argument "git" to "GitWorktreeProvider" has incompatible type "SubprocessGitService"; expected "GitService"  [arg-type]
+src/kodezart/composition/workspace.py:64: note: "SubprocessGitService" is missing following "GitService" protocol member:
+src/kodezart/composition/workspace.py:64: note:     worktree_identity
+src/kodezart/composition/workspace.py:70: error: Argument "git" to "GitChangePersister" has incompatible type "SubprocessGitService"; expected "GitService"  [arg-type]
+src/kodezart/composition/workspace.py:70: note: "SubprocessGitService" is missing following "GitService" protocol member:
+src/kodezart/composition/workspace.py:70: note:     worktree_identity
+src/kodezart/composition/workspace.py:77: error: Argument "git" to "GitBranchMerger" has incompatible type "SubprocessGitService"; expected "GitService"  [arg-type]
+src/kodezart/composition/workspace.py:77: note: "SubprocessGitService" is missing following "GitService" protocol member:
+src/kodezart/composition/workspace.py:77: note:     worktree_identity
+src/kodezart/composition/workspace.py:79: error: Argument "git" to "GitArtifactPersister" has incompatible type "SubprocessGitService"; expected "GitService"  [arg-type]
+src/kodezart/composition/workspace.py:79: note: "SubprocessGitService" is missing following "GitService" protocol member:
+src/kodezart/composition/workspace.py:79: note:     worktree_identity
+src/kodezart/composition/workspace.py:84: error: Argument "git" to "GitRefPublisher" has incompatible type "SubprocessGitService"; expected "GitService"  [arg-type]
+src/kodezart/composition/workspace.py:84: note: "SubprocessGitService" is missing following "GitService" protocol member:
+src/kodezart/composition/workspace.py:84: note:     worktree_identity
+src/kodezart/composition/workspace.py:86: error: Argument "git" to "GitStack" has incompatible type "SubprocessGitService"; expected "GitService"  [arg-type]
+src/kodezart/composition/workspace.py:86: note: "SubprocessGitService" is missing following "GitService" protocol member:
+src/kodezart/composition/workspace.py:86: note:     worktree_identity
+src/kodezart/composition/tracker.py:125: error: Incompatible return value type (got "tuple[LinearMcpTracker, SelfWriteLedger]", expected "tuple[TrackerPort, SelfWriteLedger]")  [return-value]
+src/kodezart/services/amendment_writeback.py:216: error: "type[PromptKey]" has no attribute "AMENDMENT_AUTHOR"  [attr-defined]
+src/kodezart/services/amendment_writeback.py:247: error: "type[PromptKey]" has no attribute "AMENDMENT_AUTHOR"  [attr-defined]
+src/kodezart/services/amendment_writeback.py:515: error: "TrackerPort" has no attribute "reset_criterion_pending"  [attr-defined]
+src/kodezart/chains/ticket_generation.py:306: error: Unexpected keyword argument "run_identity" for "stream_in_workspace" of "AgentRunner"  [call-arg]
+src/kodezart/core/protocols.py:1347: note: "stream_in_workspace" of "AgentRunner" defined here
+src/kodezart/chains/ticket_generation.py:388: error: Unexpected keyword argument "run_identity" for "stream_in_workspace" of "AgentRunner"  [call-arg]
+src/kodezart/services/native_amendments.py:262: error: "type[PromptKey]" has no attribute "NATIVE_WRITER_CONTRACT"  [attr-defined]
+src/kodezart/services/native_amendments.py:449: error: "type[PromptKey]" has no attribute "AMENDMENT_JUDGE"  [attr-defined]
+src/kodezart/services/native_amendments.py:482: error: "type[PromptKey]" has no attribute "AMENDMENT_JUDGE"  [attr-defined]
+src/kodezart/chains/ralph_loop.py:339: error: Unexpected keyword argument "run_identity" for "stream_workflow" of "AgentRunner"  [call-arg]
+src/kodezart/core/protocols.py:1325: note: "stream_workflow" of "AgentRunner" defined here
+src/kodezart/chains/ralph_loop.py:339: error: Unexpected keyword argument "native_guard" for "stream_workflow" of "AgentRunner"  [call-arg]
+src/kodezart/chains/ralph_loop.py:463: error: Unexpected keyword argument "observe" for "drain"  [call-arg]
+src/kodezart/core/stream_drain.py:18: note: "drain" defined here
+src/kodezart/composition/engine.py:206: error: Unexpected keyword argument "service" for "RalphWorkflowEngine"  [call-arg]
+src/kodezart/chains/ralph_workflow.py:68: note: "RalphWorkflowEngine" defined here
+src/kodezart/composition/engine.py:206: error: Unexpected keyword argument "quality_gate" for "RalphWorkflowEngine"  [call-arg]
+src/kodezart/composition/engine.py:206: error: Unexpected keyword argument "ticket_generator" for "RalphWorkflowEngine"  [call-arg]
+src/kodezart/composition/engine.py:206: error: Unexpected keyword argument "merger" for "RalphWorkflowEngine"  [call-arg]
+src/kodezart/composition/engine.py:206: error: Unexpected keyword argument "git_remote" for "RalphWorkflowEngine"  [call-arg]
+src/kodezart/composition/engine.py:206: error: Unexpected keyword argument "git" for "RalphWorkflowEngine"  [call-arg]
+src/kodezart/composition/engine.py:206: error: Unexpected keyword argument "cache" for "RalphWorkflowEngine"  [call-arg]
+src/kodezart/composition/engine.py:206: error: Unexpected keyword argument "prompts" for "RalphWorkflowEngine"  [call-arg]
+src/kodezart/composition/engine.py:206: error: Unexpected keyword argument "skills" for "RalphWorkflowEngine"  [call-arg]
+src/kodezart/composition/engine.py:206: error: Unexpected keyword argument "gate" for "RalphWorkflowEngine"  [call-arg]
+src/kodezart/composition/engine.py:206: error: Unexpected keyword argument "visibility_resolver" for "RalphWorkflowEngine"  [call-arg]
+src/kodezart/composition/engine.py:206: error: Unexpected keyword argument "pr_creator" for "RalphWorkflowEngine"  [call-arg]
+src/kodezart/composition/engine.py:206: error: Unexpected keyword argument "ci_monitor" for "RalphWorkflowEngine"  [call-arg]
+src/kodezart/composition/engine.py:206: error: Unexpected keyword argument "ref_publisher" for "RalphWorkflowEngine"  [call-arg]
+src/kodezart/composition/engine.py:206: error: Unexpected keyword argument "remediator" for "RalphWorkflowEngine"; did you mean "remediation"?  [call-arg]
+src/kodezart/composition/engine.py:206: error: Unexpected keyword argument "remediation_max_rounds" for "RalphWorkflowEngine"  [call-arg]
+src/kodezart/composition/engine.py:206: error: Unexpected keyword argument "criteria_max_regeneration_rounds" for "RalphWorkflowEngine"  [call-arg]
+src/kodezart/composition/engine.py:206: error: Unexpected keyword argument "fan_in_max_attempts" for "RalphWorkflowEngine"  [call-arg]
+src/kodezart/composition/engine.py:206: error: Unexpected keyword argument "artifact_persister" for "RalphWorkflowEngine"  [call-arg]
+src/kodezart/composition/engine.py:234: error: Argument "forge_arm" to "OriginRoutedWorkflowEngine" has incompatible type "RalphWorkflowEngine"; expected "WorkflowEngine"  [arg-type]
+src/kodezart/composition/engine.py:234: note: Following member(s) of "RalphWorkflowEngine" have conflicts:
+src/kodezart/composition/engine.py:234: note:     Expected:
+src/kodezart/composition/engine.py:234: note:         def run(self, *, prompt: str, repo_path: str | None, repo_url: str | None, base_spec: BaseSpec, implied_base: BaseSpec | None = ..., permission_mode: PermissionMode, allowed_tools: ToolPreset | list[str], cache_key: str) -> AsyncIterator[AgentEvent]
+src/kodezart/composition/engine.py:234: note:     Got:
+src/kodezart/composition/engine.py:234: note:         def run(self, *, prompt: str, issue_key: str | None = ..., repo_path: str | None, repo_url: str | None, base_spec: BaseSpec, scope: ScopeRef | None, implied_base: BaseSpec | None = ..., permission_mode: PermissionMode, allowed_tools: ToolPreset | list[str], cache_key: str, run_identity: RunIdentity | None = ...) -> AsyncIterator[AgentEvent]
+src/kodezart/composition/engine.py:235: error: Argument "forge_less_arm" to "OriginRoutedWorkflowEngine" has incompatible type "RalphWorkflowEngine"; expected "WorkflowEngine"  [arg-type]
+src/kodezart/composition/engine.py:235: note: Following member(s) of "RalphWorkflowEngine" have conflicts:
+src/kodezart/composition/engine.py:235: note:     Expected:
+src/kodezart/composition/engine.py:235: note:         def run(self, *, prompt: str, repo_path: str | None, repo_url: str | None, base_spec: BaseSpec, implied_base: BaseSpec | None = ..., permission_mode: PermissionMode, allowed_tools: ToolPreset | list[str], cache_key: str) -> AsyncIterator[AgentEvent]
+src/kodezart/composition/engine.py:235: note:     Got:
+src/kodezart/composition/engine.py:235: note:         def run(self, *, prompt: str, issue_key: str | None = ..., repo_path: str | None, repo_url: str | None, base_spec: BaseSpec, scope: ScopeRef | None, implied_base: BaseSpec | None = ..., permission_mode: PermissionMode, allowed_tools: ToolPreset | list[str], cache_key: str, run_identity: RunIdentity | None = ...) -> AsyncIterator[AgentEvent]
+src/kodezart/main.py:126: error: Argument "executor" to "build_outbound_gate" has incompatible type "ClaudeClientExecutor"; expected "AgentExecutor"  [arg-type]
+src/kodezart/main.py:126: note: Following member(s) of "ClaudeClientExecutor" have conflicts:
+src/kodezart/main.py:126: note:     Expected:
+src/kodezart/main.py:126: note:         def stream(self, *, prompt: str, cwd: str, permission_mode: PermissionMode, allowed_tools: ToolPreset | list[str], skills: SkillsSelection, session_type: SessionType, run_identity: RunIdentity | None = ..., agents: Sequence[AgentDefinition] = ..., session_policy: SessionPolicy = ..., session_id: str | None = ..., output_format: dict[str, object] | None = ...) -> AsyncIterator[AgentEvent]
+src/kodezart/main.py:126: note:     Got:
+src/kodezart/main.py:126: note:         def stream(self, *, prompt: str, cwd: str, permission_mode: PermissionMode, allowed_tools: ToolPreset | list[str], skills: SkillsSelection, session_type: SessionType, agents: Sequence[AgentDefinition] = ..., session_policy: SessionPolicy = ..., session_id: str | None = ..., output_format: dict[str, object] | None = ...) -> AsyncGenerator[AgentEvent, None]
+src/kodezart/main.py:139: error: Argument "executor" to "AgentService" has incompatible type "ClaudeClientExecutor"; expected "AgentExecutor"  [arg-type]
+src/kodezart/main.py:139: note: Following member(s) of "ClaudeClientExecutor" have conflicts:
+src/kodezart/main.py:139: note:     Expected:
+src/kodezart/main.py:139: note:         def stream(self, *, prompt: str, cwd: str, permission_mode: PermissionMode, allowed_tools: ToolPreset | list[str], skills: SkillsSelection, session_type: SessionType, run_identity: RunIdentity | None = ..., agents: Sequence[AgentDefinition] = ..., session_policy: SessionPolicy = ..., session_id: str | None = ..., output_format: dict[str, object] | None = ...) -> AsyncIterator[AgentEvent]
+src/kodezart/main.py:139: note:     Got:
+src/kodezart/main.py:139: note:         def stream(self, *, prompt: str, cwd: str, permission_mode: PermissionMode, allowed_tools: ToolPreset | list[str], skills: SkillsSelection, session_type: SessionType, agents: Sequence[AgentDefinition] = ..., session_policy: SessionPolicy = ..., session_id: str | None = ..., output_format: dict[str, object] | None = ...) -> AsyncGenerator[AgentEvent, None]
+Found 74 errors in 21 files (checked 254 source files)

@@ -1,0 +1,1768 @@
+.F...F..................FFFF............................................ [ 41%]
+..........FFFF......................................FFFFFF............FF [ 82%]
+......F..F..F...F.............                                           [100%]
+=================================== FAILURES ===================================
+_ test_combined_native_arms_keep_their_own_revisions_and_lifetimes[fake-port-mandate-error] _
+
+setup = (<function setup.<locals>.build at 0x10f141620>, <tests.tracker.test_audit_sweep.Executor object at 0x10f14df10>, <tes... <tests.fakes.FakeWorkspaceProvider object at 0x10f14f1d0>, <tests.fakes.FakePRStateReader object at 0x10f14ea80>, ...)
+tracker = <tests.fakes.FakeTrackerPort object at 0x10f14de80>
+server = <tests.fakes.FakeLinearMcpServer object at 0x10f0c82f0>
+tracker_writes = <function tracker_writes.<locals>.<lambda> at 0x10f140ea0>
+repository = (PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1853/test_combined_nati...ined_native_arms_keep1/cache'), '8b9932cd99d402aa811fbfab34b54e25ec77b299', '88a026b73f17c016bf5e124e2c97b9c5ff2b8261')
+tmp_path = PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1853/test_combined_native_arms_keep1')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10f14e6f0>
+mode = 'mandate-error'
+
+    @pytest.mark.parametrize("mode", ["complete", "mandate-error", "head-moves", "cancel"])
+    async def test_combined_native_arms_keep_their_own_revisions_and_lifetimes(
+        setup, tracker, server, tracker_writes, repository, tmp_path, monkeypatch, mode
+    ):
+        build, executor, _, _, _, _, stored, operation = setup
+        remote, author, _, graded, head = repository
+        assert graded != head
+        await tracker.update_issue(
+            issue_key=CHILD,
+            body=f"**Check:** {CHECK}\n"
+            + render_evidence_field(
+                CriterionEvidence(graded_sha=graded, test="graded_test")
+            ),
+        )
+        await completed(tracker, server)
+        native = SubprocessGitService(remote="configured-remote")
+        cache = LocalBareRepoCache(git=native, base_dir=str(tmp_path / "combined-cache"))
+        workspace = GitWorktreeProvider(
+            git=native,
+            cache=cache,
+        )
+        op = operation.model_copy(
+            update={"repos": [REPOSITORY.model_copy(update={"url": remote.as_uri()})]}
+        )
+        ci = FakeCIMonitor(
+            passed=False,
+            failed_names=NAMES,
+            check_names=NAMES,
+            observed_sha_by_ref={graded: graded},
+            rerun_results=[(False, "same historical defect", NAMES)],
+        )
+        executor.overclaim_output = payload()
+        executor.removal_output = removal_payload("holds")
+        visited = []
+        active = asyncio.Event()
+    
+        async def during(kwargs):
+            schema = kwargs["output_format"]["schema"]
+            path = Path(kwargs["cwd"])
+            visited.append((schema, path))
+            expected = graded if schema == AUDIT_MANDATE_SCHEMA else head
+            assert command(path, "rev-parse", "HEAD") == expected
+            assert kwargs["session_id"] is None
+            if schema == AUDIT_MANDATE_SCHEMA and mode == "mandate-error":
+                raise RuntimeError("historical mandate unavailable")
+            if schema == DETECTOR_REMOVAL_SCHEMA and mode == "cancel":
+                active.set()
+                await asyncio.Future()
+    
+        executor.during = during
+        if mode == "head-moves":
+            original = ci.wait_for_checks
+            moved = False
+    
+            async def after_current_arms(**kwargs):
+                nonlocal moved
+                result = await original(**kwargs)
+                if not moved:
+                    moved = True
+                    (author / "later.txt").write_text("A later current revision.\n")
+                    command(author, "add", "later.txt")
+                    command(author, "commit", "-qm", "head after current detectors")
+                    command(author, "push", "-q", "configured-remote", "ordinary-name")
+                return result
+    
+            monkeypatch.setattr(ci, "wait_for_checks", after_current_arms)
+        sweep = build(
+            selected_op=op,
+            selected_git=native,
+            selected_cache=cache,
+            selected_workspace=workspace,
+            selected_source=SubprocessGitSourceReader(),
+            include_overclaims=True,
+            include_removals=True,
+            selected_forge=verifier(tracker, op, ci),
+        )
+        before = tracker_writes()
+        if mode == "cancel":
+            task = asyncio.create_task(sweep.run())
+            try:
+                await asyncio.wait_for(active.wait(), 15)
+                task.cancel()
+                await asyncio.sleep(0)
+                task.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await task
+            finally:
+                if not task.done():
+                    task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+            assert not ci.calls
+        elif mode == "head-moves":
+            with pytest.raises(AuditClaimReadError, match="observed branch changed"):
+                await sweep.run()
+            assert {call["ref"] for call in ci.calls} == {graded}
+        else:
+>           child = (await sweep.run()).observations[0]
+                     ^^^^^^^^^^^^^^^^^
+
+tests/tracker/test_audit_combined_review.py:129: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/chains/audit_sweep.py:468: in run
+    await self.observe_target(snapshot=snapshot, target=target)
+src/kodezart/chains/audit_sweep.py:442: in observe_target
+    forge, forge_report, forge_reason = await self._observe_forge(
+src/kodezart/chains/audit_sweep.py:342: in _observe_forge
+    report = await self._mandates.complete(
+src/kodezart/chains/audit_pass.py:228: in complete
+    mandate = await self.observe(
+src/kodezart/chains/audit_pass.py:292: in observe
+    structured = await judge_in_workspace(
+src/kodezart/services/audit_sessions.py:43: in judge_in_workspace
+    result, rate_limited = await drain(
+src/kodezart/core/stream_drain.py:57: in drain
+    async for event in stream:
+src/kodezart/services/agent_service.py:117: in stream_in_workspace
+    async for event in self._executor.stream(
+tests/tracker/test_audit_sweep.py:90: in stream
+    await self.during(kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+kwargs = {'agents': (), 'allowed_tools': <ToolPreset.EVALUATION: 'evaluation'>, 'cwd': '/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43...se verdict requires exactly its corresponding payload.', 'title': 'AuditMandateJudgment'}, 'type': 'json_schema'}, ...}
+
+    async def during(kwargs):
+        schema = kwargs["output_format"]["schema"]
+        path = Path(kwargs["cwd"])
+        visited.append((schema, path))
+        expected = graded if schema == AUDIT_MANDATE_SCHEMA else head
+        assert command(path, "rev-parse", "HEAD") == expected
+        assert kwargs["session_id"] is None
+        if schema == AUDIT_MANDATE_SCHEMA and mode == "mandate-error":
+>           raise RuntimeError("historical mandate unavailable")
+E           RuntimeError: historical mandate unavailable
+
+tests/tracker/test_audit_combined_review.py:77: RuntimeError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 20:19:48 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-64d60bfef57a4e58950b7db7b290854a workspace_id=64d60bfef57a4e58950b7db7b290854a
+2026-09-12 20:19:49 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fresh-result site=audit_overclaim stop_reason=None subtype=success total_cost_usd=None usage=None
+2026-09-12 20:19:49 [info     ] workspace_released             workspace_id=64d60bfef57a4e58950b7db7b290854a
+2026-09-12 20:19:51 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-fd3ec62ecba3402e88fc941563444784 workspace_id=fd3ec62ecba3402e88fc941563444784
+2026-09-12 20:19:51 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fresh-result site=audit_detection_removal stop_reason=None subtype=success total_cost_usd=None usage=None
+2026-09-12 20:19:52 [info     ] workspace_released             workspace_id=fd3ec62ecba3402e88fc941563444784
+2026-09-12 20:19:53 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-88b356ed311d431a9838c33a47795952 workspace_id=88b356ed311d431a9838c33a47795952
+2026-09-12 20:19:54 [info     ] workspace_released             workspace_id=88b356ed311d431a9838c33a47795952
+_ test_combined_native_arms_keep_their_own_revisions_and_lifetimes[linear-mcp-mandate-error] _
+
+setup = (<function setup.<locals>.build at 0x10f0c3e20>, <tests.tracker.test_audit_sweep.Executor object at 0x10f18d220>, <tes... <tests.fakes.FakeWorkspaceProvider object at 0x10f18dfd0>, <tests.fakes.FakePRStateReader object at 0x10f18ea20>, ...)
+tracker = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10f18e5a0>
+server = <tests.fakes.FakeLinearMcpServer object at 0x10f18f1a0>
+tracker_writes = <function tracker_writes.<locals>.<lambda> at 0x10f141b20>
+repository = (PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1853/test_combined_nati...ined_native_arms_keep5/cache'), '1e7821a50e1b25879bcfe38f0b03c05af245793b', '704b3011bda5049ddb56875d9b53b5742c0da717')
+tmp_path = PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1853/test_combined_native_arms_keep5')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10f18e9f0>
+mode = 'mandate-error'
+
+    @pytest.mark.parametrize("mode", ["complete", "mandate-error", "head-moves", "cancel"])
+    async def test_combined_native_arms_keep_their_own_revisions_and_lifetimes(
+        setup, tracker, server, tracker_writes, repository, tmp_path, monkeypatch, mode
+    ):
+        build, executor, _, _, _, _, stored, operation = setup
+        remote, author, _, graded, head = repository
+        assert graded != head
+        await tracker.update_issue(
+            issue_key=CHILD,
+            body=f"**Check:** {CHECK}\n"
+            + render_evidence_field(
+                CriterionEvidence(graded_sha=graded, test="graded_test")
+            ),
+        )
+        await completed(tracker, server)
+        native = SubprocessGitService(remote="configured-remote")
+        cache = LocalBareRepoCache(git=native, base_dir=str(tmp_path / "combined-cache"))
+        workspace = GitWorktreeProvider(
+            git=native,
+            cache=cache,
+        )
+        op = operation.model_copy(
+            update={"repos": [REPOSITORY.model_copy(update={"url": remote.as_uri()})]}
+        )
+        ci = FakeCIMonitor(
+            passed=False,
+            failed_names=NAMES,
+            check_names=NAMES,
+            observed_sha_by_ref={graded: graded},
+            rerun_results=[(False, "same historical defect", NAMES)],
+        )
+        executor.overclaim_output = payload()
+        executor.removal_output = removal_payload("holds")
+        visited = []
+        active = asyncio.Event()
+    
+        async def during(kwargs):
+            schema = kwargs["output_format"]["schema"]
+            path = Path(kwargs["cwd"])
+            visited.append((schema, path))
+            expected = graded if schema == AUDIT_MANDATE_SCHEMA else head
+            assert command(path, "rev-parse", "HEAD") == expected
+            assert kwargs["session_id"] is None
+            if schema == AUDIT_MANDATE_SCHEMA and mode == "mandate-error":
+                raise RuntimeError("historical mandate unavailable")
+            if schema == DETECTOR_REMOVAL_SCHEMA and mode == "cancel":
+                active.set()
+                await asyncio.Future()
+    
+        executor.during = during
+        if mode == "head-moves":
+            original = ci.wait_for_checks
+            moved = False
+    
+            async def after_current_arms(**kwargs):
+                nonlocal moved
+                result = await original(**kwargs)
+                if not moved:
+                    moved = True
+                    (author / "later.txt").write_text("A later current revision.\n")
+                    command(author, "add", "later.txt")
+                    command(author, "commit", "-qm", "head after current detectors")
+                    command(author, "push", "-q", "configured-remote", "ordinary-name")
+                return result
+    
+            monkeypatch.setattr(ci, "wait_for_checks", after_current_arms)
+        sweep = build(
+            selected_op=op,
+            selected_git=native,
+            selected_cache=cache,
+            selected_workspace=workspace,
+            selected_source=SubprocessGitSourceReader(),
+            include_overclaims=True,
+            include_removals=True,
+            selected_forge=verifier(tracker, op, ci),
+        )
+        before = tracker_writes()
+        if mode == "cancel":
+            task = asyncio.create_task(sweep.run())
+            try:
+                await asyncio.wait_for(active.wait(), 15)
+                task.cancel()
+                await asyncio.sleep(0)
+                task.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await task
+            finally:
+                if not task.done():
+                    task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+            assert not ci.calls
+        elif mode == "head-moves":
+            with pytest.raises(AuditClaimReadError, match="observed branch changed"):
+                await sweep.run()
+            assert {call["ref"] for call in ci.calls} == {graded}
+        else:
+>           child = (await sweep.run()).observations[0]
+                     ^^^^^^^^^^^^^^^^^
+
+tests/tracker/test_audit_combined_review.py:129: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/chains/audit_sweep.py:468: in run
+    await self.observe_target(snapshot=snapshot, target=target)
+src/kodezart/chains/audit_sweep.py:442: in observe_target
+    forge, forge_report, forge_reason = await self._observe_forge(
+src/kodezart/chains/audit_sweep.py:342: in _observe_forge
+    report = await self._mandates.complete(
+src/kodezart/chains/audit_pass.py:228: in complete
+    mandate = await self.observe(
+src/kodezart/chains/audit_pass.py:292: in observe
+    structured = await judge_in_workspace(
+src/kodezart/services/audit_sessions.py:43: in judge_in_workspace
+    result, rate_limited = await drain(
+src/kodezart/core/stream_drain.py:57: in drain
+    async for event in stream:
+src/kodezart/services/agent_service.py:117: in stream_in_workspace
+    async for event in self._executor.stream(
+tests/tracker/test_audit_sweep.py:90: in stream
+    await self.during(kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+kwargs = {'agents': (), 'allowed_tools': <ToolPreset.EVALUATION: 'evaluation'>, 'cwd': '/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43...se verdict requires exactly its corresponding payload.', 'title': 'AuditMandateJudgment'}, 'type': 'json_schema'}, ...}
+
+    async def during(kwargs):
+        schema = kwargs["output_format"]["schema"]
+        path = Path(kwargs["cwd"])
+        visited.append((schema, path))
+        expected = graded if schema == AUDIT_MANDATE_SCHEMA else head
+        assert command(path, "rev-parse", "HEAD") == expected
+        assert kwargs["session_id"] is None
+        if schema == AUDIT_MANDATE_SCHEMA and mode == "mandate-error":
+>           raise RuntimeError("historical mandate unavailable")
+E           RuntimeError: historical mandate unavailable
+
+tests/tracker/test_audit_combined_review.py:77: RuntimeError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 20:20:40 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-b718153364444a7ca4999da64f4925e7 workspace_id=b718153364444a7ca4999da64f4925e7
+2026-09-12 20:20:40 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fresh-result site=audit_overclaim stop_reason=None subtype=success total_cost_usd=None usage=None
+2026-09-12 20:20:41 [info     ] workspace_released             workspace_id=b718153364444a7ca4999da64f4925e7
+2026-09-12 20:20:43 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-5668fe2b073a49769cf892b085ea52df workspace_id=5668fe2b073a49769cf892b085ea52df
+2026-09-12 20:20:43 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fresh-result site=audit_detection_removal stop_reason=None subtype=success total_cost_usd=None usage=None
+2026-09-12 20:20:44 [info     ] workspace_released             workspace_id=5668fe2b073a49769cf892b085ea52df
+2026-09-12 20:20:44 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-8958400c05f54b2abf5459f3ee9bb182 workspace_id=8958400c05f54b2abf5459f3ee9bb182
+2026-09-12 20:20:45 [info     ] workspace_released             workspace_id=8958400c05f54b2abf5459f3ee9bb182
+_ test_unreadable_replacement_namespace_cannot_be_reported_as_lapse[fake-port-1] _
+
+setup = (<function setup.<locals>.build at 0x10efde480>, <tests.tracker.test_audit_claim.Runner object at 0x10efeb3e0>, <tests...c0>, <tests.fakes.FakeRepoCache object at 0x10efeab70>, <tests.fakes.FakeWorkspaceProvider object at 0x10efeb920>, ...)
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10efea480>
+tracker_writes = <function tracker_writes.<locals>.<lambda> at 0x10efde3e0>
+read_number = 1
+
+    @pytest.mark.parametrize("read_number", [1, 2])
+    async def test_unreadable_replacement_namespace_cannot_be_reported_as_lapse(
+        setup, monkeypatch, tracker_writes, read_number
+    ):
+        build, runner, git, _, _, workspace, *_ = setup
+        error = GitSourceReadError(
+            ref="actual replacement namespace",
+            path=None,
+            reason="the replacement namespace could not be read",
+        )
+        monkeypatch.setattr(
+            git,
+            "has_replace_refs",
+>           AsyncMock(side_effect=[False] * (read_number - 1) + [error]),
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        )
+
+tests/tracker/test_audit_evidence_replacements.py:116: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/chains/audit_evidence.py:101: in observe
+    return await self._observe(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/audit_evidence.py:131: in _observe
+    head = await self._head(
+src/kodezart/chains/audit_evidence.py:95: in _head
+    head = await settle(observe())
+           ^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/owned_tasks.py:25: in settle
+    result, cancelled = await finish_owned(asyncio.create_task(operation))
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/owned_tasks.py:12: in finish_owned
+    return await asyncio.shield(task), cancelled
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/audit_evidence.py:66: in observe
+    if await read_replace_refs(git=self._git, workspace=repository):
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/services/git_observations.py:9: in read_replace_refs
+    replacements = await settle(git.has_replace_refs(workspace))
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/owned_tasks.py:25: in settle
+    result, cancelled = await finish_owned(asyncio.create_task(operation))
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/owned_tasks.py:12: in finish_owned
+    return await asyncio.shield(task), cancelled
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <AsyncMock id='4546542480'>, args = ('/tmp/fake-cache',), kwargs = {}
+_call = call('/tmp/fake-cache'), effect = <list_iterator object at 0x10f18da50>
+result = RuntimeError('the replacement namespace could not be read')
+
+    async def _execute_mock_call(self, /, *args, **kwargs):
+        # This is nearly just like super(), except for special handling
+        # of coroutines
+    
+        _call = _Call((args, kwargs), two=True)
+        self.await_count += 1
+        self.await_args = _call
+        self.await_args_list.append(_call)
+    
+        effect = self.side_effect
+        if effect is not None:
+            if _is_exception(effect):
+                raise effect
+            elif not _callable(effect):
+                try:
+                    result = next(effect)
+                except StopIteration:
+                    # It is impossible to propagate a StopIteration
+                    # through coroutines because of PEP 479
+                    raise StopAsyncIteration
+                if _is_exception(result):
+>                   raise result
+E                   RuntimeError: the replacement namespace could not be read
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/unittest/mock.py:2300: RuntimeError
+_ test_unreadable_replacement_namespace_cannot_be_reported_as_lapse[fake-port-2] _
+
+setup = (<function setup.<locals>.build at 0x10efdee80>, <tests.tracker.test_audit_claim.Runner object at 0x10f183bc0>, <tests...80>, <tests.fakes.FakeRepoCache object at 0x10f18dc40>, <tests.fakes.FakeWorkspaceProvider object at 0x10f18df70>, ...)
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10efeb530>
+tracker_writes = <function tracker_writes.<locals>.<lambda> at 0x10efdede0>
+read_number = 2
+
+    @pytest.mark.parametrize("read_number", [1, 2])
+    async def test_unreadable_replacement_namespace_cannot_be_reported_as_lapse(
+        setup, monkeypatch, tracker_writes, read_number
+    ):
+        build, runner, git, _, _, workspace, *_ = setup
+        error = GitSourceReadError(
+            ref="actual replacement namespace",
+            path=None,
+            reason="the replacement namespace could not be read",
+        )
+        monkeypatch.setattr(
+            git,
+            "has_replace_refs",
+>           AsyncMock(side_effect=[False] * (read_number - 1) + [error]),
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        )
+
+tests/tracker/test_audit_evidence_replacements.py:116: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/chains/audit_evidence.py:101: in observe
+    return await self._observe(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/audit_evidence.py:170: in _observe
+    if await read_replace_refs(git=self._git, workspace=repository):
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/services/git_observations.py:9: in read_replace_refs
+    replacements = await settle(git.has_replace_refs(workspace))
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/owned_tasks.py:25: in settle
+    result, cancelled = await finish_owned(asyncio.create_task(operation))
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/owned_tasks.py:12: in finish_owned
+    return await asyncio.shield(task), cancelled
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <AsyncMock id='4546741216'>, args = ('/tmp/fake-cache',), kwargs = {}
+_call = call('/tmp/fake-cache'), effect = <list_iterator object at 0x10f01e320>
+result = RuntimeError('the replacement namespace could not be read')
+
+    async def _execute_mock_call(self, /, *args, **kwargs):
+        # This is nearly just like super(), except for special handling
+        # of coroutines
+    
+        _call = _Call((args, kwargs), two=True)
+        self.await_count += 1
+        self.await_args = _call
+        self.await_args_list.append(_call)
+    
+        effect = self.side_effect
+        if effect is not None:
+            if _is_exception(effect):
+                raise effect
+            elif not _callable(effect):
+                try:
+                    result = next(effect)
+                except StopIteration:
+                    # It is impossible to propagate a StopIteration
+                    # through coroutines because of PEP 479
+                    raise StopAsyncIteration
+                if _is_exception(result):
+>                   raise result
+E                   RuntimeError: the replacement namespace could not be read
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/unittest/mock.py:2300: RuntimeError
+_ test_unreadable_replacement_namespace_cannot_be_reported_as_lapse[linear-mcp-1] _
+
+setup = (<function setup.<locals>.build at 0x10efde200>, <tests.tracker.test_audit_claim.Runner object at 0x10f18eb40>, <tests...10>, <tests.fakes.FakeRepoCache object at 0x10f18fa40>, <tests.fakes.FakeWorkspaceProvider object at 0x10f18e780>, ...)
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10f18fad0>
+tracker_writes = <function tracker_writes.<locals>.<lambda> at 0x10f0c3b00>
+read_number = 1
+
+    @pytest.mark.parametrize("read_number", [1, 2])
+    async def test_unreadable_replacement_namespace_cannot_be_reported_as_lapse(
+        setup, monkeypatch, tracker_writes, read_number
+    ):
+        build, runner, git, _, _, workspace, *_ = setup
+        error = GitSourceReadError(
+            ref="actual replacement namespace",
+            path=None,
+            reason="the replacement namespace could not be read",
+        )
+        monkeypatch.setattr(
+            git,
+            "has_replace_refs",
+>           AsyncMock(side_effect=[False] * (read_number - 1) + [error]),
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        )
+
+tests/tracker/test_audit_evidence_replacements.py:116: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/chains/audit_evidence.py:101: in observe
+    return await self._observe(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/audit_evidence.py:131: in _observe
+    head = await self._head(
+src/kodezart/chains/audit_evidence.py:95: in _head
+    head = await settle(observe())
+           ^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/owned_tasks.py:25: in settle
+    result, cancelled = await finish_owned(asyncio.create_task(operation))
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/owned_tasks.py:12: in finish_owned
+    return await asyncio.shield(task), cancelled
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/audit_evidence.py:66: in observe
+    if await read_replace_refs(git=self._git, workspace=repository):
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/services/git_observations.py:9: in read_replace_refs
+    replacements = await settle(git.has_replace_refs(workspace))
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/owned_tasks.py:25: in settle
+    result, cancelled = await finish_owned(asyncio.create_task(operation))
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/owned_tasks.py:12: in finish_owned
+    return await asyncio.shield(task), cancelled
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <AsyncMock id='4546538928'>, args = ('/tmp/fake-cache',), kwargs = {}
+_call = call('/tmp/fake-cache'), effect = <list_iterator object at 0x10efeb1f0>
+result = RuntimeError('the replacement namespace could not be read')
+
+    async def _execute_mock_call(self, /, *args, **kwargs):
+        # This is nearly just like super(), except for special handling
+        # of coroutines
+    
+        _call = _Call((args, kwargs), two=True)
+        self.await_count += 1
+        self.await_args = _call
+        self.await_args_list.append(_call)
+    
+        effect = self.side_effect
+        if effect is not None:
+            if _is_exception(effect):
+                raise effect
+            elif not _callable(effect):
+                try:
+                    result = next(effect)
+                except StopIteration:
+                    # It is impossible to propagate a StopIteration
+                    # through coroutines because of PEP 479
+                    raise StopAsyncIteration
+                if _is_exception(result):
+>                   raise result
+E                   RuntimeError: the replacement namespace could not be read
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/unittest/mock.py:2300: RuntimeError
+_ test_unreadable_replacement_namespace_cannot_be_reported_as_lapse[linear-mcp-2] _
+
+setup = (<function setup.<locals>.build at 0x10efde660>, <tests.tracker.test_audit_claim.Runner object at 0x10ee1d610>, <tests...50>, <tests.fakes.FakeRepoCache object at 0x10ee1cec0>, <tests.fakes.FakeWorkspaceProvider object at 0x10ee1dc70>, ...)
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10edbee10>
+tracker_writes = <function tracker_writes.<locals>.<lambda> at 0x10efdd260>
+read_number = 2
+
+    @pytest.mark.parametrize("read_number", [1, 2])
+    async def test_unreadable_replacement_namespace_cannot_be_reported_as_lapse(
+        setup, monkeypatch, tracker_writes, read_number
+    ):
+        build, runner, git, _, _, workspace, *_ = setup
+        error = GitSourceReadError(
+            ref="actual replacement namespace",
+            path=None,
+            reason="the replacement namespace could not be read",
+        )
+        monkeypatch.setattr(
+            git,
+            "has_replace_refs",
+>           AsyncMock(side_effect=[False] * (read_number - 1) + [error]),
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        )
+
+tests/tracker/test_audit_evidence_replacements.py:116: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/chains/audit_evidence.py:101: in observe
+    return await self._observe(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/audit_evidence.py:170: in _observe
+    if await read_replace_refs(git=self._git, workspace=repository):
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/services/git_observations.py:9: in read_replace_refs
+    replacements = await settle(git.has_replace_refs(workspace))
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/owned_tasks.py:25: in settle
+    result, cancelled = await finish_owned(asyncio.create_task(operation))
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/owned_tasks.py:12: in finish_owned
+    return await asyncio.shield(task), cancelled
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <AsyncMock id='4544501216'>, args = ('/tmp/fake-cache',), kwargs = {}
+_call = call('/tmp/fake-cache'), effect = <list_iterator object at 0x10eea45e0>
+result = RuntimeError('the replacement namespace could not be read')
+
+    async def _execute_mock_call(self, /, *args, **kwargs):
+        # This is nearly just like super(), except for special handling
+        # of coroutines
+    
+        _call = _Call((args, kwargs), two=True)
+        self.await_count += 1
+        self.await_args = _call
+        self.await_args_list.append(_call)
+    
+        effect = self.side_effect
+        if effect is not None:
+            if _is_exception(effect):
+                raise effect
+            elif not _callable(effect):
+                try:
+                    result = next(effect)
+                except StopIteration:
+                    # It is impossible to propagate a StopIteration
+                    # through coroutines because of PEP 479
+                    raise StopAsyncIteration
+                if _is_exception(result):
+>                   raise result
+E                   RuntimeError: the replacement namespace could not be read
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/unittest/mock.py:2300: RuntimeError
+_ test_forge_survives_independent_failure_and_retains_raw_mandate_failure[fake-port-claim] _
+
+setup = (<function setup.<locals>.build at 0x10efde160>, <tests.tracker.test_audit_sweep.Executor object at 0x10f18c620>, <tes... <tests.fakes.FakeWorkspaceProvider object at 0x10f0078f0>, <tests.fakes.FakePRStateReader object at 0x10f0062a0>, ...)
+tracker = <tests.fakes.FakeTrackerPort object at 0x10f0051c0>
+server = <tests.fakes.FakeLinearMcpServer object at 0x10f18e630>
+failed_arm = 'claim'
+
+    @pytest.mark.parametrize("failed_arm", ["claim", "mandate"])
+    async def test_forge_survives_independent_failure_and_retains_raw_mandate_failure(
+        setup, tracker, server, failed_arm
+    ):
+        build, executor, _, _, _, _, _, operation = setup
+        await completed(tracker, server)
+        op = selected_operation(operation)
+    
+        async def failing(kwargs):
+            target = AUDIT_CLAIM_SCHEMA if failed_arm == "claim" else AUDIT_MANDATE_SCHEMA
+            if kwargs["output_format"]["schema"] == target:
+                raise AgentSDKError(
+                    f"unavailable {failed_arm} session", error_kind="fixture"
+                )
+    
+        executor.during = failing
+>       async with forge("fake", "work") as (ci, _):
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/tracker/test_audit_forge_sweep.py:195: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/chains/audit_sweep.py:468: in run
+    await self.observe_target(snapshot=snapshot, target=target)
+src/kodezart/chains/audit_sweep.py:420: in observe_target
+    observation = await self._observe(target, surfaces)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/audit_sweep.py:217: in _observe
+    evidence = await self._evidence.observe(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/audit_evidence.py:101: in observe
+    return await self._observe(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/audit_evidence.py:140: in _observe
+    claim = await self._claims.verify(
+src/kodezart/chains/audit_pass.py:132: in verify
+    structured = await judge_in_workspace(
+src/kodezart/services/audit_sessions.py:43: in judge_in_workspace
+    result, rate_limited = await drain(
+src/kodezart/core/stream_drain.py:57: in drain
+    async for event in stream:
+src/kodezart/services/agent_service.py:117: in stream_in_workspace
+    async for event in self._executor.stream(
+tests/tracker/test_audit_sweep.py:90: in stream
+    await self.during(kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+kwargs = {'agents': (), 'allowed_tools': <ToolPreset.EVALUATION: 'evaluation'>, 'cwd': '/tmp/fake-workspace', 'output_format': ..., 'description': 'Holds, refuted or unverifiable from fresh repository evidence.'}}, ...}, 'type': 'json_schema'}, ...}
+
+    async def failing(kwargs):
+        target = AUDIT_CLAIM_SCHEMA if failed_arm == "claim" else AUDIT_MANDATE_SCHEMA
+        if kwargs["output_format"]["schema"] == target:
+>           raise AgentSDKError(
+                f"unavailable {failed_arm} session", error_kind="fixture"
+            )
+E           RuntimeError: unavailable claim session
+
+tests/tracker/test_audit_forge_sweep.py:190: RuntimeError
+_ test_forge_survives_independent_failure_and_retains_raw_mandate_failure[fake-port-mandate] _
+
+setup = (<function setup.<locals>.build at 0x10efdf600>, <tests.tracker.test_audit_sweep.Executor object at 0x10f01dc10>, <tes... <tests.fakes.FakeWorkspaceProvider object at 0x10f01d9a0>, <tests.fakes.FakePRStateReader object at 0x10f01f770>, ...)
+tracker = <tests.fakes.FakeTrackerPort object at 0x10f0065a0>
+server = <tests.fakes.FakeLinearMcpServer object at 0x10f1832f0>
+failed_arm = 'mandate'
+
+    @pytest.mark.parametrize("failed_arm", ["claim", "mandate"])
+    async def test_forge_survives_independent_failure_and_retains_raw_mandate_failure(
+        setup, tracker, server, failed_arm
+    ):
+        build, executor, _, _, _, _, _, operation = setup
+        await completed(tracker, server)
+        op = selected_operation(operation)
+    
+        async def failing(kwargs):
+            target = AUDIT_CLAIM_SCHEMA if failed_arm == "claim" else AUDIT_MANDATE_SCHEMA
+            if kwargs["output_format"]["schema"] == target:
+                raise AgentSDKError(
+                    f"unavailable {failed_arm} session", error_kind="fixture"
+                )
+    
+        executor.during = failing
+>       async with forge("fake", "work") as (ci, _):
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/tracker/test_audit_forge_sweep.py:195: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/chains/audit_sweep.py:468: in run
+    await self.observe_target(snapshot=snapshot, target=target)
+src/kodezart/chains/audit_sweep.py:442: in observe_target
+    forge, forge_report, forge_reason = await self._observe_forge(
+src/kodezart/chains/audit_sweep.py:342: in _observe_forge
+    report = await self._mandates.complete(
+src/kodezart/chains/audit_pass.py:228: in complete
+    mandate = await self.observe(
+src/kodezart/chains/audit_pass.py:292: in observe
+    structured = await judge_in_workspace(
+src/kodezart/services/audit_sessions.py:43: in judge_in_workspace
+    result, rate_limited = await drain(
+src/kodezart/core/stream_drain.py:57: in drain
+    async for event in stream:
+src/kodezart/services/agent_service.py:117: in stream_in_workspace
+    async for event in self._executor.stream(
+tests/tracker/test_audit_sweep.py:90: in stream
+    await self.during(kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+kwargs = {'agents': (), 'allowed_tools': <ToolPreset.EVALUATION: 'evaluation'>, 'cwd': '/tmp/fake-workspace', 'output_format': ...se verdict requires exactly its corresponding payload.', 'title': 'AuditMandateJudgment'}, 'type': 'json_schema'}, ...}
+
+    async def failing(kwargs):
+        target = AUDIT_CLAIM_SCHEMA if failed_arm == "claim" else AUDIT_MANDATE_SCHEMA
+        if kwargs["output_format"]["schema"] == target:
+>           raise AgentSDKError(
+                f"unavailable {failed_arm} session", error_kind="fixture"
+            )
+E           RuntimeError: unavailable mandate session
+
+tests/tracker/test_audit_forge_sweep.py:190: RuntimeError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 20:22:20 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fresh-result site=audit_claim stop_reason=None subtype=success total_cost_usd=None usage=None
+_ test_forge_survives_independent_failure_and_retains_raw_mandate_failure[linear-mcp-claim] _
+
+setup = (<function setup.<locals>.build at 0x10efdfba0>, <tests.tracker.test_audit_sweep.Executor object at 0x10f1b33b0>, <tes... <tests.fakes.FakeWorkspaceProvider object at 0x10f007b30>, <tests.fakes.FakePRStateReader object at 0x10f005490>, ...)
+tracker = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10f004f80>
+server = <tests.fakes.FakeLinearMcpServer object at 0x10f005b50>
+failed_arm = 'claim'
+
+    @pytest.mark.parametrize("failed_arm", ["claim", "mandate"])
+    async def test_forge_survives_independent_failure_and_retains_raw_mandate_failure(
+        setup, tracker, server, failed_arm
+    ):
+        build, executor, _, _, _, _, _, operation = setup
+        await completed(tracker, server)
+        op = selected_operation(operation)
+    
+        async def failing(kwargs):
+            target = AUDIT_CLAIM_SCHEMA if failed_arm == "claim" else AUDIT_MANDATE_SCHEMA
+            if kwargs["output_format"]["schema"] == target:
+                raise AgentSDKError(
+                    f"unavailable {failed_arm} session", error_kind="fixture"
+                )
+    
+        executor.during = failing
+>       async with forge("fake", "work") as (ci, _):
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/tracker/test_audit_forge_sweep.py:195: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/chains/audit_sweep.py:468: in run
+    await self.observe_target(snapshot=snapshot, target=target)
+src/kodezart/chains/audit_sweep.py:420: in observe_target
+    observation = await self._observe(target, surfaces)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/audit_sweep.py:217: in _observe
+    evidence = await self._evidence.observe(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/audit_evidence.py:101: in observe
+    return await self._observe(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/audit_evidence.py:140: in _observe
+    claim = await self._claims.verify(
+src/kodezart/chains/audit_pass.py:132: in verify
+    structured = await judge_in_workspace(
+src/kodezart/services/audit_sessions.py:43: in judge_in_workspace
+    result, rate_limited = await drain(
+src/kodezart/core/stream_drain.py:57: in drain
+    async for event in stream:
+src/kodezart/services/agent_service.py:117: in stream_in_workspace
+    async for event in self._executor.stream(
+tests/tracker/test_audit_sweep.py:90: in stream
+    await self.during(kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+kwargs = {'agents': (), 'allowed_tools': <ToolPreset.EVALUATION: 'evaluation'>, 'cwd': '/tmp/fake-workspace', 'output_format': ..., 'description': 'Holds, refuted or unverifiable from fresh repository evidence.'}}, ...}, 'type': 'json_schema'}, ...}
+
+    async def failing(kwargs):
+        target = AUDIT_CLAIM_SCHEMA if failed_arm == "claim" else AUDIT_MANDATE_SCHEMA
+        if kwargs["output_format"]["schema"] == target:
+>           raise AgentSDKError(
+                f"unavailable {failed_arm} session", error_kind="fixture"
+            )
+E           RuntimeError: unavailable claim session
+
+tests/tracker/test_audit_forge_sweep.py:190: RuntimeError
+_ test_forge_survives_independent_failure_and_retains_raw_mandate_failure[linear-mcp-mandate] _
+
+setup = (<function setup.<locals>.build at 0x10efdfe20>, <tests.tracker.test_audit_sweep.Executor object at 0x10edf8050>, <tes... <tests.fakes.FakeWorkspaceProvider object at 0x10f004c80>, <tests.fakes.FakePRStateReader object at 0x10f29b7a0>, ...)
+tracker = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10f29b260>
+server = <tests.fakes.FakeLinearMcpServer object at 0x10f29a3c0>
+failed_arm = 'mandate'
+
+    @pytest.mark.parametrize("failed_arm", ["claim", "mandate"])
+    async def test_forge_survives_independent_failure_and_retains_raw_mandate_failure(
+        setup, tracker, server, failed_arm
+    ):
+        build, executor, _, _, _, _, _, operation = setup
+        await completed(tracker, server)
+        op = selected_operation(operation)
+    
+        async def failing(kwargs):
+            target = AUDIT_CLAIM_SCHEMA if failed_arm == "claim" else AUDIT_MANDATE_SCHEMA
+            if kwargs["output_format"]["schema"] == target:
+                raise AgentSDKError(
+                    f"unavailable {failed_arm} session", error_kind="fixture"
+                )
+    
+        executor.during = failing
+>       async with forge("fake", "work") as (ci, _):
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/tracker/test_audit_forge_sweep.py:195: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/chains/audit_sweep.py:468: in run
+    await self.observe_target(snapshot=snapshot, target=target)
+src/kodezart/chains/audit_sweep.py:442: in observe_target
+    forge, forge_report, forge_reason = await self._observe_forge(
+src/kodezart/chains/audit_sweep.py:342: in _observe_forge
+    report = await self._mandates.complete(
+src/kodezart/chains/audit_pass.py:228: in complete
+    mandate = await self.observe(
+src/kodezart/chains/audit_pass.py:292: in observe
+    structured = await judge_in_workspace(
+src/kodezart/services/audit_sessions.py:43: in judge_in_workspace
+    result, rate_limited = await drain(
+src/kodezart/core/stream_drain.py:57: in drain
+    async for event in stream:
+src/kodezart/services/agent_service.py:117: in stream_in_workspace
+    async for event in self._executor.stream(
+tests/tracker/test_audit_sweep.py:90: in stream
+    await self.during(kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+kwargs = {'agents': (), 'allowed_tools': <ToolPreset.EVALUATION: 'evaluation'>, 'cwd': '/tmp/fake-workspace', 'output_format': ...se verdict requires exactly its corresponding payload.', 'title': 'AuditMandateJudgment'}, 'type': 'json_schema'}, ...}
+
+    async def failing(kwargs):
+        target = AUDIT_CLAIM_SCHEMA if failed_arm == "claim" else AUDIT_MANDATE_SCHEMA
+        if kwargs["output_format"]["schema"] == target:
+>           raise AgentSDKError(
+                f"unavailable {failed_arm} session", error_kind="fixture"
+            )
+E           RuntimeError: unavailable mandate session
+
+tests/tracker/test_audit_forge_sweep.py:190: RuntimeError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 20:22:20 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fresh-result site=audit_claim stop_reason=None subtype=success total_cost_usd=None usage=None
+_ test_failed_independent_arm_never_suppresses_the_other_actual_session[fake-port-claim] _
+
+setup = (<function setup.<locals>.build at 0x10f1dd8a0>, <tests.tracker.test_audit_sweep.Executor object at 0x10f27deb0>, <tes... <tests.fakes.FakeWorkspaceProvider object at 0x10f27db50>, <tests.fakes.FakePRStateReader object at 0x10f27c7a0>, ...)
+tracker = <tests.fakes.FakeTrackerPort object at 0x10f27c200>
+server = <tests.fakes.FakeLinearMcpServer object at 0x10f299e20>
+failed = 'claim'
+
+    @pytest.mark.parametrize("failed", ["claim", "overclaim", "mandate"])
+    async def test_failed_independent_arm_never_suppresses_the_other_actual_session(
+        setup, tracker, server, failed
+    ):
+        build, executor, *_ = setup
+        await completed(tracker, server)
+        executor.overclaim_output = payload(OverclaimKind.SELF_RULE, verdict="refuted")
+        reached = []
+    
+        async def during(kwargs):
+            schema = kwargs["output_format"]["schema"]
+            reached.append(schema)
+            selected = {
+                "claim": AUDIT_CLAIM_SCHEMA,
+                "overclaim": AUDIT_OVERCLAIM_SCHEMA,
+                "mandate": AUDIT_MANDATE_SCHEMA,
+            }[failed]
+            if schema == selected:
+                raise AgentSDKError(f"unavailable {failed} session", error_kind="fixture")
+    
+        executor.during = during
+>       child = (await build(include_overclaims=True).run()).observations[0]
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/tracker/test_audit_overclaim_sweep.py:198: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/chains/audit_sweep.py:468: in run
+    await self.observe_target(snapshot=snapshot, target=target)
+src/kodezart/chains/audit_sweep.py:420: in observe_target
+    observation = await self._observe(target, surfaces)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/audit_sweep.py:217: in _observe
+    evidence = await self._evidence.observe(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/audit_evidence.py:101: in observe
+    return await self._observe(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/audit_evidence.py:140: in _observe
+    claim = await self._claims.verify(
+src/kodezart/chains/audit_pass.py:132: in verify
+    structured = await judge_in_workspace(
+src/kodezart/services/audit_sessions.py:43: in judge_in_workspace
+    result, rate_limited = await drain(
+src/kodezart/core/stream_drain.py:57: in drain
+    async for event in stream:
+src/kodezart/services/agent_service.py:117: in stream_in_workspace
+    async for event in self._executor.stream(
+tests/tracker/test_audit_sweep.py:90: in stream
+    await self.during(kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+kwargs = {'agents': (), 'allowed_tools': <ToolPreset.EVALUATION: 'evaluation'>, 'cwd': '/tmp/fake-workspace', 'output_format': ..., 'description': 'Holds, refuted or unverifiable from fresh repository evidence.'}}, ...}, 'type': 'json_schema'}, ...}
+
+    async def during(kwargs):
+        schema = kwargs["output_format"]["schema"]
+        reached.append(schema)
+        selected = {
+            "claim": AUDIT_CLAIM_SCHEMA,
+            "overclaim": AUDIT_OVERCLAIM_SCHEMA,
+            "mandate": AUDIT_MANDATE_SCHEMA,
+        }[failed]
+        if schema == selected:
+>           raise AgentSDKError(f"unavailable {failed} session", error_kind="fixture")
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           RuntimeError: unavailable claim session
+
+tests/tracker/test_audit_overclaim_sweep.py:195: RuntimeError
+_ test_failed_independent_arm_never_suppresses_the_other_actual_session[fake-port-overclaim] _
+
+setup = (<function setup.<locals>.build at 0x10f1ddf80>, <tests.tracker.test_audit_sweep.Executor object at 0x10f23f380>, <tes... <tests.fakes.FakeWorkspaceProvider object at 0x10f23eed0>, <tests.fakes.FakePRStateReader object at 0x10f23c890>, ...)
+tracker = <tests.fakes.FakeTrackerPort object at 0x10f28fc50>
+server = <tests.fakes.FakeLinearMcpServer object at 0x10f28ecf0>
+failed = 'overclaim'
+
+    @pytest.mark.parametrize("failed", ["claim", "overclaim", "mandate"])
+    async def test_failed_independent_arm_never_suppresses_the_other_actual_session(
+        setup, tracker, server, failed
+    ):
+        build, executor, *_ = setup
+        await completed(tracker, server)
+        executor.overclaim_output = payload(OverclaimKind.SELF_RULE, verdict="refuted")
+        reached = []
+    
+        async def during(kwargs):
+            schema = kwargs["output_format"]["schema"]
+            reached.append(schema)
+            selected = {
+                "claim": AUDIT_CLAIM_SCHEMA,
+                "overclaim": AUDIT_OVERCLAIM_SCHEMA,
+                "mandate": AUDIT_MANDATE_SCHEMA,
+            }[failed]
+            if schema == selected:
+                raise AgentSDKError(f"unavailable {failed} session", error_kind="fixture")
+    
+        executor.during = during
+>       child = (await build(include_overclaims=True).run()).observations[0]
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/tracker/test_audit_overclaim_sweep.py:198: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/chains/audit_sweep.py:468: in run
+    await self.observe_target(snapshot=snapshot, target=target)
+src/kodezart/chains/audit_sweep.py:434: in observe_target
+    overclaims = await self._observe_overclaims(target, surfaces)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/audit_sweep.py:246: in _observe_overclaims
+    observed = await self._overclaims.observe(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/audit_overclaim.py:119: in observe
+    output = await self._sessions.judge(
+src/kodezart/services/audit_sessions.py:122: in judge
+    structured = await judge_in_workspace(
+src/kodezart/services/audit_sessions.py:43: in judge_in_workspace
+    result, rate_limited = await drain(
+src/kodezart/core/stream_drain.py:57: in drain
+    async for event in stream:
+src/kodezart/services/agent_service.py:117: in stream_in_workspace
+    async for event in self._executor.stream(
+tests/tracker/test_audit_sweep.py:90: in stream
+    await self.during(kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+kwargs = {'agents': (), 'allowed_tools': <ToolPreset.EVALUATION: 'evaluation'>, 'cwd': '/tmp/fake-workspace', 'output_format': ...native criterion key.', 'minLength': 1, 'title': 'Criterionkey', 'type': 'string'}}, ...}, 'type': 'json_schema'}, ...}
+
+    async def during(kwargs):
+        schema = kwargs["output_format"]["schema"]
+        reached.append(schema)
+        selected = {
+            "claim": AUDIT_CLAIM_SCHEMA,
+            "overclaim": AUDIT_OVERCLAIM_SCHEMA,
+            "mandate": AUDIT_MANDATE_SCHEMA,
+        }[failed]
+        if schema == selected:
+>           raise AgentSDKError(f"unavailable {failed} session", error_kind="fixture")
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           RuntimeError: unavailable overclaim session
+
+tests/tracker/test_audit_overclaim_sweep.py:195: RuntimeError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 20:22:24 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fresh-result site=audit_claim stop_reason=None subtype=success total_cost_usd=None usage=None
+_ test_failed_independent_arm_never_suppresses_the_other_actual_session[fake-port-mandate] _
+
+setup = (<function setup.<locals>.build at 0x10f1de020>, <tests.tracker.test_audit_sweep.Executor object at 0x10f27c7d0>, <tes... <tests.fakes.FakeWorkspaceProvider object at 0x10f26e900>, <tests.fakes.FakePRStateReader object at 0x10f26e810>, ...)
+tracker = <tests.fakes.FakeTrackerPort object at 0x10f22bc80>
+server = <tests.fakes.FakeLinearMcpServer object at 0x10f26dfd0>
+failed = 'mandate'
+
+    @pytest.mark.parametrize("failed", ["claim", "overclaim", "mandate"])
+    async def test_failed_independent_arm_never_suppresses_the_other_actual_session(
+        setup, tracker, server, failed
+    ):
+        build, executor, *_ = setup
+        await completed(tracker, server)
+        executor.overclaim_output = payload(OverclaimKind.SELF_RULE, verdict="refuted")
+        reached = []
+    
+        async def during(kwargs):
+            schema = kwargs["output_format"]["schema"]
+            reached.append(schema)
+            selected = {
+                "claim": AUDIT_CLAIM_SCHEMA,
+                "overclaim": AUDIT_OVERCLAIM_SCHEMA,
+                "mandate": AUDIT_MANDATE_SCHEMA,
+            }[failed]
+            if schema == selected:
+                raise AgentSDKError(f"unavailable {failed} session", error_kind="fixture")
+    
+        executor.during = during
+>       child = (await build(include_overclaims=True).run()).observations[0]
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/tracker/test_audit_overclaim_sweep.py:198: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/chains/audit_sweep.py:468: in run
+    await self.observe_target(snapshot=snapshot, target=target)
+src/kodezart/chains/audit_sweep.py:434: in observe_target
+    overclaims = await self._observe_overclaims(target, surfaces)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/audit_sweep.py:252: in _observe_overclaims
+    report=await self._mandates.complete(
+src/kodezart/chains/audit_pass.py:228: in complete
+    mandate = await self.observe(
+src/kodezart/chains/audit_pass.py:292: in observe
+    structured = await judge_in_workspace(
+src/kodezart/services/audit_sessions.py:43: in judge_in_workspace
+    result, rate_limited = await drain(
+src/kodezart/core/stream_drain.py:57: in drain
+    async for event in stream:
+src/kodezart/services/agent_service.py:117: in stream_in_workspace
+    async for event in self._executor.stream(
+tests/tracker/test_audit_sweep.py:90: in stream
+    await self.during(kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+kwargs = {'agents': (), 'allowed_tools': <ToolPreset.EVALUATION: 'evaluation'>, 'cwd': '/tmp/fake-workspace', 'output_format': ...se verdict requires exactly its corresponding payload.', 'title': 'AuditMandateJudgment'}, 'type': 'json_schema'}, ...}
+
+    async def during(kwargs):
+        schema = kwargs["output_format"]["schema"]
+        reached.append(schema)
+        selected = {
+            "claim": AUDIT_CLAIM_SCHEMA,
+            "overclaim": AUDIT_OVERCLAIM_SCHEMA,
+            "mandate": AUDIT_MANDATE_SCHEMA,
+        }[failed]
+        if schema == selected:
+>           raise AgentSDKError(f"unavailable {failed} session", error_kind="fixture")
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           RuntimeError: unavailable mandate session
+
+tests/tracker/test_audit_overclaim_sweep.py:195: RuntimeError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 20:22:25 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fresh-result site=audit_claim stop_reason=None subtype=success total_cost_usd=None usage=None
+2026-09-12 20:22:25 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fresh-result site=audit_overclaim stop_reason=None subtype=success total_cost_usd=None usage=None
+_ test_failed_independent_arm_never_suppresses_the_other_actual_session[linear-mcp-claim] _
+
+setup = (<function setup.<locals>.build at 0x10f1de840>, <tests.tracker.test_audit_sweep.Executor object at 0x10f26f8f0>, <tes... <tests.fakes.FakeWorkspaceProvider object at 0x10f224d40>, <tests.fakes.FakePRStateReader object at 0x10f224770>, ...)
+tracker = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10f224890>
+server = <tests.fakes.FakeLinearMcpServer object at 0x10f225940>
+failed = 'claim'
+
+    @pytest.mark.parametrize("failed", ["claim", "overclaim", "mandate"])
+    async def test_failed_independent_arm_never_suppresses_the_other_actual_session(
+        setup, tracker, server, failed
+    ):
+        build, executor, *_ = setup
+        await completed(tracker, server)
+        executor.overclaim_output = payload(OverclaimKind.SELF_RULE, verdict="refuted")
+        reached = []
+    
+        async def during(kwargs):
+            schema = kwargs["output_format"]["schema"]
+            reached.append(schema)
+            selected = {
+                "claim": AUDIT_CLAIM_SCHEMA,
+                "overclaim": AUDIT_OVERCLAIM_SCHEMA,
+                "mandate": AUDIT_MANDATE_SCHEMA,
+            }[failed]
+            if schema == selected:
+                raise AgentSDKError(f"unavailable {failed} session", error_kind="fixture")
+    
+        executor.during = during
+>       child = (await build(include_overclaims=True).run()).observations[0]
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/tracker/test_audit_overclaim_sweep.py:198: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/chains/audit_sweep.py:468: in run
+    await self.observe_target(snapshot=snapshot, target=target)
+src/kodezart/chains/audit_sweep.py:420: in observe_target
+    observation = await self._observe(target, surfaces)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/audit_sweep.py:217: in _observe
+    evidence = await self._evidence.observe(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/audit_evidence.py:101: in observe
+    return await self._observe(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/audit_evidence.py:140: in _observe
+    claim = await self._claims.verify(
+src/kodezart/chains/audit_pass.py:132: in verify
+    structured = await judge_in_workspace(
+src/kodezart/services/audit_sessions.py:43: in judge_in_workspace
+    result, rate_limited = await drain(
+src/kodezart/core/stream_drain.py:57: in drain
+    async for event in stream:
+src/kodezart/services/agent_service.py:117: in stream_in_workspace
+    async for event in self._executor.stream(
+tests/tracker/test_audit_sweep.py:90: in stream
+    await self.during(kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+kwargs = {'agents': (), 'allowed_tools': <ToolPreset.EVALUATION: 'evaluation'>, 'cwd': '/tmp/fake-workspace', 'output_format': ..., 'description': 'Holds, refuted or unverifiable from fresh repository evidence.'}}, ...}, 'type': 'json_schema'}, ...}
+
+    async def during(kwargs):
+        schema = kwargs["output_format"]["schema"]
+        reached.append(schema)
+        selected = {
+            "claim": AUDIT_CLAIM_SCHEMA,
+            "overclaim": AUDIT_OVERCLAIM_SCHEMA,
+            "mandate": AUDIT_MANDATE_SCHEMA,
+        }[failed]
+        if schema == selected:
+>           raise AgentSDKError(f"unavailable {failed} session", error_kind="fixture")
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           RuntimeError: unavailable claim session
+
+tests/tracker/test_audit_overclaim_sweep.py:195: RuntimeError
+_ test_failed_independent_arm_never_suppresses_the_other_actual_session[linear-mcp-overclaim] _
+
+setup = (<function setup.<locals>.build at 0x10efdfb00>, <tests.tracker.test_audit_sweep.Executor object at 0x10f23d880>, <tes... <tests.fakes.FakeWorkspaceProvider object at 0x10f23c320>, <tests.fakes.FakePRStateReader object at 0x10f23c500>, ...)
+tracker = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10f23da00>
+server = <tests.fakes.FakeLinearMcpServer object at 0x10f23d670>
+failed = 'overclaim'
+
+    @pytest.mark.parametrize("failed", ["claim", "overclaim", "mandate"])
+    async def test_failed_independent_arm_never_suppresses_the_other_actual_session(
+        setup, tracker, server, failed
+    ):
+        build, executor, *_ = setup
+        await completed(tracker, server)
+        executor.overclaim_output = payload(OverclaimKind.SELF_RULE, verdict="refuted")
+        reached = []
+    
+        async def during(kwargs):
+            schema = kwargs["output_format"]["schema"]
+            reached.append(schema)
+            selected = {
+                "claim": AUDIT_CLAIM_SCHEMA,
+                "overclaim": AUDIT_OVERCLAIM_SCHEMA,
+                "mandate": AUDIT_MANDATE_SCHEMA,
+            }[failed]
+            if schema == selected:
+                raise AgentSDKError(f"unavailable {failed} session", error_kind="fixture")
+    
+        executor.during = during
+>       child = (await build(include_overclaims=True).run()).observations[0]
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/tracker/test_audit_overclaim_sweep.py:198: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/chains/audit_sweep.py:468: in run
+    await self.observe_target(snapshot=snapshot, target=target)
+src/kodezart/chains/audit_sweep.py:434: in observe_target
+    overclaims = await self._observe_overclaims(target, surfaces)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/audit_sweep.py:246: in _observe_overclaims
+    observed = await self._overclaims.observe(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/audit_overclaim.py:119: in observe
+    output = await self._sessions.judge(
+src/kodezart/services/audit_sessions.py:122: in judge
+    structured = await judge_in_workspace(
+src/kodezart/services/audit_sessions.py:43: in judge_in_workspace
+    result, rate_limited = await drain(
+src/kodezart/core/stream_drain.py:57: in drain
+    async for event in stream:
+src/kodezart/services/agent_service.py:117: in stream_in_workspace
+    async for event in self._executor.stream(
+tests/tracker/test_audit_sweep.py:90: in stream
+    await self.during(kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+kwargs = {'agents': (), 'allowed_tools': <ToolPreset.EVALUATION: 'evaluation'>, 'cwd': '/tmp/fake-workspace', 'output_format': ...native criterion key.', 'minLength': 1, 'title': 'Criterionkey', 'type': 'string'}}, ...}, 'type': 'json_schema'}, ...}
+
+    async def during(kwargs):
+        schema = kwargs["output_format"]["schema"]
+        reached.append(schema)
+        selected = {
+            "claim": AUDIT_CLAIM_SCHEMA,
+            "overclaim": AUDIT_OVERCLAIM_SCHEMA,
+            "mandate": AUDIT_MANDATE_SCHEMA,
+        }[failed]
+        if schema == selected:
+>           raise AgentSDKError(f"unavailable {failed} session", error_kind="fixture")
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           RuntimeError: unavailable overclaim session
+
+tests/tracker/test_audit_overclaim_sweep.py:195: RuntimeError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 20:22:25 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fresh-result site=audit_claim stop_reason=None subtype=success total_cost_usd=None usage=None
+_ test_failed_independent_arm_never_suppresses_the_other_actual_session[linear-mcp-mandate] _
+
+setup = (<function setup.<locals>.build at 0x10efdee80>, <tests.tracker.test_audit_sweep.Executor object at 0x10eea4620>, <tes... <tests.fakes.FakeWorkspaceProvider object at 0x10f29a840>, <tests.fakes.FakePRStateReader object at 0x10f29aa20>, ...)
+tracker = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10f29b9e0>
+server = <tests.fakes.FakeLinearMcpServer object at 0x10f29a990>
+failed = 'mandate'
+
+    @pytest.mark.parametrize("failed", ["claim", "overclaim", "mandate"])
+    async def test_failed_independent_arm_never_suppresses_the_other_actual_session(
+        setup, tracker, server, failed
+    ):
+        build, executor, *_ = setup
+        await completed(tracker, server)
+        executor.overclaim_output = payload(OverclaimKind.SELF_RULE, verdict="refuted")
+        reached = []
+    
+        async def during(kwargs):
+            schema = kwargs["output_format"]["schema"]
+            reached.append(schema)
+            selected = {
+                "claim": AUDIT_CLAIM_SCHEMA,
+                "overclaim": AUDIT_OVERCLAIM_SCHEMA,
+                "mandate": AUDIT_MANDATE_SCHEMA,
+            }[failed]
+            if schema == selected:
+                raise AgentSDKError(f"unavailable {failed} session", error_kind="fixture")
+    
+        executor.during = during
+>       child = (await build(include_overclaims=True).run()).observations[0]
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/tracker/test_audit_overclaim_sweep.py:198: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/chains/audit_sweep.py:468: in run
+    await self.observe_target(snapshot=snapshot, target=target)
+src/kodezart/chains/audit_sweep.py:434: in observe_target
+    overclaims = await self._observe_overclaims(target, surfaces)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/audit_sweep.py:252: in _observe_overclaims
+    report=await self._mandates.complete(
+src/kodezart/chains/audit_pass.py:228: in complete
+    mandate = await self.observe(
+src/kodezart/chains/audit_pass.py:292: in observe
+    structured = await judge_in_workspace(
+src/kodezart/services/audit_sessions.py:43: in judge_in_workspace
+    result, rate_limited = await drain(
+src/kodezart/core/stream_drain.py:57: in drain
+    async for event in stream:
+src/kodezart/services/agent_service.py:117: in stream_in_workspace
+    async for event in self._executor.stream(
+tests/tracker/test_audit_sweep.py:90: in stream
+    await self.during(kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+kwargs = {'agents': (), 'allowed_tools': <ToolPreset.EVALUATION: 'evaluation'>, 'cwd': '/tmp/fake-workspace', 'output_format': ...se verdict requires exactly its corresponding payload.', 'title': 'AuditMandateJudgment'}, 'type': 'json_schema'}, ...}
+
+    async def during(kwargs):
+        schema = kwargs["output_format"]["schema"]
+        reached.append(schema)
+        selected = {
+            "claim": AUDIT_CLAIM_SCHEMA,
+            "overclaim": AUDIT_OVERCLAIM_SCHEMA,
+            "mandate": AUDIT_MANDATE_SCHEMA,
+        }[failed]
+        if schema == selected:
+>           raise AgentSDKError(f"unavailable {failed} session", error_kind="fixture")
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           RuntimeError: unavailable mandate session
+
+tests/tracker/test_audit_overclaim_sweep.py:195: RuntimeError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 20:22:26 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fresh-result site=audit_claim stop_reason=None subtype=success total_cost_usd=None usage=None
+2026-09-12 20:22:26 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fresh-result site=audit_overclaim stop_reason=None subtype=success total_cost_usd=None usage=None
+__ test_only_successful_detector_still_rechecks_its_observed_head[fake-port] ___
+
+setup = (<function setup.<locals>.build at 0x10efdfba0>, <tests.tracker.test_audit_sweep.Executor object at 0x10f23cfe0>, <tes... <tests.fakes.FakeWorkspaceProvider object at 0x10f23fb30>, <tests.fakes.FakePRStateReader object at 0x10f23dac0>, ...)
+tracker = <tests.fakes.FakeTrackerPort object at 0x10f23fec0>
+server = <tests.fakes.FakeLinearMcpServer object at 0x10f1b3440>
+
+>   ???
+
+tests/tracker/test_audit_overclaim_sweep.py:319: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/chains/audit_sweep.py:468: in run
+    await self.observe_target(snapshot=snapshot, target=target)
+src/kodezart/chains/audit_sweep.py:420: in observe_target
+    observation = await self._observe(target, surfaces)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/audit_sweep.py:217: in _observe
+    evidence = await self._evidence.observe(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/audit_evidence.py:101: in observe
+    return await self._observe(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/audit_evidence.py:140: in _observe
+    claim = await self._claims.verify(
+src/kodezart/chains/audit_pass.py:132: in verify
+    structured = await judge_in_workspace(
+src/kodezart/services/audit_sessions.py:43: in judge_in_workspace
+    result, rate_limited = await drain(
+src/kodezart/core/stream_drain.py:57: in drain
+    async for event in stream:
+src/kodezart/services/agent_service.py:117: in stream_in_workspace
+    async for event in self._executor.stream(
+tests/tracker/test_audit_sweep.py:90: in stream
+    await self.during(kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+kwargs = {'agents': (), 'allowed_tools': <ToolPreset.EVALUATION: 'evaluation'>, 'cwd': '/tmp/fake-workspace', 'output_format': ..., 'description': 'Holds, refuted or unverifiable from fresh repository evidence.'}}, ...}, 'type': 'json_schema'}, ...}
+
+    async def during(kwargs):
+        if kwargs["output_format"]["schema"] == AUDIT_CLAIM_SCHEMA:
+>           raise AgentSDKError(
+                "Independent current claim session is unavailable.",
+                error_kind="fixture",
+            )
+E           RuntimeError: Independent current claim session is unavailable.
+
+tests/tracker/test_audit_overclaim_sweep.py:313: RuntimeError
+__ test_only_successful_detector_still_rechecks_its_observed_head[linear-mcp] __
+
+setup = (<function setup.<locals>.build at 0x10f1ded40>, <tests.tracker.test_audit_sweep.Executor object at 0x10f1b1850>, <tes... <tests.fakes.FakeWorkspaceProvider object at 0x10f01d340>, <tests.fakes.FakePRStateReader object at 0x10f01cfb0>, ...)
+tracker = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10f1b2e10>
+server = <tests.fakes.FakeLinearMcpServer object at 0x10f23ddf0>
+
+>   ???
+
+tests/tracker/test_audit_overclaim_sweep.py:319: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/chains/audit_sweep.py:468: in run
+    await self.observe_target(snapshot=snapshot, target=target)
+src/kodezart/chains/audit_sweep.py:420: in observe_target
+    observation = await self._observe(target, surfaces)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/audit_sweep.py:217: in _observe
+    evidence = await self._evidence.observe(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/audit_evidence.py:101: in observe
+    return await self._observe(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/audit_evidence.py:140: in _observe
+    claim = await self._claims.verify(
+src/kodezart/chains/audit_pass.py:132: in verify
+    structured = await judge_in_workspace(
+src/kodezart/services/audit_sessions.py:43: in judge_in_workspace
+    result, rate_limited = await drain(
+src/kodezart/core/stream_drain.py:57: in drain
+    async for event in stream:
+src/kodezart/services/agent_service.py:117: in stream_in_workspace
+    async for event in self._executor.stream(
+tests/tracker/test_audit_sweep.py:90: in stream
+    await self.during(kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+kwargs = {'agents': (), 'allowed_tools': <ToolPreset.EVALUATION: 'evaluation'>, 'cwd': '/tmp/fake-workspace', 'output_format': ..., 'description': 'Holds, refuted or unverifiable from fresh repository evidence.'}}, ...}, 'type': 'json_schema'}, ...}
+
+    async def during(kwargs):
+        if kwargs["output_format"]["schema"] == AUDIT_CLAIM_SCHEMA:
+>           raise AgentSDKError(
+                "Independent current claim session is unavailable.",
+                error_kind="fixture",
+            )
+E           RuntimeError: Independent current claim session is unavailable.
+
+tests/tracker/test_audit_overclaim_sweep.py:313: RuntimeError
+_ test_native_terminal_refutation_reuses_actual_mandate_hunt[fake-port-unverifiable] _
+
+setup = (<function setup.<locals>.build at 0x10f1ddf80>, <tests.tracker.test_audit_sweep.Executor object at 0x10f01f440>, <tes... <tests.fakes.FakeWorkspaceProvider object at 0x10f01e660>, <tests.fakes.FakePRStateReader object at 0x10f01e990>, ...)
+tracker = <tests.fakes.FakeTrackerPort object at 0x10f2988f0>
+server = <tests.fakes.FakeLinearMcpServer object at 0x10f29a120>
+tracker_writes = <function tracker_writes.<locals>.<lambda> at 0x10f1dc180>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10f298620>
+outcome = 'unverifiable'
+
+    
+    @pytest.mark.parametrize("outcome", ["holds", "refuted", "unverifiable"])
+    async def test_native_terminal_refutation_reuses_actual_mandate_hunt(
+        setup, tracker, server, tracker_writes, monkeypatch, outcome
+    ):
+        build, executor, _, _, workspace, forge, *_ = setup
+        await terminal_ready(tracker, server, forge)
+        sweep = build()
+        terminal = await sweep._terminals.observe(
+            (await sweep._requests.read(scope=sweep._scope)).targets[1].request
+        )
+        if outcome == "holds":
+            executor.mandate_output = {
+                "verdict": "holds",
+                "source_index": 1,
+                "evidence": "The native source instructs this defect.",
+                "finding": {
+                    "issue_id": ROOT,
+                    "defect_class": terminal.defect_class(),
+                    "role": "mandate",
+                    "mandate_text": "Explicit parent instructions.",
+                    "evidence": "Exact native quote.",
+                },
+            }
+        if outcome == "unverifiable":
+            original_observe = sweep._terminals.observe
+            original_get = tracker.read_issue
+            fail = False
+            failed = False
+    
+            async def observe(request):
+                nonlocal fail
+                observed = await original_observe(request)
+                fail = not failed
+                return observed
+    
+            async def get(*, issue_key):
+                nonlocal fail, failed
+                if fail and issue_key == CHILD:
+                    fail = False
+                    failed = True
+                    raise TrackerUnavailableError("native body temporarily unreadable")
+                return await original_get(issue_key=issue_key)
+    
+            monkeypatch.setattr(sweep._terminals, "observe", observe)
+            monkeypatch.setattr(tracker, "read_issue", get)
+>       before = tracker_writes()
+                 ^^^^^^^^^^^^^^^^^
+
+tests/tracker/test_audit_terminal_mandate.py:78: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/chains/audit_sweep.py:468: in run
+    await self.observe_target(snapshot=snapshot, target=target)
+src/kodezart/chains/audit_sweep.py:420: in observe_target
+    observation = await self._observe(target, surfaces)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/audit_sweep.py:189: in _observe
+    mandate = await self._mandates.observe(
+src/kodezart/chains/audit_pass.py:244: in observe
+    covered, unreadable = await self._read_set(request.surfaces)
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/audit_pass.py:211: in _read_set
+    await read_tracker_artifact(tracker=self._tracker, surface=surface)
+src/kodezart/services/tracker_artifacts.py:87: in read_tracker_artifact
+    issue = await tracker.read_issue(issue_key=surface.ref.key)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    
+    async def get(*, issue_key):
+        nonlocal fail, failed
+        if fail and issue_key == CHILD:
+            fail = False
+>           failed = True
+E           RuntimeError: native body temporarily unreadable
+
+tests/tracker/test_audit_terminal_mandate.py:72: RuntimeError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 20:22:28 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fresh-result site=audit_claim stop_reason=None subtype=success total_cost_usd=None usage=None
+_ test_native_terminal_refutation_reuses_actual_mandate_hunt[linear-mcp-unverifiable] _
+
+setup = (<function setup.<locals>.build at 0x10f1dd940>, <tests.tracker.test_audit_sweep.Executor object at 0x10ee7bb90>, <tes... <tests.fakes.FakeWorkspaceProvider object at 0x10ee7bdd0>, <tests.fakes.FakePRStateReader object at 0x10ee7a390>, ...)
+tracker = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10ee7b530>
+server = <tests.fakes.FakeLinearMcpServer object at 0x10f23d430>
+tracker_writes = <function tracker_writes.<locals>.<lambda> at 0x10f1df1a0>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10f23d220>
+outcome = 'unverifiable'
+
+    
+    @pytest.mark.parametrize("outcome", ["holds", "refuted", "unverifiable"])
+    async def test_native_terminal_refutation_reuses_actual_mandate_hunt(
+        setup, tracker, server, tracker_writes, monkeypatch, outcome
+    ):
+        build, executor, _, _, workspace, forge, *_ = setup
+        await terminal_ready(tracker, server, forge)
+        sweep = build()
+        terminal = await sweep._terminals.observe(
+            (await sweep._requests.read(scope=sweep._scope)).targets[1].request
+        )
+        if outcome == "holds":
+            executor.mandate_output = {
+                "verdict": "holds",
+                "source_index": 1,
+                "evidence": "The native source instructs this defect.",
+                "finding": {
+                    "issue_id": ROOT,
+                    "defect_class": terminal.defect_class(),
+                    "role": "mandate",
+                    "mandate_text": "Explicit parent instructions.",
+                    "evidence": "Exact native quote.",
+                },
+            }
+        if outcome == "unverifiable":
+            original_observe = sweep._terminals.observe
+            original_get = tracker.read_issue
+            fail = False
+            failed = False
+    
+            async def observe(request):
+                nonlocal fail
+                observed = await original_observe(request)
+                fail = not failed
+                return observed
+    
+            async def get(*, issue_key):
+                nonlocal fail, failed
+                if fail and issue_key == CHILD:
+                    fail = False
+                    failed = True
+                    raise TrackerUnavailableError("native body temporarily unreadable")
+                return await original_get(issue_key=issue_key)
+    
+            monkeypatch.setattr(sweep._terminals, "observe", observe)
+            monkeypatch.setattr(tracker, "read_issue", get)
+>       before = tracker_writes()
+                 ^^^^^^^^^^^^^^^^^
+
+tests/tracker/test_audit_terminal_mandate.py:78: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/chains/audit_sweep.py:468: in run
+    await self.observe_target(snapshot=snapshot, target=target)
+src/kodezart/chains/audit_sweep.py:420: in observe_target
+    observation = await self._observe(target, surfaces)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/audit_sweep.py:189: in _observe
+    mandate = await self._mandates.observe(
+src/kodezart/chains/audit_pass.py:244: in observe
+    covered, unreadable = await self._read_set(request.surfaces)
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/audit_pass.py:211: in _read_set
+    await read_tracker_artifact(tracker=self._tracker, surface=surface)
+src/kodezart/services/tracker_artifacts.py:87: in read_tracker_artifact
+    issue = await tracker.read_issue(issue_key=surface.ref.key)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    
+    async def get(*, issue_key):
+        nonlocal fail, failed
+        if fail and issue_key == CHILD:
+            fail = False
+>           failed = True
+E           RuntimeError: native body temporarily unreadable
+
+tests/tracker/test_audit_terminal_mandate.py:72: RuntimeError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 20:22:28 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fresh-result site=audit_claim stop_reason=None subtype=success total_cost_usd=None usage=None
+_ test_mandate_failure_retains_native_terminal_and_refuses_complete_report[fake-port-session] _
+
+setup = (<function setup.<locals>.build at 0x10f1dede0>, <tests.tracker.test_audit_sweep.Executor object at 0x10eea54f0>, <tes... <tests.fakes.FakeWorkspaceProvider object at 0x10ee1d310>, <tests.fakes.FakePRStateReader object at 0x10ee1e930>, ...)
+tracker = <tests.fakes.FakeTrackerPort object at 0x10f005a90>
+server = <tests.fakes.FakeLinearMcpServer object at 0x10f01ea50>
+failure = 'session'
+
+    
+    @pytest.mark.parametrize(
+        "failure", ["session", "wrong-defect", "wrong-source", "inexact-quote"]
+    )
+    async def test_mandate_failure_retains_native_terminal_and_refuses_complete_report(
+        setup, tracker, server, failure
+    ):
+        build, executor, _, _, _, forge, *_ = setup
+        await terminal_ready(tracker, server, forge)
+        if failure == "session":
+    
+            async def during(kwargs):
+                if kwargs["output_format"]["schema"] == AUDIT_MANDATE_SCHEMA:
+                    raise AgentSDKError(
+                        "actual mandate session unavailable", error_kind="fixture"
+                    )
+    
+            executor.during = during
+        else:
+            sweep = build()
+            terminal = await sweep._terminals.observe(
+                (await sweep._requests.read(scope=sweep._scope)).targets[1].request
+            )
+            executor.mandate_output = {
+                "verdict": "holds",
+                "source_index": 1,
+                "evidence": "Claimed mandate",
+                "finding": {
+                    "issue_id": ROOT,
+                    "defect_class": terminal.defect_class(),
+                    "role": "mandate",
+                    "mandate_text": "Explicit parent instructions.",
+                    "evidence": "Quote",
+                },
+            }
+            field = {
+                "wrong-defect": "defect_class",
+                "wrong-source": "issue_id",
+>               "inexact-quote": "mandate_text",
+                 ^^^^^^^^^^^^^^^^^^^
+            }[failure]
+
+tests/tracker/test_audit_terminal_mandate.py:167: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/chains/audit_sweep.py:468: in run
+    await self.observe_target(snapshot=snapshot, target=target)
+src/kodezart/chains/audit_sweep.py:420: in observe_target
+    observation = await self._observe(target, surfaces)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/audit_sweep.py:189: in _observe
+    mandate = await self._mandates.observe(
+src/kodezart/chains/audit_pass.py:292: in observe
+    structured = await judge_in_workspace(
+src/kodezart/services/audit_sessions.py:43: in judge_in_workspace
+    result, rate_limited = await drain(
+src/kodezart/core/stream_drain.py:57: in drain
+    async for event in stream:
+src/kodezart/services/agent_service.py:117: in stream_in_workspace
+    async for event in self._executor.stream(
+tests/tracker/test_audit_sweep.py:90: in stream
+    await self.during(kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+kwargs = {'agents': (), 'allowed_tools': <ToolPreset.EVALUATION: 'evaluation'>, 'cwd': '/tmp/fake-workspace', 'output_format': ...se verdict requires exactly its corresponding payload.', 'title': 'AuditMandateJudgment'}, 'type': 'json_schema'}, ...}
+
+    
+    async def during(kwargs):
+>       if kwargs["output_format"]["schema"] == AUDIT_MANDATE_SCHEMA:
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       RuntimeError: actual mandate session unavailable
+
+tests/tracker/test_audit_terminal_mandate.py:141: RuntimeError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 20:22:29 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fresh-result site=audit_claim stop_reason=None subtype=success total_cost_usd=None usage=None
+_ test_mandate_failure_retains_native_terminal_and_refuses_complete_report[linear-mcp-session] _
+
+setup = (<function setup.<locals>.build at 0x10f1df740>, <tests.tracker.test_audit_sweep.Executor object at 0x10f14cbf0>, <tes... <tests.fakes.FakeWorkspaceProvider object at 0x10f18daf0>, <tests.fakes.FakePRStateReader object at 0x10f18fd70>, ...)
+tracker = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10f182360>
+server = <tests.fakes.FakeLinearMcpServer object at 0x10f183ec0>
+failure = 'session'
+
+    
+    @pytest.mark.parametrize(
+        "failure", ["session", "wrong-defect", "wrong-source", "inexact-quote"]
+    )
+    async def test_mandate_failure_retains_native_terminal_and_refuses_complete_report(
+        setup, tracker, server, failure
+    ):
+        build, executor, _, _, _, forge, *_ = setup
+        await terminal_ready(tracker, server, forge)
+        if failure == "session":
+    
+            async def during(kwargs):
+                if kwargs["output_format"]["schema"] == AUDIT_MANDATE_SCHEMA:
+                    raise AgentSDKError(
+                        "actual mandate session unavailable", error_kind="fixture"
+                    )
+    
+            executor.during = during
+        else:
+            sweep = build()
+            terminal = await sweep._terminals.observe(
+                (await sweep._requests.read(scope=sweep._scope)).targets[1].request
+            )
+            executor.mandate_output = {
+                "verdict": "holds",
+                "source_index": 1,
+                "evidence": "Claimed mandate",
+                "finding": {
+                    "issue_id": ROOT,
+                    "defect_class": terminal.defect_class(),
+                    "role": "mandate",
+                    "mandate_text": "Explicit parent instructions.",
+                    "evidence": "Quote",
+                },
+            }
+            field = {
+                "wrong-defect": "defect_class",
+                "wrong-source": "issue_id",
+>               "inexact-quote": "mandate_text",
+                 ^^^^^^^^^^^^^^^^^^^
+            }[failure]
+
+tests/tracker/test_audit_terminal_mandate.py:167: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/chains/audit_sweep.py:468: in run
+    await self.observe_target(snapshot=snapshot, target=target)
+src/kodezart/chains/audit_sweep.py:420: in observe_target
+    observation = await self._observe(target, surfaces)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/audit_sweep.py:189: in _observe
+    mandate = await self._mandates.observe(
+src/kodezart/chains/audit_pass.py:292: in observe
+    structured = await judge_in_workspace(
+src/kodezart/services/audit_sessions.py:43: in judge_in_workspace
+    result, rate_limited = await drain(
+src/kodezart/core/stream_drain.py:57: in drain
+    async for event in stream:
+src/kodezart/services/agent_service.py:117: in stream_in_workspace
+    async for event in self._executor.stream(
+tests/tracker/test_audit_sweep.py:90: in stream
+    await self.during(kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+kwargs = {'agents': (), 'allowed_tools': <ToolPreset.EVALUATION: 'evaluation'>, 'cwd': '/tmp/fake-workspace', 'output_format': ...se verdict requires exactly its corresponding payload.', 'title': 'AuditMandateJudgment'}, 'type': 'json_schema'}, ...}
+
+    
+    async def during(kwargs):
+>       if kwargs["output_format"]["schema"] == AUDIT_MANDATE_SCHEMA:
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       RuntimeError: actual mandate session unavailable
+
+tests/tracker/test_audit_terminal_mandate.py:141: RuntimeError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 20:22:29 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fresh-result site=audit_claim stop_reason=None subtype=success total_cost_usd=None usage=None
+=========================== short test summary info ============================
+FAILED tests/tracker/test_audit_combined_review.py::test_combined_native_arms_keep_their_own_revisions_and_lifetimes[fake-port-mandate-error]
+FAILED tests/tracker/test_audit_combined_review.py::test_combined_native_arms_keep_their_own_revisions_and_lifetimes[linear-mcp-mandate-error]
+FAILED tests/tracker/test_audit_evidence_replacements.py::test_unreadable_replacement_namespace_cannot_be_reported_as_lapse[fake-port-1]
+FAILED tests/tracker/test_audit_evidence_replacements.py::test_unreadable_replacement_namespace_cannot_be_reported_as_lapse[fake-port-2]
+FAILED tests/tracker/test_audit_evidence_replacements.py::test_unreadable_replacement_namespace_cannot_be_reported_as_lapse[linear-mcp-1]
+FAILED tests/tracker/test_audit_evidence_replacements.py::test_unreadable_replacement_namespace_cannot_be_reported_as_lapse[linear-mcp-2]
+FAILED tests/tracker/test_audit_forge_sweep.py::test_forge_survives_independent_failure_and_retains_raw_mandate_failure[fake-port-claim]
+FAILED tests/tracker/test_audit_forge_sweep.py::test_forge_survives_independent_failure_and_retains_raw_mandate_failure[fake-port-mandate]
+FAILED tests/tracker/test_audit_forge_sweep.py::test_forge_survives_independent_failure_and_retains_raw_mandate_failure[linear-mcp-claim]
+FAILED tests/tracker/test_audit_forge_sweep.py::test_forge_survives_independent_failure_and_retains_raw_mandate_failure[linear-mcp-mandate]
+FAILED tests/tracker/test_audit_overclaim_sweep.py::test_failed_independent_arm_never_suppresses_the_other_actual_session[fake-port-claim]
+FAILED tests/tracker/test_audit_overclaim_sweep.py::test_failed_independent_arm_never_suppresses_the_other_actual_session[fake-port-overclaim]
+FAILED tests/tracker/test_audit_overclaim_sweep.py::test_failed_independent_arm_never_suppresses_the_other_actual_session[fake-port-mandate]
+FAILED tests/tracker/test_audit_overclaim_sweep.py::test_failed_independent_arm_never_suppresses_the_other_actual_session[linear-mcp-claim]
+FAILED tests/tracker/test_audit_overclaim_sweep.py::test_failed_independent_arm_never_suppresses_the_other_actual_session[linear-mcp-overclaim]
+FAILED tests/tracker/test_audit_overclaim_sweep.py::test_failed_independent_arm_never_suppresses_the_other_actual_session[linear-mcp-mandate]
+FAILED tests/tracker/test_audit_overclaim_sweep.py::test_only_successful_detector_still_rechecks_its_observed_head[fake-port]
+FAILED tests/tracker/test_audit_overclaim_sweep.py::test_only_successful_detector_still_rechecks_its_observed_head[linear-mcp]
+FAILED tests/tracker/test_audit_terminal_mandate.py::test_native_terminal_refutation_reuses_actual_mandate_hunt[fake-port-unverifiable]
+FAILED tests/tracker/test_audit_terminal_mandate.py::test_native_terminal_refutation_reuses_actual_mandate_hunt[linear-mcp-unverifiable]
+FAILED tests/tracker/test_audit_terminal_mandate.py::test_mandate_failure_retains_native_terminal_and_refuses_complete_report[fake-port-session]
+FAILED tests/tracker/test_audit_terminal_mandate.py::test_mandate_failure_retains_native_terminal_and_refuses_complete_report[linear-mcp-session]
+22 failed, 152 passed in 187.21s (0:03:07)

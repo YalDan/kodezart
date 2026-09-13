@@ -1,0 +1,90 @@
+.FF.......                                                               [100%]
+=================================== FAILURES ===================================
+_______ test_actual_scheduled_audit_collects_and_verifies_native_summary _______
+
+    async def test_actual_scheduled_audit_collects_and_verifies_native_summary():
+        config, operation, server, tracker, forge = dependencies()
+        scheduled, executor = await runtime(config, operation, server, tracker, forge)
+        assert scheduled.interval_seconds == 60
+        assert scheduled.timeout_seconds == 17
+        assert scheduled.report is not None
+        assert await scheduled.run(FIXTURE_NOW) is PassRun.RAN
+        summaries = [
+            row
+            for row in server.comments
+            if row.body.startswith("[configured-audit-record:")
+        ]
+        assert len(summaries) == 1
+>       assert '"recordRefs":[]' in summaries[0].body
+E       assert '"recordRefs":[]' in '[configured-audit-record:project%3Aempty-project:audit%20%E2%80%94%20audit%20%40%202026-03-01T12%3A00%3A00Z]\n{"ident...ind":"project","key":"empty-project"},"observed_at":"2026-03-01T12:00:00Z","full":true,"covered":[]},"record_refs":[]}'
+E        +  where '[configured-audit-record:project%3Aempty-project:audit%20%E2%80%94%20audit%20%40%202026-03-01T12%3A00%3A00Z]\n{"ident...ind":"project","key":"empty-project"},"observed_at":"2026-03-01T12:00:00Z","full":true,"covered":[]},"record_refs":[]}' = FakeMcpComment(id='comment-0002', issue_id='FIX-1', author='fixture-actor', body='[configured-audit-record:project%3Ae...]}', created_at=datetime.datetime(2026, 3, 1, 12, 0, 2, tzinfo=datetime.timezone.utc), parent_id=None, updated_at=None).body
+
+tests/integration/test_audit_scheduler.py:152: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 19:43:44 [info     ] scheduled_passes_not_wired     delivery_probe_present=False operation_config_present=True tracker_present=True
+2026-09-12 19:43:44 [info     ] outbound_content_gated         categories=[] content_digest=622e380ccba718cc53822299a8660d7dcb4f784d1aec0504d161152486c5dd21 failure=None hits=[] surface=tracker verdict=clean visibility=public writer=tracker_comment
+2026-09-12 19:43:44 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:43:44 [info     ] audit_run_finished             report={'identity': {'kind': 'audit', 'name': 'audit', 'started_at': '2026-03-01T12:00:00Z'}, 'scopes': [{'scope': {'kind': 'project', 'key': 'empty-project'}, 'writes': [{'verdict': 'holds', 'artifact': {'surface': {'kind': 'marker_comment', 'ref': {'kind': 'issue', 'key': 'FIX-1'}, 'marker': '[configured-audit-record:project%3Aempty-project:audit%20%E2%80%94%20audit%20%40%202026-03-01T12%3A00%3A00Z]'}, 'native_ref': 'comment-0002', 'content': '[configured-audit-record:project%3Aempty-project:audit%20%E2%80%94%20audit%20%40%202026-03-01T12%3A00%3A00Z]\n{"identity":{"kind":"audit","name":"audit","started_at":"2026-03-01T12:00:00Z"},"coverage":{"scope":{"kind":"project","key":"empty-project"},"observed_at":"2026-03-01T12:00:00Z","full":true,"covered":[]},"record_refs":[]}'}, 'rounds': [{'verdict': 'holds', 'evidence': 'Read actual recorded native artifact references.', 'cited_refs': ['audit-record']}]}], 'observations': [], 'raw_observations': [], 'status': 'complete', 'coverage': {'scope': {'kind': 'project', 'key': 'empty-project'}, 'observed_at': '2026-03-01T12:00:00Z', 'full': True, 'covered': []}}]} run_identity='audit — audit @ 2026-03-01T12:00:00Z'
+__ test_summary_exhaustion_retains_actual_rounds_and_repeats_uncovered_window __
+
+    async def test_summary_exhaustion_retains_actual_rounds_and_repeats_uncovered_window():
+        scheduled, executor = await runtime(*dependencies(), verdict="refuted")
+        for index in range(2):
+            with pytest.raises(AuditRunIncompleteError) as caught:
+                await scheduled.run(FIXTURE_NOW + timedelta(seconds=index * 60))
+            scope = caught.value.report.scopes[0]
+            assert scope.status == "incomplete"
+            assert scope.writes[-1].verdict is AuditVerdict.UNVERIFIABLE
+            assert len(scope.writes[-1].rounds) == 2
+            assert scope.writes[-1].rounds[-1].cited_refs == ("audit-record",)
+>           assert scope.writes[-1].verified_artifact is None
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/integration/test_audit_scheduler.py:184: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = WriteBackResult(verdict=<AuditVerdict.UNVERIFIABLE: 'unverifiable'>, artifact=TrackerArtifact(surface=WritableSurface(...rdict.REFUTED: 'refuted'>, evidence='Read actual recorded native artifact references.', cited_refs=('audit-record',))))
+item = 'verified_artifact'
+
+    def __getattr__(self, item: str) -> Any:
+        private_attributes = object.__getattribute__(self, '__private_attributes__')
+        if item in private_attributes:
+            attribute = private_attributes[item]
+            if hasattr(attribute, '__get__'):
+                return attribute.__get__(self, type(self))  # type: ignore
+    
+            try:
+                # Note: self.__pydantic_private__ cannot be None if self.__private_attributes__ has items
+                return self.__pydantic_private__[item]  # type: ignore
+            except KeyError as exc:
+                raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}') from exc
+        else:
+            # `__pydantic_extra__` can fail to be set if the model is not yet fully initialized.
+            # See `BaseModel.__repr_args__` for more details
+            try:
+                pydantic_extra = object.__getattribute__(self, '__pydantic_extra__')
+            except AttributeError:
+                pydantic_extra = None
+    
+            if pydantic_extra and item in pydantic_extra:
+                return pydantic_extra[item]
+            else:
+                if hasattr(self.__class__, item):
+                    return super().__getattribute__(item)  # Raises AttributeError if appropriate
+                else:
+                    # this is the current error
+>                   raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}')
+E                   AttributeError: 'WriteBackResult' object has no attribute 'verified_artifact'
+
+.venv/lib/python3.12/site-packages/pydantic/main.py:1026: AttributeError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 19:43:44 [info     ] scheduled_passes_not_wired     delivery_probe_present=False operation_config_present=True tracker_present=True
+2026-09-12 19:43:44 [info     ] outbound_content_gated         categories=[] content_digest=622e380ccba718cc53822299a8660d7dcb4f784d1aec0504d161152486c5dd21 failure=None hits=[] surface=tracker verdict=clean visibility=public writer=tracker_comment
+2026-09-12 19:43:44 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:43:44 [info     ] outbound_content_gated         categories=[] content_digest=622e380ccba718cc53822299a8660d7dcb4f784d1aec0504d161152486c5dd21 failure=None hits=[] surface=tracker verdict=clean visibility=public writer=tracker_comment
+2026-09-12 19:43:44 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:43:44 [info     ] audit_run_finished             report={'identity': {'kind': 'audit', 'name': 'audit', 'started_at': '2026-03-01T12:00:00Z'}, 'scopes': [{'scope': {'kind': 'project', 'key': 'empty-project'}, 'writes': [{'verdict': 'unverifiable', 'artifact': {'surface': {'kind': 'marker_comment', 'ref': {'kind': 'issue', 'key': 'FIX-1'}, 'marker': '[configured-audit-record:project%3Aempty-project:audit%20%E2%80%94%20audit%20%40%202026-03-01T12%3A00%3A00Z]'}, 'native_ref': 'comment-0002', 'content': '[configured-audit-record:project%3Aempty-project:audit%20%E2%80%94%20audit%20%40%202026-03-01T12%3A00%3A00Z]\n{"identity":{"kind":"audit","name":"audit","started_at":"2026-03-01T12:00:00Z"},"coverage":{"scope":{"kind":"project","key":"empty-project"},"observed_at":"2026-03-01T12:00:00Z","full":true,"covered":[]},"record_refs":[]}'}, 'rounds': [{'verdict': 'refuted', 'evidence': 'Read actual recorded native artifact references.', 'cited_refs': ['audit-record']}, {'verdict': 'refuted', 'evidence': 'Read actual recorded native artifact references.', 'cited_refs': ['audit-record']}]}], 'observations': [], 'raw_observations': [], 'status': 'incomplete', 'unavailable': [{'subject': {'kind': 'project', 'key': 'empty-project'}, 'reason': 'AuditClaimReadError: the audit summary exhausted canonical write verification'}]}]} run_identity='audit — audit @ 2026-03-01T12:00:00Z'
+=========================== short test summary info ============================
+FAILED tests/integration/test_audit_scheduler.py::test_actual_scheduled_audit_collects_and_verifies_native_summary
+FAILED tests/integration/test_audit_scheduler.py::test_summary_exhaustion_retains_actual_rounds_and_repeats_uncovered_window
+2 failed, 8 passed in 1.10s

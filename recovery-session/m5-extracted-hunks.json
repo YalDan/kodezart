@@ -1,0 +1,386 @@
+[
+  {
+    "path": "src/kodezart/chains/delivery_coordinator.py",
+    "whole": true
+  },
+  {
+    "path": "src/kodezart/chains/lane_delivery.py",
+    "whole": true
+  },
+  {
+    "path": "src/kodezart/chains/native_delivery.py",
+    "whole": true
+  },
+  {
+    "path": "src/kodezart/services/union_composition.py",
+    "whole": true
+  },
+  {
+    "path": "src/kodezart/services/union_identity.py",
+    "whole": true
+  },
+  {
+    "path": "src/kodezart/services/union_tick.py",
+    "whole": true
+  },
+  {
+    "path": "src/kodezart/services/lane_reports.py",
+    "whole": true
+  },
+  {
+    "path": "src/kodezart/services/scope_runtime.py",
+    "whole": true
+  },
+  {
+    "path": "src/kodezart/composition/scope_runtime.py",
+    "whole": true
+  },
+  {
+    "path": "src/kodezart/composition/delivery.py",
+    "whole": true
+  },
+  {
+    "path": "src/kodezart/adapters/no_forge_delivery.py",
+    "whole": true
+  },
+  {
+    "path": "src/kodezart/adapters/subprocess_check_chain.py",
+    "whole": true
+  },
+  {
+    "path": "src/kodezart/domain/check_chain.py",
+    "whole": true
+  },
+  {
+    "path": "src/kodezart/types/domain/delivery.py",
+    "whole": true
+  },
+  {
+    "path": "src/kodezart/types/domain/native_delivery.py",
+    "whole": true
+  },
+  {
+    "path": "src/kodezart/types/domain/pr_state.py",
+    "whole": true
+  },
+  {
+    "path": "src/kodezart/types/domain/check_chain.py",
+    "whole": true
+  },
+  {
+    "path": "src/kodezart/types/domain/scope_runtime.py",
+    "whole": true
+  },
+  {
+    "path": "src/kodezart/types/domain/scope_terminal.py",
+    "whole": true
+  },
+  {
+    "path": "src/kodezart/types/domain/union.py",
+    "whole": true
+  },
+  {
+    "path": "src/kodezart/types/domain/union_tick.py",
+    "whole": true
+  },
+  {
+    "path": "src/kodezart/core/protocols.py",
+    "symbol": "ForgeQuery",
+    "parent": null,
+    "donor_lines": [
+      517,
+      556
+    ]
+  },
+  {
+    "path": "src/kodezart/core/protocols.py",
+    "symbol": "PRStateReader",
+    "parent": null,
+    "donor_lines": [
+      559,
+      565
+    ]
+  },
+  {
+    "path": "src/kodezart/core/protocols.py",
+    "symbol": "CheckChainRunner",
+    "parent": null,
+    "donor_lines": [
+      1943,
+      1949
+    ]
+  },
+  {
+    "path": "src/kodezart/types/domain/run_state.py",
+    "symbol": "LanePR",
+    "parent": null,
+    "donor_lines": [
+      35,
+      42
+    ]
+  },
+  {
+    "path": "src/kodezart/domain/errors.py",
+    "symbol": "CheckChainExecutionError",
+    "parent": null,
+    "donor_lines": [
+      719,
+      726
+    ]
+  },
+  {
+    "path": "src/kodezart/domain/errors.py",
+    "symbol": "DeliveryHeadError",
+    "parent": null,
+    "donor_lines": [
+      547,
+      565
+    ]
+  },
+  {
+    "path": "src/kodezart/domain/errors.py",
+    "symbol": "PRStateReadError",
+    "parent": null,
+    "donor_lines": [
+      769,
+      770
+    ]
+  },
+  {
+    "path": "src/kodezart/domain/errors.py",
+    "symbol": "UnionHeadReadError",
+    "parent": null,
+    "donor_lines": [
+      729,
+      736
+    ]
+  },
+  {
+    "path": "src/kodezart/domain/errors.py",
+    "symbol": "UnionUnstableError",
+    "parent": null,
+    "donor_lines": [
+      739,
+      758
+    ]
+  },
+  {
+    "path": "src/kodezart/core/errors.py",
+    "symbol": "LaneRosterArityError",
+    "parent": null,
+    "donor_lines": [
+      580,
+      595
+    ]
+  },
+  {
+    "path": "src/kodezart/services/git_observations.py",
+    "symbol": "read_remote_head",
+    "parent": null,
+    "donor_lines": [
+      13,
+      18
+    ]
+  },
+  {
+    "path": "src/kodezart/core/protocols.py",
+    "symbol": "merge_scratch_head",
+    "parent": "GitService",
+    "donor_lines": [
+      201,
+      205
+    ]
+  },
+  {
+    "path": "src/kodezart/adapters/subprocess_git_service.py",
+    "symbol": "merge_scratch_head",
+    "parent": "SubprocessGitService",
+    "donor_lines": [
+      404,
+      446
+    ]
+  },
+  {
+    "path": "src/kodezart/composition/engine.py",
+    "whole": true
+  },
+  {
+    "path": "src/kodezart/handlers/agent_handler.py",
+    "whole": true
+  },
+  {
+    "path": "src/kodezart/types/requests/agent.py",
+    "whole": true
+  },
+  {
+    "path": "src/kodezart/adapters/github_api.py",
+    "symbol": "open_pr_for_head",
+    "parent": "GitHubAPIClient",
+    "donor_lines": [
+      414,
+      443
+    ]
+  },
+  {
+    "path": "src/kodezart/adapters/github_api.py",
+    "symbol": "branch_web_url",
+    "parent": "GitHubAPIClient",
+    "donor_lines": [
+      445,
+      458
+    ]
+  },
+  {
+    "path": "src/kodezart/adapters/github_api.py",
+    "symbol": "read_pr_state",
+    "parent": "GitHubAPIClient",
+    "donor_lines": [
+      462,
+      532
+    ]
+  },
+  {
+    "path": "src/kodezart/adapters/github_api.py",
+    "symbol": "open_delivery_exists",
+    "parent": "GitHubAPIClient",
+    "donor_lines": [
+      536,
+      561
+    ]
+  },
+  {
+    "path": "src/kodezart/core/config.py",
+    "symbol": "union_check_step_timeout_seconds",
+    "parent": "AppConfig",
+    "donor_lines": [
+      364,
+      368
+    ]
+  },
+  {
+    "path": "src/kodezart/core/config.py",
+    "symbol": "union_stale_max_attempts",
+    "parent": "AppConfig",
+    "donor_lines": [
+      369,
+      375
+    ]
+  },
+  {
+    "path": "src/kodezart/types/domain/operation.py",
+    "symbol": "check_chain_failures",
+    "parent": null,
+    "donor_lines": [
+      500,
+      532
+    ]
+  },
+  {
+    "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "work_refs",
+    "parent": "LinearMcpTracker",
+    "donor_lines": [
+      3600,
+      3644
+    ]
+  },
+  {
+    "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "record_work_ref",
+    "parent": "LinearMcpTracker",
+    "donor_lines": [
+      3574,
+      3598
+    ]
+  },
+  {
+    "path": "src/kodezart/adapters/linear_markers.py",
+    "symbol": "work_ref_pattern",
+    "parent": "LinearMarkers",
+    "donor_lines": [
+      46,
+      53
+    ]
+  },
+  {
+    "path": "src/kodezart/adapters/linear_markers.py",
+    "symbol": "work_ref_body",
+    "parent": "LinearMarkers",
+    "donor_lines": [
+      55,
+      64
+    ]
+  },
+  {
+    "path": "src/kodezart/types/domain/branch.py",
+    "symbol": "WorkRef",
+    "parent": null,
+    "donor_lines": [
+      85,
+      120
+    ]
+  },
+  {
+    "path": "src/kodezart/adapters/github_types.py",
+    "symbol": "PullRequestBranchRepository",
+    "parent": null,
+    "donor_lines": [
+      135,
+      140
+    ]
+  },
+  {
+    "path": "src/kodezart/adapters/github_types.py",
+    "symbol": "PullRequestBranchState",
+    "parent": null,
+    "donor_lines": [
+      143,
+      147
+    ]
+  },
+  {
+    "path": "src/kodezart/adapters/github_types.py",
+    "symbol": "PullRequestStateResponse",
+    "parent": null,
+    "donor_lines": [
+      150,
+      165
+    ]
+  },
+  {
+    "path": "src/kodezart/types/domain/agent.py",
+    "symbol": "NativeFireProgressEvent",
+    "parent": null,
+    "donor_lines": [
+      1104,
+      1128
+    ]
+  },
+  {
+    "path": "src/kodezart/types/domain/outcome.py",
+    "symbol": "scope_converged",
+    "parent": "WorkflowOutcome",
+    "donor_lines": [
+      70,
+      70
+    ]
+  },
+  {
+    "path": "src/kodezart/types/domain/outcome.py",
+    "symbol": "scope_converged_with_residual",
+    "parent": "WorkflowOutcome",
+    "donor_lines": [
+      71,
+      71
+    ]
+  },
+  {
+    "path": "src/kodezart/types/domain/outcome.py",
+    "symbol": "scope_stopped_short",
+    "parent": "WorkflowOutcome",
+    "donor_lines": [
+      72,
+      72
+    ]
+  }
+]

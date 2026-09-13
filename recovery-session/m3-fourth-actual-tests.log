@@ -1,0 +1,116 @@
+........................................................................ [ 67%]
+..............FFFFFFFFFF
+=================================== FAILURES ===================================
+_____ test_reset_uses_actual_native_unstarted_id_and_replays_without_write _____
+tests/tracker/test_native_criterion_amendment.py:63: in test_reset_uses_actual_native_unstarted_id_and_replays_without_write
+    board, tracker = board_and_tracker()
+                     ^^^^^^^^^^^^^^^^^^^
+tests/tracker/test_native_criterion_amendment.py:40: in board_and_tracker
+    tracker = tracker_over(
+tests/tracker/test_linear_mcp_tracker.py:96: in tracker_over
+    return LinearMcpTracker(**kwargs)  # type: ignore[arg-type]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: LinearMcpTracker.__init__() missing 1 required keyword-only argument: 'criteria_stage_label_key'
+____ test_final_boundary_and_retry_refuse_changed_native_source[body-reset] ____
+tests/tracker/test_native_criterion_amendment.py:83: in test_final_boundary_and_retry_refuse_changed_native_source
+    board, tracker = board_and_tracker()
+                     ^^^^^^^^^^^^^^^^^^^
+tests/tracker/test_native_criterion_amendment.py:40: in board_and_tracker
+    tracker = tracker_over(
+tests/tracker/test_linear_mcp_tracker.py:96: in tracker_over
+    return LinearMcpTracker(**kwargs)  # type: ignore[arg-type]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: LinearMcpTracker.__init__() missing 1 required keyword-only argument: 'criteria_stage_label_key'
+_ test_final_boundary_and_retry_refuse_changed_native_source[body-description] _
+tests/tracker/test_native_criterion_amendment.py:83: in test_final_boundary_and_retry_refuse_changed_native_source
+    board, tracker = board_and_tracker()
+                     ^^^^^^^^^^^^^^^^^^^
+tests/tracker/test_native_criterion_amendment.py:40: in board_and_tracker
+    tracker = tracker_over(
+tests/tracker/test_linear_mcp_tracker.py:96: in tracker_over
+    return LinearMcpTracker(**kwargs)  # type: ignore[arg-type]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: LinearMcpTracker.__init__() missing 1 required keyword-only argument: 'criteria_stage_label_key'
+___ test_final_boundary_and_retry_refuse_changed_native_source[parent-reset] ___
+tests/tracker/test_native_criterion_amendment.py:83: in test_final_boundary_and_retry_refuse_changed_native_source
+    board, tracker = board_and_tracker()
+                     ^^^^^^^^^^^^^^^^^^^
+tests/tracker/test_native_criterion_amendment.py:40: in board_and_tracker
+    tracker = tracker_over(
+tests/tracker/test_linear_mcp_tracker.py:96: in tracker_over
+    return LinearMcpTracker(**kwargs)  # type: ignore[arg-type]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: LinearMcpTracker.__init__() missing 1 required keyword-only argument: 'criteria_stage_label_key'
+_ test_final_boundary_and_retry_refuse_changed_native_source[parent-description] _
+tests/tracker/test_native_criterion_amendment.py:83: in test_final_boundary_and_retry_refuse_changed_native_source
+    board, tracker = board_and_tracker()
+                     ^^^^^^^^^^^^^^^^^^^
+tests/tracker/test_native_criterion_amendment.py:40: in board_and_tracker
+    tracker = tracker_over(
+tests/tracker/test_linear_mcp_tracker.py:96: in tracker_over
+    return LinearMcpTracker(**kwargs)  # type: ignore[arg-type]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: LinearMcpTracker.__init__() missing 1 required keyword-only argument: 'criteria_stage_label_key'
+___ test_final_boundary_and_retry_refuse_changed_native_source[class-reset] ____
+tests/tracker/test_native_criterion_amendment.py:83: in test_final_boundary_and_retry_refuse_changed_native_source
+    board, tracker = board_and_tracker()
+                     ^^^^^^^^^^^^^^^^^^^
+tests/tracker/test_native_criterion_amendment.py:40: in board_and_tracker
+    tracker = tracker_over(
+tests/tracker/test_linear_mcp_tracker.py:96: in tracker_over
+    return LinearMcpTracker(**kwargs)  # type: ignore[arg-type]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: LinearMcpTracker.__init__() missing 1 required keyword-only argument: 'criteria_stage_label_key'
+_ test_final_boundary_and_retry_refuse_changed_native_source[class-description] _
+tests/tracker/test_native_criterion_amendment.py:83: in test_final_boundary_and_retry_refuse_changed_native_source
+    board, tracker = board_and_tracker()
+                     ^^^^^^^^^^^^^^^^^^^
+tests/tracker/test_native_criterion_amendment.py:40: in board_and_tracker
+    tracker = tracker_over(
+tests/tracker/test_linear_mcp_tracker.py:96: in tracker_over
+    return LinearMcpTracker(**kwargs)  # type: ignore[arg-type]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: LinearMcpTracker.__init__() missing 1 required keyword-only argument: 'criteria_stage_label_key'
+___ test_final_boundary_and_retry_refuse_changed_native_source[expiry-reset] ___
+tests/tracker/test_native_criterion_amendment.py:83: in test_final_boundary_and_retry_refuse_changed_native_source
+    board, tracker = board_and_tracker()
+                     ^^^^^^^^^^^^^^^^^^^
+tests/tracker/test_native_criterion_amendment.py:40: in board_and_tracker
+    tracker = tracker_over(
+tests/tracker/test_linear_mcp_tracker.py:96: in tracker_over
+    return LinearMcpTracker(**kwargs)  # type: ignore[arg-type]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: LinearMcpTracker.__init__() missing 1 required keyword-only argument: 'criteria_stage_label_key'
+_ test_final_boundary_and_retry_refuse_changed_native_source[expiry-description] _
+tests/tracker/test_native_criterion_amendment.py:83: in test_final_boundary_and_retry_refuse_changed_native_source
+    board, tracker = board_and_tracker()
+                     ^^^^^^^^^^^^^^^^^^^
+tests/tracker/test_native_criterion_amendment.py:40: in board_and_tracker
+    tracker = tracker_over(
+tests/tracker/test_linear_mcp_tracker.py:96: in tracker_over
+    return LinearMcpTracker(**kwargs)  # type: ignore[arg-type]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: LinearMcpTracker.__init__() missing 1 required keyword-only argument: 'criteria_stage_label_key'
+___ test_final_boundary_and_retry_refuse_changed_native_source[retry-reset] ____
+tests/tracker/test_native_criterion_amendment.py:83: in test_final_boundary_and_retry_refuse_changed_native_source
+    board, tracker = board_and_tracker()
+                     ^^^^^^^^^^^^^^^^^^^
+tests/tracker/test_native_criterion_amendment.py:40: in board_and_tracker
+    tracker = tracker_over(
+tests/tracker/test_linear_mcp_tracker.py:96: in tracker_over
+    return LinearMcpTracker(**kwargs)  # type: ignore[arg-type]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: LinearMcpTracker.__init__() missing 1 required keyword-only argument: 'criteria_stage_label_key'
+=========================== short test summary info ============================
+FAILED tests/tracker/test_native_criterion_amendment.py::test_reset_uses_actual_native_unstarted_id_and_replays_without_write
+FAILED tests/tracker/test_native_criterion_amendment.py::test_final_boundary_and_retry_refuse_changed_native_source[body-reset]
+FAILED tests/tracker/test_native_criterion_amendment.py::test_final_boundary_and_retry_refuse_changed_native_source[body-description]
+FAILED tests/tracker/test_native_criterion_amendment.py::test_final_boundary_and_retry_refuse_changed_native_source[parent-reset]
+FAILED tests/tracker/test_native_criterion_amendment.py::test_final_boundary_and_retry_refuse_changed_native_source[parent-description]
+FAILED tests/tracker/test_native_criterion_amendment.py::test_final_boundary_and_retry_refuse_changed_native_source[class-reset]
+FAILED tests/tracker/test_native_criterion_amendment.py::test_final_boundary_and_retry_refuse_changed_native_source[class-description]
+FAILED tests/tracker/test_native_criterion_amendment.py::test_final_boundary_and_retry_refuse_changed_native_source[expiry-reset]
+FAILED tests/tracker/test_native_criterion_amendment.py::test_final_boundary_and_retry_refuse_changed_native_source[expiry-description]
+FAILED tests/tracker/test_native_criterion_amendment.py::test_final_boundary_and_retry_refuse_changed_native_source[retry-reset]
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 10 failures !!!!!!!!!!!!!!!!!!!!!!!!!!
+10 failed, 86 passed in 8.94s

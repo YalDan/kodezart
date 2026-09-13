@@ -1,0 +1,151 @@
+........................................................................ [ 11%]
+........................................................................ [ 22%]
+........................................................................ [ 34%]
+........................................................................ [ 45%]
+........................................................................ [ 56%]
+.....................................................FF................. [ 68%]
+........................................................................ [ 79%]
+........................................................................ [ 90%]
+.........................................................                [100%]
+=================================== FAILURES ===================================
+_ TestTheBaseIsReadOffTheGraph.test_a_lane_with_no_blockers_is_dispatched_on_the_configured_trunk _
+
+self = <tests.services.test_fire_dispatcher.TestTheBaseIsReadOffTheGraph object at 0x10a9b9b80>
+
+    async def test_a_lane_with_no_blockers_is_dispatched_on_the_configured_trunk(
+        self,
+    ) -> None:
+        """And specifically not on the literal the request model defaults to."""
+        assert WorkflowRequest(prompt="x", repo_url=REPO_URL).base_branch != TRUNK
+    
+        tracker = FakeTrackerPort(
+            issues=[make_tracker_issue("K-1")],
+        )
+        fire, queue, _ = dispatcher(tracker)
+    
+        report = await fire.run_pass()
+    
+        _, request = queue.submissions[0]
+>       assert request.base_branch == TRUNK
+               ^^^^^^^^^^^^^^^^^^^
+
+tests/services/test_fire_dispatcher.py:1068: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = WorkflowSubmission(prompt='fixture body\n\n## Fetched assets\n\nThis ticket references no assets.', repo_path=None, re...permission_mode=<PermissionMode.UNATTENDED: 'unattended'>, allowed_tools=<ToolPreset.IMPLEMENTATION: 'implementation'>)
+item = 'base_branch'
+
+    def __getattr__(self, item: str) -> Any:
+        private_attributes = object.__getattribute__(self, '__private_attributes__')
+        if item in private_attributes:
+            attribute = private_attributes[item]
+            if hasattr(attribute, '__get__'):
+                return attribute.__get__(self, type(self))  # type: ignore
+    
+            try:
+                # Note: self.__pydantic_private__ cannot be None if self.__private_attributes__ has items
+                return self.__pydantic_private__[item]  # type: ignore
+            except KeyError as exc:
+                raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}') from exc
+        else:
+            # `__pydantic_extra__` can fail to be set if the model is not yet fully initialized.
+            # See `BaseModel.__repr_args__` for more details
+            try:
+                pydantic_extra = object.__getattribute__(self, '__pydantic_extra__')
+            except AttributeError:
+                pydantic_extra = None
+    
+            if pydantic_extra and item in pydantic_extra:
+                return pydantic_extra[item]
+            else:
+                if hasattr(self.__class__, item):
+                    return super().__getattribute__(item)  # Raises AttributeError if appropriate
+                else:
+                    # this is the current error
+>                   raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}')
+E                   AttributeError: 'WorkflowSubmission' object has no attribute 'base_branch'
+
+.venv/lib/python3.12/site-packages/pydantic/main.py:1026: AttributeError
+----------------------------- Captured stdout call -----------------------------
+{"order": ["K-1"], "tied": ["K-1"], "winner": "K-1", "event": "dispatch_ranked", "level": "info", "logger": "kodezart.services.fire_dispatcher", "timestamp": "2026-09-12T20:20:45.459841Z"}
+{"issue_key": "K-1", "asset_keys": [], "event": "fire_context_assembled", "level": "info", "logger": "kodezart.services.fire_context", "timestamp": "2026-09-12T20:20:45.461825Z"}
+{"outcome": "fire_enqueued", "issue_key": "K-1", "job_id": "job-0001", "base_branch": "trunk", "base_role": null, "event": "dispatch_fire_enqueued", "level": "info", "logger": "kodezart.services.fire_dispatcher", "timestamp": "2026-09-12T20:20:45.465513Z"}
+------------------------------ Captured log call -------------------------------
+INFO     kodezart.services.fire_dispatcher:fire_dispatcher.py:284 {'order': ['K-1'], 'tied': ['K-1'], 'winner': 'K-1', 'event': 'dispatch_ranked', 'level': 'info', 'logger': 'kodezart.services.fire_dispatcher', 'timestamp': '2026-09-12T20:20:45.459841Z'}
+INFO     kodezart.services.fire_context:fire_context.py:96 {'issue_key': 'K-1', 'asset_keys': [], 'event': 'fire_context_assembled', 'level': 'info', 'logger': 'kodezart.services.fire_context', 'timestamp': '2026-09-12T20:20:45.461825Z'}
+INFO     kodezart.services.fire_dispatcher:fire_dispatcher.py:460 {'outcome': 'fire_enqueued', 'issue_key': 'K-1', 'job_id': 'job-0001', 'base_branch': 'trunk', 'base_role': None, 'event': 'dispatch_fire_enqueued', 'level': 'info', 'logger': 'kodezart.services.fire_dispatcher', 'timestamp': '2026-09-12T20:20:45.465513Z'}
+_ TestTheBaseIsReadOffTheGraph.test_a_lane_with_a_blocker_is_dispatched_on_that_blockers_ref _
+
+self = <tests.services.test_fire_dispatcher.TestTheBaseIsReadOffTheGraph object at 0x10ab2e150>
+
+    async def test_a_lane_with_a_blocker_is_dispatched_on_that_blockers_ref(
+        self,
+    ) -> None:
+        tracker = FakeTrackerPort(
+            issues=[
+                make_tracker_issue("K-1", blocked_by=["K-2"]),
+                make_tracker_issue(
+                    "K-2",
+                    queue_states=[QueueState.DONE],
+                    state_kind=WorkflowStateKind.COMPLETED,
+                ),
+            ],
+            recorded_work_refs={"K-2": [deliverable_ref("K-2", BLOCKER_BRANCH)]},
+        )
+        fire, queue, _ = dispatcher(tracker, git=git_with(BLOCKER_BRANCH))
+    
+        report = await fire.run_pass()
+    
+        _, request = queue.submissions[0]
+>       assert request.base_branch == BLOCKER_BRANCH
+               ^^^^^^^^^^^^^^^^^^^
+
+tests/services/test_fire_dispatcher.py:1092: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = WorkflowSubmission(prompt='fixture body\n\n## Fetched assets\n\nThis ticket references no assets.', repo_path=None, re...permission_mode=<PermissionMode.UNATTENDED: 'unattended'>, allowed_tools=<ToolPreset.IMPLEMENTATION: 'implementation'>)
+item = 'base_branch'
+
+    def __getattr__(self, item: str) -> Any:
+        private_attributes = object.__getattribute__(self, '__private_attributes__')
+        if item in private_attributes:
+            attribute = private_attributes[item]
+            if hasattr(attribute, '__get__'):
+                return attribute.__get__(self, type(self))  # type: ignore
+    
+            try:
+                # Note: self.__pydantic_private__ cannot be None if self.__private_attributes__ has items
+                return self.__pydantic_private__[item]  # type: ignore
+            except KeyError as exc:
+                raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}') from exc
+        else:
+            # `__pydantic_extra__` can fail to be set if the model is not yet fully initialized.
+            # See `BaseModel.__repr_args__` for more details
+            try:
+                pydantic_extra = object.__getattribute__(self, '__pydantic_extra__')
+            except AttributeError:
+                pydantic_extra = None
+    
+            if pydantic_extra and item in pydantic_extra:
+                return pydantic_extra[item]
+            else:
+                if hasattr(self.__class__, item):
+                    return super().__getattribute__(item)  # Raises AttributeError if appropriate
+                else:
+                    # this is the current error
+>                   raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}')
+E                   AttributeError: 'WorkflowSubmission' object has no attribute 'base_branch'
+
+.venv/lib/python3.12/site-packages/pydantic/main.py:1026: AttributeError
+----------------------------- Captured stdout call -----------------------------
+{"order": ["K-1"], "tied": ["K-1"], "winner": "K-1", "event": "dispatch_ranked", "level": "info", "logger": "kodezart.services.fire_dispatcher", "timestamp": "2026-09-12T20:20:45.877046Z"}
+{"issue_key": "K-1", "asset_keys": [], "event": "fire_context_assembled", "level": "info", "logger": "kodezart.services.fire_context", "timestamp": "2026-09-12T20:20:45.878246Z"}
+{"outcome": "fire_enqueued", "issue_key": "K-1", "job_id": "job-0001", "base_branch": "kodezart/k-2-deliverable", "base_role": "deliverable", "event": "dispatch_fire_enqueued", "level": "info", "logger": "kodezart.services.fire_dispatcher", "timestamp": "2026-09-12T20:20:45.879019Z"}
+------------------------------ Captured log call -------------------------------
+INFO     kodezart.services.fire_dispatcher:fire_dispatcher.py:284 {'order': ['K-1'], 'tied': ['K-1'], 'winner': 'K-1', 'event': 'dispatch_ranked', 'level': 'info', 'logger': 'kodezart.services.fire_dispatcher', 'timestamp': '2026-09-12T20:20:45.877046Z'}
+INFO     kodezart.services.fire_context:fire_context.py:96 {'issue_key': 'K-1', 'asset_keys': [], 'event': 'fire_context_assembled', 'level': 'info', 'logger': 'kodezart.services.fire_context', 'timestamp': '2026-09-12T20:20:45.878246Z'}
+INFO     kodezart.services.fire_dispatcher:fire_dispatcher.py:460 {'outcome': 'fire_enqueued', 'issue_key': 'K-1', 'job_id': 'job-0001', 'base_branch': 'kodezart/k-2-deliverable', 'base_role': 'deliverable', 'event': 'dispatch_fire_enqueued', 'level': 'info', 'logger': 'kodezart.services.fire_dispatcher', 'timestamp': '2026-09-12T20:20:45.879019Z'}
+=========================== short test summary info ============================
+FAILED tests/services/test_fire_dispatcher.py::TestTheBaseIsReadOffTheGraph::test_a_lane_with_no_blockers_is_dispatched_on_the_configured_trunk
+FAILED tests/services/test_fire_dispatcher.py::TestTheBaseIsReadOffTheGraph::test_a_lane_with_a_blocker_is_dispatched_on_that_blockers_ref
+2 failed, 631 passed in 99.31s (0:01:39)

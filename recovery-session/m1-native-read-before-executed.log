@@ -1,0 +1,28 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+______ test_actual_configured_constructor_reads_current_native_criterion _______
+
+    async def test_actual_configured_constructor_reads_current_native_criterion():
+>       operation = OperationConfig(operation_name='fixture', workspace='fixture', issue_labels={'criterion':'Configured Check'})
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for OperationConfig
+E       issue_labels
+E         Extra inputs are not permitted [type=extra_forbidden]
+E           For further information visit https://errors.pydantic.dev/2.12/v/extra_forbidden
+
+../kodezart-recovery-session/test_m1_native_read_before.py:8: ValidationError
+____________ test_actual_empty_current_family_is_a_successful_read _____________
+
+    async def test_actual_empty_current_family_is_a_successful_read():
+>       operation = OperationConfig(operation_name='fixture',workspace='fixture',issue_labels={'criterion':'Configured Check'})
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for OperationConfig
+E       issue_labels
+E         Extra inputs are not permitted [type=extra_forbidden]
+E           For further information visit https://errors.pydantic.dev/2.12/v/extra_forbidden
+
+../kodezart-recovery-session/test_m1_native_read_before.py:17: ValidationError
+=========================== short test summary info ============================
+FAILED ::test_actual_configured_constructor_reads_current_native_criterion - ...
+FAILED ::test_actual_empty_current_family_is_a_successful_read - pydantic_cor...
+2 failed in 3.63s

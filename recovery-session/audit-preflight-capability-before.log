@@ -1,0 +1,70 @@
+FFF                                                                      [100%]
+=================================== FAILURES ===================================
+_ test_audit_preflight_checks_declared_and_actual_classification_reads[operation_criterion] _
+
+missing = 'operation_criterion'
+
+    @pytest.mark.parametrize('missing', ['operation_criterion', 'tracker_criterion', 'tracker_decision'])
+    def test_audit_preflight_checks_declared_and_actual_classification_reads(missing):
+        config, operation, server, _, forge = dependencies()
+        fields = operation.model_dump()
+        fields['issue_labels']['criterion'] = 'acceptance-condition'
+        if missing == 'operation_criterion':
+            fields['issue_labels'].pop('criterion')
+        operation = OperationConfig.model_validate(fields)
+        labels = dict(operation.issue_labels)
+        if missing.startswith('tracker_'):
+            labels.pop(missing.removeprefix('tracker_'))
+        tracker = tracker_over(server, issue_labels=labels, marker_prefixes=operation.marker_prefixes)
+>       with pytest.raises(OperationMemberAbsentError, match='issue_labels'):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'kodezart.types.domain.operation.OperationMemberAbsentError'>
+
+../kodezart-recovery-session/test_audit_preflight_capability_probe.py:22: Failed
+_ test_audit_preflight_checks_declared_and_actual_classification_reads[tracker_criterion] _
+
+missing = 'tracker_criterion'
+
+    @pytest.mark.parametrize('missing', ['operation_criterion', 'tracker_criterion', 'tracker_decision'])
+    def test_audit_preflight_checks_declared_and_actual_classification_reads(missing):
+        config, operation, server, _, forge = dependencies()
+        fields = operation.model_dump()
+        fields['issue_labels']['criterion'] = 'acceptance-condition'
+        if missing == 'operation_criterion':
+            fields['issue_labels'].pop('criterion')
+        operation = OperationConfig.model_validate(fields)
+        labels = dict(operation.issue_labels)
+        if missing.startswith('tracker_'):
+            labels.pop(missing.removeprefix('tracker_'))
+        tracker = tracker_over(server, issue_labels=labels, marker_prefixes=operation.marker_prefixes)
+>       with pytest.raises(OperationMemberAbsentError, match='issue_labels'):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'kodezart.types.domain.operation.OperationMemberAbsentError'>
+
+../kodezart-recovery-session/test_audit_preflight_capability_probe.py:22: Failed
+_ test_audit_preflight_checks_declared_and_actual_classification_reads[tracker_decision] _
+
+missing = 'tracker_decision'
+
+    @pytest.mark.parametrize('missing', ['operation_criterion', 'tracker_criterion', 'tracker_decision'])
+    def test_audit_preflight_checks_declared_and_actual_classification_reads(missing):
+        config, operation, server, _, forge = dependencies()
+        fields = operation.model_dump()
+        fields['issue_labels']['criterion'] = 'acceptance-condition'
+        if missing == 'operation_criterion':
+            fields['issue_labels'].pop('criterion')
+        operation = OperationConfig.model_validate(fields)
+        labels = dict(operation.issue_labels)
+        if missing.startswith('tracker_'):
+            labels.pop(missing.removeprefix('tracker_'))
+        tracker = tracker_over(server, issue_labels=labels, marker_prefixes=operation.marker_prefixes)
+>       with pytest.raises(OperationMemberAbsentError, match='issue_labels'):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'kodezart.types.domain.operation.OperationMemberAbsentError'>
+
+../kodezart-recovery-session/test_audit_preflight_capability_probe.py:22: Failed
+=========================== short test summary info ============================
+FAILED ::test_audit_preflight_checks_declared_and_actual_classification_reads[operation_criterion]
+FAILED ::test_audit_preflight_checks_declared_and_actual_classification_reads[tracker_criterion]
+FAILED ::test_audit_preflight_checks_declared_and_actual_classification_reads[tracker_decision]
+3 failed in 5.10s

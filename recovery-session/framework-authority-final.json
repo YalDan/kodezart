@@ -1,0 +1,11 @@
+{
+  "report_url": "https://linear.app/duckburg/issue/KOD-806#comment-ec32425c-dd49-4bf4-bed8-69f361198977",
+  "report_file": "/private/tmp/kodezart-recovery-session/framework-authority-report.md",
+  "test_count": 623,
+  "commits": [],
+  "source_changes": [],
+  "type_impact": "No implementation changes; typed-agent feasibility and current runtime/static boundary findings only.",
+  "model_effort": "Astra ultra requested by root; effective identity not independently exposed/verified.",
+  "issue_state_changed": false,
+  "founder_decision": "Unresolved, retained/moved/retired decision reserved."
+}

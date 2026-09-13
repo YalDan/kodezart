@@ -1,0 +1,99 @@
+E501 Line too long (95 > 88)
+   --> tests/integration/test_scope_runtime.py:448:89
+    |
+446 |         assert final.next == ()
+447 |         assert final.values["feature_branch"] == original_branch
+448 |         assert final.metadata["scope_lane_run_identity"] == metadata["scope_lane_run_identity"]
+    |                                                                                         ^^^^^^^
+449 |         assert any(
+450 |             isinstance(event, ScopeLaneEvent) and isinstance(event.event, LaneDeliveryEvent)
+    |
+
+E501 Line too long (92 > 88)
+   --> tests/integration/test_scope_runtime.py:450:89
+    |
+448 |         assert final.metadata["scope_lane_run_identity"] == metadata["scope_lane_run_identity"]
+449 |         assert any(
+450 |             isinstance(event, ScopeLaneEvent) and isinstance(event.event, LaneDeliveryEvent)
+    |                                                                                         ^^^^
+451 |             for event in replayed
+452 |         )
+    |
+
+E501 Line too long (92 > 88)
+   --> tests/integration/test_scope_runtime.py:502:89
+    |
+500 |         _ = [event async for event in drive(fresh)]
+501 |     assert fresh.executor.schema_calls == []
+502 |     assert (await lane_of(fresh).graph.aget_state(checkpoint_config())).next == ("deliver",)
+    |                                                                                         ^^^^
+    |
+
+E501 Line too long (92 > 88)
+   --> tests/integration/test_scope_runtime.py:511:89
+    |
+509 |     async for event in drive(harness):
+510 |         events.append(event)
+511 |         if isinstance(event, ScopeLaneEvent) and isinstance(event.event, LaneDeliveryEvent):
+    |                                                                                         ^^^^
+512 |             if event.lane_key == "A":
+513 |                 port.issues["A/check"] = port.issues["A/check"].model_copy(
+    |
+
+E501 Line too long (104 > 88)
+   --> tests/integration/test_scope_runtime.py:542:89
+    |
+540 |         fired = await app.client.post(
+541 |             "/api/v1/agent/fire",
+542 |             json={"prompt": "scope request", "repoUrl": ORIGIN, "scope": SCOPE.model_dump(mode="json")},
+    |                                                                                         ^^^^^^^^^^^^^^^^
+543 |         )
+544 |         assert fired.status_code == 202
+    |
+
+E501 Line too long (105 > 88)
+   --> tests/integration/test_scope_runtime.py:549:89
+    |
+547 |         assert stream.status_code == 200
+548 |         assert stream.headers["content-type"].startswith("text/event-stream")
+549 |         events = [json.loads(line[6:]) for line in stream.text.splitlines() if line.startswith("data: ")]
+    |                                                                                         ^^^^^^^^^^^^^^^^^
+550 |         assert not [event for event in events if event["type"] == "error"]
+551 |         lane_events = [event for event in events if event["type"] == "scope_lane"]
+    |
+
+E501 Line too long (115 > 88)
+   --> tests/integration/test_scope_runtime.py:553:89
+    |
+551 |         lane_events = [event for event in events if event["type"] == "scope_lane"]
+552 |         assert lane_events and all(event["laneKey"] == "A" for event in lane_events)
+553 |         iteration = next(event["event"] for event in lane_events if event["event"]["type"] == "workflow_iteration")
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+554 |         assert iteration["evaluation"]["criteriaResults"][0]["criterionId"] == "A/check"
+555 |         session = next(event["event"] for event in lane_events if event["event"]["type"] == "node_session_started")
+    |
+
+E501 Line too long (115 > 88)
+   --> tests/integration/test_scope_runtime.py:555:89
+    |
+553 |         iteration = next(event["event"] for event in lane_events if event["event"]["type"] == "workflow_iteration")
+554 |         assert iteration["evaluation"]["criteriaResults"][0]["criterionId"] == "A/check"
+555 |         session = next(event["event"] for event in lane_events if event["event"]["type"] == "node_session_started")
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+556 |         assert session["invocation"]["run"]["name"] == "A"
+557 |         assert session["invocation"]["run"]["started_at"]
+    |
+
+E501 Line too long (109 > 88)
+   --> tests/integration/test_scope_runtime.py:558:89
+    |
+556 |         assert session["invocation"]["run"]["name"] == "A"
+557 |         assert session["invocation"]["run"]["started_at"]
+558 |         delivery = next(event["event"] for event in lane_events if event["event"]["type"] == "lane_delivery")
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^
+559 |         assert delivery["delivery"]["phase"] == "skipped"
+560 |         observation = events[-1]["observation"]
+    |
+
+Found 10 errors (1 fixed, 9 remaining).
+1 file reformatted, 1 file left unchanged

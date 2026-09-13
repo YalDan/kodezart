@@ -1,0 +1,9 @@
+# Native compatibility independent review
+
+Reviewed frozen c47a7f112368db35a3d6e50315da9926e4282afc against its parent49843dc. Requirements: preserve authored wire compatibility and native execution identities; retain actual mid-run status test behavior. Inspected actual diff, all Contradiction/CriteriaValidationOutput source consumers, captured fingerprint test and paused quality-gate fixture. Author narrative was not the oracle.
+
+Executed `/Users/kodezart/.local/bin/uv run --locked pytest -q tests/domain/test_authored_feasibility_compatibility.py tests/domain/test_criterion_identity.py tests/types/test_wire_schemas.py tests/api/v1/test_jobs.py`:142 passed18.11s. Log `native-compat-independent-root.log`. Exact captured CriteriaValidationOutput hash remains1e49292eb7a9c7b364fb7f30db016c2c2ab9505cf51bfaa6b9b1e0f532f327bc; no fingerprint weakened. Shared IterationGrade still accepts native identities and authored contradictions reject them. The gated double now forwards the real typed criterion/spec/run identity fields; pause behavior and progress assertions are intact.
+
+Eight lenses: SOLID—authored-only validation retains its authored contract; DRY—shared native alias remains for shared consumers, authored pattern has one existing constant; hexagonal—domain model unchanged in layer; KISS—four-file correction, no new machinery; typed calls—existing dispatched JSON schema restored; framework—Pydantic annotation is checked via the actual schema fingerprint and validation; type safety—improvement, correct ExecutionCriterion list and explicit spec forwarding, no Any/casts/ignores; hygiene—types/tests remain in established modules.
+
+No material finding in this bounded diff. Does not establish entire native lane or release completion. Integrate c47a7f1 and rerun affected checks on the canonical integrated head, then the full repository gate.

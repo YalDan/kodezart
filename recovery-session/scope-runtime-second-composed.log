@@ -1,0 +1,398 @@
+......FF.....                                                            [100%]
+=================================== FAILURES ===================================
+______ test_completed_checkpoint_is_revalidated_before_it_can_be_replayed ______
+
+    async def test_completed_checkpoint_is_revalidated_before_it_can_be_replayed():
+        harness = runtime()
+        _ = [event async for event in drive(harness)]
+        harness.port.issues["A/check"] = harness.port.issues["A/check"].model_copy(
+            update={"body": "**Check:** materially changed Check\n**Evidence:** —"}
+        )
+        fresh = runtime(port=harness.port, saver=harness.saver)
+        with pytest.raises(FireSpecEntryError, match="evaluated snapshot"):
+>           _ = [event async for event in drive(fresh)]
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/integration/test_scope_runtime.py:299: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/composition/engine.py:129: in run
+    async for event in arm.run(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.services.scope_runtime.ScopeWorkflowEngine object at 0x10e313e30>
+
+    async def run(
+        self,
+        *,
+        prompt: str,
+        issue_key: str | None = None,
+        run_identity: RunIdentity | None = None,
+        repo_path: str | None,
+        repo_url: str | None,
+        base_spec: BaseSpec,
+        scope: ScopeRef | None,
+        implied_base: BaseSpec | None = None,
+        permission_mode: PermissionMode,
+        allowed_tools: AllowedTools,
+        cache_key: str,
+    ) -> AsyncIterator[AgentEvent]:
+        """Reread selection before every fire; never infer closure from a fire exit."""
+        if scope is None:
+            raise ValueError("The scope controller requires an addressed scope")
+        if issue_key is not None and (
+            scope.kind is not ScopeKind.ISSUE or scope.key != issue_key
+        ):
+            raise ScopeReadError(
+                "scope and submitted issue identity disagree", ref=scope
+            )
+        if repo_url is None:
+            raise ScopedExecutionUnavailableError(
+                "Scope execution requires a declared repository", ref=scope
+            )
+        url = resolve_repo_url(repo_url, self._git_base_url)
+        entries = [
+            repo
+            for repo in self._repositories
+            if resolve_repo_url(repo.url, self._git_base_url) == url
+        ]
+        if len(entries) != 1:
+            raise ScopeReadError("scope repository is absent or ambiguous", ref=scope)
+        repo = entries[0]
+        lane = self._lane_for(url)
+        probe = self._probe_for(url)
+        if probe is None:
+            raise ScopedExecutionUnavailableError(
+                "Scope execution requires an open-delivery reader for this origin",
+                ref=scope,
+            )
+        # The request's base describes the scope input, never an independently
+        # trusted lane base. Each lane's graph gets the current resolver answer.
+        _ = prompt, run_identity, base_spec, implied_base
+        dispatched: list[str] = []
+        skipped: list[str] = []
+        tick = 0
+        while True:
+            tick += 1
+            ready = await read_scope_ready(ref=scope, tracker=self._tracker)
+            exclusions = [
+                IssueExclusion(
+                    issue_key=blocked.issue_key,
+                    clause=ExclusionClause.LIVE_BLOCKER,
+                    detail=key,
+                )
+                for blocked in ready.blocked
+                for key in blocked.blocker_keys
+            ]
+            selected = None
+            for candidate in ready.ready:
+                if candidate.issue.issue_key in dispatched:
+                    continue
+                if await probe.open_delivery_exists(
+                    repo_url=url, issue_key=candidate.issue.issue_key
+                ):
+                    exclusions.append(
+                        IssueExclusion(
+                            issue_key=candidate.issue.issue_key,
+                            clause=ExclusionClause.OPEN_DELIVERY,
+                        )
+                    )
+                    continue
+                selected = candidate
+                break
+            yield _observation(scope, tick, ready, dispatched, skipped, exclusions)
+            if selected is None:
+                return
+            key = selected.issue.issue_key
+            lane_key = _lane_checkpoint_key(cache_key, key)
+            path = repo_path or await self._cache.ensure_available(url, lane_key)
+            spec = await self._resolver.resolve(
+                issue_key=key,
+                repo_path=path,
+                integration_workspace=str(
+                    Path(self._integration_workspace_dir) / lane_key
+                ),
+                trunk=repo.trunk,
+                now=datetime.now(tz=UTC),
+            )
+            # Base resolution and cache I/O can yield to tracker changes. Do not
+            # run the candidate merely because an earlier tick admitted it.
+            refreshed = await read_scope_ready(ref=scope, tracker=self._tracker)
+            current = next(
+                (row for row in refreshed.ready if row.issue.issue_key == key), None
+            )
+            if current is None or current != selected:
+                continue
+            if await probe.open_delivery_exists(repo_url=url, issue_key=key):
+                continue
+            fire_state, config = lane.fire.prepare(
+                prompt=current.issue.body or current.issue.title,
+                issue_key=key,
+                scope=ScopeRef(kind=ScopeKind.ISSUE, key=key),
+                repo_path=path,
+                repo_url=url,
+                base_spec=spec,
+                implied_base=spec,
+                permission_mode=permission_mode,
+                allowed_tools=allowed_tools,
+                cache_key=lane_key,
+                run_identity=RunIdentity(
+                    kind=RunKind.FIRE, name=key, started_at=datetime.now(tz=UTC)
+                ),
+            )
+            context = ExecutionContext.from_configurable(config)
+            address = {
+                "job": cache_key,
+                "scope": scope.model_dump_json(),
+                "issue": key,
+                "repo_url": context.repo_url,
+                "repo_path": context.repo_path,
+                "base": spec.model_dump_json(),
+            }
+            assert context.run_identity is not None
+            config["metadata"] = {
+                _REQUEST_METADATA: address,
+                _RUN_METADATA: context.run_identity.model_dump(mode="json"),
+            }
+            initial: NativeDeliveryState | None = lane.prepare(fire_state)
+            if lane.fire.checkpointer is not None:
+                saved = await lane.graph.aget_state(config)
+                if saved.values:
+                    if (saved.metadata or {}).get(_REQUEST_METADATA) != address:
+>                       raise ScopeReadError(
+                            "native checkpoint belongs to a different scope request",
+                            ref=scope,
+                        )
+E                       kodezart.domain.errors.ScopeReadError: native checkpoint belongs to a different scope request (scope: project:scoped-project)
+
+src/kodezart/services/scope_runtime.py:211: ScopeReadError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 15:48:40 [info     ] forge_capabilities_selected    forge_less_origin=False repo_url=file:///scope-repository.git
+2026-09-12 15:48:40 [debug    ] no_forge_delivery_probe_answered issue_key=A repo_url=file:///scope-repository.git
+2026-09-12 15:48:40 [debug    ] no_forge_delivery_probe_answered issue_key=A repo_url=file:///scope-repository.git
+2026-09-12 15:48:40 [info     ] repo_visibility_resolved       repo_url=file:///scope-repository.git visibility=unknown
+2026-09-12 15:48:40 [info     ] scope_base_resolved            base_branch=trunk base_role=None input_count=0
+2026-09-12 15:48:40 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 15:48:40 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=2 events={'system': 1, 'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 15:48:40 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=branch_name
+2026-09-12 15:48:40 [info     ] fire_criteria_read             named=1 owed=['A/check'] read_at_version=2026-01-01T00:00:00+00:00 subject=A
+2026-09-12 15:48:40 [info     ] fire_criteria_read             named=1 owed=['A/check'] read_at_version=2026-01-01T00:00:00+00:00 subject=A
+2026-09-12 15:48:40 [info     ] fire_criteria_read             named=1 owed=['A/check'] read_at_version=2026-01-01T00:00:00+00:00 subject=A
+2026-09-12 15:48:40 [info     ] fire_criteria_read             named=1 owed=['A/check'] read_at_version=2026-01-01T00:00:00+00:00 subject=A
+2026-09-12 15:48:40 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 15:48:40 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=2 events={'system': 1, 'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=ralph_evaluator stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 15:48:40 [info     ] fire_criteria_read             named=1 owed=['A/check'] read_at_version=2026-01-01T00:00:00+00:00 subject=A
+2026-09-12 15:48:40 [info     ] fire_criteria_read             named=1 owed=['A/check'] read_at_version=2026-01-01T00:00:00+00:00 subject=A
+2026-09-12 15:48:40 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 15:48:40 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=2 events={'system': 1, 'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=post_merge_review stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 15:48:40 [info     ] fire_criteria_read             named=1 owed=['A/check'] read_at_version=2026-01-01T00:00:00+00:00 subject=A
+2026-09-12 15:48:40 [info     ] fire_criteria_read             named=1 owed=['A/check'] read_at_version=2026-01-01T00:00:00+00:00 subject=A
+2026-09-12 15:48:40 [info     ] fire_criteria_read             named=1 owed=['A/check'] read_at_version=2026-01-01T00:00:00+00:00 subject=A
+2026-09-12 15:48:40 [info     ] forge_capabilities_selected    forge_less_origin=False repo_url=file:///scope-repository.git
+2026-09-12 15:48:40 [debug    ] no_forge_delivery_probe_answered issue_key=A repo_url=file:///scope-repository.git
+2026-09-12 15:48:40 [debug    ] no_forge_delivery_probe_answered issue_key=A repo_url=file:///scope-repository.git
+------------------------------ Captured log call -------------------------------
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.fire_spec.TrackerSpec from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.fire_spec', 'TrackerSpec')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.criteria.TrackerCriterionSet from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.criteria', 'TrackerCriterionSet')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.gating.RepoVisibility from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.gating', 'RepoVisibility')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.trajectory.LoopTrajectory from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.trajectory', 'LoopTrajectory')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.outcome.WorkflowOutcome from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.outcome', 'WorkflowOutcome')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.native_delivery.SkippedLaneDelivery from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.native_delivery', 'SkippedLaneDelivery')]
+_________ test_same_job_checkpoint_replay_does_not_mint_another_branch _________
+
+    async def test_same_job_checkpoint_replay_does_not_mint_another_branch():
+        harness = runtime()
+        _ = [event async for event in drive(harness)]
+        fresh = runtime(port=harness.port, saver=harness.saver)
+>       events = [event async for event in drive(fresh)]
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/integration/test_scope_runtime.py:307: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/composition/engine.py:129: in run
+    async for event in arm.run(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.services.scope_runtime.ScopeWorkflowEngine object at 0x10e256780>
+
+    async def run(
+        self,
+        *,
+        prompt: str,
+        issue_key: str | None = None,
+        run_identity: RunIdentity | None = None,
+        repo_path: str | None,
+        repo_url: str | None,
+        base_spec: BaseSpec,
+        scope: ScopeRef | None,
+        implied_base: BaseSpec | None = None,
+        permission_mode: PermissionMode,
+        allowed_tools: AllowedTools,
+        cache_key: str,
+    ) -> AsyncIterator[AgentEvent]:
+        """Reread selection before every fire; never infer closure from a fire exit."""
+        if scope is None:
+            raise ValueError("The scope controller requires an addressed scope")
+        if issue_key is not None and (
+            scope.kind is not ScopeKind.ISSUE or scope.key != issue_key
+        ):
+            raise ScopeReadError(
+                "scope and submitted issue identity disagree", ref=scope
+            )
+        if repo_url is None:
+            raise ScopedExecutionUnavailableError(
+                "Scope execution requires a declared repository", ref=scope
+            )
+        url = resolve_repo_url(repo_url, self._git_base_url)
+        entries = [
+            repo
+            for repo in self._repositories
+            if resolve_repo_url(repo.url, self._git_base_url) == url
+        ]
+        if len(entries) != 1:
+            raise ScopeReadError("scope repository is absent or ambiguous", ref=scope)
+        repo = entries[0]
+        lane = self._lane_for(url)
+        probe = self._probe_for(url)
+        if probe is None:
+            raise ScopedExecutionUnavailableError(
+                "Scope execution requires an open-delivery reader for this origin",
+                ref=scope,
+            )
+        # The request's base describes the scope input, never an independently
+        # trusted lane base. Each lane's graph gets the current resolver answer.
+        _ = prompt, run_identity, base_spec, implied_base
+        dispatched: list[str] = []
+        skipped: list[str] = []
+        tick = 0
+        while True:
+            tick += 1
+            ready = await read_scope_ready(ref=scope, tracker=self._tracker)
+            exclusions = [
+                IssueExclusion(
+                    issue_key=blocked.issue_key,
+                    clause=ExclusionClause.LIVE_BLOCKER,
+                    detail=key,
+                )
+                for blocked in ready.blocked
+                for key in blocked.blocker_keys
+            ]
+            selected = None
+            for candidate in ready.ready:
+                if candidate.issue.issue_key in dispatched:
+                    continue
+                if await probe.open_delivery_exists(
+                    repo_url=url, issue_key=candidate.issue.issue_key
+                ):
+                    exclusions.append(
+                        IssueExclusion(
+                            issue_key=candidate.issue.issue_key,
+                            clause=ExclusionClause.OPEN_DELIVERY,
+                        )
+                    )
+                    continue
+                selected = candidate
+                break
+            yield _observation(scope, tick, ready, dispatched, skipped, exclusions)
+            if selected is None:
+                return
+            key = selected.issue.issue_key
+            lane_key = _lane_checkpoint_key(cache_key, key)
+            path = repo_path or await self._cache.ensure_available(url, lane_key)
+            spec = await self._resolver.resolve(
+                issue_key=key,
+                repo_path=path,
+                integration_workspace=str(
+                    Path(self._integration_workspace_dir) / lane_key
+                ),
+                trunk=repo.trunk,
+                now=datetime.now(tz=UTC),
+            )
+            # Base resolution and cache I/O can yield to tracker changes. Do not
+            # run the candidate merely because an earlier tick admitted it.
+            refreshed = await read_scope_ready(ref=scope, tracker=self._tracker)
+            current = next(
+                (row for row in refreshed.ready if row.issue.issue_key == key), None
+            )
+            if current is None or current != selected:
+                continue
+            if await probe.open_delivery_exists(repo_url=url, issue_key=key):
+                continue
+            fire_state, config = lane.fire.prepare(
+                prompt=current.issue.body or current.issue.title,
+                issue_key=key,
+                scope=ScopeRef(kind=ScopeKind.ISSUE, key=key),
+                repo_path=path,
+                repo_url=url,
+                base_spec=spec,
+                implied_base=spec,
+                permission_mode=permission_mode,
+                allowed_tools=allowed_tools,
+                cache_key=lane_key,
+                run_identity=RunIdentity(
+                    kind=RunKind.FIRE, name=key, started_at=datetime.now(tz=UTC)
+                ),
+            )
+            context = ExecutionContext.from_configurable(config)
+            address = {
+                "job": cache_key,
+                "scope": scope.model_dump_json(),
+                "issue": key,
+                "repo_url": context.repo_url,
+                "repo_path": context.repo_path,
+                "base": spec.model_dump_json(),
+            }
+            assert context.run_identity is not None
+            config["metadata"] = {
+                _REQUEST_METADATA: address,
+                _RUN_METADATA: context.run_identity.model_dump(mode="json"),
+            }
+            initial: NativeDeliveryState | None = lane.prepare(fire_state)
+            if lane.fire.checkpointer is not None:
+                saved = await lane.graph.aget_state(config)
+                if saved.values:
+                    if (saved.metadata or {}).get(_REQUEST_METADATA) != address:
+>                       raise ScopeReadError(
+                            "native checkpoint belongs to a different scope request",
+                            ref=scope,
+                        )
+E                       kodezart.domain.errors.ScopeReadError: native checkpoint belongs to a different scope request (scope: project:scoped-project)
+
+src/kodezart/services/scope_runtime.py:211: ScopeReadError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 15:48:41 [info     ] forge_capabilities_selected    forge_less_origin=False repo_url=file:///scope-repository.git
+2026-09-12 15:48:41 [debug    ] no_forge_delivery_probe_answered issue_key=A repo_url=file:///scope-repository.git
+2026-09-12 15:48:41 [debug    ] no_forge_delivery_probe_answered issue_key=A repo_url=file:///scope-repository.git
+2026-09-12 15:48:41 [info     ] repo_visibility_resolved       repo_url=file:///scope-repository.git visibility=unknown
+2026-09-12 15:48:41 [info     ] scope_base_resolved            base_branch=trunk base_role=None input_count=0
+2026-09-12 15:48:41 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 15:48:41 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=2 events={'system': 1, 'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 15:48:41 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=branch_name
+2026-09-12 15:48:41 [info     ] fire_criteria_read             named=1 owed=['A/check'] read_at_version=2026-01-01T00:00:00+00:00 subject=A
+2026-09-12 15:48:41 [info     ] fire_criteria_read             named=1 owed=['A/check'] read_at_version=2026-01-01T00:00:00+00:00 subject=A
+2026-09-12 15:48:41 [info     ] fire_criteria_read             named=1 owed=['A/check'] read_at_version=2026-01-01T00:00:00+00:00 subject=A
+2026-09-12 15:48:41 [info     ] fire_criteria_read             named=1 owed=['A/check'] read_at_version=2026-01-01T00:00:00+00:00 subject=A
+2026-09-12 15:48:41 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 15:48:41 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=2 events={'system': 1, 'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=ralph_evaluator stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 15:48:41 [info     ] fire_criteria_read             named=1 owed=['A/check'] read_at_version=2026-01-01T00:00:00+00:00 subject=A
+2026-09-12 15:48:41 [info     ] fire_criteria_read             named=1 owed=['A/check'] read_at_version=2026-01-01T00:00:00+00:00 subject=A
+2026-09-12 15:48:41 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 15:48:41 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=2 events={'system': 1, 'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=post_merge_review stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 15:48:41 [info     ] fire_criteria_read             named=1 owed=['A/check'] read_at_version=2026-01-01T00:00:00+00:00 subject=A
+2026-09-12 15:48:41 [info     ] fire_criteria_read             named=1 owed=['A/check'] read_at_version=2026-01-01T00:00:00+00:00 subject=A
+2026-09-12 15:48:41 [info     ] fire_criteria_read             named=1 owed=['A/check'] read_at_version=2026-01-01T00:00:00+00:00 subject=A
+2026-09-12 15:48:41 [info     ] forge_capabilities_selected    forge_less_origin=False repo_url=file:///scope-repository.git
+2026-09-12 15:48:41 [debug    ] no_forge_delivery_probe_answered issue_key=A repo_url=file:///scope-repository.git
+2026-09-12 15:48:41 [debug    ] no_forge_delivery_probe_answered issue_key=A repo_url=file:///scope-repository.git
+------------------------------ Captured log call -------------------------------
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.fire_spec.TrackerSpec from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.fire_spec', 'TrackerSpec')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.criteria.TrackerCriterionSet from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.criteria', 'TrackerCriterionSet')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.gating.RepoVisibility from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.gating', 'RepoVisibility')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.trajectory.LoopTrajectory from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.trajectory', 'LoopTrajectory')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.outcome.WorkflowOutcome from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.outcome', 'WorkflowOutcome')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.native_delivery.SkippedLaneDelivery from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.native_delivery', 'SkippedLaneDelivery')]
+=========================== short test summary info ============================
+FAILED tests/integration/test_scope_runtime.py::test_completed_checkpoint_is_revalidated_before_it_can_be_replayed
+FAILED tests/integration/test_scope_runtime.py::test_same_job_checkpoint_replay_does_not_mint_another_branch
+2 failed, 11 passed in 7.49s

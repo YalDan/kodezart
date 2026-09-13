@@ -1,0 +1,1559 @@
+diff --git a/src/kodezart/adapters/linear_mcp_tracker.py b/src/kodezart/adapters/linear_mcp_tracker.py
+index 249f245..b1b5087 100644
+--- a/src/kodezart/adapters/linear_mcp_tracker.py
++++ b/src/kodezart/adapters/linear_mcp_tracker.py
+@@ -49,6 +49,16 @@ from kodezart.domain.errors import (
+ from kodezart.domain.escalation_resolution import resolution_from_comments
+ from kodezart.domain.fire_spec import require_fire_entry, tracker_spec_from_issues
+ from kodezart.domain.git_url import extract_owner_repo
++from kodezart.domain.run_alarm_record import (
++    parse_run_alarm,
++    render_run_alarm,
++    run_alarm_marker,
++)
++from kodezart.domain.run_event_stream import (
++    lane_run_events,
++    render_run_event,
++    run_event_marker,
++)
+ from kodezart.domain.scope_approval import resolve_execution_approval
+ from kodezart.domain.surface_lease import (
+     live_conflict,
+@@ -104,6 +114,8 @@ from kodezart.types.domain.operation import (
+     QueueState,
+     ScopeLabel,
+ )
++from kodezart.types.domain.run_alarm import AlarmSignal, AlarmSubject, RunAlarm
++from kodezart.types.domain.run_event_record import RunEventRecord
+ from kodezart.types.domain.scope import ScopeContainer, ScopeKind, ScopeRef
+ from kodezart.types.domain.self_writes import (
+     CommentValues,
+@@ -2729,6 +2741,80 @@ class LinearMcpTracker:
+                 ) from exc
+         return latest
+ 
++    async def record_run_alarm(self, *, issue_key: str, alarm: RunAlarm) -> None:
++        """Upsert the record the whole subject and the signal address.
++
++        The marker carries the complete subject, so the record a second
++        surface in the same lane under the same signal writes is a second
++        record and never an overwrite of the first.
++        """
++        await self.upsert_comment(
++            target=issue_key,
++            marker=run_alarm_marker(
++                subject=alarm.subject,
++                signal=alarm.signal,
++                marker_prefixes=self._marker_prefixes,
++            ),
++            body=render_run_alarm(alarm=alarm),
++        )
++
++    async def read_run_alarm(
++        self, *, issue_key: str, subject: AlarmSubject, signal: AlarmSignal
++    ) -> RunAlarm | None:
++        """Resolve exactly this address across the whole comment log."""
++        marker = run_alarm_marker(
++            subject=subject, signal=signal, marker_prefixes=self._marker_prefixes
++        )
++        stored = comment_under_marker(
++            target=issue_key,
++            marker=marker,
++            comments=await self.list_comments(issue_key=issue_key),
++        )
++        if stored is None:
++            return None
++        try:
++            return parse_run_alarm(
++                body=stored.body,
++                subject=subject,
++                signal=signal,
++                marker_prefixes=self._marker_prefixes,
++            )
++        except ValueError as exc:
++            raise TrackerProtocolError(
++                "run-alarm record does not match its declared shape",
++                tool=_TOOL_LIST_COMMENTS,
++                detail=stored.comment_key,
++            ) from exc
++
++    async def post_run_event(self, *, issue_key: str, event: RunEventRecord) -> None:
++        """Post one entry onto the lane's stream; the read is ``run_events``."""
++        await self.post_comment(
++            issue_key=issue_key,
++            body=marked_comment_body(
++                marker=run_event_marker(
++                    lane_key=event.lane_key, marker_prefixes=self._marker_prefixes
++                ),
++                body=render_run_event(event=event),
++            ),
++        )
++
++    async def run_events(
++        self, *, issue_key: str, lane_key: str
++    ) -> Sequence[RunEventRecord]:
++        """Read the createdAt-ordered posts the lane's marker addresses."""
++        try:
++            return lane_run_events(
++                lane_key=lane_key,
++                marker_prefixes=self._marker_prefixes,
++                comments=await self.list_comments(issue_key=issue_key),
++            )
++        except ValueError as exc:
++            raise TrackerProtocolError(
++                "run-event post does not match its declared shape",
++                tool=_TOOL_LIST_COMMENTS,
++                detail=issue_key,
++            ) from exc
++
+     async def recorded_repository(self, *, issue_key: str) -> str | None:
+         """The latest recorded target repository, or ``None`` when none is.
+ 
+diff --git a/src/kodezart/core/protocols.py b/src/kodezart/core/protocols.py
+index e2bc5a8..822405f 100644
+--- a/src/kodezart/core/protocols.py
++++ b/src/kodezart/core/protocols.py
+@@ -37,6 +37,8 @@ from kodezart.types.domain.persist import ArtifactPersistStatus, PersistResult
+ from kodezart.types.domain.pr_state import PRState
+ from kodezart.types.domain.prompts import PromptKey
+ from kodezart.types.domain.run import RunState
++from kodezart.types.domain.run_alarm import AlarmSignal, AlarmSubject, RunAlarm
++from kodezart.types.domain.run_event_record import RunEventRecord
+ from kodezart.types.domain.run_records import RunIdentity, RunOutcome, RunRecord
+ from kodezart.types.domain.scope import ScopeContainer, ScopeRef
+ from kodezart.types.domain.self_writes import IssueMovementSnapshot
+@@ -1155,6 +1157,57 @@ class TrackerPort(
+         """
+         ...
+ 
++    async def record_run_alarm(self, *, issue_key: str, alarm: RunAlarm) -> None:
++        """Record *alarm* on *issue_key*; ``read_run_alarm`` is the read.
++
++        The record is addressed by the complete ``(subject, signal)`` pair,
++        so two alarms whose subjects differ anywhere are two records: two
++        writable surfaces on one issue in one lane under one signal, and a
++        scope subject that carries no lane key at all.  Recording the
++        identical alarm again writes nothing and leaves the stored record
++        exactly as it stands.
++
++        The issue carrying the record is the caller's to state.  No lane
++        key is inferred from the subject, and no most-recent record ever
++        stands in for an address that does not resolve.
++        """
++        ...
++
++    async def read_run_alarm(
++        self, *, issue_key: str, subject: AlarmSubject, signal: AlarmSignal
++    ) -> RunAlarm | None:
++        """The alarm recorded on *issue_key* under exactly this address.
++
++        The value returned is the value written, field for field, with its
++        readings in the order they were recorded.  ``None`` means no record
++        carries that address — never another subject's or another signal's
++        alarm.  A record that cannot be read back as the value written
++        raises; it never becomes a ``None`` or a repaired alarm.
++        """
++        ...
++
++    async def post_run_event(self, *, issue_key: str, event: RunEventRecord) -> None:
++        """Post *event* onto its lane's stream, carried on *issue_key*.
++
++        A post and never an edit: an event is a thing that happened and
++        takes its place in an order, so posting the same event twice
++        records that it happened twice.
++        """
++        ...
++
++    async def run_events(
++        self, *, issue_key: str, lane_key: str
++    ) -> Sequence[RunEventRecord]:
++        """Exactly the events posted for *lane_key*, in write order.
++
++        A record the run edits in place is not an event and never appears
++        here, and neither does a threaded reply — a decision recorded
++        under a thread answers a comment, it does not happen to the lane.
++        A successful read with nothing posted returns an empty sequence;
++        an unreadable one raises rather than becoming an empty stream.
++        """
++        ...
++
+     async def recorded_repository(self, *, issue_key: str) -> str | None:
+         """The target repository most recently recorded on *issue_key*.
+ 
+diff --git a/src/kodezart/domain/fenced_record.py b/src/kodezart/domain/fenced_record.py
+new file mode 100644
+index 0000000..884ec41
+--- /dev/null
++++ b/src/kodezart/domain/fenced_record.py
+@@ -0,0 +1,37 @@
++"""One framing for every marked comment that carries a JSON record.
++
++A record written under a marker is read back by the same code that wrote
++it, so the framing is stated once: a marker line, then one fenced JSON
++object in the model's own canonical spelling. Anything else in that
++position is a damaged record and says so.
++"""
++
++from pydantic import BaseModel
++
++_FENCE_OPEN = "```json\n"
++_FENCE_CLOSE = "\n```"
++
++
++def render_fenced_record(record: BaseModel) -> str:
++    """The record's content beneath its marker: one explicit JSON object."""
++    return (
++        f"{_FENCE_OPEN}{record.model_dump_json(by_alias=True, indent=2)}{_FENCE_CLOSE}"
++    )
++
++
++def parse_fenced_record[T: BaseModel](*, body: str, marker: str, model: type[T]) -> T:
++    """Read the record framed under *marker*, refusing anything else.
++
++    Canonical form is compared rather than merely validated, so a payload
++    the writer could not have produced — a repeated key, a reordering, a
++    field nothing declares — is refused instead of silently collapsing to
++    whichever value the decoder happened to keep.
++    """
++    prefix = f"{marker}\n{_FENCE_OPEN}"
++    if not body.startswith(prefix) or not body.endswith(_FENCE_CLOSE):
++        raise ValueError("the record framing is invalid")
++    payload = body[len(prefix) : -len(_FENCE_CLOSE)]
++    record = model.model_validate_json(payload, strict=True)
++    if render_fenced_record(record) != f"{_FENCE_OPEN}{payload}{_FENCE_CLOSE}":
++        raise ValueError("the record is not in its canonical form")
++    return record
+diff --git a/src/kodezart/domain/run_alarm_record.py b/src/kodezart/domain/run_alarm_record.py
+new file mode 100644
+index 0000000..a2ed7e0
+--- /dev/null
++++ b/src/kodezart/domain/run_alarm_record.py
+@@ -0,0 +1,65 @@
++"""One readable representation of a run-shape alarm record.
++
++The record's address is the complete ``(subject, signal)`` pair: the whole
++subject in one canonical spelling, then the signal. A lane key alone would
++map two writable surfaces on one issue under ``SURFACE_CONTENDED`` onto one
++record, and would not address a scope subject at all.
++"""
++
++from collections.abc import Mapping
++
++from kodezart.domain.comment_markers import compose_comment_marker
++from kodezart.domain.fenced_record import parse_fenced_record, render_fenced_record
++from kodezart.types.domain.run_alarm import (
++    AlarmSignal,
++    AlarmSubject,
++    RunAlarm,
++    alarm_subject_key,
++)
++
++MARKER_PURPOSE = "run_alarm"
++
++
++def run_alarm_marker(
++    *,
++    subject: AlarmSubject,
++    signal: AlarmSignal,
++    marker_prefixes: Mapping[str, str],
++) -> str:
++    """Compose the record's marker from the whole subject and the signal."""
++    return compose_comment_marker(
++        prefixes=marker_prefixes,
++        purpose=MARKER_PURPOSE,
++        lane=alarm_subject_key(subject),
++        occurrence_key=signal.value,
++    )
++
++
++def render_run_alarm(*, alarm: RunAlarm) -> str:
++    """The alarm's content beneath its marker, readings in recorded order."""
++    return render_fenced_record(alarm)
++
++
++def parse_run_alarm(
++    *,
++    body: str,
++    subject: AlarmSubject,
++    signal: AlarmSignal,
++    marker_prefixes: Mapping[str, str],
++) -> RunAlarm:
++    """Read the record stored at this address, refusing anything else.
++
++    A body carrying an identity other than the address it was read under is
++    a damaged record, not an alarm with repairable fields: answering with
++    some other subject's alarm would answer a question nobody put.
++    """
++    alarm = parse_fenced_record(
++        body=body,
++        marker=run_alarm_marker(
++            subject=subject, signal=signal, marker_prefixes=marker_prefixes
++        ),
++        model=RunAlarm,
++    )
++    if alarm.subject != subject or alarm.signal != signal:
++        raise ValueError("the alarm record does not carry the address it is under")
++    return alarm
+diff --git a/src/kodezart/domain/run_event_stream.py b/src/kodezart/domain/run_event_stream.py
+new file mode 100644
+index 0000000..7635adf
+--- /dev/null
++++ b/src/kodezart/domain/run_event_stream.py
+@@ -0,0 +1,74 @@
++"""One lane's ordered run-event stream, read off a native comment log.
++
++The stream is what was POSTED for the lane, oldest first. Two kinds of
++comment share that log and are not events: a record the run edits in place
++under its own marker, and a threaded reply — a decision recorded under a
++thread answers a comment, it does not happen to the lane.
++"""
++
++from collections.abc import Mapping, Sequence
++
++from kodezart.domain.comment_markers import compose_comment_marker
++from kodezart.domain.fenced_record import parse_fenced_record, render_fenced_record
++from kodezart.types.domain.run_event_record import RunEventRecord
++from kodezart.types.domain.tracker import TrackerComment
++
++MARKER_PURPOSE = "run_event"
++
++
++def run_event_marker(*, lane_key: str, marker_prefixes: Mapping[str, str]) -> str:
++    """The marker every one of this lane's events is posted under."""
++    return compose_comment_marker(
++        prefixes=marker_prefixes,
++        purpose=MARKER_PURPOSE,
++        lane=lane_key,
++    )
++
++
++def render_run_event(*, event: RunEventRecord) -> str:
++    """The event's content beneath its marker: one explicit JSON object."""
++    return render_fenced_record(event)
++
++
++def parse_run_event(
++    *,
++    body: str,
++    lane_key: str,
++    marker_prefixes: Mapping[str, str],
++) -> RunEventRecord:
++    """Read one posted event, refusing a body that is not one."""
++    event = parse_fenced_record(
++        body=body,
++        marker=run_event_marker(lane_key=lane_key, marker_prefixes=marker_prefixes),
++        model=RunEventRecord,
++    )
++    if event.lane_key != lane_key:
++        raise ValueError("the event record does not carry the lane it is posted under")
++    return event
++
++
++def lane_run_events(
++    *,
++    lane_key: str,
++    marker_prefixes: Mapping[str, str],
++    comments: Sequence[TrackerComment],
++) -> tuple[RunEventRecord, ...]:
++    """The lane's posted events, in the order the backend created them.
++
++    Ordering is by the backend's own creation stamp, stably, so events
++    posted within one stamp keep the order the log lists them in. An
++    edited record carries a different marker and a reply carries a parent;
++    neither becomes an event by sharing the log with one.
++    """
++    marker = run_event_marker(lane_key=lane_key, marker_prefixes=marker_prefixes)
++    posted = [
++        comment
++        for comment in comments
++        if comment.reply_to is None and comment.body.splitlines()[:1] == [marker]
++    ]
++    return tuple(
++        parse_run_event(
++            body=comment.body, lane_key=lane_key, marker_prefixes=marker_prefixes
++        )
++        for comment in sorted(posted, key=lambda comment: comment.created_at)
++    )
+diff --git a/src/kodezart/domain/scope_reach.py b/src/kodezart/domain/scope_reach.py
+new file mode 100644
+index 0000000..267ec38
+--- /dev/null
++++ b/src/kodezart/domain/scope_reach.py
+@@ -0,0 +1,58 @@
++"""What a scope's container filter cannot reach, over the one arithmetic.
++
++A member's gap is everything its subtree still owes, read through the
++subtree and not through the filtered member set. Some of what it owes can
++sit outside the filter the walk was addressed with — another project, or
++off-milestone under a milestone reference — and stays the member's work
++either way. This names those, so the filter changes what the run can reach
++and never what the lane owes.
++"""
++
++from collections.abc import Mapping, Sequence
++from typing import assert_never
++
++from kodezart.types.domain.dispatch import UnreachableCriterion
++from kodezart.types.domain.scope import ScopeKind, ScopeRef
++from kodezart.types.domain.scope_ready import ScopeReadyLane
++from kodezart.types.domain.tracker import TrackerIssue
++
++
++def _container_key(issue: TrackerIssue, kind: ScopeKind) -> str | None:
++    """The issue's own value on the dimension the filter selects by."""
++    match kind:
++        case ScopeKind.PROJECT | ScopeKind.INITIATIVE:
++            return issue.project_id
++        case ScopeKind.MILESTONE:
++            return issue.milestone_key
++        case ScopeKind.ISSUE:
++            return issue.parent_key
++        case _:
++            assert_never(kind)
++
++
++def unreachable_criteria(
++    *,
++    ref: ScopeRef,
++    members: Mapping[str, TrackerIssue],
++    lanes: Sequence[ScopeReadyLane],
++) -> tuple[UnreachableCriterion, ...]:
++    """Every open criterion in a lane's gap the scope's members do not carry.
++
++    Membership is the filter as the walk resolved it, so this asks the one
++    question that matters to the run: can the scope address this criterion
++    on its own, or only through the lane whose subtree owes it. An issue
++    scope carries its whole subtree by construction and answers with
++    nothing.
++    """
++    return tuple(
++        UnreachableCriterion(
++            issue_key=criterion.issue_key,
++            lane_key=lane.issue.issue_key,
++            filter_kind=ref.kind,
++            filter_key=ref.key,
++            container_key=_container_key(criterion, ref.kind),
++        )
++        for lane in lanes
++        for criterion in lane.gap
++        if criterion.issue_key not in members
++    )
+diff --git a/src/kodezart/services/scope_dispatcher.py b/src/kodezart/services/scope_dispatcher.py
+index 3f1ce78..744dbfb 100644
+--- a/src/kodezart/services/scope_dispatcher.py
++++ b/src/kodezart/services/scope_dispatcher.py
+@@ -14,6 +14,7 @@ board has already moved under.
+ from kodezart.chains.scope_walker import read_scope_ready
+ from kodezart.core.logging import BoundLogger, get_logger
+ from kodezart.core.protocols import TrackerPort
++from kodezart.domain.scope_reach import unreachable_criteria
+ from kodezart.services.fire_dispatcher import FireDispatcher
+ from kodezart.types.domain.dispatch import (
+     DispatchOutcome,
+@@ -56,6 +57,13 @@ class ScopeDispatcher:
+         the same procedure the unscoped pass launches through.  A pass in
+         which every ready lane is held back, or in which none was ready at
+         all, reports an empty eligible set and leaves the board untouched.
++
++        Every open criterion a ready lane owes that this scope's own
++        container filter does not carry rides on the report beside the
++        selection.  The filter decides what the walk can address; it never
++        decides what a lane owes, so an unreachable descendant is named
++        rather than dropped and a pass that reports nothing is
++        distinguishable from a scope with nothing left in it.
+         """
+         ready = await read_scope_ready(ref=self._ref, tracker=self._tracker)
+         members = {issue.issue_key: issue for issue in ready.scope.issues}
+@@ -71,6 +79,9 @@ class ScopeDispatcher:
+                 *(members[blocked.issue_key] for blocked in ready.blocked),
+             )
+         )
++        unreachable = unreachable_criteria(
++            ref=self._ref, members=members, lanes=ready.ready
++        )
+         exclusions = [
+             IssueExclusion(
+                 issue_key=blocked.issue_key,
+@@ -86,24 +97,27 @@ class ScopeDispatcher:
+             scope_key=self._ref.key,
+             ready=list(eligible_keys),
+             blocked=[blocked.issue_key for blocked in ready.blocked],
++            unreachable=[item.issue_key for item in unreachable],
+         )
+         for lane in ready.ready:
+             exclusion = await self._dispatcher.standing_exclusion(lane.issue)
+             if exclusion is not None:
+                 exclusions.append(exclusion)
+                 continue
+-            return await self._dispatcher.launch(
++            report = await self._dispatcher.launch(
+                 lane.issue,
+                 rows=rows,
+                 exclusions=tuple(exclusions),
+                 eligible_keys=eligible_keys,
+                 criterion_keys=tuple(criterion.issue_key for criterion in lane.gap),
+             )
++            return report.model_copy(update={"unreachable": unreachable})
+         return DispatchReport(
+             outcome=DispatchOutcome.empty_eligible_set,
+             snapshot=rows,
+             exclusions=tuple(exclusions),
+             eligible=eligible_keys,
++            unreachable=unreachable,
+         )
+ 
+     async def record_run_outcome(
+diff --git a/src/kodezart/types/domain/dispatch.py b/src/kodezart/types/domain/dispatch.py
+index d4b157b..116cb4d 100644
+--- a/src/kodezart/types/domain/dispatch.py
++++ b/src/kodezart/types/domain/dispatch.py
+@@ -20,6 +20,7 @@ from pydantic import ConfigDict, Field
+ from kodezart.types.base import CamelCaseModel
+ from kodezart.types.domain.branch import BaseSpec
+ from kodezart.types.domain.gating import RepoVisibility
++from kodezart.types.domain.scope import ScopeKind
+ from kodezart.types.domain.self_writes import OwnMutation
+ from kodezart.types.domain.tracker import IssuePriority
+ 
+@@ -172,6 +173,31 @@ class IssueExclusion(DispatchModel):
+     detail: str = ""
+ 
+ 
++class UnreachableCriterion(DispatchModel):
++    """One open criterion a scope member owes that the scope cannot reach.
++
++    A container filter changes what a run can REACH; it never changes what
++    a lane owes.  A criterion under a member's subtree is that member's
++    work whether or not the filter carries the issue holding it, so a
++    descendant outside the filter is NAMED here rather than dropped: a
++    scope reporting nothing while one of these is open would be reporting
++    itself finished with work left in it.
++
++    The reason is stated in the filter's own terms — the filter's kind and
++    key beside the descendant's own value on that same dimension, which is
++    the project under a project or initiative reference and the milestone
++    under a milestone one.  ``container_key`` is ``None`` when the
++    descendant sits in no container of that kind at all, which is a state
++    of the board and not a missing reading.
++    """
++
++    issue_key: str = Field(min_length=1)
++    lane_key: str = Field(min_length=1)
++    filter_kind: ScopeKind
++    filter_key: str = Field(min_length=1)
++    container_key: str | None = None
++
++
+ class DispatchReport(DispatchModel):
+     """The outcome of exactly one dispatch pass.
+ 
+@@ -220,6 +246,15 @@ class DispatchReport(DispatchModel):
+     readable from the report rather than reconstructed from the board
+     afterwards."""
+ 
++    unreachable: tuple[UnreachableCriterion, ...] = ()
++    """Open criteria the scope's members owe that its container filter does
++    not carry.
++
++    Empty for a producer that walks no container: an unscoped pass ranks an
++    approved scan and has no filter for anything to fall outside of.  A
++    scope walk carries every one it found, so "nothing ready" is
++    distinguishable from "nothing left"."""
++
+     superseded_base: BaseSpec | None = None
+     """The base a PREVIOUS dispatch of this issue recorded, when the graph
+     has moved under it since.  ``None`` covers two states deliberately —
+diff --git a/src/kodezart/types/domain/run_alarm.py b/src/kodezart/types/domain/run_alarm.py
+index ba65536..a37cb3e 100644
+--- a/src/kodezart/types/domain/run_alarm.py
++++ b/src/kodezart/types/domain/run_alarm.py
+@@ -112,6 +112,21 @@ class AlarmSubject(CamelCaseModel):
+         return self
+ 
+ 
++_ALARM_SUBJECT = TypeAdapter(AlarmSubject)
++
++
++def alarm_subject_key(subject: AlarmSubject) -> str:
++    """Encode a whole alarm subject as one canonical, backend-neutral key.
++
++    An alarm is addressed by its complete subject, so two subjects that
++    differ anywhere address two records: two writable surfaces on one
++    issue in one lane, and a scope subject carrying no lane key at all.
++    One spelling per subject, the discipline ``surface_alarm_member_id``
++    already applies to the surface component.
++    """
++    return _ALARM_SUBJECT.dump_json(subject).decode("utf-8")
++
++
+ class LaneFieldValue(CamelCaseModel):
+     """An explicit field projection supplied by a record or event reader.
+ 
+diff --git a/src/kodezart/types/domain/run_event_record.py b/src/kodezart/types/domain/run_event_record.py
+new file mode 100644
+index 0000000..6c9532d
+--- /dev/null
++++ b/src/kodezart/types/domain/run_event_record.py
+@@ -0,0 +1,32 @@
++"""One durable run event, as a lane's stream carries it.
++
++The vocabulary and its notification partition are owned by
++``types/domain/run_event.py``; this is the value a producer posts and a
++reader enumerates.
++"""
++
++from pydantic import ConfigDict, Field
++
++from kodezart.types.base import CamelCaseModel
++from kodezart.types.domain.run_event import RunEventKind
++
++
++class RunEventRecord(CamelCaseModel):
++    """One thing that happened to a lane, posted and never edited.
++
++    Posting and editing are different writes with different meanings: an
++    event is a thing that happened and takes its place in an order, while
++    a record the run keeps current is one current fact. A stream that
++    admitted edited records would report the last edit as the moment.
++
++    ``subject_ref`` is the producer's own address for what the event is
++    about, carried verbatim. One lane's stream mixes events about its
++    criteria, its surfaces and its alarms, and a stream that could not say
++    which is not one anybody can read.
++    """
++
++    model_config = ConfigDict(frozen=True, extra="forbid")
++
++    lane_key: str = Field(min_length=1, pattern=r"\S")
++    kind: RunEventKind
++    subject_ref: str = Field(min_length=1, pattern=r"\S")
+diff --git a/tests/fakes.py b/tests/fakes.py
+index 4fd9088..88430a6 100644
+--- a/tests/fakes.py
++++ b/tests/fakes.py
+@@ -52,6 +52,16 @@ from kodezart.domain.errors import (
+ )
+ from kodezart.domain.escalation_resolution import resolution_from_comments
+ from kodezart.domain.fire_spec import require_fire_entry, tracker_spec_from_issues
++from kodezart.domain.run_alarm_record import (
++    parse_run_alarm,
++    render_run_alarm,
++    run_alarm_marker,
++)
++from kodezart.domain.run_event_stream import (
++    lane_run_events,
++    render_run_event,
++    run_event_marker,
++)
+ from kodezart.domain.scope_approval import resolve_execution_approval
+ from kodezart.domain.surface_lease import live_conflict, surface_address
+ from kodezart.domain.tracker_writes import (
+@@ -113,6 +123,8 @@ from kodezart.types.domain.operation import (
+ from kodezart.types.domain.persist import ArtifactPersistStatus, PersistResult
+ from kodezart.types.domain.pr_state import PRState
+ from kodezart.types.domain.prompts import PromptKey
++from kodezart.types.domain.run_alarm import AlarmSignal, AlarmSubject, RunAlarm
++from kodezart.types.domain.run_event_record import RunEventRecord
+ from kodezart.types.domain.run_records import RunIdentity, RunOutcome, RunRecord
+ from kodezart.types.domain.scope import ScopeContainer, ScopeKind, ScopeRef
+ from kodezart.types.domain.self_writes import IssueMovementSnapshot, field_values
+@@ -4061,6 +4073,71 @@ class FakeTrackerPort:
+         await asyncio.sleep(0)
+         return self.recorded_base_specs.get(issue_key)
+ 
++    async def record_run_alarm(self, *, issue_key: str, alarm: RunAlarm) -> None:
++        await self.upsert_comment(
++            target=issue_key,
++            marker=run_alarm_marker(
++                subject=alarm.subject,
++                signal=alarm.signal,
++                marker_prefixes=self.marker_prefixes,
++            ),
++            body=render_run_alarm(alarm=alarm),
++        )
++
++    async def read_run_alarm(
++        self, *, issue_key: str, subject: AlarmSubject, signal: AlarmSignal
++    ) -> RunAlarm | None:
++        marker = run_alarm_marker(
++            subject=subject, signal=signal, marker_prefixes=self.marker_prefixes
++        )
++        stored = comment_under_marker(
++            target=issue_key,
++            marker=marker,
++            comments=await self.list_comments(issue_key=issue_key),
++        )
++        if stored is None:
++            return None
++        try:
++            return parse_run_alarm(
++                body=stored.body,
++                subject=subject,
++                signal=signal,
++                marker_prefixes=self.marker_prefixes,
++            )
++        except ValueError as exc:
++            raise TrackerProtocolError(
++                "run-alarm record does not match its declared shape",
++                tool="list_comments",
++                detail=stored.comment_key,
++            ) from exc
++
++    async def post_run_event(self, *, issue_key: str, event: RunEventRecord) -> None:
++        await self.post_comment(
++            issue_key=issue_key,
++            body=marked_comment_body(
++                marker=run_event_marker(
++                    lane_key=event.lane_key, marker_prefixes=self.marker_prefixes
++                ),
++                body=render_run_event(event=event),
++            ),
++        )
++
++    async def run_events(
++        self, *, issue_key: str, lane_key: str
++    ) -> Sequence[RunEventRecord]:
++        try:
++            return lane_run_events(
++                lane_key=lane_key,
++                marker_prefixes=self.marker_prefixes,
++                comments=await self.list_comments(issue_key=issue_key),
++            )
++        except ValueError as exc:
++            raise TrackerProtocolError(
++                "run-event post does not match its declared shape",
++                tool="list_comments",
++                detail=issue_key,
++            ) from exc
++
+     async def recorded_repository(self, *, issue_key: str) -> str | None:
+         await asyncio.sleep(0)
+         return self.recorded_repositories.get(issue_key)
+diff --git a/tests/services/test_scope_dispatcher.py b/tests/services/test_scope_dispatcher.py
+index 67c372b..ae21556 100644
+--- a/tests/services/test_scope_dispatcher.py
++++ b/tests/services/test_scope_dispatcher.py
+@@ -32,6 +32,7 @@ from kodezart.types.domain.dispatch import (
+     IssueExclusion,
+     PassRun,
+     PassSignal,
++    UnreachableCriterion,
+ )
+ from kodezart.types.domain.job import JobState
+ from kodezart.types.domain.operation import ScopeLabel
+@@ -479,6 +480,7 @@ def test_ready_set_and_walker_modules_hold_no_merge_state_call_site():
+         "kodezart.chains.scope_walker",
+         "kodezart.core.logging",
+         "kodezart.core.protocols",
++        "kodezart.domain.scope_reach",
+         "kodezart.services.fire_dispatcher",
+         "kodezart.types.domain.dispatch",
+         "kodezart.types.domain.run_records",
+@@ -774,3 +776,96 @@ def test_walker_modules_resolve_no_lane_marker_and_parse_no_prose():
+                     "title",
+                     "list_comments",
+                 }
++
++
++OTHER_PROJECT = "fixture-other-project"
++
++
++def reach_board(*, out_of_filter: bool, child_done: bool = False):
++    """A lane whose own criteria are Done, parenting a deliverable child.
++
++    The child sits in another project on the out-of-filter arm, which is
++    what a container filter misses on the founder's boards. Membership is
++    stated rather than derived, because that IS the filter under test.
++    """
++    child_project = OTHER_PROJECT if out_of_filter else PROJECT.key
++    issues = (
++        lane_issue("lane"),
++        criterion("lane-check", parent="lane", met=True),
++        make_tracker_issue("child", parent_key="lane", project_id=child_project),
++        make_tracker_issue(
++            "child-check",
++            parent_key="child",
++            issue_labels=CRITERION,
++            queue_states=(),
++            state_kind=(
++                WorkflowStateKind.COMPLETED
++                if child_done
++                else WorkflowStateKind.UNSTARTED
++            ),
++            state_name="Done" if child_done else "Todo",
++            project_id=child_project,
++        ),
++    )
++    return FakeTrackerPort(
++        issues=issues,
++        scope_containers=[
++            ScopeContainer(
++                ref=PROJECT,
++                name="fixture project",
++                description="",
++                url="https://tracker.invalid/p",
++            ),
++        ],
++        scope_memberships={
++            PROJECT: ["lane"] if out_of_filter else ["lane", "child"],
++        },
++        scope_label_members={PROJECT: frozenset({ScopeLabel.APPROVED})},
++    )
++
++
++async def test_the_report_names_the_open_criterion_the_filter_cannot_reach():
++    """The scope is not at rest, and the unreachable descendant says why."""
++    tracker = reach_board(out_of_filter=True)
++    walker, queue, _ = walk(tracker)
++
++    report = await walker.run_pass()
++
++    assert report.unreachable == (
++        UnreachableCriterion(
++            issue_key="child-check",
++            lane_key="lane",
++            filter_kind=ScopeKind.PROJECT,
++            filter_key=PROJECT.key,
++            container_key=OTHER_PROJECT,
++        ),
++    )
++    assert report.outcome is DispatchOutcome.fire_enqueued
++    assert report.eligible == ("lane",)
++    assert enqueued(queue) == ["lane"]
++
++
++async def test_the_same_shape_inside_the_filter_names_none_and_dispatches_the_child():
++    """Nothing moves but the filter: the child is a member and is eligible."""
++    tracker = reach_board(out_of_filter=False)
++    walker, queue, _ = walk(tracker)
++
++    report = await walker.run_pass()
++
++    assert report.unreachable == ()
++    assert set(report.eligible) == {"lane", "child"}
++    assert enqueued(queue) == ["lane"]
++
++
++async def test_a_scope_whose_hidden_descendant_closed_reports_nothing_unreachable():
++    """At rest is the same read, once the one open criterion is Done."""
++    tracker = reach_board(out_of_filter=True, child_done=True)
++    walker, queue, _ = walk(tracker)
++
++    report = await walker.run_pass()
++
++    assert report.outcome is DispatchOutcome.empty_eligible_set
++    assert report.eligible == ()
++    assert report.exclusions == ()
++    assert report.unreachable == ()
++    assert enqueued(queue) == []
+diff --git a/tests/tracker/marker_config.py b/tests/tracker/marker_config.py
+index 116b6fd..d84cafd 100644
+--- a/tests/tracker/marker_config.py
++++ b/tests/tracker/marker_config.py
+@@ -8,4 +8,6 @@ MARKER_PREFIXES: dict[str, str] = {
+     "base_spec": "kodezart-basespec",
+     "repository": "kodezart-repo",
+     "issue_identity": "kodezart-issue",
++    "run_alarm": "fixture-run-alarm",
++    "run_event": "fixture-run-event",
+ }
+diff --git a/tests/tracker/test_scope_subtree_reach.py b/tests/tracker/test_scope_subtree_reach.py
+new file mode 100644
+index 0000000..d7279a8
+--- /dev/null
++++ b/tests/tracker/test_scope_subtree_reach.py
+@@ -0,0 +1,319 @@
++"""An open criterion under a lane that the scope's container filter misses.
++
++One board shape, two arms, both implementations. A scope member has every
++one of its OWN criteria Done and parents a deliverable that sits in another
++project; that deliverable still holds an open criterion. The lane owes it —
++what an issue owes is its whole subtree — and the scope cannot address it
++on its own, because the filter the walk was given does not carry it.
++
++The pair runs through the shipped Linear adapter over the in-process MCP
++server AND through the in-process double, so neither implementation can
++answer "nothing left" alone.
++"""
++
++from collections.abc import Mapping, Sequence
++from dataclasses import dataclass
++
++import pytest
++
++from kodezart.adapters.linear_mcp_tracker import LinearMcpTracker
++from kodezart.chains.scope_walker import read_scope_ready
++from kodezart.core.backoff import RetryPolicy
++from kodezart.core.protocols import TrackerPort
++from kodezart.domain.scope_reach import unreachable_criteria
++from kodezart.types.domain.dispatch import SelfWriteLedger
++from kodezart.types.domain.operation import LifecycleStage, ScopeLabel
++from kodezart.types.domain.scope import ScopeContainer, ScopeKind, ScopeRef
++from kodezart.types.domain.tracker import (
++    IssuePriority,
++    TrackerIssue,
++    WorkflowStateKind,
++)
++from tests.fakes import FakeLinearMcpServer, FakeTrackerPort
++from tests.tracker.conftest import FIXTURE_NOW
++from tests.tracker.marker_config import MARKER_PREFIXES
++from tests.tracker.test_scope_reads import ScopeMcpIssue
++
++PROJECT = ScopeRef(kind=ScopeKind.PROJECT, key="reach-project")
++OTHER_PROJECT = "reach-other-project"
++
++LANE = "REACH-1"
++LANE_CHECK = "REACH-2"
++CHILD = "REACH-3"
++CHILD_CHECK = "REACH-4"
++
++CRITERION_LABEL = "acceptance-condition"
++APPROVED_LABEL = "execution-consent"
++QUEUE_STATE_LABELS = {"approved": "queue:approved"}
++WORKFLOW_STATE_NAMES = {
++    LifecycleStage.IN_PROGRESS: "In Progress",
++    LifecycleStage.IN_REVIEW: "In Review",
++    LifecycleStage.DONE: "Done",
++}
++DONE = ("Done", "completed")
++TODO = ("Todo", "unstarted")
++
++
++def _project(key: str) -> dict[str, object]:
++    return {
++        "id": key,
++        "name": key,
++        "description": f"Complete description of {key}",
++        "url": f"https://tracker.invalid/project/{key}",
++        "initiatives": [],
++        "labels": [],
++    }
++
++
++class ReachMcpServer(FakeLinearMcpServer):
++    """The project-filtered issue reads this shape is measured through."""
++
++    def __init__(self, *, issues: Sequence[ScopeMcpIssue]) -> None:
++        super().__init__(
++            issues=issues,
++            projects={key: _project(key) for key in (PROJECT.key, OTHER_PROJECT)},
++        )
++
++    def _tool_list_issues(
++        self, arguments: Mapping[str, object]
++    ) -> Mapping[str, object]:
++        rows = [issue.entry() for issue in self.issues.values()]
++        if "project" in arguments:
++            rows = [row for row in rows if row["projectId"] == arguments["project"]]
++        if "parentId" in arguments:
++            rows = [row for row in rows if row["parentId"] == arguments["parentId"]]
++        return {"issues": rows, "hasNextPage": False}
++
++
++def _issues(*, child_done: bool, child_project: str) -> list[ScopeMcpIssue]:
++    """The one board shape both arms and both implementations are read from."""
++    child_status, child_kind = DONE if child_done else TODO
++    return [
++        ScopeMcpIssue(
++            id=LANE,
++            description="the lane the walk selects",
++            labels=[APPROVED_LABEL],
++            status="Todo",
++            status_type="unstarted",
++            project_key=PROJECT.key,
++            milestone_key=None,
++        ),
++        ScopeMcpIssue(
++            id=LANE_CHECK,
++            description="the lane's own criterion, already Done",
++            labels=[CRITERION_LABEL],
++            parent_id=LANE,
++            status=DONE[0],
++            status_type=DONE[1],
++            project_key=PROJECT.key,
++            milestone_key=None,
++        ),
++        ScopeMcpIssue(
++            id=CHILD,
++            description="the deliverable the lane parents",
++            parent_id=LANE,
++            status="Todo",
++            status_type="unstarted",
++            project_key=child_project,
++            milestone_key=None,
++        ),
++        ScopeMcpIssue(
++            id=CHILD_CHECK,
++            description="the criterion the deliverable holds",
++            labels=[CRITERION_LABEL],
++            parent_id=CHILD,
++            status=child_status,
++            status_type=child_kind,
++            project_key=child_project,
++            milestone_key=None,
++        ),
++    ]
++
++
++def _adapter(server: FakeLinearMcpServer) -> TrackerPort:
++    return LinearMcpTracker(
++        marker_prefixes=MARKER_PREFIXES,
++        issue_labels={
++            "criterion": CRITERION_LABEL,
++            "decision": "decision-record",
++            "tracker": "tracker-record",
++        },
++        criteria_stage_label_key=None,
++        scope_labels={ScopeLabel.APPROVED.value: APPROVED_LABEL},
++        caller=server,
++        queue_state_labels=QUEUE_STATE_LABELS,
++        workflow_state_names=WORKFLOW_STATE_NAMES,
++        team_identifiers={},
++        retry=RetryPolicy(attempts=1, initial_delay=1.0),
++        clock=lambda: FIXTURE_NOW,
++        ledger=SelfWriteLedger(),
++    )
++
++
++def _domain_issue(issue: ScopeMcpIssue) -> TrackerIssue:
++    return TrackerIssue(
++        issue_key=issue.id,
++        title=issue.title,
++        body=issue.description,
++        priority=IssuePriority.NONE,
++        state_name=issue.status,
++        state_kind=WorkflowStateKind(issue.status_type),
++        queue_states=frozenset(),
++        issue_labels=frozenset(
++            "criterion" if label == CRITERION_LABEL else label for label in issue.labels
++        ),
++        team_key=None,
++        project=issue.project_key,
++        project_id=issue.project_key,
++        milestone_key=issue.milestone_key,
++        parent_key=issue.parent_id,
++        created_at=FIXTURE_NOW,
++        updated_at=FIXTURE_NOW,
++        url=f"https://tracker.invalid/issue/{issue.id}",
++    )
++
++
++def _double(issues: Sequence[ScopeMcpIssue]) -> FakeTrackerPort:
++    return FakeTrackerPort(
++        issues=[_domain_issue(issue) for issue in issues],
++        scope_containers=[
++            ScopeContainer(
++                ref=PROJECT,
++                name=PROJECT.key,
++                description="",
++                url=f"https://tracker.invalid/project/{PROJECT.key}",
++            ),
++        ],
++        scope_memberships={
++            PROJECT: [issue.id for issue in issues if issue.project_key == PROJECT.key],
++        },
++        scope_label_members={PROJECT: frozenset({ScopeLabel.APPROVED})},
++    )
++
++
++@dataclass(frozen=True)
++class Board:
++    tracker: TrackerPort
++    name: str
++
++
++@pytest.fixture(params=["linear-mcp", "fake-port"])
++def implementation(request: pytest.FixtureRequest) -> str:
++    """Both tracker implementations, over one stated board shape."""
++    param: str = request.param
++    return param
++
++
++def board(implementation: str, *, child_done: bool, out_of_filter: bool) -> Board:
++    issues = _issues(
++        child_done=child_done,
++        child_project=OTHER_PROJECT if out_of_filter else PROJECT.key,
++    )
++    tracker = (
++        _adapter(ReachMcpServer(issues=issues))
++        if implementation == "linear-mcp"
++        else _double(issues)
++    )
++    return Board(tracker=tracker, name=implementation)
++
++
++async def test_the_lane_owes_the_criterion_its_scope_cannot_reach(
++    implementation: str,
++) -> None:
++    """The out-of-filter arm: the read names the descendant and its reason."""
++    reading = board(implementation, child_done=False, out_of_filter=True)
++
++    ready = await read_scope_ready(ref=PROJECT, tracker=reading.tracker)
++
++    members = {issue.issue_key for issue in ready.scope.issues}
++    assert members == {LANE, LANE_CHECK}
++    assert [lane.issue.issue_key for lane in ready.ready] == [LANE]
++    assert [criterion.issue_key for criterion in ready.ready[0].gap] == [CHILD_CHECK]
++    unreachable = unreachable_criteria(
++        ref=PROJECT,
++        members={issue.issue_key: issue for issue in ready.scope.issues},
++        lanes=ready.ready,
++    )
++    assert len(unreachable) == 1
++    named = unreachable[0]
++    assert named.issue_key == CHILD_CHECK
++    assert named.lane_key == LANE
++    assert named.filter_kind is ScopeKind.PROJECT
++    assert named.filter_key == PROJECT.key
++    assert named.container_key == OTHER_PROJECT
++
++
++async def test_the_same_shape_inside_the_filter_names_no_unreachable_descendant(
++    implementation: str,
++) -> None:
++    """The in-filter arm: the child is a member and is dispatched as before."""
++    reading = board(implementation, child_done=False, out_of_filter=False)
++
++    ready = await read_scope_ready(ref=PROJECT, tracker=reading.tracker)
++
++    assert {issue.issue_key for issue in ready.scope.issues} == {
++        LANE,
++        LANE_CHECK,
++        CHILD,
++        CHILD_CHECK,
++    }
++    assert {lane.issue.issue_key for lane in ready.ready} == {LANE, CHILD}
++    assert (
++        unreachable_criteria(
++            ref=PROJECT,
++            members={issue.issue_key: issue for issue in ready.scope.issues},
++            lanes=ready.ready,
++        )
++        == ()
++    )
++
++
++async def test_the_lane_is_not_at_rest_while_the_hidden_descendant_is_open(
++    implementation: str,
++) -> None:
++    """The lane's state follows the subtree, not the filtered member set.
++
++    Its own criterion family is entirely Done, so a reading taken over the
++    filtered members would report an empty gap and the scope would go to
++    rest with this criterion open forever.
++    """
++    reading = board(implementation, child_done=False, out_of_filter=True)
++
++    own = await reading.tracker.read_criteria(issue_key=LANE)
++    assert [criterion.issue_key for criterion in own] == [LANE_CHECK]
++    assert all(criterion.state_kind is WorkflowStateKind.COMPLETED for criterion in own)
++
++    ready = await read_scope_ready(ref=PROJECT, tracker=reading.tracker)
++
++    # Not at rest: the scope still reports the lane as work, and the named
++    # reason is exactly the descendant its own filter cannot reach.
++    assert ready.ready != ()
++    assert [lane.issue.issue_key for lane in ready.ready] == [LANE]
++    assert [criterion.issue_key for criterion in ready.ready[0].gap] == [CHILD_CHECK]
++    unreachable = unreachable_criteria(
++        ref=PROJECT,
++        members={issue.issue_key: issue for issue in ready.scope.issues},
++        lanes=ready.ready,
++    )
++    assert [named.issue_key for named in unreachable] == [CHILD_CHECK]
++
++
++async def test_the_same_lane_reads_at_rest_once_that_descendant_is_done(
++    implementation: str,
++) -> None:
++    """Nothing else changed: the one open criterion moved to Done."""
++    reading = board(implementation, child_done=True, out_of_filter=True)
++
++    ready = await read_scope_ready(ref=PROJECT, tracker=reading.tracker)
++
++    assert {issue.issue_key for issue in ready.scope.issues} == {LANE, LANE_CHECK}
++    assert ready.ready == ()
++    assert ready.blocked == ()
++    assert (
++        unreachable_criteria(
++            ref=PROJECT,
++            members={issue.issue_key: issue for issue in ready.scope.issues},
++            lanes=ready.ready,
++        )
++        == ()
++    )
+diff --git a/tests/tracker/test_tracker_conformance.py b/tests/tracker/test_tracker_conformance.py
+index e850c89..e2a0978 100644
+--- a/tests/tracker/test_tracker_conformance.py
++++ b/tests/tracker/test_tracker_conformance.py
+@@ -18,9 +18,22 @@ import pytest
+ from kodezart.core.errors import TrackerEnsureConflictError
+ from kodezart.core.protocols import TrackerPort
+ from kodezart.domain.errors import DuplicateWorkRefError, SurfaceLeaseError
++from kodezart.domain.run_event_stream import render_run_event, run_event_marker
++from kodezart.domain.tracker_writes import marked_comment_body
+ from kodezart.types.domain.branch import BaseInput, BaseSpec, WorkRef, WorkRefRole
+ from kodezart.types.domain.dispatch import PassSignal
+ from kodezart.types.domain.operation import LifecycleStage, QueueState
++from kodezart.types.domain.run_alarm import (
++    AlarmBound,
++    AlarmReading,
++    AlarmSignal,
++    AlarmSubject,
++    AlarmSubjectKind,
++    RunAlarm,
++    surface_alarm_member_id,
++)
++from kodezart.types.domain.run_event import RunEventKind
++from kodezart.types.domain.run_event_record import RunEventRecord
+ from kodezart.types.domain.scope import ScopeKind, ScopeRef
+ from kodezart.types.domain.surface import SurfaceKind, SurfaceLease, WritableSurface
+ from kodezart.types.domain.tracker import (
+@@ -54,6 +67,7 @@ from tests.tracker.conftest import (
+     TEAM_IDENTIFIERS,
+     FixtureClock,
+ )
++from tests.tracker.marker_config import MARKER_PREFIXES
+ 
+ LEASE_SECONDS = 600.0
+ TEAM = TEAM_IDENTIFIERS["engineering"]
+@@ -2068,3 +2082,339 @@ class TestRecordedBaseSpec:
+         assert [ref.role for ref in refs] == [WorkRefRole.DELIVERABLE]
+         recorded = await tracker.read_base_spec(issue_key=APPROVED_ISSUE)
+         assert recorded is not None and recorded.base_branch == "kodezart/blocker"
++
++
++class TestRunAlarmRecords:
++    """P1 — an alarm's identity is the complete ``(subject, signal)`` pair.
++
++    An implementation addressing the record by a lane key alone passes the
++    single-subject round trip and fails here: two writable surfaces on one
++    issue in one lane under one signal collapse onto one record, and a
++    scope subject has no lane key to address at all.
++    """
++
++    SCOPE_KEY = "fixture-scope"
++    LANE_KEY = CLAIMED_ISSUE
++
++    def _surface_subject(self, surface: WritableSurface) -> AlarmSubject:
++        return AlarmSubject(
++            kind=AlarmSubjectKind.SURFACE,
++            scope_key=self.SCOPE_KEY,
++            lane_key=self.LANE_KEY,
++            member_id=surface_alarm_member_id(surface),
++        )
++
++    def _contended(self, surface: WritableSurface, *, holder: str) -> RunAlarm:
++        return RunAlarm(
++            subject=self._surface_subject(surface),
++            signal=AlarmSignal.SURFACE_CONTENDED,
++            readings=(
++                AlarmReading(source_ref=f"{holder}/lease", value=holder),
++                AlarmReading(source_ref=f"{holder}/holders", value="2"),
++            ),
++            bound=AlarmBound(
++                config_field="run_alarm_max_surface_holders",
++                configured_value=1,
++                observed_value=2,
++            ),
++            raised_at_sha="c" * 40,
++            raised_by="fixture-supervisor",
++        )
++
++    def _scope_alarm(self) -> RunAlarm:
++        return RunAlarm(
++            subject=AlarmSubject(
++                kind=AlarmSubjectKind.SCOPE,
++                scope_key=self.SCOPE_KEY,
++            ),
++            signal=AlarmSignal.RULINGS_OUTPACE_CLOSURES,
++            readings=(
++                AlarmReading(source_ref="rulings", value="7"),
++                AlarmReading(source_ref="closures", value="1"),
++            ),
++            bound=None,
++            raised_at_sha="d" * 40,
++            raised_by="fixture-supervisor",
++        )
++
++    async def test_an_alarm_round_trips_field_for_field_with_its_reading_order(
++        self,
++        tracker: TrackerPort,
++    ) -> None:
++        alarm = self._contended(MARKER_A, holder=JOB_A)
++
++        await tracker.record_run_alarm(issue_key=CLAIMED_ISSUE, alarm=alarm)
++
++        stored = await tracker.read_run_alarm(
++            issue_key=CLAIMED_ISSUE,
++            subject=alarm.subject,
++            signal=alarm.signal,
++        )
++        assert stored == alarm
++        assert stored is not None
++        assert [reading.source_ref for reading in stored.readings] == [
++            f"{JOB_A}/lease",
++            f"{JOB_A}/holders",
++        ]
++
++    async def test_recording_the_identical_alarm_again_writes_no_second_record(
++        self,
++        tracker: TrackerPort,
++    ) -> None:
++        alarm = self._contended(MARKER_A, holder=JOB_A)
++        before = await tracker.list_comments(issue_key=CLAIMED_ISSUE)
++
++        await tracker.record_run_alarm(issue_key=CLAIMED_ISSUE, alarm=alarm)
++        once = await tracker.list_comments(issue_key=CLAIMED_ISSUE)
++        await tracker.record_run_alarm(issue_key=CLAIMED_ISSUE, alarm=alarm)
++        twice = await tracker.list_comments(issue_key=CLAIMED_ISSUE)
++
++        assert len(once) == len(before) + 1
++        assert list(twice) == list(once)
++        assert (
++            await tracker.read_run_alarm(
++                issue_key=CLAIMED_ISSUE,
++                subject=alarm.subject,
++                signal=alarm.signal,
++            )
++            == alarm
++        )
++
++    async def test_two_surfaces_in_one_lane_under_one_signal_are_two_records(
++        self,
++        tracker: TrackerPort,
++    ) -> None:
++        """The collision D5's lane-keyed marker could not tell apart."""
++        first = self._contended(MARKER_A, holder=JOB_A)
++        second = self._contended(MARKER_B, holder=JOB_B)
++        before = await tracker.list_comments(issue_key=CLAIMED_ISSUE)
++
++        await tracker.record_run_alarm(issue_key=CLAIMED_ISSUE, alarm=first)
++        await tracker.record_run_alarm(issue_key=CLAIMED_ISSUE, alarm=second)
++
++        assert first.subject != second.subject
++        assert first.signal is second.signal
++        assert (
++            await tracker.read_run_alarm(
++                issue_key=CLAIMED_ISSUE,
++                subject=first.subject,
++                signal=first.signal,
++            )
++            == first
++        )
++        assert (
++            await tracker.read_run_alarm(
++                issue_key=CLAIMED_ISSUE,
++                subject=second.subject,
++                signal=second.signal,
++            )
++            == second
++        )
++        after = await tracker.list_comments(issue_key=CLAIMED_ISSUE)
++        assert len(after) == len(before) + 2
++
++    async def test_a_scope_subject_carrying_no_lane_key_round_trips(
++        self,
++        tracker: TrackerPort,
++    ) -> None:
++        alarm = self._scope_alarm()
++        assert alarm.subject.lane_key is None
++
++        await tracker.record_run_alarm(issue_key=CLAIMED_ISSUE, alarm=alarm)
++
++        assert (
++            await tracker.read_run_alarm(
++                issue_key=CLAIMED_ISSUE,
++                subject=alarm.subject,
++                signal=alarm.signal,
++            )
++            == alarm
++        )
++
++    async def test_an_address_no_record_carries_reads_as_none(
++        self,
++        tracker: TrackerPort,
++    ) -> None:
++        """No latest-record fallback: a miss is a miss, not the last alarm."""
++        recorded = self._contended(MARKER_A, holder=JOB_A)
++        await tracker.record_run_alarm(issue_key=CLAIMED_ISSUE, alarm=recorded)
++
++        assert (
++            await tracker.read_run_alarm(
++                issue_key=CLAIMED_ISSUE,
++                subject=self._surface_subject(MARKER_B),
++                signal=AlarmSignal.SURFACE_CONTENDED,
++            )
++            is None
++        )
++        assert (
++            await tracker.read_run_alarm(
++                issue_key=CLAIMED_ISSUE,
++                subject=recorded.subject,
++                signal=AlarmSignal.RECORD_SUPERSEDED,
++            )
++            is None
++        )
++
++    async def test_a_record_is_scoped_to_the_issue_that_carries_it(
++        self,
++        tracker: TrackerPort,
++    ) -> None:
++        alarm = self._contended(MARKER_A, holder=JOB_A)
++        await tracker.record_run_alarm(issue_key=CLAIMED_ISSUE, alarm=alarm)
++
++        assert (
++            await tracker.read_run_alarm(
++                issue_key=APPROVED_ISSUE,
++                subject=alarm.subject,
++                signal=alarm.signal,
++            )
++            is None
++        )
++
++
++class TestRunEventStream:
++    """P3 — the lane's stream is what was POSTED, in the order it landed.
++
++    The split the port draws between its two comment writes: a post adds
++    one entry to an order, an upsert keeps one fact current. An
++    implementation that enumerated the log would report the run's own
++    records as things that happened to the lane, and would report a
++    threaded reply — an answer to a comment — as a second event.
++    """
++
++    LANE = "lane-seven"
++    EVENT_MARKER = run_event_marker(lane_key=LANE, marker_prefixes=MARKER_PREFIXES)
++
++    def _event(self, kind: RunEventKind, subject_ref: str) -> RunEventRecord:
++        return RunEventRecord(lane_key=self.LANE, kind=kind, subject_ref=subject_ref)
++
++    def _stream(self) -> tuple[RunEventRecord, ...]:
++        """Four posts, one of them a repeat: a stream is an order, not a set."""
++        return (
++            self._event(RunEventKind.FIRST_PUSH, "kodezart/lane-seven"),
++            self._event(RunEventKind.GATE_RED, "check-chain"),
++            self._event(RunEventKind.GATE_GREEN, "check-chain"),
++            self._event(RunEventKind.FIRST_PUSH, "kodezart/lane-seven"),
++        )
++
++    def _alarm(self, *, observed: int) -> RunAlarm:
++        return RunAlarm(
++            subject=AlarmSubject(
++                kind=AlarmSubjectKind.LANE,
++                scope_key="fixture-scope",
++                lane_key=self.LANE,
++            ),
++            signal=AlarmSignal.TALLY_UNMOVED,
++            readings=(AlarmReading(source_ref="tally", value=str(observed)),),
++            bound=None,
++            raised_at_sha="e" * 40,
++            raised_by="fixture-supervisor",
++        )
++
++    async def test_the_stream_is_exactly_the_posted_events_in_write_order(
++        self,
++        tracker: TrackerPort,
++    ) -> None:
++        posted = self._stream()
++
++        for event in posted:
++            await tracker.post_run_event(issue_key=CLAIMED_ISSUE, event=event)
++
++        read = await tracker.run_events(issue_key=CLAIMED_ISSUE, lane_key=self.LANE)
++        assert tuple(read) == posted
++
++    async def test_a_record_edited_in_place_never_appears_in_the_stream(
++        self,
++        tracker: TrackerPort,
++    ) -> None:
++        posted = self._stream()
++
++        await tracker.record_run_alarm(
++            issue_key=CLAIMED_ISSUE, alarm=self._alarm(observed=3)
++        )
++        for event in posted:
++            await tracker.post_run_event(issue_key=CLAIMED_ISSUE, event=event)
++        await tracker.record_run_alarm(
++            issue_key=CLAIMED_ISSUE, alarm=self._alarm(observed=4)
++        )
++
++        read = await tracker.run_events(issue_key=CLAIMED_ISSUE, lane_key=self.LANE)
++        assert tuple(read) == posted
++        # The record IS on the same log and IS about the same lane: the
++        # stream excludes it because it is edited, not because it is absent.
++        log = await tracker.list_comments(issue_key=CLAIMED_ISSUE)
++        assert len(log) == len(posted) + 1
++
++    async def test_the_stream_is_scoped_to_its_lane_and_its_issue(
++        self,
++        tracker: TrackerPort,
++    ) -> None:
++        event = self._event(RunEventKind.FIRST_PUSH, "kodezart/lane-seven")
++        await tracker.post_run_event(issue_key=CLAIMED_ISSUE, event=event)
++
++        assert (
++            await tracker.run_events(issue_key=CLAIMED_ISSUE, lane_key="lane-other")
++            == ()
++        )
++        assert (
++            await tracker.run_events(issue_key=APPROVED_ISSUE, lane_key=self.LANE) == ()
++        )
++
++    async def test_a_threaded_record_is_not_an_event(
++        self,
++        server: FakeLinearMcpServer,
++        adapter: TrackerPort,
++    ) -> None:
++        """A reply carrying a whole, well-formed event body is still a reply.
++
++        Seeded through the fake MCP server, which is the adapters' input:
++        the port offers no reply write, and a decision recorded under a
++        thread is exactly the shape that reaches this read in the field.
++        The paired top-level post proves the exclusion is the parent link
++        and not the body.
++        """
++        threaded = self._event(RunEventKind.ESCALATION_RAISED, "escalation-4")
++        body = marked_comment_body(
++            marker=self.EVENT_MARKER, body=render_run_event(event=threaded)
++        )
++        server.comments.append(
++            FakeMcpComment(
++                id="comment-threaded-decision",
++                issue_id=CLAIMED_ISSUE,
++                author=APPROVER,
++                body=body,
++                created_at=FIXTURE_NOW - timedelta(days=1),
++                parent_id="comment-some-thread-root",
++            ),
++        )
++        posted = self._stream()
++        for event in posted:
++            await adapter.post_run_event(issue_key=CLAIMED_ISSUE, event=event)
++
++        read = await adapter.run_events(issue_key=CLAIMED_ISSUE, lane_key=self.LANE)
++
++        assert tuple(read) == posted
++
++    async def test_the_same_body_posted_top_level_is_an_event(
++        self,
++        server: FakeLinearMcpServer,
++        adapter: TrackerPort,
++    ) -> None:
++        """The paired positive for the reply exclusion."""
++        top_level = self._event(RunEventKind.ESCALATION_RAISED, "escalation-4")
++        server.comments.append(
++            FakeMcpComment(
++                id="comment-top-level-event",
++                issue_id=CLAIMED_ISSUE,
++                author=APPROVER,
++                body=marked_comment_body(
++                    marker=self.EVENT_MARKER, body=render_run_event(event=top_level)
++                ),
++                created_at=FIXTURE_NOW - timedelta(days=1),
++            ),
++        )
++
++        read = await adapter.run_events(issue_key=CLAIMED_ISSUE, lane_key=self.LANE)
++
++        assert tuple(read) == (top_level,)

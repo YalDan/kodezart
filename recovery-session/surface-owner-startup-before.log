@@ -1,0 +1,27 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+_ test_missing_marker_purpose_refuses_at_construction_before_any_tracker_mutation _
+
+    def test_missing_marker_purpose_refuses_at_construction_before_any_tracker_mutation():
+        board = _Board()
+>       with pytest.raises(OperationMemberAbsentError, match="run_outcome"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'kodezart.types.domain.operation.OperationMemberAbsentError'>
+
+tests/services/test_run_surface_lease.py:217: Failed
+_ test_composed_writer_missing_marker_purpose_refuses_before_tracker_mutation __
+
+    async def test_composed_writer_missing_marker_purpose_refuses_before_tracker_mutation():
+        board = _Board()
+        config = AppConfig()
+        queue = build_job_queue(settings=config.queue, workflow_engine=_CompletedEngine())
+        operation = operation_config().model_copy(update={"marker_prefixes": {}})
+>       with pytest.raises(OperationMemberAbsentError, match="run_outcome"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'kodezart.types.domain.operation.OperationMemberAbsentError'>
+
+tests/services/test_run_surface_lease.py:227: Failed
+=========================== short test summary info ============================
+FAILED tests/services/test_run_surface_lease.py::test_missing_marker_purpose_refuses_at_construction_before_any_tracker_mutation
+FAILED tests/services/test_run_surface_lease.py::test_composed_writer_missing_marker_purpose_refuses_before_tracker_mutation
+2 failed, 17 deselected in 0.56s

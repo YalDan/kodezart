@@ -1,0 +1,309 @@
+[
+  {
+    "path": "tests/chains/test_organize.py",
+    "imports": [
+      "kodezart.chains.organize",
+      "kodezart.core.errors",
+      "kodezart.domain.errors",
+      "kodezart.domain.organize",
+      "kodezart.services.agent_service",
+      "kodezart.services.audit_sessions",
+      "kodezart.services.organize_context",
+      "kodezart.types.domain.agent",
+      "kodezart.types.domain.organize",
+      "kodezart.types.domain.prompts",
+      "kodezart.types.domain.run_records",
+      "kodezart.types.domain.scope_address",
+      "kodezart.types.domain.session",
+      "kodezart.types.domain.skills",
+      "kodezart.types.domain.subagents",
+      "kodezart.types.domain.tracker",
+      "kodezart.types.domain.tracker_writes",
+      "tests.fakes",
+      "tests.prompts.sets",
+      "tests.prompts.test_organize_mandate_bindings",
+      "tests.prompts.test_prompt_wiring",
+      "tests.tracker.test_linear_mcp_tracker"
+    ]
+  },
+  {
+    "path": "tests/chains/test_organize_correction.py",
+    "imports": [
+      "kodezart.domain.errors",
+      "tests.chains.test_organize",
+      "tests.chains.test_organize_owner",
+      "tests.tracker.conftest"
+    ]
+  },
+  {
+    "path": "tests/chains/test_organize_delivery_independent.py",
+    "imports": [
+      "kodezart.domain.errors",
+      "kodezart.services.organize_tick",
+      "kodezart.services.run_surface_lease",
+      "kodezart.types.domain.scope",
+      "tests.chains.test_organize",
+      "tests.chains.test_organize_owner",
+      "tests.fakes",
+      "tests.services.test_run_surface_lease",
+      "tests.tracker.conftest",
+      "tests.tracker.test_criterion_creation"
+    ]
+  },
+  {
+    "path": "tests/chains/test_organize_graph_independent.py",
+    "imports": [
+      "kodezart.domain.errors",
+      "tests.chains.test_organize",
+      "tests.chains.test_organize_owner",
+      "tests.tracker.conftest"
+    ]
+  },
+  {
+    "path": "tests/chains/test_organize_graph_owner.py",
+    "imports": [
+      "kodezart.domain.errors",
+      "kodezart.domain.rulings",
+      "kodezart.types.domain.agent",
+      "tests.chains.test_organize",
+      "tests.chains.test_organize_owner",
+      "tests.domain.test_rulings",
+      "tests.fakes",
+      "tests.tracker.conftest"
+    ]
+  },
+  {
+    "path": "tests/chains/test_organize_native_independent.py",
+    "imports": [
+      "kodezart.domain.errors",
+      "tests.chains.test_organize",
+      "tests.chains.test_organize_owner",
+      "tests.tracker.conftest"
+    ]
+  },
+  {
+    "path": "tests/chains/test_organize_owner.py",
+    "imports": [
+      "kodezart.composition.organize",
+      "kodezart.core.config",
+      "kodezart.core.errors",
+      "kodezart.core.organize_settings",
+      "kodezart.core.prompt_namespaces",
+      "kodezart.domain.errors",
+      "kodezart.services.agent_service",
+      "kodezart.types.domain.gating",
+      "kodezart.types.domain.operation",
+      "kodezart.types.domain.prompts",
+      "kodezart.types.domain.scope",
+      "kodezart.types.domain.session",
+      "tests.chains.test_organize",
+      "tests.fakes",
+      "tests.prompts.test_organize_mandate_bindings",
+      "tests.prompts.test_prompt_wiring",
+      "tests.services.test_run_surface_lease",
+      "tests.tracker.conftest",
+      "tests.tracker.test_linear_mcp_tracker"
+    ]
+  },
+  {
+    "path": "tests/chains/test_organize_ownership.py",
+    "imports": [
+      "kodezart.adapters.git_worktree_provider",
+      "kodezart.adapters.subprocess_git_service",
+      "tests.chains.test_organize",
+      "tests.fakes"
+    ]
+  },
+  {
+    "path": "tests/core/test_organize_settings.py",
+    "imports": [
+      "kodezart.core.config",
+      "kodezart.core.organize_settings",
+      "kodezart.domain.errors",
+      "kodezart.types.domain.dispatch",
+      "kodezart.types.domain.operation",
+      "kodezart.types.domain.run_records",
+      "kodezart.types.domain.scope",
+      "kodezart.types.domain.scope_address",
+      "tests.chains.test_organize_owner",
+      "tests.prompts.test_organize_mandate_bindings"
+    ]
+  },
+  {
+    "path": "tests/domain/test_organize.py",
+    "imports": [
+      "kodezart.adapters.toml_operation_config",
+      "kodezart.core.config",
+      "kodezart.core.errors",
+      "kodezart.domain.organize",
+      "kodezart.main",
+      "kodezart.types.domain.operation",
+      "kodezart.types.domain.organize",
+      "kodezart.types.domain.scope_address",
+      "tests.fakes"
+    ]
+  },
+  {
+    "path": "tests/domain/test_organize_routing.py",
+    "imports": [
+      "kodezart.domain.organize",
+      "kodezart.types.domain.organize",
+      "kodezart.types.domain.scope_address",
+      "kodezart.types.domain.tracker",
+      "tests.fakes"
+    ]
+  },
+  {
+    "path": "tests/integration/test_organize_scheduler.py",
+    "imports": [
+      "kodezart.composition.passes",
+      "kodezart.composition.records",
+      "kodezart.composition.tracker",
+      "kodezart.composition.workspace",
+      "kodezart.core.logging",
+      "kodezart.core.prompt_namespaces",
+      "kodezart.services.agent_service",
+      "kodezart.services.run_recorder",
+      "kodezart.types.domain.dispatch",
+      "kodezart.types.domain.operation",
+      "kodezart.types.domain.prompts",
+      "tests.chains.test_organize",
+      "tests.chains.test_organize_owner",
+      "tests.fakes",
+      "tests.prompts.test_organize_mandate_bindings",
+      "tests.prompts.test_prompt_wiring",
+      "tests.services.test_prompt_passes",
+      "tests.services.test_run_surface_lease",
+      "tests.tracker.conftest",
+      "tests.tracker.test_linear_mcp_tracker"
+    ]
+  },
+  {
+    "path": "tests/integration/test_organize_tick_halt.py",
+    "imports": [
+      "kodezart.domain.errors",
+      "kodezart.services.organize_tick",
+      "kodezart.types.domain.scope",
+      "tests.chains.test_organize",
+      "tests.chains.test_organize_owner",
+      "tests.fakes",
+      "tests.tracker.conftest"
+    ]
+  },
+  {
+    "path": "tests/prompts/test_organize_call_bindings.py",
+    "imports": [
+      "kodezart.adapters.toml_operation_config",
+      "kodezart.composition.prompts",
+      "kodezart.core.config",
+      "kodezart.core.errors",
+      "kodezart.core.prompt_namespaces",
+      "kodezart.domain.prompt_variables",
+      "kodezart.types.domain.operation",
+      "kodezart.types.domain.organize",
+      "kodezart.types.domain.prompts",
+      "kodezart.types.domain.scope_address",
+      "tests.prompts.sets",
+      "tests.prompts.test_prompt_wiring"
+    ]
+  },
+  {
+    "path": "tests/prompts/test_organize_mandate_bindings.py",
+    "imports": [
+      "kodezart.core.prompt_namespaces",
+      "kodezart.types.domain.operation",
+      "kodezart.types.domain.prompts",
+      "tests.domain.test_organize",
+      "tests.fakes",
+      "tests.prompts.test_operation_config",
+      "tests.prompts.test_prompt_wiring"
+    ]
+  },
+  {
+    "path": "tests/prompts/test_organize_roles.py",
+    "imports": [
+      "kodezart.adapters.in_repo_prompt_registry",
+      "kodezart.composition.prompts",
+      "kodezart.core.config",
+      "kodezart.core.errors",
+      "kodezart.types.domain.prompts",
+      "tests.prompts.sets",
+      "tests.prompts.test_prompt_wiring",
+      "tests.prompts.test_session_policy"
+    ]
+  },
+  {
+    "path": "tests/test_organize_portability.py",
+    "imports": []
+  },
+  {
+    "path": "tests/tracker/test_organize_graph_final_boundary.py",
+    "imports": [
+      "kodezart.domain.errors",
+      "kodezart.services.run_surface_lease",
+      "kodezart.types.domain.surface",
+      "tests.tracker.conftest",
+      "tests.tracker.test_organize_graph_writes"
+    ]
+  },
+  {
+    "path": "tests/tracker/test_organize_graph_independent.py",
+    "imports": [
+      "kodezart.domain.errors",
+      "kodezart.domain.organize_graph",
+      "kodezart.services.run_surface_lease",
+      "kodezart.types.domain.surface",
+      "tests.fakes",
+      "tests.tracker.conftest",
+      "tests.tracker.test_organize_graph_writes",
+      "tests.tracker.test_scope_reads"
+    ]
+  },
+  {
+    "path": "tests/tracker/test_organize_graph_receipt_boundary.py",
+    "imports": [
+      "kodezart.core.errors",
+      "kodezart.services.run_surface_lease",
+      "kodezart.types.domain.surface",
+      "tests.tracker.conftest",
+      "tests.tracker.test_linear_mcp_tracker",
+      "tests.tracker.test_organize_graph_writes"
+    ]
+  },
+  {
+    "path": "tests/tracker/test_organize_graph_retry_boundary.py",
+    "imports": [
+      "kodezart.core.errors",
+      "kodezart.domain.errors",
+      "kodezart.services.run_surface_lease",
+      "kodezart.types.domain.surface",
+      "tests.tracker.conftest",
+      "tests.tracker.test_linear_mcp_tracker",
+      "tests.tracker.test_organize_graph_writes"
+    ]
+  },
+  {
+    "path": "tests/tracker/test_organize_graph_writes.py",
+    "imports": [
+      "kodezart.adapters.linear_mcp_tracker",
+      "kodezart.adapters.linear_mcp_types",
+      "kodezart.core.errors",
+      "kodezart.domain.errors",
+      "kodezart.domain.organize_graph",
+      "kodezart.services.run_surface_lease",
+      "kodezart.types.domain.organize_graph",
+      "kodezart.types.domain.scope",
+      "kodezart.types.domain.surface",
+      "tests.fakes",
+      "tests.services.test_run_surface_lease",
+      "tests.tracker.conftest",
+      "tests.tracker.test_scope_reads"
+    ]
+  },
+  {
+    "path": "tests/types/test_organize_halt.py",
+    "imports": [
+      "kodezart.types.domain.organize_owner"
+    ]
+  }
+]

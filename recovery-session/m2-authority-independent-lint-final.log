@@ -1,0 +1,12 @@
+E501 Line too long (89 > 88)
+   --> tests/chains/test_authority_independent_review.py:309:89
+    |
+307 |                             "check": f"The source property {i} holds.",
+308 |                             "do": (
+309 |                                 f"Compare source property {i} with the current artifact."
+    |                                                                                         ^
+310 |                             ),
+311 |                         }
+    |
+
+Found 1 error.

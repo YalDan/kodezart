@@ -1,0 +1,53 @@
+..................................F.........F........................... [ 52%]
+..................................................................       [100%]
+=================================== FAILURES ===================================
+_______ test_per_call_namespace_covers_every_non_operation_template_name _______
+
+    def test_per_call_namespace_covers_every_non_operation_template_name() -> None:
+        """The declared per-call set is not allowed to drift from the templates."""
+        registry = load_registry()
+        operation_names = set(bindings_for(example_config()))
+        for key in PromptKey:
+            names = binding_names(registry.template_for(key).body)
+            unaccounted = (
+                names
+                - operation_names
+                - PER_CALL_VARIABLE_NAMES
+                - SET_FRAGMENT_NAMES
+                - ITEM_SCOPED_NAMES
+            )
+            unaccounted = {n for n in unaccounted if "." not in n}
+>           assert unaccounted == set(), f"{key.value} references {unaccounted}"
+E           AssertionError: native_writer_contract references {'pinned_rulings'}
+E           assert {'pinned_rulings'} == set()
+E             
+E             Extra items in the left set:
+E             'pinned_rulings'
+E             Use -v to get more diff
+
+tests/prompts/test_operation_config.py:517: AssertionError
+_____________ test_placeholder_mapping_is_total_in_both_directions _____________
+
+    def test_placeholder_mapping_is_total_in_both_directions() -> None:
+        """Every placeholder maps to one path; every field is template-reachable."""
+        rows = markdown_rows("## Placeholder → OperationConfig field")
+        mapped = {row[0]: row[1] for row in rows}
+        assert len(mapped) == len(rows)
+    
+        # Direction 1 — no placeholder the templates reference is unmapped.
+        referenced = template_placeholders()
+>       assert referenced == set(mapped), referenced ^ set(mapped)
+E       AssertionError: {'base_sha', 'claim', 'pinned_rulings'}
+E       assert {'agent_ident...ocs_mcp', ...} == {'agent_ident...nnector', ...}
+E         
+E         Extra items in the left set:
+E         'base_sha'
+E         'claim'
+E         'pinned_rulings'
+E         Use -v to get more diff
+
+tests/prompts/test_operation_config.py:631: AssertionError
+=========================== short test summary info ============================
+FAILED tests/prompts/test_operation_config.py::test_per_call_namespace_covers_every_non_operation_template_name
+FAILED tests/prompts/test_operation_config.py::test_placeholder_mapping_is_total_in_both_directions
+2 failed, 136 passed in 3.20s

@@ -1,0 +1,87 @@
+tests/domain/test_run_alarm.py:42:    assert AlarmSignal[name].value == value
+tests/domain/test_run_alarm.py:48:        kind.value
+tests/domain/test_run_alarm.py:82:    subject = AlarmSubject.model_validate(subject_data(kind))
+tests/domain/test_run_alarm.py:83:    assert AlarmSubject.model_validate_json(subject.model_dump_json()) == subject
+tests/domain/test_run_alarm.py:103:        AlarmSubject.model_validate(data)
+tests/domain/test_run_alarm.py:121:        AlarmSubject.model_validate(data)
+tests/domain/test_run_alarm.py:126:    subject = AlarmSubject(
+tests/domain/test_run_alarm.py:149:    subject = AlarmSubject(
+tests/domain/test_run_alarm.py:153:    assert AlarmSubject.model_validate_json(subject.model_dump_json()) == subject
+tests/domain/test_run_alarm.py:154:    assert json.loads(member)["ref"]["key"] == surface.ref.key
+tests/domain/test_run_alarm.py:155:    assert json.loads(member)["marker"] == surface.marker
+tests/domain/test_run_alarm.py:172:        AlarmSubject(kind=AlarmSubjectKind.SURFACE, scope_key="scope", member_id=member)
+tests/domain/test_run_alarm.py:177:    data["member_id"] = json.dumps(json.loads(data["member_id"]), indent=2)
+tests/domain/test_run_alarm.py:179:        AlarmSubject.model_validate(data)
+tests/domain/test_run_alarm.py:228:    assert tuple(reading.value for reading in alarm.readings) == (
+tests/domain/test_run_alarm.py:236:    assert RunAlarm.model_validate_json(alarm.model_dump_json(by_alias=True)) == alarm
+tests/domain/test_run_alarm.py:244:    assert tuple(reading.value for reading in alarm.readings) == (
+tests/domain/test_run_alarm.py:249:        alarm.readings[0].value = "changed"
+tests/domain/test_run_alarm.py:261:    replacement = AlarmReading(source_ref="other/reading", value="changed")
+tests/domain/test_run_alarm.py:271:    reading = AlarmReading(source_ref="record/empty", value="", at_sha=None)
+tests/domain/test_run_alarm.py:272:    assert reading.value == ""
+tests/domain/test_escalation_ageing.py:25:SUBJECT = AlarmSubject(
+tests/domain/test_escalation_ageing.py:52:        AlarmReading(
+tests/domain/test_escalation_ageing.py:57:        AlarmReading(
+tests/domain/test_escalation_ageing.py:66:        AlarmReading(
+tests/domain/test_escalation_ageing.py:71:        AlarmReading(
+tests/domain/test_escalation_ageing.py:74:        AlarmReading(source_ref=COMMIT_FIELD, value=json.dumps(max_commits)),
+tests/domain/test_escalation_ageing.py:75:        AlarmReading(source_ref=TICK_FIELD, value=json.dumps(max_ticks)),
+tests/domain/test_escalation_ageing.py:159:    restored = RunAlarm.model_validate_json(alarm.model_dump_json(by_alias=True))
+tests/domain/test_escalation_ageing.py:177:    assert raised.value.source_ref == "record/lane#commits"
+tests/domain/test_escalation_ageing.py:178:    assert raised.value.signal == "escalation_ageing"
+tests/domain/test_escalation_ageing.py:185:    assert raised.value.source_ref == "record/lane#commits"
+tests/domain/test_escalation_ageing.py:191:    assert raised.value.source_ref == "record/walker#ticks-since-question"
+tests/domain/test_escalation_ageing.py:204:    assert raised.value.source_ref == original[slot].source_ref
+tests/domain/test_escalation_ageing.py:205:    assert isinstance(raised.value.__cause__, ValidationError)
+tests/domain/test_escalation_ageing.py:308:        isinstance(child, ast.Constant) and isinstance(child.value, (int, float))
+tests/domain/test_record_consistency.py:38:    return AlarmSubject(
+tests/domain/test_record_consistency.py:47:        AlarmReading(
+tests/domain/test_record_consistency.py:49:            value=json.dumps(json.loads(surface_alarm_member_id(address)), indent=2),
+tests/domain/test_record_consistency.py:52:        AlarmReading(
+tests/domain/test_record_consistency.py:61:    return AlarmSubject(
+tests/domain/test_record_consistency.py:73:        AlarmReading(
+tests/domain/test_record_consistency.py:145:    assert raised.value.source_ref == surface_alarm_member_id(address)
+tests/domain/test_record_consistency.py:146:    assert isinstance(raised.value.__cause__, ValidationError)
+tests/domain/test_record_consistency.py:280:    restored = RunAlarm.model_validate_json(alarm.model_dump_json(by_alias=True))
+tests/domain/test_mandate_graph.py:30:SUBJECT = AlarmSubject(kind=AlarmSubjectKind.LANE, scope_key="scope", lane_key="lane")
+tests/domain/test_mandate_graph.py:35:    return AlarmReading(source_ref=source, value=json.dumps(value))
+tests/domain/test_mandate_graph.py:86:        state_name=state.value,
+tests/domain/test_mandate_graph.py:117:    return AlarmReading(source_ref="lane-graph", value=snapshot.model_dump_json())
+tests/domain/test_mandate_graph.py:139:    restored = RunAlarm.model_validate_json(alarm.model_dump_json())
+tests/domain/test_mandate_graph.py:226:        restored = RunAlarm.model_validate_json(alarm.model_dump_json())
+tests/domain/test_mandate_graph.py:376:    subject = AlarmSubject(
+tests/domain/test_scope_tally.py:22:SUBJECT = AlarmSubject(kind=AlarmSubjectKind.SCOPE, scope_key=SCOPE.key)
+tests/domain/test_scope_tally.py:26:    return AlarmReading(source_ref=source, value=json.dumps(value))
+tests/domain/test_scope_tally.py:34:        AlarmReading(source_ref=SCOPE.key, value=SCOPE.model_dump_json()),
+tests/domain/test_scope_tally.py:138:        values[4] = AlarmReading(source_ref="one", value="not JSON")
+tests/domain/test_scope_tally.py:153:    assert caught.value.signal == AlarmSignal.TALLY_UNMOVED.value
+tests/domain/test_scope_tally.py:157:    subject = AlarmSubject(
+tests/domain/test_scope_tally.py:187:    foreign = AlarmSubject(kind=AlarmSubjectKind.SCOPE, scope_key="different/scope")
+tests/domain/test_record_superseded.py:26:    return AlarmSubject.model_validate(
+tests/domain/test_record_superseded.py:54:        AlarmReading(
+tests/domain/test_record_superseded.py:59:        AlarmReading(
+tests/domain/test_record_superseded.py:64:        AlarmReading(
+tests/domain/test_record_superseded.py:160:        AlarmSubject(kind=AlarmSubjectKind.SCOPE, scope_key="scope/run"),
+tests/domain/test_record_superseded.py:161:        AlarmSubject(
+tests/domain/test_record_superseded.py:190:    assert raised.value.source_ref == original[slot].source_ref
+tests/domain/test_record_superseded.py:217:    assert raised.value.signal == "record_superseded"
+tests/domain/test_record_superseded.py:218:    assert raised.value.source_ref == original[slot].source_ref
+tests/domain/test_record_superseded.py:219:    assert isinstance(raised.value.__cause__, ValidationError)
+tests/domain/test_record_superseded.py:253:        field.value = "green"
+tests/domain/test_record_superseded.py:268:    restored = RunAlarm.model_validate_json(alarm.model_dump_json(by_alias=True))
+tests/domain/test_barren_tick.py:22:SUBJECT = AlarmSubject(
+tests/domain/test_barren_tick.py:37:        AlarmReading(source_ref=source, value=json.dumps(value, indent=2), at_sha=sha)
+tests/domain/test_barren_tick.py:112:    stored = RunAlarm.model_validate_json(alarm.model_dump_json(by_alias=True))
+tests/domain/test_barren_tick.py:134:    assert raised.value.source_ref == original[slot].source_ref
+tests/domain/test_barren_tick.py:135:    assert raised.value.signal == "barren_tick_with_diff_growth"
+tests/domain/test_barren_tick.py:136:    assert isinstance(raised.value.__cause__, ValidationError)
+tests/domain/test_barren_tick.py:175:            subject=AlarmSubject(kind=AlarmSubjectKind.SCOPE, scope_key="scope-a"),
+tests/domain/test_surface_contention.py:41:    return AlarmSubject(
+tests/domain/test_surface_contention.py:51:        AlarmReading(
+tests/domain/test_surface_contention.py:56:        AlarmReading(
+tests/domain/test_surface_contention.py:61:        AlarmReading(source_ref=FIELD, value=json.dumps(limit)),
+tests/domain/test_surface_contention.py:157:    restored = RunAlarm.model_validate_json(alarm.model_dump_json(by_alias=True))
+tests/domain/test_surface_contention.py:180:    assert raised.value.signal == "surface_contended"
+tests/domain/test_surface_contention.py:181:    assert raised.value.source_ref == original[slot].source_ref
+tests/domain/test_surface_contention.py:182:    assert isinstance(raised.value.__cause__, ValidationError)
+tests/domain/test_surface_contention.py:239:            subject=AlarmSubject(kind=AlarmSubjectKind.SCOPE, scope_key="scope-a"),

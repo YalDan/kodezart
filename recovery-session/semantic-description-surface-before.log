@@ -1,0 +1,15 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_____ test_generic_description_grant_cannot_write_a_native_criterion_body ______
+
+    async def test_generic_description_grant_cannot_write_a_native_criterion_body():
+        board, tracker = board_and_tracker()
+        async with lease(tracker, SurfaceKind.ISSUE_DESCRIPTION):
+>           with pytest.raises(ValueError, match="current native surface"):
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/tracker/test_native_criterion_amendment.py:258: Failed
+=========================== short test summary info ============================
+FAILED tests/tracker/test_native_criterion_amendment.py::test_generic_description_grant_cannot_write_a_native_criterion_body
+1 failed, 19 deselected in 0.59s

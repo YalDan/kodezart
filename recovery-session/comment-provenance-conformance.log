@@ -1,0 +1,83 @@
+........................................................................ [ 15%]
+........................................................................ [ 30%]
+........................................................................ [ 45%]
+........................................................................ [ 60%]
+....................................................................F... [ 75%]
+........................................................................ [ 90%]
+...............................................                          [100%]
+=================================== FAILURES ===================================
+_________ test_legacy_generic_read_does_not_require_unreported_linkage _________
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10cc58620>
+shape = <class 'kodezart.adapters.linear_mcp_types.LinearCommentListWire'>
+payload = {'comments': [{'author': {'id': 'fixture-author-id', 'name': 'fixture-author'}, 'body': '[fixture-escalation:lane%3Aon...rical prose and SHA 0000000.', 'createdAt': '2026-03-01T12:00:00+00:00', 'id': 'question', ...}], 'hasNextPage': False}
+tool = 'list_comments'
+
+    def _validate[WireT: LinearWireModel](
+        self,
+        shape: type[WireT],
+        payload: McpToolResult,
+        tool: str,
+    ) -> WireT:
+        try:
+>           return shape.model_validate(payload)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 1 validation error for LinearCommentListWire
+E           comments.0.parentId
+E             Field required [type=missing, input_value={'id': 'question', 'autho...one, 'onBehalfOf': None}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.12/v/missing
+
+src/kodezart/adapters/linear_mcp_tracker.py:3733: ValidationError
+
+The above exception was the direct cause of the following exception:
+
+    async def test_legacy_generic_read_does_not_require_unreported_linkage():
+        escalation, _ = records()
+        escalation.pop("parentId")
+        server = CommentPageServer({None: {"comments": [escalation], "hasNextPage": False}})
+        tracker = linear_over_fake_mcp(server)
+>       assert len(await tracker.list_comments(issue_key=APPROVED_ISSUE)) == 1
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/tracker/test_escalation_resolution_boundary.py:85: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/adapters/linear_mcp_tracker.py:1826: in list_comments
+    for wire in await self._comment_wires(issue_key)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/adapters/linear_mcp_tracker.py:3669: in _comment_wires
+    async for listing in cursor_pages(
+src/kodezart/adapters/pagination.py:22: in cursor_pages
+    page, has_more, cursor = await read(request)
+                             ^^^^^^^^^^^^^^^^^^^
+src/kodezart/adapters/linear_mcp_tracker.py:3664: in read
+    listing = self._validate(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10cc58620>
+shape = <class 'kodezart.adapters.linear_mcp_types.LinearCommentListWire'>
+payload = {'comments': [{'author': {'id': 'fixture-author-id', 'name': 'fixture-author'}, 'body': '[fixture-escalation:lane%3Aon...rical prose and SHA 0000000.', 'createdAt': '2026-03-01T12:00:00+00:00', 'id': 'question', ...}], 'hasNextPage': False}
+tool = 'list_comments'
+
+    def _validate[WireT: LinearWireModel](
+        self,
+        shape: type[WireT],
+        payload: McpToolResult,
+        tool: str,
+    ) -> WireT:
+        try:
+            return shape.model_validate(payload)
+        except ValidationError as exc:
+>           raise TrackerProtocolError(
+                "tracker response does not match its declared shape",
+                tool=tool,
+                detail=str(exc),
+            ) from exc
+E           kodezart.core.errors.TrackerProtocolError: tracker response does not match its declared shape (tool: list_comments; 1 validation error for LinearCommentListWire
+E           comments.0.parentId
+E             Field required [type=missing, input_value={'id': 'question', 'autho...one, 'onBehalfOf': None}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.12/v/missing)
+
+src/kodezart/adapters/linear_mcp_tracker.py:3735: TrackerProtocolError
+=========================== short test summary info ============================
+FAILED tests/tracker/test_escalation_resolution_boundary.py::test_legacy_generic_read_does_not_require_unreported_linkage
+1 failed, 478 passed in 18.18s

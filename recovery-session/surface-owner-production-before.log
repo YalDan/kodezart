@@ -1,0 +1,55 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_______ test_composed_outcome_comment_is_held_by_the_actual_queue_job_id _______
+
+    async def test_composed_outcome_comment_is_held_by_the_actual_queue_job_id():
+        config = AppConfig(tracker_surface_lease_seconds=321.5)
+        engine = _CompletedEngine()
+        queue = build_job_queue(settings=config.queue, workflow_engine=engine)
+        tracker = _ObservedTracker()
+        built = await build_dispatch_passes(
+            recorder=RunRecorder(records={}, sinks={}),
+            config=config,
+            operation=operation_config(),
+            tracker=tracker,
+            ledger=tracker.self_writes,
+            delivery=FakeDeliveryProbe(),
+            queue=queue,
+            registry=queue,
+            gate=PassThroughGate(),
+            git=FakeGitService(),
+            cache=FakeRepoCache(),
+            integration_workspace_dir=INTEGRATION_DIR,
+        )
+        await queue.start()
+        try:
+            await built.passes[0].run(TICK_STARTED_AT)
+            async with asyncio.timeout(10):
+                await tracker.written.wait()
+            await built.lifecycle.drain()
+            assert len(engine.job_id) == 32
+            assert tracker.holds_at_write
+>           assert all(holds for holds in tracker.holds_at_write)
+E           assert False
+E            +  where False = all(<generator object test_composed_outcome_comment_is_held_by_the_actual_queue_job_id.<locals>.<genexpr> at 0x10ad96980>)
+
+tests/services/test_run_surface_lease.py:78: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 14:13:12 [info     ] pass_gate_delta                changed=['K-1'] mark=2026-01-01T00:00:00+00:00 signals=['approved_changed'] unanswerable=[]
+2026-09-12 14:13:12 [info     ] dispatch_ranked                order=['K-1'] tied=['K-1'] winner=K-1
+2026-09-12 14:13:12 [info     ] fire_context_assembled         asset_keys=[] issue_key=K-1
+2026-09-12 14:13:12 [info     ] job_submitted                  job_id=931a1641313244daa8022faf5918f8bb lane=tracker queue_position=1
+2026-09-12 14:13:12 [info     ] job_started                    job_id=931a1641313244daa8022faf5918f8bb lane=tracker
+2026-09-12 14:13:12 [info     ] dispatch_fire_enqueued         base_branch=trunk base_role=None issue_key=K-1 job_id=931a1641313244daa8022faf5918f8bb outcome=fire_enqueued
+2026-09-12 14:13:12 [info     ] job_finished                   job_id=931a1641313244daa8022faf5918f8bb lane=tracker outcome=review_passed_no_pr_adapter
+2026-09-12 14:13:12 [info     ] dispatch_pass_completed        changed=['K-1'] claimed_issue_key=K-1 job_id=931a1641313244daa8022faf5918f8bb outcome=fire_enqueued
+2026-09-12 14:13:12 [info     ] lifecycle_in_progress          issue_key=K-1
+2026-09-12 14:13:12 [info     ] outbound_content_gated         categories=[] content_digest=0f5615525413d6cb16dc47fcd7ce63fd8f853126ab95a43cca78eaee90c807df failure=None hits=[] surface=tracker verdict=clean visibility=public writer=tracker_comment
+2026-09-12 14:13:12 [info     ] lifecycle_outcome_comment      issue_key=K-1 job_id=931a1641313244daa8022faf5918f8bb outcome=review_passed_no_pr_adapter
+2026-09-12 14:13:12 [info     ] claim_released                 holder=kodezart issue_key=K-1
+2026-09-12 14:13:12 [info     ] lifecycle_watch_finished       issue_key=K-1 job_id=931a1641313244daa8022faf5918f8bb run_started=True terminal_outcome=True
+2026-09-12 14:13:12 [info     ] run_record_destination_undeclared kind=fire name=K-1 outcome=completed
+2026-09-12 14:13:12 [info     ] job_queue_stopped              abandoned=0 lanes=2 outcome=shutdown_abandoned
+=========================== short test summary info ============================
+FAILED tests/services/test_run_surface_lease.py::test_composed_outcome_comment_is_held_by_the_actual_queue_job_id
+1 failed in 2.35s

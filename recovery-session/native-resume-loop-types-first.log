@@ -1,0 +1,2 @@
+src/kodezart/chains/ralph_loop.py:206: error: Item "str" of "str | Any" has no attribute "get"  [union-attr]
+Found 1 error in 1 file (checked 11 source files)

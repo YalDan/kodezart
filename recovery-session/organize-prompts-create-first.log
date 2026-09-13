@@ -1,0 +1,63 @@
+........................................................................ [  6%]
+........................................................................ [ 12%]
+........................................................................ [ 19%]
+..........F............................................................. [ 25%]
+........................................................................ [ 31%]
+........................................................................ [ 38%]
+........................................................................ [ 44%]
+........................................................................ [ 50%]
+............................................F........................... [ 57%]
+........................................................................ [ 63%]
+........................................................................ [ 69%]
+........................................................................ [ 76%]
+........................................................................ [ 82%]
+.............................................................F.......... [ 88%]
+........................................................................ [ 95%]
+.......................................................                  [100%]
+=================================== FAILURES ===================================
+___________ test_claude_opus_completeness_passes_at_the_full_census ____________
+
+    def test_claude_opus_completeness_passes_at_the_full_census() -> None:
+        """KOD-63's completeness rule obliges the default set to supply both."""
+>       assert {key.value for key in PromptKey} == PROMPT_FUNCTION_NAMES
+E       AssertionError: assert {'acceptance_...ch_name', ...} == frozenset({'a...h_name', ...})
+E         
+E         Extra items in the left set:
+E         'write_back_verify'
+E         Use -v to get more diff
+
+tests/prompts/test_operation_config.py:538: AssertionError
+_________________________ test_the_census_is_the_enum __________________________
+
+    def test_the_census_is_the_enum() -> None:
+        """The independent role names exactly match the registered enum."""
+>       assert {key.value for key in PromptKey} == PROMPT_FUNCTION_NAMES
+E       AssertionError: assert {'acceptance_...ch_name', ...} == frozenset({'a...h_name', ...})
+E         
+E         Extra items in the left set:
+E         'write_back_verify'
+E         Use -v to get more diff
+
+tests/prompts/test_set_completeness.py:38: AssertionError
+_ test_rule_holds_over_every_v5_template[one_data_boundary_sentence-write_back_verify] _
+
+rule_name = 'one_data_boundary_sentence', key = 'write_back_verify'
+
+    @pytest.mark.parametrize(("rule_name", "key"), V5_CASES)
+    def test_rule_holds_over_every_v5_template(rule_name: str, key: str) -> None:
+        """Each rule, over each template of the new set."""
+        body = v5_bodies()[key]
+        found = check_rule(rule_name, key, body, v5_context())
+>       assert found == (), f"{key} violates {RULES[rule_name].describe}: {found}"
+E       AssertionError: write_back_verify violates exactly one data-not-instructions sentence per artifact template: ('0 boundary sentences, expected exactly 1',)
+E       assert ('0 boundary ...d exactly 1',) == ()
+E         
+E         Left contains one more item: '0 boundary sentences, expected exactly 1'
+E         Use -v to get more diff
+
+tests/prompts/test_v5_style_rules.py:407: AssertionError
+=========================== short test summary info ============================
+FAILED tests/prompts/test_operation_config.py::test_claude_opus_completeness_passes_at_the_full_census
+FAILED tests/prompts/test_set_completeness.py::test_the_census_is_the_enum - ...
+FAILED tests/prompts/test_v5_style_rules.py::test_rule_holds_over_every_v5_template[one_data_boundary_sentence-write_back_verify]
+3 failed, 1132 passed in 98.98s (0:01:38)

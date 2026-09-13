@@ -1,0 +1,15 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+________________ test_configured_mandates_reach_scheduled_owner ________________
+
+tmp_path = PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1722/test_configured_mandates_reach0')
+
+    async def test_configured_mandates_reach_scheduled_owner(tmp_path):
+        passes, _ = await _registrations(tmp_path, operation=declared_operation())
+>       assert "organize" in {entry.name for entry in passes}
+E       AssertionError: assert 'organize' in {'fire_prep_pass', 'grooming_pass'}
+
+../kodezart-recovery-session/test_organize_production_gap.py:8: AssertionError
+=========================== short test summary info ============================
+FAILED ::test_configured_mandates_reach_scheduled_owner - AssertionError: ass...
+1 failed in 3.86s

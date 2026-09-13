@@ -1,0 +1,1325 @@
+uv run ruff format --check src/ tests/
+353 files already formatted
+uv run ruff check src/ tests/
+All checks passed!
+uv run mypy src/
+Success: no issues found in 178 source files
+uv run pytest
+============================= test session starts ==============================
+platform darwin -- Python 3.12.13, pytest-9.0.2, pluggy-1.6.0
+rootdir: /private/tmp/kodezart-v03-m1-lease-extraction
+configfile: pyproject.toml
+testpaths: tests
+plugins: anyio-4.12.1, langsmith-0.7.14, asyncio-1.3.0, logfire-4.27.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=session, asyncio_default_test_loop_scope=function
+collected 3450 items
+
+tests/adapters/test_claude_client_executor.py .........                  [  0%]
+tests/adapters/test_claude_executors.py ................................ [  1%]
+..................................                                       [  2%]
+tests/adapters/test_git_artifact_persister.py ......                     [  2%]
+tests/adapters/test_git_branch_merger.py ..............                  [  2%]
+tests/adapters/test_git_change_persister.py ...............              [  3%]
+tests/adapters/test_git_ref_publisher.py .....                           [  3%]
+tests/adapters/test_git_worktree_provider.py ...........                 [  3%]
+tests/adapters/test_github_api.py ...................................... [  4%]
+...................................................................      [  6%]
+tests/adapters/test_host_skill_inventory.py ................             [  7%]
+tests/adapters/test_hosted_mcp_session.py .......                        [  7%]
+tests/adapters/test_http_mcp_tool_caller.py ............................ [  8%]
+..............................                                           [  9%]
+tests/adapters/test_judgment_scanner.py ................................ [  9%]
+.....................                                                    [ 10%]
+tests/adapters/test_knowledge_transport.py ..................            [ 11%]
+tests/adapters/test_mcp_strictness.py ...................                [ 11%]
+tests/adapters/test_no_forge_delivery.py ...                             [ 11%]
+tests/adapters/test_outbound_corpus.py ....................              [ 12%]
+tests/adapters/test_outbound_gate.py .....................               [ 12%]
+tests/adapters/test_sdk_mapping.py .......................               [ 13%]
+tests/adapters/test_self_write_replay.py ............................... [ 14%]
+...                                                                      [ 14%]
+tests/adapters/test_stdio_mcp_tool_caller.py ..................          [ 15%]
+tests/adapters/test_subprocess_git.py .................................. [ 16%]
+.....                                                                    [ 16%]
+tests/adapters/test_tracker_self_writes.py .............                 [ 16%]
+tests/api/v1/test_agent.py ....................                          [ 17%]
+tests/api/v1/test_health.py .....                                        [ 17%]
+tests/api/v1/test_jobs.py .............................................. [ 18%]
+..........                                                               [ 18%]
+tests/chains/test_accept_gate.py ......................                  [ 19%]
+tests/chains/test_criteria_validation.py ..............................  [ 20%]
+tests/chains/test_dispatch_definitions.py .............                  [ 20%]
+tests/chains/test_outbound_gating.py ..............                      [ 21%]
+tests/chains/test_ralph_loop.py ........................................ [ 22%]
+........                                                                 [ 22%]
+tests/chains/test_ralph_workflow.py .................................... [ 23%]
+........................................................................ [ 25%]
+......                                                                   [ 25%]
+tests/chains/test_remediation.py .......                                 [ 26%]
+tests/chains/test_retry_floor_wiring.py ......                           [ 26%]
+tests/chains/test_shorthand_url_resolution.py ...                        [ 26%]
+tests/chains/test_ticket_generation.py ................................. [ 27%]
+....                                                                     [ 27%]
+tests/core/test_bare_mode.py .                                           [ 27%]
+tests/core/test_config.py ..........................                     [ 28%]
+tests/core/test_config_error_redaction.py ....                           [ 28%]
+tests/core/test_credential_shapes.py .........                           [ 28%]
+tests/core/test_docs_prompt_knobs.py ...........                         [ 28%]
+tests/core/test_error_egress.py ................................         [ 29%]
+tests/core/test_knowledge_connection.py ................................ [ 30%]
+..............................                                           [ 31%]
+tests/core/test_knowledge_grant.py .........                             [ 31%]
+tests/core/test_log_emitter.py .......                                   [ 32%]
+tests/core/test_logging.py .                                             [ 32%]
+tests/core/test_logging_chain.py ....                                    [ 32%]
+tests/core/test_notion_credential.py ......                              [ 32%]
+tests/core/test_prompt_boot.py ......                                    [ 32%]
+tests/core/test_retry.py .............................                   [ 33%]
+tests/core/test_stream_drain.py ........                                 [ 33%]
+tests/core/test_surface_lease_config.py ........                         [ 33%]
+tests/core/test_tracker_credential.py .......                            [ 34%]
+tests/core/test_tracker_settings.py .................................... [ 35%]
+....................................................                     [ 36%]
+tests/docs/test_api_event_reference.py ....                              [ 36%]
+tests/docs/test_documented_surface.py ....................               [ 37%]
+tests/docs/test_parity_checklist.py .........                            [ 37%]
+tests/docs/test_setup_guide.py .....FF........                           [ 38%]
+tests/domain/test_agent.py ..                                            [ 38%]
+tests/domain/test_base_resolution.py ............................        [ 38%]
+tests/domain/test_base_scope.py ...........                              [ 39%]
+tests/domain/test_base_staleness.py ......                               [ 39%]
+tests/domain/test_branch.py .....                                        [ 39%]
+tests/domain/test_comment_markers.py ...............                     [ 40%]
+tests/domain/test_criteria_feasibility.py .............................. [ 40%]
+......................................                                   [ 42%]
+tests/domain/test_criteria_grading.py .......                            [ 42%]
+tests/domain/test_criterion_identity.py ........                         [ 42%]
+tests/domain/test_dispatch_predicate.py ................................ [ 43%]
+...                                                                      [ 43%]
+tests/domain/test_git_url.py .........................                   [ 44%]
+tests/domain/test_no_ref_parsing.py ....                                 [ 44%]
+tests/domain/test_operation_optionality.py .......................       [ 44%]
+tests/domain/test_outcome.py ....................                        [ 45%]
+tests/domain/test_scope_container.py ...............                     [ 45%]
+tests/domain/test_scope_ref.py .................                         [ 46%]
+tests/domain/test_self_write_retention.py ..                             [ 46%]
+tests/domain/test_stall_report.py .........                              [ 46%]
+tests/domain/test_surface_lease.py .................                     [ 47%]
+tests/domain/test_surface_lease_error.py ...                             [ 47%]
+tests/integration/test_checkpointer_postgres.py ss                       [ 47%]
+tests/integration/test_criteria_oracle.py ...                            [ 47%]
+tests/integration/test_live_criteria_probes.py ss                        [ 47%]
+tests/integration/test_self_running_chain.py ...                         [ 47%]
+tests/integration/test_session_resume.py sss                             [ 47%]
+tests/integration/test_stacked_scope.py .....                            [ 47%]
+tests/integration/test_workflow_e2e.py .................                 [ 48%]
+tests/probes/test_ab_failure_capture.py ...                              [ 48%]
+tests/probes/test_ab_smoke.py s                                          [ 48%]
+tests/probes/test_harness_capabilities.py .ssssss                        [ 48%]
+tests/probes/test_strict_output_enforcement.py .s                        [ 48%]
+tests/probes/test_v5_orchestration_live.py s                             [ 48%]
+tests/prompts/test_absence_bindings.py ................................  [ 49%]
+tests/prompts/test_criteria_generation_prompts.py ...............        [ 50%]
+tests/prompts/test_initiative_target_date.py .....                       [ 50%]
+tests/prompts/test_knowledge_map.py ..........................           [ 51%]
+tests/prompts/test_minimal_floor.py ....                                 [ 51%]
+tests/prompts/test_operation_config.py F................................ [ 52%]
+...........FF....                                                        [ 52%]
+tests/prompts/test_pass_roster.py ...................................... [ 53%]
+........................................                                 [ 54%]
+tests/prompts/test_principal_roles.py ..........                         [ 55%]
+tests/prompts/test_prompt_wiring.py .................................... [ 56%]
+.................                                                        [ 56%]
+tests/prompts/test_resolvable_identifiers.py ...........                 [ 57%]
+tests/prompts/test_rollback.py ........                                  [ 57%]
+tests/prompts/test_session_policy.py ................................... [ 58%]
+.......................................                                  [ 59%]
+tests/prompts/test_set_completeness.py .........                         [ 59%]
+tests/prompts/test_skills_loadouts.py .....................              [ 60%]
+tests/prompts/test_v5_fragments.py ............................          [ 61%]
+tests/prompts/test_v5_lenses.py ........                                 [ 61%]
+tests/prompts/test_v5_orchestration.py ....................              [ 61%]
+tests/prompts/test_v5_style_rules.py ................................... [ 62%]
+........................................................................ [ 64%]
+........................................................................ [ 67%]
+............................................                             [ 68%]
+tests/prompts/test_v5_wiring.py ........................................ [ 69%]
+.....................                                                    [ 70%]
+tests/services/test_agent_service.py ...                                 [ 70%]
+tests/services/test_claim_heartbeat.py .....................             [ 70%]
+tests/services/test_dispatch_pass.py .................Message: {'issue_key': 'K-1', 'job_id': 'job-0001', 'run_started': True, 'terminal_outcome': True, 'event': 'lifecycle_watch_finished', 'level': 'info', 'logger': 'kodezart.services.lifecycle_watcher', 'timestamp': '2026-09-12T19:00:56.010725Z'}
+Arguments: ()
+............       [ 71%]
+tests/services/test_fire_context.py .....................                [ 72%]
+tests/services/test_fire_dispatcher.py ................................. [ 73%]
+..................................................                       [ 74%]
+tests/services/test_lifecycle_watcher.py .FF................FF.......... [ 75%]
+.........                                                                [ 75%]
+tests/services/test_pass_gate.py .....................................   [ 76%]
+tests/services/test_pass_scheduler.py ........................           [ 77%]
+tests/services/test_prompt_pass.py ......................                [ 78%]
+tests/services/test_prompt_passes.py .........................           [ 78%]
+tests/services/test_run_recorder.py .............................        [ 79%]
+tests/services/test_run_surface_lease.py ...................             [ 80%]
+tests/services/test_session_grant_threading.py ...................       [ 80%]
+tests/services/test_tracker_lifecycle.py .........................       [ 81%]
+tests/test_composition_root.py ................                          [ 82%]
+tests/test_forge_origin_selection.py .............                       [ 82%]
+tests/test_lane_verification.py ......                                   [ 82%]
+tests/test_release.py ....                                               [ 82%]
+tests/tracker/test_comment_expected.py ...................               [ 83%]
+tests/tracker/test_comment_expected_independent.py ......                [ 83%]
+tests/tracker/test_linear_mcp_tracker.py ............................... [ 84%]
+...............................                                          [ 85%]
+tests/tracker/test_linear_tool_arguments.py ......                       [ 85%]
+tests/tracker/test_linear_tool_roster.py .....                           [ 85%]
+tests/tracker/test_linear_wire_shapes.py ............................... [ 86%]
+..                                                                       [ 86%]
+tests/tracker/test_marker_configuration.py .....                         [ 86%]
+tests/tracker/test_ownership_arbitration.py ............................ [ 87%]
+                                                                         [ 87%]
+tests/tracker/test_protected_comment_retry.py ..........                 [ 87%]
+tests/tracker/test_scope_reads.py ...................................... [ 88%]
+.............................                                            [ 89%]
+tests/tracker/test_tracker_boot.py ....................................  [ 90%]
+tests/tracker/test_tracker_boot_wiring.py ..................             [ 91%]
+tests/tracker/test_tracker_conformance.py .............................. [ 92%]
+........................................................................ [ 94%]
+........................................................................ [ 96%]
+...........................................                              [ 97%]
+tests/types/test_output_descriptions.py ............                     [ 97%]
+tests/types/test_wire_renames.py ......                                  [ 98%]
+tests/types/test_wire_schemas.py ............................            [ 98%]
+tests/types/test_writable_surface.py ..........................          [ 99%]
+tests/workflows/test_investigate_fan_in.py ...........                   [100%]
+
+=================================== FAILURES ===================================
+_________ test_every_variable_the_guide_sets_is_a_shipped_config_field _________
+
+    def test_every_variable_the_guide_sets_is_a_shipped_config_field() -> None:
+        """The guide instructs against the env surface the code actually reads."""
+        shipped = _shipped_variables()
+        guide = _guide()
+    
+        for variable in CITED_VARIABLES:
+>           assert variable in shipped, variable
+E           AssertionError: KODEZART_TRACKER__TOKEN
+E           assert 'KODEZART_TRACKER__TOKEN' in {'KODEZART_AGENTIC_CONTENT_SCANNER_ENABLED', 'KODEZART_API_V1_PREFIX', 'KODEZART_CHECKPOINT_URL', 'KODEZART_CI_CHECK_RUNS_MAX_PAGES', 'KODEZART_CI_GRACE_POLL_INTERVAL_SECONDS', 'KODEZART_CI_NO_CHECKS_GRACE_POLLS', ...}
+
+tests/docs/test_setup_guide.py:186: AssertionError
+__________ test_the_guide_names_no_variable_the_config_does_not_ship ___________
+
+    def test_the_guide_names_no_variable_the_config_does_not_ship() -> None:
+        """The other direction, derived: an invented or misspelled name reds here.
+    
+        The floor above says which variables the guide owes an operator; this
+        reads every one it actually carries out of the text, so a variable
+        added to the guide is checked by the act of adding it rather than by
+        somebody remembering to extend a list.
+        """
+        shipped = _shipped_variables()
+        named = set(re.findall(r"\bKODEZART_[A-Z0-9_]+\b", _guide()))
+    
+        assert named, "the guide names no configuration variable at all"
+>       assert named <= shipped, named - shipped
+E       AssertionError: {'KODEZART_TRACKER__TOKEN'}
+E       assert {'KODEZART_AG..._GRANTS', ...} <= {'KODEZART_AG...E_POLLS', ...}
+E         
+E         Extra items in the left set:
+E         'KODEZART_TRACKER__TOKEN'
+
+tests/docs/test_setup_guide.py:202: AssertionError
+__________ test_all_fourteen_fields_are_present_with_the_stated_types __________
+
+    def test_all_fourteen_fields_are_present_with_the_stated_types() -> None:
+        """Field-by-field census: exact equality, never a subset check.
+    
+        Grew by ``records`` under KOD-112 R3 fix 6 (the write-side destination
+        registry) and by ``private_surface`` under KOD-106 R2 (the operator's
+        prose description of what this operation treats as private).  The
+        census stays total and stays ``==``; a census loosened to a containment
+        check stops being one.
+        """
+        fields = OperationConfig.model_fields
+>       assert set(fields) == {
+            "operation_name",
+            "workspace",
+            "principals",
+            "agent_identities",
+            "teams",
+            "queue_states",
+            "workflow_states",
+            "repos",
+            "documents",
+            "records",
+            "knowledge",
+            "endpoints",
+            "initiatives",
+            "private_surface",
+        }
+E       AssertionError: assert {'agent_ident...refixes', ...} == {'agent_ident...on_name', ...}
+E         
+E         Extra items in the left set:
+E         'marker_prefixes'
+E         Use -v to get more diff
+
+tests/prompts/test_operation_config.py:133: AssertionError
+_____________ test_placeholder_mapping_is_total_in_both_directions _____________
+
+    def test_placeholder_mapping_is_total_in_both_directions() -> None:
+        """Every placeholder maps to one path; every field is template-reachable."""
+        rows = markdown_rows("## Placeholder → OperationConfig field")
+        mapped = {row[0]: row[1] for row in rows}
+        assert len(mapped) == len(rows)
+    
+        # Direction 1 — no placeholder the templates reference is unmapped.
+        referenced = template_placeholders()
+        assert referenced == set(mapped), referenced ^ set(mapped)
+        for placeholder, path in mapped.items():
+            assert placeholder.split(".")[0] == path
+    
+        # Direction 2 — read off the MODEL, never off the table's own rows, so
+        # the mapping can no longer be checked against what it was derived from.
+>       assert set(mapped.values()) == set(OperationConfig.model_fields)
+E       AssertionError: assert {'agent_ident...on_name', ...} == {'agent_ident...refixes', ...}
+E         
+E         Extra items in the right set:
+E         'marker_prefixes'
+E         Use -v to get more diff
+
+tests/prompts/test_operation_config.py:634: AssertionError
+_____ test_every_operation_config_field_is_reachable_from_a_pass_template ______
+
+    def test_every_operation_config_field_is_reachable_from_a_pass_template() -> None:
+        """Direction 2 again, straight from the templates to the model.
+    
+        R2 added four fields — principals, agent_identities, repos, initiatives —
+        on the reasoning that the passes consume them.  A field no template can
+        reach is a field the port did not actually port.
+        """
+        reachable = {name.split(".")[0] for name in template_placeholders()}
+        unreachable = set(OperationConfig.model_fields) - reachable
+>       assert unreachable == set(), f"no pass template reaches {sorted(unreachable)}"
+E       AssertionError: no pass template reaches ['marker_prefixes']
+E       assert {'marker_prefixes'} == set()
+E         
+E         Extra items in the left set:
+E         'marker_prefixes'
+E         Use -v to get more diff
+
+tests/prompts/test_operation_config.py:646: AssertionError
+_ TestTheTransitionsAJobStreamProduces.test_the_terminal_outcome_reaches_the_issue_as_a_comment _
+
+self = <tests.services.test_lifecycle_watcher.TestTheTransitionsAJobStreamProduces object at 0x10f9431a0>
+
+    async def test_the_terminal_outcome_reaches_the_issue_as_a_comment(self) -> None:
+        watch, tracker, _ = watcher(
+            complete(merged=True, outcome=WorkflowOutcome.ci_passed),
+        )
+    
+        await watch.watch(
+            issue_key=ISSUE,
+            job_id="job-0001",
+            pre_claim_state=PRE_CLAIM_STATE,
+        )
+    
+>       assert [comment.body for comment in tracker.comments] == [
+            f"job job-0001 reached outcome {WorkflowOutcome.ci_passed.value}",
+        ]
+E       AssertionError: assert ['[fixture-ou...me ci_passed'] == ['job job-000...me ci_passed']
+E         
+E         At index 0 diff: '[fixture-outcome:K-1:job-0001]\njob job-0001 reached outcome ci_passed' != 'job job-0001 reached outcome ci_passed'
+E         Use -v to get more diff
+
+tests/services/test_lifecycle_watcher.py:237: AssertionError
+----------------------------- Captured stderr call -----------------------------
+--- Logging error ---
+Traceback (most recent call last):
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/logging/__init__.py", line 1163, in emit
+    stream.write(msg + self.terminator)
+ValueError: I/O operation on closed file.
+Call stack:
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1032, in _bootstrap
+    self._bootstrap_inner()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 93, in _worker
+    work_item.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 216, in info
+    return self._proxy_to_logger("info", event, *args, **kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 280, in _proxy_to_logger
+    return super()._proxy_to_logger(method_name, event=event, **event_kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/_base.py", line 223, in _proxy_to_logger
+    return getattr(self._logger, method_name)(*args, **kw)
+Message: {'issue_key': 'K-1', 'event': 'lifecycle_in_progress', 'level': 'info', 'logger': 'kodezart.services.tracker_lifecycle', 'timestamp': '2026-09-12T19:00:58.566600Z'}
+Arguments: ()
+--- Logging error ---
+Traceback (most recent call last):
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/logging/__init__.py", line 1163, in emit
+    stream.write(msg + self.terminator)
+ValueError: I/O operation on closed file.
+Call stack:
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1032, in _bootstrap
+    self._bootstrap_inner()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 93, in _worker
+    work_item.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 216, in info
+    return self._proxy_to_logger("info", event, *args, **kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 280, in _proxy_to_logger
+    return super()._proxy_to_logger(method_name, event=event, **event_kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/_base.py", line 223, in _proxy_to_logger
+    return getattr(self._logger, method_name)(*args, **kw)
+Message: {'issue_key': 'K-1', 'event': 'lifecycle_done', 'level': 'info', 'logger': 'kodezart.services.tracker_lifecycle', 'timestamp': '2026-09-12T19:00:58.568701Z'}
+Arguments: ()
+--- Logging error ---
+Traceback (most recent call last):
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/logging/__init__.py", line 1163, in emit
+    stream.write(msg + self.terminator)
+ValueError: I/O operation on closed file.
+Call stack:
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1032, in _bootstrap
+    self._bootstrap_inner()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 93, in _worker
+    work_item.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 216, in info
+    return self._proxy_to_logger("info", event, *args, **kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 280, in _proxy_to_logger
+    return super()._proxy_to_logger(method_name, event=event, **event_kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/_base.py", line 223, in _proxy_to_logger
+    return getattr(self._logger, method_name)(*args, **kw)
+Message: {'writer': 'tracker_comment', 'surface': 'tracker', 'verdict': 'clean', 'visibility': 'public', 'categories': [], 'failure': None, 'content_digest': 'fdfd09ada3e6d93a2f2e6c1cc13db95ffcdb0cdb1495ec29b06ab7d0a66a2f97', 'hits': [], 'event': 'outbound_content_gated', 'level': 'info', 'logger': 'kodezart.services.tracker_lifecycle', 'timestamp': '2026-09-12T19:00:58.570789Z'}
+Arguments: ()
+--- Logging error ---
+Traceback (most recent call last):
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/logging/__init__.py", line 1163, in emit
+    stream.write(msg + self.terminator)
+ValueError: I/O operation on closed file.
+Call stack:
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1032, in _bootstrap
+    self._bootstrap_inner()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 93, in _worker
+    work_item.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 216, in info
+    return self._proxy_to_logger("info", event, *args, **kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 280, in _proxy_to_logger
+    return super()._proxy_to_logger(method_name, event=event, **event_kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/_base.py", line 223, in _proxy_to_logger
+    return getattr(self._logger, method_name)(*args, **kw)
+Message: {'issue_key': 'K-1', 'job_id': 'job-0001', 'outcome': 'ci_passed', 'event': 'lifecycle_outcome_comment', 'level': 'info', 'logger': 'kodezart.services.tracker_lifecycle', 'timestamp': '2026-09-12T19:00:58.572884Z'}
+Arguments: ()
+--- Logging error ---
+Traceback (most recent call last):
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/logging/__init__.py", line 1163, in emit
+    stream.write(msg + self.terminator)
+ValueError: I/O operation on closed file.
+Call stack:
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1032, in _bootstrap
+    self._bootstrap_inner()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 93, in _worker
+    work_item.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 216, in info
+    return self._proxy_to_logger("info", event, *args, **kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 280, in _proxy_to_logger
+    return super()._proxy_to_logger(method_name, event=event, **event_kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/_base.py", line 223, in _proxy_to_logger
+    return getattr(self._logger, method_name)(*args, **kw)
+Message: {'issue_key': 'K-1', 'holder': 'pass-a', 'event': 'claim_released', 'level': 'info', 'logger': 'kodezart.services.claim_heartbeat', 'timestamp': '2026-09-12T19:00:58.574535Z'}
+Arguments: ()
+--- Logging error ---
+Traceback (most recent call last):
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/logging/__init__.py", line 1163, in emit
+    stream.write(msg + self.terminator)
+ValueError: I/O operation on closed file.
+Call stack:
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1032, in _bootstrap
+    self._bootstrap_inner()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 93, in _worker
+    work_item.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 216, in info
+    return self._proxy_to_logger("info", event, *args, **kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 280, in _proxy_to_logger
+    return super()._proxy_to_logger(method_name, event=event, **event_kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/_base.py", line 223, in _proxy_to_logger
+    return getattr(self._logger, method_name)(*args, **kw)
+Message: {'issue_key': 'K-1', 'job_id': 'job-0001', 'run_started': True, 'terminal_outcome': True, 'event': 'lifecycle_watch_finished', 'level': 'info', 'logger': 'kodezart.services.lifecycle_watcher', 'timestamp': '2026-09-12T19:00:58.575836Z'}
+Arguments: ()
+--- Logging error ---
+Traceback (most recent call last):
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/logging/__init__.py", line 1163, in emit
+    stream.write(msg + self.terminator)
+ValueError: I/O operation on closed file.
+Call stack:
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1032, in _bootstrap
+    self._bootstrap_inner()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 93, in _worker
+    work_item.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 230, in error
+    return self._proxy_to_logger("error", event, *args, **kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 280, in _proxy_to_logger
+    return super()._proxy_to_logger(method_name, event=event, **event_kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/_base.py", line 223, in _proxy_to_logger
+    return getattr(self._logger, method_name)(*args, **kw)
+Message: {'issue_key': 'K-1', 'job_id': 'job-0001', 'outcome': 'completed', 'event': 'finished_fire_unknown_to_registry', 'level': 'error', 'logger': 'kodezart.services.lifecycle_watcher', 'timestamp': '2026-09-12T19:00:58.577398Z'}
+Arguments: ()
+------------------------------ Captured log call -------------------------------
+INFO     kodezart.services.tracker_lifecycle:tracker_lifecycle.py:99 {'issue_key': 'K-1', 'event': 'lifecycle_in_progress', 'level': 'info', 'logger': 'kodezart.services.tracker_lifecycle', 'timestamp': '2026-09-12T19:00:58.566600Z'}
+INFO     kodezart.services.tracker_lifecycle:tracker_lifecycle.py:156 {'issue_key': 'K-1', 'event': 'lifecycle_done', 'level': 'info', 'logger': 'kodezart.services.tracker_lifecycle', 'timestamp': '2026-09-12T19:00:58.568701Z'}
+INFO     kodezart.services.tracker_lifecycle:outbound_write.py:56 {'writer': 'tracker_comment', 'surface': 'tracker', 'verdict': 'clean', 'visibility': 'public', 'categories': [], 'failure': None, 'content_digest': 'fdfd09ada3e6d93a2f2e6c1cc13db95ffcdb0cdb1495ec29b06ab7d0a66a2f97', 'hits': [], 'event': 'outbound_content_gated', 'level': 'info', 'logger': 'kodezart.services.tracker_lifecycle', 'timestamp': '2026-09-12T19:00:58.570789Z'}
+INFO     kodezart.services.tracker_lifecycle:tracker_lifecycle.py:274 {'issue_key': 'K-1', 'job_id': 'job-0001', 'outcome': 'ci_passed', 'event': 'lifecycle_outcome_comment', 'level': 'info', 'logger': 'kodezart.services.tracker_lifecycle', 'timestamp': '2026-09-12T19:00:58.572884Z'}
+INFO     kodezart.services.claim_heartbeat:claim_heartbeat.py:106 {'issue_key': 'K-1', 'holder': 'pass-a', 'event': 'claim_released', 'level': 'info', 'logger': 'kodezart.services.claim_heartbeat', 'timestamp': '2026-09-12T19:00:58.574535Z'}
+INFO     kodezart.services.lifecycle_watcher:lifecycle_watcher.py:422 {'issue_key': 'K-1', 'job_id': 'job-0001', 'run_started': True, 'terminal_outcome': True, 'event': 'lifecycle_watch_finished', 'level': 'info', 'logger': 'kodezart.services.lifecycle_watcher', 'timestamp': '2026-09-12T19:00:58.575836Z'}
+ERROR    kodezart.services.lifecycle_watcher:lifecycle_watcher.py:453 {'issue_key': 'K-1', 'job_id': 'job-0001', 'outcome': 'completed', 'event': 'finished_fire_unknown_to_registry', 'level': 'error', 'logger': 'kodezart.services.lifecycle_watcher', 'timestamp': '2026-09-12T19:00:58.577398Z'}
+_ TestTheTransitionsAJobStreamProduces.test_an_unmerged_run_reports_its_outcome_and_is_not_moved_to_done _
+
+self = <tests.services.test_lifecycle_watcher.TestTheTransitionsAJobStreamProduces object at 0x10f9400b0>
+
+    async def test_an_unmerged_run_reports_its_outcome_and_is_not_moved_to_done(
+        self,
+    ) -> None:
+        """A failed run is still reported — but never as delivered work."""
+        watch, tracker, _ = watcher(
+            PR_EVENT,
+            complete(
+                merged=False, outcome=WorkflowOutcome.ci_failed_fix_budget_exhausted
+            ),
+        )
+    
+        await watch.watch(
+            issue_key=ISSUE,
+            job_id="job-0001",
+            pre_claim_state=PRE_CLAIM_STATE,
+        )
+    
+        assert (ISSUE, LifecycleStage.DONE) not in tracker.workflow_writes
+        assert tracker.queue_writes == []
+        exhausted = WorkflowOutcome.ci_failed_fix_budget_exhausted
+>       assert [comment.body for comment in tracker.comments] == [
+            f"job job-0001 reached outcome {exhausted.value}",
+        ]
+E       AssertionError: assert ['[fixture-ou...et_exhausted'] == ['job job-000...et_exhausted']
+E         
+E         At index 0 diff: '[fixture-outcome:K-1:job-0001]\njob job-0001 reached outcome ci_failed_fix_budget_exhausted' != 'job job-0001 reached outcome ci_failed_fix_budget_exhausted'
+E         Use -v to get more diff
+
+tests/services/test_lifecycle_watcher.py:261: AssertionError
+----------------------------- Captured stderr call -----------------------------
+--- Logging error ---
+Traceback (most recent call last):
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/logging/__init__.py", line 1163, in emit
+    stream.write(msg + self.terminator)
+ValueError: I/O operation on closed file.
+Call stack:
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1032, in _bootstrap
+    self._bootstrap_inner()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 93, in _worker
+    work_item.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 216, in info
+    return self._proxy_to_logger("info", event, *args, **kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 280, in _proxy_to_logger
+    return super()._proxy_to_logger(method_name, event=event, **event_kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/_base.py", line 223, in _proxy_to_logger
+    return getattr(self._logger, method_name)(*args, **kw)
+Message: {'issue_key': 'K-1', 'event': 'lifecycle_in_progress', 'level': 'info', 'logger': 'kodezart.services.tracker_lifecycle', 'timestamp': '2026-09-12T19:00:58.645789Z'}
+Arguments: ()
+--- Logging error ---
+Traceback (most recent call last):
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/logging/__init__.py", line 1163, in emit
+    stream.write(msg + self.terminator)
+ValueError: I/O operation on closed file.
+Call stack:
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1032, in _bootstrap
+    self._bootstrap_inner()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 93, in _worker
+    work_item.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 216, in info
+    return self._proxy_to_logger("info", event, *args, **kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 280, in _proxy_to_logger
+    return super()._proxy_to_logger(method_name, event=event, **event_kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/_base.py", line 223, in _proxy_to_logger
+    return getattr(self._logger, method_name)(*args, **kw)
+Message: {'issue_key': 'K-1', 'branch': 'feature', 'pushed_head_sha': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'event': 'lifecycle_deliverable_ref', 'level': 'info', 'logger': 'kodezart.services.tracker_lifecycle', 'timestamp': '2026-09-12T19:00:58.648171Z'}
+Arguments: ()
+--- Logging error ---
+Traceback (most recent call last):
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/logging/__init__.py", line 1163, in emit
+    stream.write(msg + self.terminator)
+ValueError: I/O operation on closed file.
+Call stack:
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1032, in _bootstrap
+    self._bootstrap_inner()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 93, in _worker
+    work_item.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 216, in info
+    return self._proxy_to_logger("info", event, *args, **kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 280, in _proxy_to_logger
+    return super()._proxy_to_logger(method_name, event=event, **event_kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/_base.py", line 223, in _proxy_to_logger
+    return getattr(self._logger, method_name)(*args, **kw)
+Message: {'issue_key': 'K-1', 'event': 'lifecycle_in_review', 'level': 'info', 'logger': 'kodezart.services.tracker_lifecycle', 'timestamp': '2026-09-12T19:00:58.649713Z'}
+Arguments: ()
+--- Logging error ---
+Traceback (most recent call last):
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/logging/__init__.py", line 1163, in emit
+    stream.write(msg + self.terminator)
+ValueError: I/O operation on closed file.
+Call stack:
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1032, in _bootstrap
+    self._bootstrap_inner()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 93, in _worker
+    work_item.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 216, in info
+    return self._proxy_to_logger("info", event, *args, **kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 280, in _proxy_to_logger
+    return super()._proxy_to_logger(method_name, event=event, **event_kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/_base.py", line 223, in _proxy_to_logger
+    return getattr(self._logger, method_name)(*args, **kw)
+Message: {'writer': 'tracker_comment', 'surface': 'tracker', 'verdict': 'clean', 'visibility': 'public', 'categories': [], 'failure': None, 'content_digest': 'd568b6d196d7da063ff3fc3e8083b16812d32a5a63e07dcd238068b89cd3eb9c', 'hits': [], 'event': 'outbound_content_gated', 'level': 'info', 'logger': 'kodezart.services.tracker_lifecycle', 'timestamp': '2026-09-12T19:00:58.651604Z'}
+Arguments: ()
+--- Logging error ---
+Traceback (most recent call last):
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/logging/__init__.py", line 1163, in emit
+    stream.write(msg + self.terminator)
+ValueError: I/O operation on closed file.
+Call stack:
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1032, in _bootstrap
+    self._bootstrap_inner()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 93, in _worker
+    work_item.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 216, in info
+    return self._proxy_to_logger("info", event, *args, **kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 280, in _proxy_to_logger
+    return super()._proxy_to_logger(method_name, event=event, **event_kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/_base.py", line 223, in _proxy_to_logger
+    return getattr(self._logger, method_name)(*args, **kw)
+Message: {'issue_key': 'K-1', 'job_id': 'job-0001', 'outcome': 'ci_failed_fix_budget_exhausted', 'event': 'lifecycle_outcome_comment', 'level': 'info', 'logger': 'kodezart.services.tracker_lifecycle', 'timestamp': '2026-09-12T19:00:58.654195Z'}
+Arguments: ()
+--- Logging error ---
+Traceback (most recent call last):
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/logging/__init__.py", line 1163, in emit
+    stream.write(msg + self.terminator)
+ValueError: I/O operation on closed file.
+Call stack:
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1032, in _bootstrap
+    self._bootstrap_inner()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 93, in _worker
+    work_item.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 216, in info
+    return self._proxy_to_logger("info", event, *args, **kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 280, in _proxy_to_logger
+    return super()._proxy_to_logger(method_name, event=event, **event_kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/_base.py", line 223, in _proxy_to_logger
+    return getattr(self._logger, method_name)(*args, **kw)
+Message: {'issue_key': 'K-1', 'holder': 'pass-a', 'event': 'claim_released', 'level': 'info', 'logger': 'kodezart.services.claim_heartbeat', 'timestamp': '2026-09-12T19:00:58.655949Z'}
+Arguments: ()
+--- Logging error ---
+Traceback (most recent call last):
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/logging/__init__.py", line 1163, in emit
+    stream.write(msg + self.terminator)
+ValueError: I/O operation on closed file.
+Call stack:
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1032, in _bootstrap
+    self._bootstrap_inner()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 93, in _worker
+    work_item.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 216, in info
+    return self._proxy_to_logger("info", event, *args, **kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 280, in _proxy_to_logger
+    return super()._proxy_to_logger(method_name, event=event, **event_kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/_base.py", line 223, in _proxy_to_logger
+    return getattr(self._logger, method_name)(*args, **kw)
+Message: {'issue_key': 'K-1', 'job_id': 'job-0001', 'run_started': True, 'terminal_outcome': True, 'event': 'lifecycle_watch_finished', 'level': 'info', 'logger': 'kodezart.services.lifecycle_watcher', 'timestamp': '2026-09-12T19:00:58.657471Z'}
+Arguments: ()
+--- Logging error ---
+Traceback (most recent call last):
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/logging/__init__.py", line 1163, in emit
+    stream.write(msg + self.terminator)
+ValueError: I/O operation on closed file.
+Call stack:
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1032, in _bootstrap
+    self._bootstrap_inner()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 93, in _worker
+    work_item.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 230, in error
+    return self._proxy_to_logger("error", event, *args, **kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 280, in _proxy_to_logger
+    return super()._proxy_to_logger(method_name, event=event, **event_kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/_base.py", line 223, in _proxy_to_logger
+    return getattr(self._logger, method_name)(*args, **kw)
+Message: {'issue_key': 'K-1', 'job_id': 'job-0001', 'outcome': 'completed', 'event': 'finished_fire_unknown_to_registry', 'level': 'error', 'logger': 'kodezart.services.lifecycle_watcher', 'timestamp': '2026-09-12T19:00:58.658957Z'}
+Arguments: ()
+------------------------------ Captured log call -------------------------------
+INFO     kodezart.services.tracker_lifecycle:tracker_lifecycle.py:99 {'issue_key': 'K-1', 'event': 'lifecycle_in_progress', 'level': 'info', 'logger': 'kodezart.services.tracker_lifecycle', 'timestamp': '2026-09-12T19:00:58.645789Z'}
+INFO     kodezart.services.tracker_lifecycle:tracker_lifecycle.py:321 {'issue_key': 'K-1', 'branch': 'feature', 'pushed_head_sha': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'event': 'lifecycle_deliverable_ref', 'level': 'info', 'logger': 'kodezart.services.tracker_lifecycle', 'timestamp': '2026-09-12T19:00:58.648171Z'}
+INFO     kodezart.services.tracker_lifecycle:tracker_lifecycle.py:144 {'issue_key': 'K-1', 'event': 'lifecycle_in_review', 'level': 'info', 'logger': 'kodezart.services.tracker_lifecycle', 'timestamp': '2026-09-12T19:00:58.649713Z'}
+INFO     kodezart.services.tracker_lifecycle:outbound_write.py:56 {'writer': 'tracker_comment', 'surface': 'tracker', 'verdict': 'clean', 'visibility': 'public', 'categories': [], 'failure': None, 'content_digest': 'd568b6d196d7da063ff3fc3e8083b16812d32a5a63e07dcd238068b89cd3eb9c', 'hits': [], 'event': 'outbound_content_gated', 'level': 'info', 'logger': 'kodezart.services.tracker_lifecycle', 'timestamp': '2026-09-12T19:00:58.651604Z'}
+INFO     kodezart.services.tracker_lifecycle:tracker_lifecycle.py:274 {'issue_key': 'K-1', 'job_id': 'job-0001', 'outcome': 'ci_failed_fix_budget_exhausted', 'event': 'lifecycle_outcome_comment', 'level': 'info', 'logger': 'kodezart.services.tracker_lifecycle', 'timestamp': '2026-09-12T19:00:58.654195Z'}
+INFO     kodezart.services.claim_heartbeat:claim_heartbeat.py:106 {'issue_key': 'K-1', 'holder': 'pass-a', 'event': 'claim_released', 'level': 'info', 'logger': 'kodezart.services.claim_heartbeat', 'timestamp': '2026-09-12T19:00:58.655949Z'}
+INFO     kodezart.services.lifecycle_watcher:lifecycle_watcher.py:422 {'issue_key': 'K-1', 'job_id': 'job-0001', 'run_started': True, 'terminal_outcome': True, 'event': 'lifecycle_watch_finished', 'level': 'info', 'logger': 'kodezart.services.lifecycle_watcher', 'timestamp': '2026-09-12T19:00:58.657471Z'}
+ERROR    kodezart.services.lifecycle_watcher:lifecycle_watcher.py:453 {'issue_key': 'K-1', 'job_id': 'job-0001', 'outcome': 'completed', 'event': 'finished_fire_unknown_to_registry', 'level': 'error', 'logger': 'kodezart.services.lifecycle_watcher', 'timestamp': '2026-09-12T19:00:58.658957Z'}
+_ TestTheFailureArm.test_a_run_reaching_a_terminal_outcome_is_untouched_by_the_arm _
+
+self = <tests.services.test_lifecycle_watcher.TestTheFailureArm object at 0x10ed865d0>
+
+    async def test_a_run_reaching_a_terminal_outcome_is_untouched_by_the_arm(
+        self,
+    ) -> None:
+        """The paired positive: the success path writes exactly what it did."""
+        watch, tracker, _ = watcher(
+            PR_EVENT,
+            complete(merged=True, outcome=WorkflowOutcome.ci_passed),
+        )
+    
+        await watch.watch(
+            issue_key=ISSUE,
+            job_id="job-0001",
+            pre_claim_state=PRE_CLAIM_STATE,
+        )
+    
+        assert tracker.restored_states == []
+        assert tracker.workflow_writes == [
+            (ISSUE, LifecycleStage.IN_PROGRESS),
+            (ISSUE, LifecycleStage.IN_REVIEW),
+            (ISSUE, LifecycleStage.DONE),
+        ]
+>       assert [comment.body for comment in tracker.comments] == [
+            f"job job-0001 reached outcome {WorkflowOutcome.ci_passed.value}",
+        ]
+E       AssertionError: assert ['[fixture-ou...me ci_passed'] == ['job job-000...me ci_passed']
+E         
+E         At index 0 diff: '[fixture-outcome:K-1:job-0001]\njob job-0001 reached outcome ci_passed' != 'job job-0001 reached outcome ci_passed'
+E         Use -v to get more diff
+
+tests/services/test_lifecycle_watcher.py:759: AssertionError
+----------------------------- Captured stderr call -----------------------------
+--- Logging error ---
+Traceback (most recent call last):
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/logging/__init__.py", line 1163, in emit
+    stream.write(msg + self.terminator)
+ValueError: I/O operation on closed file.
+Call stack:
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1032, in _bootstrap
+    self._bootstrap_inner()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 93, in _worker
+    work_item.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 216, in info
+    return self._proxy_to_logger("info", event, *args, **kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 280, in _proxy_to_logger
+    return super()._proxy_to_logger(method_name, event=event, **event_kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/_base.py", line 223, in _proxy_to_logger
+    return getattr(self._logger, method_name)(*args, **kw)
+Message: {'issue_key': 'K-1', 'event': 'lifecycle_in_progress', 'level': 'info', 'logger': 'kodezart.services.tracker_lifecycle', 'timestamp': '2026-09-12T19:00:59.018765Z'}
+Arguments: ()
+--- Logging error ---
+Traceback (most recent call last):
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/logging/__init__.py", line 1163, in emit
+    stream.write(msg + self.terminator)
+ValueError: I/O operation on closed file.
+Call stack:
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1032, in _bootstrap
+    self._bootstrap_inner()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 93, in _worker
+    work_item.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 216, in info
+    return self._proxy_to_logger("info", event, *args, **kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 280, in _proxy_to_logger
+    return super()._proxy_to_logger(method_name, event=event, **event_kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/_base.py", line 223, in _proxy_to_logger
+    return getattr(self._logger, method_name)(*args, **kw)
+Message: {'issue_key': 'K-1', 'branch': 'feature', 'pushed_head_sha': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'event': 'lifecycle_deliverable_ref', 'level': 'info', 'logger': 'kodezart.services.tracker_lifecycle', 'timestamp': '2026-09-12T19:00:59.022441Z'}
+Arguments: ()
+--- Logging error ---
+Traceback (most recent call last):
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/logging/__init__.py", line 1163, in emit
+    stream.write(msg + self.terminator)
+ValueError: I/O operation on closed file.
+Call stack:
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1032, in _bootstrap
+    self._bootstrap_inner()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 93, in _worker
+    work_item.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 216, in info
+    return self._proxy_to_logger("info", event, *args, **kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 280, in _proxy_to_logger
+    return super()._proxy_to_logger(method_name, event=event, **event_kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/_base.py", line 223, in _proxy_to_logger
+    return getattr(self._logger, method_name)(*args, **kw)
+Message: {'issue_key': 'K-1', 'event': 'lifecycle_in_review', 'level': 'info', 'logger': 'kodezart.services.tracker_lifecycle', 'timestamp': '2026-09-12T19:00:59.024357Z'}
+Arguments: ()
+--- Logging error ---
+Traceback (most recent call last):
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/logging/__init__.py", line 1163, in emit
+    stream.write(msg + self.terminator)
+ValueError: I/O operation on closed file.
+Call stack:
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1032, in _bootstrap
+    self._bootstrap_inner()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 93, in _worker
+    work_item.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 216, in info
+    return self._proxy_to_logger("info", event, *args, **kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 280, in _proxy_to_logger
+    return super()._proxy_to_logger(method_name, event=event, **event_kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/_base.py", line 223, in _proxy_to_logger
+    return getattr(self._logger, method_name)(*args, **kw)
+Message: {'issue_key': 'K-1', 'event': 'lifecycle_done', 'level': 'info', 'logger': 'kodezart.services.tracker_lifecycle', 'timestamp': '2026-09-12T19:00:59.025889Z'}
+Arguments: ()
+--- Logging error ---
+Traceback (most recent call last):
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/logging/__init__.py", line 1163, in emit
+    stream.write(msg + self.terminator)
+ValueError: I/O operation on closed file.
+Call stack:
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1032, in _bootstrap
+    self._bootstrap_inner()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 93, in _worker
+    work_item.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 216, in info
+    return self._proxy_to_logger("info", event, *args, **kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 280, in _proxy_to_logger
+    return super()._proxy_to_logger(method_name, event=event, **event_kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/_base.py", line 223, in _proxy_to_logger
+    return getattr(self._logger, method_name)(*args, **kw)
+Message: {'writer': 'tracker_comment', 'surface': 'tracker', 'verdict': 'clean', 'visibility': 'public', 'categories': [], 'failure': None, 'content_digest': 'fdfd09ada3e6d93a2f2e6c1cc13db95ffcdb0cdb1495ec29b06ab7d0a66a2f97', 'hits': [], 'event': 'outbound_content_gated', 'level': 'info', 'logger': 'kodezart.services.tracker_lifecycle', 'timestamp': '2026-09-12T19:00:59.029980Z'}
+Arguments: ()
+--- Logging error ---
+Traceback (most recent call last):
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/logging/__init__.py", line 1163, in emit
+    stream.write(msg + self.terminator)
+ValueError: I/O operation on closed file.
+Call stack:
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1032, in _bootstrap
+    self._bootstrap_inner()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 93, in _worker
+    work_item.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 216, in info
+    return self._proxy_to_logger("info", event, *args, **kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 280, in _proxy_to_logger
+    return super()._proxy_to_logger(method_name, event=event, **event_kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/_base.py", line 223, in _proxy_to_logger
+    return getattr(self._logger, method_name)(*args, **kw)
+Message: {'issue_key': 'K-1', 'job_id': 'job-0001', 'outcome': 'ci_passed', 'event': 'lifecycle_outcome_comment', 'level': 'info', 'logger': 'kodezart.services.tracker_lifecycle', 'timestamp': '2026-09-12T19:00:59.032156Z'}
+Arguments: ()
+--- Logging error ---
+Traceback (most recent call last):
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/logging/__init__.py", line 1163, in emit
+    stream.write(msg + self.terminator)
+ValueError: I/O operation on closed file.
+Call stack:
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1032, in _bootstrap
+    self._bootstrap_inner()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 93, in _worker
+    work_item.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 216, in info
+    return self._proxy_to_logger("info", event, *args, **kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 280, in _proxy_to_logger
+    return super()._proxy_to_logger(method_name, event=event, **event_kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/_base.py", line 223, in _proxy_to_logger
+    return getattr(self._logger, method_name)(*args, **kw)
+Message: {'issue_key': 'K-1', 'holder': 'pass-a', 'event': 'claim_released', 'level': 'info', 'logger': 'kodezart.services.claim_heartbeat', 'timestamp': '2026-09-12T19:00:59.033835Z'}
+Arguments: ()
+--- Logging error ---
+Traceback (most recent call last):
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/logging/__init__.py", line 1163, in emit
+    stream.write(msg + self.terminator)
+ValueError: I/O operation on closed file.
+Call stack:
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1032, in _bootstrap
+    self._bootstrap_inner()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 93, in _worker
+    work_item.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 216, in info
+    return self._proxy_to_logger("info", event, *args, **kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 280, in _proxy_to_logger
+    return super()._proxy_to_logger(method_name, event=event, **event_kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/_base.py", line 223, in _proxy_to_logger
+    return getattr(self._logger, method_name)(*args, **kw)
+Message: {'issue_key': 'K-1', 'job_id': 'job-0001', 'run_started': True, 'terminal_outcome': True, 'event': 'lifecycle_watch_finished', 'level': 'info', 'logger': 'kodezart.services.lifecycle_watcher', 'timestamp': '2026-09-12T19:00:59.035418Z'}
+Arguments: ()
+--- Logging error ---
+Traceback (most recent call last):
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/logging/__init__.py", line 1163, in emit
+    stream.write(msg + self.terminator)
+ValueError: I/O operation on closed file.
+Call stack:
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1032, in _bootstrap
+    self._bootstrap_inner()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 93, in _worker
+    work_item.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 230, in error
+    return self._proxy_to_logger("error", event, *args, **kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 280, in _proxy_to_logger
+    return super()._proxy_to_logger(method_name, event=event, **event_kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/_base.py", line 223, in _proxy_to_logger
+    return getattr(self._logger, method_name)(*args, **kw)
+Message: {'issue_key': 'K-1', 'job_id': 'job-0001', 'outcome': 'completed', 'event': 'finished_fire_unknown_to_registry', 'level': 'error', 'logger': 'kodezart.services.lifecycle_watcher', 'timestamp': '2026-09-12T19:00:59.037775Z'}
+Arguments: ()
+------------------------------ Captured log call -------------------------------
+INFO     kodezart.services.tracker_lifecycle:tracker_lifecycle.py:99 {'issue_key': 'K-1', 'event': 'lifecycle_in_progress', 'level': 'info', 'logger': 'kodezart.services.tracker_lifecycle', 'timestamp': '2026-09-12T19:00:59.018765Z'}
+INFO     kodezart.services.tracker_lifecycle:tracker_lifecycle.py:321 {'issue_key': 'K-1', 'branch': 'feature', 'pushed_head_sha': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'event': 'lifecycle_deliverable_ref', 'level': 'info', 'logger': 'kodezart.services.tracker_lifecycle', 'timestamp': '2026-09-12T19:00:59.022441Z'}
+INFO     kodezart.services.tracker_lifecycle:tracker_lifecycle.py:144 {'issue_key': 'K-1', 'event': 'lifecycle_in_review', 'level': 'info', 'logger': 'kodezart.services.tracker_lifecycle', 'timestamp': '2026-09-12T19:00:59.024357Z'}
+INFO     kodezart.services.tracker_lifecycle:tracker_lifecycle.py:156 {'issue_key': 'K-1', 'event': 'lifecycle_done', 'level': 'info', 'logger': 'kodezart.services.tracker_lifecycle', 'timestamp': '2026-09-12T19:00:59.025889Z'}
+INFO     kodezart.services.tracker_lifecycle:outbound_write.py:56 {'writer': 'tracker_comment', 'surface': 'tracker', 'verdict': 'clean', 'visibility': 'public', 'categories': [], 'failure': None, 'content_digest': 'fdfd09ada3e6d93a2f2e6c1cc13db95ffcdb0cdb1495ec29b06ab7d0a66a2f97', 'hits': [], 'event': 'outbound_content_gated', 'level': 'info', 'logger': 'kodezart.services.tracker_lifecycle', 'timestamp': '2026-09-12T19:00:59.029980Z'}
+INFO     kodezart.services.tracker_lifecycle:tracker_lifecycle.py:274 {'issue_key': 'K-1', 'job_id': 'job-0001', 'outcome': 'ci_passed', 'event': 'lifecycle_outcome_comment', 'level': 'info', 'logger': 'kodezart.services.tracker_lifecycle', 'timestamp': '2026-09-12T19:00:59.032156Z'}
+INFO     kodezart.services.claim_heartbeat:claim_heartbeat.py:106 {'issue_key': 'K-1', 'holder': 'pass-a', 'event': 'claim_released', 'level': 'info', 'logger': 'kodezart.services.claim_heartbeat', 'timestamp': '2026-09-12T19:00:59.033835Z'}
+INFO     kodezart.services.lifecycle_watcher:lifecycle_watcher.py:422 {'issue_key': 'K-1', 'job_id': 'job-0001', 'run_started': True, 'terminal_outcome': True, 'event': 'lifecycle_watch_finished', 'level': 'info', 'logger': 'kodezart.services.lifecycle_watcher', 'timestamp': '2026-09-12T19:00:59.035418Z'}
+ERROR    kodezart.services.lifecycle_watcher:lifecycle_watcher.py:453 {'issue_key': 'K-1', 'job_id': 'job-0001', 'outcome': 'completed', 'event': 'finished_fire_unknown_to_registry', 'level': 'error', 'logger': 'kodezart.services.lifecycle_watcher', 'timestamp': '2026-09-12T19:00:59.037775Z'}
+_ TestTheFailureArm.test_a_terminal_outcome_after_an_error_frame_is_still_terminal _
+
+self = <tests.services.test_lifecycle_watcher.TestTheFailureArm object at 0x10f930fe0>
+
+    async def test_a_terminal_outcome_after_an_error_frame_is_still_terminal(
+        self,
+    ) -> None:
+        """An ErrorEvent alone is not the signal — reaching no terminal is.
+    
+        The ticket loop yields an ``ErrorEvent`` on a soft failure and can
+        still complete, so the arm turns on the absence of a terminal
+        outcome rather than on an error frame having appeared.
+        """
+        watch, tracker, _ = watcher(
+            ErrorEvent(error="soft", error_kind="WorkspaceError"),
+            complete(merged=False, outcome=WorkflowOutcome.loop_not_accepted),
+        )
+    
+        await watch.watch(
+            issue_key=ISSUE,
+            job_id="job-0001",
+            pre_claim_state=PRE_CLAIM_STATE,
+        )
+    
+        assert tracker.restored_states == []
+>       assert [comment.body for comment in tracker.comments] == [
+            f"job job-0001 reached outcome {WorkflowOutcome.loop_not_accepted.value}",
+        ]
+E       AssertionError: assert ['[fixture-ou...not_accepted'] == ['job job-000...not_accepted']
+E         
+E         At index 0 diff: '[fixture-outcome:K-1:job-0001]\njob job-0001 reached outcome loop_not_accepted' != 'job job-0001 reached outcome loop_not_accepted'
+E         Use -v to get more diff
+
+tests/services/test_lifecycle_watcher.py:784: AssertionError
+----------------------------- Captured stderr call -----------------------------
+--- Logging error ---
+Traceback (most recent call last):
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/logging/__init__.py", line 1163, in emit
+    stream.write(msg + self.terminator)
+ValueError: I/O operation on closed file.
+Call stack:
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1032, in _bootstrap
+    self._bootstrap_inner()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 93, in _worker
+    work_item.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 216, in info
+    return self._proxy_to_logger("info", event, *args, **kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 280, in _proxy_to_logger
+    return super()._proxy_to_logger(method_name, event=event, **event_kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/_base.py", line 223, in _proxy_to_logger
+    return getattr(self._logger, method_name)(*args, **kw)
+Message: {'issue_key': 'K-1', 'event': 'lifecycle_in_progress', 'level': 'info', 'logger': 'kodezart.services.tracker_lifecycle', 'timestamp': '2026-09-12T19:00:59.118799Z'}
+Arguments: ()
+--- Logging error ---
+Traceback (most recent call last):
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/logging/__init__.py", line 1163, in emit
+    stream.write(msg + self.terminator)
+ValueError: I/O operation on closed file.
+Call stack:
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1032, in _bootstrap
+    self._bootstrap_inner()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 93, in _worker
+    work_item.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 216, in info
+    return self._proxy_to_logger("info", event, *args, **kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 280, in _proxy_to_logger
+    return super()._proxy_to_logger(method_name, event=event, **event_kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/_base.py", line 223, in _proxy_to_logger
+    return getattr(self._logger, method_name)(*args, **kw)
+Message: {'writer': 'tracker_comment', 'surface': 'tracker', 'verdict': 'clean', 'visibility': 'public', 'categories': [], 'failure': None, 'content_digest': '687014a0c750007447e7b8148b11ae653ba39e348cef563678564d70585cfad3', 'hits': [], 'event': 'outbound_content_gated', 'level': 'info', 'logger': 'kodezart.services.tracker_lifecycle', 'timestamp': '2026-09-12T19:00:59.122646Z'}
+Arguments: ()
+--- Logging error ---
+Traceback (most recent call last):
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/logging/__init__.py", line 1163, in emit
+    stream.write(msg + self.terminator)
+ValueError: I/O operation on closed file.
+Call stack:
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1032, in _bootstrap
+    self._bootstrap_inner()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 93, in _worker
+    work_item.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 216, in info
+    return self._proxy_to_logger("info", event, *args, **kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 280, in _proxy_to_logger
+    return super()._proxy_to_logger(method_name, event=event, **event_kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/_base.py", line 223, in _proxy_to_logger
+    return getattr(self._logger, method_name)(*args, **kw)
+Message: {'issue_key': 'K-1', 'job_id': 'job-0001', 'outcome': 'loop_not_accepted', 'event': 'lifecycle_outcome_comment', 'level': 'info', 'logger': 'kodezart.services.tracker_lifecycle', 'timestamp': '2026-09-12T19:00:59.125241Z'}
+Arguments: ()
+--- Logging error ---
+Traceback (most recent call last):
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/logging/__init__.py", line 1163, in emit
+    stream.write(msg + self.terminator)
+ValueError: I/O operation on closed file.
+Call stack:
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1032, in _bootstrap
+    self._bootstrap_inner()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 93, in _worker
+    work_item.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 216, in info
+    return self._proxy_to_logger("info", event, *args, **kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 280, in _proxy_to_logger
+    return super()._proxy_to_logger(method_name, event=event, **event_kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/_base.py", line 223, in _proxy_to_logger
+    return getattr(self._logger, method_name)(*args, **kw)
+Message: {'issue_key': 'K-1', 'holder': 'pass-a', 'event': 'claim_released', 'level': 'info', 'logger': 'kodezart.services.claim_heartbeat', 'timestamp': '2026-09-12T19:00:59.127683Z'}
+Arguments: ()
+--- Logging error ---
+Traceback (most recent call last):
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/logging/__init__.py", line 1163, in emit
+    stream.write(msg + self.terminator)
+ValueError: I/O operation on closed file.
+Call stack:
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1032, in _bootstrap
+    self._bootstrap_inner()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 93, in _worker
+    work_item.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 216, in info
+    return self._proxy_to_logger("info", event, *args, **kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 280, in _proxy_to_logger
+    return super()._proxy_to_logger(method_name, event=event, **event_kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/_base.py", line 223, in _proxy_to_logger
+    return getattr(self._logger, method_name)(*args, **kw)
+Message: {'issue_key': 'K-1', 'job_id': 'job-0001', 'run_started': True, 'terminal_outcome': True, 'event': 'lifecycle_watch_finished', 'level': 'info', 'logger': 'kodezart.services.lifecycle_watcher', 'timestamp': '2026-09-12T19:00:59.131917Z'}
+Arguments: ()
+--- Logging error ---
+Traceback (most recent call last):
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/logging/__init__.py", line 1163, in emit
+    stream.write(msg + self.terminator)
+ValueError: I/O operation on closed file.
+Call stack:
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1032, in _bootstrap
+    self._bootstrap_inner()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 93, in _worker
+    work_item.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 230, in error
+    return self._proxy_to_logger("error", event, *args, **kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 280, in _proxy_to_logger
+    return super()._proxy_to_logger(method_name, event=event, **event_kw)
+  File "/private/tmp/kodezart-v03-m1-lease-extraction/.venv/lib/python3.12/site-packages/structlog/_base.py", line 223, in _proxy_to_logger
+    return getattr(self._logger, method_name)(*args, **kw)
+Message: {'issue_key': 'K-1', 'job_id': 'job-0001', 'outcome': 'completed', 'event': 'finished_fire_unknown_to_registry', 'level': 'error', 'logger': 'kodezart.services.lifecycle_watcher', 'timestamp': '2026-09-12T19:00:59.133698Z'}
+Arguments: ()
+------------------------------ Captured log call -------------------------------
+INFO     kodezart.services.tracker_lifecycle:tracker_lifecycle.py:99 {'issue_key': 'K-1', 'event': 'lifecycle_in_progress', 'level': 'info', 'logger': 'kodezart.services.tracker_lifecycle', 'timestamp': '2026-09-12T19:00:59.118799Z'}
+INFO     kodezart.services.tracker_lifecycle:outbound_write.py:56 {'writer': 'tracker_comment', 'surface': 'tracker', 'verdict': 'clean', 'visibility': 'public', 'categories': [], 'failure': None, 'content_digest': '687014a0c750007447e7b8148b11ae653ba39e348cef563678564d70585cfad3', 'hits': [], 'event': 'outbound_content_gated', 'level': 'info', 'logger': 'kodezart.services.tracker_lifecycle', 'timestamp': '2026-09-12T19:00:59.122646Z'}
+INFO     kodezart.services.tracker_lifecycle:tracker_lifecycle.py:274 {'issue_key': 'K-1', 'job_id': 'job-0001', 'outcome': 'loop_not_accepted', 'event': 'lifecycle_outcome_comment', 'level': 'info', 'logger': 'kodezart.services.tracker_lifecycle', 'timestamp': '2026-09-12T19:00:59.125241Z'}
+INFO     kodezart.services.claim_heartbeat:claim_heartbeat.py:106 {'issue_key': 'K-1', 'holder': 'pass-a', 'event': 'claim_released', 'level': 'info', 'logger': 'kodezart.services.claim_heartbeat', 'timestamp': '2026-09-12T19:00:59.127683Z'}
+INFO     kodezart.services.lifecycle_watcher:lifecycle_watcher.py:422 {'issue_key': 'K-1', 'job_id': 'job-0001', 'run_started': True, 'terminal_outcome': True, 'event': 'lifecycle_watch_finished', 'level': 'info', 'logger': 'kodezart.services.lifecycle_watcher', 'timestamp': '2026-09-12T19:00:59.131917Z'}
+ERROR    kodezart.services.lifecycle_watcher:lifecycle_watcher.py:453 {'issue_key': 'K-1', 'job_id': 'job-0001', 'outcome': 'completed', 'event': 'finished_fire_unknown_to_registry', 'level': 'error', 'logger': 'kodezart.services.lifecycle_watcher', 'timestamp': '2026-09-12T19:00:59.133698Z'}
+=========================== short test summary info ============================
+FAILED tests/docs/test_setup_guide.py::test_every_variable_the_guide_sets_is_a_shipped_config_field
+FAILED tests/docs/test_setup_guide.py::test_the_guide_names_no_variable_the_config_does_not_ship
+FAILED tests/prompts/test_operation_config.py::test_all_fourteen_fields_are_present_with_the_stated_types
+FAILED tests/prompts/test_operation_config.py::test_placeholder_mapping_is_total_in_both_directions
+FAILED tests/prompts/test_operation_config.py::test_every_operation_config_field_is_reachable_from_a_pass_template
+FAILED tests/services/test_lifecycle_watcher.py::TestTheTransitionsAJobStreamProduces::test_the_terminal_outcome_reaches_the_issue_as_a_comment
+FAILED tests/services/test_lifecycle_watcher.py::TestTheTransitionsAJobStreamProduces::test_an_unmerged_run_reports_its_outcome_and_is_not_moved_to_done
+FAILED tests/services/test_lifecycle_watcher.py::TestTheFailureArm::test_a_run_reaching_a_terminal_outcome_is_untouched_by_the_arm
+FAILED tests/services/test_lifecycle_watcher.py::TestTheFailureArm::test_a_terminal_outcome_after_an_error_frame_is_still_terminal
+============ 9 failed, 3425 passed, 16 skipped in 539.35s (0:08:59) ============
+make: *** [test] Error 1

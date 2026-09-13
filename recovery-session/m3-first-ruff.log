@@ -1,0 +1,10 @@
+F821 Undefined name `FAKE_CRITERION_IDS`
+    --> tests/fakes.py:4888:42
+     |
+4886 | def make_passing_evaluation_of_fake_criteria() -> AcceptanceCriteriaOutput:
+4887 |     """A pass for every criterion the fake generator emits."""
+4888 |     return make_passing_evaluation_over(*FAKE_CRITERION_IDS)
+     |                                          ^^^^^^^^^^^^^^^^^^
+     |
+
+Found 8 errors (7 fixed, 1 remaining).

@@ -1,0 +1,12 @@
+E501 Line too long (111 > 88)
+    --> src/kodezart/adapters/linear_mcp_tracker.py:2050:89
+     |
+2048 |                 if label in self._queue_state_by_label
+2049 |             ),
+2050 |             issue_labels=frozenset(name for name, label in self._issue_labels.items() if label in wire.labels),
+     |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^
+2051 |             team_key=self._team_key_by_identifier.get(wire.team),
+2052 |             project=wire.project,
+     |
+
+Found 9 errors (8 fixed, 1 remaining).

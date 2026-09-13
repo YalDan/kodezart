@@ -1,0 +1,75 @@
+uv run ruff format --check src/ tests/
+401 files already formatted
+uv run ruff check src/ tests/
+I001 [*] Import block is un-sorted or un-formatted
+  --> tests/tracker/test_issue_ruling_records.py:3:1
+   |
+ 1 |   """Issue-wide ruling reads discover native lane markers without guessing lanes."""
+ 2 |
+ 3 | / from datetime import timedelta
+ 4 | |
+ 5 | | import pytest
+ 6 | |
+ 7 | | from kodezart.domain.errors import RulingRecordReadError
+ 8 | | from kodezart.domain.rulings import render_ruling
+ 9 | | from kodezart.types.domain.agent import Ruling
+10 | | from tests.domain.test_rulings import PREFIXES, ruling_data
+11 | | from tests.tracker.conftest import APPROVED_ISSUE, linear_over_fake_mcp
+12 | | from tests.tracker.comment_page_fixtures import CommentPageServer, comment
+13 | | from tests.tracker.test_ruling_records import reader
+   | |____________________________________________________^
+   |
+help: Organize imports
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> tests/tracker/test_ruling_reader_independent.py:3:1
+   |
+ 1 |   """Independent native-boundary probes for the issue-wide ruling reader."""
+ 2 |
+ 3 | / import asyncio
+ 4 | |
+ 5 | | import pytest
+ 6 | |
+ 7 | | from kodezart.core.errors import TrackerProtocolError, TrackerUnavailableError
+ 8 | | from kodezart.domain.errors import RulingRecordReadError
+ 9 | | from kodezart.domain.rulings import render_ruling
+10 | | from kodezart.types.domain.agent import Ruling
+11 | | from tests.domain.test_rulings import PREFIXES, ruling_data
+12 | | from tests.tracker.conftest import APPROVED_ISSUE, linear_over_fake_mcp
+13 | | from tests.tracker.comment_page_fixtures import CommentPageServer, comment
+14 | | from tests.tracker.test_ruling_records import reader
+   | |____________________________________________________^
+   |
+help: Organize imports
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> tests/tracker/test_ruling_records.py:3:1
+   |
+ 1 |   """Ruling occurrences survive replay and cold reads through both tracker ports."""
+ 2 |
+ 3 | / import asyncio
+ 4 | | from unittest.mock import AsyncMock
+ 5 | |
+ 6 | | import pytest
+ 7 | |
+ 8 | | from kodezart.core.errors import TrackerUnavailableError
+ 9 | | from kodezart.domain.errors import RulingRecordReadError
+10 | | from kodezart.domain.rulings import render_ruling
+11 | | from kodezart.services.ruling_records import RulingRecordReader
+12 | | from kodezart.types.domain.agent import Ruling, RulingAuthor
+13 | | from kodezart.types.domain.operation import OperationConfig, OperationMemberAbsentError
+14 | | from kodezart.types.domain.tracker import TrackerComment
+15 | | from tests.domain.test_rulings import LANE, PREFIXES, ruling_data
+16 | | from tests.fakes import FakeTrackerPort
+17 | | from tests.tracker.conftest import APPROVED_ISSUE, CLAIMED_ISSUE, linear_over_fake_mcp
+18 | | from tests.tracker.lease_fixtures import leased_comment
+19 | | from tests.tracker.comment_page_fixtures import CommentPageServer, comment
+   | |__________________________________________________________________________^
+20 |
+21 |   OPERATION = OperationConfig(
+   |
+help: Organize imports
+
+Found 3 errors.
+[*] 3 fixable with the `--fix` option.
+make: *** [lint] Error 1

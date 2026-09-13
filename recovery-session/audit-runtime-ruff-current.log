@@ -1,0 +1,402 @@
+E501 Line too long (94 > 88)
+   --> src/kodezart/types/domain/audit_runtime.py:175:89
+    |
+173 |     )
+174 |     finding: WriteBackFinding = Field(
+175 |         description="The exact received repair input; not a new judgment or completed result."
+    |                                                                                         ^^^^^^
+176 |     )
+    |
+
+E501 Line too long (114 > 88)
+   --> src/kodezart/types/domain/audit_runtime.py:186:89
+    |
+184 |     repair_inputs: tuple[AuditRepairInput, ...] = Field(
+185 |         default=(),
+186 |         description="Received repair inputs for attempts interrupted before a completed WriteBackResult existed.",
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^
+187 |     )
+    |
+
+RUF059 Unpacked variable `config` is never used
+  --> tests/integration/test_audit_configuration.py:35:5
+   |
+33 | )
+34 | def test_audit_roster_has_no_ambiguous_or_incomplete_binding(damage):
+35 |     config, operation, *_ = dependencies()
+   |     ^^^^^^
+36 |     fields = operation.model_dump()
+37 |     if damage == "duplicate":
+   |
+help: Prefix it with an underscore or any other dummy variable pattern
+
+RUF059 Unpacked variable `server` is never used
+  --> tests/integration/test_audit_configuration.py:50:24
+   |
+49 | def test_declared_audit_generic_sink_refuses_until_verified_record_seam_exists():
+50 |     config, operation, server, tracker, forge = dependencies()
+   |                        ^^^^^^
+51 |     fields = operation.model_dump()
+52 |     fields["records"][RunKind.AUDIT.value] = {
+   |
+help: Prefix it with an underscore or any other dummy variable pattern
+
+RUF043 Pattern passed to `match=` contains metacharacters but is neither escaped nor raw
+  --> tests/integration/test_audit_configuration.py:59:58
+   |
+57 |     }
+58 |     operation = OperationConfig.model_validate(fields)
+59 |     with pytest.raises(OperationMemberAbsentError, match="records.audit"):
+   |                                                          ^^^^^^^^^^^^^^^
+60 |         verify_audit_configuration(
+61 |             config=config, operation=operation, tracker=tracker, forge=forge
+   |
+help: Use a raw string or `re.escape()` to make the intention explicit
+
+E501 Line too long (93 > 88)
+   --> tests/integration/test_audit_runtime_native.py:99:89
+    |
+ 97 |                     "verdict": "holds",
+ 98 |                     "source_index": 1,
+ 99 |                     "evidence": "The exact current parent instruction mandates this defect.",
+    |                                                                                         ^^^^^
+100 |                     "finding": {
+101 |                         "issue_id": ROOT,
+    |
+
+E501 Line too long (129 > 88)
+   --> tests/integration/test_audit_runtime_native.py:102:89
+    |
+100 |                     "finding": {
+101 |                         "issue_id": ROOT,
+102 |                         "defect_class": "violation of the current Check: The current check.txt contains the committed contents.",
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+103 |                         "role": "mandate",
+104 |                         "mandate_text": "Explicit parent instructions.",
+    |
+
+E501 Line too long (89 > 88)
+   --> tests/integration/test_audit_runtime_native.py:105:89
+    |
+103 |                         "role": "mandate",
+104 |                         "mandate_text": "Explicit parent instructions.",
+105 |                         "evidence": "Read the exact parent body and measured check.txt.",
+    |                                                                                         ^
+106 |                     },
+107 |                 }
+    |
+
+RUF059 Unpacked variable `author` is never used
+   --> tests/integration/test_audit_runtime_native.py:128:13
+    |
+126 | @pytest.fixture
+127 | async def native_audit(repository, server, tmp_path):
+128 |     remote, author, observer, prior, head = repository
+    |             ^^^^^^
+129 |     fields = base_operation(repos=(remote.as_uri(),)).model_dump()
+130 |     fields["repos"][0].update(
+    |
+help: Prefix it with an underscore or any other dummy variable pattern
+
+RUF059 Unpacked variable `observer` is never used
+   --> tests/integration/test_audit_runtime_native.py:128:21
+    |
+126 | @pytest.fixture
+127 | async def native_audit(repository, server, tmp_path):
+128 |     remote, author, observer, prior, head = repository
+    |                     ^^^^^^^^
+129 |     fields = base_operation(repos=(remote.as_uri(),)).model_dump()
+130 |     fields["repos"][0].update(
+    |
+help: Prefix it with an underscore or any other dummy variable pattern
+
+RUF059 Unpacked variable `prior` is never used
+   --> tests/integration/test_audit_runtime_native.py:128:31
+    |
+126 | @pytest.fixture
+127 | async def native_audit(repository, server, tmp_path):
+128 |     remote, author, observer, prior, head = repository
+    |                               ^^^^^
+129 |     fields = base_operation(repos=(remote.as_uri(),)).model_dump()
+130 |     fields["repos"][0].update(
+    |
+help: Prefix it with an underscore or any other dummy variable pattern
+
+E501 Line too long (103 > 88)
+   --> tests/integration/test_audit_runtime_native.py:161:89
+    |
+159 |     server.issues[ROOT].description = "Explicit parent instructions."
+160 |     server.issues[CHILD].description = (
+161 |         "**Check:** The current check.txt contains the committed contents.\n**Do:** AUTHOR REASONING\n"
+    |                                                                                         ^^^^^^^^^^^^^^^
+162 |         + render_evidence_field(
+163 |             CriterionEvidence(graded_sha=head, test="historical author reasoning")
+    |
+
+RUF059 Unpacked variable `tracker` is never used
+   --> tests/integration/test_audit_runtime_native.py:228:30
+    |
+226 |     native_audit,
+227 | ):
+228 |     audit, executor, server, tracker, git, workspace, repository = native_audit
+    |                              ^^^^^^^
+229 |     assert await audit.run(FIXTURE_NOW) is PassRun.RAN
+230 |     report = audit.last_report
+    |
+help: Prefix it with an underscore or any other dummy variable pattern
+
+RUF059 Unpacked variable `git` is never used
+   --> tests/integration/test_audit_runtime_native.py:228:39
+    |
+226 |     native_audit,
+227 | ):
+228 |     audit, executor, server, tracker, git, workspace, repository = native_audit
+    |                                       ^^^
+229 |     assert await audit.run(FIXTURE_NOW) is PassRun.RAN
+230 |     report = audit.last_report
+    |
+help: Prefix it with an underscore or any other dummy variable pattern
+
+RUF059 Unpacked variable `repository` is never used
+   --> tests/integration/test_audit_runtime_native.py:228:55
+    |
+226 |     native_audit,
+227 | ):
+228 |     audit, executor, server, tracker, git, workspace, repository = native_audit
+    |                                                       ^^^^^^^^^^
+229 |     assert await audit.run(FIXTURE_NOW) is PassRun.RAN
+230 |     report = audit.last_report
+    |
+help: Prefix it with an underscore or any other dummy variable pattern
+
+RUF059 Unpacked variable `tracker` is never used
+   --> tests/integration/test_audit_runtime_native.py:256:30
+    |
+254 |     native_audit, change
+255 | ):
+256 |     audit, executor, server, tracker, git, workspace, repository = native_audit
+    |                              ^^^^^^^
+257 |     if change == "wrong_identity":
+258 |         executor.claim_key = "another/native-criterion"
+    |
+help: Prefix it with an underscore or any other dummy variable pattern
+
+RUF059 Unpacked variable `git` is never used
+   --> tests/integration/test_audit_runtime_native.py:256:39
+    |
+254 |     native_audit, change
+255 | ):
+256 |     audit, executor, server, tracker, git, workspace, repository = native_audit
+    |                                       ^^^
+257 |     if change == "wrong_identity":
+258 |         executor.claim_key = "another/native-criterion"
+    |
+help: Prefix it with an underscore or any other dummy variable pattern
+
+RUF059 Unpacked variable `tracker` is never used
+   --> tests/integration/test_audit_runtime_native.py:293:30
+    |
+291 |     native_audit,
+292 | ):
+293 |     audit, executor, server, tracker, git, workspace, repository = native_audit
+    |                              ^^^^^^^
+294 |     executor.claim_verdict = "refuted"
+295 |     executor.instruction = True
+    |
+help: Prefix it with an underscore or any other dummy variable pattern
+
+RUF059 Unpacked variable `git` is never used
+   --> tests/integration/test_audit_runtime_native.py:293:39
+    |
+291 |     native_audit,
+292 | ):
+293 |     audit, executor, server, tracker, git, workspace, repository = native_audit
+    |                                       ^^^
+294 |     executor.claim_verdict = "refuted"
+295 |     executor.instruction = True
+    |
+help: Prefix it with an underscore or any other dummy variable pattern
+
+RUF059 Unpacked variable `repository` is never used
+   --> tests/integration/test_audit_runtime_native.py:293:55
+    |
+291 |     native_audit,
+292 | ):
+293 |     audit, executor, server, tracker, git, workspace, repository = native_audit
+    |                                                       ^^^^^^^^^^
+294 |     executor.claim_verdict = "refuted"
+295 |     executor.instruction = True
+    |
+help: Prefix it with an underscore or any other dummy variable pattern
+
+RUF059 Unpacked variable `tracker` is never used
+   --> tests/integration/test_audit_runtime_native.py:332:30
+    |
+331 | async def test_executor_programming_failure_escapes_the_native_owner(native_audit):
+332 |     audit, executor, server, tracker, git, workspace, repository = native_audit
+    |                              ^^^^^^^
+333 |     error = RuntimeError("executor implementation defect")
+    |
+help: Prefix it with an underscore or any other dummy variable pattern
+
+RUF059 Unpacked variable `git` is never used
+   --> tests/integration/test_audit_runtime_native.py:332:39
+    |
+331 | async def test_executor_programming_failure_escapes_the_native_owner(native_audit):
+332 |     audit, executor, server, tracker, git, workspace, repository = native_audit
+    |                                       ^^^
+333 |     error = RuntimeError("executor implementation defect")
+    |
+help: Prefix it with an underscore or any other dummy variable pattern
+
+RUF059 Unpacked variable `repository` is never used
+   --> tests/integration/test_audit_runtime_native.py:332:55
+    |
+331 | async def test_executor_programming_failure_escapes_the_native_owner(native_audit):
+332 |     audit, executor, server, tracker, git, workspace, repository = native_audit
+    |                                                       ^^^^^^^^^^
+333 |     error = RuntimeError("executor implementation defect")
+    |
+help: Prefix it with an underscore or any other dummy variable pattern
+
+RUF059 Unpacked variable `server` is never used
+   --> tests/integration/test_audit_runtime_native.py:348:22
+    |
+347 | async def test_repair_refusal_retains_the_actual_prior_writeback_finding(native_audit):
+348 |     audit, executor, server, tracker, git, workspace, repository = native_audit
+    |                      ^^^^^^
+349 |     executor.refuse_after_first_refutation = True
+350 |     with pytest.raises(AuditRunIncompleteError) as raised:
+    |
+help: Prefix it with an underscore or any other dummy variable pattern
+
+RUF059 Unpacked variable `tracker` is never used
+   --> tests/integration/test_audit_runtime_native.py:348:30
+    |
+347 | async def test_repair_refusal_retains_the_actual_prior_writeback_finding(native_audit):
+348 |     audit, executor, server, tracker, git, workspace, repository = native_audit
+    |                              ^^^^^^^
+349 |     executor.refuse_after_first_refutation = True
+350 |     with pytest.raises(AuditRunIncompleteError) as raised:
+    |
+help: Prefix it with an underscore or any other dummy variable pattern
+
+RUF059 Unpacked variable `git` is never used
+   --> tests/integration/test_audit_runtime_native.py:348:39
+    |
+347 | async def test_repair_refusal_retains_the_actual_prior_writeback_finding(native_audit):
+348 |     audit, executor, server, tracker, git, workspace, repository = native_audit
+    |                                       ^^^
+349 |     executor.refuse_after_first_refutation = True
+350 |     with pytest.raises(AuditRunIncompleteError) as raised:
+    |
+help: Prefix it with an underscore or any other dummy variable pattern
+
+RUF059 Unpacked variable `workspace` is never used
+   --> tests/integration/test_audit_runtime_native.py:348:44
+    |
+347 | async def test_repair_refusal_retains_the_actual_prior_writeback_finding(native_audit):
+348 |     audit, executor, server, tracker, git, workspace, repository = native_audit
+    |                                            ^^^^^^^^^
+349 |     executor.refuse_after_first_refutation = True
+350 |     with pytest.raises(AuditRunIncompleteError) as raised:
+    |
+help: Prefix it with an underscore or any other dummy variable pattern
+
+RUF059 Unpacked variable `repository` is never used
+   --> tests/integration/test_audit_runtime_native.py:348:55
+    |
+347 | async def test_repair_refusal_retains_the_actual_prior_writeback_finding(native_audit):
+348 |     audit, executor, server, tracker, git, workspace, repository = native_audit
+    |                                                       ^^^^^^^^^^
+349 |     executor.refuse_after_first_refutation = True
+350 |     with pytest.raises(AuditRunIncompleteError) as raised:
+    |
+help: Prefix it with an underscore or any other dummy variable pattern
+
+RUF059 Unpacked variable `tracker` is never used
+   --> tests/integration/test_audit_runtime_native.py:364:30
+    |
+362 |     from kodezart.domain.errors import AgentSDKError
+363 |
+364 |     audit, executor, server, tracker, git, workspace, repository = native_audit
+    |                              ^^^^^^^
+365 |
+366 |     async def during(kwargs):
+    |
+help: Prefix it with an underscore or any other dummy variable pattern
+
+RUF059 Unpacked variable `git` is never used
+   --> tests/integration/test_audit_runtime_native.py:364:39
+    |
+362 |     from kodezart.domain.errors import AgentSDKError
+363 |
+364 |     audit, executor, server, tracker, git, workspace, repository = native_audit
+    |                                       ^^^
+365 |
+366 |     async def during(kwargs):
+    |
+help: Prefix it with an underscore or any other dummy variable pattern
+
+RUF059 Unpacked variable `repository` is never used
+   --> tests/integration/test_audit_runtime_native.py:364:55
+    |
+362 |     from kodezart.domain.errors import AgentSDKError
+363 |
+364 |     audit, executor, server, tracker, git, workspace, repository = native_audit
+    |                                                       ^^^^^^^^^^
+365 |
+366 |     async def during(kwargs):
+    |
+help: Prefix it with an underscore or any other dummy variable pattern
+
+I001 [*] Import block is un-sorted or un-formatted
+   --> tests/integration/test_audit_scheduler.py:224:5
+    |
+223 |   async def test_actual_main_lifespan_registers_and_executes_audit(tmp_path, monkeypatch):
+224 | /     from kodezart import main
+225 | |     from kodezart.composition.records import BuiltRecorder
+226 | |     from kodezart.composition.workspace import GitStack
+227 | |     from tests.fakes import (
+228 | |         FakeArtifactPersister,
+229 | |         FakeBranchMerger,
+230 | |         FakeChangePersister,
+231 | |         FakeRefPublisher,
+232 | |         ManagedFakeLinearMcpServer,
+233 | |     )
+234 | |     from tests.services.test_prompt_passes import _config
+235 | |
+236 | |     from tests.prompts.test_organize_mandate_bindings import declared_operation
+237 | |     from kodezart.core.prompt_namespaces import operation_bindings
+    | |__________________________________________________________________^
+238 |
+239 |       _, _, server, tracker, _ = dependencies()
+    |
+help: Organize imports
+
+S106 Possible hardcoded password assigned to argument: "github_token"
+   --> tests/integration/test_audit_scheduler.py:256:9
+    |
+254 |         audit={"timeout_seconds": 17},
+255 |         write_back={"max_verify_rounds": 2},
+256 |         github_token="fixture-audit-token",
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+257 |         ticket_review_mode="reviewed",
+258 |         fire_prep_pass_gate_signals=[],
+    |
+
+I001 [*] Import block is un-sorted or un-formatted
+   --> tests/integration/test_audit_scheduler.py:331:5
+    |
+329 |   @pytest.mark.parametrize("mode", ["blocked", "rewritten", "cancel"])
+330 |   async def test_actual_publication_obeys_privacy_gate_before_native_comment(mode):
+331 | /     import asyncio
+332 | |     from kodezart.types.domain.gating import GateDecision, GateVerdict
+    | |______________________________________________________________________^
+333 |
+334 |       class Gate:
+    |
+help: Organize imports
+
+Found 34 errors.
+[*] 2 fixable with the `--fix` option (24 hidden fixes can be enabled with the `--unsafe-fixes` option).

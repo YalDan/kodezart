@@ -1,0 +1,6 @@
+uv run --locked ruff format --check src/ tests/
+709 files already formatted
+uv run --locked ruff check src/ tests/
+All checks passed!
+uv run --locked mypy src/
+Success: no issues found in 308 source files

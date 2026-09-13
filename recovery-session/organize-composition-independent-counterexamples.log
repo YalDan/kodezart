@@ -1,0 +1,38 @@
+..FF                                                                     [100%]
+=================================== FAILURES ===================================
+________ test_non_issue_halt_does_not_claim_an_issue_identity[project] _________
+
+kind = <ScopeKind.PROJECT: 'project'>
+
+    @pytest.mark.parametrize("kind", [ScopeKind.PROJECT, ScopeKind.INITIATIVE])
+    def test_non_issue_halt_does_not_claim_an_issue_identity(kind):
+        scope = ScopeRef(kind=kind, key="same-spelling")
+        report = OrganizeReport(halt=StageHaltReport(cause="human_decision"))
+        error = OrganizeHaltError(scope=scope, report=report)
+        assert error.scope == scope
+        assert error.report is report
+>       assert not hasattr(error, "issue_key")
+E       assert not True
+E        +  where True = hasattr(OrganizeHaltError("organize write for 'same-spelling' refused: Organize halted: human_decision"), 'issue_key')
+
+tests/integration/test_organize_scheduler_independent.py:38: AssertionError
+_______ test_non_issue_halt_does_not_claim_an_issue_identity[initiative] _______
+
+kind = <ScopeKind.INITIATIVE: 'initiative'>
+
+    @pytest.mark.parametrize("kind", [ScopeKind.PROJECT, ScopeKind.INITIATIVE])
+    def test_non_issue_halt_does_not_claim_an_issue_identity(kind):
+        scope = ScopeRef(kind=kind, key="same-spelling")
+        report = OrganizeReport(halt=StageHaltReport(cause="human_decision"))
+        error = OrganizeHaltError(scope=scope, report=report)
+        assert error.scope == scope
+        assert error.report is report
+>       assert not hasattr(error, "issue_key")
+E       assert not True
+E        +  where True = hasattr(OrganizeHaltError("organize write for 'same-spelling' refused: Organize halted: human_decision"), 'issue_key')
+
+tests/integration/test_organize_scheduler_independent.py:38: AssertionError
+=========================== short test summary info ============================
+FAILED tests/integration/test_organize_scheduler_independent.py::test_non_issue_halt_does_not_claim_an_issue_identity[project]
+FAILED tests/integration/test_organize_scheduler_independent.py::test_non_issue_halt_does_not_claim_an_issue_identity[initiative]
+2 failed, 2 passed in 0.59s

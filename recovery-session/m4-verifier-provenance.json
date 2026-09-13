@@ -1,0 +1,309 @@
+{
+  "base": "57dcc8c3ae4836207307a715812fe389c301e130",
+  "maintained_equivalent": "a4575cd11133c5e631fff454de8cbac682f5a30e",
+  "base_tree": "92c99fe09310652f7e5e12f33625c28413dff924",
+  "accepted_donor": "7892ca1a47adbcfd91fbcfb1e580dfc86f066a99",
+  "watermark": "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+  "files": [
+    {
+      "path": "docs/architecture.md",
+      "sha256": "39e603b59c4e0422db7170546f631fbf43f4a9f9b1f9a899e22102d1215055bb",
+      "base_sha256": "82ff8a883d008ec526363513e3a9b8048c0e61fdd7c333d331a941f74cc8f459",
+      "donor": null,
+      "donor_path": "docs/architecture.md",
+      "donor_sha256": null,
+      "whole_file_identical_to_donor": false,
+      "mapping": "new bounded shared verification explanation and honest pending surface/config/adoption closure"
+    },
+    {
+      "path": "src/kodezart/adapters/subprocess_git_service.py",
+      "sha256": "cbd7e6a4e1d0cc29dfab3d14e84e1a4d370b7ab5c87136a09773b48f8a85d053",
+      "base_sha256": "ed69896a7b1abdcf9c3bbb121c460c1ef969ab5088c4dc2b0f3c9e52ef6561d9",
+      "donor": "7892ca1a47adbcfd91fbcfb1e580dfc86f066a99",
+      "donor_path": "src/kodezart/adapters/subprocess_git_service.py",
+      "donor_sha256": "8d2218ad793ace5d0e3a178e5312c3129e35efce6849dddd4ba239f143f03b53",
+      "whole_file_identical_to_donor": false,
+      "mapping": "SubprocessGitService.has_replace_refs only; existing _run_output unchanged"
+    },
+    {
+      "path": "src/kodezart/chains/write_back_verifier.py",
+      "sha256": "a21d069fe28002c866366a9d68002bc4676d97d7e0ba8a4882033e500547773a",
+      "base_sha256": null,
+      "donor": "7892ca1a47adbcfd91fbcfb1e580dfc86f066a99",
+      "donor_path": "src/kodezart/chains/write_back_verifier.py",
+      "donor_sha256": "a21d069fe28002c866366a9d68002bc4676d97d7e0ba8a4882033e500547773a",
+      "whole_file_identical_to_donor": true,
+      "mapping": "whole donor file"
+    },
+    {
+      "path": "src/kodezart/core/prompt_namespaces.py",
+      "sha256": "9360eb0785822528f59251966ff280e8858401326d0e7f647e341e37db45a56a",
+      "base_sha256": "4da701bc4ac1f17d0f96696b515061957f0a8734c7f6247e3bbd0aad603376ca",
+      "donor": "7892ca1a47adbcfd91fbcfb1e580dfc86f066a99",
+      "donor_path": "src/kodezart/core/prompt_namespaces.py",
+      "donor_sha256": "2a9186179a5ed935ee212f00b2af4619493280777b5855ebf3ca4745150b370c",
+      "whole_file_identical_to_donor": false,
+      "mapping": "written_artifact only; base_ref already present"
+    },
+    {
+      "path": "src/kodezart/core/protocols.py",
+      "sha256": "0bb7fca673ad1b5bd7ccabbbbbfcfc4e5b89be6f70b6829f4d1ca65746b72553",
+      "base_sha256": "c4aec0d57797850406ecbee38862b2bed899263ca4ed6b39be19cf5cfbfb5e75",
+      "donor": "7892ca1a47adbcfd91fbcfb1e580dfc86f066a99",
+      "donor_path": "src/kodezart/core/protocols.py",
+      "donor_sha256": "84b49e824512ac124f0986db7b96927c8ac753f75925521f809ccd86d6c9256b",
+      "whole_file_identical_to_donor": false,
+      "mapping": "GitService.has_replace_refs only; no Git subprocess/error taxonomy change"
+    },
+    {
+      "path": "src/kodezart/domain/errors.py",
+      "sha256": "ebf40bb137a8fb9e838a510c5b234814a6b20b6d734fd6b5f996c32dd1b7f96f",
+      "base_sha256": "7ce00ede787636d006e0be844bcef468484fd94c2c9ae122edffd56dc0c61560",
+      "donor": "7892ca1a47adbcfd91fbcfb1e580dfc86f066a99",
+      "donor_path": "src/kodezart/domain/errors.py",
+      "donor_sha256": "a4e9d74b7449e42409e354fe92afeb59a703c654de4dfe47f99886328fac5d3f",
+      "whole_file_identical_to_donor": false,
+      "mapping": "WriteBackReadError only"
+    },
+    {
+      "path": "src/kodezart/prompts/sets/anthropic_v5/set.toml",
+      "sha256": "c35e66ea08cd93e3fd8b98166f452b9b229786cc30bce48004bbe766822fc508",
+      "base_sha256": "fcb437829000331355d31b4b3ce83665c4ebcf2c779efa0c53134e02a684aaea",
+      "donor": "7892ca1a47adbcfd91fbcfb1e580dfc86f066a99",
+      "donor_path": "src/kodezart/prompts/sets/anthropic_v5/set.toml",
+      "donor_sha256": "7ba024952b482998dd193d802701c54ecfb5f9222e43b2221aa0621e4698d6b7",
+      "whole_file_identical_to_donor": false,
+      "mapping": "write_back_verify evaluative role registration only"
+    },
+    {
+      "path": "src/kodezart/prompts/sets/anthropic_v5/write_back_verify.md",
+      "sha256": "6aa84b889573d1025ee3c3fa5182c3d8f303911924d282e96f2044affc64ba60",
+      "base_sha256": null,
+      "donor": "7892ca1a47adbcfd91fbcfb1e580dfc86f066a99",
+      "donor_path": "src/kodezart/prompts/sets/anthropic_v5/write_back_verify.md",
+      "donor_sha256": "6aa84b889573d1025ee3c3fa5182c3d8f303911924d282e96f2044affc64ba60",
+      "whole_file_identical_to_donor": true,
+      "mapping": "whole donor file"
+    },
+    {
+      "path": "src/kodezart/prompts/sets/claude-opus/set.toml",
+      "sha256": "c282432ba69efe62d208563fb75e16a845b336b5be671bc8d17ea8bacf8d2d7d",
+      "base_sha256": "cd23fbe01eee0bf48b18d6a8b3148a55218420b7be4cea0b71bf5f34753b1e1c",
+      "donor": "7892ca1a47adbcfd91fbcfb1e580dfc86f066a99",
+      "donor_path": "src/kodezart/prompts/sets/claude-opus/set.toml",
+      "donor_sha256": "1dfc04f2441f8d86cb47c954a89fa3ceb6559cd70eba6f5be44ff3870719acee",
+      "whole_file_identical_to_donor": false,
+      "mapping": "write_back_verify code-review skill loadout only"
+    },
+    {
+      "path": "src/kodezart/prompts/sets/claude-opus/write_back_verify.md",
+      "sha256": "6aa84b889573d1025ee3c3fa5182c3d8f303911924d282e96f2044affc64ba60",
+      "base_sha256": null,
+      "donor": "7892ca1a47adbcfd91fbcfb1e580dfc86f066a99",
+      "donor_path": "src/kodezart/prompts/sets/claude-opus/write_back_verify.md",
+      "donor_sha256": "6aa84b889573d1025ee3c3fa5182c3d8f303911924d282e96f2044affc64ba60",
+      "whole_file_identical_to_donor": true,
+      "mapping": "whole donor file"
+    },
+    {
+      "path": "src/kodezart/services/audit_sessions.py",
+      "sha256": "3f8fa4038b65151be15bfd71139f1eb28b6f69b872b1f2e6040a5362adaeb8ee",
+      "base_sha256": null,
+      "donor": "7042032",
+      "donor_path": "src/kodezart/services/audit_sessions.py",
+      "donor_sha256": "6186aba7a814d530b812b31989f78cdf43c7f548954c8c5ba81a7f1bd4117f7a",
+      "whole_file_identical_to_donor": false,
+      "mapping": "judge_in_workspace only; exact historical string/list evaluation boundary; FreshAuditSession excluded M6; final6994552 ToolPreset migration pending shared M1 boundary"
+    },
+    {
+      "path": "src/kodezart/services/git_observations.py",
+      "sha256": "1cf75d70513f4bdfccf5bbf85bb2395c2e18f6dcf7f24ac620c3fb4a205175fd",
+      "base_sha256": null,
+      "donor": "7892ca1a47adbcfd91fbcfb1e580dfc86f066a99",
+      "donor_path": "src/kodezart/services/git_observations.py",
+      "donor_sha256": "08dc4fd6c3838d601cf2b63e876e4130be0b3a60b746322a958bfb5c3711dd56",
+      "whole_file_identical_to_donor": false,
+      "mapping": "read_workspace_head only and settle/GitService imports; other Git observation helpers excluded"
+    },
+    {
+      "path": "src/kodezart/services/owned_workspace.py",
+      "sha256": "931ad6e9c8d40a32247b9bb254c1ce6b10572dab3b419fdf9e5a8704ed1add80",
+      "base_sha256": null,
+      "donor": "7892ca1a47adbcfd91fbcfb1e580dfc86f066a99",
+      "donor_path": "src/kodezart/services/owned_workspace.py",
+      "donor_sha256": "931ad6e9c8d40a32247b9bb254c1ce6b10572dab3b419fdf9e5a8704ed1add80",
+      "whole_file_identical_to_donor": true,
+      "mapping": "whole donor file"
+    },
+    {
+      "path": "src/kodezart/services/tracker_artifacts.py",
+      "sha256": "9aeaac79dee3764c1bf227479f2000454ea1c5ca29ef797d4c639bce2ed6f5ac",
+      "base_sha256": null,
+      "donor": "7042032",
+      "donor_path": "src/kodezart/services/tracker_artifacts.py",
+      "donor_sha256": "9aeaac79dee3764c1bf227479f2000454ea1c5ca29ef797d4c639bce2ed6f5ac",
+      "whole_file_identical_to_donor": true,
+      "mapping": "whole initial three-surface reader; later161ca93 label/criterion and child-set arm pending M4 after minimal native reads M1; later graph/split arms remain M2"
+    },
+    {
+      "path": "src/kodezart/types/domain/agent.py",
+      "sha256": "4f76cf12f89821d15a03c5fdad36eef657a6e451be8f13d152d1b9d50879d3ca",
+      "base_sha256": "066d427357024855c9884b085e94427bc674eb5979e1eb960aeb669c6e9c34da",
+      "donor": "7892ca1a47adbcfd91fbcfb1e580dfc86f066a99",
+      "donor_path": "src/kodezart/types/domain/agent.py",
+      "donor_sha256": "7796678b82f2232c3eadf309ad34ca72346f599d072d02d7b78ac462ab1ccfd1",
+      "whole_file_identical_to_donor": false,
+      "mapping": "WriteBackFinding import; write_back_verify RaiseSite; WRITE_BACK_SCHEMA exact own schema; WIRE_SCHEMAS row only"
+    },
+    {
+      "path": "src/kodezart/types/domain/audit.py",
+      "sha256": "d615e59dafc6457fc733e7f6ec006d0942e722a99187e5eeef5753d51843b89f",
+      "base_sha256": null,
+      "donor": "7892ca1a47adbcfd91fbcfb1e580dfc86f066a99",
+      "donor_path": "src/kodezart/types/domain/audit.py",
+      "donor_sha256": "a8beb7606325597243479ad6293d0d19cda27169a8e93e446f741fb75ea99271",
+      "whole_file_identical_to_donor": false,
+      "mapping": "AuditVerdict and TrackerArtifact only with minimal imports; all M2/M6 models excluded"
+    },
+    {
+      "path": "src/kodezart/types/domain/prompts.py",
+      "sha256": "9592ee1c29526cc6c09d3908b15dd650e07987e7a108ed9d1c3fbe648c499f88",
+      "base_sha256": "677a67f63c335d544d18d20a193e7ebf42bb36b0f97ae1da5d2a174d1a655b13",
+      "donor": "7892ca1a47adbcfd91fbcfb1e580dfc86f066a99",
+      "donor_path": "src/kodezart/types/domain/prompts.py",
+      "donor_sha256": "a5ea5b052389c1403cdbd063fda5e349b5ca2a4efd62fee8faf1d5844c9d938e",
+      "whole_file_identical_to_donor": false,
+      "mapping": "WRITE_BACK_VERIFY only"
+    },
+    {
+      "path": "src/kodezart/types/domain/write_back.py",
+      "sha256": "cb4e39a2598272c2864f516ead5b732e4971fb76d8e3f1953eed49d99950faa2",
+      "base_sha256": null,
+      "donor": "7892ca1a47adbcfd91fbcfb1e580dfc86f066a99",
+      "donor_path": "src/kodezart/types/domain/write_back.py",
+      "donor_sha256": "cb4e39a2598272c2864f516ead5b732e4971fb76d8e3f1953eed49d99950faa2",
+      "whole_file_identical_to_donor": true,
+      "mapping": "whole donor file"
+    },
+    {
+      "path": "tests/chains/test_fresh_write_back_judge.py",
+      "sha256": "d3258339a8dbfc054ad7b1fe3bc3747a443887bba34c1a221b61489238acbab6",
+      "base_sha256": null,
+      "donor": "7892ca1a47adbcfd91fbcfb1e580dfc86f066a99",
+      "donor_path": "tests/chains/test_fresh_write_back_judge.py",
+      "donor_sha256": "82ba195b9202ae8a1cd98f8670eed566fa2dd89148c2c502e71d918f080729bc",
+      "whole_file_identical_to_donor": false,
+      "mapping": "actual FreshWriteBackJudge/AgentService oracles; existing FakeAgentExecutor and SessionType.SCHEDULED_PASS/string-list evaluation boundary; add six actual subprocess cancellation phases"
+    },
+    {
+      "path": "tests/chains/test_write_back_tracker_boundary.py",
+      "sha256": "d07805a8f01853e17516ff70106d3a0e0847b2b915acb04a164e20173df6a4c1",
+      "base_sha256": null,
+      "donor": null,
+      "donor_path": "tests/chains/test_write_back_tracker_boundary.py",
+      "donor_sha256": null,
+      "whole_file_identical_to_donor": false,
+      "mapping": "new actual Linear adapter+RunSurfaceLease+WriteBackVerifier controls; only external MCP/clock/semantic judgment doubles"
+    },
+    {
+      "path": "tests/chains/test_write_back_verifier.py",
+      "sha256": "3cc944cddc64b1a932654e2d23dcc3553591d912780b1dc50da10ab396cb56b6",
+      "base_sha256": null,
+      "donor": "7892ca1a47adbcfd91fbcfb1e580dfc86f066a99",
+      "donor_path": "tests/chains/test_write_back_verifier.py",
+      "donor_sha256": "a0daf4b13d6868871f733e27787b18b9bbebe003ccdadf81466f39ce73ca507a",
+      "whole_file_identical_to_donor": false,
+      "mapping": "all original behavioral assertions unchanged; omit later FakeTrackerPort marker_prefixes argument unsupported at M1 base"
+    },
+    {
+      "path": "tests/chains/test_write_back_workspace_ownership.py",
+      "sha256": "faeae9540dd866256e42fa0d730493b5a35ecd0ef73a57d701a138bea787de93",
+      "base_sha256": null,
+      "donor": "7892ca1a47adbcfd91fbcfb1e580dfc86f066a99",
+      "donor_path": "tests/chains/test_write_back_workspace_ownership.py",
+      "donor_sha256": null,
+      "whole_file_identical_to_donor": false,
+      "mapping": "adapt tests/services/test_audit_session_ownership.py seven actual Git replacement/cancellation controls to FreshWriteBackJudge and AgentService; original 5s timeout/oracles preserved; FakeRepoCache external boundary only"
+    },
+    {
+      "path": "tests/chains/write_back_fixtures.py",
+      "sha256": "3e1481604c973fab38cec35001ba86a775a8b6ebfd497616e8f7907da94acb21",
+      "base_sha256": null,
+      "donor": null,
+      "donor_path": "tests/chains/write_back_fixtures.py",
+      "donor_sha256": null,
+      "whole_file_identical_to_donor": false,
+      "mapping": "new bounded test fixture validated ResultEvent and recording existing fake workspace; no application abstraction"
+    },
+    {
+      "path": "tests/chains/write_back_read_cancellation.py",
+      "sha256": "29d010823a2e9bbb0c2a2e7ae83d02b75256e2a15c19c2ea76788b73c2b57af9",
+      "base_sha256": null,
+      "donor": "7892ca1a47adbcfd91fbcfb1e580dfc86f066a99",
+      "donor_path": "tests/chains/write_back_read_cancellation.py",
+      "donor_sha256": null,
+      "whole_file_identical_to_donor": false,
+      "mapping": "tests/git_read_cancellation.py assert_git_read_settles_before_release only; M6 cache helper excluded"
+    },
+    {
+      "path": "tests/fakes.py",
+      "sha256": "6a944bc229ce0cdaad36812765980eeaaceb19148dedbdf48a353d882d660a2a",
+      "base_sha256": "be8436a53b8a2cf9498aeea9aebfd68457c6f4913ba951ee2aed1b3cfe1b3480",
+      "donor": "7892ca1a47adbcfd91fbcfb1e580dfc86f066a99",
+      "donor_path": "tests/fakes.py",
+      "donor_sha256": "cc543d36a890612d6a851ddab24bbd43ccb95b7701cb4d04bf0fd774beaa10ce",
+      "whole_file_identical_to_donor": false,
+      "mapping": "FakeGitService has_replace_refs_result constructor/store and has_replace_refs method only"
+    },
+    {
+      "path": "tests/prompt_census.py",
+      "sha256": "1e6912417e8414f5d3fad7ae10f30f161b6f30e9e71c9140b3997a2b25ccfe6d",
+      "base_sha256": "18153679f696074c5189c1ef69facec0813cb309a633d558855f33c9b953f18a",
+      "donor": "7892ca1a47adbcfd91fbcfb1e580dfc86f066a99",
+      "donor_path": "tests/prompt_census.py",
+      "donor_sha256": "958b2e8ca48e39b55f0d1e8f0193aa4955c47abf7ddae0e0e071b4eb470fe05a",
+      "whole_file_identical_to_donor": false,
+      "mapping": "existing explicit census18->19 for exactly one actual new role; all enum/count assertions retained"
+    },
+    {
+      "path": "tests/types/test_wire_schemas.py",
+      "sha256": "2edfcfb512ca9ec0fadaa714123053abecf4498ce1b726eda8ecb3473cbc02d5",
+      "base_sha256": "e71b112ea272861ce4b4b93b5e7c3e0d68693b7ab083f20cf31bd67509b09faa",
+      "donor": "7892ca1a47adbcfd91fbcfb1e580dfc86f066a99",
+      "donor_path": "tests/types/test_wire_schemas.py",
+      "donor_sha256": "664695d611b59874b4555019a65293ebab04a07b56ad18653fe45897db4fcccf",
+      "whole_file_identical_to_donor": false,
+      "mapping": "WriteBackFinding roster and exact one-forwarder lexical AST schema ownership census; M6 bridge/callers excluded; four source damage controls; original raw-schema/census assertions retained"
+    }
+  ],
+  "pending": [
+    {
+      "owner": "M1",
+      "responsibility": "minimal native classification/read_criteria shared port/model prerequisite; root serialization; not M2"
+    },
+    {
+      "owner": "M4",
+      "source": "161ca93",
+      "responsibility": "all accepted label/criterion and criterion-child-set reader deltas after M1 native read prerequisite; exact final reader preserved in donor"
+    },
+    {
+      "owner": "M4/M1 boundary",
+      "source": "6994552",
+      "responsibility": "historical judge string/list boundary replaced by exact current ToolPreset.EVALUATION consumer when shared boundary extracted"
+    },
+    {
+      "owner": "M4 later slice",
+      "responsibility": "WriteBackSettings1..10 configured consumers; LaneEscalation; native semantic/state/ruling/evidence closure"
+    },
+    {
+      "owner": "M2",
+      "responsibility": "graph/split artifact arms and Organize author/admission/runtime; no dependency inverted into M4"
+    },
+    {
+      "owner": "M6",
+      "responsibility": "FreshAuditSession and other Audit models/composition remain later"
+    }
+  ],
+  "frozen_commit": "40b250c5c032c2a7ef9764c16f85bc7cf8d086ea",
+  "frozen_tree": "0ce9243d450bf45cc06d3599eac5c6ee5bb3baec"
+}

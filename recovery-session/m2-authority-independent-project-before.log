@@ -1,0 +1,306 @@
+FFFF                                                                     [100%]
+=================================== FAILURES ===================================
+_ test_unsent_retry_preserves_every_owner_precondition[project_approval-body] __
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10ccae690>
+kind = 'body', change = 'project_approval'
+
+    @pytest.mark.parametrize("kind", ["body", "graph", "split", "criteria"])
+    @pytest.mark.parametrize(
+        "change",
+        ["parent_approval", "project_approval", "context", "membership", "phase", "lease"],
+    )
+    async def test_unsent_retry_preserves_every_owner_precondition(
+        monkeypatch, kind, change
+    ):
+        owner, board, selected = configured(monkeypatch, kind)
+        original = board.call_tool
+        attempts = 0
+        before_subject = None
+    
+        async def call_tool(*, name, arguments):
+            nonlocal attempts, before_subject
+            if selected(name, arguments):
+                attempts += 1
+                if attempts == 1:
+                    subject = board.server.issues[CLAIMED_ISSUE]
+                    before_subject = copy.deepcopy(subject)
+                    if change == "parent_approval":
+                        board.server.issues[PARENT].labels.append("approved scope")
+                    elif change == "project_approval":
+                        board.server.projects[PROJECT]["labels"].append("approved scope")
+                    elif change == "context":
+                        board.server.issues[
+                            PARENT
+                        ].description = "Externally revised context."
+                    elif change == "membership":
+                        board.server.issues["new-member"] = FakeMcpIssue(
+                            id="new-member",
+                            parent_id=CLAIMED_ISSUE,
+                            description="An externally added scope member.",
+                        )
+                    elif change == "phase":
+                        subject.labels = [
+                            label
+                            for label in subject.labels
+                            if label
+                            not in {"candidate scope", "graph complete", "body complete"}
+                        ]
+                    else:
+                        board.advance(10000)
+                    raise McpTransportError(
+                        "Known unsent interruption", server_name="fixture", tool_name=name
+                    )
+            return await original(name=name, arguments=arguments)
+    
+        monkeypatch.setattr(board, "call_tool", call_tool)
+>       with pytest.raises((OrganizeWriteRefusalError, SurfaceLeaseError)):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE any of (<class 'kodezart.domain.errors.OrganizeWriteRefusalError'>, <class 'kodezart.domain.errors.SurfaceLeaseError'>)
+
+tests/chains/test_authority_independent_review.py:141: Failed
+----------------------------- Captured stdout call -----------------------------
+2026-09-13 02:01:18 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-13 02:01:18 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 02:01:18 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 02:01:18 [info     ] outbound_content_gated         categories=[] content_digest=f89d1825e4481064a8b5a1ea1946290f442ebe4ad9e7445547d1046d6df1fd1c failure=None hits=[] surface=tracker verdict=clean visibility=private writer=tracker_description
+2026-09-13 02:01:18 [warning  ] tracker_mcp_retry              attempt=0 delay_seconds=0.0 tool=save_issue
+2026-09-13 02:01:18 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 02:01:18 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_verify resumed_session_id=None session_id=None
+2026-09-13 02:01:18 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 02:01:18 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_verify resumed_session_id=None session_id=None
+2026-09-13 02:01:18 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+_ test_unsent_retry_preserves_every_owner_precondition[project_approval-graph] _
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10ccca300>
+kind = 'graph', change = 'project_approval'
+
+    @pytest.mark.parametrize("kind", ["body", "graph", "split", "criteria"])
+    @pytest.mark.parametrize(
+        "change",
+        ["parent_approval", "project_approval", "context", "membership", "phase", "lease"],
+    )
+    async def test_unsent_retry_preserves_every_owner_precondition(
+        monkeypatch, kind, change
+    ):
+        owner, board, selected = configured(monkeypatch, kind)
+        original = board.call_tool
+        attempts = 0
+        before_subject = None
+    
+        async def call_tool(*, name, arguments):
+            nonlocal attempts, before_subject
+            if selected(name, arguments):
+                attempts += 1
+                if attempts == 1:
+                    subject = board.server.issues[CLAIMED_ISSUE]
+                    before_subject = copy.deepcopy(subject)
+                    if change == "parent_approval":
+                        board.server.issues[PARENT].labels.append("approved scope")
+                    elif change == "project_approval":
+                        board.server.projects[PROJECT]["labels"].append("approved scope")
+                    elif change == "context":
+                        board.server.issues[
+                            PARENT
+                        ].description = "Externally revised context."
+                    elif change == "membership":
+                        board.server.issues["new-member"] = FakeMcpIssue(
+                            id="new-member",
+                            parent_id=CLAIMED_ISSUE,
+                            description="An externally added scope member.",
+                        )
+                    elif change == "phase":
+                        subject.labels = [
+                            label
+                            for label in subject.labels
+                            if label
+                            not in {"candidate scope", "graph complete", "body complete"}
+                        ]
+                    else:
+                        board.advance(10000)
+                    raise McpTransportError(
+                        "Known unsent interruption", server_name="fixture", tool_name=name
+                    )
+            return await original(name=name, arguments=arguments)
+    
+        monkeypatch.setattr(board, "call_tool", call_tool)
+        with pytest.raises((OrganizeWriteRefusalError, SurfaceLeaseError)):
+            await fixtures.run_owner(owner)
+>       assert attempts == 1
+E       assert 2 == 1
+
+tests/chains/test_authority_independent_review.py:143: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-13 02:01:18 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-13 02:01:18 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 02:01:18 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 02:01:18 [warning  ] tracker_mcp_retry              attempt=0 delay_seconds=0.0 tool=save_issue
+2026-09-13 02:01:18 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 02:01:18 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_verify resumed_session_id=None session_id=None
+2026-09-13 02:01:18 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 02:01:18 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+_ test_unsent_retry_preserves_every_owner_precondition[project_approval-split] _
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10cd32f90>
+kind = 'split', change = 'project_approval'
+
+    @pytest.mark.parametrize("kind", ["body", "graph", "split", "criteria"])
+    @pytest.mark.parametrize(
+        "change",
+        ["parent_approval", "project_approval", "context", "membership", "phase", "lease"],
+    )
+    async def test_unsent_retry_preserves_every_owner_precondition(
+        monkeypatch, kind, change
+    ):
+        owner, board, selected = configured(monkeypatch, kind)
+        original = board.call_tool
+        attempts = 0
+        before_subject = None
+    
+        async def call_tool(*, name, arguments):
+            nonlocal attempts, before_subject
+            if selected(name, arguments):
+                attempts += 1
+                if attempts == 1:
+                    subject = board.server.issues[CLAIMED_ISSUE]
+                    before_subject = copy.deepcopy(subject)
+                    if change == "parent_approval":
+                        board.server.issues[PARENT].labels.append("approved scope")
+                    elif change == "project_approval":
+                        board.server.projects[PROJECT]["labels"].append("approved scope")
+                    elif change == "context":
+                        board.server.issues[
+                            PARENT
+                        ].description = "Externally revised context."
+                    elif change == "membership":
+                        board.server.issues["new-member"] = FakeMcpIssue(
+                            id="new-member",
+                            parent_id=CLAIMED_ISSUE,
+                            description="An externally added scope member.",
+                        )
+                    elif change == "phase":
+                        subject.labels = [
+                            label
+                            for label in subject.labels
+                            if label
+                            not in {"candidate scope", "graph complete", "body complete"}
+                        ]
+                    else:
+                        board.advance(10000)
+                    raise McpTransportError(
+                        "Known unsent interruption", server_name="fixture", tool_name=name
+                    )
+            return await original(name=name, arguments=arguments)
+    
+        monkeypatch.setattr(board, "call_tool", call_tool)
+        with pytest.raises((OrganizeWriteRefusalError, SurfaceLeaseError)):
+            await fixtures.run_owner(owner)
+>       assert attempts == 1
+E       assert 2 == 1
+
+tests/chains/test_authority_independent_review.py:143: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-13 02:01:19 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-13 02:01:19 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 02:01:19 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 02:01:19 [info     ] outbound_content_gated         categories=[] content_digest=51a12b505f95d13dbb293ebdd1bc3bdaeb56c738c4c14c82a82a62336c8f8dd5 failure=None hits=[] surface=tracker verdict=clean visibility=private writer=tracker_title
+2026-09-13 02:01:19 [info     ] outbound_content_gated         categories=[] content_digest=97fdbd2067334e4e2be1e8d212e3de1dc352706ddf966b2379f9b7d954fa5d28 failure=None hits=[] surface=tracker verdict=clean visibility=private writer=tracker_description
+2026-09-13 02:01:19 [warning  ] tracker_mcp_retry              attempt=0 delay_seconds=0.0 tool=save_issue
+2026-09-13 02:01:19 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 02:01:19 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_verify resumed_session_id=None session_id=None
+2026-09-13 02:01:19 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 02:01:19 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+_ test_unsent_retry_preserves_every_owner_precondition[project_approval-criteria] _
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10cd33a70>
+kind = 'criteria', change = 'project_approval'
+
+    @pytest.mark.parametrize("kind", ["body", "graph", "split", "criteria"])
+    @pytest.mark.parametrize(
+        "change",
+        ["parent_approval", "project_approval", "context", "membership", "phase", "lease"],
+    )
+    async def test_unsent_retry_preserves_every_owner_precondition(
+        monkeypatch, kind, change
+    ):
+        owner, board, selected = configured(monkeypatch, kind)
+        original = board.call_tool
+        attempts = 0
+        before_subject = None
+    
+        async def call_tool(*, name, arguments):
+            nonlocal attempts, before_subject
+            if selected(name, arguments):
+                attempts += 1
+                if attempts == 1:
+                    subject = board.server.issues[CLAIMED_ISSUE]
+                    before_subject = copy.deepcopy(subject)
+                    if change == "parent_approval":
+                        board.server.issues[PARENT].labels.append("approved scope")
+                    elif change == "project_approval":
+                        board.server.projects[PROJECT]["labels"].append("approved scope")
+                    elif change == "context":
+                        board.server.issues[
+                            PARENT
+                        ].description = "Externally revised context."
+                    elif change == "membership":
+                        board.server.issues["new-member"] = FakeMcpIssue(
+                            id="new-member",
+                            parent_id=CLAIMED_ISSUE,
+                            description="An externally added scope member.",
+                        )
+                    elif change == "phase":
+                        subject.labels = [
+                            label
+                            for label in subject.labels
+                            if label
+                            not in {"candidate scope", "graph complete", "body complete"}
+                        ]
+                    else:
+                        board.advance(10000)
+                    raise McpTransportError(
+                        "Known unsent interruption", server_name="fixture", tool_name=name
+                    )
+            return await original(name=name, arguments=arguments)
+    
+        monkeypatch.setattr(board, "call_tool", call_tool)
+>       with pytest.raises((OrganizeWriteRefusalError, SurfaceLeaseError)):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE any of (<class 'kodezart.domain.errors.OrganizeWriteRefusalError'>, <class 'kodezart.domain.errors.SurfaceLeaseError'>)
+
+tests/chains/test_authority_independent_review.py:141: Failed
+----------------------------- Captured stdout call -----------------------------
+2026-09-13 02:01:19 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-13 02:01:19 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 02:01:19 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 02:01:19 [info     ] outbound_content_gated         categories=[] content_digest=f89d1825e4481064a8b5a1ea1946290f442ebe4ad9e7445547d1046d6df1fd1c failure=None hits=[] surface=tracker verdict=clean visibility=private writer=tracker_description
+2026-09-13 02:01:19 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 02:01:19 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_verify resumed_session_id=None session_id=None
+2026-09-13 02:01:19 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 02:01:19 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_verify resumed_session_id=None session_id=None
+2026-09-13 02:01:19 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 02:01:19 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 02:01:19 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-13 02:01:19 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 02:01:19 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_verify resumed_session_id=None session_id=None
+2026-09-13 02:01:19 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 02:01:19 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 02:01:19 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-13 02:01:19 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 02:01:19 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_criteria_author stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 02:01:19 [info     ] outbound_content_gated         categories=[] content_digest=444ea9545cc64bfb5c76d9ebd806e35d1175eabac77e2447a23aba20ee5dd4bb failure=None hits=[] surface=tracker verdict=clean visibility=private writer=tracker_description
+2026-09-13 02:01:19 [info     ] outbound_content_gated         categories=[] content_digest=6cccd0622ce623addb5e69d3e39e752fb7fb3714d72d017e33d3aa0e13331ff2 failure=None hits=[] surface=tracker verdict=clean visibility=private writer=tracker_title
+2026-09-13 02:01:19 [warning  ] tracker_mcp_retry              attempt=0 delay_seconds=0.0 tool=save_issue
+2026-09-13 02:01:19 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 02:01:19 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_verify resumed_session_id=None session_id=None
+2026-09-13 02:01:19 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 02:01:19 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_verify resumed_session_id=None session_id=None
+2026-09-13 02:01:19 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 02:01:19 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=NEW-5 prompt_key=organize_verify resumed_session_id=None session_id=None
+2026-09-13 02:01:19 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+=========================== short test summary info ============================
+FAILED tests/chains/test_authority_independent_review.py::test_unsent_retry_preserves_every_owner_precondition[project_approval-body]
+FAILED tests/chains/test_authority_independent_review.py::test_unsent_retry_preserves_every_owner_precondition[project_approval-graph]
+FAILED tests/chains/test_authority_independent_review.py::test_unsent_retry_preserves_every_owner_precondition[project_approval-split]
+FAILED tests/chains/test_authority_independent_review.py::test_unsent_retry_preserves_every_owner_precondition[project_approval-criteria]
+4 failed, 32 deselected in 1.45s

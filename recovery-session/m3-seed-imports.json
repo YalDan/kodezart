@@ -1,0 +1,628 @@
+{
+  "src/kodezart/core/protocols.py": [
+    "AgentExecutor",
+    "AgentRunner",
+    "ArtifactPersister",
+    "BranchMerger",
+    "CIMonitor",
+    "ChangePersister",
+    "DeliveryProbe",
+    "FireCriteriaReader",
+    "FireCriteriaSource",
+    "GitService",
+    "GitSourceReader",
+    "JobQueue",
+    "JobRegistry",
+    "NativeWriteGuard",
+    "OutboundContentGate",
+    "PRCreator",
+    "PromptSetProvider",
+    "QualityGate",
+    "RefPublisher",
+    "Remediator",
+    "RepoCache",
+    "RepoVisibilityResolver",
+    "TicketGenerator",
+    "TrackerContextReader",
+    "TrackerCriteriaReader",
+    "TrackerPort",
+    "WorkspaceProvider"
+  ],
+  "src/kodezart/domain/ci.py": [
+    "ci_status_of"
+  ],
+  "src/kodezart/domain/errors.py": [
+    "AssetFetchError",
+    "BaseIntegrationConflictError",
+    "BaseResolutionError",
+    "CheckObservationError",
+    "CriteriaFanInError",
+    "CriterionReadError",
+    "CriterionResolutionError",
+    "DuplicateCommentMarkerError",
+    "EmptyFireCriteriaError",
+    "FireSpecEntryError",
+    "ForgeAPIError",
+    "GitSourceReadError",
+    "InvalidFireCriterionError",
+    "MergeConflictError",
+    "RulingRecordReadError",
+    "ScopePlanRefusalError",
+    "ScopeReadError",
+    "ScopeSupersessionReadError",
+    "ScopedExecutionUnavailableError",
+    "TransientAPIError",
+    "UngroundedVerdictError",
+    "WorkspaceError",
+    "WriteBackReadError"
+  ],
+  "src/kodezart/domain/git_url.py": [
+    "resolve_repo_url"
+  ],
+  "src/kodezart/services/check_classification.py": [
+    "classify_red_checks"
+  ],
+  "src/kodezart/types/domain/agent.py": [
+    "ACCEPTANCE_CRITERIA_SCHEMA",
+    "AMENDMENT_JUDGMENT_SCHEMA",
+    "AMENDMENT_TEXT_SCHEMA",
+    "AcceptanceCriteriaOutput",
+    "AgentEvent",
+    "AuthoredWorkflowCompleteEvent",
+    "BRANCH_NAME_SCHEMA",
+    "BranchNameOutput",
+    "CRITERIA_VALIDATION_SCHEMA",
+    "CriterionResult",
+    "GENERATED_CRITERIA_SCHEMA",
+    "GeneratedCriteriaOutput",
+    "NATIVE_WRITER_SCHEMA",
+    "NativeAmendmentEvent",
+    "PRDescriptionOutput",
+    "PR_DESCRIPTION_SCHEMA",
+    "REMEDIATION_SCHEMA",
+    "ResultEvent",
+    "Ruling",
+    "RulingAuthor",
+    "TICKET_DRAFT_SCHEMA",
+    "TICKET_REVIEW_SCHEMA",
+    "TicketDraftOutput",
+    "TicketReviewOutput",
+    "WorkflowArtifactsEvent",
+    "WorkflowCIEvent",
+    "WorkflowCompleteEvent",
+    "WorkflowConsolidationEvent",
+    "WorkflowCriteriaEvent",
+    "WorkflowCriteriaValidationEvent",
+    "WorkflowIterationEvent",
+    "WorkflowPREvent",
+    "WorkflowRemediationEvent",
+    "WorkflowReviewEvent",
+    "WorkflowScopeBaseEvent",
+    "WorkflowTicketDraftEvent",
+    "WorkflowTicketEvent",
+    "WorkflowTicketReviewEvent",
+    "WorkflowVisibilityEvent"
+  ],
+  "src/kodezart/types/domain/check_observation.py": [
+    "IncompleteChecks",
+    "ObservedChecks"
+  ],
+  "src/kodezart/types/domain/operation.py": [
+    "CheckPrerequisite",
+    "OperationConfig",
+    "OperationMemberAbsentError",
+    "QueueState",
+    "RepoEntry"
+  ],
+  "src/kodezart/types/domain/workflow.py": [
+    "AuthoredWorkflowState",
+    "ExecutionContext",
+    "RalphLoopContext",
+    "RalphLoopState",
+    "RemediationRequest",
+    "TicketGenerationState",
+    "WorkflowContext",
+    "WorkflowState",
+    "WorkflowSubmission"
+  ],
+  "src/kodezart/chains/authored_checks.py": [
+    "AuthoredChecks"
+  ],
+  "src/kodezart/chains/authored_publication.py": [
+    "AuthoredPublication"
+  ],
+  "src/kodezart/chains/ralph_workflow.py": [
+    "RalphWorkflowEngine"
+  ],
+  "src/kodezart/domain/accept_gate.py": [
+    "accept_verdict",
+    "flagged_items",
+    "gate_cleared",
+    "is_graded",
+    "sherlock_items"
+  ],
+  "src/kodezart/domain/authored_outcome.py": [
+    "classify_authored_outcome"
+  ],
+  "src/kodezart/domain/workflow_state.py": [
+    "current_fire_spec",
+    "current_ticket",
+    "original_fire_spec",
+    "validated_artifact",
+    "validated_criteria"
+  ],
+  "src/kodezart/types/domain/branch.py": [
+    "BaseInput",
+    "BaseSpec",
+    "WorkRef",
+    "WorkRefLanding",
+    "WorkRefRole"
+  ],
+  "src/kodezart/types/domain/ci.py": [
+    "CIStatus"
+  ],
+  "src/kodezart/types/domain/delivery.py": [
+    "CheckRedClass"
+  ],
+  "src/kodezart/types/domain/remediation.py": [
+    "RemediationEntry",
+    "RemediationPlan"
+  ],
+  "src/kodezart/types/domain/run_records.py": [
+    "RunIdentity",
+    "RunOutcome"
+  ],
+  "src/kodezart/types/domain/scope.py": [
+    "ResolvedScope",
+    "ScopeKind",
+    "ScopePlanSnapshot",
+    "ScopeRef"
+  ],
+  "src/kodezart/types/domain/session.py": [
+    "AllowedTools",
+    "PermissionMode",
+    "SessionType",
+    "ToolPreset"
+  ],
+  "src/kodezart/core/constants.py": [
+    "EVAL_PERMISSION_MODE"
+  ],
+  "src/kodezart/core/errors.py": [
+    "RateLimitedSoftFailureError",
+    "TicketReviewModeError",
+    "TrackerAccessDeniedError",
+    "TrackerProtocolError",
+    "TrackerUnavailableError",
+    "soft_failure"
+  ],
+  "src/kodezart/core/logging.py": [
+    "BoundLogger",
+    "get_logger"
+  ],
+  "src/kodezart/core/outbound_write.py": [
+    "gated_write"
+  ],
+  "src/kodezart/core/stream_drain.py": [
+    "drain"
+  ],
+  "src/kodezart/domain/pr_body.py": [
+    "append_flagged_section",
+    "append_tracker_issue",
+    "require_tracker_issue"
+  ],
+  "src/kodezart/domain/stall_report.py": [
+    "stall_pr_body",
+    "stall_pr_title"
+  ],
+  "src/kodezart/domain/ticket.py": [
+    "format_fire_spec",
+    "format_ticket_as_task"
+  ],
+  "src/kodezart/types/domain/fire_spec.py": [
+    "AuthoredSpec",
+    "CriterionRef",
+    "FireSpec",
+    "IssueRef",
+    "TrackerSpec"
+  ],
+  "src/kodezart/types/domain/gating.py": [
+    "ContentClass",
+    "GateDecision",
+    "GateVerdict",
+    "OutboundDestination",
+    "RepoVisibility",
+    "WriterShape"
+  ],
+  "src/kodezart/types/domain/prompts.py": [
+    "PromptKey"
+  ],
+  "src/kodezart/types/domain/skills.py": [
+    "SkillsSelection"
+  ],
+  "src/kodezart/domain/fire_spec.py": [
+    "CriterionField",
+    "criterion_check",
+    "criterion_field_bodies",
+    "replace_criterion_fields"
+  ],
+  "src/kodezart/services/scope_membership.py": [
+    "read_member_subtrees",
+    "read_scope_members"
+  ],
+  "src/kodezart/types/domain/criteria.py": [
+    "CRITERION_ID_PREFIX",
+    "ConjunctionVerdict",
+    "CostClaim",
+    "CostMeasurement",
+    "CriteriaArtifact",
+    "CriteriaValidation",
+    "CriteriaValidationOutput",
+    "CriterionFailure",
+    "CriterionFeasibility",
+    "CriterionFinding",
+    "CriterionFlag",
+    "CriterionId",
+    "CriterionVerdict",
+    "DerivedFeasibility",
+    "DraftedCriterion",
+    "ExecutionCriterion",
+    "FanInReport",
+    "FindingEvidence",
+    "ForbiddenCriterionClass",
+    "GeneratedCriterion",
+    "LimitArm",
+    "RepairKind",
+    "TrackerCriterion",
+    "TrackerCriterionSet",
+    "ValidatedCriterion"
+  ],
+  "src/kodezart/types/domain/tracker.py": [
+    "ClaimResult",
+    "ClaimStatus",
+    "IssuePriority",
+    "IssueQuery",
+    "IssueRelationKind",
+    "TrackerComment",
+    "TrackerIssue",
+    "WorkflowStateKind",
+    "is_open",
+    "priority_rank"
+  ],
+  "src/kodezart/domain/agent.py": [
+    "best_iteration_ref",
+    "generate_ralph_branch_name",
+    "generate_workspace_id"
+  ],
+  "src/kodezart/domain/trajectory.py": [
+    "fold_trajectory",
+    "landable_commit"
+  ],
+  "src/kodezart/types/domain/consolidation.py": [
+    "ConsolidationStatus"
+  ],
+  "src/kodezart/chains/criteria.py": [
+    "current_native_criteria",
+    "require_current_native_snapshot",
+    "revalidate_criteria"
+  ],
+  "src/kodezart/domain/amendment.py": [
+    "AmendmentWriteBackRefusalError",
+    "NativeAmendmentRefusalError",
+    "NativeWriteRefusalError",
+    "repeated_upheld",
+    "upheld_reason"
+  ],
+  "src/kodezart/types/domain/accept.py": [
+    "AcceptVerdict",
+    "FlaggedItem",
+    "SherlockFlag"
+  ],
+  "src/kodezart/chains/fire_consolidation.py": [
+    "FireConsolidation",
+    "resolve_workflow_cwd"
+  ],
+  "src/kodezart/core/redispatch.py": [
+    "correction_notice",
+    "correction_report",
+    "until_conforming",
+    "until_permutation"
+  ],
+  "src/kodezart/domain/criteria_grading.py": [
+    "grade_iteration"
+  ],
+  "src/kodezart/domain/fan_in.py": [
+    "fan_in_breach",
+    "fan_in_report",
+    "require_permutation"
+  ],
+  "src/kodezart/domain/prompt_variables.py": [
+    "changeset_variables",
+    "execution_criteria_variables",
+    "tracker_checks_section"
+  ],
+  "src/kodezart/types/domain/grading.py": [
+    "IterationGrade"
+  ],
+  "src/kodezart/types/domain/subagents.py": [
+    "AgentDefinition",
+    "NO_SUBAGENTS",
+    "SessionPolicy",
+    "UNCONFIGURED_SESSION_POLICY"
+  ],
+  "src/kodezart/domain/criteria.py": [
+    "build_artifact",
+    "mint_criteria"
+  ],
+  "src/kodezart/domain/criteria_feasibility.py": [
+    "demands_regeneration",
+    "regeneration_targets",
+    "sweep"
+  ],
+  "src/kodezart/domain/criteria_prompt.py": [
+    "render_validation_findings"
+  ],
+  "src/kodezart/types/domain/amendment.py": [
+    "AmendedAmendment",
+    "AmendmentClaim",
+    "AmendmentJudgment",
+    "AmendmentReport",
+    "AmendmentSubject",
+    "AmendmentVerdict",
+    "CommitSha",
+    "CriterionSubject",
+    "EscalatedRefusal",
+    "NativeWriterOutput",
+    "NativeWriterStart",
+    "Nonblank",
+    "RecordedRefusal",
+    "RepeatedUpheld",
+    "RulingSubject",
+    "UpheldAmendment",
+    "UpheldReason"
+  ],
+  "src/kodezart/types/base.py": [
+    "CamelCaseModel"
+  ],
+  "src/kodezart/types/domain/native_execution.py": [
+    "ActiveNativeExecution",
+    "NativeAuthoritySnapshot",
+    "NativeExecutionPhase",
+    "NewNativeExecution",
+    "PersistedNativeExecution",
+    "PreparedNativeExecution",
+    "ReconciledNativeExecution",
+    "RefusedNativeExecution",
+    "UnchangedNativeExecution",
+    "WrittenNativeExecution"
+  ],
+  "src/kodezart/core/node_sessions.py": [
+    "NodeSessionObserver"
+  ],
+  "src/kodezart/core/retry.py": [
+    "DelayFloor",
+    "RetryFloor",
+    "should_retry"
+  ],
+  "src/kodezart/domain/thread_id.py": [
+    "ralph_thread_id",
+    "ticket_thread_id",
+    "workflow_thread_id"
+  ],
+  "src/kodezart/services/native_amendments.py": [
+    "NativeAmendments"
+  ],
+  "src/kodezart/types/domain/node_session.py": [
+    "NodeInvocation"
+  ],
+  "src/kodezart/types/domain/ralph_outcome.py": [
+    "EvaluatedRalphOutcome",
+    "NativeEvaluatedRalphOutcome",
+    "PendingRalphOutcome",
+    "RalphOutcome",
+    "RefusedRalphOutcome"
+  ],
+  "src/kodezart/types/domain/trajectory.py": [
+    "IterationRecord",
+    "LoopTrajectory"
+  ],
+  "src/kodezart/chains/fire_implementation.py": [
+    "FireImplementation"
+  ],
+  "src/kodezart/chains/fire_remediation.py": [
+    "FireRemediation"
+  ],
+  "src/kodezart/chains/fire_review.py": [
+    "FireReview"
+  ],
+  "src/kodezart/chains/fire_specification.py": [
+    "FireSpecification"
+  ],
+  "src/kodezart/domain/base_scope.py": [
+    "scope_base"
+  ],
+  "src/kodezart/domain/outcome.py": [
+    "classify_outcome"
+  ],
+  "src/kodezart/domain/remediation.py": [
+    "done_work_summary"
+  ],
+  "src/kodezart/core/error_egress.py": [
+    "build_error_event"
+  ],
+  "src/kodezart/types/domain/ticket_review.py": [
+    "DEFAULT_MAX_REVIEWS",
+    "DRAFT_CRITIC_LENS",
+    "TicketApproval",
+    "TicketReviewMode"
+  ],
+  "src/kodezart/domain/dispatch.py": [
+    "Selection",
+    "blocker_keys",
+    "clause_approved",
+    "clause_in_scope",
+    "clause_in_team",
+    "clause_open",
+    "clause_recorded_repository",
+    "clause_unclaimed",
+    "clause_undelivered",
+    "live_blocker",
+    "ranked_order",
+    "select_top_ranked"
+  ],
+  "src/kodezart/domain/issue_tree.py": [
+    "RECORD_KINDS",
+    "SubtreeClosure",
+    "index_issue_tree"
+  ],
+  "src/kodezart/domain/topology.py": [
+    "plan_topology"
+  ],
+  "src/kodezart/services/scope_planning.py": [
+    "read_scope_plan"
+  ],
+  "src/kodezart/types/domain/scope_ready.py": [
+    "ScopeReadyLane",
+    "ScopeReadySet"
+  ],
+  "src/kodezart/types/domain/write_back.py": [
+    "WriteBackResult"
+  ],
+  "src/kodezart/types/domain/outcome.py": [
+    "WorkflowOutcome"
+  ],
+  "src/kodezart/types/domain/criterion_evidence.py": [
+    "CriterionEvidence"
+  ],
+  "src/kodezart/domain/gap.py": [
+    "compute_gap"
+  ],
+  "src/kodezart/services/native_execution.py": [
+    "NativeExecution",
+    "NativeExecutionRequest"
+  ],
+  "src/kodezart/chains/write_back_verifier.py": [
+    "FreshWriteBackJudge",
+    "WriteBackFinding",
+    "WriteBackResult",
+    "WriteBackVerifier"
+  ],
+  "src/kodezart/core/owned_tasks.py": [
+    "settle"
+  ],
+  "src/kodezart/domain/comment_markers.py": [
+    "compose_comment_marker",
+    "configured_marker_prefix"
+  ],
+  "src/kodezart/domain/rulings.py": [
+    "render_ruling"
+  ],
+  "src/kodezart/domain/tracker_writes.py": [
+    "comment_under_marker",
+    "marked_comment_body"
+  ],
+  "src/kodezart/services/audit_sessions.py": [
+    "judge_in_workspace"
+  ],
+  "src/kodezart/services/lane_escalation.py": [
+    "LaneEscalationWriter"
+  ],
+  "src/kodezart/services/owned_workspace.py": [
+    "owned_workspace"
+  ],
+  "src/kodezart/services/run_surface_lease.py": [
+    "RunSurfaceLease"
+  ],
+  "src/kodezart/services/tracker_artifacts.py": [
+    "read_tracker_artifact"
+  ],
+  "src/kodezart/types/domain/amendment_write.py": [
+    "AmendmentRecord",
+    "AmendmentTextOutput",
+    "CriterionReplacement",
+    "PreservedSubject",
+    "RulingReplacement"
+  ],
+  "src/kodezart/types/domain/audit.py": [
+    "AuditVerdict",
+    "TrackerArtifact"
+  ],
+  "src/kodezart/types/domain/run_state.py": [
+    "LaneEscalation"
+  ],
+  "src/kodezart/types/domain/surface.py": [
+    "DescriptionWriteAuthority",
+    "SurfaceKind",
+    "WritableSurface"
+  ],
+  "src/kodezart/domain/base_resolution.py": [
+    "BasePlan",
+    "resolve_base"
+  ],
+  "src/kodezart/types/domain/fire.py": [
+    "FireAsset",
+    "FireContext"
+  ],
+  "src/kodezart/domain/base_staleness.py": [
+    "is_base_stale"
+  ],
+  "src/kodezart/services/base_resolver.py": [
+    "BaseResolver"
+  ],
+  "src/kodezart/services/fire_context.py": [
+    "FireContextAssembler"
+  ],
+  "src/kodezart/types/domain/dispatch.py": [
+    "DispatchOutcome",
+    "DispatchReport",
+    "ExclusionClause",
+    "IssueExclusion",
+    "IssueSnapshot"
+  ],
+  "src/kodezart/types/domain/job.py": [
+    "JobState"
+  ],
+  "src/kodezart/chains/native_amendment.py": [
+    "NativeAmendmentGraph"
+  ],
+  "src/kodezart/domain/criterion_amendment.py": [
+    "require_criterion_source"
+  ],
+  "src/kodezart/services/amendment_writeback.py": [
+    "AmendmentSource",
+    "AmendmentWriteBack",
+    "CriterionAmendmentSource",
+    "RulingAmendmentSource"
+  ],
+  "src/kodezart/services/ruling_records.py": [
+    "RulingRecordReader"
+  ],
+  "src/kodezart/types/domain/persist.py": [
+    "PersistResult"
+  ],
+  "src/kodezart/chains/native_execution.py": [
+    "NativeExecutionGraph",
+    "NativeExecutionState"
+  ],
+  "src/kodezart/chains/scope_walker.py": [
+    "read_scope_ready",
+    "unreachable_criteria"
+  ],
+  "src/kodezart/services/fire_dispatcher.py": [
+    "FireDispatcher"
+  ],
+  "src/kodezart/services/scope_resolution.py": [
+    "resolve_scope"
+  ],
+  "src/kodezart/types/domain/ruling_id.py": [
+    "RulingId"
+  ],
+  "src/kodezart/types/domain/criterion_ref.py": [
+    "CriterionRef"
+  ],
+  "src/kodezart/types/domain/workspace.py": [
+    "WorkspaceSnapshot"
+  ],
+  "src/kodezart/types/domain/topology.py": [
+    "BlockedIssue"
+  ]
+}

@@ -1,0 +1,13 @@
+S110 `try`-`except`-`pass` detected, consider logging the exception
+   --> src/kodezart/services/native_execution.py:179:13
+    |
+177 |                       workspace_path=path, start=phase.start
+178 |                   )
+179 | /             except BaseException:
+180 | |                 pass  # A cleanup read must not replace the writer's failure.
+    | |____________________^
+181 |               else:
+182 |                   self._release_incomplete_workspace = True
+    |
+
+Found 1 error.

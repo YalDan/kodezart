@@ -1,0 +1,42 @@
+EE                                                                       [100%]
+==================================== ERRORS ====================================
+_ ERROR at setup of test_native_summary_rereads_previously_verified_records[deleted] _
+
+fixturedef = <FixtureDef argname='native_audit' scope='function' baseid='kodezart-recovery-session/test_audit_report_records_probe.py'>
+request = <SubRequest 'native_audit' for <Function test_native_summary_rereads_previously_verified_records[deleted]>>
+
+    @pytest.hookimpl(wrapper=True)
+    def pytest_fixture_setup(fixturedef: FixtureDef, request) -> object | None:
+        asyncio_mode = _get_asyncio_mode(request.config)
+        if not _is_asyncio_fixture_function(fixturedef.func):
+            if asyncio_mode == Mode.STRICT:
+                # Ignore async fixtures without explicit asyncio mark in strict mode
+                # This applies to pytest_trio fixtures, for example
+>               return (yield)
+                        ^^^^^
+E               pytest.PytestRemovedIn9Warning: 'test_native_summary_rereads_previously_verified_records[deleted]' requested an async fixture 'native_audit', with no plugin or hook that handled it. This is usually an error, as pytest does not natively support it. This will turn into an error in pytest 9.
+E               See: https://docs.pytest.org/en/stable/deprecations.html#sync-test-depending-on-async-fixture
+
+.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:728: PytestRemovedIn9Warning
+_ ERROR at setup of test_native_summary_rereads_previously_verified_records[changed] _
+
+fixturedef = <FixtureDef argname='native_audit' scope='function' baseid='kodezart-recovery-session/test_audit_report_records_probe.py'>
+request = <SubRequest 'native_audit' for <Function test_native_summary_rereads_previously_verified_records[changed]>>
+
+    @pytest.hookimpl(wrapper=True)
+    def pytest_fixture_setup(fixturedef: FixtureDef, request) -> object | None:
+        asyncio_mode = _get_asyncio_mode(request.config)
+        if not _is_asyncio_fixture_function(fixturedef.func):
+            if asyncio_mode == Mode.STRICT:
+                # Ignore async fixtures without explicit asyncio mark in strict mode
+                # This applies to pytest_trio fixtures, for example
+>               return (yield)
+                        ^^^^^
+E               pytest.PytestRemovedIn9Warning: 'test_native_summary_rereads_previously_verified_records[changed]' requested an async fixture 'native_audit', with no plugin or hook that handled it. This is usually an error, as pytest does not natively support it. This will turn into an error in pytest 9.
+E               See: https://docs.pytest.org/en/stable/deprecations.html#sync-test-depending-on-async-fixture
+
+.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:728: PytestRemovedIn9Warning
+=========================== short test summary info ============================
+ERROR ../kodezart-recovery-session/test_audit_report_records_probe.py::test_native_summary_rereads_previously_verified_records[deleted]
+ERROR ../kodezart-recovery-session/test_audit_report_records_probe.py::test_native_summary_rereads_previously_verified_records[changed]
+2 errors in 11.90s

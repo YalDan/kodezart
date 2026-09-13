@@ -1,0 +1,691 @@
+E501 Line too long (108 > 88)
+  --> src/kodezart/chains/native_amendment.py:47:89
+   |
+45 |     def __init__(self, *, actions: AmendmentActions) -> None:
+46 |         self._actions = actions
+47 |         graph: StateGraph[AmendmentState, None, AmendmentState, AmendmentState] = StateGraph(AmendmentState)
+   |                                                                                         ^^^^^^^^^^^^^^^^^^^^
+48 |         graph.add_node("judge", self._judge)
+49 |         graph.add_node("canonical_write_back", self._write_back)
+   |
+
+E501 Line too long (103 > 88)
+   --> src/kodezart/chains/write_back_verifier.py:166:89
+    |
+164 |             value is not None and not value.strip() for value in (repo_url, repo_path)
+165 |         ):
+166 |             raise ValueError("write-back verification requires exactly one nonblank repository source")
+    |                                                                                         ^^^^^^^^^^^^^^^
+167 |         self._runner, self._workspace, self._git = runner, workspace, git
+168 |         self._prompts, self._skills = prompts, skills
+    |
+
+E501 Line too long (95 > 88)
+   --> src/kodezart/chains/write_back_verifier.py:169:89
+    |
+167 |         self._runner, self._workspace, self._git = runner, workspace, git
+168 |         self._prompts, self._skills = prompts, skills
+169 |         self._repo_url, self._repo_path, self._session_type = repo_url, repo_path, session_type
+    |                                                                                         ^^^^^^^
+170 |
+171 |     async def _require_head(self, workspace: str, ref: str) -> None:
+    |
+
+E501 Line too long (90 > 88)
+   --> src/kodezart/services/amendment_writeback.py:292:89
+    |
+290 |         ):
+291 |             raise NativeWriteRefusalError(
+292 |                 "The canonical amendment artifact changed during independent verification"
+    |                                                                                         ^^
+293 |             )
+294 |         await authority.require_current()
+    |
+
+E501 Line too long (101 > 88)
+   --> src/kodezart/services/amendment_writeback.py:357:89
+    |
+355 |             await authority.require_current()
+356 |             explanation = judgment.finding.refutation or (
+357 |                 f"The independently judged departure remains {reason.value if reason else 'pending'}"
+    |                                                                                         ^^^^^^^^^^^^^
+358 |             )
+359 |             existing_archive = comment_under_marker(
+    |
+
+E501 Line too long (89 > 88)
+   --> src/kodezart/services/amendment_writeback.py:380:89
+    |
+378 |                 ):
+379 |                     raise NativeWriteRefusalError(
+380 |                         "The existing amendment record has different historical evidence"
+    |                                                                                         ^
+381 |                     )
+382 |                 explanation = stored.explanation
+    |
+
+E501 Line too long (90 > 88)
+   --> src/kodezart/services/amendment_writeback.py:639:89
+    |
+637 |                 raised_by=holder,
+638 |                 question=question,
+639 |                 interim_reading="UPHELD: retain the existing criterion or pinned ruling.",
+    |                                                                                         ^^
+640 |                 interim_basis=judgment.model_dump_json(),
+641 |                 raised_at_sha=judgment.base_sha,
+    |
+
+E501 Line too long (91 > 88)
+   --> src/kodezart/services/native_amendments.py:470:89
+    |
+468 |             git=owner._git, prompts=owner._prompts, skills=owner._skills,
+469 |             operation=owner._operation, max_verify_rounds=owner._max_verify_rounds,
+470 |             gate=owner._gate, lease_seconds=owner._lease_seconds, repo_path=workspace_path,
+    |                                                                                         ^^^
+471 |         )
+    |
+
+E501 Line too long (89 > 88)
+   --> src/kodezart/services/native_amendments.py:588:89
+    |
+586 |         ):
+587 |             raise NativeWriteRefusalError(
+588 |                 "The escalation changed more than its authorized decision classification"
+    |                                                                                         ^
+589 |             )
+590 |         guard._criterion_issues = tuple(
+    |
+
+E501 Line too long (91 > 88)
+  --> tests/chains/test_amendment_review_reentry.py:52:89
+   |
+50 |             payload.update(proposed_grade)
+51 |
+52 |     executor = Executor(subject={"kind": "ruling", "id": ruling.ruling_id}, mutate=answers)
+   |                                                                                         ^^^
+53 |     fire, spec, current, _, workspace = await make_runtime(
+54 |         repository, executor, max_iterations=1
+   |
+
+E501 Line too long (121 > 88)
+  --> tests/chains/test_amendment_review_reentry.py:59:89
+   |
+57 |     await port.post_comment(
+58 |         issue_key=SUBJECT,
+59 |         body=render_ruling(ruling=ruling, lane_key="original-ruling-lane", marker_prefixes={"ruling": "fixture-pinned"}),
+   |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+60 |     )
+61 |     # Both counterfactual gate outcomes are deliberate. The existing evaluator
+   |
+
+E501 Line too long (151 > 88)
+  --> tests/chains/test_amendment_review_reentry.py:63:89
+   |
+61 | …e. The existing evaluator
+62 | …t authorize the departure.
+63 | …nceCriteriaOutput.model_validate(proposed_grade)).verdict is AcceptVerdict.accepted) is gate_green
+   |                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+64 | …e", "main")
+65 | …ative-feature")
+   |
+
+E501 Line too long (89 > 88)
+  --> tests/chains/test_amendment_review_reentry.py:82:89
+   |
+80 |         repo_visibility=RepoVisibility.PUBLIC,
+81 |     )
+82 |     await fire.native_graph.aupdate_state(config, state, as_node="review_against_ticket")
+   |                                                                                         ^
+83 |     assert (await fire.native_graph.aget_state(config)).next == ("remediate",)
+84 |     events = []
+   |
+
+E501 Line too long (100 > 88)
+  --> tests/chains/test_amendment_review_reentry.py:87:89
+   |
+85 |     try:
+86 |         with pytest.raises(NativeAmendmentRefusalError):
+87 |             async for event in fire.native_graph.astream(None, config=config, stream_mode="custom"):
+   |                                                                                         ^^^^^^^^^^^^
+88 |                 events.append(event)
+89 |         assert await git(repository[0], "rev-parse", "native-feature") == before
+   |
+
+E501 Line too long (92 > 88)
+  --> tests/chains/test_amendment_review_reentry.py:91:89
+   |
+89 |         assert await git(repository[0], "rev-parse", "native-feature") == before
+90 |         saved = await fire.native_graph.aget_state(config)
+91 |         assert await git(repository[0], "rev-parse", saved.values["ralph_branch"]) == before
+   |                                                                                         ^^^^
+92 |         assert any(isinstance(e, WorkflowRemediationEvent) for e in events)
+93 |         assert not any(isinstance(e, WorkflowIterationEvent) for e in events)
+   |
+
+E501 Line too long (90 > 88)
+   --> tests/chains/test_amendment_review_reentry.py:99:89
+    |
+ 97 |         assert len(records) == 1
+ 98 |         assert records[0].issue_key == SUBJECT
+ 99 |         recorded = AmendmentRecord.model_validate_json(records[0].body.partition("\n")[2])
+    |                                                                                         ^^
+100 |         assert recorded.disposition == "accepted_and_not_actioned"
+101 |         assert recorded.claim.subject.id == ruling.ruling_id
+    |
+
+E501 Line too long (99 > 88)
+   --> tests/chains/test_amendment_review_reentry.py:103:89
+    |
+101 |         assert recorded.claim.subject.id == ruling.ruling_id
+102 |         assert ruling.resolution in recorded.prior.content
+103 |         assert json.loads(recorded.model_dump_json())["claim"]["subject"]["id"] == ruling.ruling_id
+    |                                                                                         ^^^^^^^^^^^
+104 |         titles = [c["output_format"]["schema"]["title"] for c in executor.calls]
+105 |         assert titles == ["RemediationPlan", "NativeWriterOutput", "AmendmentJudgment", "WriteBackFinding"]
+    |
+
+E501 Line too long (107 > 88)
+   --> tests/chains/test_amendment_review_reentry.py:105:89
+    |
+103 |         assert json.loads(recorded.model_dump_json())["claim"]["subject"]["id"] == ruling.ruling_id
+104 |         titles = [c["output_format"]["schema"]["title"] for c in executor.calls]
+105 |         assert titles == ["RemediationPlan", "NativeWriterOutput", "AmendmentJudgment", "WriteBackFinding"]
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^
+106 |         assert not await git(repository[0], "ls-remote", "origin", f"refs/heads/{saved.values['ralph_branch']}")
+107 |     finally:
+    |
+
+E501 Line too long (112 > 88)
+   --> tests/chains/test_amendment_review_reentry.py:106:89
+    |
+104 |         titles = [c["output_format"]["schema"]["title"] for c in executor.calls]
+105 |         assert titles == ["RemediationPlan", "NativeWriterOutput", "AmendmentJudgment", "WriteBackFinding"]
+106 |         assert not await git(repository[0], "ls-remote", "origin", f"refs/heads/{saved.values['ralph_branch']}")
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^
+107 |     finally:
+108 |         await cleanup(workspace)
+    |
+
+E501 Line too long (90 > 88)
+  --> tests/chains/test_fresh_write_back_judge.py:52:89
+   |
+51 | async def test_local_repository_is_forwarded_without_inventing_a_url():
+52 |     judge, _, workspace = build({"verdict": "holds", "evidence": "Actual local evidence"},
+   |                                                                                         ^^
+53 |                                 source={"repo_path": "/actual/writer/workspace"})
+54 |     await judge.judge(artifact=ARTIFACT, ref=HEAD)
+   |
+
+E501 Line too long (100 > 88)
+  --> tests/chains/test_native_amendment_adoption.py:14:89
+   |
+12 | ROOT = Path(__file__).resolve().parents[2] / "src" / "kodezart"
+13 | # All normal iterations and review/CI remediation reentry use this same node.
+14 | WRITING_STAGES = (("chains/ralph_loop.py", "RalphLoop", "_execute_node", PromptKey.IMPLEMENTATION),)
+   |                                                                                         ^^^^^^^^^^^^
+   |
+
+E501 Line too long (104 > 88)
+  --> tests/chains/test_native_amendment_adoption.py:21:89
+   |
+19 |     for path, source in sources.items():
+20 |         tree = ast.parse(source)
+21 |         parents = {child: parent for parent in ast.walk(tree) for child in ast.iter_child_nodes(parent)}
+   |                                                                                         ^^^^^^^^^^^^^^^^
+22 |         for call in ast.walk(tree):
+23 |             if not isinstance(call, ast.Call) or not isinstance(call.func, ast.Attribute) or call.func.attr != "stream_workflow":
+   |
+
+E501 Line too long (129 > 88)
+  --> tests/chains/test_native_amendment_adoption.py:23:89
+   |
+21 |         parents = {child: parent for parent in ast.walk(tree) for child in ast.iter_child_nodes(parent)}
+22 |         for call in ast.walk(tree):
+23 |             if not isinstance(call, ast.Call) or not isinstance(call.func, ast.Attribute) or call.func.attr != "stream_workflow":
+   |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+24 |                 continue
+25 |             ancestors = []
+   |
+
+E501 Line too long (124 > 88)
+  --> tests/chains/test_native_amendment_adoption.py:30:89
+   |
+28 |                 node = parents[node]
+29 |                 ancestors.append(node)
+30 |             function = next((node for node in ancestors if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))), None)
+   |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+31 |             owner = next((node for node in ancestors if isinstance(node, ast.ClassDef)), None)
+32 |             address = (path, None if owner is None else owner.name, None if function is None else function.name)
+   |
+
+E501 Line too long (94 > 88)
+  --> tests/chains/test_native_amendment_adoption.py:31:89
+   |
+29 |                 ancestors.append(node)
+30 |             function = next((node for node in ancestors if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))), None)
+31 |             owner = next((node for node in ancestors if isinstance(node, ast.ClassDef)), None)
+   |                                                                                         ^^^^^^
+32 |             address = (path, None if owner is None else owner.name, None if function is None else function.name)
+33 |             if address == ("api/v1/endpoints/agent.py", None, "generate"):
+   |
+
+E501 Line too long (112 > 88)
+  --> tests/chains/test_native_amendment_adoption.py:32:89
+   |
+30 |             function = next((node for node in ancestors if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))), None)
+31 |             owner = next((node for node in ancestors if isinstance(node, ast.ClassDef)), None)
+32 |             address = (path, None if owner is None else owner.name, None if function is None else function.name)
+   |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^
+33 |             if address == ("api/v1/endpoints/agent.py", None, "generate"):
+34 |                 # This exact HTTP adapter calls the queue handler, not AgentRunner.
+   |
+
+E501 Line too long (90 > 88)
+  --> tests/chains/test_native_amendment_adoption.py:45:89
+   |
+43 | def require_adoption(sources):
+44 |     actual = dispatches(sources)
+45 |     assert set(actual) == {(path, owner, node) for path, owner, node, _ in WRITING_STAGES}
+   |                                                                                         ^^
+46 |     assert {role for _, _, _, role in WRITING_STAGES} == NATIVE_WRITING_STAGES
+47 |     for path, owner, node, role in WRITING_STAGES:
+   |
+
+E501 Line too long (101 > 88)
+  --> tests/chains/test_native_amendment_adoption.py:50:89
+   |
+48 | …     function, calls = actual[path, owner, node]
+49 | …     assert len(calls) == 1
+50 | …     guard = next(keyword.value for keyword in calls[0].keywords if keyword.arg == "native_guard")
+   |                                                                                       ^^^^^^^^^^^^^
+51 | …     assert isinstance(guard, ast.Name)
+52 | …     constructors = [assignment for assignment in ast.walk(function) if isinstance(assignment, ast.Assign) and any(isinstance(target,…
+   |
+
+E501 Line too long (350 > 88)
+  --> tests/chains/test_native_amendment_adoption.py:52:89
+   |
+50 | …== "native_guard")
+51 | …
+52 | …ce(assignment, ast.Assign) and any(isinstance(target, ast.Name) and target.id == guard.id for target in assignment.targets) and isinstance(assignment.value, ast.Call) and isinstance(assignment.value.func, ast.Attribute) and assignment.value.func.attr == "for_writer"]
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+53 | …
+54 | … keyword.arg == "stage")
+   |
+
+E501 Line too long (107 > 88)
+  --> tests/chains/test_native_amendment_adoption.py:54:89
+   |
+52 | …     constructors = [assignment for assignment in ast.walk(function) if isinstance(assignment, ast.Assign) and any(isinstance(target,…
+53 | …     assert len(constructors) == 1
+54 | …     stage = next(keyword.value for keyword in constructors[0].value.keywords if keyword.arg == "stage")
+   |                                                                                       ^^^^^^^^^^^^^^^^^^^
+55 | …     assert ast.unparse(stage) == f"PromptKey.{role.name}"
+   |
+
+E501 Line too long (95 > 88)
+  --> tests/chains/test_native_amendment_adoption.py:59:89
+   |
+58 | def sources():
+59 |     return {path.relative_to(ROOT).as_posix(): path.read_text() for path in ROOT.rglob("*.py")}
+   |                                                                                         ^^^^^^^
+   |
+
+E501 Line too long (131 > 88)
+  --> tests/chains/test_native_amendment_adoption.py:70:89
+   |
+68 | …
+69 | …
+70 | …hanged["chains/ralph_loop.py"].replace("native_guard=native_guard", "native_guard=None")
+   |                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+71 | …
+72 | …async def execute(runner):\n    await runner.stream_workflow(prompt='write without guard')\n"
+   |
+
+E501 Line too long (136 > 88)
+  --> tests/chains/test_native_amendment_adoption.py:72:89
+   |
+70 | …ged["chains/ralph_loop.py"].replace("native_guard=native_guard", "native_guard=None")
+71 | …
+72 | …nc def execute(runner):\n    await runner.stream_workflow(prompt='write without guard')\n"
+   |                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+73 | …
+74 | …ss NewWriter:\n    async def execute(self):\n        await self.runner.stream_workflow(prompt='write without guard')\n"
+   |
+
+E501 Line too long (165 > 88)
+  --> tests/chains/test_native_amendment_adoption.py:74:89
+   |
+72 | …(runner):\n    await runner.stream_workflow(prompt='write without guard')\n"
+73 | …
+74 | …n    async def execute(self):\n        await self.runner.stream_workflow(prompt='write without guard')\n"
+   |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+75 | …
+76 | …
+   |
+
+E501 Line too long (100 > 88)
+  --> tests/chains/test_native_amendment_adoption.py:82:89
+   |
+80 |     # No collaborator executes for this structural graph contract.
+81 |     graph = NativeAmendmentGraph(actions=None).graph.get_graph()
+82 |     assert set(graph.nodes) == {"__start__", "judge", "canonical_write_back", "complete", "__end__"}
+   |                                                                                         ^^^^^^^^^^^^
+83 |     incoming = {edge.source for edge in graph.edges if edge.target == "canonical_write_back"}
+84 |     assert incoming == {"judge"}
+   |
+
+E501 Line too long (93 > 88)
+  --> tests/chains/test_native_amendment_adoption.py:83:89
+   |
+81 |     graph = NativeAmendmentGraph(actions=None).graph.get_graph()
+82 |     assert set(graph.nodes) == {"__start__", "judge", "canonical_write_back", "complete", "__end__"}
+83 |     incoming = {edge.source for edge in graph.edges if edge.target == "canonical_write_back"}
+   |                                                                                         ^^^^^
+84 |     assert incoming == {"judge"}
+85 |     assert any(edge.source == "canonical_write_back" and edge.target == "judge" for edge in graph.edges)
+   |
+
+E501 Line too long (104 > 88)
+  --> tests/chains/test_native_amendment_adoption.py:85:89
+   |
+83 |     incoming = {edge.source for edge in graph.edges if edge.target == "canonical_write_back"}
+84 |     assert incoming == {"judge"}
+85 |     assert any(edge.source == "canonical_write_back" and edge.target == "judge" for edge in graph.edges)
+   |                                                                                         ^^^^^^^^^^^^^^^^
+   |
+
+E501 Line too long (123 > 88)
+  --> tests/chains/test_native_amendment_runtime.py:52:89
+   |
+50 |         operation_name="fixture",
+51 |         workspace="fixture",
+52 |         marker_prefixes={"ruling": "fixture-pinned", "amendment": "fixture-amendment", "escalation": "fixture-escalation"},
+   |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+53 |         issue_labels={"decision": "decision"},
+54 |     )
+   |
+
+E501 Line too long (89 > 88)
+   --> tests/chains/test_native_amendment_trajectory_independent.py:130:89
+    |
+128 |         assert final is not None
+129 |         assert any(isinstance(event, NativeAmendmentEvent) for event in events)
+130 |         assert [call["output_format"]["schema"]["title"] for call in executor.calls] == [
+    |                                                                                         ^
+131 |             "NativeWriterOutput", "AmendmentJudgment", "WriteBackFinding"
+132 |         ]
+    |
+
+E501 Line too long (128 > 88)
+   --> tests/chains/test_native_fire.py:565:89
+    |
+563 |         operation_name="native-fixture",
+564 |         workspace="fixture",
+565 |         marker_prefixes={"ruling": "native-fixture-ruling", "amendment": "native-amendment", "escalation": "native-escalation"},
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+566 |         issue_labels={"decision": "decision"},
+567 |     )
+    |
+
+E501 Line too long (119 > 88)
+  --> tests/domain/test_amendment.py:68:89
+   |
+66 |             verdict="holds", artifact=TrackerArtifact(
+67 |                 surface=WritableSurface(kind=SurfaceKind.MARKER_COMMENT,
+68 |                                         ref=ScopeRef(kind=ScopeKind.ISSUE,key=identity), marker="[amendment:fixture]"),
+   |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+69 |                 native_ref="actual-record", content="Fixture of an independently verified record.",
+70 |             ), rounds=(WriteBackFinding(verdict="holds", evidence="Fixture verified.", cited_refs=()),),
+   |
+
+E501 Line too long (99 > 88)
+  --> tests/domain/test_amendment.py:69:89
+   |
+67 |                 surface=WritableSurface(kind=SurfaceKind.MARKER_COMMENT,
+68 |                                         ref=ScopeRef(kind=ScopeKind.ISSUE,key=identity), marker="[amendment:fixture]"),
+69 |                 native_ref="actual-record", content="Fixture of an independently verified record.",
+   |                                                                                         ^^^^^^^^^^^
+70 |             ), rounds=(WriteBackFinding(verdict="holds", evidence="Fixture verified.", cited_refs=()),),
+71 |         )),
+   |
+
+E501 Line too long (104 > 88)
+  --> tests/domain/test_amendment.py:70:89
+   |
+68 |                                         ref=ScopeRef(kind=ScopeKind.ISSUE,key=identity), marker="[amendment:fixture]"),
+69 |                 native_ref="actual-record", content="Fixture of an independently verified record.",
+70 |             ), rounds=(WriteBackFinding(verdict="holds", evidence="Fixture verified.", cited_refs=()),),
+   |                                                                                         ^^^^^^^^^^^^^^^^
+71 |         )),
+72 |     )
+   |
+
+E501 Line too long (136 > 88)
+   --> tests/domain/test_amendment.py:230:89
+    |
+230 | …_publication", "unverified", "wrong_issue", "duplicate", "uneconomic_without_escalation"])
+    |                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+231 | …nrelated_canonical_evidence(mutation):
+232 | …
+    |
+
+E501 Line too long (93 > 88)
+   --> tests/domain/test_amendment.py:238:89
+    |
+236 |         value["publication"]["record"]["verdict"] = "unverifiable"
+237 |     elif mutation == "wrong_issue":
+238 |         value["publication"]["record"]["artifact"]["surface"]["ref"]["key"] = "another-issue"
+    |                                                                                         ^^^^^
+239 |     elif mutation == "uneconomic_without_escalation":
+240 |         value["reason"] = "cost_measured_uneconomic"
+    |
+
+E501 Line too long (108 > 88)
+   --> tests/domain/test_amendment.py:242:89
+    |
+240 |         value["reason"] = "cost_measured_uneconomic"
+241 |     with pytest.raises(ValidationError):
+242 |         AmendmentReport.model_validate({"verdicts": [value, value] if mutation == "duplicate" else [value]})
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^
+    |
+
+E501 Line too long (121 > 88)
+  --> tests/domain/test_criterion_amendment_fields.py:22:89
+   |
+22 | @pytest.mark.parametrize("replacement", ["new\n**Do:** injected", "new\n**Check:** duplicate", "new\n<!-- unterminated"])
+   |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+23 | def test_replacement_cannot_change_the_meaning_of_another_template_field(replacement):
+24 |     body = "**Check:** old\n**Do:** existing\n**Evidence:** old evidence"
+   |
+
+E501 Line too long (104 > 88)
+  --> tests/domain/test_criterion_amendment_fields.py:31:89
+   |
+29 | def test_duplicate_native_rows_refuse_before_replacement():
+30 |     with pytest.raises(ValueError, match="unambiguous"):
+31 |         replace_criterion_fields("**Check:** first\n**Check:** second\n", replacements={"Check": "new"})
+   |                                                                                         ^^^^^^^^^^^^^^^^
+   |
+
+E501 Line too long (105 > 88)
+   --> tests/services/test_applied_native_amendments.py:239:89
+    |
+238 | @pytest.mark.parametrize("ground", list(AmendmentGround))
+239 | async def test_ruling_amendment_preserves_native_occurrence_question_and_prior_bytes(repository, ground):
+    |                                                                                         ^^^^^^^^^^^^^^^^^
+240 |     from kodezart.domain.rulings import render_ruling
+241 |     from kodezart.services.ruling_records import RulingRecordReader
+    |
+
+E501 Line too long (91 > 88)
+   --> tests/services/test_applied_native_amendments.py:248:89
+    |
+247 |     port = tracker()
+248 |     ruling = Ruling.model_validate(ruling_data(issue_ref=SUBJECT, authored_by="principal"))
+    |                                                                                         ^^^
+249 |     body = render_ruling(ruling=ruling, lane_key="historical:café/lane", marker_prefixes={"ruling": "fixture-pinned"})
+250 |     original = await port.post_comment(issue_key=SUBJECT, body=body)
+    |
+
+E501 Line too long (118 > 88)
+   --> tests/services/test_applied_native_amendments.py:249:89
+    |
+247 |     port = tracker()
+248 |     ruling = Ruling.model_validate(ruling_data(issue_ref=SUBJECT, authored_by="principal"))
+249 |     body = render_ruling(ruling=ruling, lane_key="historical:café/lane", marker_prefixes={"ruling": "fixture-pinned"})
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+250 |     original = await port.post_comment(issue_key=SUBJECT, body=body)
+    |
+
+E501 Line too long (91 > 88)
+   --> tests/services/test_applied_native_amendments.py:256:89
+    |
+254 |             payload["replacement"] = {
+255 |                 "kind": "ruling", "subject": {"kind": "ruling", "id": ruling.ruling_id},
+256 |                 "resolution": "The corrected answer follows the reproduced base evidence.",
+    |                                                                                         ^^^
+257 |                 "rejected_alternative": "The independently refuted prior reading.",
+258 |                 "repo_evidence": ["policy.py"],
+    |
+
+E501 Line too long (123 > 88)
+   --> tests/services/test_applied_native_amendments.py:261:89
+    |
+259 |             }
+260 |
+261 |     executor = Executor(reproduced=True, ground=ground, subject={"kind": "ruling", "id": ruling.ruling_id}, mutate=answers)
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+262 |     service, guard, workspace, _ = await build(repository, executor, port=port)
+263 |     try:
+    |
+
+E501 Line too long (206 > 88)
+   --> tests/services/test_applied_native_amendments.py:270:89
+    |
+268 | …
+269 | …
+270 | …g(operation_name="fixture", workspace="fixture", marker_prefixes={"ruling": "fixture-pinned"})).read_issue(issue_key=SUBJECT)
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+271 | …
+272 | …
+    |
+
+E501 Line too long (123 > 88)
+   --> tests/services/test_applied_native_amendments.py:289:89
+    |
+287 | @pytest.mark.parametrize("boundary", ["author", "verification"])
+288 | @pytest.mark.parametrize("change", ["check", "outage"])
+289 | async def test_amendment_refuses_external_authority_drift_across_fresh_sessions(repository, monkeypatch, boundary, change):
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+290 |     from kodezart.domain.amendment import NativeWriteRefusalError
+291 |     from kodezart.domain.errors import FireSpecEntryError
+    |
+
+E501 Line too long (151 > 88)
+   --> tests/services/test_applied_native_amendments.py:301:89
+    |
+299 | …
+300 | …
+301 | …ntTextOutput") or (boundary == "verification" and title == "WriteBackFinding" and verifies == 2):
+    |                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+302 | …
+303 | …
+    |
+
+E501 Line too long (145 > 88)
+   --> tests/services/test_applied_native_amendments.py:304:89
+    |
+302 | …
+303 | …
+304 | …model_copy(update={"body": current.body.replace("the check", "a concurrent different check")})
+    |                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+305 | …
+306 | …
+    |
+
+E501 Line too long (92 > 88)
+   --> tests/services/test_applied_native_amendments.py:315:89
+    |
+313 |         with pytest.raises((NativeWriteRefusalError, FireSpecEntryError)):
+314 |             await drive(service, guard, repository)
+315 |         assert not await git(repository[0], "ls-remote", "origin", "refs/heads/native-test")
+    |                                                                                         ^^^^
+316 |         assert await git(repository[0], "log", "native-test", "--format=%s", "-1") == "newer writer starting point"
+317 |         if boundary == "author":
+    |
+
+E501 Line too long (115 > 88)
+   --> tests/services/test_applied_native_amendments.py:316:89
+    |
+314 |             await drive(service, guard, repository)
+315 |         assert not await git(repository[0], "ls-remote", "origin", "refs/heads/native-test")
+316 |         assert await git(repository[0], "log", "native-test", "--format=%s", "-1") == "newer writer starting point"
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+317 |         if boundary == "author":
+318 |             assert "the amended observable Check" not in port.issues[DIRECT_OWED].body
+    |
+
+E501 Line too long (96 > 88)
+   --> tests/services/test_native_amendments.py:123:89
+    |
+121 |                     "do": "the amended implementation guidance",
+122 |                 },
+123 |                 "explanation": "The independently reproduced ground requires this text change.",
+    |                                                                                         ^^^^^^^^
+124 |             }
+125 |         elif title == "CommitMessageOutput":
+    |
+
+E501 Line too long (94 > 88)
+   --> tests/services/test_native_amendments.py:167:89
+    |
+166 | async def build(
+167 |     repository, executor, *, prompt_set="claude-opus", port=None, gate=None, repo_url=REPO_URL
+    |                                                                                         ^^^^^^
+168 | ):
+169 |     repo, base = repository
+    |
+
+E501 Line too long (173 > 88)
+   --> tests/tracker/test_native_criterion_amendment.py:168:89
+    |
+166 | …
+167 | …ue description.",
+168 | …, surface=WritableSurface(kind=SurfaceKind.ISSUE_DESCRIPTION, ref=ScopeRef(kind=ScopeKind.ISSUE, key=KEY))),
+    |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+169 | …
+170 | …ue description."
+    |
+
+E501 Line too long (179 > 88)
+   --> tests/tracker/test_native_criterion_amendment.py:180:89
+    |
+178 | …
+179 | …
+180 | …urface=WritableSurface(kind=SurfaceKind.ISSUE_DESCRIPTION, ref=ScopeRef(kind=ScopeKind.ISSUE, key="another"))),
+    |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+181 | …
+182 | …
+    |
+
+E501 Line too long (118 > 88)
+   --> tests/tracker/test_native_criterion_amendment.py:185:89
+    |
+185 | @pytest.mark.parametrize("holder,kind", [(" ", SurfaceKind.ISSUE_DESCRIPTION), (HOLDER, SurfaceKind.ISSUE_LABEL_SET)])
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+186 | def test_description_authority_has_only_two_real_description_surfaces(holder, kind):
+187 |     with pytest.raises(ValueError):
+    |
+
+E501 Line too long (129 > 88)
+   --> tests/tracker/test_native_criterion_amendment.py:188:89
+    |
+186 | def test_description_authority_has_only_two_real_description_surfaces(holder, kind):
+187 |     with pytest.raises(ValueError):
+188 |         DescriptionWriteAuthority(holder=holder, surface=WritableSurface(kind=kind, ref=ScopeRef(kind=ScopeKind.ISSUE, key=KEY)))
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+
+Found 67 errors (2 fixed, 65 remaining).
+14 files reformatted, 3 files left unchanged

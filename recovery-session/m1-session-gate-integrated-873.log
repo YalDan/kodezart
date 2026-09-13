@@ -1,0 +1,40 @@
+...................F.................................................... [ 24%]
+........................................................................ [ 49%]
+........................................................................ [ 73%]
+........................................................................ [ 98%]
+.....                                                                    [100%]
+=================================== FAILURES ===================================
+_ TestAFailedPassGivesTheWakeUpBack.test_a_tick_cancelled_on_its_budget_keeps_its_window_too _
+
+self = <tests.services.test_dispatch_pass.TestAFailedPassGivesTheWakeUpBack object at 0x10df1ee10>
+
+    async def test_a_tick_cancelled_on_its_budget_keeps_its_window_too(
+        self,
+    ) -> None:
+        """A timed-out pass may not eat the wake-up either.
+    
+        Driven as a real cancellation — the scheduler abandons a tick that
+        outran its timeout — rather than as a raised ``CancelledError``,
+        because what has to survive is the unwind and not an exception
+        type.
+        """
+        tracker = FakeTrackerPort(issues=[make_tracker_issue("K-1")])
+        pass_, guard, dispatcher = failing_tick(tracker, block=asyncio.Event())
+    
+        with pytest.raises(TimeoutError):
+            await asyncio.wait_for(
+                pass_.run(TICK_STARTED_AT),
+                timeout=SETTLE_DELAY_SECONDS,
+            )
+    
+>       assert dispatcher.calls == 1, "the pass was entered and then abandoned"
+E       AssertionError: the pass was entered and then abandoned
+E       assert 0 == 1
+E        +  where 0 = <tests.services.test_dispatch_pass._FailingDispatcher object at 0x10e0dbc20>.calls
+
+tests/services/test_dispatch_pass.py:563: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 23:02:15 [info     ] pass_gate_delta                changed=['K-1'] mark=2026-01-01T00:00:00+00:00 signals=['approved_changed'] unanswerable=[]
+=========================== short test summary info ============================
+FAILED tests/services/test_dispatch_pass.py::TestAFailedPassGivesTheWakeUpBack::test_a_tick_cancelled_on_its_budget_keeps_its_window_too
+1 failed, 292 passed in 23.71s

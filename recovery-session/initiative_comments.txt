@@ -1,0 +1,654 @@
+a6a8fbf8-fe79-4420-8e54-e40a788fb7f0 2026-09-12T11:27:07.049Z Goofy
+Implementation run resumed from the required Notion page and latest recovery checkpoint. Remote PR #107 is still `55a87a5009e1816d1d87c130a7f46a2a83a9f37e`; the recovery siblings remain open. Rebuilding the complete live issue/dependency frontier in parallel with locating/reconciling isolated implementation checkouts (estimate 10–15 minutes). Existing reviewer verdicts are preserved. No fresh verification or initiative completion is claimed; further implementation follows the current lane contracts and settled rulings.
+
+001280af-0927-4971-b9f4-3d1be3f78e1b 2026-09-12T11:16:57.841Z Goofy
+Starting a fresh canonical repository gate on unchanged PR107 `55a87a5` in an isolated checkout; locked dependency sync completed. Estimated local duration: 30–40 minutes. This establishes the actual baseline while KOD-815, KOD-753 and KOD-163 repairs proceed in separate worktrees; it is not release-completion evidence. New ruling reads also show that the earlier recovery plan's lane-claim mechanism and native criteria-cache prescription require correction against current KOD-747 and KOD-814 contracts. Specific limitations are being recorded on their owning issues.
+
+2c676fde-53f7-48a7-aff0-542e1fa4cda5 2026-09-12T11:13:02.943Z Goofy
+Implementation resumed from the September 12 recovery plan (comment 9eda0ca2-d237-4407-bf70-d81d1353c582). Current GitHub heads revalidated: PR107 remains `55a87a5009e1816d1d87c130a7f46a2a83a9f37e`; sibling PRs remain divergent drafts. The old September 8 continuation is historical, not the current implementation baseline.
+
+Three Astra-ultra delegates are independently checking current authority rulings, the KOD-815/L9 state handoff, and selective sibling-delta disposition while I prepare an isolated canonical recovery checkout. Initial reconciliation: approximately 10–15 minutes. Local filesystem and GitHub network are available in this run, so fresh execution proof is now possible. No fresh test result or completion claim yet; existing reviewer-owned issue states will be preserved.
+
+9eda0ca2-d237-4407-bf70-d81d1353c582 2026-09-12T11:05:10.942Z Goofy
+[initiative recovery plan · 2026-09-12 · review complete to available source/tracker evidence]
+
+## Executive diagnosis
+
+The v0.3 initiative is **not failing because the implementation lanes are empty**. Most lanes contain substantial typed domain logic and isolated tests. It is failing because the system has accumulated **unresolved authority decisions, divergent stacked branches, and production composition seams that still boot older/parallel authorities instead of the new lane implementations**.
+
+The recurring defects are:
+
+1. **Authority duplication:** configured run-event state table vs direct `TrackerLifecycleWriter` transitions; union verifier named `DeliveryCoordinator` vs the missing L5 landing coordinator; readback `LaneReport` vs the missing L6 delivery vector.
+2. **Implemented-but-unreachable components:** `ScopeDispatcher`, Organize admission, run-shape predicates, audit readers all exist but are not selected/scheduled by production composition for the required lane behavior.
+3. **Unclosed contracts:** KOD-787/KOD-751 approval placement, KOD-788 lease-holder composition, KOD-797 plateau/budget representation, KOD-783 stall behavior, KOD-781 terminal vocabulary, plus the KOD-806 founder architecture review.
+4. **Stack drift:** PR107 is the reviewed integration baseline at `55a87a5`; sibling drafts were cut from older `3f942fb...`. PR108, for example, is 3 commits ahead but 14 behind PR107. Treating these as independent merge candidates would replay old topology and multiply conflicts.
+5. **Semantic judgment implemented as heuristics:** the competing amendment reconciler drafts (PR112/PR115) turn semantic grounds into path/substring/quote tests. That is the wrong side of the deterministic/agent boundary.
+
+The initiative should remain **At Risk** until the authority rulings and canonical composition are repaired. No fresh full test suite was executed during this source/tracker review, so historical green counts are not release evidence.
+
+---
+
+# Ordered healing plan
+
+## Phase 0 — Close the contracts before writing more machinery
+
+Resolve the small set of decisions that change architecture. Do this first so repair work is not invalidated by another ruling.
+
+**0A. Approval contract — KOD-787 + KOD-751.** Choose one legible rule for unapproved members and one owner for the open-decision/Backlog-criterion barrier. The current shipped state—unapproved members silently disappearing—is not acceptable because an unapproved scope can look identical to an exhausted scope. Whatever is chosen must be visible as a typed refusal or typed exclusion, never absence.
+
+**0B. Write-lease owner — KOD-788.** Name exactly one composed component that acquires/renews/releases the writable surface set under the run job id, and name the source of its duration (`tracker_surface_lease_seconds` through subsystem configuration). Do not add a second lease implementation; use the repaired KOD-747 arbitration primitive.
+
+**0C. Run-event put-back semantics — KOD-797.** Decide how plateau/budget restoration is representable in the table KOD-750 already ruled to be the sole issue-state writer. The chosen effect must stay vendor-neutral and be applied only behind the tracker port.
+
+**0D. Stall exit — KOD-783.** Reconcile the amendment with the old unconditional In Review behavior and explicitly retire/amend any obsolete guard criterion rather than leaving contradictory tests.
+
+**0E. Lane-terminal vocabulary — KOD-781.** Close the three-terminal-vs-four-report-state fork. Preserve the useful distinction that `UNREPORTED` is an alarm/readback state, not convergence.
+
+**0F. KOD-806 architecture ruling.** The source review evidence is now on KOD-806. The practical cut observed across v0.3 is: semantic judgment belongs in typed structured agent calls; identity, ownership, topology, exact tracker facts, total mappings and replayable arithmetic stay deterministic. Founder decides the final interpretation before KOD-797/table work expands.
+
+**Exit gate:** no implementation criterion in the recovery path is blocked on an unresolved founder/Organize decision that changes its public contract.
+
+---
+
+## Phase 1 — Collapse the branch stack to one canonical integration branch
+
+Use PR107 head `55a87a5` as the reviewed v0.3 evidence baseline. Create/rebase one canonical integration line from it (and, when ready, onto the current target branch). Do **not** merge the sibling drafts independently.
+
+**Preserve/rebase selectively:**
+- **PR108:** preserve the CriterionClass removal aligned with KOD-753; KOD-818 was narrowed and is not a rollback reason. Clean stale class prose in tracker/tests separately.
+- **PR110:** preserve the clean two-composition/one-downstream-node-set design for tracker-native fire, but do not integrate it as complete until KOD-815 is fixed.
+- **PR116:** preserve the typed run-event stream / run-alarm persistence capabilities and the useful scope-read fixes, after rebasing against the repaired L1/L4 surfaces. It is persistence inventory, not proof of L8 composition.
+- **PR114:** harvest its union/composition tests. It changes tests only and does not supply L5 landing runtime.
+- **PR117:** harvest its criterion-resolution tests. It is not a production lane implementation.
+
+**Supersede rather than merge both:**
+- **PR112 + PR115:** choose neither implementation wholesale. Preserve useful typed amendment claim/verdict records and PR115's retained repeat-refusal reporting, but replace semantic ground reproduction with one structured-output reconciler. Deterministic code may validate identities, base SHA, referenced files/quotes, output schema and write ordering; it should not infer `UNSATISFIABLE_AT_BASE` or similar semantic conclusions from path/string shape.
+
+Every harvested delta gets rebased once onto the canonical line, with its owning Linear criterion re-run there. Close/supersede sibling PRs only after their unique accepted delta is represented on the canonical branch.
+
+**Exit gate:** one branch contains every accepted unique delta; no release-required behavior exists only on a divergent draft; every sibling has an explicit preserve/supersede/test-only disposition.
+
+---
+
+## Phase 2 — Repair the authority foundation: L1 then L4
+
+### L1 / KOD-73
+Keep the existing strong port/value layer: exact four `ScopeKind`s, vendor-neutral `ScopeRef`, container/subtree reads, live approval ancestry, writer identity, separate process-claim vs run-job lease identities.
+
+Repair only the missing authority/composition:
+- implement the Phase-0 approval decision at the named boundary;
+- compose the single KOD-788 surface-lease consumer;
+- require lease policy + writer attribution at boot;
+- route every protected tracker write through held surfaces and typed refusal on missing/lost/expired ownership.
+
+Do not create another approval reader, another lease service, or a vendor state vocabulary in the domain.
+
+### L4 / KOD-76
+Apply KOD-750 literally: `OperationConfig.run_event_states` is the sole issue-state authority.
+- add one typed `apply_run_event(...)` seam behind the tracker port;
+- existing lifecycle callbacks emit typed events into it or disappear;
+- remove direct stage selection / preclaim-state strings from services;
+- implement the KOD-797 effect once;
+- DERIVED/NO_TRANSITION remain total and provably non-moving;
+- preserve event history as append-only facts.
+
+**Exit gate:** source search/conformance proves exactly one issue-state application seam; no lifecycle service directly selects tracker workflow state; all protected writes execute under the composed run-job lease.
+
+---
+
+## Phase 3 — Make scoped execution actually boot: L3 + L9
+
+### L3 / KOD-75
+`ScopeDispatcher` already contains the live scope-ready behavior, but `build_dispatch_passes()` currently constructs plain `FireDispatcher` instances. Fix composition, not arithmetic.
+- production composition explicitly selects/builds the scope producer for approved `ScopeRef` execution;
+- one walk tick rereads the live plan/gap, applies the ruled approval behavior, skips marked/external-owned residuals, resolves the three-arm base, dispatches only ready lanes, and rereads next tick;
+- no future schedule is cached;
+- keep topology/priority arithmetic pure and reproducible.
+
+### L9 / KOD-105 + KOD-815
+Preserve PR110's graph partition: tracker-native arm physically omits ticket/criteria generation and authored artifact nodes while sharing downstream execution nodes.
+
+Complete its **data** contract:
+- read a frozen `TrackerSpec` once at native entry;
+- carry subject/ticket and id-keyed criterion refs/Checks into the same typed `FireSpec = AuthoredSpec | TrackerSpec` consumed downstream;
+- use one pure total formatter; prove authored bytes unchanged;
+- reread criterion states/Checks at required loop/remediation barriers; tracker outage halts;
+- persist only tracker criterion resume/ref identity, not a generated ticket artifact or second ledger.
+
+**Exit gate:** a production-constructor integration test dispatches one ready scoped lane through the tracker-native graph to the shared implementation loop, while a blocked lane does not launch. Authored single-ticket behavior remains byte/graph compatible.
+
+---
+
+## Phase 4 — Compose Organize as the one spec-preparation owner: L2
+
+KOD-74 already has a strong `OrganizeAdmission` boundary and configured `MandateSpec` vocabulary. What is missing is the scope-grain coordinator/node.
+
+Build one owner around existing pieces:
+`live source reread → fresh assess session → typed route → author under L1 lease → fresh verify session → bounded repair/stop → configured terminal marker`.
+
+Run exactly GROOM → TICKET → CRITERIA from the operation mandate table. Mint criterion subissues idempotently. Human-decision refusal becomes a legible blocker. Organize prepares work and **never ticks or executes a fire**.
+
+Do not introduce string-literal stage markers or another admission abstraction.
+
+**Exit gate:** an approved multi-issue scope reaches fireable tracker state using exactly the configured three mandates; assessment and verification never share/resume a session; revision drift invalidates stale admission; rerun is idempotent.
+
+---
+
+## Phase 5 — Build the missing landing runtime: L5
+
+Keep the current `DeliveryCoordinator.verify()` behavior as the union-composition verifier (rename it if needed to make ownership obvious). It is not the KOD-77 landing coordinator.
+
+Add the actual lane delivery service:
+- `deliver(...) -> LaneDelivery`;
+- receives the L3-resolved head/base;
+- opens exactly one PR at that base;
+- watches the configured check roster;
+- routes red through the single `CheckRedClass` vocabulary before remediation;
+- remediates only `WORK_DEFECT`;
+- **never merges and never changes tracker workflow state**;
+- returns the canonical typed `{issue/outcome/pr/branch/...}` delivery record.
+
+Union composition stays scope-grain and read-only; lane landing stays lane-grain. Do not combine them to save a class.
+
+**Exit gate:** capability-level test proves the landing coordinator has PR-open/check-read capability but no merge/state-write capability, and production composition calls it immediately after a lane fire.
+
+---
+
+## Phase 6 — Close the scope and supervise it: L6 + L8
+
+### L6 / KOD-78
+Preserve `LaneReportCollection`'s useful fixed-roster/duplicate/UNREPORTED checks as tracker readback infrastructure, but do not pretend it is the terminal delivery vector.
+
+Consume the canonical L5 `LaneDelivery` records:
+- enforce exact dispatched roster/arity and preserve issue/PR/branch identity;
+- reread referenced tracker/forge facts before convergence;
+- compute exactly the ruled three terminal outcomes;
+- typed durability + privacy/reference classification before rendering;
+- aggregate report writes only to the scope container;
+- no body/checklist parsing.
+
+### L8 / KOD-103
+Keep the typed `RunAlarm`/subject model and pure S1–S7/folded predicates.
+- add one tracker-only supervisor service;
+- compose it at exactly two cadences: after each walker tick and after each lane exit;
+- upsert at most one addressed alarm under the alarm-marker lease;
+- append the two NO_TRANSITION events through the L4 event seam;
+- no model/repository read, no workflow-state move, no fallback if capability/table is absent.
+
+**Exit gate:** fixed-roster terminal integration reaches each of the three outcomes; an unreported member prevents convergence; repeated identical alarm address upserts rather than multiplies; both supervisor call sites execute and cannot move workflow state.
+
+---
+
+## Phase 7 — Make audit a real scheduled second reader: L7
+
+Preserve the existing strong reader core: fresh exact-head workspaces, assertion/source restamping, detector-removal/overclaim/forge arms, explicit unavailability.
+
+Add the missing runtime owner:
+- exactly one `ScheduledPass` with the two configured cadences;
+- a separate publisher consumes only complete typed observations;
+- total write table over `AuditVerdict`: REFUTED = criterion Done→Todo + evidence + parent rollup; ordinary UNVERIFIABLE = no write; lapse-unverifiable = ruled In Review arm;
+- sanitization before outward evidence text;
+- every write goes through the canonical `WriteBackVerifier`: reread → verify with `session_id=None` → bounded repair;
+- iteration/round count is never accepted as proof.
+
+**Exit gate:** production boot proves one audit pass registration and the three verdict arms produce exactly the specified tracker effects on exact current branch/SHA evidence.
+
+---
+
+## Phase 8 — End-to-end release proof on the canonical branch
+
+Do not infer readiness from unit coverage or historical `make check` counts. Run fresh proof at the final canonical SHA.
+
+Required proof stack:
+
+1. **Contract/conformance:** tracker port on fake + Linear adapter; scope kinds/read completeness; writer identity; claim + surface lease interleavings; event-table totality; exact one state seam.
+2. **Lane-focused tests:** each KOD-73/74/75/76/77/78/79/103/105 acceptance contract, including the previously refuted edge cases.
+3. **Production-constructor integration:** approved multi-lane scope with blocker DAG, external-owned residual, criterion drift, PR/check delivery, one red-classification case, alarm tick/exit, scope terminal, and audit writeback. Assert that the components used are the production composition—not manually instantiated test substitutes.
+4. **Legacy compatibility:** authored fire path unchanged, existing HTTP/authored behavior remains valid, no new route required for scoped execution.
+5. **Full repository gate:** fresh full `make check` (or the repository's current canonical gate) at the exact release SHA, with result recorded on the initiative/PR.
+6. **Live tracker probe where adapter semantics matter:** ownership/lease, event append/read order, alarm upsert, and any writeback verification behavior not falsifiable through the fake alone. Clean probe artifacts afterward.
+7. **Repository hygiene:** no stale CriterionClass references that imply live grading; no unused duplicate coordinators/enums/settings; docs/config example/migration notes reflect the actual composed behavior; no suppressions or compatibility shims hiding type errors.
+
+**Release acceptance:** every lane parent is Done or explicitly superseded; every remaining open decision is outside v0.3 scope; every accepted sibling delta is present on the canonical SHA; PR checks are green on that SHA; the integration branch is mergeable; and the end-to-end scope fixture reaches a terminal result without test-only wiring.
+
+---
+
+## Phase 9 — One merge to `main`, then cleanup
+
+Once Phase 8 is green, merge the single canonical v0.3 integration PR to current `main`. Do not merge the old sibling PRs afterward. Mark them superseded/close them with links to the canonical commits that preserved their accepted deltas. Update Linear lane/criterion states from the fresh release evidence, publish the final initiative status, and keep the Notion review ledger as provenance—not as the runtime source of truth.
+
+## Lane health at this checkpoint
+
+- **L1 KOD-73:** strong typed foundation; blocked by approval + composed lease authority.
+- **L2 KOD-74:** strong admission/mandate primitives; missing Organize coordinator + production composition.
+- **L3 KOD-75:** planner/walker implementation exists; scope producer not boot-composed; live rulings remain.
+- **L4 KOD-76:** typed/validated table exists; direct lifecycle writer still bypasses it.
+- **L5 KOD-77:** actual landing coordinator / `LaneDelivery` runtime absent; current class is union verifier.
+- **L6 KOD-78:** roster/readback primitives exist; canonical delivery-vector terminal runtime absent.
+- **L7 KOD-79:** reader core strong; scheduled publisher/writeback composition absent.
+- **L8 KOD-103:** typed alarms/pure predicates strong; supervisor persistence/cadence composition absent.
+- **L9 KOD-105:** PR110 graph split is structurally good; native state/spec handoff incomplete (KOD-815).
+
+**Overall:** heal by reducing authority and composing existing good primitives, not by adding another generation of parallel services.
+
+38a17e03-2790-48c4-b632-97d753c6bee3 2026-09-12T08:29:40.068Z Goofy
+Review tracker note: Linear write access is available in this session. I’ll use Linear as the canonical review/change-request surface, with Notion holding only the working plan/progress log and links back to Linear. I’ll keep code-local findings on the relevant Linear review/issue, avoid duplicating issue content in Notion, and finish with an initiative-level recovery update that a coding agent can execute.
+
+fc27f7d7-4bc7-45cf-8852-077a763af713 2026-09-12T08:15:12.485Z Goofy
+The [canonical evidence inventory and PR lane map](https://linear.app/duckburg/document/v03-architecture-review-evidence-inventory-and-pr-lane-map-2026-09-12-be41ea8bf9f3) now holds the pinned comparison points, open-PR population, additional branch heads, target framework versions and detailed coverage/execution limitations. The [Notion checkpoint](https://app.notion.com/p/3d9f89e34d1081b8a94cee5a498ab926?pvs=204) stores only the plan, completed work and next/open actions and links back here. Initial source inspection is underway; no lane-complete or new test-pass claim is made.
+
+6d229e59-466b-4f92-8a7f-a89b3af08d69 2026-09-12T07:51:54.904Z Goofy
+## Architecture and regression review — 2026-09-12
+
+Review authorized by the user. This thread is the review index; findings will be recorded on their owning lane/criterion issues and relevant Linear PR review surfaces. No implementation changes, PR merges, branch rewrites, or automatic Done transitions are part of this review.
+
+**Baselines:** v0.3 integration head `55a87a5009e1816d1d87c130a7f46a2a83a9f37e` (PR #107); pre-handover checkpoint `b89db2ac025d33844b2430bec82e3e01d4a640b4` (PR #103); remaining branch heads will be recorded separately. Immediate stacked PR diffs are not the cumulative change against main.
+
+**Review lenses:** SOLID, DRY, hexagonal boundaries, KISS, unnecessary heuristic machinery versus typed agent calls, official FastAPI/Pydantic/LangGraph practices at locked versions, type-safety improvement/regression/neutral, and repository hygiene. Structured agent output is a first-class typed boundary; structural validity and semantic correctness are evaluated separately.
+
+Existing accepted findings and amendments under KOD-744 will be rechecked rather than duplicated. Model/author attribution is not itself evidence of regression. Each finding needs a pinned source location, consequence, smallest correction, and verification requirement. Coverage and unexecuted checks will remain explicit. Current stage: inventory and source inspection; no complete audit or passing test run claimed.
+
+14f35601-c9f8-4661-b671-5a6ba1e89e24 2026-09-12T08:15:09.413Z Goofy
+Review continuity checkpoint — 2026-09-12.
+
+The user requested a lightweight Notion tracker for plan, completed review coverage, open work and resume state. The existing [assistant working notes](https://app.notion.com/p/3d4f89e34d1081018a12c8991e5e9ae3) now have an Active architecture review section; the historical log is preserved. Linear remains the canonical surface for findings and requests for changes, referenced from Notion rather than copied.
+
+The historical log is explanatory evidence only: agent-written justifications, old test summaries and claimed decisions will be checked against source, current accepted requirements and actual observations. No model-author attribution is itself a defect. Current work is branch/PR ancestry and coverage inventory; no complete audit or independent passing test run is claimed.
+
+e459b54f-2703-4251-8391-e56473558c99 2026-09-09T15:16:26.152Z Goofy
+[amended 2026-09-09 · founder ruling recorded on KOD-747] — one referencing sentence in the "One writer per surface" ruling. The ruling itself is untouched.
+
+**The clause as it stood:**
+> KOD-58's **atomic claim** answers *who may FIRE an issue*; nothing on the board answered *who may WRITE a surface*, and those are different exclusions — only one of them exists today.
+
+**Why.** The founder ruled today that **a lane carries a mark while it is worked, and the walker reads the mark and skips it**, retiring the claim-with-a-lease. The fire-level exclusion is now that mark, so naming KOD-58's atomic claim as the thing this ruling contrasts itself against pointed at a retired mechanism. Only the contrast changed; the contrast still holds, and "only one of them exists today" is still true — a lane-level exclusion exists in the code, and `acquire_surfaces` / `renew_surfaces` / `release_surfaces` still have no call site in `src`.
+
+**Explicitly untouched, and the reason this pass exists:** everything after that sentence — every writable surface leased exclusively through the tracker port for the duration of a run, a typed error rather than last-write-wins on an unheld write, declared non-intersecting surface sets, shared scope containers single-writer with the terminal as that writer. The founder did not speak to the write lease and this ruling does not reach it.
+
+**Two consequences worth recording rather than acting on.** The ruling makes this section's own next sentence — *"lane concurrency is safe precisely because lane surface sets are disjoint by construction"* — load-bearing rather than hypothetical, since concurrent lanes are now the ruled behaviour. And the shared-container clause is reinforced: scopes are serial queue items, so one scope run at a time means one container writer at a time.
+
+**Two other rows in this charter were checked and needed nothing** — the cron evolution table's auto-dispatch row and the standing-scopes sentence already read "with a marked lane skipped" and "skips a lane already carrying the in-progress mark". Every occurrence of "heartbeat" in this charter is the cron reconciler's liveness floor, which has nothing to do with the retired claim heartbeat; none was touched.
+
+11256b51-89d0-42d2-a7ec-d9f724fb7ca8 2026-09-09T15:11:19.616Z Goofy
+**2026-09-09 — two sentences in "Cron evolution: from workers to heartbeat" restated against the mark (KOD-747)**
+
+Founder ruling of 2026-09-09, recorded on KOD-747: a lane carries a mark while it is worked, the walker reads the mark and skips it, and the claim-with-a-lease is retired. Scopes stay serial (a scope is a queue item); lanes inside one approved scope may run concurrently. Two sentences in this description still named the retired mechanism. They read, as they were:
+
+> Approval remains the only human act at every tick; a standing reconciler cannot run away because the walker dispatches only approved, unblocked, unclaimed lanes.
+
+> | Auto-dispatch pass | The walker's ready-set tick (same eligibility arithmetic and claim semantics, scope-wide) |
+
+Both are overwritten in place: the runaway guard now reads "the walker dispatches only approved, unblocked lanes and skips a lane already carrying the in-progress mark", and the table row now reads "same eligibility arithmetic, scope-wide, with a marked lane skipped". Only those two sentences changed — the remaining 93k characters of the description are byte-identical, verified by diff after the write. The intent of the runaway guard is unchanged; only its third predicate moved from the claim to the mark.
+
+Nothing else in the charter is touched, because the rest of the concurrency vocabulary is upheld rather than changed by the ruling: STAGE 3's "for each READY lane (concurrency from config)", the worked example's `t3 … fire BOTH in parallel`, the concept map's "parallel roots; concurrency from config", Ruling B's several-open-PRs steady state, the one-writer-per-surface ruling, and the port's **exclusive write leases** capability all rest on lanes being able to be in flight together.
+
+The surface write lease is deliberately left alone: it answers *who may WRITE a surface*, which is a different exclusion from *who may FIRE a lane*, and the founder did not speak to it. The one-writer paragraph's "KOD-58's atomic claim answers who may FIRE an issue" keeps its stale referent for now — restating it would have to name the mark, and the mark's identity (an existing workflow state vs a new `scope:in_progress` label) is explicitly open. Also open, and not decided here: how many lanes may run at once and where that bound is configured, and who clears a stale mark after a crash.
+
+3ffdc516-f2bc-49c9-9422-29e35d225935 2026-09-08T07:39:58.314Z Goofy
+Current user tracking directive (2026-09-08) supersedes the earlier merge-gated completion rule: Done means the actual criterion is met, its tests pass, correctness is reviewed and nothing remains open. Merging is a separate later act; an open draft PR can correctly carry Done issues. Preserve all states set by the separate reviewer; disagreement is recorded on the issue without overwriting their verdict. Implementation continues across all lanes, with source and exercised PR coverage checked before status changes. No bulk regrading or status rewrite is being inferred from this policy change.
+
+2318a049-05c3-4c8f-bc86-7e0e43648389 2026-09-01T21:56:43.675Z Goofy
+[ruling] 2026-09-01 (founder) — **write discipline for every v0.3 prompt that touches a tracker surface: overwrite, never supersede or amend.** Verbatim: *"we also need to instruct the v03 prompts to not supersede or amend but to always just overwrite since we can read history in linear, it stores it, everything is self-documenting"*
+
+| surface | rule |
+| -- | -- |
+| issue body, criterion body, container description, milestone description | rewritten to the current state in full; no strikethrough, no "superseded / amended / void" blocks, no appended layers, no dated banners at the top of a body |
+| history | Linear's own revision history holds every prior version; nothing is copied forward to preserve it |
+| rulings | recorded once, dated, as a comment (immutable, queryable); the body's Rulings row is a one-line pointer — the body never restates or archives a ruling |
+| status updates and run-state | status updates are point-in-time and never edited; the marker-keyed run-state comment is edited in place to its current table |
+| prompts (ORGANIZE, AUDIT, evaluator, terminal) | carry this rule as an instruction and a static check over the rendered templates; a write that appends "superseded" or "amended" prose to a body is a defect AUDIT reopens |
+
+Binds KOD-74 (organize writes), KOD-79 (audit writes), KOD-76 (evaluator writes), KOD-78 (terminal writes) and KOD-255's restructure (the bodies it produces carry no archaeology).
+
+5a59ce38-dc3b-4649-a6c5-da2921716cf9 2026-09-01T21:55:14.171Z Goofy
+[ruling] 2026-09-01 (session, under the founder's directives of the same date; pinned interims the founder may amend) — **consequences settled across the lanes.** A clause-by-clause map of KOD-74/75/76/79/105 against the directive (≈200 clauses) raised these; each lane's `[amendments]` comment carries the per-lane detail.
+
+| question | ruling |
+| -- | -- |
+| what is a sub-issue | a sub-issue labelled `criterion` is a criterion; any other sub-issue is a deliverable whose own criteria are its sub-issues. A parent's Done is a read over ALL children: criterion children Done, deliverable children Done recursively. The walker never selects a criterion as an issue (label filter) |
+| what "no open blocker" means | the blocker's subtree is Done (the read) — never a merge (Ruling B); dependents stack on the blocker's branch |
+| fire terminal states | all criteria Done + PR open → the issue reads Done-by-subtree and is In Review until AUDIT confirms; plateau/budget → the issue returns to Todo with the draft PR recorded as its work ref and an escalation comment; In Review never carries Todo criteria |
+| re-dispatch | never automatic for an In Review issue; re-entry events: AUDIT refutes a criterion (its subtree is no longer Done → ready again, stacking on its own branch), a plateau put-back, or the approver reopens |
+| who cancels a criterion with supersession | the pre-loop re-validation (the session judges, the node applies) and AUDIT; the in-loop evaluator only flips Done ↔ Todo. The one line names the target key or ruling and the sha decided at |
+| a criterion FIRE finds missing | never minted in-fire: typed refusal, the issue goes back to ORGANIZE (re-entry); the write lease stays per subtree |
+| tracker unreachable mid-loop | halt the fire (the exit condition is a live query); the on-branch snapshot is a resume cache, never the exit authority; the claim lapses and the put-back rule applies |
+| lapsed / undemonstrable | lapsed = Done → In Review (re-check at head); undemonstrable-here = Canceled with a supersession naming the owner, or Todo with a `decision` — no fourth state |
+| lane-level checks | criterion sub-issues of the fire (the v0.2 practice: KOD-56, KOD-68) |
+| stage markers vs approval | `queue:approved:ticket` / `queue:approved:criteria` stay as ORGANIZE's machine phase markers; `scope:approved` is the one human act; the approval barrier refuses a scope holding a Backlog criterion or an open `decision` — narrowing the scope is the founder's lever |
+| record-shaped members | `tracker` / `decision` issues carry zero criteria and are never dispatched; AUDIT expects zero |
+| digests | one admitted-body digest per surface (issue body, each criterion body); a criterion edit lapses that criterion only |
+| AC-n identities | a criterion's identity is its sub-issue key; the old `KOD-nn-AC-m` string survives in the title for traceability |
+| forge status | the evaluator's Done needs the named test green in the worktree; "gate green at head" is the lane's own criterion; AUDIT re-verifies both |
+| AUDIT trigger and coverage | scheduled cadence (the grooming slot); delta since its mark every tick, full sweep at a configured interval; sampled mode retired; Canceled criteria: the supersession line must resolve |
+| behavioral spec for ORGANIZE | the 2026-09-01 v0.2 close-out restructure (bodies, graph, criterion trees, done by hand) supersedes the 2026-08-07 sweep as the reference output |
+| FireSpec arms | scope runs read `TrackerSpec` only; the authored arm survives as the single-issue degeneration path (an unorganized issue fired alone) |
+
+15526c96-58d4-4d0b-8955-148c07cbb2d2 2026-09-01T21:53:17.621Z Goofy
+[ruling] 2026-09-01 (founder, same session; extends the graph ruling above) — **priority, blocking and the leaf record.** Verbatim: *"somewhere in that loop should also be the priority order, basically I want an autistic record of how to implement what that lives on linear, but we need to make sure that it won't confuse an agent because something has higher prio but the other things blocks it unexpectedly on a sub issue level, but the point is the prep steps need to leave as little room for assumptions as possible s.t. the workhorse always knows exactly what to do"*
+
+| rule | statement | owner |
+| -- | -- | -- |
+| blocked beats priority | priority orders only the READY set; a blocked issue has no rank, it has a named blocker | WALK (KOD-75) |
+| priority inheritance | an issue's effective priority = max(its own, the priority of everything it transitively blocks); a low-priority blocker of urgent work is dispatched first because it blocks urgent work | WALK (KOD-75) |
+| tie-break | effective priority, then age (older first); the walker's report names, for every non-dispatched issue, the blocker or the higher-ranked winner | WALK (KOD-75) |
+| blocking lives at the issue level, by construction | ORGANIZE lifts any cross-issue dependency found on a criterion to its parent (A `blockedBy` B) or splits the parent so the dependent criteria move to A′ `blockedBy` B; a criterion may carry `blockedBy` only toward a SIBLING (order inside the issue); the planner refuses a leaf edge that leaves its parent's subtree | ORGANIZE (KOD-74) · planner (KOD-75) · audit (KOD-79) |
+| readiness is whole-subtree | an issue is ready iff every open blocker of the issue is Done — so once dispatched, the workhorse never meets a blocked leaf | WALK (KOD-75) |
+| the leaf record | each `criterion` sub-issue body = **Check** (the test or observation that proves it) · **Do** (file → change, the mechanism to reuse, the forbidden list) · **Evidence** (sha + test, filled at grading); sibling order by `blockedBy`, else creation order; leaf priority unused — the issue is the unit of priority | ORGANIZE (KOD-74) |
+| no assumptions reach the workhorse | a criterion without a determinate Do stays **Backlog**; **Todo** means fully specified; every fork ORGANIZE cannot settle is a `decision` on the issue, and the approval barrier refuses a scope with an open `decision` or a Backlog criterion in it; the fire-time ruling node (KOD-94) is the last resort, not the plan | ORGANIZE (KOD-74) · approval barrier (KOD-73) |
+| the parent stays the overview | the issue body's Fix is the shape; the leaves carry the slices; a leaf that contradicts its parent's Fix is an ORGANIZE defect the audit reopens | AUDIT (KOD-79) |
+
+7e3f8808-07d4-4ed1-9988-65013bc35f78 2026-09-01T21:43:29.932Z Goofy
+[ruling] 2026-09-01 (founder, in the v0.2 close-out session) — **the v0.3 loop adopts the criterion-sub-issue model end to end.** Verbatim: *"we actually also need to adjust the v0.3 loop to use our new approach with the sub-issues under each issue as acceptance criteria and then think about the two previous steps before the ralph loop and think about whether it should be bottom up i.e. first big picture then granular or the other way around but basically this is how it should go, and then fire prep and groom should also be adjusted to that. basically groom should really double check if state reported = actual state for each, and fire prep should work on doing the same organizing that we're doing right now, and then the workflow would just loop and loop over issues until all sub issues are done, then move on the the next, guided by what blocks what and what is what priority"*
+
+**The loop, as ruled**
+
+| stage | owner | does | exit |
+| -- | -- | -- | -- |
+| ORGANIZE (fire prep → L2, KOD-74) | judgment · breadth-first over the scope · idempotent | every issue: body on the template (Outcome · Measured · Fix · Rulings · Done when); graph hygiene (parent, `blockedBy`, `relatedTo`, priority, milestone, splits); then one `criterion` sub-issue per acceptance criterion (Check + Evidence, Todo); escalates a `decision` where a ruling is missing; sets the machine stage markers | every issue in scope organized; `scope:approved` is the one human act |
+| WALK (L3, KOD-75) | deterministic, never judges | ready set = approved issues with no open blocker, ordered by priority then age; dispatches ONE execution-only fire for the top issue | no unresolved issue left in scope |
+| FIRE (L4 KOD-76 · L9 KOD-105) | per issue | pre-loop: re-validate the issue's Todo criteria at the current head (amend or cancel-with-supersession — KOD-66, KOD-97); the ralph loop works **one criterion sub-issue at a time** — implement, evaluate that Check, flip it Done with Evidence = sha + test, re-check Done siblings for regression — until the subtree is Done, or plateau/budget ends it with a PR from the best iteration; terminal: open PR | the subtree Done → the walker takes the next issue |
+| AUDIT (groom → L7, KOD-79) | judgment · fresh context · never grades its own work | for every issue and every criterion: reported state == actual state? (table below); a refuted claim is reopened with evidence, never silently | — |
+
+**The graph — ruled 2026-09-01, founder confirmed: descend to decompose, ascend to complete.**
+
+| direction | rule |
+| -- | -- |
+| descend (the two pre-loop nodes) | the ticket node writes the parent's body; the criteria node mints its `criterion` children; they only ever create downward and never tick anything |
+| ascend (completion) | Done happens only at the leaves: the loop flips one criterion sub-issue at a time; an issue is Done because its subtree is; a milestone crosses because its issues are; the scope run ends because its milestones are — a parent's state is a read of its children, never a write; the lifecycle writer's terminal state write disappears |
+| walk (between issues) | the `blockedBy` graph is walked topologically, priority then age breaking ties; the next issue is dispatched when the current subtree is Done |
+
+**Reported vs actual — the audit's table**
+
+| reported | actual check |
+| -- | -- |
+| criterion Done | its Evidence sha is on the branch/PR; the named test exists there and passes, or the named observation is on record |
+| criterion In Review | demonstrated at a prior sha; still passes at the current head, else back to Todo |
+| criterion Todo | nothing claims it; its Check is still satisfiable at the head |
+| criterion Canceled | a one-line supersession names where the obligation went |
+| issue Done | every criterion resolved; a PR is attached; the branch exists |
+| issue In Review | PR open with its checks; every criterion In Review or Done |
+| issue In Progress | a live claim and a running job; otherwise stale → put back |
+| issue Todo / Backlog | organized: body on the template, criteria present, edges and priority set |
+| `blockedBy` | consistent with the blockers' states and refs |
+
+**Organize order (session design, stands unless the founder amends):** ORGANIZE is breadth-first over the scope — bodies and the graph for every issue, then criteria for every issue — because blockers and priority are only judgeable with the whole scope in view; criteria are validated just-in-time at dispatch, never minted there.
+
+**Consequences:** v0.2's `generate_ticket` and `generate_criteria` (the two steps before the ralph loop) move into ORGANIZE; the loop's unit becomes the criterion sub-issue and its exit condition a tracker query over the subtree; the fire-prep and grooming templates are rewritten to the ORGANIZE and AUDIT mandates in L2/L7; KOD-255 restructures the lane bodies to this shape. The v0.2 release and its finale run the v0.2 loop unchanged.
+
+f9905ebf-54c2-491c-b716-60a1f95b8c61 2026-09-01T21:24:49.367Z Goofy
+[ruling] 2026-09-01 (founder, recorded from the v0.2 close-out — KOD-56 `[ruling]` row 5): *"Track everything in Linear and keep it your source of truth. Make Linear really granular so it is easily fetchable by AI agents and easily digestible, instead of ultra-long prose and issue descriptions. Use sub-issues as acceptance criteria. Wherever we can use structure, replace prose with structure."*
+
+Binding on this initiative: (1) criteria are sub-issues labelled `criterion` (Check + Evidence; Todo / In Review / Done / Canceled-with-supersession) — the criterion-lifecycle lane's body-checklist surface is superseded (rulings recorded on KOD-104 and KOD-117); (2) issue bodies are short and templated (Outcome · Measured · Fix/Landed · Rulings · Done when), history lives in dated comments; (3) rosters, counts and config values are queries or links, never restated. The first v0.3 act is to restructure this initiative's lane bodies into criterion sub-issue trees — filed as its own issue with one sub-issue per lane when v0.3 opens.
+
+8a329829-6dab-414a-bacc-e2b263465b94 2026-08-12T13:09:30.784Z Goofy
+[decision] 2026-08-12 — founder ruling, general and binding on every lane of this initiative: **when the work is a model's, the repository's share is wiring and gates. Never a reimplementation.**
+
+**The rule.** A capability whose work is performed by a model consists of exactly three things: **a prompt, a trigger, and a grant.** The prompt renders from configuration. The trigger fires it — a cadence, an event, a dispatch. The grant is the capability the session runs with. The session then does the work through the tools it holds. What this repository owes around that is the render path, the trigger registration, and whatever deterministic gates are separately specified. Nothing else is owed, and nothing else should be built.
+
+**Why it is stated as a ruling rather than a preference — it has recurred three times in two days, each time in different clothing.** The scheduled-pass deliverable first grew roughly 2,800 lines of source and tests around a 49-line prompt, and was withdrawn. An analysis pass then prescribed rebuilding it as a *session harness and pass service*, sized at "lane-scale feature work" — the same shape, withdrawn again the same day. And the parity artifact that measures the deliverable derives one row per imperative clause of a prompt and demands an executable demonstration of each, which *structurally requires* re-expressing prompt behaviour as code in order to go green. Three different surfaces, one defect: **treating a model's instructions as a specification for code.**
+
+**The test, applied to every diff on this initiative:** *would deleting this change what the capability does?* If not, it should not exist. Some structure is admissible where something genuinely needs it, and the default assumption is that nothing does. Line count is not the measure and neither is vocabulary — a class wrapping a single render call fails the test however tidy it reads, and it is tidiness that makes this defect recur.
+
+**Consequence for how behaviour is proven.** A prompt clause is not demonstrated by a test that re-performs it. It is demonstrated by **the prompt reaching the session intact** — byte-identity against the reference text where one exists — **and the session holding equivalent capability**. Same instructions, same class of model, therefore same behaviour. Verification effort belongs on the wiring, the gates and the grants, which are code, and on one live observation that the capability runs. Any acceptance criterion that would only pass by writing code to do what a prompt says is itself the defect and is to be raised rather than satisfied.
+
+e1ee710c-4e73-42f6-b853-0c68adbf7734 2026-08-11T22:26:17.315Z Goofy
+`[stage-run-state]` Battle test of workflow stages 1+2 over this approved scope — edited in place; the record of record. **Closing entry, 2026-08-12: both barriers re-derived as arithmetic from the live board by a top-tier reader after the base-resolution ruling was applied — never read from a pass's report.**
+
+**Outcome: CONVERGED. Both barriers close.** The residual that held stage 2 open — R1, the two halted members — is **discharged**: ruled by the founder, applied to both bodies, and its ground re-derived at the base rather than inherited. No marker was set to make a barrier close; the halts were resolved by the ruling, one member returning to the roster carrying its marker and one leaving it as a record that ships nothing. R2, R3 and R4 stand exactly as they stood — none is a barrier condition, and R2's top-tier re-verification obligation is **undischarged**.
+
+## The two barriers, as arithmetic over the fireable roster
+
+| | |
+| -- | -- |
+| **Roster** | 25 members enumerated live over the project, archived included, single page, every one carrying a milestone — no orphans. **2 excluded as resolved:** each **Canceled with a recorded supersession**, verified on the member itself rather than inferred from its state — the attributable-identity member (its disposition map), and now the plan-time base-resolvability member, whose `[supersession-record]` carries the audit fields, preserves its measurement verbatim as ground, and names each salvageable fragment's owner, its body intact and unedited. Per the crossing rule, Canceled-with-recorded-supersession holds nothing open, and **both correctly carry no criteria marker** — a stamp on either would be a false completion marker. **Fireable: 23** (M1 1 · M2 4 · M3 4 · M4 8 · M5 4 · M6 1 · M7 1). The roster rule is the one the barrier itself forced: the first arithmetic correctly refused to close over a resolved member, and it refuses again here for the same reason. *(The ruling's own text anticipated closing "at 24 of 24"; the same ruling directed the cancellation that removes a member from the roster, so the derived arithmetic is 23 of 23. The board is the count's source, never a ruling's prose or a pass's report.)* |
+| **Stage 1 — ticket marker** | **23 of 23.** Every fireable member positively carries it; a missing report is OPEN, never a pass. **CLOSED.** |
+| **Stage 2 — criteria marker** | **23 of 23. CLOSED.** The last was set this pass on the plan-and-walk lane fire, after its checklist was re-derived at the current, superseded body: of its 34 criteria, **6 are marked superseded** — neither ticked nor refuted, one subject removed outright and five moved to the shipped rule — and the remaining **28 all carry a feasible verdict**, with no infeasible criterion and no stamped blocker. Their conjunction is satisfiable as a proper subset of the satisfiable set the sweep measured. |
+| **Stage 2 — authoring** | **COMPLETE** — 424 acceptance criteria written INTO the issue bodies across the 24 members then in the roster (M1 26 · M2 72 · M3 73 · M4 142 · M5 62 · M6 24 · M7 25); over the **23 fireable today that is 417** (M3 66), the 7 on the now-resolved member staying on its intact body as record rather than being deleted. Unticked, issue-qualified, provenance-footered, per the checklist ruling: no marker comments, no per-criterion comments, extraction preferred and generation marked where a body carried no done-check. Counts as the authoring pass recorded them; the validators' own set sizes corroborate them member by member. |
+| **Stage 2 — validation** | **COMPLETE over all 24 members then in the roster; all 23 fireable today are clean.** Seven independent graders, fresh context, one bounded regeneration round each: repairs applied in place on the checklist lines, three-state verdicts, conjunction satisfiability checked per set, `unverifiable`-pending-blocker stamped where admissible. Two members ended dirty and were recorded as halts rather than waved through; **both halts are discharged by the ruling in R1** — neither by a repair to criterion text, and neither by a stamp. |
+
+## Residual, as data
+
+**R1 — DISCHARGED 2026-08-12: ruled, applied, trail-audited.** One class, one cause, measured rather than argued: the milestone's central mechanism was already superseded at the declared base. The base ships base resolution as one total rule — dedupe the blockers' refs, reduce to the frontier **over commits**, then combine on three arms (trunk, the single ref, an integration base constructed by merging the tail) — and its suite was run at the declared base in a detached worktree, **26 passed, before any v0.3 work exists**. The two bodies specified the opposite mechanism: highest-index blocker plus an ancestry requirement, with a typed unstackable error that exists nowhere at the base. Under the shipped rule a fan-in lane is ordinary and resolvable, and a redundant ordering edge changes neither the base nor the recorded base spec, each with a passing test.
+
+- **Ruled.** The founder ruled the supersession on the lane fire: the highest-index-plus-ancestry clause superseded **in substance**, the typed-error clause **in full**, and the sub-issue superseded **wholly** — under the shipped rule its subject class is empty, so its deliverable is not merely unbuilt but unbuildable as specified. Two conditions are part of the ruling, not commentary: the trail must support an **independent audit** later, and it must be **pickable up again**.
+- **Applied**, machine-performed under that ruling and no other authority. On the lane fire: one appended supersession block — both superseded clauses quoted **in place with nothing deleted**, what ships instead by module path and by its three arms, the base sha and the re-derived test counts, exactly which clauses still stand and which deliverables remain unbuilt, and a **reinstatement condition** keyed to the passing tests that close both routes back, so reinstatement is a reading act and never an archaeology act. Six criteria annotated **SUPERSEDED**, no other criterion line touched. On the sub-issue: the same audit fields as a record, and Canceled with its body intact.
+- **Trail-audited.** The measurement was re-derived in a fresh detached worktree at the declared base rather than inherited, agreeing with the read-only analysis in every particular; this closing pass re-derived it once more directly against the base tree — the typed unstackable error absent everywhere under source and tests, both shipped modules present, the combining rule carrying exactly three arms with **no default arm**, and neither the planner nor the walker module existing, so the criteria resting on them rest on work that is unbuilt rather than false. One earlier stage-2 verdict was **refuted** in the course of the audit — a criterion stamped satisfied-at-base "in part" is satisfied in full, its containment half asserted by a real three-level-stack test with a negative control — and corrected on the body rather than left standing.
+- **Consequence.** The lane fire re-entered the stage-2 set and carries the criteria marker; the sub-issue left the fireable roster as a resolved record, correctly unmarked. The owner named while this was open — the ticket stage and the pre-approval grooming pass — is discharged of it, and nothing here is carried forward. One fragment of the cancelled member is **dropped openly**: a dispatch-time refusal whose remedy is unavailable where it fires is real, is not plan-time computable, and has no owner on the board today; a future pass that wants it files it fresh, with that record as its ground.
+
+**R2 — the standing tier deviation, and its re-verification obligation.** The grading tier's quota was exhausted mid-pass; all seven stage-2 validators and the terminal died at their first call with zero tool uses (transcripts and board both confirm — nothing partial, nothing lost). Validation resumed at the **writer tier**, the only tier then available. Fresh-context independence was preserved; tier **elevation** was not. Consequence, unchanged by this terminal: **every stage-2 verdict, every in-place criterion repair and every criteria-stage marker set under the deviation is PROVISIONAL**, and each carries that qualification on its own surface. **The obligation stands and is owned by the audit lane: re-verify these verdicts at the top tier before any execution run consumes them.** This terminal re-derived the **barriers** at top tier — the roster, the exclusion, and both markers, member by member. It did **not** re-derive the 424 criterion verdicts, and does not discharge the obligation.
+
+**R3 — one escalation open on the excluded member** (the attributable-identity question, the founder's to rule, under its `decision` label). Cancellation did not discharge it; its pinned interim stands; it is not a barrier condition.
+
+**R4 — `unverifiable`-pending-blocker criteria, admissible and stamped in place** — three on the audit lane, two on the terminal member, one on the supervisor lane. Each is blocked by a sibling lane's unlanded deliverable, none is a criterion-text fault, and each resolves to feasible the moment its blocker sits on the consuming lane's base.
+
+## Findings ledger this battle test filed, complete, by lane
+
+**Scope-pass lane — 10 findings, 1 correction.** Seven stage-1 grooming holes, one per milestone: a member that can never be fireable, with the barrier arithmetic unable to express it (M1) · six holes on the scope-pass milestone itself (M2) · the plan-and-walk holes (M3) · six on the criterion-lifecycle model (M4) · six on deliver-and-terminate (M5) · two on the audit lane, of which **item 2 was later WITHDRAWN by verification and item 1 stands** (M6) · two on the run supervisor (M7). Then, from stage 2: **validator drivability** — the shipped feasibility contract drove end to end over board criteria, the graph node is not standalone-callable, five gaps named · **fire-body accretion under the frozen-fire rule**, where every layer becomes permanent input · and **the supersession the criteria stage found and cannot close**, filed here because the repair belongs to the pass that admits a body as fireable.
+
+**Criterion-lifecycle lane — 8 findings.** One criteria-feasibility contract-gap filing per milestone validator (seven, each naming what it was measured on: no verdict for a model-lease conflict; the forbidden-class screen is prose and 5 of 5 members reproduced the same violation; no repair arm for a criterion blocked by a sibling lane; graded-by-reading versus graded-by-running undecidable across 142 verdicts; minted ids not issue-qualified; the validator has no standalone entry point). Plus the one that blocks the stage-2 node before any prompt runs: **the shipped criterion-id pattern rejects every id the board's criteria stage mints**, enforced at three type boundaries.
+
+**Run-supervisor lane — 2 findings.** The **false-green barrier**: the run's own harness computed its set-level barrier as "no failures reported" and printed a scope fully admitted over which zero issues had been staged — both readings internally consistent, their conjunction false; fixed the same day, and the incident is the fixture. And the **correlated tier-loss shape**: seven agents failing identically at their first call with zero tool uses is a capability loss, not seven task failures — a run that can still write but no longer judge, which the stage-barrier owner needs in its own vocabulary as an outcome distinct from "graded and found gaps".
+
+**Live-record member — 1 finding, 1 write-back.** The tracker **auto-linkifies a bare criterion id**, silently destroying the addressing the tick mechanics depend on: the first checklist written came back with every id replaced by a link object, nothing failed, and the line still read correctly to a human. Code fencing is the measured-safe carriage and is now the format across all 24 members; the conformance property is round-trip **read back through the port**, never echoed from the write. The write-back requests a per-node session-start member for the run-event vocabulary, mirrored onto the walker lane where the emitting role sits.
+
+**Port-surface lane — 1 finding, ruled.** The unfireable-member roster rule: the barrier counts members admitted as fireable, never all members. Raised by stage 1, which could not fill it, and ruled by the grooming disposition on the member itself.
+
+*Filed as the battle test's yield: every manual substitution for a missing node, every grooming hole stage 1 caught, every contract gap, and every barrier-mechanics gap, each on the lane that owns the node it names.*
+
+f227306a-98c0-4b27-a777-b442833133bf 2026-08-12T11:55:45.790Z Goofy
+`[open-decisions-ledger]` **Every open question awaiting the founder across both boards — point-in-time, 2026-08-12.**
+
+An aggregate is admissible here and nowhere else: this is a point-in-time surface, and membership stays a query. Derived by enumerating every `decision`-labelled issue on the team (13 hits, both projects, archived included) plus every `[decision]`-shaped escalation recorded as a comment with a pinned interim reading. **Nothing here is ruled by this sweep**, and no label, state or body was touched to produce it.
+
+**Eleven open. Two labelled `decision` but already answered — their labels are stale.**
+
+## Open — awaiting a ruling
+
+| # | Issue(s) | The question | Interim reading in force | Blocks | Ruler |
+| -- | -- | -- | -- | -- | -- |
+| **E-A** | KOD-121, KOD-122, KOD-125 — one filing each; all three now outside the project | May the three review-lens issues be removed from the v0.3 project, and is that removal from the project only or from scope entirely (re-parented out, so an issue-scoped run rooted at the audit lane no longer reaches them)? | Removed from the project; parents untouched; re-adding is one field | Nothing in flight. If refused: the audit lane gains three sub-issues, the board acquires its only unresolvable cross-board dependency — prose-only, carried by no recorded edge — as a second escalation, and KOD-123's remedy 4 returns with its named owner | Founder — removing filed work from a scope is a scoping act |
+| **E-B** | KOD-123 — Canceled with a recorded supersession; cancellation explicitly did **not** discharge this | The tracker connection authenticates as a principal's account, so a machine write and an approver's act are indistinguishable at the source: who restores an attributable machine identity, and by what act? | Build no lane. The port declares a boot-checked attributable-writer capability regardless; a machine-authored ruling carries a machine-authored marker in its own body; every fixture asserts on the declared capability, never on a vendor identity field | Nothing in flight. Five deliverables presuppose the answer: the supervisor's write-provenance capability and its two-writers-on-one-surface signal, the port lane's approver-provenance fixtures, the idempotent-writes member's own-write recognition, and the ruling node's marker — transitional if the identity is provided, permanent if not | Founder — this is the approval boundary; provisioning the identity is an operator act, never a deliverable |
+| **E-C** | KOD-105 | May the tracker-native fire-composition lane fire be demoted to a sub-issue of the plan-and-walk lane and narrowed to its one forced seam, with the rest of its D-list cut? | Demoted and narrowed: D2 kept as the seam; D1, D3, D4, D9's dual-artifact treatment and the A/B harness cut; D5 cut to configuration; D8 cut; D6's prohibitions moved to the port lane; D7 split. Full provenance kept above the narrowing block, so the cut is reversible by reading | Nothing — the seam is the same seam either way and the composition edges are covered by parentage. If refused: the issue returns as a lane fire with its own milestone, the two compiled compositions become a build deliverable, and the cut items return with it | Founder — a scoping act on a filed lane fire |
+| **E-D** | KOD-73 | The scope ladder has three functional rungs but only two label literals: what is the third (triage) member's **name**, and **who may set it**? | Name `scope:triage`, settable by any principal — prioritization, not authorization; resolved through OperationConfig by the same ancestor walk as the other two members; never materialized per issue | The name flips one config mapping entry and no code. The **setter** arm is the material one and **must be ruled before the scope pass (M2) is built**, because it is the pre-approval grooming mandate's dispatch predicate | Founder — label vocabulary is the founder's surface |
+| **E-E** | KOD-115 | May **no** landedness-detection mechanism be built at all, discarding all three candidates the founder-filed issue offers? | No detection is built. Landedness is recorded on the tracker by whoever observes it; absent such a record, base resolution fails loud with a typed error naming the missing or stale ref, and never substitutes trunk | Nothing — under the crossing and no-merge rulings nothing waits on a merge. If refused: candidate 2 (content equivalence) or 3 (ask the forge) becomes a plan-and-walk deliverable, and candidate 3 needs an explicit scoped exception to the merge-state prohibition recorded on that lane **before** it is built | Founder — this discards a mechanism the founder filed |
+| **E-F** | KOD-78 | May the HTTP job-status surface's **scope dimension** (charter element D3) be cut? | D3 is out of scope for v0.3; the tracker record is the legibility surface. The process-local run-state reader stays as the checkpointer seam and the existing job-status endpoint stays as operator convenience | Nothing — D3 shares no artifact with the rest of the lane. If refused it returns as a deliverable of this issue with no re-ordering anywhere | Founder — this cuts an element the charter names |
+| **L7-1** | KOD-81 (v0.2, lane 7) | Does the session-MCP seam stay assigned to the lane recorded as owning it — leaving this block blocked — or does the lane that first *needs* it create it? | The lane that first needs it creates it, minimally: one keyword argument at two existing construction sites plus the value that decides it, under the recorded arrival-order ownership rule | Nothing — the interim was enacted, the seam is landed and graded 6/6 at `0920a60` with the forge green. Open as a confirm-or-refute of an already-executed call | Founder / owner |
+| **L7-2** | KOD-82 (v0.2, lane 7) | Should the working-directory MCP-injection guarantee be widened from *sessions carrying a configured server* to *every session the service starts*? | The pairing stands, not widened: the strict flag is set wherever — and only where — servers are set, so a non-granted session's options are argument-for-argument unchanged | Nothing in v0.2 (lane closed 4/4). Standing exposure, recorded not inherited: a session outside the grant still loads server definitions found in its working directory, and the service clones arbitrary repositories. v0.3 grooming records that **every consumer session proceeds under the pairing until this is ruled**. Ruling "widen" first requires amendments to `KOD-81-AC-3` and `KOD-85-AC-4` | Founder — a security-posture call, not a measurement |
+| **FIX** | KOD-48 (v0.2, lane 3) | The single-shot fix NODE is deleted but the `fix` PROMPT key survives with no dispatcher: does the key go — with the prompt-registry suite re-pointing roughly thirty composition, precedence, override and completeness assertions at a live key — or does it stay as inert set content? | The key stays for now: "path" named a route through the graph and the route is gone; an unread registry key is inert data, not a second way for a run to fail | Nothing in the branch — 12 of 12 satisfied, issue Done. If it stays, its unwired status needs stating on a durable surface, or the next reader will assume a key implies a dispatcher | The approver — removing it is churn on another lane's test surface |
+| **M3-a** | KOD-75 | May D9d (highest-index blocker plus an ancestry requirement) and D9e (`UnstackableLaneError`) be **superseded at body level** — D9d in substance, D9e in full — and replaced by a pointer to the shipped base-resolution rule? | Base resolution is the shipped three-arm rule at the declared base: dedupe → reduce to the frontier over commits → trunk / the single ref / a constructed integration base. **D9d and D9e are inert** — no lane implements them, no criterion is graded against them, and `KOD-75-AC-10` stays **ungraded, never refuted**. No body edited, no label or state moved | **Blocks the M3 stage-2 barrier.** The criteria-stage marker is withheld here, so stage 2 stands at 22 of 24 and cannot truthfully close. Both routes to reinstating D9d are closed by passing tests that may not be edited | Founder — a body-level supersession changes what a lane delivers |
+| **M3-b** | KOD-109 | Is this issue **wholly superseded** — its plan-time base-resolvability check having an empty subject class under the shipped rule — and closed with no replacement issue, its 2026-08-08 measurement preserved as ground on the parent lane? | Same pinned interim: all seven of its criteria stay ungraded, never refuted; no marker, no state moved. Its two salvageable fragments already have owners — the reject-never-repair discipline by the planner deliverable, and the dispatch-time textual-conflict refusal, which is not plan-time computable and cannot be re-pointed at | **Blocks the same M3 stage-2 barrier** — the second of the two members carrying no criteria marker | Founder — the same body-level supersession act |
+
+**Carried with the sweep.** E-A through E-F are the six escalations the 2026-08-11 grooming pass filed; the attributable-identity escalation **is** E-B and is counted once. M3-a and M3-b were proposed today by a read-only supersession analysis recorded on the plan-and-walk lane; the sub-issue carries no filing of its own, so its disposition is readable only from the parent. **Neither carries the `decision` label** — they are `[decision]`-shaped escalations with pinned interims, found by comment sweep rather than by label, which is itself the finding: label-only enumeration misses two of the eleven. The measurement under both was re-derived in a fresh detached worktree at the declared base — base-resolution 26 passed, base-scope 11 passed, stacked-scope 5 passed.
+
+## Labelled `decision`, already answered — stale label
+
+| Issue | Question | How it closed |
+| -- | -- | -- |
+| KOD-93 | Does the recorded-but-incomplete A/B pair satisfy `KOD-93-AC-8`, or does the issue stay open until a re-execution produces two terminal events? | Answered 2026-08-12 by the close-out grader, which is exactly who the escalation asked: AC-8 graded NOT SATISFIED, the issue closed with AC-8 carried as a named residual it owns. Not a founder decision. Residual standing: one execution of the landed harness **detached from any stage's process lifetime** — the rate-budget cause is retired, wall-clock cost replaced it |
+| KOD-68 | Does lane 8 land the repair for an inherited racy test to get its own PR green, or does it belong to the lane that owns the dispatch pass? | Answered 2026-08-12 by coordinator dispatch: a lane-8 writer holding the tree lease was instructed to close the blocker; the repair landed at `07e9a74` with no assertion changed and the forge went green. One residual recorded and deliberately not fixed — a sibling integration test is latent-red by the same mechanism |
+
+Two escalations the grooming pass **dissolved** rather than filed, recorded so they are not re-raised: the initiative-label creation question (authorized by the corrected addendum; the label is verified absent) and the revision question the corrected third `[decision]` settles.
+
+`[decision sweep 2026-08-12 · MACHINE-AUTHORED — an enumeration, not an approver's act. Nothing above is ruled.]`
+
+d7e91b9c-62b5-4d00-ae78-bb0919c6b57c 2026-08-11T21:11:15.114Z Goofy
+[event] 2026-08-11 — the scope ladder enacted end to end on this initiative: the grooming pass converged (board verified against the roadmap of record), set `scope:proposed` as its terminal act, and the run then set `scope:approved` **under the founder's one-shot delegation recorded in the fifth [decision] of this date — that delegation is now spent.** The actual workflow over this scope (fire bodies → criteria → execution) is authorized; stages 1 and 2 run next as the battle test per the standing addendum.
+
+0094d077-04cb-4c25-bf61-1318d5cbdf19 2026-08-11T20:10:49.540Z Goofy
+[charter-defect] v0.3 grooming 2026-08-11
+
+**Four defects found in the charter body by the grooming pass. The charter is founder surface, so they are recorded here as comments and the body is not edited.** Each is stated with what a reader would otherwise conclude wrongly.
+
+**(a) A "Two channels" heading stands over three bullets.** A reader counting channels from the heading gets a different answer from a reader counting bullets, and the third channel is the mirror-publication one whose kodezart-side half this pass admits into the deliver-and-terminate milestone on measured grounds. Either the heading or the bullet list is wrong; the pass proceeded on the assumption that the **bullets** are right, because the third one carries measured evidence behind it.
+
+**(b) The charter pins a code baseline that is superseded.** The pinned commit is no longer the base: the base is the v0.2 union integration branch, per the base ruling now recorded on the plan-and-walk lane and measured point-in-time in this pass's decision comment. Measured drift from the pinned baseline to the base is substantial — hundreds of files. Every lane fire now carries an anchor ruling saying that a line reference is a pointer rather than a spec claim, and that an unresolvable reference is a stale pointer rather than a defect. The charter's own pin is the one that motivated those rulings.
+
+**(c) The `queue:done` rung has no producer and no consumer under the no-merge ruling.** Measured: the label does not exist, and the terminal transition that would set it is unreachable, because the transition it was written against is a merge — a human act entirely outside the loop. Under the crossing rule an issue is Done from its Verification being demonstrated in the branch, which happens before any pull request exists. So the rung is not merely unused; it is unreachable by construction, and the queue ladder in the charter reads as if it had one more rung than it has.
+
+**(d) The charter's stage-1 description now over-covers.** The corrected third [decision] **split** stage 1: the board-organization half moved out of the workflow into the pre-approval grooming pass, and what remains in stage 1 is fireable ticket bodies per issue and sub-issue only. The charter's stage-1 paragraph still describes both halves. That [decision] owns the split and is pointed at rather than restated — but a reader who reaches the stage-1 paragraph first and stops there will build the superseded conflation.
+
+*Filed by the 2026-08-11 grooming pass. None of these blocked the pass; each was worked around under the reading stated above, and each is recorded so the next reader does not re-derive it.*
+
+eb92f2cf-1191-4348-85f9-20d4dd812aa8 2026-08-11T20:10:24.280Z Goofy
+[decision] v0.3 grooming 2026-08-11
+
+**Point-in-time record of the grooming pass that applied the v0.3 roadmap to this initiative's project.** Everything here is a fact as of this date: the counts, the rosters and the base measurement live here and on no durable surface, because membership is a query and a count embedded in a description is a second source of truth that starts disagreeing immediately.
+
+Counts re-derived this pass, and nowhere else: **27 issues at entry → 7 milestones; 3 issues removed from the project; 1 new sub-issue created (28 filed, 25 in scope).**
+
+---
+
+## 1. The consumed / bypassed / superseded table, per the founder scoping ruling
+
+v0.2 is **not** sunset — it is the generic engine path. v0.3 is a wider lane beside it and **inherits no v0.2 organ by default**. Every organ below is classified with a **named v0.3 consumer** as its ground, or cut. Legend: **C** consumed · **B** bypassed (generic-path-only) · **S** superseded (forward supersession; no frozen v0.2 body is edited).
+
+| # | v0.2 organ | verdict | named consumer, or the cut |
+| -- | -- | -- | -- |
+| 1 | Tracker port + conformance suite + fake | **C**, widened | M1; the suite is the extension vehicle. One property changes forward: total substitutability gives way to boot-declared capability (an S of the no-flags stance, not of the port) |
+| 2 | Fire queue | **C** | M3 dispatch |
+| 3 | Selection arithmetic + atomic claim | **C**, generalized | M3's ready-set tick; the claim surface by M1's lease vocabulary — one primitive, two vocabularies, a different exclusion beside it rather than a replacement |
+| 4 | Base resolution / stacking | **C** | M3's base arithmetic, amended to plan-time |
+| 5 | Per-issue approval as a human act | **B** | standalone flow; inside a scope one act plus the ancestor walk replaces N |
+| 6 | Criteria generation node, in-fire | **B** | generic path; the capability relocates to M2's CRITERIA mandate |
+| 7 | Criteria feasibility gate | **C** | M2's stage-2 admission test; M3's per-dispatch re-validation for stacked lanes |
+| 8 | Criterion identity and its minting | **C** | M4's addressing. Measured: the identity type is a distinct type at the base and the item it keys is pattern-constrained — the "bare strings" premise is dead |
+| 8b | Three-state accept verdict with reviewer flags | **B** (flagged) | **no v0.3 consumer found**; generic-path-only unless the founder names one |
+| 9 | Grading + accept gate | **C** | M4's write-back, hardened by the green-gate-is-not-evidence finding; the Done-setter split binds it |
+| 10 | Branch-side criteria artifact | **S** as a read, **B** as a projection | the tracker record is the re-entry index; the projection has no v0.3 reader — the surface a fresh agent cannot reach is the projection |
+| 11 | Outcome discriminator | **C**, extended | M5. Measured: the enum EXISTS at the base — appended to, not awaited |
+| 12 | Remediation loop + stall exit | **C** | M5 routes classified reds to it; M3 fires the follow-ups it creates, auto-approved inside the approved subtree |
+| 13 | Lifecycle write-back | **C** | M4 |
+| 14 | On-verified-merge trigger | **S** | the crossing rule |
+| 15 | Poll-per-issue lifecycle follower | **S** for scope runs, **B** for HTTP fires | no polling loop, no side channel, no second process that can drift |
+| 16 | Prompt registry + rendering | **C** | M2's three mandates, M6's audit sessions, M3's fire-time ruling prompt |
+| 17 | Prescriptive per-node prompt members | **B** | the legacy prompt set, per the scoping ruling |
+| 17b | The grooming-pass template | **C** (split classification) | the v0.2 grooming pass itself is organ 23 (S, transformed into M6's verification mandate); its ORGANIZATIONAL half's corrected artifact is consumed by M2's GROOM mandate. Neither is a paraphrase of the other, and a reader of the cron table alone would wrongly conclude the GROOM mandate has no charter basis |
+| 17c | Fire-prep pass + its template | **C** | the pre-warmer, mandate unchanged — and the GROOM mandate is this organ's rubric'd continuation, not a fourth scheduled worker |
+| 18 | OperationConfig | **C**, extended | M1 label mapping (incl. the third meta-label member), M2 round bounds, M3 concurrency, M5 residual bounds. **Measured at base: five model-gap findings are CLOSED here** — optional container target date, three-member principal role, document system field, check-step dependency, records/record-destination |
+| 19 | Skills adapter + boot preflight | **C** | M2 and M6 judgment sessions; binding bound: capability = definition ∩ session allowlist |
+| 20 | Sanitization gate + gated write | **C** | M5's aggregate scanner AND the mirror-publication pattern set register as scanners on the existing seam — the enforcement point the no-aggregate ruling demands already exists |
+| 21 | Fire-prep pass mandate | **C**, merged | M2's GROOM mandate — not a new organ |
+| 22 | Auto-dispatch pass | **C**, generalized | M3's tick |
+| 23 | Grooming pass (the v0.2 cleanup worker) | **S**, transformed | M6, as its verification mandate. Name collision with 17b/21 noted there |
+| 24 | The three-worker cron scheduler identity | **S** in meaning | the heartbeat of one reconciler; mechanics reusable, identity not |
+| 25 | Delta pre-query gate | **C** | the tick's opening act — a **cost gate, never a convergence stopping condition**; M2 identifies it with the gap's cardinality (one implementation) |
+| 26 | Pass template texts | **C**, defect-at-source recorded | M2's rubrics — valid only against the byte-identity-restored texts, never the paraphrases the 2026-08-10 finding measured |
+| 27 | Job-status HTTP surface + streaming | **B** — **CUT from M5** | the run's legibility surface must be readable by a human and a fresh agent with no access to the dead process; an HTTP surface on a live process is neither. The process-local run-state reader stays as the checkpointer seam; S as the resume mechanism. Charter-element cut → deferral 2 / E-F |
+| 28 | Ralph engine + per-ticket graph | **C** | M3 invokes it as the sub-graph per fire |
+| 29 | The CI-monitor node | **S** | dissolves into M5; the adapter classification logic is C as M5's availability axis |
+| 30 | CI classification adapter | **C** | M5's availability axis; the check-step type supplies gate-vs-cascade; the **validity axis is the new part** |
+| 31 | Git stack (worktree, publisher, change persister, cache, auth) | **C** | M5; the publisher's no-merge rationale is the no-merge ruling in port form |
+| 32 | Branch merger | **C**, bounded | scratch composition **for the union check only** — never a delivery act |
+| 33 | Branch-name generation | **C** | M3, association-lookup-first |
+| 34 | Ticket draft/review loop | **B** | M2's convergence loop is the one convergence mechanism; the review-node shape is precedent, not artifact — **no edge** |
+| 35 | The streaming agent-query surface | **B**, with a compatibility note | the issue-scoped degenerate submission over the EXISTING surface is the degeneration contract's entry point — the reason it is not deleted; **no NEW HTTP surface is a v0.3 deliverable** |
+| 36 | Knowledge-grant tree | **B** as a deliverable | its named consumer was the fire-composition lane's session grant, cut as configuration; the grant remains session config |
+| 36b | MCP mapping seam + strict-MCP guard + fragment shape + additivity guard | **C** | the mechanism by which M2/M6 judgment sessions and M4's granted writers reach the tracker — one entry added, no second flag, no exemption. **Falsifies the fire-composition lane's "no MCP seam exists" grounding.** Rider: the working-directory-injection **widening decision is OPEN on the v0.2 board**; every consumer session proceeds under the pairing ruling as it stands until it is ruled — recorded durably on M2 |
+| 37 | Subagent / fan-out organs | **out of scope** | not on the base; their only v0.3 dependent leaves the project (E-A) |
+| 38 | Artifact persist/clean machinery | **B** | serves unstaged fires; M5 calls clean before opening a PR — consumption of an existing call, not of the design |
+
+**Binding measured facts, recorded here because no durable surface may hold them.** The orchestration primitive is **an agent, not a workflow** — the workflow primitive requires a non-plan permission mode plus an allowlist entry, and every judgment session runs plan mode by standing ruling (6/6 probes, 145 s). Effective subagent capability is **the definition's tool list ∩ the session allowlist**, and either bound can bind. The allowlist is **permission, not loadout** — 50 tools enumerated where 4 were allowed. And **the union is the only place composition is observable**: 34 combined-tree-only failures, one of them a production defect present in no branch alone.
+
+---
+
+## 2. The base measurement (point-in-time; the durable rule is on the plan-and-walk lane)
+
+The durable base ruling — a lane's base is its blocker's recorded branch, the root lane's base is the v0.2 union integration branch as the tracker records it, and no body enumerates a concrete stack — is recorded on the plan-and-walk lane and is **not** restated here.
+
+Measured today: the union branch stands at `55b5525e8d06d4c99b5b29d5d2481b7774dc9f90`, **178 commits ahead of trunk** at `1d1bab5`, with trunk an ancestor of it. It composes the three wave branches plus the artifact-persist states and carries the 34 union-only fixes.
+
+**The base is a branch, not a merge: nothing waits on it landing.**
+
+---
+
+## 3. Cross-board edges, stated once
+
+Every **recorded cross-board blocker** on this project's issues is **discharged at the base** — the v0.2 work each names is present. They stay recorded, because they are true statements about what each lane consumes, and they are argued lane by lane in the Dependencies sections that carry them.
+
+Two v0.2 organs named as inputs by the review-lens family are **grep-verified absent from the base**, and are carried by **no recorded edge at all** — they appear only in prose. That prose-dependent family leaves the project (E-A).
+
+One coordination item is deliberately **not** an edge: the retirement of the check tri-state's force-serializer is scheduled on both boards, and the rule is *whichever lands first, the other does not re-add it.* No artifact passes between them, so an edge there would be a false order statement.
+
+---
+
+## 4. Charter elements deferred to a later initiative — every rejection, with its ground
+
+1. **Event-driven re-entry (tracker webhooks).** The charter itself calls it a future step; named so it is not quietly re-absorbed.
+2. **The HTTP job-status surface gaining a scope dimension.** No v0.3 consumer (organ 27; E-F on its owning issue).
+3. **Two compiled fire compositions, the node-by-node ledger, the parity test and the A/B harness.** Machinery whose consumer is the machinery; the charter's own degeneration language is a **per-issue predicate**. The initiative-level completion condition is the real parity test (E-C).
+4. **The mirror-publication channel, tracker-side half.** The kodezart-side pattern set IS admitted into M5 (measured finding + named consumer class); scrubbing what the tracker itself serializes of content this system never wrote is an operator/hygiene workstream.
+5. **The predict-before-observe conduct rule.** A new cross-cutting obligation on every writer, with no measured consumer on this board (Q7).
+6. **The review-lens family.** Three issues removed from the project (E-A, one filing each).
+7. **The knowledge grant as a deliverable.** Organ 36; the seam (36b) is consumed as configuration.
+8. **Cancellation of in-flight lanes on revocation.** Machinery with no measured need; the tick boundary is a seam that already exists (Q10).
+9. **A ruled value for the escalation endpoint.** v0.3 writes escalations to the tracker at raise time; a config-instance question with no v0.3 consumer.
+
+---
+
+## 5. Escalations filed this pass, each with a pinned interim on its owning issue
+
+Six, each carrying the `decision` label and one marker-keyed comment stating the question, the interim the pass proceeds under, and what flips if the founder rules otherwise: **E-A** (three issues removed from the project), **E-B** (transport identity / attributable writer), **E-C** (the fire-composition lane demoted and narrowed), **E-D** (the third meta-label member's name and setter), **E-E** (the landedness mechanism cut), **E-F** (the job-status scope dimension cut).
+
+Two escalations **dissolved** rather than being filed, recorded so they are not re-raised: the initiative-label creation question (authorized by the corrected addendum, and the label is verified absent), and the revision question the corrected third [decision] settles.
+
+6deac1ba-b431-49bf-9b06-491268410dc5 2026-08-11T18:07:01.360Z Goofy
+[decision] 2026-08-11, fifth ruling of the day — founder-directed: **a delegated approval, for this battle test only.**
+
+Once the grooming pass has converged and set `scope:proposed` on this initiative, **the run is authorized to set `scope:approved` itself** — the founder delegates the approval act for this scenario, because enacting the full ladder end-to-end is the battle test's purpose. Bounds, stated so the delegation cannot creep: it covers exactly one act (`scope:approved` on this initiative, after `scope:proposed` exists), it is spent when exercised, and the standing rule — approval is the human act, no pass or agent may apply it — is UNCHANGED for every other scope, every other label, and every future run.
+
+Recorded before the act so provenance is legible: when the label appears, this comment is its authorization trail. The delegation case is itself a battle-test datum for the provenance design: an approval performed by an agent under recorded human delegation is a shape the approver-provenance arithmetic will eventually need vocabulary for; until then, the durable record standing BEFORE the act is the interim mechanism.
+
+5c299919-16eb-4c86-b43f-62b2601dcac8 2026-08-11T17:50:40.968Z Goofy
+[decision] 2026-08-11, fourth ruling of the day — founder-directed: **the criteria write-back model. The checklist lives on the issue; the loop ticks it; a big-picture evaluation sets Done; comments stay scarce.**
+
+- **Stage 2 writes the acceptance-criteria checklist into the issue body itself** (the deliverable already filed on this board as the checklist-onto-body issue, now ruled). The issue is the single durable surface on which criteria evolve; how they evolved is read from that one place, not reconstructed from a comment stream.
+- **During the ralph loop, the evaluator writes to the tracker directly**: each criterion demonstrated in the branch is ticked on the issue's checklist IN PLACE, at evaluator cadence, carrying the graded sha inline. Per-criterion verdicts are silent EDITS — the edit-vs-post split already ruled for the run-state record extends to criteria: progress a reader can see without being notified per tick.
+- **A separate big-picture evaluation step double-checks everything** — fresh context, independent of the loop that ticked — and ONLY IT sets issue and fire states to Done, when the whole is truly done. The per-criterion tick never moves a state. (This is the writer/grader split the 2026-08-11 manual run enforced by brief, promoted to the machine's design. It does not replace the standing audit — the audit remains the later independent re-verification of what the big-picture step concluded, per its non-substitution rule.)
+- **The design ground, stated because it binds implementations: minimal comment volume.** Comments are for lane events, escalations, and evidence a human must be notified of; everything that is a durable evolving fact — checklist state, run-state — is an in-place edit on its one surface.
+- Port consequence, one line: the port's criterion-satisfaction vocabulary (identity-addressed, graded-sha-stamped) is unchanged; the body checklist is the Linear adapter's carriage of it, replacing marker comments.
+
+Owning lanes: the tick mechanics and the Done-setter split → the evaluator write-back lane; the checklist-onto-body deliverable → its filed issue, now ruled rather than proposed. Pointers posted on both.
+
+8fd570ce-f70c-4434-997c-3dc95da35e3d 2026-08-11T17:40:30.716Z Goofy
+[decision] 2026-08-11, third ruling of the day — CORRECTED SAME DAY by the founder (an earlier revision of this comment inverted the proposed-label's direction and wrongly narrowed the approved-label's license; both errors are replaced by this text, which is the ruling of record).
+
+**The queue-ladder logic, scope-wide: a human triages → the machine grooms and PROPOSES → a human approves → the machine runs the actual workflow.**
+
+- **A human triages**: a scope (initiative / project / milestone / issue subtree) surfaces as a candidate for implementation.
+- **The grooming pass grooms it** — general and organizational, distinct from the workflow's stages: blockers organized ACROSS projects, milestones, issues and sub-issues; stakeholders asked on open decisions; deadlines arranged; priorities and order verified; every issue checked to end with completing its stated goal in a measurable way. **Its terminal act is setting `scope:proposed`** — the machine's request for authorization, exactly `queue:proposed` one level up. Machine-set, never a human act; agent provenance per the standing state-change discipline.
+- **A human sets `scope:approved`** — the one human act, approver provenance, unchanged in authority.
+- **`scope:approved` runs the ACTUAL workflow, all of it**: stage 1 = **fireable ticket bodies per issue and sub-issue, only that**; stage 2 = **acceptance criteria, only that**; stage 3 = the walker dispatching execution-only fires. From stage 1 onward every artifact is optimized for agents — the human-facing organizational work already happened in grooming, which is what makes the approval meaningful: the human approves an organized, ordered, measurable scope.
+
+Supersessions this ruling carries: the charter's stage-1 description ("organize — the spec pass as a graph step") splits — the board-organization half moves OUT of the workflow into the pre-approval grooming pass; the in-workflow stage 1 keeps only fire-body preparation. The grooming pass running over this board today is the grooming agent's behavioral spec; the stage-1+2 battle test (fire bodies + criteria by hand, per the standing battle-test addendum) runs AFTER the approval act, which is where those stages live.
+
+Owning lanes: label vocabulary + resolution arithmetic → L1; the grooming pass and the narrowed in-run stage 1 → the organize lane (whether they are one lane or two is the roadmap's call). Corrected pointers posted on both.
+
+daecd2a0-d5ce-44d4-ac6f-1eb0ceba8d9e 2026-08-11T17:36:41.816Z Goofy
+[decision] 2026-08-11, addendum to the scoping ruling — founder-directed: **the current grooming pass and the criteria pass that follows it ARE stages 1 and 2 of this initiative's own scope-run design, executed by hand as a battle test.**
+
+- The organize pass now running over this board is stage 1: every issue specced fireable, admission test = the dry-implementation test. The criteria pass that follows it is stage 2: acceptance criteria generated and validated for every issue in the organized scope, admission test = a clean feasibility verdict per the criteria-validation contract (`unverifiable`-pending-blocker admissible, per the charter), with the set-level barrier observed — stage 2 completes only when every issue in scope carries its marker.
+- The battle-test contract: the run drives the REAL v0.2 organs wherever they can be driven (the criteria-validation contract the composed tree ships), and **every place the manual run must substitute a hand for a node is filed as a finding on the lane that owns that node** — the same recursion by which the 2026-08-07 sweep became the organize node's behavioral spec.
+- The two machine stage markers the charter names (ticket-stage and criteria-stage completion, names via OperationConfig) are minted on this board by the pass as machine-set markers — never approval acts; the approval ladder is untouched.
+- Findings from the simulation are spec inputs for the organize and criteria stages' owning lanes; deviations between the staged design and what the run actually had to do are the deliverable, not noise.
+
+a17ee34d-d69e-42bd-9c19-a7078c8d095a 2026-08-11T17:32:36.401Z Goofy
+[decision] 2026-08-11 — founder scoping ruling for this initiative's grooming and roadmap:
+
+**The v0.2 workflow is not sunset.** It remains the generic engine path — the legacy prompt set, the prescriptive per-ticket graph, the full v0.2 organ set — for less-orchestrated models that need that structure. **v0.3 is a wider lane beside it, not a replacement**: the scope-orchestration machine is built for engine families that carry more of the orchestration themselves, and the degeneration principle already chartered (an issue-scoped run runs the old graph unchanged) is the compatibility contract between the two.
+
+Consequence, binding on the grooming pass: **v0.3 does not inherit v0.2's feature set by default.** Every v0.2 organ is classified during grooming — consumed by v0.3 / bypassed by v0.3 (generic-path-only) / superseded — each with grounds tied to a named consumer in the v0.3 design, never kept because v0.2 built it. A feature carried without a consumer is the over-engineering class this operation has already punished once. The roadmap that comes out of grooming must read SOLID, DRY, hexagonal and KISS against the charter body as written, folded with the run findings recorded on the owning lanes 2026-08-11.
+
+4e0e88e1-3c30-43d8-ad6f-cc0c75abf78b 2026-08-08T12:50:41.122Z Goofy
+<!-- kodezart:port-conformance-probe -->
+**Port-widening conformance probe — Linear adapter, 2026-08-08.** Executed: each domain value the v0.3 widening adds was written through the adapter and read back independently, and this record was then edited in place under its own marker key.
+
+| property under test | result |
+| -- | -- |
+| durable keyed record round-trips verbatim | PASS — payload carrying a criterion id, a satisfaction state, a 40-hex graded sha, a role-tagged work-ref set, an escalation with its interim reading and raised-at, and an alarm key read back byte-identical to what was written, including a fenced block, an underscore-bearing identifier and adjacent inline-code spans |
+| the record is addressable by marker, not by position | PASS — the HTML-comment marker survives storage and is readable, so a writer finds its own record without scanning |
+| writing twice under one key leaves one object | PASS — this comment was written, then rewritten by id; the initiative carries one probe record, not two, and the edit did not create a second thread |
+| the edit is silent, the post notifies | NOT PROVEN HERE — the split is a claim about Linear's notification behavior, which a write-and-read-back cannot observe. Named as an adapter capability to be declared, and as a conformance case that needs an observable signal rather than an inference |
+
+Two adapter facts worth carrying forward. **The stored value is the markdown source, not a rendered form** — so a domain value survives intact provided the writer never depends on the vendor's renderer to reconstruct it. **The corresponding hazard is real and already visible on this board:** the approval-label ruling in the description above contains a mangled inline-code run (a stray sequence of backticks around the scope label's name), a value damaged in authoring and never detected, because nothing read it back and compared. That is precisely the failure the round-trip property exists to catch, and it is the argument for machine-read values being written as addressable records rather than parsed out of prose.
+
+Scope of this probe: comment-carried records on an initiative. The remaining mappings — work-refs as link attachments with role-bearing titles, open decisions as a queryable label, the point-in-time surface for aggregates — are named in the port-widening section of the description and are the owning lanes' to prove against the conformance suite.

@@ -1,0 +1,55 @@
+import ast,hashlib,json,subprocess
+from pathlib import Path
+R=Path('/private/tmp/kodezart-v03-m5-union-roster-correction');O=Path('/private/tmp/kodezart-recovery-session');BASE='da39c439898aec1233aa8b6157b35e961df1e453';HEAD='1a83163ecdecf962b21d4ea029ccdd31d16a45de';PR='c17f5d71ce95a94d0fd63f74ee6aa467cce01dad'
+def git(*args):return subprocess.run(['git','-C',str(R),*args],text=True,capture_output=True)
+def source(ref,p):
+ r=git('show',ref+':'+p);return None if r.returncode else r.stdout
+def units(s):
+ out={}
+ if not s:return out
+ def walk(nodes,prefix=''):
+  for n in nodes:
+   if isinstance(n,(ast.ClassDef,ast.FunctionDef,ast.AsyncFunctionDef)):
+    out[prefix+n.name]=n
+    if isinstance(n,ast.ClassDef):walk(n.body,prefix+n.name+'.')
+   if isinstance(n,(ast.Assign,ast.AnnAssign)):
+    for t in n.targets if isinstance(n,ast.Assign) else [n.target]:
+     if isinstance(t,ast.Name):out[prefix+t.id]=n
+ walk(ast.parse(s).body);return out
+def textunit(s,n):
+ a=min([n.lineno]+[d.lineno for d in getattr(n,'decorator_list',[])]);return ''.join(s.splitlines(True)[a-1:n.end_lineno])
+def norm(n):return ast.dump(n,include_attributes=False)
+paths=git('diff','--name-only',BASE,HEAD).stdout.splitlines();assert len(paths)==11
+rows=[]
+for p in paths:
+ s=source(HEAD,p);originals=[(BASE,p),(PR,p)]
+ if p.endswith('test_union_exit_invariance.py'):originals=[(PR,'tests/chains/test_delivery_coordinator.py'),(PR,'tests/chains/test_union_forge_isolation.py')]
+ records=[]
+ for name,n in units(s).items():
+  if isinstance(n,ast.ClassDef):continue
+  proof=[]
+  for ref,path in originals:
+   old=source(ref,path);os=units(old);node=os.get(name)
+   if node is not None:proof.append({'ref':ref,'path':path,'start':node.lineno,'end':node.end_lineno,'ast_same':norm(n)==norm(node)})
+  records.append({'symbol':name,'start':n.lineno,'end':n.end_lineno,'source':textunit(s,n),'provenance':proof})
+ rows.append({'path':p,'blob':git('rev-parse',HEAD+':'+p).stdout.strip(),'patch':git('diff',BASE,HEAD,'--',p).stdout,'units':records})
+p=paths[0];s=source(HEAD,p);b=source(BASE,p);ns=units(s);bs=units(b)
+assert norm(ns['ScopeUnionCoordinator.__init__'])==norm(bs['DeliveryCoordinator.__init__'])
+assert norm(ns['ScopeUnionCoordinator._lane_branch'])==norm(bs['DeliveryCoordinator._lane_branch'])
+patch=git('diff','--binary',BASE,HEAD).stdout;additions='\n'.join(x[1:] for x in git('diff',BASE,HEAD,'--','src').stdout.splitlines() if x.startswith('+') and not x.startswith('+++'))
+assert not any(x in additions for x in ['Any','cast(','type: ignore','noqa','PRStateReader','read_pr_state','create_pr'])
+assert 'read_scope_ready' not in s
+unmodified=['src/kodezart/chains/lane_delivery.py','src/kodezart/chains/native_delivery.py','src/kodezart/core/protocols.py','src/kodezart/core/config.py','src/kodezart/chains/scope_walker.py','src/kodezart/domain/topology.py','src/kodezart/services/union_composition.py','src/kodezart/types/domain/union.py','src/kodezart/types/domain/scope_terminal.py']
+assert all(source(BASE,p)==source(HEAD,p) for p in unmodified)
+old_plan=units(source(BASE,'src/kodezart/services/scope_planning.py'))['read_scope_plan']
+new_helper=units(source(HEAD,'src/kodezart/services/scope_planning.py'))['_read_scope_facts']
+old_reads=old_plan.body[1:]
+cut=next(i for i,n in enumerate(old_reads) if isinstance(n,ast.Assign) and isinstance(n.targets[0],ast.Name) and n.targets[0].id=='open_decisions')
+assert [norm(n) for n in old_reads[:cut]] == [norm(n) for n in new_helper.body[1:1+cut]]
+print('coherent fact-read statements unchanged AST:', cut)
+results={'base':BASE,'candidate':HEAD,'old_pr114_current':PR,'scope':'Bounded F02 complete union participant correction; no native application/terminal integration claim.','unmodified_boundaries':unmodified,'coherent_fact_read_unchanged_ast':True,'constructor_unchanged_ast':True,'deliverable_ref_refusal_unchanged_ast':True,'new_source_type_escape_hatches':False,'files':rows}
+(O/'m5-union-correction-map.json').write_text(json.dumps(results,indent=2)+'\n');(O/'m5-union-correction.patch').write_text(patch)
+print('candidate',HEAD);print('files',paths);print('constructor and required deliverable-ref lookup unchanged AST');print('unmodified boundary files',len(unmodified));print('source escape hatches: none');print('patch SHA256',hashlib.sha256(patch.encode()).hexdigest());print('PR114 exact copied units:')
+for r in rows:
+ for u in r['units']:
+  if any(x['ref']==PR and x['ast_same'] for x in u['provenance']):print(r['path'],u['symbol'])

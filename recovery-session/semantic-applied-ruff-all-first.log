@@ -1,0 +1,242 @@
+E501 Line too long (89 > 88)
+   --> src/kodezart/chains/write_back_verifier.py:167:89
+    |
+165 |         ):
+166 |             raise ValueError(
+167 |                 "write-back verification requires exactly one nonblank repository source"
+    |                                                                                         ^
+168 |             )
+169 |         self._runner, self._workspace, self._git = runner, workspace, git
+    |
+
+E501 Line too long (90 > 88)
+   --> src/kodezart/services/amendment_writeback.py:292:89
+    |
+290 |         ):
+291 |             raise NativeWriteRefusalError(
+292 |                 "The canonical amendment artifact changed during independent verification"
+    |                                                                                         ^^
+293 |             )
+294 |         await authority.require_current()
+    |
+
+E501 Line too long (101 > 88)
+   --> src/kodezart/services/amendment_writeback.py:357:89
+    |
+355 |             await authority.require_current()
+356 |             explanation = judgment.finding.refutation or (
+357 |                 f"The independently judged departure remains {reason.value if reason else 'pending'}"
+    |                                                                                         ^^^^^^^^^^^^^
+358 |             )
+359 |             existing_archive = comment_under_marker(
+    |
+
+E501 Line too long (89 > 88)
+   --> src/kodezart/services/amendment_writeback.py:380:89
+    |
+378 |                 ):
+379 |                     raise NativeWriteRefusalError(
+380 |                         "The existing amendment record has different historical evidence"
+    |                                                                                         ^
+381 |                     )
+382 |                 explanation = stored.explanation
+    |
+
+E501 Line too long (90 > 88)
+   --> src/kodezart/services/amendment_writeback.py:639:89
+    |
+637 |                 raised_by=holder,
+638 |                 question=question,
+639 |                 interim_reading="UPHELD: retain the existing criterion or pinned ruling.",
+    |                                                                                         ^^
+640 |                 interim_basis=judgment.model_dump_json(),
+641 |                 raised_at_sha=judgment.base_sha,
+    |
+
+E501 Line too long (89 > 88)
+   --> src/kodezart/services/native_amendments.py:595:89
+    |
+593 |         ):
+594 |             raise NativeWriteRefusalError(
+595 |                 "The escalation changed more than its authorized decision classification"
+    |                                                                                         ^
+596 |             )
+597 |         guard._criterion_issues = tuple(
+    |
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> src/kodezart/types/domain/agent.py:3:1
+   |
+ 1 |   """Agent event domain models for SSE streaming."""
+ 2 |
+ 3 | / from enum import StrEnum
+ 4 | | from typing import Annotated, Literal, Self
+ 5 | |
+ 6 | | from pydantic import (
+ 7 | |     ConfigDict,
+ 8 | |     Field,
+ 9 | |     field_validator,
+10 | |     model_validator,
+11 | | )
+12 | |
+13 | | from kodezart.types.base import CamelCaseModel
+14 | | from kodezart.types.domain.accept import AcceptVerdict, SherlockFlag
+15 | | from kodezart.types.domain.amendment import (
+16 | |     AmendmentJudgment,
+17 | |     AmendmentReport,
+18 | |     NativeWriterOutput,
+19 | |     RepeatedUpheld,
+20 | | )
+21 | | from kodezart.types.domain.assertion_drift import ProtectedTestRef
+22 | | from kodezart.types.domain.amendment_write import AmendmentTextOutput
+23 | | from kodezart.types.domain.audit import (
+24 | |     AuditClaimJudgment,
+25 | |     AuditMandateJudgment,
+26 | | )
+27 | | from kodezart.types.domain.audit_detection_removal import DetectorRemovalJudgment
+28 | | from kodezart.types.domain.audit_overclaim import AuditOverclaimJudgment
+29 | | from kodezart.types.domain.branch import BaseInput, WorkRefRole
+30 | | from kodezart.types.domain.ci import CIStatus
+31 | | from kodezart.types.domain.consolidation import ConsolidationStatus
+32 | | from kodezart.types.domain.criteria import (
+33 | |     ContractCorrection,
+34 | |     CriteriaValidation,
+35 | |     CriteriaValidationOutput,
+36 | |     CriterionId,
+37 | |     DraftedCriterion,
+38 | |     FanInReport,
+39 | |     GeneratedCriterion,
+40 | | )
+41 | | from kodezart.types.domain.gating import (
+42 | |     DurabilityCategory,
+43 | |     RedactionCategory,
+44 | |     RepoVisibility,
+45 | | )
+46 | | from kodezart.types.domain.node_session import NodeInvocation
+47 | | from kodezart.types.domain.organize import AdmissionJudgment
+48 | | from kodezart.types.domain.organize_owner import OrganizeProposal
+49 | | from kodezart.types.domain.outcome import WorkflowOutcome
+50 | | from kodezart.types.domain.persist import ArtifactPersistStatus
+51 | | from kodezart.types.domain.remediation import RemediationEntry, RemediationPlan
+52 | | from kodezart.types.domain.ruling_id import RulingId as RulingId
+53 | | from kodezart.types.domain.run_event import RunEventKind
+54 | | from kodezart.types.domain.session import SessionFailureKind
+55 | | from kodezart.types.domain.ticket_review import TicketApproval, TicketReviewMode
+56 | | from kodezart.types.domain.trajectory import LoopTrajectory
+57 | | from kodezart.types.domain.write_back import WriteBackFinding
+58 | | from kodezart.types.job_acceptance import (
+59 | |     AcceptanceHandle,
+60 | |     AcceptedQueuePosition,
+61 | |     JobLink,
+62 | | )
+   | |_^
+   |
+help: Organize imports
+
+E501 Line too long (106 > 88)
+   --> tests/chains/test_native_amendment_adoption.py:122:89
+    |
+120 |     elif mutation == "new_function":
+121 |         changed["chains/new_writer.py"] = (
+122 |             "async def execute(runner):\n    await runner.stream_workflow(prompt='write without guard')\n"
+    |                                                                                         ^^^^^^^^^^^^^^^^^^
+123 |         )
+124 |     else:
+    |
+
+E501 Line too long (135 > 88)
+   --> tests/chains/test_native_amendment_adoption.py:126:89
+    |
+124 | …
+125 | …
+126 | …xecute(self):\n        await self.runner.stream_workflow(prompt='write without guard')\n"
+    |                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+127 | …
+128 | …
+    |
+
+E501 Line too long (89 > 88)
+   --> tests/chains/test_native_amendment_runtime.py:269:89
+    |
+269 | async def test_amended_done_criterion_enters_the_actual_fresh_grading_roster(repository):
+    |                                                                                         ^
+270 |     from tests.chains.test_native_fire import DIRECT_DONE
+    |
+
+E501 Line too long (106 > 88)
+   --> tests/chains/test_native_amendment_runtime.py:281:89
+    |
+279 |             payload.update(native_evaluation(checks=current_checks))
+280 |
+281 |     executor = Executor(reproduced=True, subject={"kind": "criterion", "id": DIRECT_DONE}, mutate=answers)
+    |                                                                                         ^^^^^^^^^^^^^^^^^^
+282 |     fire, spec, current, _, workspace = await make_runtime(repository, executor, max_iterations=1)
+283 |     current_checks.update({c.id: c.text for c in current.criteria})
+    |
+
+E501 Line too long (98 > 88)
+   --> tests/chains/test_native_amendment_runtime.py:282:89
+    |
+281 |     executor = Executor(reproduced=True, subject={"kind": "criterion", "id": DIRECT_DONE}, mutate=answers)
+282 |     fire, spec, current, _, workspace = await make_runtime(repository, executor, max_iterations=1)
+    |                                                                                         ^^^^^^^^^^
+283 |     current_checks.update({c.id: c.text for c in current.criteria})
+284 |     current_checks[DIRECT_DONE] = "the amended observable Check"
+    |
+
+E501 Line too long (91 > 88)
+   --> tests/services/test_applied_native_amendments.py:265:89
+    |
+263 |                 "kind": "ruling",
+264 |                 "subject": {"kind": "ruling", "id": ruling.ruling_id},
+265 |                 "resolution": "The corrected answer follows the reproduced base evidence.",
+    |                                                                                         ^^^
+266 |                 "rejected_alternative": "The independently refuted prior reading.",
+267 |                 "repo_evidence": ["policy.py"],
+    |
+
+E501 Line too long (96 > 88)
+   --> tests/services/test_native_amendments.py:123:89
+    |
+121 |                     "do": "the amended implementation guidance",
+122 |                 },
+123 |                 "explanation": "The independently reproduced ground requires this text change.",
+    |                                                                                         ^^^^^^^^
+124 |             }
+125 |         elif title == "CommitMessageOutput":
+    |
+
+E501 Line too long (104 > 88)
+   --> tests/tracker/test_native_criterion_amendment.py:216:89
+    |
+215 | @pytest.mark.parametrize("action", ["reset", "description"])
+216 | async def test_known_unsent_native_write_retries_only_the_fresh_authorized_attempt(monkeypatch, action):
+    |                                                                                         ^^^^^^^^^^^^^^^^
+217 |     board, tracker = board_and_tracker()
+218 |     expected = await tracker.read_issue(issue_key=KEY)
+    |
+
+E501 Line too long (134 > 88)
+   --> tests/tracker/test_native_criterion_amendment.py:233:89
+    |
+231 | …", call)
+232 | …
+233 | …rion_pending(expected=expected, holder=HOLDER)).state_kind is WorkflowStateKind.UNSTARTED
+    |                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+234 | …
+235 | …rget=KEY, expected=BODY, replacement=BODY.replace("old predicate", "new predicate"), authorization=DescriptionWriteAuthority(holder=…
+    |
+
+E501 Line too long (293 > 88)
+   --> tests/tracker/test_native_criterion_amendment.py:235:89
+    |
+233 | …=HOLDER)).state_kind is WorkflowStateKind.UNSTARTED
+234 | …
+235 | …ODY.replace("old predicate", "new predicate"), authorization=DescriptionWriteAuthority(holder=HOLDER, surface=WritableSurface(kind=SurfaceKind.CRITERION_SUB_ISSUE, ref=ScopeRef(kind=ScopeKind.ISSUE, key=KEY))))
+    |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+236 | …
+237 | …
+    |
+
+Found 17 errors.
+[*] 1 fixable with the `--fix` option.

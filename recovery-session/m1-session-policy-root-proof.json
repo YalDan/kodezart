@@ -1,0 +1,884 @@
+{
+  "base": "fec7f28292975f0b4635a06ba84e4e35fdc3c2e8",
+  "final": "ea1d91596cc862dbfaa48abb149d2480702bf1bb",
+  "donor": "1f4296c8c36a7498625d2478f8ec7ae6ec187923",
+  "files": [
+    {
+      "path": "docs/architecture.md",
+      "hunks": 1,
+      "hashes_verified": true,
+      "donor_bytes_verified": false
+    },
+    {
+      "path": "src/kodezart/adapters/_agents_mapping.py",
+      "hunks": 2,
+      "hashes_verified": true,
+      "donor_bytes_verified": true
+    },
+    {
+      "path": "src/kodezart/adapters/_permission_modes.py",
+      "hunks": 5,
+      "hashes_verified": true,
+      "donor_bytes_verified": true
+    },
+    {
+      "path": "src/kodezart/adapters/agent_content_scanner.py",
+      "hunks": 2,
+      "hashes_verified": true,
+      "donor_bytes_verified": false
+    },
+    {
+      "path": "src/kodezart/adapters/asyncio_job_queue.py",
+      "hunks": 5,
+      "hashes_verified": true,
+      "donor_bytes_verified": false
+    },
+    {
+      "path": "src/kodezart/adapters/claude_agent_executor.py",
+      "hunks": 5,
+      "hashes_verified": true,
+      "donor_bytes_verified": false
+    },
+    {
+      "path": "src/kodezart/adapters/claude_client_executor.py",
+      "hunks": 6,
+      "hashes_verified": true,
+      "donor_bytes_verified": false
+    },
+    {
+      "path": "src/kodezart/adapters/git_change_persister.py",
+      "hunks": 2,
+      "hashes_verified": true,
+      "donor_bytes_verified": false
+    },
+    {
+      "path": "src/kodezart/api/v1/endpoints/agent.py",
+      "hunks": 2,
+      "hashes_verified": true,
+      "donor_bytes_verified": false
+    },
+    {
+      "path": "src/kodezart/chains/ralph_loop.py",
+      "hunks": 4,
+      "hashes_verified": true,
+      "donor_bytes_verified": false
+    },
+    {
+      "path": "src/kodezart/chains/ralph_workflow.py",
+      "hunks": 7,
+      "hashes_verified": true,
+      "donor_bytes_verified": false
+    },
+    {
+      "path": "src/kodezart/chains/remediation.py",
+      "hunks": 3,
+      "hashes_verified": true,
+      "donor_bytes_verified": false
+    },
+    {
+      "path": "src/kodezart/chains/ticket_generation.py",
+      "hunks": 4,
+      "hashes_verified": true,
+      "donor_bytes_verified": false
+    },
+    {
+      "path": "src/kodezart/composition/engine.py",
+      "hunks": 2,
+      "hashes_verified": true,
+      "donor_bytes_verified": false
+    },
+    {
+      "path": "src/kodezart/core/constants.py",
+      "hunks": 2,
+      "hashes_verified": true,
+      "donor_bytes_verified": false
+    },
+    {
+      "path": "src/kodezart/core/protocols.py",
+      "hunks": 9,
+      "hashes_verified": true,
+      "donor_bytes_verified": false
+    },
+    {
+      "path": "src/kodezart/handlers/agent_handler.py",
+      "hunks": 5,
+      "hashes_verified": true,
+      "donor_bytes_verified": false
+    },
+    {
+      "path": "src/kodezart/services/agent_service.py",
+      "hunks": 5,
+      "hashes_verified": true,
+      "donor_bytes_verified": false
+    },
+    {
+      "path": "src/kodezart/services/fire_dispatcher.py",
+      "hunks": 6,
+      "hashes_verified": true,
+      "donor_bytes_verified": false
+    },
+    {
+      "path": "src/kodezart/services/prompt_pass.py",
+      "hunks": 2,
+      "hashes_verified": true,
+      "donor_bytes_verified": false
+    },
+    {
+      "path": "src/kodezart/types/domain/session.py",
+      "hunks": 1,
+      "hashes_verified": true,
+      "donor_bytes_verified": false
+    },
+    {
+      "path": "src/kodezart/types/domain/workflow.py",
+      "hunks": 3,
+      "hashes_verified": true,
+      "donor_bytes_verified": false
+    },
+    {
+      "path": "src/kodezart/types/requests/agent.py",
+      "hunks": 4,
+      "hashes_verified": true,
+      "donor_bytes_verified": false
+    },
+    {
+      "path": "tests/adapters/test_claude_client_executor.py",
+      "hunks": 2,
+      "hashes_verified": true,
+      "donor_bytes_verified": true
+    },
+    {
+      "path": "tests/adapters/test_claude_executors.py",
+      "hunks": 8,
+      "hashes_verified": true,
+      "donor_bytes_verified": false
+    },
+    {
+      "path": "tests/adapters/test_permission_boundary.py",
+      "hunks": 1,
+      "hashes_verified": true,
+      "donor_bytes_verified": false
+    },
+    {
+      "path": "tests/adapters/test_tool_selection.py",
+      "hunks": 1,
+      "hashes_verified": true,
+      "donor_bytes_verified": false
+    },
+    {
+      "path": "tests/adapters/tool_request_schemas.json",
+      "hunks": 1,
+      "hashes_verified": true,
+      "donor_bytes_verified": false
+    },
+    {
+      "path": "tests/api/v1/test_jobs.py",
+      "hunks": 2,
+      "hashes_verified": true,
+      "donor_bytes_verified": false
+    },
+    {
+      "path": "tests/api/v1/test_session_policy_base_boundary.py",
+      "hunks": 1,
+      "hashes_verified": true,
+      "donor_bytes_verified": false
+    },
+    {
+      "path": "tests/chains/test_accept_gate.py",
+      "hunks": 2,
+      "hashes_verified": true,
+      "donor_bytes_verified": false
+    },
+    {
+      "path": "tests/chains/test_criteria_validation.py",
+      "hunks": 2,
+      "hashes_verified": true,
+      "donor_bytes_verified": false
+    },
+    {
+      "path": "tests/chains/test_dispatch_definitions.py",
+      "hunks": 2,
+      "hashes_verified": true,
+      "donor_bytes_verified": false
+    },
+    {
+      "path": "tests/chains/test_outbound_gating.py",
+      "hunks": 2,
+      "hashes_verified": true,
+      "donor_bytes_verified": false
+    },
+    {
+      "path": "tests/chains/test_ralph_loop.py",
+      "hunks": 2,
+      "hashes_verified": true,
+      "donor_bytes_verified": false
+    },
+    {
+      "path": "tests/chains/test_ralph_workflow.py",
+      "hunks": 80,
+      "hashes_verified": true,
+      "donor_bytes_verified": false
+    },
+    {
+      "path": "tests/chains/test_session_policy_composition.py",
+      "hunks": 1,
+      "hashes_verified": true,
+      "donor_bytes_verified": false
+    },
+    {
+      "path": "tests/chains/test_shorthand_url_resolution.py",
+      "hunks": 4,
+      "hashes_verified": true,
+      "donor_bytes_verified": false
+    },
+    {
+      "path": "tests/chains/test_ticket_generation.py",
+      "hunks": 2,
+      "hashes_verified": true,
+      "donor_bytes_verified": false
+    },
+    {
+      "path": "tests/core/test_logging_chain.py",
+      "hunks": 3,
+      "hashes_verified": true,
+      "donor_bytes_verified": false
+    },
+    {
+      "path": "tests/domain/test_base_scope.py",
+      "hunks": 3,
+      "hashes_verified": true,
+      "donor_bytes_verified": true
+    },
+    {
+      "path": "tests/fakes.py",
+      "hunks": 12,
+      "hashes_verified": true,
+      "donor_bytes_verified": false
+    },
+    {
+      "path": "tests/integration/test_criteria_oracle.py",
+      "hunks": 4,
+      "hashes_verified": true,
+      "donor_bytes_verified": false
+    },
+    {
+      "path": "tests/integration/test_live_criteria_probes.py",
+      "hunks": 3,
+      "hashes_verified": true,
+      "donor_bytes_verified": false
+    },
+    {
+      "path": "tests/integration/test_stacked_scope.py",
+      "hunks": 2,
+      "hashes_verified": true,
+      "donor_bytes_verified": false
+    },
+    {
+      "path": "tests/integration/test_workflow_e2e.py",
+      "hunks": 8,
+      "hashes_verified": true,
+      "donor_bytes_verified": false
+    },
+    {
+      "path": "tests/probes/test_ab_smoke.py",
+      "hunks": 4,
+      "hashes_verified": true,
+      "donor_bytes_verified": false
+    },
+    {
+      "path": "tests/probes/test_harness_capabilities.py",
+      "hunks": 17,
+      "hashes_verified": true,
+      "donor_bytes_verified": false
+    },
+    {
+      "path": "tests/prompts/test_skills_loadouts.py",
+      "hunks": 3,
+      "hashes_verified": true,
+      "donor_bytes_verified": false
+    },
+    {
+      "path": "tests/services/test_agent_service.py",
+      "hunks": 4,
+      "hashes_verified": true,
+      "donor_bytes_verified": false
+    },
+    {
+      "path": "tests/services/test_fire_dispatcher.py",
+      "hunks": 2,
+      "hashes_verified": true,
+      "donor_bytes_verified": false
+    },
+    {
+      "path": "tests/services/test_lifecycle_watcher.py",
+      "hunks": 6,
+      "hashes_verified": true,
+      "donor_bytes_verified": false
+    },
+    {
+      "path": "tests/services/test_run_surface_lease.py",
+      "hunks": 5,
+      "hashes_verified": true,
+      "donor_bytes_verified": false
+    },
+    {
+      "path": "tests/services/test_session_grant_threading.py",
+      "hunks": 4,
+      "hashes_verified": true,
+      "donor_bytes_verified": false
+    },
+    {
+      "path": "tests/test_composition_root.py",
+      "hunks": 4,
+      "hashes_verified": true,
+      "donor_bytes_verified": false
+    },
+    {
+      "path": "tests/test_forge_origin_selection.py",
+      "hunks": 2,
+      "hashes_verified": true,
+      "donor_bytes_verified": false
+    }
+  ],
+  "exact_donor_symbols": [
+    {
+      "path": "src/kodezart/adapters/_agents_mapping.py",
+      "symbol": "_SDK_TOOL_PRESETS"
+    },
+    {
+      "path": "src/kodezart/adapters/_agents_mapping.py",
+      "symbol": "map_allowed_tools"
+    },
+    {
+      "path": "src/kodezart/adapters/_permission_modes.py",
+      "symbol": "_PERMISSION_MODE_MAP"
+    },
+    {
+      "path": "src/kodezart/adapters/_permission_modes.py",
+      "symbol": "map_permission_mode"
+    },
+    {
+      "path": "src/kodezart/adapters/agent_content_scanner.py",
+      "symbol": "_AUDIT_PERMISSION_MODE"
+    },
+    {
+      "path": "src/kodezart/adapters/asyncio_job_queue.py",
+      "symbol": "AsyncioJobQueue.__init__"
+    },
+    {
+      "path": "src/kodezart/adapters/asyncio_job_queue.py",
+      "symbol": "AsyncioJobQueue.submit"
+    },
+    {
+      "path": "src/kodezart/adapters/claude_agent_executor.py",
+      "symbol": "ClaudeAgentExecutor.stream.options"
+    },
+    {
+      "path": "src/kodezart/adapters/claude_client_executor.py",
+      "symbol": "ClaudeClientExecutor.stream.options"
+    },
+    {
+      "path": "src/kodezart/adapters/git_change_persister.py",
+      "symbol": "GitChangePersister._generate_commit_message"
+    },
+    {
+      "path": "src/kodezart/core/constants.py",
+      "symbol": "EVAL_PERMISSION_MODE"
+    },
+    {
+      "path": "src/kodezart/core/constants.py",
+      "symbol": "UNATTENDED_PERMISSION_MODE"
+    },
+    {
+      "path": "src/kodezart/core/protocols.py",
+      "symbol": "JobQueue.submit"
+    },
+    {
+      "path": "src/kodezart/handlers/agent_handler.py",
+      "symbol": "AgentHandler.stream_query"
+    },
+    {
+      "path": "src/kodezart/handlers/agent_handler.py",
+      "symbol": "_HTTP_PERMISSIONS"
+    },
+    {
+      "path": "src/kodezart/types/domain/session.py",
+      "symbol": "AllowedTools"
+    },
+    {
+      "path": "src/kodezart/types/domain/session.py",
+      "symbol": "PermissionMode.ACCEPT_EDITS"
+    },
+    {
+      "path": "src/kodezart/types/domain/session.py",
+      "symbol": "PermissionMode.INTERACTIVE"
+    },
+    {
+      "path": "src/kodezart/types/domain/session.py",
+      "symbol": "PermissionMode.PLAN"
+    },
+    {
+      "path": "src/kodezart/types/domain/session.py",
+      "symbol": "PermissionMode.UNATTENDED"
+    },
+    {
+      "path": "src/kodezart/types/domain/session.py",
+      "symbol": "ToolPreset.AUTHORING"
+    },
+    {
+      "path": "src/kodezart/types/domain/session.py",
+      "symbol": "ToolPreset.DELEGATED_EVALUATION"
+    },
+    {
+      "path": "src/kodezart/types/domain/session.py",
+      "symbol": "ToolPreset.EVALUATION"
+    },
+    {
+      "path": "src/kodezart/types/domain/session.py",
+      "symbol": "ToolPreset.IMPLEMENTATION"
+    },
+    {
+      "path": "src/kodezart/types/domain/workflow.py",
+      "symbol": "ExecutionContext.allowed_tools"
+    },
+    {
+      "path": "src/kodezart/types/domain/workflow.py",
+      "symbol": "ExecutionContext.permission_mode"
+    },
+    {
+      "path": "src/kodezart/types/domain/workflow.py",
+      "symbol": "WorkflowSubmission.allowed_tools"
+    },
+    {
+      "path": "src/kodezart/types/domain/workflow.py",
+      "symbol": "WorkflowSubmission.base_spec"
+    },
+    {
+      "path": "src/kodezart/types/domain/workflow.py",
+      "symbol": "WorkflowSubmission.implied_base"
+    },
+    {
+      "path": "src/kodezart/types/domain/workflow.py",
+      "symbol": "WorkflowSubmission.model_config"
+    },
+    {
+      "path": "src/kodezart/types/domain/workflow.py",
+      "symbol": "WorkflowSubmission.permission_mode"
+    },
+    {
+      "path": "src/kodezart/types/domain/workflow.py",
+      "symbol": "WorkflowSubmission.prompt"
+    },
+    {
+      "path": "src/kodezart/types/domain/workflow.py",
+      "symbol": "WorkflowSubmission.repo_path"
+    },
+    {
+      "path": "src/kodezart/types/domain/workflow.py",
+      "symbol": "WorkflowSubmission.repo_url"
+    },
+    {
+      "path": "src/kodezart/types/requests/agent.py",
+      "symbol": "HttpPermissionMode"
+    },
+    {
+      "path": "src/kodezart/types/requests/agent.py",
+      "symbol": "QueryRequest.permission_mode"
+    },
+    {
+      "path": "src/kodezart/types/requests/agent.py",
+      "symbol": "WorkflowRequest._check_trunk_base"
+    },
+    {
+      "path": "src/kodezart/types/requests/agent.py",
+      "symbol": "WorkflowRequest.permission_mode"
+    },
+    {
+      "path": "tests/adapters/test_claude_client_executor.py",
+      "symbol": "_failure_of"
+    },
+    {
+      "path": "tests/adapters/test_claude_executors.py",
+      "symbol": "_options_for"
+    },
+    {
+      "path": "tests/adapters/test_claude_executors.py",
+      "symbol": "test_both_executors_pass_the_mapped_skills_never_none"
+    },
+    {
+      "path": "tests/adapters/test_claude_executors.py",
+      "symbol": "test_process_error_redacts_token_in_warning_log"
+    },
+    {
+      "path": "tests/adapters/test_claude_executors.py",
+      "symbol": "test_process_error_round_trips_exit_code_and_stderr_on_re_raise"
+    },
+    {
+      "path": "tests/adapters/test_claude_executors.py",
+      "symbol": "test_process_error_stderr_tail_on_agent_sdk_error_is_redacted"
+    },
+    {
+      "path": "tests/adapters/test_claude_executors.py",
+      "symbol": "test_process_error_with_none_stderr_does_not_crash"
+    },
+    {
+      "path": "tests/adapters/test_claude_executors.py",
+      "symbol": "test_setting_sources_come_from_config_in_every_mode"
+    },
+    {
+      "path": "tests/adapters/test_permission_boundary.py",
+      "symbol": "MODES"
+    },
+    {
+      "path": "tests/adapters/test_permission_boundary.py",
+      "symbol": "TOOLS"
+    },
+    {
+      "path": "tests/adapters/test_permission_boundary.py",
+      "symbol": "sdk.executor"
+    },
+    {
+      "path": "tests/adapters/test_permission_boundary.py",
+      "symbol": "sdk.module"
+    },
+    {
+      "path": "tests/adapters/test_permission_boundary.py",
+      "symbol": "sdk.persistent"
+    },
+    {
+      "path": "tests/adapters/test_permission_boundary.py",
+      "symbol": "sdk.records"
+    },
+    {
+      "path": "tests/adapters/test_permission_boundary.py",
+      "symbol": "sdk.replacement"
+    },
+    {
+      "path": "tests/adapters/test_permission_boundary.py",
+      "symbol": "sdk.service"
+    },
+    {
+      "path": "tests/adapters/test_permission_boundary.py",
+      "symbol": "sdk.target"
+    },
+    {
+      "path": "tests/adapters/test_permission_boundary.py",
+      "symbol": "sdk.workspace"
+    },
+    {
+      "path": "tests/adapters/test_permission_boundary.py",
+      "symbol": "test_application_permission_reaches_each_sdk_as_its_existing_option.options"
+    },
+    {
+      "path": "tests/adapters/test_permission_boundary.py",
+      "symbol": "test_cancellation_still_closes_sdk_and_releases_the_workspace.Client.__aenter__"
+    },
+    {
+      "path": "tests/adapters/test_permission_boundary.py",
+      "symbol": "test_cancellation_still_closes_sdk_and_releases_the_workspace.Client.__aexit__"
+    },
+    {
+      "path": "tests/adapters/test_permission_boundary.py",
+      "symbol": "test_cancellation_still_closes_sdk_and_releases_the_workspace.Client.__init__"
+    },
+    {
+      "path": "tests/adapters/test_permission_boundary.py",
+      "symbol": "test_cancellation_still_closes_sdk_and_releases_the_workspace.Client.query"
+    },
+    {
+      "path": "tests/adapters/test_permission_boundary.py",
+      "symbol": "test_cancellation_still_closes_sdk_and_releases_the_workspace.Client.receive_response"
+    },
+    {
+      "path": "tests/adapters/test_permission_boundary.py",
+      "symbol": "test_cancellation_still_closes_sdk_and_releases_the_workspace.closed"
+    },
+    {
+      "path": "tests/adapters/test_permission_boundary.py",
+      "symbol": "test_cancellation_still_closes_sdk_and_releases_the_workspace.entered"
+    },
+    {
+      "path": "tests/adapters/test_permission_boundary.py",
+      "symbol": "test_cancellation_still_closes_sdk_and_releases_the_workspace.options_seen"
+    },
+    {
+      "path": "tests/adapters/test_permission_boundary.py",
+      "symbol": "test_cancellation_still_closes_sdk_and_releases_the_workspace.persistent"
+    },
+    {
+      "path": "tests/adapters/test_permission_boundary.py",
+      "symbol": "test_cancellation_still_closes_sdk_and_releases_the_workspace.query"
+    },
+    {
+      "path": "tests/adapters/test_permission_boundary.py",
+      "symbol": "test_cancellation_still_closes_sdk_and_releases_the_workspace.run"
+    },
+    {
+      "path": "tests/adapters/test_permission_boundary.py",
+      "symbol": "test_cancellation_still_closes_sdk_and_releases_the_workspace.service"
+    },
+    {
+      "path": "tests/adapters/test_permission_boundary.py",
+      "symbol": "test_cancellation_still_closes_sdk_and_releases_the_workspace.target"
+    },
+    {
+      "path": "tests/adapters/test_permission_boundary.py",
+      "symbol": "test_cancellation_still_closes_sdk_and_releases_the_workspace.workspace"
+    },
+    {
+      "path": "tests/adapters/test_permission_boundary.py",
+      "symbol": "test_checkpoint_config_restores_the_same_domain_permission.context"
+    },
+    {
+      "path": "tests/adapters/test_permission_boundary.py",
+      "symbol": "test_checkpoint_config_restores_the_same_domain_permission.loaded"
+    },
+    {
+      "path": "tests/adapters/test_permission_boundary.py",
+      "symbol": "test_checkpoint_config_restores_the_same_domain_permission.restored"
+    },
+    {
+      "path": "tests/adapters/test_permission_boundary.py",
+      "symbol": "test_checkpoint_config_restores_the_same_domain_permission.serializer"
+    },
+    {
+      "path": "tests/adapters/test_permission_boundary.py",
+      "symbol": "test_domain_construction_rejects_vendor_modes_and_unknown_values.fields"
+    },
+    {
+      "path": "tests/adapters/test_permission_boundary.py",
+      "symbol": "test_existing_http_values_and_defaults_translate_before_application_entry.app"
+    },
+    {
+      "path": "tests/adapters/test_permission_boundary.py",
+      "symbol": "test_existing_http_values_and_defaults_translate_before_application_entry.body"
+    },
+    {
+      "path": "tests/adapters/test_permission_boundary.py",
+      "symbol": "test_existing_http_values_and_defaults_translate_before_application_entry.effective_wire"
+    },
+    {
+      "path": "tests/adapters/test_permission_boundary.py",
+      "symbol": "test_existing_http_values_and_defaults_translate_before_application_entry.expected"
+    },
+    {
+      "path": "tests/adapters/test_permission_boundary.py",
+      "symbol": "test_existing_http_values_and_defaults_translate_before_application_entry.queue"
+    },
+    {
+      "path": "tests/adapters/test_permission_boundary.py",
+      "symbol": "test_http_does_not_widen_its_existing_two_mode_contract.app"
+    },
+    {
+      "path": "tests/adapters/test_permission_boundary.py",
+      "symbol": "test_http_does_not_widen_its_existing_two_mode_contract.queue"
+    },
+    {
+      "path": "tests/adapters/test_permission_boundary.py",
+      "symbol": "test_opt_in_harness_probe_uses_the_same_sdk_translation.options"
+    },
+    {
+      "path": "tests/adapters/test_permission_boundary.py",
+      "symbol": "test_the_probe_alternative_preserves_its_interactive_sdk_mode.options"
+    },
+    {
+      "path": "tests/adapters/test_permission_boundary.py",
+      "symbol": "test_untyped_adapter_input_refuses_before_sdk_construction"
+    },
+    {
+      "path": "tests/adapters/test_tool_selection.py",
+      "symbol": "BUNDLES"
+    },
+    {
+      "path": "tests/adapters/test_tool_selection.py",
+      "symbol": "OPEN"
+    },
+    {
+      "path": "tests/adapters/test_tool_selection.py",
+      "symbol": "SELECTIONS"
+    },
+    {
+      "path": "tests/adapters/test_tool_selection.py",
+      "symbol": "context.fields"
+    },
+    {
+      "path": "tests/adapters/test_tool_selection.py",
+      "symbol": "test_actual_http_schemas_match_the_captured_previous_boundary.expected"
+    },
+    {
+      "path": "tests/adapters/test_tool_selection.py",
+      "symbol": "test_actual_queue_keeps_selection_until_native_execution.Engine.run"
+    },
+    {
+      "path": "tests/adapters/test_tool_selection.py",
+      "symbol": "test_actual_queue_keeps_selection_until_native_execution.seen"
+    },
+    {
+      "path": "tests/adapters/test_tool_selection.py",
+      "symbol": "test_actual_sdk_expands_only_application_bundles"
+    },
+    {
+      "path": "tests/adapters/test_tool_selection.py",
+      "symbol": "test_actual_tracker_dispatch_requests_the_implementation_bundle.tracker"
+    },
+    {
+      "path": "tests/adapters/test_tool_selection.py",
+      "symbol": "test_checkpoint_and_json_keep_preset_distinct_from_explicit_list.loaded"
+    },
+    {
+      "path": "tests/adapters/test_tool_selection.py",
+      "symbol": "test_checkpoint_and_json_keep_preset_distinct_from_explicit_list.original"
+    },
+    {
+      "path": "tests/adapters/test_tool_selection.py",
+      "symbol": "test_checkpoint_and_json_keep_preset_distinct_from_explicit_list.serializer"
+    },
+    {
+      "path": "tests/adapters/test_tool_selection.py",
+      "symbol": "test_http_remains_an_explicit_open_list_contract.actual"
+    },
+    {
+      "path": "tests/adapters/test_tool_selection.py",
+      "symbol": "test_http_remains_an_explicit_open_list_contract.app"
+    },
+    {
+      "path": "tests/adapters/test_tool_selection.py",
+      "symbol": "test_http_remains_an_explicit_open_list_contract.body"
+    },
+    {
+      "path": "tests/adapters/test_tool_selection.py",
+      "symbol": "test_http_remains_an_explicit_open_list_contract.expected"
+    },
+    {
+      "path": "tests/adapters/test_tool_selection.py",
+      "symbol": "test_http_remains_an_explicit_open_list_contract.queue"
+    },
+    {
+      "path": "tests/adapters/test_tool_selection.py",
+      "symbol": "test_unknown_whole_value_cannot_reach_native_sdk"
+    },
+    {
+      "path": "tests/adapters/test_tool_selection.py",
+      "symbol": "test_unsupported_whole_value_is_refused_by_actual_context"
+    },
+    {
+      "path": "tests/chains/test_dispatch_definitions.py",
+      "symbol": "evaluator_dispatches"
+    },
+    {
+      "path": "tests/chains/test_ralph_loop.py",
+      "symbol": "_run_kwargs"
+    },
+    {
+      "path": "tests/chains/test_ralph_workflow.py",
+      "symbol": "TestForgeNodePreconditions._config"
+    },
+    {
+      "path": "tests/chains/test_ralph_workflow.py",
+      "symbol": "TestWorkBaseRefIsWrittenWhereItBecomesTrue._config"
+    },
+    {
+      "path": "tests/chains/test_ralph_workflow.py",
+      "symbol": "test_review_against_ticket_raises_when_review_shas_missing.config"
+    },
+    {
+      "path": "tests/domain/test_base_scope.py",
+      "symbol": "_context"
+    },
+    {
+      "path": "tests/domain/test_base_scope.py",
+      "symbol": "test_the_context_holds_no_base_of_its_own"
+    },
+    {
+      "path": "tests/fakes.py",
+      "symbol": "FakeJobQueue.__init__"
+    },
+    {
+      "path": "tests/fakes.py",
+      "symbol": "FakeJobQueue.submit"
+    },
+    {
+      "path": "tests/probes/test_harness_capabilities.py",
+      "symbol": "EVALUATIVE_CONFIGURATION"
+    },
+    {
+      "path": "tests/probes/test_harness_capabilities.py",
+      "symbol": "GENERATIVE_CONFIGURATION"
+    },
+    {
+      "path": "tests/probes/test_harness_capabilities.py",
+      "symbol": "UNGATED_PERMISSION_MODE"
+    },
+    {
+      "path": "tests/probes/test_harness_capabilities.py",
+      "symbol": "WORKFLOW_ALLOWED_TOOLS"
+    },
+    {
+      "path": "tests/probes/test_harness_capabilities.py",
+      "symbol": "evaluator_options"
+    },
+    {
+      "path": "tests/probes/test_harness_capabilities.py",
+      "symbol": "generative_options"
+    },
+    {
+      "path": "tests/probes/test_harness_capabilities.py",
+      "symbol": "test_probe_c_workflow_tool_presence"
+    },
+    {
+      "path": "tests/probes/test_harness_capabilities.py",
+      "symbol": "test_probe_config_matches_production"
+    },
+    {
+      "path": "tests/probes/test_harness_capabilities.py",
+      "symbol": "test_probe_d_named_workflow_invocation"
+    },
+    {
+      "path": "tests/probes/test_harness_capabilities.py",
+      "symbol": "test_probe_e_agent_type_and_bounding"
+    },
+    {
+      "path": "tests/probes/test_harness_capabilities.py",
+      "symbol": "test_probe_f_origin_gate"
+    },
+    {
+      "path": "tests/prompts/test_skills_loadouts.py",
+      "symbol": "test_ralph_loop_threads_the_selection_into_stream_workflow"
+    },
+    {
+      "path": "tests/services/test_agent_service.py",
+      "symbol": "test_stream_passes_output_format"
+    },
+    {
+      "path": "tests/services/test_agent_service.py",
+      "symbol": "test_stream_propagates_executor_error"
+    },
+    {
+      "path": "tests/services/test_agent_service.py",
+      "symbol": "test_stream_workflow_persists_changes.collected"
+    },
+    {
+      "path": "tests/services/test_fire_dispatcher.py",
+      "symbol": "TestTheBaseIsReadOffTheGraph.test_a_lane_with_a_blocker_is_dispatched_on_that_blockers_ref"
+    },
+    {
+      "path": "tests/services/test_fire_dispatcher.py",
+      "symbol": "TestTheBaseIsReadOffTheGraph.test_a_lane_with_no_blockers_is_dispatched_on_the_configured_trunk"
+    },
+    {
+      "path": "tests/services/test_session_grant_threading.py",
+      "symbol": "test_stream_carries_the_session_type_to_the_executor"
+    },
+    {
+      "path": "tests/services/test_session_grant_threading.py",
+      "symbol": "test_stream_in_workspace_carries_the_session_type"
+    },
+    {
+      "path": "tests/services/test_session_grant_threading.py",
+      "symbol": "test_stream_workflow_carries_the_session_type"
+    }
+  ],
+  "file_count": 56,
+  "hunk_count": 286,
+  "exact_donor_symbol_count": 134
+}

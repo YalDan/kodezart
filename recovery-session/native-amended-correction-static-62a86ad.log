@@ -1,0 +1,6 @@
+Command: uv run mypy src/kodezart/services/amendment_writeback.py src/kodezart/services/native_amendments.py
+Captured exit 0 output:
+Success: no issues found in 2 source files
+Command: uv run ruff check src/kodezart/services/amendment_writeback.py src/kodezart/services/native_amendments.py tests/services/test_native_amendment_archive_independent.py tests/services/test_native_amendment_archive_publication.py
+Captured exit 0 output:
+All checks passed!

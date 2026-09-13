@@ -1,0 +1,7 @@
+Using CPython 3.12.13
+Creating virtual environment at: .venv
+   Building kodezart @ file:///private/tmp/kodezart-v03-native-resume-integration-review
+warning: `build_system.requires = ["uv-build>=0.10.9,<0.11.0"]` does not contain the current uv version 0.11.6
+      Built kodezart @ file:///private/tmp/kodezart-v03-native-resume-integration-review
+Installed 174 packages in 1.66s
+Success: no issues found in 333 source files

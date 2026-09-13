@@ -1,0 +1,58 @@
+.F                                                                       [100%]
+=================================== FAILURES ===================================
+______ test_result_is_current_after_final_tracker_roster_read[head-moved] ______
+
+tmp_path = PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-2041/test_result_is_current_after_f1')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10ac837d0>
+move_head = True
+
+    @pytest.mark.parametrize("move_head", [False, True], ids=["unchanged", "head-moved"])
+    async def test_result_is_current_after_final_tracker_roster_read(
+        tmp_path, monkeypatch, move_head
+    ):
+        fixture = await build_delivery(tmp_path / "world")
+        original = fixture.tracker.work_refs
+        calls = []
+        pushed_sha = None
+    
+        async def read_refs(*, issue_key):
+            nonlocal pushed_sha
+            answer = await original(issue_key=issue_key)
+            calls.append(issue_key)
+            # Two participant refs were read to compose the union. The next
+            # read is after UnionTick has completed its final remote-head check.
+            if move_head and len(calls) == 3:
+                await pinned.git(fixture.author, "checkout", "work/z")
+                (fixture.author / "later.txt").write_text("another actor's new head\n")
+                await pinned.git(fixture.author, "add", "later.txt")
+                await pinned.git(fixture.author, "commit", "-m", "head moved during roster read")
+                await pinned.git(fixture.author, "push", str(fixture.remote), "work/z")
+                pushed_sha = await pinned.git(fixture.author, "rev-parse", "HEAD")
+            return answer
+    
+        monkeypatch.setattr(fixture.tracker, "work_refs", read_refs)
+        try:
+            result = await fixture.coordinator().verify()
+        except (UnionHeadReadError, UnionUnstableError):
+            assert move_head and pushed_sha is not None
+        else:
+            remote_sha = (
+                await pinned.git(fixture.remote, "rev-parse", "refs/heads/work/z")
+            )
+            observed = next(head.head_sha for head in result.lane_heads if head.lane_key == "z")
+>           assert observed == remote_sha, (
+                "the union result became stale during its awaited final tracker reread",
+                observed,
+                remote_sha,
+                calls,
+            )
+E           AssertionError: ('the union result became stale during its awaited final tracker reread', '947f7247dba6e1802cacea2a8c3892a694c6e493', '90519f600b020bdcb62a6d6d4a43ae7ff23520ea', ['z', 'a', 'z', 'a'])
+E           assert '947f7247dba6...892a694c6e493' == '90519f600b02...3ae7ff23520ea'
+E             
+E             - 90519f600b020bdcb62a6d6d4a43ae7ff23520ea
+E             + 947f7247dba6e1802cacea2a8c3892a694c6e493
+
+../kodezart-recovery-session/test_m5_union_final_freshness_independent.py:46: AssertionError
+=========================== short test summary info ============================
+FAILED ::test_result_is_current_after_final_tracker_roster_read[head-moved]
+1 failed, 1 passed in 22.20s

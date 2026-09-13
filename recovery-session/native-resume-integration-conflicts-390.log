@@ -1,0 +1,14 @@
+ab98ab49bc1280391558dab821252face1f10c90
+src/kodezart/adapters/git_worktree_provider.py
+src/kodezart/adapters/subprocess_git_service.py
+tests/chains/test_retry_floor_wiring.py
+
+Auto-merging src/kodezart/adapters/git_worktree_provider.py
+CONFLICT (content): Merge conflict in src/kodezart/adapters/git_worktree_provider.py
+Auto-merging src/kodezart/adapters/subprocess_git_service.py
+CONFLICT (content): Merge conflict in src/kodezart/adapters/subprocess_git_service.py
+Auto-merging src/kodezart/core/protocols.py
+Auto-merging src/kodezart/domain/errors.py
+Auto-merging src/kodezart/services/native_amendments.py
+Auto-merging tests/chains/test_retry_floor_wiring.py
+CONFLICT (content): Merge conflict in tests/chains/test_retry_floor_wiring.py

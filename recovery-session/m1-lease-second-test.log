@@ -1,0 +1,57 @@
+........................................................................ [ 26%]
+........................................................................ [ 52%]
+........................................................................ [ 79%]
+.............................F..........................                 [100%]
+=================================== FAILURES ===================================
+_______ test_composed_outcome_comment_is_held_by_the_actual_queue_job_id _______
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10f028ce0>
+
+    async def test_composed_outcome_comment_is_held_by_the_actual_queue_job_id(monkeypatch):
+        monkeypatch.setenv("KODEZART_TRACKER__SURFACE_LEASE_SECONDS", str(DURATION))
+        monkeypatch.setenv("KODEZART_DISPATCH_HOLDER", "separate-deployment")
+        config = AppConfig()
+        engine = _CompletedEngine()
+        queue = build_job_queue(config=config, workflow_engine=engine)
+        board = _Board()
+        tracker = board.tracker()
+        gate = PassThroughGate()
+        built = await build_dispatch_passes(
+            recorder=RunRecorder(records={}, sinks={}),
+            config=config,
+            operation=operation_config(),
+            tracker=tracker,
+            ledger=board.ledger,
+            delivery=FakeDeliveryProbe(),
+            queue=queue,
+            registry=queue,
+            gate=gate,
+            git=FakeGitService(),
+            cache=FakeRepoCache(),
+            integration_workspace_dir=INTEGRATION_DIR,
+        )
+        await queue.start()
+        try:
+            record = await queue.submit(
+                lane="fixture",
+>               request=WorkflowRequest(
+                    prompt="Run the fixture",
+                    issue_key=CLAIMED_ISSUE,
+                    repo_path=None,
+                    repo_url=None,
+                    base_spec=BaseSpec(inputs=(), base_branch="trunk"),
+                    permission_mode="bypassPermissions",
+                    allowed_tools=[],
+                ),
+            )
+E           pydantic_core._pydantic_core.ValidationError: 1 validation error for WorkflowRequest
+E           issue_key
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='FIX-1', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.12/v/extra_forbidden
+
+tests/services/test_run_surface_lease.py:162: ValidationError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 20:32:25 [info     ] job_queue_stopped              abandoned=0 lanes=1 outcome=shutdown_abandoned
+=========================== short test summary info ============================
+FAILED tests/services/test_run_surface_lease.py::test_composed_outcome_comment_is_held_by_the_actual_queue_job_id
+1 failed, 271 passed in 5.19s

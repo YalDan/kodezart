@@ -1,0 +1,38 @@
+Using CPython 3.12.13
+Creating virtual environment at: .venv
+   Building kodezart @ file:///private/tmp/kodezart-v03-recovery-lane-delivery
+warning: `build_system.requires = ["uv-build>=0.10.9,<0.11.0"]` does not contain the current uv version 0.11.6
+      Built kodezart @ file:///private/tmp/kodezart-v03-recovery-lane-delivery
+Installed 174 packages in 1.23s
+F                                                                        [100%]
+=================================== FAILURES ===================================
+____________ test_completed_watch_returns_one_portable_observation _____________
+
+    async def test_completed_watch_returns_one_portable_observation():
+        requests = []
+    
+        def handler(request):
+            requests.append(request)
+            return httpx.Response(
+                200,
+                json={
+                    "total_count": 2,
+                    "check_runs": [check(), check(identity=2, name="lint", passed=True)],
+                },
+            )
+    
+        client = _make_client(handler)
+        try:
+            observed = await asyncio.create_task(
+                client.wait_for_checks(repo_url=REPO, ref=BRANCH)
+            )
+>           assert observed.commit_sha == SHA
+                   ^^^^^^^^^^^^^^^^^^^
+E           AttributeError: 'tuple' object has no attribute 'commit_sha'
+
+tests/adapters/test_ci_watch_result.py:29: AttributeError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 14:58:11 [info     ] ci_runs_observed               count=2 ref=feature/one
+=========================== short test summary info ============================
+FAILED tests/adapters/test_ci_watch_result.py::test_completed_watch_returns_one_portable_observation
+1 failed in 0.49s

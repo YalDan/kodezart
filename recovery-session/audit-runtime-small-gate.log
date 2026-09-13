@@ -1,0 +1,112 @@
+.....................F.................................................. [ 67%]
+..................................                                       [100%]
+=================================== FAILURES ===================================
+____ test_actual_main_lifespan_registers_and_executes_audit[missing_policy] ____
+
+tmp_path = PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1865/test_actual_main_lifespan_regi1')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10e635d60>
+configuration = 'missing_policy'
+
+    @pytest.mark.parametrize(
+        "configuration", ["complete", "missing_policy", "missing_roster"]
+    )
+    async def test_actual_main_lifespan_registers_and_executes_audit(
+        tmp_path, monkeypatch, configuration
+    ):
+        from kodezart import main
+        from kodezart.composition.records import BuiltRecorder
+        from kodezart.composition.workspace import GitStack
+        from kodezart.core.prompt_namespaces import operation_bindings
+        from tests.fakes import (
+            FakeArtifactPersister,
+            FakeBranchMerger,
+            FakeChangePersister,
+            FakeRefPublisher,
+            ManagedFakeLinearMcpServer,
+        )
+        from tests.prompts.test_organize_mandate_bindings import declared_operation
+        from tests.services.test_prompt_passes import _config
+    
+        _, _, server, tracker, _ = dependencies()
+        fields = declared_operation().model_dump()
+        fields["marker_prefixes"]["audit"] = "configured-audit-record"
+        fields["marker_prefixes"]["escalation"] = "configured-audit-escalation"
+        fields["issue_labels"]["decision"] = "needs decision"
+        fields["audit_scopes"] = [
+            {
+                "scope": EMPTY_PROJECT.model_dump(),
+                "repo_url": fields["repos"][0]["url"],
+                "report_issue_key": ROOT.key,
+            }
+        ]
+        operation = OperationConfig.model_validate(fields)
+        config = _config(
+            tmp_path,
+            audit={"timeout_seconds": 17},
+            write_back={"max_verify_rounds": 2},
+            github_token=SecretStr("fixture-audit-token").get_secret_value(),
+            ticket_review_mode="reviewed",
+            fire_prep_pass_gate_signals=[],
+            grooming_pass_gate_signals=[],
+        )
+        workspace = RecordingWorkspace()
+        executor = RecordingExecutor(
+            [
+                result(
+                    structured_output={
+                        "verdict": "holds",
+                        "evidence": "Read actual native record references.",
+                        "cited_refs": [],
+                    }
+                )
+            ]
+        )
+        stack = GitStack(
+            git=FakeGitService(remote_branch_shas={operation.repos[0].trunk: "a" * 40}),
+            cache=FakeRepoCache(),
+            workspace=workspace,
+            persister=FakeChangePersister(),
+            merger=FakeBranchMerger(),
+            artifact_persister=FakeArtifactPersister(),
+            ref_publisher=FakeRefPublisher(),
+        )
+    
+        async def tracker_boot(**_kwargs):
+            return DialledTracker(
+                tracker=tracker,
+                caller=ManagedFakeLinearMcpServer(),
+                operation=operation,
+                ledger=SelfWriteLedger(),
+            )
+    
+        async def prompt_boot(**_kwargs):
+            return load_registry(bindings=operation_bindings(operation))
+    
+        async def recorder_boot(**_kwargs):
+            return BuiltRecorder(RunRecorder(records={}, sinks={}), None)
+    
+        async def knowledge_boot(**_kwargs):
+            return None
+    
+        async def gate_boot(**_kwargs):
+            return PassThroughGate()
+    
+        monkeypatch.setattr(main, "boot_tracker", tracker_boot)
+        monkeypatch.setattr(main, "boot_prompts", prompt_boot)
+        monkeypatch.setattr(main, "build_run_recorder", recorder_boot)
+        monkeypatch.setattr(main, "boot_knowledge_grant", knowledge_boot)
+        monkeypatch.setattr(main, "build_outbound_gate", gate_boot)
+        monkeypatch.setattr(main, "ClaudeClientExecutor", lambda **_kwargs: executor)
+        monkeypatch.setattr(main, "build_git_stack", lambda **_kwargs: stack)
+        if configuration == "missing_policy":
+>           config = AppConfig.model_validate({**config.model_dump(), "write_back": None})
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 1 validation error for AppConfig
+E           knowledge
+E             Value error, session_grants requires connection with credential (or HTTP gateway_credential) [type=value_error]
+E               For further information visit https://errors.pydantic.dev/2.12/v/value_error
+
+tests/integration/test_audit_scheduler.py:316: ValidationError
+=========================== short test summary info ============================
+FAILED tests/integration/test_audit_scheduler.py::test_actual_main_lifespan_registers_and_executes_audit[missing_policy]
+1 failed, 105 passed in 8.39s

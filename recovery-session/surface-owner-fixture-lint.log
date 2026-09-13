@@ -1,0 +1,40 @@
+E501 Line too long (114 > 88)
+   --> tests/services/test_lifecycle_watcher.py:239:89
+    |
+238 |         assert [comment.body for comment in tracker.comments] == [
+239 |             f"[fixture-outcome:{ISSUE}:job-0001]\njob job-0001 reached outcome {WorkflowOutcome.ci_passed.value}",
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^
+240 |         ]
+    |
+
+E501 Line too long (98 > 88)
+   --> tests/services/test_lifecycle_watcher.py:263:89
+    |
+261 |         exhausted = WorkflowOutcome.ci_failed_fix_budget_exhausted
+262 |         assert [comment.body for comment in tracker.comments] == [
+263 |             f"[fixture-outcome:{ISSUE}:job-0001]\njob job-0001 reached outcome {exhausted.value}",
+    |                                                                                         ^^^^^^^^^^
+264 |         ]
+    |
+
+E501 Line too long (114 > 88)
+   --> tests/services/test_lifecycle_watcher.py:788:89
+    |
+786 |         ]
+787 |         assert [comment.body for comment in tracker.comments] == [
+788 |             f"[fixture-outcome:{ISSUE}:job-0001]\njob job-0001 reached outcome {WorkflowOutcome.ci_passed.value}",
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^
+789 |         ]
+    |
+
+E501 Line too long (122 > 88)
+   --> tests/services/test_lifecycle_watcher.py:813:89
+    |
+811 |         assert tracker.restored_states == []
+812 |         assert [comment.body for comment in tracker.comments] == [
+813 |             f"[fixture-outcome:{ISSUE}:job-0001]\njob job-0001 reached outcome {WorkflowOutcome.loop_not_accepted.value}",
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+814 |         ]
+    |
+
+Found 4 errors.

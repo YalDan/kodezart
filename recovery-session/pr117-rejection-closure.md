@@ -1,0 +1,5 @@
+Closing this draft as a rejected scanner proposal, without merging it. The audited head is `2eed8a9c0a8c39f6ebf203d04af1b315908aea7b`: its sole delta is a 212-line AST/regex scanner and three static tests. No accepted unique production change or behavioral test is being discarded.
+
+The [blocking architecture finding](https://github.com/YalDan/kodezart/pull/117#issuecomment-5644812624) and outstanding typed-resolver/behavioral acceptance remain on [the owning criterion](https://linear.app/duckburg/issue/KOD-651). Shared reader contracts are being maintained in [M4 #120](https://github.com/YalDan/kodezart/pull/120); native execution binding and its criterion-identity behavior still require the M3 milestone destination. That migration is incomplete, and this closure does not claim implementation acceptance.
+
+The [current transfer manifest](https://linear.app/duckburg/initiative/kodezart-v03-loop-orchestration-scopes-as-input-the-tracker-as-live-97c2509ef1b8#comment-3ae7f771-d30e-43fc-8357-b2892b666abc) preserves that follow-up. The branch, commits and review history are retained.

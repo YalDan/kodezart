@@ -1,0 +1,31 @@
+...............F........................                                 [100%]
+=================================== FAILURES ===================================
+___________ test_one_refused_binding_does_not_starve_the_next_scope ____________
+
+    async def test_one_refused_binding_does_not_starve_the_next_scope():
+        from kodezart.types.domain.gating import GateDecision, GateVerdict
+        from tests.tracker.test_scope_reads import EMPTY_INITIATIVE
+    
+        class FirstBlocked:
+            def __init__(self):
+                self.calls = 0
+    
+            async def gate(self, **kwargs):
+                self.calls += 1
+                return GateDecision(
+                    verdict=GateVerdict.BLOCKED if self.calls == 1 else GateVerdict.CLEAN,
+                    content=kwargs["content"],
+                )
+    
+        config, operation, server, tracker, forge = dependencies()
+        fields = operation.model_dump()
+>       fields["audit_scopes"].append(
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            {**fields["audit_scopes"][0], "scope": EMPTY_INITIATIVE.model_dump()}
+        )
+E       AttributeError: 'tuple' object has no attribute 'append'
+
+tests/integration/test_audit_scheduler.py:401: AttributeError
+=========================== short test summary info ============================
+FAILED tests/integration/test_audit_scheduler.py::test_one_refused_binding_does_not_starve_the_next_scope
+1 failed, 39 passed in 2.03s

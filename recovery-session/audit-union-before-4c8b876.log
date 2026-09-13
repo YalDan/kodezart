@@ -1,0 +1,30 @@
+FF...                                                                    [100%]
+=================================== FAILURES ===================================
+__ test_mandate_schema_discriminates_payload_by_verdict[AuditMandateJudgment] __
+
+model = <class 'kodezart.types.domain.audit.AuditMandateJudgment'>
+
+    @pytest.mark.parametrize("model", [AuditMandateJudgment, AuditMandateObservation])
+    def test_mandate_schema_discriminates_payload_by_verdict(model):
+        schema = model.model_json_schema()
+        discriminator = schema.get("discriminator")
+>       assert discriminator is not None
+E       assert None is not None
+
+tests/types/test_audit_union_contracts.py:13: AssertionError
+_ test_mandate_schema_discriminates_payload_by_verdict[AuditMandateObservation] _
+
+model = <class 'kodezart.types.domain.audit.AuditMandateObservation'>
+
+    @pytest.mark.parametrize("model", [AuditMandateJudgment, AuditMandateObservation])
+    def test_mandate_schema_discriminates_payload_by_verdict(model):
+        schema = model.model_json_schema()
+        discriminator = schema.get("discriminator")
+>       assert discriminator is not None
+E       assert None is not None
+
+tests/types/test_audit_union_contracts.py:13: AssertionError
+=========================== short test summary info ============================
+FAILED tests/types/test_audit_union_contracts.py::test_mandate_schema_discriminates_payload_by_verdict[AuditMandateJudgment]
+FAILED tests/types/test_audit_union_contracts.py::test_mandate_schema_discriminates_payload_by_verdict[AuditMandateObservation]
+2 failed, 3 passed in 0.32s

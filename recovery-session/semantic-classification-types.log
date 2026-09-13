@@ -1,0 +1,5 @@
+src/kodezart/adapters/linear_mcp_tracker.py:2158: error: Too many positional arguments for "IssueLabelReadError"  [misc]
+src/kodezart/adapters/linear_mcp_tracker.py:2158: error: Missing named argument "reason" for "IssueLabelReadError"  [call-arg]
+src/kodezart/adapters/linear_mcp_tracker.py:2178: error: Too many positional arguments for "IssueLabelReadError"  [misc]
+src/kodezart/adapters/linear_mcp_tracker.py:2178: error: Missing named argument "reason" for "IssueLabelReadError"  [call-arg]
+Found 4 errors in 1 file (checked 3 source files)

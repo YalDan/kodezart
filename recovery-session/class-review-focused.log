@@ -1,0 +1,11 @@
+HEAD=b714b984112efd8471f73985300864d66a3eb814
+2026-09-12T14:01:49.444045
+.venv/bin/python -m pytest -q tests/chains/test_accept_gate.py tests/chains/test_criteria_validation.py tests/chains/test_authored_check_routing.py tests/chains/test_fire_extraction.py tests/chains/test_fire_spec_prompt_consumers.py tests/domain/test_authored_feasibility_compatibility.py tests/domain/test_criteria_feasibility.py tests/domain/test_criteria_grading.py tests/prompts/test_criteria_generation_prompts.py tests/prompts/test_prompt_wiring.py tests/prompts/test_skills_loadouts.py
+........................................................................ [ 22%]
+........................................................................ [ 45%]
+........................................................................ [ 67%]
+........................................................................ [ 90%]
+..............................                                           [100%]
+318 passed in 255.77s (0:04:15)
+
+exit_code=0

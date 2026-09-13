@@ -1,0 +1,113 @@
+................F
+=================================== FAILURES ===================================
+__ test_fresh_judge_payload_and_workspace_refuse_without_publication[cancel] ___
+
+repository = (PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1965/test_fresh_judge_payload_and_w6/repo'), '63fde886eafce53f36a22b3d647b809c5bef349a')
+failure = 'cancel'
+
+    @pytest.mark.parametrize(
+        "failure", ["subject", "base", "ground", "quote", "dirty", "extra", "cancel"]
+    )
+    async def test_fresh_judge_payload_and_workspace_refuse_without_publication(
+        repository, failure
+    ):
+        async def damage(title, payload, kwargs):
+            if title != "AmendmentJudgment":
+                return
+            if failure == "subject":
+                payload["subject"] = {"kind": "criterion", "id": "FOREIGN-1"}
+            elif failure == "base":
+                payload["base_sha"] = "f" * 40
+            elif failure == "ground":
+                payload["ground"] = "premise_false_at_base"
+            elif failure == "quote":
+                payload["citations"][0]["quote"] = "source bytes that do not exist"
+            elif failure == "dirty":
+                Path(kwargs["cwd"], "judge-instrumentation.py").write_text("side effect")
+            elif failure == "extra":
+                payload["writer_reasoning"] = "untrusted extra field"
+            else:
+                raise asyncio.CancelledError("actual judge cancelled")
+    
+        executor = Executor(mutate=damage)
+        service, guard, workspace, _ = await build(repository, executor)
+        try:
+            with pytest.raises(
+                asyncio.CancelledError
+                if failure == "cancel"
+                else (NativeWriteRefusalError, ValidationError)
+            ):
+>               await drive(service, guard, repository)
+
+tests/services/test_native_amendment_independent.py:194: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/services/test_native_amendments.py:236: in drive
+    return [
+src/kodezart/services/agent_service.py:152: in stream_workflow
+    async for event in self._run_in_workspace(
+src/kodezart/services/agent_service.py:236: in _run_in_workspace
+    async for event in execution.stream():
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.services.native_execution.NativeExecution object at 0x10c660c80>
+
+    async def stream(self) -> AsyncIterator[AgentEvent]:
+        """Stream existing events and retain interrupted native workspace evidence."""
+        completed = False
+        report_emitted = False
+        state = NativeExecutionState(execution=NewNativeExecution())
+        graph = NativeExecutionGraph(actions=self).graph
+        try:
+            async for mode, value in graph.astream(
+                state,
+                stream_mode=["custom", "values"],
+            ):
+                if mode == "custom":
+                    if not isinstance(value, AgentEvent):
+                        raise TypeError(
+                            "Native phase stream requires an actual AgentEvent"
+                        )
+                    report_emitted = report_emitted or isinstance(
+                        value, NativeAmendmentEvent
+                    )
+                    yield value
+                else:
+                    state = NativeExecutionState.model_validate(value)
+            # The installed framework can finish a stream after a child task
+            # cancels itself. Preserve the actual writer failure in this runtime
+            # invocation; exceptions are never serialized as phase state.
+            if self._writer_failure is not None:
+                raise self._writer_failure
+            phase = state.execution
+            if not isinstance(
+                phase,
+                (
+                    PersistedNativeExecution,
+                    UnchangedNativeExecution,
+                    RefusedNativeExecution,
+                ),
+            ):
+>               raise NativeWriteRefusalError(
+                    "Native execution stopped before a completed phase"
+                )
+E               kodezart.domain.amendment.NativeWriteRefusalError: Native execution stopped before a completed phase
+
+src/kodezart/services/native_execution.py:309: NativeWriteRefusalError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 22:53:45 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:53:45 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-27db6eb522a54bf8a09470a1655db264 workspace_id=27db6eb522a54bf8a09470a1655db264
+2026-09-12 22:53:46 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:53:48 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:53:49 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:53:52 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:53:53 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:53:53 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:53:54 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-52b7c65fc8c44b3884f83ce639e25d99 workspace_id=52b7c65fc8c44b3884f83ce639e25d99
+2026-09-12 22:53:54 [info     ] workspace_released             workspace_id=52b7c65fc8c44b3884f83ce639e25d99
+2026-09-12 22:53:54 [warning  ] native_writer_workspace_retained workspace_path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-27db6eb522a54bf8a09470a1655db264
+2026-09-12 22:53:54 [warning  ] workspace_release_unclean      branch_name=native-test path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-27db6eb522a54bf8a09470a1655db264 workspace_id=27db6eb522a54bf8a09470a1655db264
+2026-09-12 22:53:55 [info     ] workspace_released             workspace_id=27db6eb522a54bf8a09470a1655db264
+=========================== short test summary info ============================
+FAILED tests/services/test_native_amendment_independent.py::test_fresh_judge_payload_and_workspace_refuse_without_publication[cancel]
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed, 16 passed in 242.45s (0:04:02)

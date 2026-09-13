@@ -1,0 +1,35 @@
+candidate aef9e78c34dca6897ddfcbfb439246edf76dd364
+files ['src/kodezart/chains/delivery_coordinator.py', 'tests/chains/test_delivery_coordinator.py', 'tests/chains/test_union_exit_invariance.py', 'tests/chains/test_union_participant_order.py']
+constructor and required deliverable-ref lookup unchanged AST
+unmodified boundary files 11
+source escape hatches: none
+patch SHA256 783c610ccbd5c372b725f9a256311d03cd60bee15d6265dd2b4c2f4f95b26aea
+PR114 exact copied units:
+tests/chains/test_delivery_coordinator.py PROJECT
+tests/chains/test_delivery_coordinator.py work_ref
+tests/chains/test_delivery_coordinator.py Fixture.sha
+tests/chains/test_delivery_coordinator.py RaisingRunner.__init__
+tests/chains/test_delivery_coordinator.py RaisingRunner.run_chain
+tests/chains/test_delivery_coordinator.py test_the_scratch_tree_is_obtained_through_the_git_port_and_removed
+tests/chains/test_delivery_coordinator.py test_a_raising_check_chain_still_removes_the_composed_tree
+tests/chains/test_union_exit_invariance.py Fixture.__init__
+tests/chains/test_union_exit_invariance.py Fixture.sha
+tests/chains/test_union_exit_invariance.py Fixture.with_checks
+tests/chains/test_union_exit_invariance.py Fixture.refs
+tests/chains/test_union_exit_invariance.py Fixture.merge_graph_order
+tests/chains/test_union_exit_invariance.py make_repository
+tests/chains/test_union_exit_invariance.py build_delivery
+tests/chains/test_union_exit_invariance.py ForbiddenPublisher.push
+tests/chains/test_union_exit_invariance.py ForbiddenPublisher.merge_branch
+tests/chains/test_union_exit_invariance.py ForbiddenPublisher.delete_remote_branch
+tests/chains/test_union_exit_invariance.py PathlessConflict.merge_scratch_head
+tests/chains/test_union_exit_invariance.py BlockedCreate.__init__
+tests/chains/test_union_exit_invariance.py BlockedCreate.create_worktree
+tests/chains/test_union_exit_invariance.py drive_green
+tests/chains/test_union_exit_invariance.py drive_merge_conflict
+tests/chains/test_union_exit_invariance.py drive_pathless_conflict
+tests/chains/test_union_exit_invariance.py drive_unclassifiable_chain
+tests/chains/test_union_exit_invariance.py drive_undeclared_chain
+tests/chains/test_union_exit_invariance.py drive_unobservable_chain
+tests/chains/test_union_exit_invariance.py drive_cancellation
+tests/chains/test_union_exit_invariance.py EXIT_SCENARIOS

@@ -1,0 +1,30 @@
+........................................................................ [ 12%]
+........................................................................ [ 25%]
+........................................................................ [ 37%]
+........................................................................ [ 50%]
+........................................................................ [ 62%]
+........................................................................ [ 75%]
+........................................................................ [ 87%]
+.....................................................................F.. [100%]
+=================================== FAILURES ===================================
+___________ test_only_the_engine_builder_binds_an_engine_forge_slot ____________
+
+    def test_only_the_engine_builder_binds_an_engine_forge_slot() -> None:
+        """One selection site for the set, findable by this test."""
+        binding = sorted(
+            module.name
+            for module in COMPOSITION.glob("*.py")
+            if _forge_slot_keywords(module)
+        )
+    
+>       assert binding == ["engine.py"]
+E       AssertionError: assert ['delivery.py', 'engine.py'] == ['engine.py']
+E         
+E         At index 0 diff: 'delivery.py' != 'engine.py'
+E         Left contains one more item: 'engine.py'
+E         Use -v to get more diff
+
+tests/test_forge_origin_selection.py:518: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_forge_origin_selection.py::test_only_the_engine_builder_binds_an_engine_forge_slot
+1 failed, 575 passed in 59.32s

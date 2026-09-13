@@ -1,0 +1,218 @@
+{
+  "candidate": "37723cd8c660de5ad959de1f118b93287da48e64",
+  "tree": "965ce3a5833741293a7405cfed50bc6d2ab960ac",
+  "parents": [
+    "fadf6efe29c7addcc608b22e8345cd9008ce4bab",
+    "268be4057dbcd4d4edb79b35d7e2b60a30f2f3c8"
+  ],
+  "production_functions_not_composed_exactly_from_parents": [],
+  "duplicate_definitions": [],
+  "constructor_duplicates": [
+    {
+      "path": "tests/fakes.py",
+      "owner": "module.FakeTrackerPort",
+      "name": "scope_label_members",
+      "lines": [
+        3092,
+        3101
+      ]
+    },
+    {
+      "path": "tests/fakes.py",
+      "owner": "module.FakeTrackerPort",
+      "name": "issue_writes",
+      "lines": [
+        3094,
+        3143
+      ]
+    }
+  ],
+  "fourteen_removals": [
+    {
+      "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+      "name": "LinearMcpTracker.read_scope_labels",
+      "exact_m2_ast": true,
+      "exact_shared_ast": true
+    },
+    {
+      "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+      "name": "LinearMcpTracker.execution_approved",
+      "exact_m2_ast": true,
+      "exact_shared_ast": true
+    },
+    {
+      "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+      "name": "LinearMcpTracker._read_execution_approval",
+      "exact_m2_ast": true,
+      "exact_shared_ast": true
+    },
+    {
+      "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+      "name": "LinearMcpTracker.project_milestones",
+      "exact_m2_ast": true,
+      "exact_shared_ast": true
+    },
+    {
+      "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+      "name": "LinearMcpTracker._scope_label_members",
+      "exact_m2_ast": true,
+      "exact_shared_ast": true
+    },
+    {
+      "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+      "name": "LinearMcpTracker._read_scope_issue",
+      "exact_m2_ast": true,
+      "exact_shared_ast": true
+    },
+    {
+      "path": "src/kodezart/adapters/linear_scope_reader.py",
+      "name": "LinearScopeReader.project_milestones",
+      "exact_m2_ast": true,
+      "exact_shared_ast": true
+    },
+    {
+      "path": "src/kodezart/core/protocols.py",
+      "name": "TrackerPort.read_scope_labels",
+      "exact_m2_ast": true,
+      "exact_shared_ast": true
+    },
+    {
+      "path": "src/kodezart/core/protocols.py",
+      "name": "TrackerPort.execution_approved",
+      "exact_m2_ast": true,
+      "exact_shared_ast": true
+    },
+    {
+      "path": "src/kodezart/core/protocols.py",
+      "name": "TrackerPort.project_milestones",
+      "exact_m2_ast": true,
+      "exact_shared_ast": true
+    },
+    {
+      "path": "tests/fakes.py",
+      "name": "FakeTrackerPort.project_milestones",
+      "exact_m2_ast": true,
+      "exact_shared_ast": true
+    },
+    {
+      "path": "tests/fakes.py",
+      "name": "FakeTrackerPort.execution_approved",
+      "exact_m2_ast": true,
+      "exact_shared_ast": true
+    },
+    {
+      "path": "tests/fakes.py",
+      "name": "FakeTrackerPort._read_execution_approval",
+      "exact_m2_ast": true,
+      "exact_shared_ast": true
+    },
+    {
+      "path": "tests/fakes.py",
+      "name": "FakeTrackerPort.read_scope_labels",
+      "exact_m2_ast": true,
+      "exact_shared_ast": true
+    }
+  ]
+}
+Production function deltas: [
+  {
+    "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "name": "LinearMcpTracker.resolve_mappings",
+    "new": false,
+    "exact_shared_ast": true
+  },
+  {
+    "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "name": "LinearMcpTracker.ensure_mappings",
+    "new": false,
+    "exact_shared_ast": true
+  },
+  {
+    "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "name": "LinearMcpTracker._scope_label_definitions",
+    "new": true,
+    "exact_shared_ast": true
+  },
+  {
+    "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "name": "LinearMcpTracker._ensure_scope_label",
+    "new": true,
+    "exact_shared_ast": true
+  },
+  {
+    "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "name": "LinearMcpTracker._label_entries",
+    "new": false,
+    "exact_shared_ast": true
+  },
+  {
+    "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "name": "LinearMcpTracker._identifiers_of",
+    "new": false,
+    "exact_shared_ast": true
+  },
+  {
+    "path": "src/kodezart/services/scope_resolution.py",
+    "name": "resolve_scope",
+    "new": true,
+    "exact_shared_ast": true
+  },
+  {
+    "path": "src/kodezart/services/tracker_boot.py",
+    "name": "configured_mappings",
+    "new": false,
+    "exact_shared_ast": true
+  },
+  {
+    "path": "src/kodezart/services/tracker_boot.py",
+    "name": "_scope_label_refs",
+    "new": true,
+    "exact_shared_ast": true
+  }
+]
+Test deltas not exact shared AST: [
+  {
+    "path": "tests/fakes.py",
+    "exact_shared_file": false,
+    "changed": [
+      {
+        "name": "FakeTrackerPort.__init__",
+        "new": false,
+        "exact_shared_ast": false
+      }
+    ],
+    "removed": []
+  },
+  {
+    "path": "tests/prompts/test_operation_config.py",
+    "exact_shared_file": false,
+    "changed": [
+      {
+        "name": "test_all_fields_are_present_with_the_stated_types",
+        "new": false,
+        "exact_shared_ast": false
+      }
+    ],
+    "removed": []
+  },
+  {
+    "path": "tests/tracker/conftest.py",
+    "exact_shared_file": false,
+    "changed": [
+      {
+        "name": "linear_over_fake_mcp",
+        "new": false,
+        "exact_shared_ast": false
+      }
+    ],
+    "removed": []
+  },
+  {
+    "path": "tests/tracker/test_linear_tool_roster.py",
+    "exact_shared_file": true,
+    "changed": [],
+    "removed": [
+      "test_every_tracker_tool_this_process_names_exists_on_the_server"
+    ]
+  }
+]

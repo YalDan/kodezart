@@ -1,0 +1,158 @@
+[
+  {
+    "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "missing_from_m3": [],
+    "duplicate_names": [],
+    "changed_not_either_parent": []
+  },
+  {
+    "path": "src/kodezart/adapters/linear_mcp_types.py",
+    "missing_from_m3": [],
+    "duplicate_names": [],
+    "changed_not_either_parent": []
+  },
+  {
+    "path": "src/kodezart/core/protocols.py",
+    "missing_from_m3": [],
+    "duplicate_names": [],
+    "changed_not_either_parent": []
+  },
+  {
+    "path": "src/kodezart/services/organize_owner.py",
+    "missing_from_m3": [],
+    "duplicate_names": [],
+    "changed_not_either_parent": []
+  },
+  {
+    "path": "src/kodezart/services/tracker_boot.py",
+    "missing_from_m3": [],
+    "duplicate_names": [],
+    "changed_not_either_parent": []
+  },
+  {
+    "path": "src/kodezart/types/domain/run_event.py",
+    "missing_from_m3": [],
+    "duplicate_names": [],
+    "changed_not_either_parent": []
+  },
+  {
+    "path": "src/kodezart/types/domain/surface.py",
+    "missing_from_m3": [],
+    "duplicate_names": [],
+    "changed_not_either_parent": []
+  },
+  {
+    "path": "src/kodezart/types/domain/tracker.py",
+    "missing_from_m3": [],
+    "duplicate_names": [],
+    "changed_not_either_parent": []
+  },
+  {
+    "path": "tests/chains/test_authority_independent_review.py",
+    "missing_from_m3": [],
+    "duplicate_names": [],
+    "changed_not_either_parent": []
+  },
+  {
+    "path": "tests/chains/test_organize_description_authority.py",
+    "missing_from_m3": [],
+    "duplicate_names": [],
+    "changed_not_either_parent": []
+  },
+  {
+    "path": "tests/chains/test_organize_write_revalidation.py",
+    "missing_from_m3": [],
+    "duplicate_names": [],
+    "changed_not_either_parent": []
+  },
+  {
+    "path": "tests/domain/test_scope_label_config.py",
+    "missing_from_m3": [],
+    "duplicate_names": [],
+    "changed_not_either_parent": []
+  },
+  {
+    "path": "tests/domain/test_scope_labels.py",
+    "missing_from_m3": [],
+    "duplicate_names": [],
+    "changed_not_either_parent": []
+  },
+  {
+    "path": "tests/fakes.py",
+    "missing_from_m3": [],
+    "duplicate_names": [],
+    "changed_not_either_parent": [
+      "FakeTrackerPort.__init__"
+    ]
+  },
+  {
+    "path": "tests/prompts/test_operation_config.py",
+    "missing_from_m3": [],
+    "duplicate_names": [],
+    "changed_not_either_parent": []
+  },
+  {
+    "path": "tests/prompts/test_scope_label_bindings.py",
+    "missing_from_m3": [],
+    "duplicate_names": [],
+    "changed_not_either_parent": []
+  },
+  {
+    "path": "tests/tracker/connected_app_label_contract.py",
+    "missing_from_m3": [],
+    "duplicate_names": [],
+    "changed_not_either_parent": []
+  },
+  {
+    "path": "tests/tracker/native_read_fixtures.py",
+    "missing_from_m3": [],
+    "duplicate_names": [],
+    "changed_not_either_parent": [
+      "tracker_over"
+    ]
+  },
+  {
+    "path": "tests/tracker/test_linear_tool_arguments.py",
+    "missing_from_m3": [],
+    "duplicate_names": [],
+    "changed_not_either_parent": []
+  },
+  {
+    "path": "tests/tracker/test_linear_tool_roster.py",
+    "missing_from_m3": [
+      "test_every_tracker_tool_this_process_names_exists_on_the_server"
+    ],
+    "duplicate_names": [],
+    "changed_not_either_parent": []
+  },
+  {
+    "path": "tests/tracker/test_milestone_approval.py",
+    "missing_from_m3": [],
+    "duplicate_names": [],
+    "changed_not_either_parent": []
+  },
+  {
+    "path": "tests/tracker/test_native_approval_aliases.py",
+    "missing_from_m3": [],
+    "duplicate_names": [],
+    "changed_not_either_parent": []
+  },
+  {
+    "path": "tests/tracker/test_project_milestones.py",
+    "missing_from_m3": [],
+    "duplicate_names": [],
+    "changed_not_either_parent": []
+  },
+  {
+    "path": "tests/tracker/test_scope_label_mappings.py",
+    "missing_from_m3": [],
+    "duplicate_names": [],
+    "changed_not_either_parent": []
+  },
+  {
+    "path": "tests/tracker/test_tracker_boot.py",
+    "missing_from_m3": [],
+    "duplicate_names": [],
+    "changed_not_either_parent": []
+  }
+]

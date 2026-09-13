@@ -1,0 +1,38 @@
+--- a/tests/services/test_claim_heartbeat.py
++++ b/tests/services/test_claim_heartbeat.py
+@@ -204,7 +204,7 @@
+         recorder=RunRecorder(records={}, sinks={}),
+         queue=FakeJobQueue(events=events),
+         registry=FakeJobQueue(),
+-        writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
++        writer=TrackerLifecycleWriter(marker_prefixes={"run_outcome": "fixture-outcome"}, surface_lease_seconds=900, tracker=tracker, gate=PassThroughGate()),
+         heartbeat=heartbeat(tracker, clock=clock),
+         report=FakeFireReport(),
+     )
+@@ -511,7 +511,7 @@
+             recorder=RunRecorder(records={}, sinks={}),
+             queue=RaisingJobQueue(),
+             registry=FakeJobQueue(),
+-            writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
++            writer=TrackerLifecycleWriter(marker_prefixes={"run_outcome": "fixture-outcome"}, surface_lease_seconds=900, tracker=tracker, gate=PassThroughGate()),
+             heartbeat=heartbeat(tracker, clock=clock),
+             report=FakeFireReport(),
+         )
+@@ -585,7 +585,7 @@
+             recorder=RunRecorder(records={}, sinks={}),
+             queue=RaisingJobQueue(),
+             registry=FakeJobQueue(),
+-            writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
++            writer=TrackerLifecycleWriter(marker_prefixes={"run_outcome": "fixture-outcome"}, surface_lease_seconds=900, tracker=tracker, gate=PassThroughGate()),
+             heartbeat=heartbeat(tracker, clock=clock),
+             report=FakeFireReport(),
+         )
+@@ -619,7 +619,7 @@
+             recorder=RunRecorder(records={}, sinks={}),
+             queue=FakeJobQueue(events=(TERMINAL_EVENT,)),
+             registry=FakeJobQueue(),
+-            writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
++            writer=TrackerLifecycleWriter(marker_prefixes={"run_outcome": "fixture-outcome"}, surface_lease_seconds=900, tracker=tracker, gate=PassThroughGate()),
+             heartbeat=heartbeat(tracker, clock=clock),
+             report=FakeFireReport(),
+         )

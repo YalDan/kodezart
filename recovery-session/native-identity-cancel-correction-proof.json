@@ -1,0 +1,22 @@
+{
+  "source": "c579eb9da9425ac4f720d9449a9b0774411e43a6",
+  "tree": "8ec94aa03ee8242ee45df9da0e4772099b9fcc0b",
+  "parent": "3508980103cabbb0b28bfe49571293743b42d561",
+  "source_diff_empty": true,
+  "changed_files": [
+    "src/kodezart/adapters/subprocess_git_service.py",
+    "tests/adapters/test_native_identity_process_probe.py"
+  ],
+  "original_probe_sha256": "c3909e3943f8e31015f30aa22d8b46e0cf654a4a03c872fa2e733a975d85bb4f",
+  "rerun_exact_sha256": "c3909e3943f8e31015f30aa22d8b46e0cf654a4a03c872fa2e733a975d85bb4f",
+  "committed_probe_sha256": "7431b6dd7cd7d58fcb5cbed9b0012f2a53b0b5af92118b8836d5c814de34687b",
+  "original_rerun_bytes_equal": true,
+  "committed_functions_ast_equal": true,
+  "committed_test_change": "unused pathlib.Path import removed only; original retained for byte-identical execution",
+  "runtime": {
+    "python": "3.12.13 (main, Apr  7 2026, 21:09:58) [Clang 22.1.1 ]",
+    "langgraph": "1.0.10",
+    "langgraph-checkpoint": "4.0.1"
+  },
+  "author_role": "root explicitly reassigned independent reviewer after finding publication; correction requires root independent acceptance"
+}

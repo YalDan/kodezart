@@ -1,0 +1,1671 @@
+{
+  "candidate": "daae8df4c4e09499f0401c9406251ec88af9a8dd",
+  "candidate_tree": "a0881f14bbf76515233bb94a9f2bded8a5fe3c14",
+  "comparison_base": "25c32f603f9c9cb59852304743e653f70be309ff",
+  "donor": "36083f83f42c03240ebb5861fe284da2c9f04180",
+  "changed_file_count": 121,
+  "rows": [
+    {
+      "path": ".env.example",
+      "candidate_sha256": "d368382c4f2a8f4960f319e164ff73d8ff977e72da41db16712970f53abd3267",
+      "donor_sha256": "1d9067a5089d190515d3bdd544bb2757e6e27ff2e6748ab7464e3c65bde114dc",
+      "byte_equal_donor": false
+    },
+    {
+      "path": "docs/architecture.md",
+      "candidate_sha256": "c9a27729f2106747a1186105ce1ce4ec3bf8bb660325ca86376de623bdeaab58",
+      "donor_sha256": "2884a469dd273fc97a5d447fcb80f470d56bb311d28c4a86ac89253ade767adb",
+      "byte_equal_donor": false
+    },
+    {
+      "path": "docs/configuration.md",
+      "candidate_sha256": "bf592d38da601c0eb5a4fd77a06047b2c77d59c17dac9c4d91db73a9895c7e1c",
+      "donor_sha256": "0fb03dfbfcee89c2efc773a9c80042c5b001fccecacda0dc1442edaa3bc78a2d",
+      "byte_equal_donor": false
+    },
+    {
+      "path": "docs/operation.example.toml",
+      "candidate_sha256": "09c204e0fcfe41083ff7b2d3409b4149db7b06242fbb4b51f7b8ef23212a42b8",
+      "donor_sha256": "2b8b6cdec94a23c1d75ee87e8dafc3f98d1f72ee80f4dd2bd36ae218063ad157",
+      "byte_equal_donor": false
+    },
+    {
+      "path": "src/kodezart/adapters/_mcp_mapping.py",
+      "candidate_sha256": "4a5d228659a74bc1cde7d738e922121edd8613e9a8f1bc03138648bd7123ffba",
+      "donor_sha256": "d04ed833abbb2fa27a1e8a5feee3029d15d0ac9543282394b89fe726f7aaf644",
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": [
+        "_described_servers",
+        "_http_definition",
+        "_stdio_definition",
+        "prompt_with_knowledge_map"
+      ]
+    },
+    {
+      "path": "src/kodezart/adapters/linear_issue_identity.py",
+      "candidate_sha256": "f2fa7d45cf0edfa32ace5de31eeb2d6c7170e39105b7795359c10316d320dcd7",
+      "donor_sha256": "f2fa7d45cf0edfa32ace5de31eeb2d6c7170e39105b7795359c10316d320dcd7",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": []
+    },
+    {
+      "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+      "candidate_sha256": "3f7db41c0bbe6072b6b2d379e03dd65f362a890a9b1a9c23e329b513f24d2016",
+      "donor_sha256": "0128d16fa203cac45809f7b2f05145b569fca0b39a6028440eda2a928ad3a590",
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": [
+        "_label_arguments",
+        "_without_mention_syntax",
+        "is_long_lived_credential",
+        "_LabelListings",
+        "LinearMcpTracker",
+        "LinearMcpTracker.__init__",
+        "LinearMcpTracker.scan_issues",
+        "LinearMcpTracker._wrote",
+        "LinearMcpTracker.create_issue",
+        "LinearMcpTracker.update_issue",
+        "LinearMcpTracker._save_state",
+        "LinearMcpTracker.set_queue_state",
+        "LinearMcpTracker.list_issue_assets",
+        "LinearMcpTracker.work_refs",
+        "LinearMcpTracker.recorded_repository",
+        "LinearMcpTracker.initiative_identifiers",
+        "LinearMcpTracker.resolve_mappings",
+        "LinearMcpTracker.ensure_mappings",
+        "LinearMcpTracker._ensure_document",
+        "LinearMcpTracker._label_definitions",
+        "LinearMcpTracker._label_entries",
+        "LinearMcpTracker._identifiers_of"
+      ]
+    },
+    {
+      "path": "src/kodezart/adapters/linear_mcp_types.py",
+      "candidate_sha256": "fecd77864be0d017adb8856cf02b52f0c5981178babded3da7e1e338df7013e0",
+      "donor_sha256": "a1001764e213f2607dbd6c669e687e2b2f1d5e269ddb132449954a6b6fd0afa8",
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": [
+        "LinearRelatedIssueWire",
+        "LinearAssetWire",
+        "LinearIssueDetailWire",
+        "LinearProjectWire",
+        "LinearNamedWire",
+        "LinearLabelWire",
+        "LinearLabelListWire",
+        "LinearUserWire"
+      ]
+    },
+    {
+      "path": "src/kodezart/adapters/linear_scope_reader.py",
+      "candidate_sha256": "9e9a96098b292019f787395e977f838fc77658f8f989d52110af3831af5c6ca6",
+      "donor_sha256": "afd6252990ce227293d150a8ea3710bbff556412d7f820150f83bcdcc001f1e5",
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": [
+        "LinearScopeReader"
+      ]
+    },
+    {
+      "path": "src/kodezart/adapters/linear_scope_types.py",
+      "candidate_sha256": "6a518926008a23023517234085b1635496065555956b4d4cfb9c4093f9241101",
+      "donor_sha256": "6a518926008a23023517234085b1635496065555956b4d4cfb9c4093f9241101",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": []
+    },
+    {
+      "path": "src/kodezart/adapters/subprocess_git_source_reader.py",
+      "candidate_sha256": "793280ae5e329cb536734eae7534664133065586a7574256c3c9a0b05c17a993",
+      "donor_sha256": "793280ae5e329cb536734eae7534664133065586a7574256c3c9a0b05c17a993",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": []
+    },
+    {
+      "path": "src/kodezart/chains/organize.py",
+      "candidate_sha256": "37d38748a9d00daa8f73980823cac2a13b286db61448585f03b023f5a170f75e",
+      "donor_sha256": "37d38748a9d00daa8f73980823cac2a13b286db61448585f03b023f5a170f75e",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": []
+    },
+    {
+      "path": "src/kodezart/chains/organize_author.py",
+      "candidate_sha256": "c1ad262a70d9d6186d5f741969cc8ae88d7f6089abb66eb2c00b3c1ab32f122e",
+      "donor_sha256": "c1ad262a70d9d6186d5f741969cc8ae88d7f6089abb66eb2c00b3c1ab32f122e",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": []
+    },
+    {
+      "path": "src/kodezart/composition/organize.py",
+      "candidate_sha256": "4417912a54deb02a89354d522a389122886f2fb349ba873de48c69472c6ed81d",
+      "donor_sha256": "3f2e2a1ad66985df19590d5e10b7c9ecb7ad4a6068475e8f7d2027fd89ff05d0",
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": [
+        "build_organize_tick"
+      ]
+    },
+    {
+      "path": "src/kodezart/composition/passes.py",
+      "candidate_sha256": "2f695b0f810fdb7e28030debe9f3a3c86bfe353b30819daf58c34b467a760124",
+      "donor_sha256": "47e55309e5052d7dcb191a1d99b759cc35118e0a34b5503994a4719674258e4b",
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": [
+        "DispatchPasses",
+        "delivery_probe_for",
+        "build_gate",
+        "_assert_renders",
+        "_record_kind_for",
+        "fire_report",
+        "build_dispatch_passes",
+        "_session_running",
+        "_knowledge_surfaces",
+        "_verify_knowledge_destinations",
+        "verify_pass_preflight",
+        "build_dispatch_runtime"
+      ]
+    },
+    {
+      "path": "src/kodezart/composition/tracker.py",
+      "candidate_sha256": "e33d6898eb7d7f8895e0cdececc12a04eafd1ab8c36aa53b024ad175238ee7ea",
+      "donor_sha256": "914a835f42e9c18a3ff396a01d641d699ffd459a0bdc39240531d0525381f1f9",
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": [
+        "make_mcp_tool_caller",
+        "build_tracker",
+        "boot_tracker"
+      ]
+    },
+    {
+      "path": "src/kodezart/core/config.py",
+      "candidate_sha256": "76c189759f2175271bb6c326d9ad0d7ff1a97630b18718ed7e2fff8ca4cf9e86",
+      "donor_sha256": "e8129379a27745c0d0343c78211135ff8dd632e6520d869bc3c29ef4dd673552",
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": [
+        "AppConfig",
+        "AppConfig._session_model_keys_name_prompt_keys",
+        "AppConfig._grant_entries_name_session_types",
+        "AppConfig._buffer_retention_within_record_retention",
+        "AppConfig._reject_a_pattern_list_for_a_patternless_category",
+        "AppConfig._check_skills_configuration",
+        "AppConfig._check_knowledge_grant_carries_its_credential",
+        "AppConfig._check_the_knowledge_transport_reads_what_is_set",
+        "AppConfig._check_a_stdio_credential_has_exactly_one_delivery_entry",
+        "AppConfig.skills_selection",
+        "AppConfig.knowledge_grant",
+        "AppConfig.settings_customise_sources"
+      ]
+    },
+    {
+      "path": "src/kodezart/core/organize_settings.py",
+      "candidate_sha256": "1feddfea741d2d3c50b74a292530ebc307b88151e0dc2201147d65f898071a0f",
+      "donor_sha256": "1feddfea741d2d3c50b74a292530ebc307b88151e0dc2201147d65f898071a0f",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": []
+    },
+    {
+      "path": "src/kodezart/core/prompt_namespaces.py",
+      "candidate_sha256": "b23e7338bf94fcd3bc91dceafcfac3bd386bced1df9d7aca93fb6560f4384438",
+      "donor_sha256": "35d020812117b55e12331d8584cbdd0cd2c875b006a99b17db2d9002382fe969",
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": [
+        "operation_bindings"
+      ]
+    },
+    {
+      "path": "src/kodezart/core/protocols.py",
+      "candidate_sha256": "c02045094379ad83f62e57aafcc9df192ccb0fd8fdd60c9f8a642287f79239d5",
+      "donor_sha256": "fa47199412a70b66229965bb50d9db9b85a654d0e0d9c5b8d3fe6e0bfe086101",
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": [
+        "GitService",
+        "AgentExecutor",
+        "AgentExecutor.stream",
+        "ChangePersister",
+        "ChangePersister.persist",
+        "CIMonitor",
+        "CIMonitor.wait_for_checks",
+        "RunRecordSink",
+        "ManagedMcpToolCaller",
+        "ManagedMcpToolCaller.probe",
+        "TrackerPort",
+        "TrackerPort.set_workflow_state",
+        "TrackerPort.set_queue_state",
+        "TrackerPort.set_issue_classification",
+        "TrackerPort.list_comments",
+        "TrackerPort.list_issue_assets",
+        "TrackerPort.read_document",
+        "TrackerPort.work_refs",
+        "TrackerPort.record_base_spec",
+        "TrackerPort.recorded_repository",
+        "TrackerPort.initiative_identifiers",
+        "AgentRunner",
+        "AgentRunner.stream",
+        "AgentRunner.stream_workflow",
+        "AgentRunner.stream_in_workspace",
+        "QualityGate",
+        "QualityGate.run",
+        "TicketGenerator",
+        "TicketGenerator.run",
+        "Remediator",
+        "Remediator.run",
+        "WorkflowEngine",
+        "WorkflowEngine.run",
+        "ContentScanner",
+        "ContentScanner.routing",
+        "ContentScanner.scan"
+      ]
+    },
+    {
+      "path": "src/kodezart/core/write_back_settings.py",
+      "candidate_sha256": "07926227af00a95c8586010e24547f20b4c5877f9764a58e87c991cbd225e373",
+      "donor_sha256": "07926227af00a95c8586010e24547f20b4c5877f9764a58e87c991cbd225e373",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": []
+    },
+    {
+      "path": "src/kodezart/domain/agent.py",
+      "candidate_sha256": "6ae893667e8ebff6f345b00d3da697c0675ccbe95c249107f400195e3be29617",
+      "donor_sha256": "6ae893667e8ebff6f345b00d3da697c0675ccbe95c249107f400195e3be29617",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": []
+    },
+    {
+      "path": "src/kodezart/domain/criterion_amendment.py",
+      "candidate_sha256": "eb8e02009636fae364a7d8383c1ce6ea8e8a9733d40c2ac1d8cdecea447e50f8",
+      "donor_sha256": "eb8e02009636fae364a7d8383c1ce6ea8e8a9733d40c2ac1d8cdecea447e50f8",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": []
+    },
+    {
+      "path": "src/kodezart/domain/criterion_creation.py",
+      "candidate_sha256": "f5ed8344fef5ee41d28d5b77b5a645981f8e640814a78306d857cfa42f975d81",
+      "donor_sha256": "f5ed8344fef5ee41d28d5b77b5a645981f8e640814a78306d857cfa42f975d81",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": []
+    },
+    {
+      "path": "src/kodezart/domain/errors.py",
+      "candidate_sha256": "752bc79e2f37e4f397b87a3e9d80b623f31d95386df333f7e7705da8c9b53820",
+      "donor_sha256": "21803faa273e896aa3b3f9a6ee704df2ee3aa8a9e1bfca5433599190e4a99ab6",
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": [
+        "OutboundContentBlockedError",
+        "OutboundContentBlockedError.__init__"
+      ]
+    },
+    {
+      "path": "src/kodezart/domain/fire_spec.py",
+      "candidate_sha256": "cb19528ab899e16e38ef31f8424abc03437bdcaa781de01a5440966e49d7d9dd",
+      "donor_sha256": "480df47c8de6a0d1e5bac13d5f514efa67f6313aafdc2a14ffda10b8a429892e",
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": []
+    },
+    {
+      "path": "src/kodezart/domain/organize.py",
+      "candidate_sha256": "9ae8ebc94d0fa25e3011a3c603557de7db0e26c9c42b8668eac0a7cede79eea0",
+      "donor_sha256": "9ae8ebc94d0fa25e3011a3c603557de7db0e26c9c42b8668eac0a7cede79eea0",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": []
+    },
+    {
+      "path": "src/kodezart/domain/organize_graph.py",
+      "candidate_sha256": "d1d9e0ab6e0a2f44c15f654ba59b71e988aeeb1397120d46c549287da0e29077",
+      "donor_sha256": "d1d9e0ab6e0a2f44c15f654ba59b71e988aeeb1397120d46c549287da0e29077",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": []
+    },
+    {
+      "path": "src/kodezart/domain/prompt_variables.py",
+      "candidate_sha256": "d3007f7ab76435aa6cc2c22a69f8147b061b114343d293c1b559690013a3ce3e",
+      "donor_sha256": "8821a1bd5e8ad61d772a404a8725c305b6c862096b093ef856fd19aa83b83d1a",
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": []
+    },
+    {
+      "path": "src/kodezart/domain/rulings.py",
+      "candidate_sha256": "42a979abc960feb979f6bca048ad57b2e8e281e9b2a5e03edd051c78231d95ca",
+      "donor_sha256": "42a979abc960feb979f6bca048ad57b2e8e281e9b2a5e03edd051c78231d95ca",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": []
+    },
+    {
+      "path": "src/kodezart/domain/scope_approval.py",
+      "candidate_sha256": "c30ab514ff2ca41a2652465d096530f5cc0808d2ce706e57d7787f87ec2ae36e",
+      "donor_sha256": "c30ab514ff2ca41a2652465d096530f5cc0808d2ce706e57d7787f87ec2ae36e",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": []
+    },
+    {
+      "path": "src/kodezart/domain/topology.py",
+      "candidate_sha256": "ba2ef33a62e89c79abb4b03ec7db49347bb37091e478fa6154e5a115f595fed2",
+      "donor_sha256": "ba2ef33a62e89c79abb4b03ec7db49347bb37091e478fa6154e5a115f595fed2",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": []
+    },
+    {
+      "path": "src/kodezart/domain/tracker_writes.py",
+      "candidate_sha256": "164de0f04c1d2a63ebce154c942e8b3e0a584782326fb455ab13de01f4555644",
+      "donor_sha256": "380d2c8312d57f59b9f55888ea2819a8543b486f3bf6c5f263b44e11a22f5d85",
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": []
+    },
+    {
+      "path": "src/kodezart/main.py",
+      "candidate_sha256": "2326ba106467a17297d25e72b318a29d306eda74cb44f0aadc0da429416cc3ed",
+      "donor_sha256": "87d425a9c9c18b218a3f5a6bfe4daa454ebb8fad6125312d06f3fe9eba63e54c",
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": [
+        "lifespan",
+        "create_app"
+      ]
+    },
+    {
+      "path": "src/kodezart/prompts/sets/anthropic_v5/grooming_pass.md",
+      "candidate_sha256": "d062949cbf543b78fdfbcb287514cd6bee59fab9730cde6a363a9c85beebb67e",
+      "donor_sha256": "d062949cbf543b78fdfbcb287514cd6bee59fab9730cde6a363a9c85beebb67e",
+      "byte_equal_donor": true
+    },
+    {
+      "path": "src/kodezart/prompts/sets/anthropic_v5/organize_assess.md",
+      "candidate_sha256": "4845b39a22c0e13027c019cc7ad7277e2786e4216704b18d661f2a7e0928e8d6",
+      "donor_sha256": "4845b39a22c0e13027c019cc7ad7277e2786e4216704b18d661f2a7e0928e8d6",
+      "byte_equal_donor": true
+    },
+    {
+      "path": "src/kodezart/prompts/sets/anthropic_v5/organize_author.md",
+      "candidate_sha256": "559b72611a3340d16fdeade74372ce1793e774614f94baaf3f8ca270449c74e3",
+      "donor_sha256": "559b72611a3340d16fdeade74372ce1793e774614f94baaf3f8ca270449c74e3",
+      "byte_equal_donor": true
+    },
+    {
+      "path": "src/kodezart/prompts/sets/anthropic_v5/organize_criteria_author.md",
+      "candidate_sha256": "9d7207c392649d16f0c55231e6d4fe4111b556b220bc86d818ade3fdfd1e1b2d",
+      "donor_sha256": "9d7207c392649d16f0c55231e6d4fe4111b556b220bc86d818ade3fdfd1e1b2d",
+      "byte_equal_donor": true
+    },
+    {
+      "path": "src/kodezart/prompts/sets/anthropic_v5/organize_verify.md",
+      "candidate_sha256": "a814763843594f39eef55d5f2eb2aced6b6f26be4f83afd17e947ce8f9a76dbb",
+      "donor_sha256": "a814763843594f39eef55d5f2eb2aced6b6f26be4f83afd17e947ce8f9a76dbb",
+      "byte_equal_donor": true
+    },
+    {
+      "path": "src/kodezart/prompts/sets/anthropic_v5/set.toml",
+      "candidate_sha256": "82687d6aadae3a0d3e42c9340f2aa28e88a25a16c30bc486c323c1b26e12cd18",
+      "donor_sha256": "1dc403e2aaf263349dbc25fca50fea3c4451eee31a15056307de59e1505d47cf",
+      "byte_equal_donor": false
+    },
+    {
+      "path": "src/kodezart/prompts/sets/claude-opus/grooming_pass.md",
+      "candidate_sha256": "e263d2ac2a329f53fc3397c6a246788f68cdc7be5bfcb06329d30727b88711c9",
+      "donor_sha256": "0270af8a69f55807ba90612f5afc792e172bc92f7f8f45b3f1014e0fe2345ebc",
+      "byte_equal_donor": false
+    },
+    {
+      "path": "src/kodezart/prompts/sets/claude-opus/organize_assess.md",
+      "candidate_sha256": "527c6ba73d8c83ec5e91ed55498fa448cb7c73eba03c3310461659de9d53a086",
+      "donor_sha256": "527c6ba73d8c83ec5e91ed55498fa448cb7c73eba03c3310461659de9d53a086",
+      "byte_equal_donor": true
+    },
+    {
+      "path": "src/kodezart/prompts/sets/claude-opus/organize_author.md",
+      "candidate_sha256": "74a361723de8c6f91fba059d15578f6d886ab1f00316eb724db18977ab65b249",
+      "donor_sha256": "74a361723de8c6f91fba059d15578f6d886ab1f00316eb724db18977ab65b249",
+      "byte_equal_donor": true
+    },
+    {
+      "path": "src/kodezart/prompts/sets/claude-opus/organize_criteria_author.md",
+      "candidate_sha256": "ad5ea987bf60f1f8f087279cb78d185d1534c0589a137aa7da968ea3aa948412",
+      "donor_sha256": "ad5ea987bf60f1f8f087279cb78d185d1534c0589a137aa7da968ea3aa948412",
+      "byte_equal_donor": true
+    },
+    {
+      "path": "src/kodezart/prompts/sets/claude-opus/organize_verify.md",
+      "candidate_sha256": "a5ffd74ecc3c151f649c833c117fe6101165ffd655ee898a87329a989cc4d166",
+      "donor_sha256": "a5ffd74ecc3c151f649c833c117fe6101165ffd655ee898a87329a989cc4d166",
+      "byte_equal_donor": true
+    },
+    {
+      "path": "src/kodezart/prompts/sets/claude-opus/set.toml",
+      "candidate_sha256": "525373bbfe16447af1c8eaa00759bdd398645e345a57411cbba8ceb0c62d6806",
+      "donor_sha256": "dc83e29c868f8b0eef21565e3aecea0795c7ad83db865adb767fc020f275daa6",
+      "byte_equal_donor": false
+    },
+    {
+      "path": "src/kodezart/services/git_observations.py",
+      "candidate_sha256": "1ecba15f60669886bd397750217107d2b6f238e826c1023fa473bcc96dbe93b0",
+      "donor_sha256": "08dc4fd6c3838d601cf2b63e876e4130be0b3a60b746322a958bfb5c3711dd56",
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": []
+    },
+    {
+      "path": "src/kodezart/services/organize_context.py",
+      "candidate_sha256": "84ef4856dc7a2c8e94bc099e740f5ef2a4d9c9f13ff688ab22d4923d72283b71",
+      "donor_sha256": "84ef4856dc7a2c8e94bc099e740f5ef2a4d9c9f13ff688ab22d4923d72283b71",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": []
+    },
+    {
+      "path": "src/kodezart/services/organize_owner.py",
+      "candidate_sha256": "23b4dc43ec71ec59945c5c8b2087f3b6e61ae6b0a6259de806c3297cf95fa17f",
+      "donor_sha256": "23b4dc43ec71ec59945c5c8b2087f3b6e61ae6b0a6259de806c3297cf95fa17f",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": []
+    },
+    {
+      "path": "src/kodezart/services/organize_tick.py",
+      "candidate_sha256": "3c509a3c09f254fbc90084a510a8c969e43a27d825b241a06ffd89b8be8cdb18",
+      "donor_sha256": "3c509a3c09f254fbc90084a510a8c969e43a27d825b241a06ffd89b8be8cdb18",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": []
+    },
+    {
+      "path": "src/kodezart/services/ruling_records.py",
+      "candidate_sha256": "83d5aa68573a643fcfbe66ac996e6161bbaa3fa91b11677ee53d13a397bbc1c2",
+      "donor_sha256": "83d5aa68573a643fcfbe66ac996e6161bbaa3fa91b11677ee53d13a397bbc1c2",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": []
+    },
+    {
+      "path": "src/kodezart/services/tracker_artifacts.py",
+      "candidate_sha256": "e4a8c402d82bec3320097518eed9f006c76bfe247012186ccc38e9348eccaa0d",
+      "donor_sha256": "e4a8c402d82bec3320097518eed9f006c76bfe247012186ccc38e9348eccaa0d",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": []
+    },
+    {
+      "path": "src/kodezart/types/domain/agent.py",
+      "candidate_sha256": "f52f6415f70b0f3e36afc3d8eff7759b6b4940c9394b3cbe438b9b98b4ffde67",
+      "donor_sha256": "a745411666245771f0b99db753611f3ce6ecde9c3b6da2c96e6271e658a19f9c",
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": [
+        "ResultEvent",
+        "CriterionResult",
+        "ContentAuditFinding",
+        "WorkflowIterationEvent",
+        "WorkflowRemediationEvent",
+        "WorkflowCompleteEvent",
+        "JobAcceptedEvent"
+      ]
+    },
+    {
+      "path": "src/kodezart/types/domain/assertion_drift.py",
+      "candidate_sha256": "766de0f6a409c3ceb9381175344df6b1f17916ad47eab54b19ba1e5a168b1b3d",
+      "donor_sha256": "8eaf7c26b1078c674eda925f32238943993adae1fb9f1b1a25b39c6550633fa0",
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": []
+    },
+    {
+      "path": "src/kodezart/types/domain/gating.py",
+      "candidate_sha256": "d730c8cdb8f57fa488391281b94ca94102bdc227cfbec3adb978fb4334719ef4",
+      "donor_sha256": "c8b1a0913f708b979a9ae226399ee2896d2254c537052111de5398dac653fd6a",
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": [
+        "RedactionCategory",
+        "OutboundDestination",
+        "ScanFailureKind",
+        "ScanHit",
+        "GateDecision",
+        "ScannerRouting",
+        "ScannerRouting.applies"
+      ]
+    },
+    {
+      "path": "src/kodezart/types/domain/issue_identity.py",
+      "candidate_sha256": "b6070ccfd8d2f9c85fc371611f90d9107d7091e57847a491dec0a8f225f18a93",
+      "donor_sha256": "b6070ccfd8d2f9c85fc371611f90d9107d7091e57847a491dec0a8f225f18a93",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": []
+    },
+    {
+      "path": "src/kodezart/types/domain/operation.py",
+      "candidate_sha256": "4fae28a374130d987614adc874a9c0a1540cb2c9994d7b29fefeb662edd80fa8",
+      "donor_sha256": "c8bb2a7d86cedaca98eea86590be1519edbb513925c0bafa6f674dc9a7e8ad3d",
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": [
+        "RunKind",
+        "CheckStep",
+        "RepoEntry",
+        "RecordDestination",
+        "Initiative",
+        "_check_chain_failures",
+        "OperationConfig",
+        "OperationConfig._check_structure"
+      ]
+    },
+    {
+      "path": "src/kodezart/types/domain/organize.py",
+      "candidate_sha256": "2959013d52edef7600078d80ef4b1b4794ef39bf7ac99e615f3c31c843faec37",
+      "donor_sha256": "2959013d52edef7600078d80ef4b1b4794ef39bf7ac99e615f3c31c843faec37",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": []
+    },
+    {
+      "path": "src/kodezart/types/domain/organize_graph.py",
+      "candidate_sha256": "224b6496ce4ea546c8038b0aa4ba82a86e7847909563add57743e85b42214d8a",
+      "donor_sha256": "224b6496ce4ea546c8038b0aa4ba82a86e7847909563add57743e85b42214d8a",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": []
+    },
+    {
+      "path": "src/kodezart/types/domain/organize_owner.py",
+      "candidate_sha256": "3d3d97e91b6b22982a4e9e0647e6f14a5ce16c1f549d48716af9103ac133f6c8",
+      "donor_sha256": "3d3d97e91b6b22982a4e9e0647e6f14a5ce16c1f549d48716af9103ac133f6c8",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": []
+    },
+    {
+      "path": "src/kodezart/types/domain/prompts.py",
+      "candidate_sha256": "0dcfe99cb0d713872363c21cfe6f86b601952db5f7f6b0919da45d3bd9eebb9b",
+      "donor_sha256": "f9a8e65dfbc46ef06b34ce5ab987ef4225b1788b8564fdba8227d11b3ec13c84",
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": [
+        "PromptKey"
+      ]
+    },
+    {
+      "path": "src/kodezart/types/domain/ruling_id.py",
+      "candidate_sha256": "545fc8b1f333b9d4ed7b374d31e5da7e0a076fd5b47e71068346bdfd61fcdfac",
+      "donor_sha256": "545fc8b1f333b9d4ed7b374d31e5da7e0a076fd5b47e71068346bdfd61fcdfac",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": []
+    },
+    {
+      "path": "src/kodezart/types/domain/session.py",
+      "candidate_sha256": "23c0d1b0301c7236a114424e8dc149fc0e84993f3fdb6a5e0bde21165999d5de",
+      "donor_sha256": "bf37a694c682ef36b9a4e5897eca07c9a16c77a920809c0a1d64b72082d5ae38",
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": [
+        "SessionType",
+        "KnowledgeGrant",
+        "KnowledgeGrant._the_shape_matches_its_transport",
+        "KnowledgeGrant._an_interactive_host_takes_no_static_credential",
+        "KnowledgeGrant._a_stdio_command_resolves_nowhere_but_itself",
+        "KnowledgeGrant._set_fields",
+        "KnowledgeGrant._the_map_rides_with_the_grant"
+      ]
+    },
+    {
+      "path": "src/kodezart/types/domain/surface.py",
+      "candidate_sha256": "80c4d7e5bac58f5e883cf1a22c90a8b537ea40e6ad0c7d276b61ea62a9bee596",
+      "donor_sha256": "4f73ac880ea892a0649a4ce3f5c8d60ea79a1598f051cb50be74ac327e0a3540",
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": [
+        "SurfaceKind"
+      ]
+    },
+    {
+      "path": "src/kodezart/types/domain/topology.py",
+      "candidate_sha256": "aaed816c1415dd64458f770c1f9b02f1721b79e52dc1ac4ffec81f2fde4c250b",
+      "donor_sha256": "aaed816c1415dd64458f770c1f9b02f1721b79e52dc1ac4ffec81f2fde4c250b",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": []
+    },
+    {
+      "path": "src/kodezart/types/domain/tracker.py",
+      "candidate_sha256": "82310c6634be61a94059d98fe07cbb3e8ccf6cf6bfbbd44f6d7a950b04e979aa",
+      "donor_sha256": "6aa8efa6d1fba6ca6c1ee6d5008647c66a17d4517b3d38fd36a3011e2bdaee60",
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": [
+        "IssueRelationKind",
+        "MappingKind"
+      ]
+    },
+    {
+      "path": "src/kodezart/types/domain/tracker_writes.py",
+      "candidate_sha256": "8c1fa98e8b097334ad1dfa2d67efcd39c8494553349a286a9cbeb369b596de31",
+      "donor_sha256": "8c1fa98e8b097334ad1dfa2d67efcd39c8494553349a286a9cbeb369b596de31",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": []
+    },
+    {
+      "path": "tests/adapters/test_tracker_self_writes.py",
+      "candidate_sha256": "34abcef0f1e05d3a382d008f3e6829f4de936c0c915167602cc230ce889733ca",
+      "donor_sha256": "aacdf0378a395a1b30e7cc318bc60424a4b9f885b37950dbc13bd6eb0e24dd9f",
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": [
+        "_tracker",
+        "test_a_read_back_that_fails_does_not_fail_the_write_it_recorded"
+      ],
+      "baseline_test_oracles_changed_or_removed": [
+        "test_a_read_back_that_fails_does_not_fail_the_write_it_recorded"
+      ],
+      "added_test_count": 0,
+      "added_tests_exact_donor": [],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/chains/test_organize.py",
+      "candidate_sha256": "d4bfecfd993473b361a7cb93231076a40de799825c68193297ef438ee3a353b1",
+      "donor_sha256": "d4bfecfd993473b361a7cb93231076a40de799825c68193297ef438ee3a353b1",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": [],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 31,
+      "added_tests_exact_donor": [
+        "test_every_call_reads_full_tracker_sources_and_dispatches_fresh_at_base",
+        "test_verify_rereads_mutated_tracker_bodies_instead_of_reusing_assess_input",
+        "test_surface_liveness_reads_never_retest_or_restamp",
+        "test_body_edit_during_session_does_not_stamp_the_later_revision",
+        "test_agent_cannot_supply_its_own_revision_metadata",
+        "test_liveness_read_refuses_missing_or_mismatched_source_identity",
+        "test_real_revision_reader_lapses_the_exact_admission_surface",
+        "test_incomplete_source_reads_fail_before_any_workspace_or_session",
+        "test_missing_or_failed_output_releases_workspace_without_admission",
+        "test_rejected_rate_limit_is_not_an_admission_even_with_structured_output",
+        "test_judgment_for_another_issue_is_refused_and_workspace_is_released",
+        "test_all_three_verdicts_return_without_coercion_or_phase_writes",
+        "test_session_type_is_required_by_the_actual_runner_call",
+        "test_request_cannot_carry_author_context_or_a_previous_session",
+        "test_real_tracker_hydrates_evidence_before_real_runner_dispatch",
+        "test_the_organize_dispatch_census_names_its_type_and_read_only_policy",
+        "test_organized_scope_has_empty_gap_and_preserves_source_records",
+        "test_each_missing_organize_fact_puts_only_its_issue_in_gap",
+        "test_open_finding_of_either_role_puts_only_its_issue_in_gap",
+        "test_child_state_only_controls_non_canceled_existence_not_code_satisfaction",
+        "test_canceled_child_does_not_hide_another_live_criterion",
+        "test_deliverable_child_does_not_count_as_a_criterion",
+        "test_record_shaped_members_are_outside_gap_even_without_markers_or_verdicts",
+        "test_gap_uses_the_configured_semantic_body_marker",
+        "test_gap_preserves_input_order_and_exact_records",
+        "test_gap_refuses_incoherent_snapshots_instead_of_dropping_evidence",
+        "test_child_surface_liveness_reenters_parent_without_lapsing_its_body",
+        "test_open_child_surface_finding_routes_to_parent_only",
+        "test_port_criterion_changes_use_only_surface_digests_for_parent_gap",
+        "test_mention_ripple_bumps_the_stamp_without_entering_the_gap",
+        "test_gap_has_no_amendment_input_or_body_judgment_branch"
+      ],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/chains/test_organize_correction.py",
+      "candidate_sha256": "97419b271bfce75518bbb1f8f0433a5643194c92c0a99fb5ac955fa0f26090c2",
+      "donor_sha256": "97419b271bfce75518bbb1f8f0433a5643194c92c0a99fb5ac955fa0f26090c2",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": [],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 1,
+      "added_tests_exact_donor": [
+        "test_escalation_rechecks_approval_before_its_second_write"
+      ],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/chains/test_organize_delivery_independent.py",
+      "candidate_sha256": "b152cd5d3eab15d427914c2cbe43a863b9de0436f0fbb0ae7a1fd75d8927e24f",
+      "donor_sha256": "b152cd5d3eab15d427914c2cbe43a863b9de0436f0fbb0ae7a1fd75d8927e24f",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": [],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 6,
+      "added_tests_exact_donor": [
+        "test_halted_first_binding_does_not_starve_second_binding",
+        "test_approval_is_current_after_last_awaited_gate_read",
+        "test_criterion_author_is_bound_to_current_parent_revision",
+        "test_current_scope_membership_binds_author_write",
+        "test_foreign_holder_cannot_create_while_first_owner_holds_set",
+        "test_cancel_during_owner_create_settles_before_release"
+      ],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/chains/test_organize_graph_independent.py",
+      "candidate_sha256": "09049c43c3cb3306c2aabffe484602b3c246cc83deea91f1e324886f3d0f15c2",
+      "donor_sha256": "09049c43c3cb3306c2aabffe484602b3c246cc83deea91f1e324886f3d0f15c2",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": [],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 1,
+      "added_tests_exact_donor": [
+        "test_configured_owner_refuses_observed_final_split_source_drift"
+      ],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/chains/test_organize_graph_owner.py",
+      "candidate_sha256": "59ed609bf3cfaadda09b6b21c32f8514f8967800dd4c5b1aebb3002f95f19d1a",
+      "donor_sha256": "59ed609bf3cfaadda09b6b21c32f8514f8967800dd4c5b1aebb3002f95f19d1a",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": [],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 6,
+      "added_tests_exact_donor": [
+        "test_configured_owner_applies_graph_priority_then_reentry_writes_nothing",
+        "test_configured_split_prepares_children_without_execution_and_replays_cleanly",
+        "test_graph_author_metadata_drift_refuses_before_native_write",
+        "test_cancel_during_issued_split_settles_before_lease_release",
+        "test_peer_refutation_retains_citations_and_bound_without_peer_repair",
+        "test_recorded_ruling_context_reaches_author_and_lapses_on_actual_edit"
+      ],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/chains/test_organize_native_independent.py",
+      "candidate_sha256": "3e014cf73df8a166da4e22db0c3e8ae16e8352e099845dd924309ab53bccd3fb",
+      "donor_sha256": "3e014cf73df8a166da4e22db0c3e8ae16e8352e099845dd924309ab53bccd3fb",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": [],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 3,
+      "added_tests_exact_donor": [
+        "test_criterion_mint_requires_the_parent_revision_its_author_read",
+        "test_writeback_exhaustion_retains_its_actual_cited_refutation",
+        "test_scope_approval_ends_organize_before_escalation_writes"
+      ],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/chains/test_organize_owner.py",
+      "candidate_sha256": "173e5195598bae435d2df0f684cb4fcfe4bad5c4aceeb77dd9a6ba0929aee54d",
+      "donor_sha256": "02eda2edb0a1df099d2a01a5e2905fe3adfbd8d3c786f28a5a66f5124017a929",
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": [
+        "factory"
+      ],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 15,
+      "added_tests_exact_donor": [
+        "test_source_identity_is_checked_before_any_session",
+        "test_actual_factory_runs_all_configured_phases_and_reentry_writes_nothing",
+        "test_single_admission_round_stops_with_durable_refusal_and_no_completion",
+        "test_wrong_author_identity_refuses_before_native_issue_write",
+        "test_author_source_changed_during_session_cannot_be_overwritten",
+        "test_human_approval_arriving_during_authorship_ends_organize_before_write",
+        "test_cancelled_author_never_reaches_a_tracker_mutation",
+        "test_landed_claim_refutation_drives_a_fresh_author_repair",
+        "test_author_decision_is_recorded_without_inventing_an_admission",
+        "test_unanswered_escalation_is_unrecorded_with_exact_issue_and_no_resend",
+        "test_assessment_dispatch_uses_the_configured_admission_role",
+        "test_already_approved_scope_starts_no_author_or_judgment",
+        "test_full_scope_finding_exhausts_the_actual_convergence_bound",
+        "test_missing_criterion_edit_capability_is_not_invented_as_a_human_fork",
+        "test_removed_phase_gate_refuses_author_write"
+      ],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/chains/test_organize_ownership.py",
+      "candidate_sha256": "455ed448deb103e7546c95f175475df098881f9caee67e673754ce537a76ffea",
+      "donor_sha256": "c8a26956910a18548b7a0365b82aa698ef61a3ca583f3f602a413dc38a93990e",
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": [
+        "test_repeated_cancellation_settles_native_admission_worktree"
+      ],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 1,
+      "added_tests_exact_donor": [],
+      "added_tests_different_or_not_in_donor_module": [
+        "test_repeated_cancellation_settles_native_admission_worktree"
+      ]
+    },
+    {
+      "path": "tests/chains/test_write_back_tracker_boundary.py",
+      "candidate_sha256": "73db2767f45f97577042c30bd2ac5883a424860b25a289feed545248f6428f68",
+      "donor_sha256": null,
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": [
+        "adapter",
+        "test_actual_adapter_rounds_reread_and_repair",
+        "test_unavailable_surface_refuses_before_any_write",
+        "test_actual_writer_failure_escapes_without_replay_or_judgment",
+        "test_actual_description_reader_returns_current_body_and_identity",
+        "test_actual_container_reader_returns_full_description"
+      ],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 0,
+      "added_tests_exact_donor": [],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/core/test_organize_settings.py",
+      "candidate_sha256": "73d5a30d125420ae1ab7bdfe0614771b0a59b39339b22b4fea7d198cb9e26971",
+      "donor_sha256": "73d5a30d125420ae1ab7bdfe0614771b0a59b39339b22b4fea7d198cb9e26971",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": [],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 6,
+      "added_tests_exact_donor": [
+        "test_scope_address_reexport_preserves_type_and_wire_shape",
+        "test_bounds_are_both_required_and_positive",
+        "test_scope_binding_has_one_declared_repository_and_no_ambiguous_authority",
+        "test_environment_bounds_reach_the_tick_and_stop_after_one_author",
+        "test_actual_tick_uses_fresh_remote_trunk_and_existing_run_identity",
+        "test_declared_owner_bindings_without_bounds_refuse_construction"
+      ],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/domain/test_organize.py",
+      "candidate_sha256": "782815f89b8223cc1608c6eb8b23efb939abfaf25dc98c050e8a67be605a5e4e",
+      "donor_sha256": "782815f89b8223cc1608c6eb8b23efb939abfaf25dc98c050e8a67be605a5e4e",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": [],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 41,
+      "added_tests_exact_donor": [
+        "test_admission_verdict_is_exactly_three_distinct_states",
+        "test_admission_verdict_cannot_be_coerced_to_boolean",
+        "test_no_source_call_booleanizes_admission_verdict",
+        "test_static_detector_catches_typed_consumer_mutations",
+        "test_static_detector_accepts_explicit_comparison_and_unrelated_boolean",
+        "test_admission_result_round_trips_without_changing_verdict",
+        "test_every_verdict_requires_a_nonempty_admitted_body_digest",
+        "test_admission_liveness_is_exact_digest_arithmetic",
+        "test_liveness_cannot_treat_unavailable_digests_as_live",
+        "test_admission_refusal_requires_actionable_fields",
+        "test_defect_role_has_exact_instance_and_mandate_members",
+        "test_mandate_finding_requires_a_quoted_sentence",
+        "test_instance_finding_refuses_any_mandate_text",
+        "test_finding_round_trip_keeps_role_and_verbatim_instruction",
+        "test_instance_finding_needs_no_mandate_text",
+        "test_finding_is_frozen_and_rejects_unknown_fields",
+        "test_refusal_kind_has_exact_spec_gap_and_human_decision_members",
+        "test_not_buildable_requires_an_explicit_refusal_kind",
+        "test_only_not_buildable_can_carry_a_refusal_kind",
+        "test_non_refusals_round_trip_with_no_refusal_kind",
+        "test_admission_refusal_route_uses_kind_without_reading_tone",
+        "test_mandate_kind_names_and_values_are_the_three_organize_phases",
+        "test_mandate_has_only_its_five_configured_differences",
+        "test_every_mandate_field_is_required",
+        "test_mandate_is_frozen_closed_and_round_trips_qualified_keys",
+        "test_mandate_refs_name_an_explicit_supported_mapping",
+        "test_gate_reference_can_name_either_label_family_without_guessing",
+        "test_phase_completion_is_an_issue_marker_not_scope_approval",
+        "test_mandate_prompt_references_must_be_registered_prompt_roles",
+        "test_all_phase_references_resolve_to_operation_values_at_construction",
+        "test_absent_mandate_table_is_legal_without_any_label_mapping",
+        "test_a_declared_table_cannot_omit_a_phase",
+        "test_duplicate_phases_are_rejected_even_with_every_phase_present",
+        "test_unmapped_keys_fail_while_constructing_the_operation",
+        "test_all_bad_references_are_reported_in_the_same_load_error",
+        "test_qualified_reference_selects_the_mapping_even_when_keys_overlap",
+        "test_scope_approval_cannot_be_used_through_an_issue_label_alias",
+        "test_scope_approval_is_not_an_organize_gate",
+        "test_blank_scope_label_is_not_a_resolved_gate",
+        "test_normal_toml_loader_resolves_the_declared_phase_table",
+        "test_invalid_table_stops_normal_boot_before_tracker_or_dispatch"
+      ],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/domain/test_organize_routing.py",
+      "candidate_sha256": "19996b995975414c6c2afe537b906c4312262b7b20ecc990a8a47a4a688a5bee",
+      "donor_sha256": "19996b995975414c6c2afe537b906c4312262b7b20ecc990a8a47a4a688a5bee",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": [],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 5,
+      "added_tests_exact_donor": [
+        "test_unverifiable_requires_both_the_real_blocked_by_edge_and_scope_membership",
+        "test_another_in_scope_blocker_cannot_substitute_for_the_named_blocker",
+        "test_unverifiable_prose_cannot_approve_or_escalate_without_an_edge",
+        "test_result_cannot_be_routed_using_another_issues_edges",
+        "test_buildable_requires_no_pending_blocker_proof"
+      ],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/domain/test_ruling_identity.py",
+      "candidate_sha256": "ec28016fc4372b8092235696a85bc6a1db2203b77877d5a05859db9afbd81211",
+      "donor_sha256": "ec28016fc4372b8092235696a85bc6a1db2203b77877d5a05859db9afbd81211",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": [],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 8,
+      "added_tests_exact_donor": [
+        "test_one_minting_site_and_no_bare_string_model_addresses",
+        "test_site_guard_detects_aliases_and_qualified_constructors",
+        "test_address_guard_rejects_bare_strings_inside_containers",
+        "test_address_guard_rejects_quoted_and_aliased_builtin_annotations",
+        "test_address_guard_keeps_typed_forward_references_and_metadata",
+        "test_exact_pair_is_stable_and_component_boundaries_are_distinct",
+        "test_identity_preserves_each_exact_input",
+        "test_missing_identity_inputs_refuse"
+      ],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/domain/test_ruling_protected_tests.py",
+      "candidate_sha256": "1355a607d0b1d33f5f461cf736d323d486aca54ba3bd4a3112f39abc2f6593cd",
+      "donor_sha256": "1355a607d0b1d33f5f461cf736d323d486aca54ba3bd4a3112f39abc2f6593cd",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": [],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 9,
+      "added_tests_exact_donor": [
+        "test_unknown_designation_preserves_the_original_generic_record_bytes",
+        "test_explicit_empty_is_distinct_from_unknown_on_wire",
+        "test_protected_names_round_trip_in_the_owning_ruling_without_new_identity",
+        "test_native_explicit_null_is_unknown_not_empty",
+        "test_reference_to_another_ruling_is_rejected",
+        "test_repeated_test_address_cannot_duplicate_one_rulings_protection",
+        "test_invalid_native_designation_refuses_instead_of_losing_protection",
+        "test_native_designation_has_a_typed_ruling_owner",
+        "test_mypy_preserves_reader_identity_and_refuses_a_plain_string_owner"
+      ],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/domain/test_rulings.py",
+      "candidate_sha256": "f7d357c90780a6c7bfcdb9102d1ade692fad2c8a73d0992c65c141dcea967842",
+      "donor_sha256": "f7d357c90780a6c7bfcdb9102d1ade692fad2c8a73d0992c65c141dcea967842",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": [],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 8,
+      "added_tests_exact_donor": [
+        "test_closed_model_and_pinned_text_round_trip_every_author_and_class",
+        "test_every_ruling_field_is_required",
+        "test_no_account_or_unknown_author_substitutes_for_the_required_enum",
+        "test_rejected_alternative_is_explicit_and_required_for_a_losing_reading",
+        "test_damaged_or_ambiguous_text_refuses",
+        "test_answer_amendment_retains_question_address_but_a_new_question_does_not",
+        "test_renderer_refuses_an_unrelated_minted_id",
+        "test_absent_ruling_purpose_cannot_borrow_the_decision_reply_prefix"
+      ],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/domain/test_topology.py",
+      "candidate_sha256": "bfbbe071831c541592d8a9b54d6dd7e5852f8138ad1f7283ab3bd2ebd625a3b8",
+      "donor_sha256": "bfbbe071831c541592d8a9b54d6dd7e5852f8138ad1f7283ab3bd2ebd625a3b8",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": [],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 14,
+      "added_tests_exact_donor": [
+        "test_deep_dependency_priority_outranks_parallel_older_roots",
+        "test_priority_flows_to_blockers_never_to_dependents",
+        "test_fan_in_propagates_priority_to_each_root_without_linearizing_them",
+        "test_ready_set_reuses_the_domain_open_blocker_partition",
+        "test_replanning_observes_changed_blocker_state",
+        "test_only_explicit_candidates_can_appear_in_the_ready_set",
+        "test_parent_and_non_blocking_relations_do_not_create_dependencies",
+        "test_exact_priority_and_age_ties_keep_the_snapshot_order",
+        "test_an_empty_candidate_set_does_not_dispatch_every_issue",
+        "test_missing_blocker_facts_are_refused_instead_of_treated_as_closed",
+        "test_unknown_candidates_are_refused_instead_of_silently_dropped",
+        "test_duplicate_issue_keys_cannot_replace_a_snapshot_fact",
+        "test_duplicate_blocker_edges_do_not_duplicate_the_report",
+        "test_deep_stacks_do_not_depend_on_the_python_recursion_limit"
+      ],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/domain/test_topology_cycles.py",
+      "candidate_sha256": "a8fc9da897ae5b706180fe3e17b784fc941b9e6c84b5ec4c42ffa3d10af1e790",
+      "donor_sha256": "a8fc9da897ae5b706180fe3e17b784fc941b9e6c84b5ec4c42ffa3d10af1e790",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": [],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 6,
+      "added_tests_exact_donor": [
+        "test_a_cycle_raises_the_domain_error_naming_only_its_offending_keys",
+        "test_a_self_dependency_is_a_cycle",
+        "test_a_cycle_is_not_hidden_by_candidate_filtering_or_closed_states",
+        "test_an_acyclic_diamond_returns_its_ready_set",
+        "test_cycle_detection_does_not_stop_at_the_python_recursion_limit",
+        "test_cycle_error_copies_primitive_keys"
+      ],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/fakes.py",
+      "candidate_sha256": "577925d9b651825ea13c29907102f0b669a03477c7037808c7195b2a56f4ff77",
+      "donor_sha256": "f02b3640679394a0f81a3bd756fffe15708bded2a6b261a9f239e31a78dbd47b",
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": [
+        "knowledge_grant_for",
+        "executor_for",
+        "recorded_session",
+        "FakeGitService",
+        "FakeAgentExecutor",
+        "FakeAgentExecutor.stream",
+        "FakeRaisingExecutor",
+        "FakeRaisingExecutor.stream",
+        "FakeChangePersister",
+        "FakeChangePersister.persist",
+        "FakeAgentRunner",
+        "FakeAgentRunner.stream",
+        "FakeAgentRunner.stream_workflow",
+        "FakeAgentRunner.stream_in_workspace",
+        "ScriptedFakeExecutor",
+        "ScriptedFakeExecutor.stream",
+        "as_validated",
+        "make_minted_criteria",
+        "make_criteria",
+        "make_generated_criteria",
+        "make_passing_evaluation",
+        "FakeQualityGate",
+        "FakeQualityGate.run",
+        "FakeRemediator",
+        "FakeRemediator.run",
+        "FakePRCreator",
+        "FakePRCreator.create_pr",
+        "FakeCIMonitor",
+        "FakeCIMonitor.__init__",
+        "FakeCIMonitor.wait_for_checks",
+        "SequentialCIMonitor",
+        "SequentialCIMonitor.__init__",
+        "SequentialCIMonitor.wait_for_checks",
+        "FakeTicketGenerator",
+        "FakeTicketGenerator.run",
+        "FakeContentScanner",
+        "FakeContentScanner.__init__",
+        "FakeContentScanner.routing",
+        "FakeContentScanner.scan",
+        "FakeMcpIssue",
+        "FakeMcpIssue.wire",
+        "FakeLinearMcpServer",
+        "FakeLinearMcpServer.__init__",
+        "FakeLinearMcpServer._tool_save_issue",
+        "FakeLinearMcpServer._tool_list_issue_labels",
+        "FakeTrackerPort",
+        "FakeTrackerPort.__init__",
+        "FakeTrackerPort.set_workflow_state",
+        "FakeTrackerPort.restore_workflow_state",
+        "FakeTrackerPort.set_queue_state",
+        "FakeTrackerPort.set_issue_classification",
+        "FakeTrackerPort.resolve_mappings",
+        "FakeTrackerPort.ensure_mappings",
+        "FakeDeliveryProbe",
+        "FakeDeliveryProbe.__init__",
+        "make_tracker_issue",
+        "RefusingRecordSink",
+        "RefusingRecordSink.holds_record",
+        "RefusingRecordSink.write_record"
+      ],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 0,
+      "added_tests_exact_donor": [],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/git_source_fixtures.py",
+      "candidate_sha256": "05c556c9fe19d511b091562c66af55781df1a1222cf19d8a15e03e1f51c05f28",
+      "donor_sha256": null,
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": [
+        "git",
+        "source",
+        "commit",
+        "repo"
+      ],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 0,
+      "added_tests_exact_donor": [],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/identity_guards.py",
+      "candidate_sha256": "da1674eeddcf524ad3f4a908655b8cfa41cb32694f166d43c4f85595e32cf639",
+      "donor_sha256": "da1674eeddcf524ad3f4a908655b8cfa41cb32694f166d43c4f85595e32cf639",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": [],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 0,
+      "added_tests_exact_donor": [],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/integration/test_organize_scheduler.py",
+      "candidate_sha256": "8e42b301342cfaffc3e0eb1b211ba2e36cf5aa08eebbce3fd0cd385678387d77",
+      "donor_sha256": "792f060d1e7df667c0771fad76d175513976e1baca998dd1153d4fa6780e787b",
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": [
+        "dependencies"
+      ],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 3,
+      "added_tests_exact_donor": [
+        "test_scheduled_owner_prepares_native_children_and_reentry_is_idempotent",
+        "test_partial_owner_configuration_refuses_during_preflight",
+        "test_actual_lifespan_registers_and_runs_the_owner"
+      ],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/integration/test_organize_tick_halt.py",
+      "candidate_sha256": "048b7f8f9fd8601fed58627ea6eb6ec8c01f683e995dda52f0ed3050c37d3d28",
+      "donor_sha256": "048b7f8f9fd8601fed58627ea6eb6ec8c01f683e995dda52f0ed3050c37d3d28",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": [],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 1,
+      "added_tests_exact_donor": [
+        "test_halted_first_binding_does_not_starve_second_binding"
+      ],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/prompts/sets.py",
+      "candidate_sha256": "a98be5d23df89485ae4c35c783f2220dc14ccbb93eac7053dfa644b4222aea0f",
+      "donor_sha256": "48bce8e5b8a2ad04a10d046cd40201cc091e9ac330dfd9f82bc553bb5e3b8da2",
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": [],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 0,
+      "added_tests_exact_donor": [],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/prompts/test_organize_call_bindings.py",
+      "candidate_sha256": "cfdbf047cf2795ab96fcfaa40d5d957e6300902ad363cded70e203d6a92ec39c",
+      "donor_sha256": "cfdbf047cf2795ab96fcfaa40d5d957e6300902ad363cded70e203d6a92ec39c",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": [],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 8,
+      "added_tests_exact_donor": [
+        "test_named_per_call_roster_is_disjoint_from_both_other_namespaces",
+        "test_a_configuration_field_collision_is_named_at_prompt_boot",
+        "test_a_projected_configuration_binding_collision_is_named_at_boot",
+        "test_two_calls_render_distinct_rubrics_and_all_current_source_bodies",
+        "test_read_only_roles_do_not_render_prior_refusal_or_author_rationale",
+        "test_authoring_receives_the_typed_refusal_decision_and_evidence",
+        "test_an_empty_child_family_and_first_authoring_round_remain_explicit",
+        "test_required_source_bindings_cannot_silently_disappear"
+      ],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/prompts/test_organize_mandate_bindings.py",
+      "candidate_sha256": "8c1971ebe6963ea74cdcd4a9dd4d23f85f11ff0e991f63f84c63bc13c40cfcdc",
+      "donor_sha256": "8c1971ebe6963ea74cdcd4a9dd4d23f85f11ff0e991f63f84c63bc13c40cfcdc",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": [],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 2,
+      "added_tests_exact_donor": [
+        "test_operation_binding_contains_resolved_phase_metadata",
+        "test_grooming_consumes_the_declared_or_absent_phase_table"
+      ],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/prompts/test_organize_roles.py",
+      "candidate_sha256": "68446d4c0ff90d7050222dd5cacb63c525797c3af5729ec4def1589738fd82c9",
+      "donor_sha256": "68446d4c0ff90d7050222dd5cacb63c525797c3af5729ec4def1589738fd82c9",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": [],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 4,
+      "added_tests_exact_donor": [
+        "test_organize_roles_have_the_named_enum_members_and_values",
+        "test_removing_each_organize_data_file_fails_application_prompt_boot",
+        "test_each_role_renders_its_own_data_file",
+        "test_organize_roles_inherit_the_existing_authorship_and_judgment_policies"
+      ],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/services/test_git_source_lookup.py",
+      "candidate_sha256": "697468d442c3b304f9f1d934fb8800ced8c73d33a175e806c54d00f36f43f60f",
+      "donor_sha256": "7a0a3c703e8bbf7863a4328e1e0821c384ea8c8a928159e175452ce60274ef83",
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": [
+        "test_native_read_preserves_exact_bytes_and_refuses_symlink_or_tree"
+      ],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 3,
+      "added_tests_exact_donor": [
+        "test_actual_deleted_file_is_absent_only_at_the_selected_revision",
+        "test_unreadable_or_unsupported_objects_are_never_missing"
+      ],
+      "added_tests_different_or_not_in_donor_module": [
+        "test_native_read_preserves_exact_bytes_and_refuses_symlink_or_tree"
+      ]
+    },
+    {
+      "path": "tests/test_organize_portability.py",
+      "candidate_sha256": "caf83a5607ee151773021cdab7378a878e179e1e919233a67a44df6a6e379bd6",
+      "donor_sha256": "caf83a5607ee151773021cdab7378a878e179e1e919233a67a44df6a6e379bd6",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": [],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 13,
+      "added_tests_exact_donor": [
+        "test_source_and_prompt_data_have_no_literal_phase_labels",
+        "test_literal_constructions_cannot_hide_labels",
+        "test_constant_aliases_are_followed_within_nested_scopes",
+        "test_unknown_bindings_and_semantic_keys_are_not_backend_labels",
+        "test_alias_cycles_end_without_executing_the_source",
+        "test_tree_guard_reports_literal_sources_and_exempts_only_config_model",
+        "test_template_bindings_remain_configurable",
+        "test_literal_namespace_plus_unknown_runtime_suffix_is_still_hardcoded",
+        "test_toml_escaped_string_values_are_decoded_before_checking",
+        "test_literal_namespace_before_a_template_binding_is_hardcoded",
+        "test_function_and_class_headers_cannot_hide_literal_labels",
+        "test_real_source_gate_rejects_an_injected_offending_tree",
+        "test_fstring_folding_handles_formatted_prefix_and_suffix"
+      ],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/tracker/comment_page_fixtures.py",
+      "candidate_sha256": "d5e86d6aee5b4c6b6aed2a8c5e27a178dcb8cf882e142e762344d9183ac32017",
+      "donor_sha256": null,
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": [
+        "CommentPageServer",
+        "CommentPageServer.__init__",
+        "CommentPageServer._tool_list_comments",
+        "comment"
+      ],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 0,
+      "added_tests_exact_donor": [],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/tracker/conftest.py",
+      "candidate_sha256": "b747215ffe1cf6da95ffb1e4c1cae958717d7baf6676024963fdc15fda5ef9c7",
+      "donor_sha256": "ff5036cbc6dc64f215ece5ed47a1412ceaf32dc440c308fe8928b3a7345b944e",
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": [
+        "linear_over_fake_mcp",
+        "_snapshot",
+        "fake_port_over_fixture",
+        "tracker_writes"
+      ],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 0,
+      "added_tests_exact_donor": [],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/tracker/native_read_fixtures.py",
+      "candidate_sha256": "d6f8112ad0b2372d2fee769f4380e4af0a813b4de1d479d32fac8d949a2aa406",
+      "donor_sha256": null,
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": [
+        "tracker_over",
+        "native_tracker"
+      ],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 0,
+      "added_tests_exact_donor": [],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/tracker/test_artifact_native_fields.py",
+      "candidate_sha256": "f75459b7fd83dda1a729a86e62b5f1a624b109ee7d6b39e44cb9ee51cb08b288",
+      "donor_sha256": "f75459b7fd83dda1a729a86e62b5f1a624b109ee7d6b39e44cb9ee51cb08b288",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": [],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 3,
+      "added_tests_exact_donor": [
+        "test_missing_consumed_native_facts_cannot_be_a_complete_artifact",
+        "test_reported_native_facts_form_the_requested_complete_artifact",
+        "test_description_only_read_does_not_claim_unconsumed_classification"
+      ],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/tracker/test_artifact_split_identity_independent.py",
+      "candidate_sha256": "f7f15e266a4d364db4f2ff2af84af6e6969bd89be38c202ec2ee4cddae85e470",
+      "donor_sha256": "f7f15e266a4d364db4f2ff2af84af6e6969bd89be38c202ec2ee4cddae85e470",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": [],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 2,
+      "added_tests_exact_donor": [
+        "test_a_split_artifact_never_pairs_identity_with_another_body",
+        "test_a_foreign_identity_read_cannot_supply_the_split_receipt"
+      ],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/tracker/test_body_revisions.py",
+      "candidate_sha256": "70eb8fa16976ff8d23ae75bfa0513f87fd237822aaf7e057288d3301845d5853",
+      "donor_sha256": "70eb8fa16976ff8d23ae75bfa0513f87fd237822aaf7e057288d3301845d5853",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": [],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 7,
+      "added_tests_exact_donor": [
+        "test_repeated_reads_preserve_body_and_digest_without_writes",
+        "test_metadata_changes_preserve_the_body_revision",
+        "test_body_change_moves_only_its_surface_and_unchanged_replay_moves_none",
+        "test_every_exact_body_has_a_nonempty_stable_revision",
+        "test_revision_rejects_an_unavailable_digest",
+        "test_revision_is_frozen_closed_and_does_not_normalize_opaque_digests",
+        "test_linear_revision_uses_one_full_hydration_and_hashes_its_exact_body"
+      ],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/tracker/test_comment_expected_independent.py",
+      "candidate_sha256": "8ed3fb838e53eac6b663c3e405e39787ae7d097280fb6166874b6dd0138d068c",
+      "donor_sha256": "512792d40e58e4d339f21052b80d4a52e47774fab810d11b41e329a4368cd993",
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": [
+        "test_known_unissued_retry_revalidates_changed_expected_comment"
+      ],
+      "baseline_test_oracles_changed_or_removed": [
+        "test_known_unissued_retry_revalidates_changed_expected_comment"
+      ],
+      "added_test_count": 0,
+      "added_tests_exact_donor": [],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/tracker/test_criterion_creation.py",
+      "candidate_sha256": "660f4673f179ac57eec398f67cc6d1f62a429f69ad2b96ddbccb98aa1e86a577",
+      "donor_sha256": "660f4673f179ac57eec398f67cc6d1f62a429f69ad2b96ddbccb98aa1e86a577",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": [],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 10,
+      "added_tests_exact_donor": [
+        "test_native_create_initializes_a_new_todo_criterion_then_replays_no_write",
+        "test_missing_or_other_surface_grant_cannot_authorize_creation",
+        "test_ambiguous_or_absent_native_initial_state_refuses_before_write",
+        "test_duplicate_check_identity_refuses_before_any_write",
+        "test_invalid_authored_fields_refuse_before_any_native_call",
+        "test_create_initialization_exception_cannot_admit_an_update_or_malformed_shape",
+        "test_backend_can_land_an_already_issued_create_after_expiry",
+        "test_unknown_create_response_preserves_committed_child_without_resend",
+        "test_initial_state_requires_actual_nonblank_native_id",
+        "test_initial_state_uses_the_selected_team_id_not_shared_name"
+      ],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/tracker/test_issue_ruling_records.py",
+      "candidate_sha256": "ce0e295473a8e1e10b8be58b31bfd945a608fc70516cb954a13b23daa0a6e8b8",
+      "donor_sha256": "ccdf4f1ba40c6e3f7bd3f70268919917987e4c81807ff947dd681823f5737938",
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": [],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 6,
+      "added_tests_exact_donor": [
+        "test_issue_wide_read_retains_actual_different_lane_occurrences",
+        "test_same_question_under_two_lanes_is_ambiguous_not_two_rulings",
+        "test_malformed_owned_lane_component_is_not_silent_absence",
+        "test_ordinary_comment_and_other_namespace_remain_unselected",
+        "test_native_pages_retain_historical_lane_and_current_native_provenance",
+        "test_full_valid_payload_cannot_override_native_provenance"
+      ],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/tracker/test_linear_mcp_tracker.py",
+      "candidate_sha256": "5a5e64ba22d39c6ac79fb0fe3fe2121e62f00b5841e6779c3024ef55a7d86e6d",
+      "donor_sha256": "520ae270a2475a54aaa3fd1aa5d7f876a4b8d2aade58773c0e2be53f02eab206",
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": [
+        "tracker_over",
+        "TestACommentTheVendorAttributesToNobody",
+        "TestACommentTheVendorAttributesToNobody._log_with_every_marker",
+        "TestARetryBudgetIsNotSpentOnASessionThatDied",
+        "TestARetryBudgetIsNotSpentOnASessionThatDied._over_a_dying_endpoint"
+      ],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 0,
+      "added_tests_exact_donor": [],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/tracker/test_linear_wire_shapes.py",
+      "candidate_sha256": "9fb1ad87b312a391eb13eb61a71a5b0a23f7caab68a762894f538c85728d9fda",
+      "donor_sha256": "e93932f95dc844ee5040c7cf863044393586fe70c0c2376cd974053d2981e48a",
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": [
+        "tracker_over"
+      ],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 0,
+      "added_tests_exact_donor": [],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/tracker/test_milestone_approval.py",
+      "candidate_sha256": "6aa6bbd1072feaecc3b10e48de3ffe20f8cb7145e36c3373292e6609bfe86016",
+      "donor_sha256": "0a6711dbda8352acd4584c433b3588a85bddd02f086593ee823194ce25ac8a9d",
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": [],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 2,
+      "added_tests_exact_donor": [
+        "test_a_milestone_label_cannot_approve_its_project_or_members",
+        "test_milestone_membership_without_reported_project_refuses"
+      ],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/tracker/test_native_approval_aliases.py",
+      "candidate_sha256": "977e9446d53234b0baf1018699952d161591bf5fec5dc8f10223ec36d318087f",
+      "donor_sha256": "167704b068599ab0370d481fffc08f19cfedda4c00d5200a52ad80e91e13a044",
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": [
+        "test_actual_entry_preserves_reported_alias_with_one_subject_read",
+        "test_actual_entry_refuses_foreign_subject_before_membership"
+      ],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 2,
+      "added_tests_exact_donor": [],
+      "added_tests_different_or_not_in_donor_module": [
+        "test_actual_entry_preserves_reported_alias_with_one_subject_read",
+        "test_actual_entry_refuses_foreign_subject_before_membership"
+      ]
+    },
+    {
+      "path": "tests/tracker/test_organize_graph_final_boundary.py",
+      "candidate_sha256": "0d34783ec7eaa487fdab874ba8ae4f087b7f9b84503389cacda5ad1388ee7c38",
+      "donor_sha256": "0d34783ec7eaa487fdab874ba8ae4f087b7f9b84503389cacda5ad1388ee7c38",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": [],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 2,
+      "added_tests_exact_donor": [
+        "test_final_split_observation_after_refreshed_identity_is_authoritative",
+        "test_final_writers_refuse_missing_and_foreign_holder"
+      ],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/tracker/test_organize_graph_independent.py",
+      "candidate_sha256": "0d64e27361e6f21323d99efd2600aad5833cf2a54601f53d58b8bfff73dbefe4",
+      "donor_sha256": "0d64e27361e6f21323d99efd2600aad5833cf2a54601f53d58b8bfff73dbefe4",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": [],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 4,
+      "added_tests_exact_donor": [
+        "test_graph_lease_must_still_hold_after_final_graph_read",
+        "test_split_final_observed_source_is_checked_before_creation",
+        "test_split_identity_appearing_during_state_read_is_not_duplicated",
+        "test_milestone_parent_is_current_after_holder_wait"
+      ],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/tracker/test_organize_graph_receipt_boundary.py",
+      "candidate_sha256": "f99c1ecc75b76ca3e39c2d7491da05310e7b4ddfc1169180158bae65231e2dd7",
+      "donor_sha256": "f99c1ecc75b76ca3e39c2d7491da05310e7b4ddfc1169180158bae65231e2dd7",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": [],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 1,
+      "added_tests_exact_donor": [
+        "test_post_save_read_failure_never_reissues_a_completed_write"
+      ],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/tracker/test_organize_graph_retry_boundary.py",
+      "candidate_sha256": "c9acca3d13ec9cf4705c9f00673ae0e3547c445b7fd2b2c18cb200d192a64883",
+      "donor_sha256": "c9acca3d13ec9cf4705c9f00673ae0e3547c445b7fd2b2c18cb200d192a64883",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": [],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 1,
+      "added_tests_exact_donor": [
+        "test_known_unsent_retry_revalidates_current_write_preconditions"
+      ],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/tracker/test_organize_graph_writes.py",
+      "candidate_sha256": "449552e7bea0a0c9a8eb955060f6de00d1a79f058ac2131f3d9a66c713a9ce3c",
+      "donor_sha256": "449552e7bea0a0c9a8eb955060f6de00d1a79f058ac2131f3d9a66c713a9ce3c",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": [],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 12,
+      "added_tests_exact_donor": [
+        "test_actual_adapter_preserves_unrequested_edges_and_updates_inverse",
+        "test_graph_refuses_before_save",
+        "test_split_creation_uses_native_initial_state_and_replay_never_overwrites",
+        "test_graph_surfaces_never_alias_container_or_parent_body",
+        "test_split_source_drift_during_state_lookup_refuses_before_create",
+        "test_initial_state_requires_actual_nonblank_native_identity",
+        "test_split_creation_shape_never_bypasses_existing_issue_transition_guard",
+        "test_project_milestones_expose_complete_native_identities_and_descriptions",
+        "test_project_milestone_incomplete_identity_evidence_refuses",
+        "test_parent_change_and_clear_use_exact_native_keys",
+        "test_milestone_assignment_requires_actual_current_project",
+        "test_existing_split_identity_damage_never_creates_or_overwrites"
+      ],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/tracker/test_ruling_protocol_boundary.py",
+      "candidate_sha256": "f6fd7845783abecf32c7c6b5db50b4bed626cfe436cf26923d039f956f18e45a",
+      "donor_sha256": null,
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": [
+        "test_comment_reader_runtime_contract_accepts_actual_adapter"
+      ],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 1,
+      "added_tests_exact_donor": [],
+      "added_tests_different_or_not_in_donor_module": [
+        "test_comment_reader_runtime_contract_accepts_actual_adapter"
+      ]
+    },
+    {
+      "path": "tests/tracker/test_ruling_reader_independent.py",
+      "candidate_sha256": "3df371ab1a5c0902d891ef46181a39e14d5c5559fb5c47060624c75c165ed4a7",
+      "donor_sha256": "b535a73669b496fd6f95706a925768f0e1a2af86a5e5d02f5265446f01f43092",
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": [],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 11,
+      "added_tests_exact_donor": [
+        "test_actual_encoded_lane_and_native_author_survive_cold_read",
+        "test_identical_page_overlap_is_one_native_record",
+        "test_conflicting_native_key_across_pages_is_refused",
+        "test_missing_native_reply_metadata_cannot_assert_top_level_record",
+        "test_later_page_cannot_advance_refuses_with_unknown_lane",
+        "test_later_page_damage_refuses_without_partial_result",
+        "test_duplicate_question_later_page_is_not_reconciled_by_answer",
+        "test_cancellation_during_second_native_page_propagates",
+        "test_backend_outage_retains_typed_cause_and_unknown_lane",
+        "test_read_all_keeps_explicit_lane_boundary_with_other_lane_damage",
+        "test_inherited_explicit_lane_boundary_refuses_ambiguous_native_record"
+      ],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/tracker/test_ruling_records.py",
+      "candidate_sha256": "1ee0d7fc210ae7719a3e66688b81968ef753ec0ce46ed8453e34b886cf0c9a0a",
+      "donor_sha256": "856e32b036a71955f9610191949bf90b650f08ab089a81a75985526db152d8da",
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": [],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 10,
+      "added_tests_exact_donor": [
+        "test_same_pair_replays_one_record_and_two_questions_keep_two",
+        "test_amended_answer_edits_same_native_record_and_cold_reader_observes_it",
+        "test_successful_empty_and_other_comment_namespaces_are_not_rulings",
+        "test_duplicate_marker_comments_refuse_instead_of_counting_twice",
+        "test_conflicting_native_and_record_identity_refuse",
+        "test_owned_namespace_damage_cannot_become_an_empty_projection",
+        "test_missing_configuration_refuses_without_listing",
+        "test_unreachable_native_listing_retains_typed_cause",
+        "test_cancellation_is_not_reported_as_empty_history",
+        "test_native_reader_exhausts_pages_before_declaring_the_occurrence_set"
+      ],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/tracker/test_scope_approval.py",
+      "candidate_sha256": "afdacbb82a027485ea51ea3e2eaaa2ffa61c34b7433b8189390346e97481d676",
+      "donor_sha256": "afdacbb82a027485ea51ea3e2eaaa2ffa61c34b7433b8189390346e97481d676",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": [],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 20,
+      "added_tests_exact_donor": [
+        "test_approval_at_each_real_ancestor_admits_deepest_issue",
+        "test_absent_approval_or_another_meta_member_is_not_approval",
+        "test_current_reparenting_and_revocation_need_no_copied_label",
+        "test_container_label_removal_is_visible_on_the_same_adapter",
+        "test_issue_parent_project_does_not_replace_child_membership",
+        "test_issue_without_container_can_be_unapproved_or_inherit_issue_label",
+        "test_reported_project_without_canonical_key_refuses",
+        "test_native_no_project_retains_omitted_and_null_compatibility",
+        "test_nested_initiative_is_read_and_reparenting_changes_next_resolution",
+        "test_cyclic_ancestry_is_not_a_negative_answer",
+        "test_missing_ancestry_refuses_instead_of_returning_false",
+        "test_returned_identity_must_match_the_address",
+        "test_unmapped_approval_refuses_before_any_native_read",
+        "test_actual_composition_passes_the_remapped_scope_vocabulary",
+        "test_unconfigured_names_never_substitute_for_configured_approval",
+        "test_issue_membership_omission_is_not_an_empty_answer",
+        "test_unreadable_native_labels_do_not_become_absence",
+        "test_omitted_native_labels_refuse",
+        "test_multiple_container_parents_refuse_even_with_an_approval_label",
+        "test_native_cancellation_propagates_without_answer_or_write"
+      ],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/tracker/test_scope_tool_arguments.py",
+      "candidate_sha256": "53a84f5561d18ee773f3ced632e57df70fae2e12d0fc7f60d9e0eecf8f5fff4e",
+      "donor_sha256": "53a84f5561d18ee773f3ced632e57df70fae2e12d0fc7f60d9e0eecf8f5fff4e",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": [],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 1,
+      "added_tests_exact_donor": [
+        "test_scope_reads_send_declared_arguments_on_every_call"
+      ],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/tracker/test_tracker_boot.py",
+      "candidate_sha256": "2d12a39dc7d07b446a9f6bebdc92472e2b1e45b7c2305f01b4fe73b4904bbff5",
+      "donor_sha256": "8ef7cabd46d54415517b2c7b47e5cdb411faeea3996b81e59a667395a46c3054",
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": [
+        "operation_config",
+        "TestConfiguredMappings",
+        "TestConfiguredMappings.test_every_category_is_covered",
+        "TestQueueVocabularyPerDeclaredTeam",
+        "TestQueueVocabularyPerDeclaredTeam._tracker",
+        "TestWorkflowStatesResolvePerTeam",
+        "TestWorkflowStatesResolvePerTeam._server",
+        "TestWorkflowStatesResolvePerTeam._tracker",
+        "_caller_over"
+      ],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 0,
+      "added_tests_exact_donor": [],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/types/test_organize_halt.py",
+      "candidate_sha256": "73fdbdfbe27ca8246d64e4b181e054f890bc830ebc28ff2a4666d7f17c808d43",
+      "donor_sha256": "73fdbdfbe27ca8246d64e4b181e054f890bc830ebc28ff2a4666d7f17c808d43",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": [],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 2,
+      "added_tests_exact_donor": [
+        "test_wrong_cause_or_missing_evidence_refuses",
+        "test_valid_halt_roundtrips_the_existing_flat_json"
+      ],
+      "added_tests_different_or_not_in_donor_module": []
+    }
+  ]
+}

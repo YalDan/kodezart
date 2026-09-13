@@ -1,0 +1,89 @@
+[
+  {
+    "path": "tests/test_forge_origin_selection.py",
+    "adaptation": "Only application permission kwargs/config fixture literals to exact donor enum members; HTTP request and SDK option constructors excluded"
+  },
+  {
+    "path": "tests/fakes.py",
+    "adaptation": "Only application permission kwargs/config fixture literals to exact donor enum members; HTTP request and SDK option constructors excluded"
+  },
+  {
+    "path": "tests/integration/test_criteria_oracle.py",
+    "adaptation": "Only application permission kwargs/config fixture literals to exact donor enum members; HTTP request and SDK option constructors excluded"
+  },
+  {
+    "path": "tests/integration/test_workflow_e2e.py",
+    "adaptation": "Only application permission kwargs/config fixture literals to exact donor enum members; HTTP request and SDK option constructors excluded"
+  },
+  {
+    "path": "tests/integration/test_stacked_scope.py",
+    "adaptation": "Only application permission kwargs/config fixture literals to exact donor enum members; HTTP request and SDK option constructors excluded"
+  },
+  {
+    "path": "tests/adapters/test_claude_client_executor.py",
+    "adaptation": "Only application permission kwargs/config fixture literals to exact donor enum members; HTTP request and SDK option constructors excluded"
+  },
+  {
+    "path": "tests/adapters/test_claude_executors.py",
+    "adaptation": "Only application permission kwargs/config fixture literals to exact donor enum members; HTTP request and SDK option constructors excluded"
+  },
+  {
+    "path": "tests/prompts/test_skills_loadouts.py",
+    "adaptation": "Only application permission kwargs/config fixture literals to exact donor enum members; HTTP request and SDK option constructors excluded"
+  },
+  {
+    "path": "tests/chains/test_criteria_validation.py",
+    "adaptation": "Only application permission kwargs/config fixture literals to exact donor enum members; HTTP request and SDK option constructors excluded"
+  },
+  {
+    "path": "tests/chains/test_ralph_workflow.py",
+    "adaptation": "Only application permission kwargs/config fixture literals to exact donor enum members; HTTP request and SDK option constructors excluded"
+  },
+  {
+    "path": "tests/chains/test_dispatch_definitions.py",
+    "adaptation": "Only application permission kwargs/config fixture literals to exact donor enum members; HTTP request and SDK option constructors excluded"
+  },
+  {
+    "path": "tests/chains/test_accept_gate.py",
+    "adaptation": "Only application permission kwargs/config fixture literals to exact donor enum members; HTTP request and SDK option constructors excluded"
+  },
+  {
+    "path": "tests/chains/test_outbound_gating.py",
+    "adaptation": "Only application permission kwargs/config fixture literals to exact donor enum members; HTTP request and SDK option constructors excluded"
+  },
+  {
+    "path": "tests/chains/test_shorthand_url_resolution.py",
+    "adaptation": "Only application permission kwargs/config fixture literals to exact donor enum members; HTTP request and SDK option constructors excluded"
+  },
+  {
+    "path": "tests/chains/test_ralph_loop.py",
+    "adaptation": "Only application permission kwargs/config fixture literals to exact donor enum members; HTTP request and SDK option constructors excluded"
+  },
+  {
+    "path": "tests/domain/test_base_scope.py",
+    "adaptation": "Only application permission kwargs/config fixture literals to exact donor enum members; HTTP request and SDK option constructors excluded"
+  },
+  {
+    "path": "tests/services/test_session_grant_threading.py",
+    "adaptation": "Only application permission kwargs/config fixture literals to exact donor enum members; HTTP request and SDK option constructors excluded"
+  },
+  {
+    "path": "tests/services/test_agent_service.py",
+    "adaptation": "Only application permission kwargs/config fixture literals to exact donor enum members; HTTP request and SDK option constructors excluded"
+  },
+  {
+    "path": "tests/adapters/test_permission_boundary.py",
+    "donor": "1f4296c8c36a7498625d2478f8ec7ae6ec187923",
+    "adaptation": "Preserved all test assertions; app.state fixture instead of later Depends; current AppConfig queue binding; remove absent M3 scope fixture only"
+  },
+  {
+    "path": "tests/adapters/test_tool_selection.py",
+    "donor": "1f4296c8c36a7498625d2478f8ec7ae6ec187923",
+    "adaptation": "Preserved all test assertions; app.state fixture instead of later Depends; current AppConfig queue binding; remove absent M3 scope fixture only"
+  },
+  {
+    "path": "tests/probes/test_harness_capabilities.py",
+    "donor": "1f4296c8c36a7498625d2478f8ec7ae6ec187923",
+    "adaptation": "Exact donor harness; only two existing flat configuration consumers retained"
+  }
+]

@@ -1,0 +1,22 @@
+Using CPython 3.12.13
+Creating virtual environment at: .venv
+   Building kodezart @ file:///private/tmp/kodezart-v03-m1-native-read-extraction
+warning: `build_system.requires = ["uv-build>=0.10.9,<0.11.0"]` does not contain the current uv version 0.11.6
+      Built kodezart @ file:///private/tmp/kodezart-v03-m1-native-read-extraction
+Installed 174 packages in 1.38s
+
+==================================== ERRORS ====================================
+___ ERROR collecting kodezart-recovery-session/test_m1_native_read_before.py ___
+ImportError while importing test module '/private/tmp/kodezart-recovery-session/test_m1_native_read_before.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../kodezart-recovery-session/test_m1_native_read_before.py:5: in <module>
+    from tests.fakes import FakeLinearMcpServer, FakeMcpIssue
+E   ModuleNotFoundError: No module named 'tests'
+=========================== short test summary info ============================
+ERROR ../kodezart-recovery-session/test_m1_native_read_before.py
+!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+1 error in 12.48s

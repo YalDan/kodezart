@@ -1,0 +1,1167 @@
+Using CPython 3.12.13
+Creating virtual environment at: .venv
+   Building kodezart @ file:///private/tmp/kodezart-v03-recovery-audit-types
+warning: `build_system.requires = ["uv-build>=0.10.9,<0.11.0"]` does not contain the current uv version 0.11.6
+      Built kodezart @ file:///private/tmp/kodezart-v03-recovery-audit-types
+Installed 174 packages in 1.73s
+FF.FFFF.FF                                                               [100%]
+=================================== FAILURES ===================================
+_ test_native_terminal_mandate_observes_current_head_without_criterion_cast[fake-port-closed] _
+
+setup = (<function setup.<locals>.build at 0x10c82f7e0>, <tests.tracker.test_audit_sweep.Executor object at 0x10c614aa0>, <tes... <tests.fakes.FakeWorkspaceProvider object at 0x10c4fe720>, <tests.fakes.FakePRStateReader object at 0x10c4fe2d0>, ...)
+tracker = <tests.fakes.FakeTrackerPort object at 0x10c73bb60>
+server = <tests.fakes.FakeLinearMcpServer object at 0x10c732c30>
+tracker_writes = <function tracker_writes.<locals>.<lambda> at 0x10c82ee80>
+repository = (PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1755/test_native_termin...ve_terminal_mandate_o0/cache'), '59dfff3d00ee85ccedab5406e175a579b3eb076d', 'b3af8a147b0ebb496653692fada31cb92986ba87')
+tmp_path = PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1755/test_native_terminal_mandate_o0')
+case = 'closed'
+
+    @pytest.mark.parametrize(
+        "case", ["closed", "open", "unresolved", "cancel", "replacement"]
+    )
+    async def test_native_terminal_mandate_observes_current_head_without_criterion_cast(
+        setup, tracker, server, tracker_writes, repository, tmp_path, case
+    ):
+        build, executor, _, _, _, forge, _, operation = setup
+        remote, author, _, prior, head = repository
+        await terminal_ready(tracker, server, forge)
+        await tracker.update_issue(
+            issue_key=CHILD,
+            body=f"**Check:** {CHECK}\n"
+            + render_evidence_field(
+                CriterionEvidence(graded_sha=head, test="old assertion")
+            ),
+        )
+        native = SubprocessGitService(remote="configured-remote")
+        cache = LocalBareRepoCache(git=native, base_dir=str(tmp_path / "terminal-cache"))
+        workspace = GitWorktreeProvider(
+            git=native,
+            cache=cache,
+        )
+        selected = operation.model_copy(
+            update={
+                "repos": [operation.repos[0].model_copy(update={"url": remote.as_uri()})]
+            }
+        )
+        forge.records[(remote.as_uri(), 7)] = forge.records[(REPO, 7)].model_copy(
+            update={
+                "head_sha": head,
+                "head_repo_url": remote.as_uri(),
+                "lifecycle": PRLifecycle.OPEN if case == "open" else PRLifecycle.CLOSED,
+            }
+        )
+        sweep = build(
+            selected_op=selected,
+            selected_git=native,
+            selected_cache=cache,
+            selected_workspace=workspace,
+            selected_source=SubprocessGitSourceReader(),
+        )
+        source = (await sweep._requests.read(scope=sweep._scope)).targets[1].source
+        if case == "unresolved":
+            rendered = render_lane_record(
+                record=source.record.model_copy(update={"pr": None}),
+                marker_prefixes=PREFIXES,
+            )
+            marker, _, body = rendered.partition("\n")
+            updated = await leased_comment(tracker, target=ROOT, marker=marker, body=body)
+            assert updated.comment_key == source.comment.comment_key
+        paths, mandate_calls = [], []
+        active = asyncio.Event()
+    
+        async def during(kwargs):
+            path = Path(kwargs["cwd"])
+            paths.append(path)
+            assert command(path, "rev-parse", "HEAD") == head
+            assert (
+                subprocess.run(
+                    ["git", "symbolic-ref", "-q", "HEAD"], cwd=path, capture_output=True
+                ).returncode
+                == 1
+            )
+            assert (path / "check.txt").read_bytes() == (author / "check.txt").read_bytes()
+            assert not await native.has_changes(str(path))
+            if kwargs["output_format"]["schema"] != AUDIT_MANDATE_SCHEMA:
+                return
+            mandate_calls.append(kwargs)
+            assert (
+                ROOT in kwargs["prompt"] and source.comment.comment_key in kwargs["prompt"]
+            )
+            assert head in kwargs["prompt"] and "head-full-identity" not in kwargs["prompt"]
+            if case == "cancel":
+                active.set()
+                await asyncio.Future()
+            elif case == "replacement":
+                command(path, "replace", head, prior)
+                command(path, "reset", "--hard", head)
+                assert command(path, "rev-parse", "HEAD") == head
+                assert not await native.has_changes(str(path))
+                assert (path / "check.txt").read_text() == "prior committed contents\n"
+    
+        executor.during = during
+        before = tracker_writes()
+        if case == "cancel":
+            task = asyncio.create_task(sweep.run())
+            try:
+                await asyncio.wait_for(active.wait(), 10)
+                task.cancel()
+                await asyncio.sleep(0)
+                task.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await asyncio.wait_for(task, 5)
+            finally:
+                if not task.done():
+                    task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+        else:
+            result = await sweep.run()
+            child, parent = result.observations
+            assert child.claim is not None
+>           assert parent.terminal.branch_head == head
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AttributeError: 'NoneType' object has no attribute 'branch_head'
+
+tests/tracker/test_audit_terminal_mandate_git.py:131: AttributeError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 17:30:45 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-e1b54d5253894647b0b4ec572469de21 workspace_id=e1b54d5253894647b0b4ec572469de21
+2026-09-12 17:30:46 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fresh-result site=audit_claim stop_reason=None subtype=success total_cost_usd=None usage=None
+2026-09-12 17:30:46 [info     ] workspace_released             workspace_id=e1b54d5253894647b0b4ec572469de21
+_ test_native_terminal_mandate_observes_current_head_without_criterion_cast[fake-port-open] _
+
+setup = (<function setup.<locals>.build at 0x10c985f80>, <tests.tracker.test_audit_sweep.Executor object at 0x10c7d6b10>, <tes... <tests.fakes.FakeWorkspaceProvider object at 0x10c7d7dd0>, <tests.fakes.FakePRStateReader object at 0x10c7d6f30>, ...)
+tracker = <tests.fakes.FakeTrackerPort object at 0x10c4ff0e0>
+server = <tests.fakes.FakeLinearMcpServer object at 0x10c7d7b00>
+tracker_writes = <function tracker_writes.<locals>.<lambda> at 0x10c82f100>
+repository = (PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1755/test_native_termin...ve_terminal_mandate_o1/cache'), '2f80c6b1847f434483980134a5ed88c6e156e892', '1e4a97757426971ba249b9f56f7f7c65195127dc')
+tmp_path = PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1755/test_native_terminal_mandate_o1')
+case = 'open'
+
+    @pytest.mark.parametrize(
+        "case", ["closed", "open", "unresolved", "cancel", "replacement"]
+    )
+    async def test_native_terminal_mandate_observes_current_head_without_criterion_cast(
+        setup, tracker, server, tracker_writes, repository, tmp_path, case
+    ):
+        build, executor, _, _, _, forge, _, operation = setup
+        remote, author, _, prior, head = repository
+        await terminal_ready(tracker, server, forge)
+        await tracker.update_issue(
+            issue_key=CHILD,
+            body=f"**Check:** {CHECK}\n"
+            + render_evidence_field(
+                CriterionEvidence(graded_sha=head, test="old assertion")
+            ),
+        )
+        native = SubprocessGitService(remote="configured-remote")
+        cache = LocalBareRepoCache(git=native, base_dir=str(tmp_path / "terminal-cache"))
+        workspace = GitWorktreeProvider(
+            git=native,
+            cache=cache,
+        )
+        selected = operation.model_copy(
+            update={
+                "repos": [operation.repos[0].model_copy(update={"url": remote.as_uri()})]
+            }
+        )
+        forge.records[(remote.as_uri(), 7)] = forge.records[(REPO, 7)].model_copy(
+            update={
+                "head_sha": head,
+                "head_repo_url": remote.as_uri(),
+                "lifecycle": PRLifecycle.OPEN if case == "open" else PRLifecycle.CLOSED,
+            }
+        )
+        sweep = build(
+            selected_op=selected,
+            selected_git=native,
+            selected_cache=cache,
+            selected_workspace=workspace,
+            selected_source=SubprocessGitSourceReader(),
+        )
+        source = (await sweep._requests.read(scope=sweep._scope)).targets[1].source
+        if case == "unresolved":
+            rendered = render_lane_record(
+                record=source.record.model_copy(update={"pr": None}),
+                marker_prefixes=PREFIXES,
+            )
+            marker, _, body = rendered.partition("\n")
+            updated = await leased_comment(tracker, target=ROOT, marker=marker, body=body)
+            assert updated.comment_key == source.comment.comment_key
+        paths, mandate_calls = [], []
+        active = asyncio.Event()
+    
+        async def during(kwargs):
+            path = Path(kwargs["cwd"])
+            paths.append(path)
+            assert command(path, "rev-parse", "HEAD") == head
+            assert (
+                subprocess.run(
+                    ["git", "symbolic-ref", "-q", "HEAD"], cwd=path, capture_output=True
+                ).returncode
+                == 1
+            )
+            assert (path / "check.txt").read_bytes() == (author / "check.txt").read_bytes()
+            assert not await native.has_changes(str(path))
+            if kwargs["output_format"]["schema"] != AUDIT_MANDATE_SCHEMA:
+                return
+            mandate_calls.append(kwargs)
+            assert (
+                ROOT in kwargs["prompt"] and source.comment.comment_key in kwargs["prompt"]
+            )
+            assert head in kwargs["prompt"] and "head-full-identity" not in kwargs["prompt"]
+            if case == "cancel":
+                active.set()
+                await asyncio.Future()
+            elif case == "replacement":
+                command(path, "replace", head, prior)
+                command(path, "reset", "--hard", head)
+                assert command(path, "rev-parse", "HEAD") == head
+                assert not await native.has_changes(str(path))
+                assert (path / "check.txt").read_text() == "prior committed contents\n"
+    
+        executor.during = during
+        before = tracker_writes()
+        if case == "cancel":
+            task = asyncio.create_task(sweep.run())
+            try:
+                await asyncio.wait_for(active.wait(), 10)
+                task.cancel()
+                await asyncio.sleep(0)
+                task.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await asyncio.wait_for(task, 5)
+            finally:
+                if not task.done():
+                    task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+        else:
+            result = await sweep.run()
+            child, parent = result.observations
+            assert child.claim is not None
+>           assert parent.terminal.branch_head == head
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AttributeError: 'NoneType' object has no attribute 'branch_head'
+
+tests/tracker/test_audit_terminal_mandate_git.py:131: AttributeError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 17:30:50 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-517b01afbb654302b611aa8424c94920 workspace_id=517b01afbb654302b611aa8424c94920
+2026-09-12 17:30:50 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fresh-result site=audit_claim stop_reason=None subtype=success total_cost_usd=None usage=None
+2026-09-12 17:30:51 [info     ] workspace_released             workspace_id=517b01afbb654302b611aa8424c94920
+_ test_native_terminal_mandate_observes_current_head_without_criterion_cast[fake-port-cancel] _
+
+fut = <coroutine object Event.wait at 0x10ca0b920>, timeout = 10
+
+    async def wait_for(fut, timeout):
+        """Wait for the single Future or coroutine to complete, with timeout.
+    
+        Coroutine will be wrapped in Task.
+    
+        Returns result of the Future or coroutine.  When a timeout occurs,
+        it cancels the task and raises TimeoutError.  To avoid the task
+        cancellation, wrap it in shield().
+    
+        If the wait is cancelled, the task is also cancelled.
+    
+        If the task suppresses the cancellation and returns a value instead,
+        that value is returned.
+    
+        This function is a coroutine.
+        """
+        # The special case for timeout <= 0 is for the following case:
+        #
+        # async def test_waitfor():
+        #     func_started = False
+        #
+        #     async def func():
+        #         nonlocal func_started
+        #         func_started = True
+        #
+        #     try:
+        #         await asyncio.wait_for(func(), 0)
+        #     except asyncio.TimeoutError:
+        #         assert not func_started
+        #     else:
+        #         assert False
+        #
+        # asyncio.run(test_waitfor())
+    
+    
+        if timeout is not None and timeout <= 0:
+            fut = ensure_future(fut)
+    
+            if fut.done():
+                return fut.result()
+    
+            await _cancel_and_wait(fut)
+            try:
+                return fut.result()
+            except exceptions.CancelledError as exc:
+                raise TimeoutError from exc
+    
+        async with timeouts.timeout(timeout):
+>           return await fut
+                   ^^^^^^^^^
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/tasks.py:520: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <asyncio.locks.Event object at 0x10c7da0c0 [unset]>
+
+    async def wait(self):
+        """Block until the internal flag is true.
+    
+        If the internal flag is true on entry, return True
+        immediately.  Otherwise, block until another coroutine calls
+        set() to set the flag to true, then return True.
+        """
+        if self._value:
+            return True
+    
+        fut = self._get_loop().create_future()
+        self._waiters.append(fut)
+        try:
+>           await fut
+E           asyncio.exceptions.CancelledError
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/locks.py:212: CancelledError
+
+The above exception was the direct cause of the following exception:
+
+setup = (<function setup.<locals>.build at 0x10c987100>, <tests.tracker.test_audit_sweep.Executor object at 0x10c7daf30>, <tes... <tests.fakes.FakeWorkspaceProvider object at 0x10c7da060>, <tests.fakes.FakePRStateReader object at 0x10c7d8c20>, ...)
+tracker = <tests.fakes.FakeTrackerPort object at 0x10c7da570>
+server = <tests.fakes.FakeLinearMcpServer object at 0x10c7db680>
+tracker_writes = <function tracker_writes.<locals>.<lambda> at 0x10c9872e0>
+repository = (PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1755/test_native_termin...ve_terminal_mandate_o3/cache'), 'c8bdac472b03dde9af5eeed0cedadde1713f9b57', '550f2be248ea49f1ba1417c37811c1ab9e6bc47b')
+tmp_path = PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1755/test_native_terminal_mandate_o3')
+case = 'cancel'
+
+    @pytest.mark.parametrize(
+        "case", ["closed", "open", "unresolved", "cancel", "replacement"]
+    )
+    async def test_native_terminal_mandate_observes_current_head_without_criterion_cast(
+        setup, tracker, server, tracker_writes, repository, tmp_path, case
+    ):
+        build, executor, _, _, _, forge, _, operation = setup
+        remote, author, _, prior, head = repository
+        await terminal_ready(tracker, server, forge)
+        await tracker.update_issue(
+            issue_key=CHILD,
+            body=f"**Check:** {CHECK}\n"
+            + render_evidence_field(
+                CriterionEvidence(graded_sha=head, test="old assertion")
+            ),
+        )
+        native = SubprocessGitService(remote="configured-remote")
+        cache = LocalBareRepoCache(git=native, base_dir=str(tmp_path / "terminal-cache"))
+        workspace = GitWorktreeProvider(
+            git=native,
+            cache=cache,
+        )
+        selected = operation.model_copy(
+            update={
+                "repos": [operation.repos[0].model_copy(update={"url": remote.as_uri()})]
+            }
+        )
+        forge.records[(remote.as_uri(), 7)] = forge.records[(REPO, 7)].model_copy(
+            update={
+                "head_sha": head,
+                "head_repo_url": remote.as_uri(),
+                "lifecycle": PRLifecycle.OPEN if case == "open" else PRLifecycle.CLOSED,
+            }
+        )
+        sweep = build(
+            selected_op=selected,
+            selected_git=native,
+            selected_cache=cache,
+            selected_workspace=workspace,
+            selected_source=SubprocessGitSourceReader(),
+        )
+        source = (await sweep._requests.read(scope=sweep._scope)).targets[1].source
+        if case == "unresolved":
+            rendered = render_lane_record(
+                record=source.record.model_copy(update={"pr": None}),
+                marker_prefixes=PREFIXES,
+            )
+            marker, _, body = rendered.partition("\n")
+            updated = await leased_comment(tracker, target=ROOT, marker=marker, body=body)
+            assert updated.comment_key == source.comment.comment_key
+        paths, mandate_calls = [], []
+        active = asyncio.Event()
+    
+        async def during(kwargs):
+            path = Path(kwargs["cwd"])
+            paths.append(path)
+            assert command(path, "rev-parse", "HEAD") == head
+            assert (
+                subprocess.run(
+                    ["git", "symbolic-ref", "-q", "HEAD"], cwd=path, capture_output=True
+                ).returncode
+                == 1
+            )
+            assert (path / "check.txt").read_bytes() == (author / "check.txt").read_bytes()
+            assert not await native.has_changes(str(path))
+            if kwargs["output_format"]["schema"] != AUDIT_MANDATE_SCHEMA:
+                return
+            mandate_calls.append(kwargs)
+            assert (
+                ROOT in kwargs["prompt"] and source.comment.comment_key in kwargs["prompt"]
+            )
+            assert head in kwargs["prompt"] and "head-full-identity" not in kwargs["prompt"]
+            if case == "cancel":
+                active.set()
+                await asyncio.Future()
+            elif case == "replacement":
+                command(path, "replace", head, prior)
+                command(path, "reset", "--hard", head)
+                assert command(path, "rev-parse", "HEAD") == head
+                assert not await native.has_changes(str(path))
+                assert (path / "check.txt").read_text() == "prior committed contents\n"
+    
+        executor.during = during
+        before = tracker_writes()
+        if case == "cancel":
+            task = asyncio.create_task(sweep.run())
+            try:
+>               await asyncio.wait_for(active.wait(), 10)
+
+tests/tracker/test_audit_terminal_mandate_git.py:117: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/tasks.py:519: in wait_for
+    async with timeouts.timeout(timeout):
+               ^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <Timeout [expired]>
+exc_type = <class 'asyncio.exceptions.CancelledError'>
+exc_val = CancelledError(), exc_tb = <traceback object at 0x10cb9f9c0>
+
+    async def __aexit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType],
+    ) -> Optional[bool]:
+        assert self._state in (_State.ENTERED, _State.EXPIRING)
+    
+        if self._timeout_handler is not None:
+            self._timeout_handler.cancel()
+            self._timeout_handler = None
+    
+        if self._state is _State.EXPIRING:
+            self._state = _State.EXPIRED
+    
+            if self._task.uncancel() <= self._cancelling and exc_type is exceptions.CancelledError:
+                # Since there are no new cancel requests, we're
+                # handling this.
+>               raise TimeoutError from exc_val
+E               TimeoutError
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/timeouts.py:115: TimeoutError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 17:31:01 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-2129b70c438a4138b17fe90b6f16064e workspace_id=2129b70c438a4138b17fe90b6f16064e
+2026-09-12 17:31:01 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fresh-result site=audit_claim stop_reason=None subtype=success total_cost_usd=None usage=None
+2026-09-12 17:31:01 [info     ] workspace_released             workspace_id=2129b70c438a4138b17fe90b6f16064e
+_ test_native_terminal_mandate_observes_current_head_without_criterion_cast[fake-port-replacement] _
+
+setup = (<function setup.<locals>.build at 0x10c987a60>, <tests.tracker.test_audit_sweep.Executor object at 0x10c7e8a10>, <tes... <tests.fakes.FakeWorkspaceProvider object at 0x10c7eb140>, <tests.fakes.FakePRStateReader object at 0x10c7eb560>, ...)
+tracker = <tests.fakes.FakeTrackerPort object at 0x10c606b40>
+server = <tests.fakes.FakeLinearMcpServer object at 0x10c7e8320>
+tracker_writes = <function tracker_writes.<locals>.<lambda> at 0x10c987ce0>
+repository = (PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1755/test_native_termin...ve_terminal_mandate_o4/cache'), '184dc96e777de99ac6a2098922ac357c47af155c', '2e9335e0653822de09ede7ba2ce4506b28679ab0')
+tmp_path = PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1755/test_native_terminal_mandate_o4')
+case = 'replacement'
+
+    @pytest.mark.parametrize(
+        "case", ["closed", "open", "unresolved", "cancel", "replacement"]
+    )
+    async def test_native_terminal_mandate_observes_current_head_without_criterion_cast(
+        setup, tracker, server, tracker_writes, repository, tmp_path, case
+    ):
+        build, executor, _, _, _, forge, _, operation = setup
+        remote, author, _, prior, head = repository
+        await terminal_ready(tracker, server, forge)
+        await tracker.update_issue(
+            issue_key=CHILD,
+            body=f"**Check:** {CHECK}\n"
+            + render_evidence_field(
+                CriterionEvidence(graded_sha=head, test="old assertion")
+            ),
+        )
+        native = SubprocessGitService(remote="configured-remote")
+        cache = LocalBareRepoCache(git=native, base_dir=str(tmp_path / "terminal-cache"))
+        workspace = GitWorktreeProvider(
+            git=native,
+            cache=cache,
+        )
+        selected = operation.model_copy(
+            update={
+                "repos": [operation.repos[0].model_copy(update={"url": remote.as_uri()})]
+            }
+        )
+        forge.records[(remote.as_uri(), 7)] = forge.records[(REPO, 7)].model_copy(
+            update={
+                "head_sha": head,
+                "head_repo_url": remote.as_uri(),
+                "lifecycle": PRLifecycle.OPEN if case == "open" else PRLifecycle.CLOSED,
+            }
+        )
+        sweep = build(
+            selected_op=selected,
+            selected_git=native,
+            selected_cache=cache,
+            selected_workspace=workspace,
+            selected_source=SubprocessGitSourceReader(),
+        )
+        source = (await sweep._requests.read(scope=sweep._scope)).targets[1].source
+        if case == "unresolved":
+            rendered = render_lane_record(
+                record=source.record.model_copy(update={"pr": None}),
+                marker_prefixes=PREFIXES,
+            )
+            marker, _, body = rendered.partition("\n")
+            updated = await leased_comment(tracker, target=ROOT, marker=marker, body=body)
+            assert updated.comment_key == source.comment.comment_key
+        paths, mandate_calls = [], []
+        active = asyncio.Event()
+    
+        async def during(kwargs):
+            path = Path(kwargs["cwd"])
+            paths.append(path)
+            assert command(path, "rev-parse", "HEAD") == head
+            assert (
+                subprocess.run(
+                    ["git", "symbolic-ref", "-q", "HEAD"], cwd=path, capture_output=True
+                ).returncode
+                == 1
+            )
+            assert (path / "check.txt").read_bytes() == (author / "check.txt").read_bytes()
+            assert not await native.has_changes(str(path))
+            if kwargs["output_format"]["schema"] != AUDIT_MANDATE_SCHEMA:
+                return
+            mandate_calls.append(kwargs)
+            assert (
+                ROOT in kwargs["prompt"] and source.comment.comment_key in kwargs["prompt"]
+            )
+            assert head in kwargs["prompt"] and "head-full-identity" not in kwargs["prompt"]
+            if case == "cancel":
+                active.set()
+                await asyncio.Future()
+            elif case == "replacement":
+                command(path, "replace", head, prior)
+                command(path, "reset", "--hard", head)
+                assert command(path, "rev-parse", "HEAD") == head
+                assert not await native.has_changes(str(path))
+                assert (path / "check.txt").read_text() == "prior committed contents\n"
+    
+        executor.during = during
+        before = tracker_writes()
+        if case == "cancel":
+            task = asyncio.create_task(sweep.run())
+            try:
+                await asyncio.wait_for(active.wait(), 10)
+                task.cancel()
+                await asyncio.sleep(0)
+                task.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await asyncio.wait_for(task, 5)
+            finally:
+                if not task.done():
+                    task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+        else:
+            result = await sweep.run()
+            child, parent = result.observations
+            assert child.claim is not None
+>           assert parent.terminal.branch_head == head
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AttributeError: 'NoneType' object has no attribute 'branch_head'
+
+tests/tracker/test_audit_terminal_mandate_git.py:131: AttributeError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 17:31:14 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-b0fd213f18f74f0fba37b4737b63f073 workspace_id=b0fd213f18f74f0fba37b4737b63f073
+2026-09-12 17:31:15 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fresh-result site=audit_claim stop_reason=None subtype=success total_cost_usd=None usage=None
+2026-09-12 17:31:16 [info     ] workspace_released             workspace_id=b0fd213f18f74f0fba37b4737b63f073
+_ test_native_terminal_mandate_observes_current_head_without_criterion_cast[linear-mcp-closed] _
+
+setup = (<function setup.<locals>.build at 0x10c82fd80>, <tests.tracker.test_audit_sweep.Executor object at 0x10c617e00>, <tes... <tests.fakes.FakeWorkspaceProvider object at 0x10c6178c0>, <tests.fakes.FakePRStateReader object at 0x10c617800>, ...)
+tracker = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10c617710>
+server = <tests.fakes.FakeLinearMcpServer object at 0x10c7ebe60>
+tracker_writes = <function tracker_writes.<locals>.<lambda> at 0x10c82fa60>
+repository = (PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1755/test_native_termin...ve_terminal_mandate_o5/cache'), '1111003bac962b086d116aec34a481c01a0da718', '8b4a727cd30b69edc533f9e9655c99076c21e952')
+tmp_path = PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1755/test_native_terminal_mandate_o5')
+case = 'closed'
+
+    @pytest.mark.parametrize(
+        "case", ["closed", "open", "unresolved", "cancel", "replacement"]
+    )
+    async def test_native_terminal_mandate_observes_current_head_without_criterion_cast(
+        setup, tracker, server, tracker_writes, repository, tmp_path, case
+    ):
+        build, executor, _, _, _, forge, _, operation = setup
+        remote, author, _, prior, head = repository
+        await terminal_ready(tracker, server, forge)
+        await tracker.update_issue(
+            issue_key=CHILD,
+            body=f"**Check:** {CHECK}\n"
+            + render_evidence_field(
+                CriterionEvidence(graded_sha=head, test="old assertion")
+            ),
+        )
+        native = SubprocessGitService(remote="configured-remote")
+        cache = LocalBareRepoCache(git=native, base_dir=str(tmp_path / "terminal-cache"))
+        workspace = GitWorktreeProvider(
+            git=native,
+            cache=cache,
+        )
+        selected = operation.model_copy(
+            update={
+                "repos": [operation.repos[0].model_copy(update={"url": remote.as_uri()})]
+            }
+        )
+        forge.records[(remote.as_uri(), 7)] = forge.records[(REPO, 7)].model_copy(
+            update={
+                "head_sha": head,
+                "head_repo_url": remote.as_uri(),
+                "lifecycle": PRLifecycle.OPEN if case == "open" else PRLifecycle.CLOSED,
+            }
+        )
+        sweep = build(
+            selected_op=selected,
+            selected_git=native,
+            selected_cache=cache,
+            selected_workspace=workspace,
+            selected_source=SubprocessGitSourceReader(),
+        )
+        source = (await sweep._requests.read(scope=sweep._scope)).targets[1].source
+        if case == "unresolved":
+            rendered = render_lane_record(
+                record=source.record.model_copy(update={"pr": None}),
+                marker_prefixes=PREFIXES,
+            )
+            marker, _, body = rendered.partition("\n")
+            updated = await leased_comment(tracker, target=ROOT, marker=marker, body=body)
+            assert updated.comment_key == source.comment.comment_key
+        paths, mandate_calls = [], []
+        active = asyncio.Event()
+    
+        async def during(kwargs):
+            path = Path(kwargs["cwd"])
+            paths.append(path)
+            assert command(path, "rev-parse", "HEAD") == head
+            assert (
+                subprocess.run(
+                    ["git", "symbolic-ref", "-q", "HEAD"], cwd=path, capture_output=True
+                ).returncode
+                == 1
+            )
+            assert (path / "check.txt").read_bytes() == (author / "check.txt").read_bytes()
+            assert not await native.has_changes(str(path))
+            if kwargs["output_format"]["schema"] != AUDIT_MANDATE_SCHEMA:
+                return
+            mandate_calls.append(kwargs)
+            assert (
+                ROOT in kwargs["prompt"] and source.comment.comment_key in kwargs["prompt"]
+            )
+            assert head in kwargs["prompt"] and "head-full-identity" not in kwargs["prompt"]
+            if case == "cancel":
+                active.set()
+                await asyncio.Future()
+            elif case == "replacement":
+                command(path, "replace", head, prior)
+                command(path, "reset", "--hard", head)
+                assert command(path, "rev-parse", "HEAD") == head
+                assert not await native.has_changes(str(path))
+                assert (path / "check.txt").read_text() == "prior committed contents\n"
+    
+        executor.during = during
+        before = tracker_writes()
+        if case == "cancel":
+            task = asyncio.create_task(sweep.run())
+            try:
+                await asyncio.wait_for(active.wait(), 10)
+                task.cancel()
+                await asyncio.sleep(0)
+                task.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await asyncio.wait_for(task, 5)
+            finally:
+                if not task.done():
+                    task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+        else:
+            result = await sweep.run()
+            child, parent = result.observations
+            assert child.claim is not None
+>           assert parent.terminal.branch_head == head
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AttributeError: 'NoneType' object has no attribute 'branch_head'
+
+tests/tracker/test_audit_terminal_mandate_git.py:131: AttributeError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 17:31:21 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-ab1bc7c07d2043f383dd3be8cf0fd923 workspace_id=ab1bc7c07d2043f383dd3be8cf0fd923
+2026-09-12 17:31:21 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fresh-result site=audit_claim stop_reason=None subtype=success total_cost_usd=None usage=None
+2026-09-12 17:31:22 [info     ] workspace_released             workspace_id=ab1bc7c07d2043f383dd3be8cf0fd923
+_ test_native_terminal_mandate_observes_current_head_without_criterion_cast[linear-mcp-open] _
+
+setup = (<function setup.<locals>.build at 0x10c987380>, <tests.tracker.test_audit_sweep.Executor object at 0x10c7289e0>, <tes... <tests.fakes.FakeWorkspaceProvider object at 0x10c732e70>, <tests.fakes.FakePRStateReader object at 0x10c610b60>, ...)
+tracker = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10c609460>
+server = <tests.fakes.FakeLinearMcpServer object at 0x10c612300>
+tracker_writes = <function tracker_writes.<locals>.<lambda> at 0x10c82eca0>
+repository = (PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1755/test_native_termin...ve_terminal_mandate_o6/cache'), '17fb5d870b9038ceb8e5f97812ef8ac2c1bef48e', '4ab51135b3f9d0a8051a8ca6e1c5bb907f768728')
+tmp_path = PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1755/test_native_terminal_mandate_o6')
+case = 'open'
+
+    @pytest.mark.parametrize(
+        "case", ["closed", "open", "unresolved", "cancel", "replacement"]
+    )
+    async def test_native_terminal_mandate_observes_current_head_without_criterion_cast(
+        setup, tracker, server, tracker_writes, repository, tmp_path, case
+    ):
+        build, executor, _, _, _, forge, _, operation = setup
+        remote, author, _, prior, head = repository
+        await terminal_ready(tracker, server, forge)
+        await tracker.update_issue(
+            issue_key=CHILD,
+            body=f"**Check:** {CHECK}\n"
+            + render_evidence_field(
+                CriterionEvidence(graded_sha=head, test="old assertion")
+            ),
+        )
+        native = SubprocessGitService(remote="configured-remote")
+        cache = LocalBareRepoCache(git=native, base_dir=str(tmp_path / "terminal-cache"))
+        workspace = GitWorktreeProvider(
+            git=native,
+            cache=cache,
+        )
+        selected = operation.model_copy(
+            update={
+                "repos": [operation.repos[0].model_copy(update={"url": remote.as_uri()})]
+            }
+        )
+        forge.records[(remote.as_uri(), 7)] = PRState.model_validate(
+            {
+                **forge.records[(REPO, 7)].model_dump(),
+                "head_sha": head,
+                "head_repo_url": remote.as_uri(),
+                "base_repo_url": remote.as_uri(),
+                "lifecycle": PRLifecycle.OPEN if case == "open" else PRLifecycle.CLOSED,
+            }
+        )
+        sweep = build(
+            selected_op=selected,
+            selected_git=native,
+            selected_cache=cache,
+            selected_workspace=workspace,
+            selected_source=SubprocessGitSourceReader(),
+        )
+        source = (await sweep._requests.read(scope=sweep._scope)).targets[1].source
+        if case == "unresolved":
+            rendered = render_lane_record(
+                record=source.record.model_copy(update={"pr": None}),
+                marker_prefixes=PREFIXES,
+            )
+            marker, _, body = rendered.partition("\n")
+            updated = await leased_comment(tracker, target=ROOT, marker=marker, body=body)
+            assert updated.comment_key == source.comment.comment_key
+        paths, mandate_calls = [], []
+        active = asyncio.Event()
+    
+        async def during(kwargs):
+            path = Path(kwargs["cwd"])
+            paths.append(path)
+            assert command(path, "rev-parse", "HEAD") == head
+            assert (
+                subprocess.run(
+                    ["git", "symbolic-ref", "-q", "HEAD"], cwd=path, capture_output=True
+                ).returncode
+                == 1
+            )
+            assert (path / "check.txt").read_bytes() == (author / "check.txt").read_bytes()
+            assert not await native.has_changes(str(path))
+            if kwargs["output_format"]["schema"] != AUDIT_MANDATE_SCHEMA:
+                return
+            mandate_calls.append(kwargs)
+            assert (
+                ROOT in kwargs["prompt"] and source.comment.comment_key in kwargs["prompt"]
+            )
+            assert head in kwargs["prompt"] and "head-full-identity" not in kwargs["prompt"]
+            if case == "cancel":
+                active.set()
+                await asyncio.Future()
+            elif case == "replacement":
+                command(path, "replace", head, prior)
+                command(path, "reset", "--hard", head)
+                assert command(path, "rev-parse", "HEAD") == head
+                assert not await native.has_changes(str(path))
+                assert (path / "check.txt").read_text() == "prior committed contents\n"
+    
+        executor.during = during
+        before = tracker_writes()
+        if case == "cancel":
+            task = asyncio.create_task(sweep.run())
+            try:
+                await asyncio.wait_for(active.wait(), 10)
+                task.cancel()
+                await asyncio.sleep(0)
+                task.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await asyncio.wait_for(task, 5)
+            finally:
+                if not task.done():
+                    task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+        else:
+            result = await sweep.run()
+>           child, parent = result.observations
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AttributeError: 'NoneType' object has no attribute 'branch_head'
+
+tests/tracker/test_audit_terminal_mandate_git.py:131: AttributeError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 17:31:25 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-ee17012928c646219aaebe59afa08f15 workspace_id=ee17012928c646219aaebe59afa08f15
+2026-09-12 17:31:26 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fresh-result site=audit_claim stop_reason=None subtype=success total_cost_usd=None usage=None
+2026-09-12 17:31:26 [info     ] workspace_released             workspace_id=ee17012928c646219aaebe59afa08f15
+_ test_native_terminal_mandate_observes_current_head_without_criterion_cast[linear-mcp-cancel] _
+
+fut = <coroutine object Event.wait at 0x10ca42500>, timeout = 10
+
+    async def wait_for(fut, timeout):
+        """Wait for the single Future or coroutine to complete, with timeout.
+    
+        Coroutine will be wrapped in Task.
+    
+        Returns result of the Future or coroutine.  When a timeout occurs,
+        it cancels the task and raises TimeoutError.  To avoid the task
+        cancellation, wrap it in shield().
+    
+        If the wait is cancelled, the task is also cancelled.
+    
+        If the task suppresses the cancellation and returns a value instead,
+        that value is returned.
+    
+        This function is a coroutine.
+        """
+        # The special case for timeout <= 0 is for the following case:
+        #
+        # async def test_waitfor():
+        #     func_started = False
+        #
+        #     async def func():
+        #         nonlocal func_started
+        #         func_started = True
+        #
+        #     try:
+        #         await asyncio.wait_for(func(), 0)
+        #     except asyncio.TimeoutError:
+        #         assert not func_started
+        #     else:
+        #         assert False
+        #
+        # asyncio.run(test_waitfor())
+    
+    
+        if timeout is not None and timeout <= 0:
+            fut = ensure_future(fut)
+    
+            if fut.done():
+                return fut.result()
+    
+            await _cancel_and_wait(fut)
+            try:
+                return fut.result()
+            except exceptions.CancelledError as exc:
+                raise TimeoutError from exc
+    
+        async with timeouts.timeout(timeout):
+>           return await fut
+                   ^^^^^^^^^
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/tasks.py:520: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <asyncio.locks.Event object at 0x10c7eb350 [unset]>
+
+    async def wait(self):
+        """Block until the internal flag is true.
+    
+        If the internal flag is true on entry, return True
+        immediately.  Otherwise, block until another coroutine calls
+        set() to set the flag to true, then return True.
+        """
+        if self._value:
+            return True
+    
+        fut = self._get_loop().create_future()
+        self._waiters.append(fut)
+        try:
+>           await fut
+E           asyncio.exceptions.CancelledError
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/locks.py:212: CancelledError
+
+The above exception was the direct cause of the following exception:
+
+setup = (<function setup.<locals>.build at 0x10cba44a0>, <tests.tracker.test_audit_sweep.Executor object at 0x10c608b30>, <tes... <tests.fakes.FakeWorkspaceProvider object at 0x10c7db020>, <tests.fakes.FakePRStateReader object at 0x10c7db800>, ...)
+tracker = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10c7d8b90>
+server = <tests.fakes.FakeLinearMcpServer object at 0x10c7db080>
+tracker_writes = <function tracker_writes.<locals>.<lambda> at 0x10c986d40>
+repository = (PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1755/test_native_termin...ve_terminal_mandate_o8/cache'), 'b9d7f15c47aaba81bb450c6928c28c3961489b1c', 'd406fbcbcd6b58cb56ef1f5e4ba9cc4d11fc6a69')
+tmp_path = PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1755/test_native_terminal_mandate_o8')
+case = 'cancel'
+
+    @pytest.mark.parametrize(
+        "case", ["closed", "open", "unresolved", "cancel", "replacement"]
+    )
+    async def test_native_terminal_mandate_observes_current_head_without_criterion_cast(
+        setup, tracker, server, tracker_writes, repository, tmp_path, case
+    ):
+        build, executor, _, _, _, forge, _, operation = setup
+        remote, author, _, prior, head = repository
+        await terminal_ready(tracker, server, forge)
+        await tracker.update_issue(
+            issue_key=CHILD,
+            body=f"**Check:** {CHECK}\n"
+            + render_evidence_field(
+                CriterionEvidence(graded_sha=head, test="old assertion")
+            ),
+        )
+        native = SubprocessGitService(remote="configured-remote")
+        cache = LocalBareRepoCache(git=native, base_dir=str(tmp_path / "terminal-cache"))
+        workspace = GitWorktreeProvider(
+            git=native,
+            cache=cache,
+        )
+        selected = operation.model_copy(
+            update={
+                "repos": [operation.repos[0].model_copy(update={"url": remote.as_uri()})]
+            }
+        )
+        forge.records[(remote.as_uri(), 7)] = PRState.model_validate(
+            {
+                **forge.records[(REPO, 7)].model_dump(),
+                "head_sha": head,
+                "head_repo_url": remote.as_uri(),
+                "base_repo_url": remote.as_uri(),
+                "lifecycle": PRLifecycle.OPEN if case == "open" else PRLifecycle.CLOSED,
+            }
+        )
+        sweep = build(
+            selected_op=selected,
+            selected_git=native,
+            selected_cache=cache,
+            selected_workspace=workspace,
+            selected_source=SubprocessGitSourceReader(),
+        )
+        source = (await sweep._requests.read(scope=sweep._scope)).targets[1].source
+        if case == "unresolved":
+            rendered = render_lane_record(
+                record=source.record.model_copy(update={"pr": None}),
+                marker_prefixes=PREFIXES,
+            )
+            marker, _, body = rendered.partition("\n")
+            updated = await leased_comment(tracker, target=ROOT, marker=marker, body=body)
+            assert updated.comment_key == source.comment.comment_key
+        paths, mandate_calls = [], []
+        active = asyncio.Event()
+    
+        async def during(kwargs):
+            path = Path(kwargs["cwd"])
+            paths.append(path)
+            assert command(path, "rev-parse", "HEAD") == head
+            assert (
+                subprocess.run(
+                    ["git", "symbolic-ref", "-q", "HEAD"], cwd=path, capture_output=True
+                ).returncode
+                == 1
+            )
+            assert (path / "check.txt").read_bytes() == (author / "check.txt").read_bytes()
+            assert not await native.has_changes(str(path))
+            if kwargs["output_format"]["schema"] != AUDIT_MANDATE_SCHEMA:
+                return
+            mandate_calls.append(kwargs)
+            assert (
+                ROOT in kwargs["prompt"] and source.comment.comment_key in kwargs["prompt"]
+            )
+            assert head in kwargs["prompt"] and "head-full-identity" not in kwargs["prompt"]
+            if case == "cancel":
+                active.set()
+                await asyncio.Future()
+            elif case == "replacement":
+                command(path, "replace", head, prior)
+                command(path, "reset", "--hard", head)
+                assert command(path, "rev-parse", "HEAD") == head
+                assert not await native.has_changes(str(path))
+                assert (path / "check.txt").read_text() == "prior committed contents\n"
+    
+        executor.during = during
+        before = tracker_writes()
+        if case == "cancel":
+>           task = asyncio.create_task(sweep.run())
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/tracker/test_audit_terminal_mandate_git.py:117: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/tasks.py:519: in wait_for
+    async with timeouts.timeout(timeout):
+               ^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <Timeout [expired]>
+exc_type = <class 'asyncio.exceptions.CancelledError'>
+exc_val = CancelledError(), exc_tb = <traceback object at 0x10c7c1f00>
+
+    async def __aexit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType],
+    ) -> Optional[bool]:
+        assert self._state in (_State.ENTERED, _State.EXPIRING)
+    
+        if self._timeout_handler is not None:
+            self._timeout_handler.cancel()
+            self._timeout_handler = None
+    
+        if self._state is _State.EXPIRING:
+            self._state = _State.EXPIRED
+    
+            if self._task.uncancel() <= self._cancelling and exc_type is exceptions.CancelledError:
+                # Since there are no new cancel requests, we're
+                # handling this.
+>               raise TimeoutError from exc_val
+E               TimeoutError
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/timeouts.py:115: TimeoutError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 17:31:36 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-187e7b8578ad4847b40cd51a5082d617 workspace_id=187e7b8578ad4847b40cd51a5082d617
+2026-09-12 17:31:36 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fresh-result site=audit_claim stop_reason=None subtype=success total_cost_usd=None usage=None
+2026-09-12 17:31:36 [info     ] workspace_released             workspace_id=187e7b8578ad4847b40cd51a5082d617
+_ test_native_terminal_mandate_observes_current_head_without_criterion_cast[linear-mcp-replacement] _
+
+setup = (<function setup.<locals>.build at 0x10c986ca0>, <tests.tracker.test_audit_sweep.Executor object at 0x10c7d8b30>, <tes... <tests.fakes.FakeWorkspaceProvider object at 0x10c7dbef0>, <tests.fakes.FakePRStateReader object at 0x10c7dbb60>, ...)
+tracker = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10c7db170>
+server = <tests.fakes.FakeLinearMcpServer object at 0x10c7dba10>
+tracker_writes = <function tracker_writes.<locals>.<lambda> at 0x10c987380>
+repository = (PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1755/test_native_termin...ve_terminal_mandate_o9/cache'), 'ec03daed07a75db81b221fde79bd6a49c6fd51ad', '60421afb74df027c1d4cb5b42e127f7cd4544a1c')
+tmp_path = PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1755/test_native_terminal_mandate_o9')
+case = 'replacement'
+
+    @pytest.mark.parametrize(
+        "case", ["closed", "open", "unresolved", "cancel", "replacement"]
+    )
+    async def test_native_terminal_mandate_observes_current_head_without_criterion_cast(
+        setup, tracker, server, tracker_writes, repository, tmp_path, case
+    ):
+        build, executor, _, _, _, forge, _, operation = setup
+        remote, author, _, prior, head = repository
+        await terminal_ready(tracker, server, forge)
+        await tracker.update_issue(
+            issue_key=CHILD,
+            body=f"**Check:** {CHECK}\n"
+            + render_evidence_field(
+                CriterionEvidence(graded_sha=head, test="old assertion")
+            ),
+        )
+        native = SubprocessGitService(remote="configured-remote")
+        cache = LocalBareRepoCache(git=native, base_dir=str(tmp_path / "terminal-cache"))
+        workspace = GitWorktreeProvider(
+            git=native,
+            cache=cache,
+        )
+        selected = operation.model_copy(
+            update={
+                "repos": [operation.repos[0].model_copy(update={"url": remote.as_uri()})]
+            }
+        )
+        forge.records[(remote.as_uri(), 7)] = PRState.model_validate(
+            {
+                **forge.records[(REPO, 7)].model_dump(),
+                "head_sha": head,
+                "head_repo_url": remote.as_uri(),
+                "base_repo_url": remote.as_uri(),
+                "lifecycle": PRLifecycle.OPEN if case == "open" else PRLifecycle.CLOSED,
+            }
+        )
+        sweep = build(
+            selected_op=selected,
+            selected_git=native,
+            selected_cache=cache,
+            selected_workspace=workspace,
+            selected_source=SubprocessGitSourceReader(),
+        )
+        source = (await sweep._requests.read(scope=sweep._scope)).targets[1].source
+        if case == "unresolved":
+            rendered = render_lane_record(
+                record=source.record.model_copy(update={"pr": None}),
+                marker_prefixes=PREFIXES,
+            )
+            marker, _, body = rendered.partition("\n")
+            updated = await leased_comment(tracker, target=ROOT, marker=marker, body=body)
+            assert updated.comment_key == source.comment.comment_key
+        paths, mandate_calls = [], []
+        active = asyncio.Event()
+    
+        async def during(kwargs):
+            path = Path(kwargs["cwd"])
+            paths.append(path)
+            assert command(path, "rev-parse", "HEAD") == head
+            assert (
+                subprocess.run(
+                    ["git", "symbolic-ref", "-q", "HEAD"], cwd=path, capture_output=True
+                ).returncode
+                == 1
+            )
+            assert (path / "check.txt").read_bytes() == (author / "check.txt").read_bytes()
+            assert not await native.has_changes(str(path))
+            if kwargs["output_format"]["schema"] != AUDIT_MANDATE_SCHEMA:
+                return
+            mandate_calls.append(kwargs)
+            assert (
+                ROOT in kwargs["prompt"] and source.comment.comment_key in kwargs["prompt"]
+            )
+            assert head in kwargs["prompt"] and "head-full-identity" not in kwargs["prompt"]
+            if case == "cancel":
+                active.set()
+                await asyncio.Future()
+            elif case == "replacement":
+                command(path, "replace", head, prior)
+                command(path, "reset", "--hard", head)
+                assert command(path, "rev-parse", "HEAD") == head
+                assert not await native.has_changes(str(path))
+                assert (path / "check.txt").read_text() == "prior committed contents\n"
+    
+        executor.during = during
+        before = tracker_writes()
+        if case == "cancel":
+            task = asyncio.create_task(sweep.run())
+            try:
+                await asyncio.wait_for(active.wait(), 10)
+                task.cancel()
+                await asyncio.sleep(0)
+                task.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await asyncio.wait_for(task, 5)
+            finally:
+                if not task.done():
+                    task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+        else:
+            result = await sweep.run()
+>           child, parent = result.observations
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AttributeError: 'NoneType' object has no attribute 'branch_head'
+
+tests/tracker/test_audit_terminal_mandate_git.py:131: AttributeError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 17:31:48 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-4e46b8f9f39649ae8e72295a6b366d78 workspace_id=4e46b8f9f39649ae8e72295a6b366d78
+2026-09-12 17:31:48 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fresh-result site=audit_claim stop_reason=None subtype=success total_cost_usd=None usage=None
+2026-09-12 17:31:49 [info     ] workspace_released             workspace_id=4e46b8f9f39649ae8e72295a6b366d78
+=========================== short test summary info ============================
+FAILED tests/tracker/test_audit_terminal_mandate_git.py::test_native_terminal_mandate_observes_current_head_without_criterion_cast[fake-port-closed]
+FAILED tests/tracker/test_audit_terminal_mandate_git.py::test_native_terminal_mandate_observes_current_head_without_criterion_cast[fake-port-open]
+FAILED tests/tracker/test_audit_terminal_mandate_git.py::test_native_terminal_mandate_observes_current_head_without_criterion_cast[fake-port-cancel]
+FAILED tests/tracker/test_audit_terminal_mandate_git.py::test_native_terminal_mandate_observes_current_head_without_criterion_cast[fake-port-replacement]
+FAILED tests/tracker/test_audit_terminal_mandate_git.py::test_native_terminal_mandate_observes_current_head_without_criterion_cast[linear-mcp-closed]
+FAILED tests/tracker/test_audit_terminal_mandate_git.py::test_native_terminal_mandate_observes_current_head_without_criterion_cast[linear-mcp-open]
+FAILED tests/tracker/test_audit_terminal_mandate_git.py::test_native_terminal_mandate_observes_current_head_without_criterion_cast[linear-mcp-cancel]
+FAILED tests/tracker/test_audit_terminal_mandate_git.py::test_native_terminal_mandate_observes_current_head_without_criterion_cast[linear-mcp-replacement]
+8 failed, 2 passed in 68.55s (0:01:08)

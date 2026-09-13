@@ -1,0 +1,57 @@
+...........................................F............................ [ 82%]
+...............                                                          [100%]
+=================================== FAILURES ===================================
+________ test_writeback_exhaustion_retains_its_actual_cited_refutation _________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10d2f0650>
+
+    async def test_writeback_exhaustion_retains_its_actual_cited_refutation(monkeypatch):
+        owner, _board, executor = factory(bound=1)
+        original = executor.stream
+        checked_bad_body = []
+    
+        async def refute_landed_body(**kwargs):
+            async for event in original(**kwargs):
+                if kwargs["output_format"]["schema"].get("title") == "WriteBackFinding":
+                    artifact = json.loads(
+                        re.search(
+                            r"<written_artifact>\s*(.*?)\s*</written_artifact>",
+                            kwargs["prompt"],
+                            re.S,
+                        )[1]
+                    )
+                    if artifact["content"] == "Prepared body grounded in the source.":
+                        checked_bad_body.append(artifact)
+                        event = result(
+                            structured_output={
+                                "verdict": "refuted",
+                                "evidence": (
+                                    "tests/absent.py is absent at this exact commit."
+                                ),
+                                "cited_refs": ["tests/absent.py"],
+                            }
+                        )
+                yield event
+    
+        monkeypatch.setattr(executor, "stream", refute_landed_body)
+        report = await run_owner(owner)
+>       assert len(checked_bad_body) == 1
+E       AssertionError: assert 2 == 1
+E        +  where 2 = len([{'content': 'Prepared body grounded in the source.', 'nativeRef': 'FIX-1', 'surface': {'kind': 'issue_description', '...tiveRef': 'FIX-1', 'surface': {'kind': 'issue_description', 'marker': None, 'ref': {'key': 'FIX-1', 'kind': 'issue'}}}])
+
+tests/chains/test_organize_native_independent.py:80: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 19:16:43 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-12 19:16:43 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:16:43 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:16:43 [info     ] outbound_content_gated         categories=[] content_digest=f89d1825e4481064a8b5a1ea1946290f442ebe4ad9e7445547d1046d6df1fd1c failure=None hits=[] surface=tracker verdict=clean visibility=private writer=tracker_description
+2026-09-12 19:16:43 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:16:43 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:16:43 [info     ] outbound_content_gated         categories=[] content_digest=f89d1825e4481064a8b5a1ea1946290f442ebe4ad9e7445547d1046d6df1fd1c failure=None hits=[] surface=tracker verdict=clean visibility=private writer=tracker_description
+2026-09-12 19:16:43 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:16:43 [info     ] outbound_content_gated         categories=[] content_digest=9933402dca7e6443cd92ce9fc56aea8239640087a45fa138778b9cb3f4d8b404 failure=None hits=[] surface=tracker verdict=clean visibility=private writer=tracker_comment
+2026-09-12 19:16:43 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:16:43 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+=========================== short test summary info ============================
+FAILED tests/chains/test_organize_native_independent.py::test_writeback_exhaustion_retains_its_actual_cited_refutation
+1 failed, 86 passed in 6.43s

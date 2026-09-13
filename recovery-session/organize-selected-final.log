@@ -1,0 +1,88 @@
+........................................................................ [  4%]
+........................................................................ [  8%]
+........................................................................ [ 12%]
+........................................................................ [ 17%]
+........................................................................ [ 21%]
+........................................................................ [ 25%]
+........................................................................ [ 30%]
+........................................................................ [ 34%]
+........................................................................ [ 38%]
+........................................................................ [ 43%]
+........................................................................ [ 47%]
+........................................................................ [ 51%]
+........................................................................ [ 56%]
+........................................................................ [ 60%]
+........................................................................ [ 64%]
+........................................................................ [ 68%]
+........................................................................ [ 73%]
+........................................................................ [ 77%]
+........................................................................ [ 81%]
+........................................................................ [ 86%]
+........................................................................ [ 90%]
+.................................F...................................... [ 94%]
+........................................................................ [ 99%]
+...............                                                          [100%]
+=================================== FAILURES ===================================
+__________ test_returned_identity_must_match_the_address[linear-ref0] __________
+
+approval = ApprovalFixture(tracker=<kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10dd69640>, server=<tests.tracker.test_scope_reads.ScopeMcpServer object at 0x10d9fb800>, fake=<tests.fakes.FakeTrackerPort object at 0x10dd68590>)
+ref = ScopeRef(kind=<ScopeKind.ISSUE: 'issue'>, key='FIX-3')
+
+    @pytest.mark.parametrize("ref", [CHILD, OTHER, INITIATIVE])
+    async def test_returned_identity_must_match_the_address(
+        approval: ApprovalFixture, ref: ScopeRef
+    ) -> None:
+        if ref.kind is ScopeKind.ISSUE:
+            approval.server.issue_detail_updates[ref.key] = {"id": "impostor"}
+            approval.fake.issues[ref.key] = approval.fake.issues[ref.key].model_copy(
+                update={"issue_key": "impostor"}
+            )
+        else:
+            collection = (
+                approval.server.projects
+                if ref.kind is ScopeKind.PROJECT
+                else approval.server.initiatives
+            )
+            collection[ref.key]["id"] = "impostor"
+            approval.fake.scope_containers[ref] = _container(
+                ScopeRef(kind=ref.kind, key="impostor")
+            )
+        with pytest.raises(ScopeReadError, match="identity"):
+>           await approval.tracker.execution_approved(issue_key=CHILD.key)
+
+tests/tracker/test_scope_approval.py:276: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/adapters/linear_mcp_tracker.py:1110: in execution_approved
+    _, approved = await self._read_execution_approval(issue_key=issue_key)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/adapters/linear_mcp_tracker.py:1162: in _read_execution_approval
+    subject = await hydrate(issue_key)
+              ^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/adapters/linear_mcp_tracker.py:1159: in hydrate
+    issue, members = await self._read_scope_issue(key)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10dd69640>
+issue_key = 'FIX-3'
+
+    async def _read_scope_issue(
+        self, issue_key: str
+    ) -> tuple[TrackerIssue, frozenset[ScopeLabel]]:
+        payload = await self._call(
+            _TOOL_GET_ISSUE, {"id": issue_key, "includeRelations": True}
+        )
+        wire = self._validate(LinearApprovalIssueWire, payload, _TOOL_GET_ISSUE)
+        issue = self._to_issue(wire)
+        if issue.issue_key != issue_key:
+>           raise TrackerProtocolError(
+                "scope label read returned another issue",
+                tool=_TOOL_GET_ISSUE,
+                detail=issue_key,
+            )
+E           kodezart.core.errors.TrackerProtocolError: scope label read returned another issue (tool: get_issue; FIX-3)
+
+src/kodezart/adapters/linear_mcp_tracker.py:1129: TrackerProtocolError
+=========================== short test summary info ============================
+FAILED tests/tracker/test_scope_approval.py::test_returned_identity_must_match_the_address[linear-ref0]
+1 failed, 1670 passed in 97.43s (0:01:37)

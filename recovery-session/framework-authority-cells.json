@@ -1,0 +1,373 @@
+{
+  "canonical_sha": "c96895e18d3137544ea30d18188006118ee8a6e5",
+  "cells": [
+    {
+      "lane": "L1",
+      "issue": "KOD-73",
+      "lens": "SOLID",
+      "status": "reviewed_partial",
+      "finding": "Read membership, structural closure and readiness are separable; whole-read refusal is an explicit coupled policy.",
+      "scope": "Only named source/test boundaries inspected; no entire-lane pass.",
+      "evidence": [
+        "framework-authority-report.md",
+        "framework-authority-focused.log",
+        "framework-authority-framework-tests-corrected.log",
+        "framework-authority-probe-corrected.log"
+      ],
+      "report_url": "https://linear.app/duckburg/issue/KOD-806#comment-ec32425c-dd49-4bf4-bed8-69f361198977"
+    },
+    {
+      "lane": "L3",
+      "issue": "KOD-75",
+      "lens": "SOLID",
+      "status": "reviewed_partial",
+      "finding": "Pure planner separated from reads/launch; a full concurrent walker is not proven by this slice. ScopeDispatcher launches at most one lane per pass.",
+      "scope": "Only named source/test boundaries inspected; no entire-lane pass.",
+      "evidence": [
+        "framework-authority-report.md",
+        "framework-authority-focused.log",
+        "framework-authority-framework-tests-corrected.log",
+        "framework-authority-probe-corrected.log"
+      ],
+      "report_url": "https://linear.app/duckburg/issue/KOD-806#comment-ec32425c-dd49-4bf4-bed8-69f361198977"
+    },
+    {
+      "lane": "L4",
+      "issue": "KOD-76",
+      "lens": "SOLID",
+      "status": "reviewed_partial",
+      "finding": "Config declares authority; live writer bypasses it. Writer also owns delivery-ref/comments, so deleting it wholesale removes unrelated responsibilities.",
+      "scope": "Only named source/test boundaries inspected; no entire-lane pass.",
+      "evidence": [
+        "framework-authority-report.md",
+        "framework-authority-focused.log",
+        "framework-authority-framework-tests-corrected.log",
+        "framework-authority-probe-corrected.log"
+      ],
+      "report_url": "https://linear.app/duckburg/issue/KOD-806#comment-ec32425c-dd49-4bf4-bed8-69f361198977"
+    },
+    {
+      "lane": "L1",
+      "issue": "KOD-73",
+      "lens": "DRY",
+      "status": "reviewed_partial",
+      "finding": "One SubtreeClosure supplies gap and discharge; scope/queue approval types still represent different domains.",
+      "scope": "Only named source/test boundaries inspected; no entire-lane pass.",
+      "evidence": [
+        "framework-authority-report.md",
+        "framework-authority-focused.log",
+        "framework-authority-framework-tests-corrected.log",
+        "framework-authority-probe-corrected.log"
+      ],
+      "report_url": "https://linear.app/duckburg/issue/KOD-806#comment-ec32425c-dd49-4bf4-bed8-69f361198977"
+    },
+    {
+      "lane": "L3",
+      "issue": "KOD-75",
+      "lens": "DRY",
+      "status": "reviewed_partial",
+      "finding": "Shared individual clauses, two intentionally different selection producers and precedence orders; blocker duality must be documented.",
+      "scope": "Only named source/test boundaries inspected; no entire-lane pass.",
+      "evidence": [
+        "framework-authority-report.md",
+        "framework-authority-focused.log",
+        "framework-authority-framework-tests-corrected.log",
+        "framework-authority-probe-corrected.log"
+      ],
+      "report_url": "https://linear.app/duckburg/issue/KOD-806#comment-ec32425c-dd49-4bf4-bed8-69f361198977"
+    },
+    {
+      "lane": "L4",
+      "issue": "KOD-76",
+      "lens": "DRY",
+      "status": "reviewed_partial",
+      "finding": "Typed event vocabulary has one declaration, but disconnected table policy duplicates live transition intent; no applier exists.",
+      "scope": "Only named source/test boundaries inspected; no entire-lane pass.",
+      "evidence": [
+        "framework-authority-report.md",
+        "framework-authority-focused.log",
+        "framework-authority-framework-tests-corrected.log",
+        "framework-authority-probe-corrected.log"
+      ],
+      "report_url": "https://linear.app/duckburg/issue/KOD-806#comment-ec32425c-dd49-4bf4-bed8-69f361198977"
+    },
+    {
+      "lane": "L1",
+      "issue": "KOD-73",
+      "lens": "Hexagonal architecture",
+      "status": "reviewed_partial",
+      "finding": "Reads are through TrackerPort; missing native supersession capability is explicit.",
+      "scope": "Only named source/test boundaries inspected; no entire-lane pass.",
+      "evidence": [
+        "framework-authority-report.md",
+        "framework-authority-focused.log",
+        "framework-authority-framework-tests-corrected.log",
+        "framework-authority-probe-corrected.log"
+      ],
+      "report_url": "https://linear.app/duckburg/issue/KOD-806#comment-ec32425c-dd49-4bf4-bed8-69f361198977"
+    },
+    {
+      "lane": "L3",
+      "issue": "KOD-75",
+      "lens": "Hexagonal architecture",
+      "status": "reviewed_partial",
+      "finding": "Planner uses domain facts and injected draw; FireDispatcher obtains external facts through ports.",
+      "scope": "Only named source/test boundaries inspected; no entire-lane pass.",
+      "evidence": [
+        "framework-authority-report.md",
+        "framework-authority-focused.log",
+        "framework-authority-framework-tests-corrected.log",
+        "framework-authority-probe-corrected.log"
+      ],
+      "report_url": "https://linear.app/duckburg/issue/KOD-806#comment-ec32425c-dd49-4bf4-bed8-69f361198977"
+    },
+    {
+      "lane": "L4",
+      "issue": "KOD-76",
+      "lens": "Hexagonal architecture",
+      "status": "reviewed_partial",
+      "finding": "Stage-to-vendor mapping is adapter-side; pre-claim restoration still sends vendor state text from service across the port.",
+      "scope": "Only named source/test boundaries inspected; no entire-lane pass.",
+      "evidence": [
+        "framework-authority-report.md",
+        "framework-authority-focused.log",
+        "framework-authority-framework-tests-corrected.log",
+        "framework-authority-probe-corrected.log"
+      ],
+      "report_url": "https://linear.app/duckburg/issue/KOD-806#comment-ec32425c-dd49-4bf4-bed8-69f361198977"
+    },
+    {
+      "lane": "L1",
+      "issue": "KOD-73",
+      "lens": "KISS",
+      "status": "reviewed_partial",
+      "finding": "Session tree/refusal proposal is feasible; exact full-read and refusal behavior must be preserved or consciously changed.",
+      "scope": "Only named source/test boundaries inspected; no entire-lane pass.",
+      "evidence": [
+        "framework-authority-report.md",
+        "framework-authority-focused.log",
+        "framework-authority-framework-tests-corrected.log",
+        "framework-authority-probe-corrected.log"
+      ],
+      "report_url": "https://linear.app/duckburg/issue/KOD-806#comment-ec32425c-dd49-4bf4-bed8-69f361198977"
+    },
+    {
+      "lane": "L3",
+      "issue": "KOD-75",
+      "lens": "KISS",
+      "status": "reviewed_partial",
+      "finding": "Agent choice is feasible; current ordering/readiness contracts cannot disappear invisibly. Founder choice remains open.",
+      "scope": "Only named source/test boundaries inspected; no entire-lane pass.",
+      "evidence": [
+        "framework-authority-report.md",
+        "framework-authority-focused.log",
+        "framework-authority-framework-tests-corrected.log",
+        "framework-authority-probe-corrected.log"
+      ],
+      "report_url": "https://linear.app/duckburg/issue/KOD-806#comment-ec32425c-dd49-4bf4-bed8-69f361198977"
+    },
+    {
+      "lane": "L4",
+      "issue": "KOD-76",
+      "lens": "KISS",
+      "status": "reviewed_partial",
+      "finding": "Do not grow an unconsumed state table while the choice is reserved; report live behavior first.",
+      "scope": "Only named source/test boundaries inspected; no entire-lane pass.",
+      "evidence": [
+        "framework-authority-report.md",
+        "framework-authority-focused.log",
+        "framework-authority-framework-tests-corrected.log",
+        "framework-authority-probe-corrected.log"
+      ],
+      "report_url": "https://linear.app/duckburg/issue/KOD-806#comment-ec32425c-dd49-4bf4-bed8-69f361198977"
+    },
+    {
+      "lane": "L1",
+      "issue": "KOD-73",
+      "lens": "Typed agent calls",
+      "status": "reviewed_partial",
+      "finding": "Can carry keys/gap/refusal, but no schema can create an absent native reference or authenticate approval.",
+      "scope": "Only named source/test boundaries inspected; no entire-lane pass.",
+      "evidence": [
+        "framework-authority-report.md",
+        "framework-authority-focused.log",
+        "framework-authority-framework-tests-corrected.log",
+        "framework-authority-probe-corrected.log"
+      ],
+      "report_url": "https://linear.app/duckburg/issue/KOD-806#comment-ec32425c-dd49-4bf4-bed8-69f361198977"
+    },
+    {
+      "lane": "L3",
+      "issue": "KOD-75",
+      "lens": "Typed agent calls",
+      "status": "reviewed_partial",
+      "finding": "Can carry winner/ready/blocked/provenance; draw membership and graph conformance are distinct checks.",
+      "scope": "Only named source/test boundaries inspected; no entire-lane pass.",
+      "evidence": [
+        "framework-authority-report.md",
+        "framework-authority-focused.log",
+        "framework-authority-framework-tests-corrected.log",
+        "framework-authority-probe-corrected.log"
+      ],
+      "report_url": "https://linear.app/duckburg/issue/KOD-806#comment-ec32425c-dd49-4bf4-bed8-69f361198977"
+    },
+    {
+      "lane": "L4",
+      "issue": "KOD-76",
+      "lens": "Typed agent calls",
+      "status": "reviewed_partial",
+      "finding": "Can carry event/effect proposal and observations; port-side write ownership still controls effects.",
+      "scope": "Only named source/test boundaries inspected; no entire-lane pass.",
+      "evidence": [
+        "framework-authority-report.md",
+        "framework-authority-focused.log",
+        "framework-authority-framework-tests-corrected.log",
+        "framework-authority-probe-corrected.log"
+      ],
+      "report_url": "https://linear.app/duckburg/issue/KOD-806#comment-ec32425c-dd49-4bf4-bed8-69f361198977"
+    },
+    {
+      "lane": "L1",
+      "issue": "KOD-73",
+      "lens": "Official framework practices",
+      "status": "reviewed_partial",
+      "finding": "Pydantic closed models and explicit native reads are useful; FastAPI serialization is not a transactional read/write guard.",
+      "scope": "Only named source/test boundaries inspected; no entire-lane pass.",
+      "evidence": [
+        "framework-authority-report.md",
+        "framework-authority-focused.log",
+        "framework-authority-framework-tests-corrected.log",
+        "framework-authority-probe-corrected.log"
+      ],
+      "report_url": "https://linear.app/duckburg/issue/KOD-806#comment-ec32425c-dd49-4bf4-bed8-69f361198977"
+    },
+    {
+      "lane": "L3",
+      "issue": "KOD-75",
+      "lens": "Official framework practices",
+      "status": "reviewed_partial",
+      "finding": "LangGraph node/task persistence supports bounded replay; no full scoped execution is proven, and baseline composition still refuses non-null scope.",
+      "scope": "Only named source/test boundaries inspected; no entire-lane pass.",
+      "evidence": [
+        "framework-authority-report.md",
+        "framework-authority-focused.log",
+        "framework-authority-framework-tests-corrected.log",
+        "framework-authority-probe-corrected.log"
+      ],
+      "report_url": "https://linear.app/duckburg/issue/KOD-806#comment-ec32425c-dd49-4bf4-bed8-69f361198977"
+    },
+    {
+      "lane": "L4",
+      "issue": "KOD-76",
+      "lens": "Official framework practices",
+      "status": "reviewed_partial",
+      "finding": "Checkpointing does not apply table effects or rollback writes; keep external effect ownership separate from graph state.",
+      "scope": "Only named source/test boundaries inspected; no entire-lane pass.",
+      "evidence": [
+        "framework-authority-report.md",
+        "framework-authority-focused.log",
+        "framework-authority-framework-tests-corrected.log",
+        "framework-authority-probe-corrected.log"
+      ],
+      "report_url": "https://linear.app/duckburg/issue/KOD-806#comment-ec32425c-dd49-4bf4-bed8-69f361198977"
+    },
+    {
+      "lane": "L1",
+      "issue": "KOD-73",
+      "lens": "Type safety",
+      "status": "reviewed_partial",
+      "finding": "Typed EmptyFireCriteria/ScopeSupersession refusal; topology’s missing/duplicate facts still use bare ValueError in some cases.",
+      "scope": "Only named source/test boundaries inspected; no entire-lane pass.",
+      "evidence": [
+        "framework-authority-report.md",
+        "framework-authority-focused.log",
+        "framework-authority-framework-tests-corrected.log",
+        "framework-authority-probe-corrected.log"
+      ],
+      "report_url": "https://linear.app/duckburg/issue/KOD-806#comment-ec32425c-dd49-4bf4-bed8-69f361198977"
+    },
+    {
+      "lane": "L3",
+      "issue": "KOD-75",
+      "lens": "Type safety",
+      "status": "reviewed_partial",
+      "finding": "Four scoped mypy files pass; callable draw returns unrestricted str and P demonstrates foreign-key acceptance.",
+      "scope": "Only named source/test boundaries inspected; no entire-lane pass.",
+      "evidence": [
+        "framework-authority-report.md",
+        "framework-authority-focused.log",
+        "framework-authority-framework-tests-corrected.log",
+        "framework-authority-probe-corrected.log"
+      ],
+      "report_url": "https://linear.app/duckburg/issue/KOD-806#comment-ec32425c-dd49-4bf4-bed8-69f361198977"
+    },
+    {
+      "lane": "L4",
+      "issue": "KOD-76",
+      "lens": "Type safety",
+      "status": "reviewed_partial",
+      "finding": "Table keys remain str and nested mapping mutable; effect union prevents vendor names in table, but restoration is a string seam.",
+      "scope": "Only named source/test boundaries inspected; no entire-lane pass.",
+      "evidence": [
+        "framework-authority-report.md",
+        "framework-authority-focused.log",
+        "framework-authority-framework-tests-corrected.log",
+        "framework-authority-probe-corrected.log"
+      ],
+      "report_url": "https://linear.app/duckburg/issue/KOD-806#comment-ec32425c-dd49-4bf4-bed8-69f361198977"
+    },
+    {
+      "lane": "L1",
+      "issue": "KOD-73",
+      "lens": "Repository hygiene",
+      "status": "reviewed_partial",
+      "finding": "Reviewed files pass Ruff/format; refusal docstrings need to track actual capability/policy.",
+      "scope": "Only named source/test boundaries inspected; no entire-lane pass.",
+      "evidence": [
+        "framework-authority-report.md",
+        "framework-authority-focused.log",
+        "framework-authority-framework-tests-corrected.log",
+        "framework-authority-probe-corrected.log"
+      ],
+      "report_url": "https://linear.app/duckburg/issue/KOD-806#comment-ec32425c-dd49-4bf4-bed8-69f361198977"
+    },
+    {
+      "lane": "L3",
+      "issue": "KOD-75",
+      "lens": "Repository hygiene",
+      "status": "reviewed_partial",
+      "finding": "“Ten in domain” is stale inventory (8 functions / 10 stages / 12 reasons); categorical anti-prompt prose is not an authority source.",
+      "scope": "Only named source/test boundaries inspected; no entire-lane pass.",
+      "evidence": [
+        "framework-authority-report.md",
+        "framework-authority-focused.log",
+        "framework-authority-framework-tests-corrected.log",
+        "framework-authority-probe-corrected.log"
+      ],
+      "report_url": "https://linear.app/duckburg/issue/KOD-806#comment-ec32425c-dd49-4bf4-bed8-69f361198977"
+    },
+    {
+      "lane": "L4",
+      "issue": "KOD-76",
+      "lens": "Repository hygiene",
+      "status": "reviewed_partial",
+      "finding": "Tests pass while pinning unconditional review/explicit Done; green is not proof of alignment with newer tracker contracts.",
+      "scope": "Only named source/test boundaries inspected; no entire-lane pass.",
+      "evidence": [
+        "framework-authority-report.md",
+        "framework-authority-focused.log",
+        "framework-authority-framework-tests-corrected.log",
+        "framework-authority-probe-corrected.log"
+      ],
+      "report_url": "https://linear.app/duckburg/issue/KOD-806#comment-ec32425c-dd49-4bf4-bed8-69f361198977"
+    }
+  ],
+  "unreviewed_lanes": [
+    "L2",
+    "L5",
+    "L6",
+    "L7",
+    "L8",
+    "L9"
+  ]
+}

@@ -1,0 +1,49 @@
+{
+  "candidate": "aef9e78c34dca6897ddfcbfb439246edf76dd364",
+  "parent": "da39c439898aec1233aa8b6157b35e961df1e453",
+  "PR114_source": "c17f5d71ce95a94d0fd63f74ee6aa467cce01dad",
+  "constructor_ref_reader_ast_exact": {
+    "__init__": true,
+    "_lane_branch": true
+  },
+  "seven_scenarios_and_drivers_exact_PR114_AST": {
+    "ForbiddenPublisher.push": true,
+    "ForbiddenPublisher.merge_branch": true,
+    "ForbiddenPublisher.delete_remote_branch": true,
+    "PathlessConflict.merge_scratch_head": true,
+    "BlockedCreate.__init__": true,
+    "BlockedCreate.create_worktree": true,
+    "drive_green": true,
+    "drive_merge_conflict": true,
+    "drive_pathless_conflict": true,
+    "drive_unclassifiable_chain": true,
+    "drive_undeclared_chain": true,
+    "drive_unobservable_chain": true,
+    "drive_cancellation": true,
+    "EXIT_SCENARIOS": true
+  },
+  "baseline_test_function_differences": [
+    "test_a_scope_the_planner_ranks_nothing_in_refuses_to_compose"
+  ],
+  "new_test_functions": [
+    "test_only_structural_artifacts_is_a_genuinely_empty_roster",
+    "test_roster_change_during_measurement_refuses_before_return",
+    "test_completed_and_unfinished_retained_lanes_each_participate_once",
+    "test_dependency_cycle_is_refused_before_any_union_work",
+    "test_retained_unapproved_lanes_still_participate",
+    "test_cyclic_parentage_is_refused_before_any_union_work",
+    "test_missing_dependency_is_not_dropped_by_empty_blocking_predicate",
+    "test_completed_lanes_with_retained_heads_are_checked_together"
+  ],
+  "probe_sha256": {
+    "test_m5_union_final_freshness_independent.py": "257145bf6e7bb8cde92d272940467ea0b30ff5a61caf7feba4cb4a1db29a986e",
+    "test_m5_union_stage_independence.py": "4eb3e5ca09b4d994a944e14ed8417bb3ee29956eca6e9a51f64810a6976d30ac",
+    "test_m5_union_post_composition_freshness.py": "b97ba3de84556f6f7139ab55842a3542cb76b14257bdb961b30b83655614b532"
+  },
+  "post_composition_baseline": {
+    "sha": "aef9e78c34dca6897ddfcbfb439246edf76dd364",
+    "failed": 1,
+    "seconds": 13.65,
+    "log": "m5-union-roster-independent-post-composition-aef.log"
+  }
+}

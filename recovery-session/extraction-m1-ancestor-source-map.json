@@ -1,0 +1,37 @@
+{
+  "base": "a2ee4c6bebd438359b53fb7a9e11c3966d24ceb5",
+  "destination": "b0def20b996fc157a2356b8fdfd528d069ce9ed4",
+  "tree": "5cc1abb71ec23068995c76419830dff3cbf15251",
+  "patch_sha256": "eda03f9d17a809e6f8c5700b895de90811fe175d6436e06a71bbcdf97400bd5a",
+  "kind": "accepted post-watermark repair, not pure donor extraction",
+  "source_commits": [
+    "8dedc14fb24a8302eec74d360785a3fd7067db87",
+    "dd6147c6c9ac40b6799e408bc8fd6b5554919646"
+  ],
+  "destination_commits": [
+    "067b773",
+    "b0def20"
+  ],
+  "canonical_commits": [
+    "e04960b",
+    "6f0fbff"
+  ],
+  "independent_review": "https://linear.app/duckburg/issue/KOD-73#comment-1da8f4d7-9c0d-4769-b9ae-85292e939a8a",
+  "paths": [
+    {
+      "path": "src/kodezart/adapters/linear_scope_reader.py",
+      "sha256": "99727661529740b2297d5e5255102d9e9cb22582f948825cbed2173cadc2ba6e",
+      "whole_file_equals_correction_source": false
+    },
+    {
+      "path": "tests/tracker/test_scope_alias_identity.py",
+      "sha256": "5d81b95beb77a18962734542527b38dacd21e4cd4cc1ae388532cf049d335129",
+      "whole_file_equals_correction_source": true
+    },
+    {
+      "path": "tests/tracker/test_scope_ancestor_identity.py",
+      "sha256": "efed2eea7083fab1c6a21753e854567206cfd07b707fb6b6330931faf2814c82",
+      "whole_file_equals_correction_source": true
+    }
+  ]
+}

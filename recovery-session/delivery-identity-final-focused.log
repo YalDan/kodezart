@@ -1,0 +1,3525 @@
+........................................................................ [ 28%]
+.......................................FF..FF..FF..FF.F.F..FF.F.F..FF... [ 56%]
+..FFFFF.....FFFFF..................FF................................... [ 85%]
+......................................                                   [100%]
+=================================== FAILURES ===================================
+___ test_open_unmerged_review_terminal_has_no_discrepancy[github-fake-port] ____
+
+self = <kodezart.adapters.github_api.GitHubAPIClient object at 0x10f387e00>
+method = 'GET', url = '/repos/example/project/pulls/7'
+parse = <bound method BaseModel.model_validate of <class 'kodezart.adapters.github_types.PullRequestStateResponse'>>
+
+    async def _parsed_with_retry(
+        self,
+        method: str,
+        url: str,
+        parse: Callable[[object], _WireT],
+        *,
+        json: dict[str, object] | None = None,
+        params: dict[str, str | int] | None = None,
+        retryable: bool = True,
+    ) -> _WireT:
+        """One request, with its body decoded and validated.
+    
+        The single seam every body read goes through, so the translation
+        below is stated ONCE rather than at each reader.  Both ways a
+        payload fails to become a wire model are ``ValueError``: the JSON
+        decoder raises one on bytes that are not JSON, and pydantic's
+        ``ValidationError`` IS one.  Catching the superset is exact here
+        and keeps the two from needing separate arms that could drift.
+    
+        A body this adapter cannot read is a forge failure like any
+        other, and it carries the status the response really had — the
+        request was answered, and what came back was unusable.
+        """
+        response = await self._request_with_retry(
+            method,
+            url,
+            json=json,
+            params=params,
+            retryable=retryable,
+        )
+        try:
+>           return parse(response.json())
+                   ^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 1 validation error for PullRequestStateResponse
+E           base
+E             Field required [type=missing, input_value={'html_url': 'https://git...e': 'example/project'}}}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.12/v/missing
+
+src/kodezart/adapters/github_api.py:338: ValidationError
+
+The above exception was the direct cause of the following exception:
+
+setup = (<kodezart.services.audit_terminal.AuditTerminalReader object at 0x10f42a030>, <tests.fakes.FakeGitService object at 0...iteria drive new work.', created_at=datetime.datetime(2026, 3, 1, 12, 0, tzinfo=datetime.timezone.utc), reply_to=None))
+tracker_writes = <function tracker_writes.<locals>.<lambda> at 0x10f464fe0>
+forge = (<kodezart.adapters.github_api.GitHubAPIClient object at 0x10f387e00>, {('https://github.com/example/project', 7): PRS...mple/project', base_branch='main', lifecycle=<PRLifecycle.OPEN: 'open'>)}, [('https://github.com/example/project', 7)])
+
+    async def test_open_unmerged_review_terminal_has_no_discrepancy(
+        setup, tracker_writes, forge
+    ):
+        reader, git, _, comment = setup
+        before = tracker_writes()
+>       result = await reader.observe(REQUEST)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/chains/test_audit_pass.py:150: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/services/audit_terminal.py:89: in observe
+    pr = await self._forge.read_pr_state(
+src/kodezart/adapters/github_api.py:471: in read_pr_state
+    native = await self._parsed_with_retry(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.github_api.GitHubAPIClient object at 0x10f387e00>
+method = 'GET', url = '/repos/example/project/pulls/7'
+parse = <bound method BaseModel.model_validate of <class 'kodezart.adapters.github_types.PullRequestStateResponse'>>
+
+    async def _parsed_with_retry(
+        self,
+        method: str,
+        url: str,
+        parse: Callable[[object], _WireT],
+        *,
+        json: dict[str, object] | None = None,
+        params: dict[str, str | int] | None = None,
+        retryable: bool = True,
+    ) -> _WireT:
+        """One request, with its body decoded and validated.
+    
+        The single seam every body read goes through, so the translation
+        below is stated ONCE rather than at each reader.  Both ways a
+        payload fails to become a wire model are ``ValueError``: the JSON
+        decoder raises one on bytes that are not JSON, and pydantic's
+        ``ValidationError`` IS one.  Catching the superset is exact here
+        and keeps the two from needing separate arms that could drift.
+    
+        A body this adapter cannot read is a forge failure like any
+        other, and it carries the status the response really had — the
+        request was answered, and what came back was unusable.
+        """
+        response = await self._request_with_retry(
+            method,
+            url,
+            json=json,
+            params=params,
+            retryable=retryable,
+        )
+        try:
+            return parse(response.json())
+        except ValueError as exc:
+>           raise ForgeAPIError(
+                f"Forge answered with a body this adapter cannot read: "
+                f"{type(exc).__name__}",
+                status_code=response.status_code,
+                detail=f"{method} {url}",
+            ) from exc
+E           kodezart.domain.errors.ForgeAPIError: Forge answered with a body this adapter cannot read: ValidationError (status: 200; request: GET /repos/example/project/pulls/7)
+
+src/kodezart/adapters/github_api.py:340: ForgeAPIError
+___ test_open_unmerged_review_terminal_has_no_discrepancy[github-linear-mcp] ___
+
+self = <kodezart.adapters.github_api.GitHubAPIClient object at 0x10f35bdd0>
+method = 'GET', url = '/repos/example/project/pulls/7'
+parse = <bound method BaseModel.model_validate of <class 'kodezart.adapters.github_types.PullRequestStateResponse'>>
+
+    async def _parsed_with_retry(
+        self,
+        method: str,
+        url: str,
+        parse: Callable[[object], _WireT],
+        *,
+        json: dict[str, object] | None = None,
+        params: dict[str, str | int] | None = None,
+        retryable: bool = True,
+    ) -> _WireT:
+        """One request, with its body decoded and validated.
+    
+        The single seam every body read goes through, so the translation
+        below is stated ONCE rather than at each reader.  Both ways a
+        payload fails to become a wire model are ``ValueError``: the JSON
+        decoder raises one on bytes that are not JSON, and pydantic's
+        ``ValidationError`` IS one.  Catching the superset is exact here
+        and keeps the two from needing separate arms that could drift.
+    
+        A body this adapter cannot read is a forge failure like any
+        other, and it carries the status the response really had — the
+        request was answered, and what came back was unusable.
+        """
+        response = await self._request_with_retry(
+            method,
+            url,
+            json=json,
+            params=params,
+            retryable=retryable,
+        )
+        try:
+>           return parse(response.json())
+                   ^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 1 validation error for PullRequestStateResponse
+E           base
+E             Field required [type=missing, input_value={'html_url': 'https://git...e': 'example/project'}}}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.12/v/missing
+
+src/kodezart/adapters/github_api.py:338: ValidationError
+
+The above exception was the direct cause of the following exception:
+
+setup = (<kodezart.services.audit_terminal.AuditTerminalReader object at 0x10f385370>, <tests.fakes.FakeGitService object at 0...y failing criteria drive new work.', created_at=datetime.datetime(2026, 3, 1, 12, 0, tzinfo=TzInfo(0)), reply_to=None))
+tracker_writes = <function tracker_writes.<locals>.<lambda> at 0x10f465800>
+forge = (<kodezart.adapters.github_api.GitHubAPIClient object at 0x10f35bdd0>, {('https://github.com/example/project', 7): PRS...mple/project', base_branch='main', lifecycle=<PRLifecycle.OPEN: 'open'>)}, [('https://github.com/example/project', 7)])
+
+    async def test_open_unmerged_review_terminal_has_no_discrepancy(
+        setup, tracker_writes, forge
+    ):
+        reader, git, _, comment = setup
+        before = tracker_writes()
+>       result = await reader.observe(REQUEST)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/chains/test_audit_pass.py:150: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/services/audit_terminal.py:89: in observe
+    pr = await self._forge.read_pr_state(
+src/kodezart/adapters/github_api.py:471: in read_pr_state
+    native = await self._parsed_with_retry(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.github_api.GitHubAPIClient object at 0x10f35bdd0>
+method = 'GET', url = '/repos/example/project/pulls/7'
+parse = <bound method BaseModel.model_validate of <class 'kodezart.adapters.github_types.PullRequestStateResponse'>>
+
+    async def _parsed_with_retry(
+        self,
+        method: str,
+        url: str,
+        parse: Callable[[object], _WireT],
+        *,
+        json: dict[str, object] | None = None,
+        params: dict[str, str | int] | None = None,
+        retryable: bool = True,
+    ) -> _WireT:
+        """One request, with its body decoded and validated.
+    
+        The single seam every body read goes through, so the translation
+        below is stated ONCE rather than at each reader.  Both ways a
+        payload fails to become a wire model are ``ValueError``: the JSON
+        decoder raises one on bytes that are not JSON, and pydantic's
+        ``ValidationError`` IS one.  Catching the superset is exact here
+        and keeps the two from needing separate arms that could drift.
+    
+        A body this adapter cannot read is a forge failure like any
+        other, and it carries the status the response really had — the
+        request was answered, and what came back was unusable.
+        """
+        response = await self._request_with_retry(
+            method,
+            url,
+            json=json,
+            params=params,
+            retryable=retryable,
+        )
+        try:
+            return parse(response.json())
+        except ValueError as exc:
+>           raise ForgeAPIError(
+                f"Forge answered with a body this adapter cannot read: "
+                f"{type(exc).__name__}",
+                status_code=response.status_code,
+                detail=f"{method} {url}",
+            ) from exc
+E           kodezart.domain.errors.ForgeAPIError: Forge answered with a body this adapter cannot read: ValidationError (status: 200; request: GET /repos/example/project/pulls/7)
+
+src/kodezart/adapters/github_api.py:340: ForgeAPIError
+_ test_closed_unmerged_pr_is_a_discrepancy_despite_recorded_pr_state[github-fake-port] _
+
+self = <kodezart.adapters.github_api.GitHubAPIClient object at 0x10f448fb0>
+method = 'GET', url = '/repos/example/project/pulls/7'
+parse = <bound method BaseModel.model_validate of <class 'kodezart.adapters.github_types.PullRequestStateResponse'>>
+
+    async def _parsed_with_retry(
+        self,
+        method: str,
+        url: str,
+        parse: Callable[[object], _WireT],
+        *,
+        json: dict[str, object] | None = None,
+        params: dict[str, str | int] | None = None,
+        retryable: bool = True,
+    ) -> _WireT:
+        """One request, with its body decoded and validated.
+    
+        The single seam every body read goes through, so the translation
+        below is stated ONCE rather than at each reader.  Both ways a
+        payload fails to become a wire model are ``ValueError``: the JSON
+        decoder raises one on bytes that are not JSON, and pydantic's
+        ``ValidationError`` IS one.  Catching the superset is exact here
+        and keeps the two from needing separate arms that could drift.
+    
+        A body this adapter cannot read is a forge failure like any
+        other, and it carries the status the response really had — the
+        request was answered, and what came back was unusable.
+        """
+        response = await self._request_with_retry(
+            method,
+            url,
+            json=json,
+            params=params,
+            retryable=retryable,
+        )
+        try:
+>           return parse(response.json())
+                   ^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 1 validation error for PullRequestStateResponse
+E           base
+E             Field required [type=missing, input_value={'html_url': 'https://git...e': 'example/project'}}}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.12/v/missing
+
+src/kodezart/adapters/github_api.py:338: ValidationError
+
+The above exception was the direct cause of the following exception:
+
+setup = (<kodezart.services.audit_terminal.AuditTerminalReader object at 0x10f4486b0>, <tests.fakes.FakeGitService object at 0...iteria drive new work.', created_at=datetime.datetime(2026, 3, 1, 12, 0, tzinfo=datetime.timezone.utc), reply_to=None))
+forge = (<kodezart.adapters.github_api.GitHubAPIClient object at 0x10f448fb0>, {('https://github.com/example/project', 7): PRS.../project', base_branch='main', lifecycle=<PRLifecycle.CLOSED: 'closed'>)}, [('https://github.com/example/project', 7)])
+
+    async def test_closed_unmerged_pr_is_a_discrepancy_despite_recorded_pr_state(
+        setup, forge
+    ):
+        reader, *_ = setup
+        forge[1][(REPO, 7)] = forge[1][(REPO, 7)].model_copy(
+            update={"lifecycle": PRLifecycle.CLOSED}
+        )
+>       result = await reader.observe(REQUEST)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/chains/test_audit_pass.py:168: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/services/audit_terminal.py:89: in observe
+    pr = await self._forge.read_pr_state(
+src/kodezart/adapters/github_api.py:471: in read_pr_state
+    native = await self._parsed_with_retry(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.github_api.GitHubAPIClient object at 0x10f448fb0>
+method = 'GET', url = '/repos/example/project/pulls/7'
+parse = <bound method BaseModel.model_validate of <class 'kodezart.adapters.github_types.PullRequestStateResponse'>>
+
+    async def _parsed_with_retry(
+        self,
+        method: str,
+        url: str,
+        parse: Callable[[object], _WireT],
+        *,
+        json: dict[str, object] | None = None,
+        params: dict[str, str | int] | None = None,
+        retryable: bool = True,
+    ) -> _WireT:
+        """One request, with its body decoded and validated.
+    
+        The single seam every body read goes through, so the translation
+        below is stated ONCE rather than at each reader.  Both ways a
+        payload fails to become a wire model are ``ValueError``: the JSON
+        decoder raises one on bytes that are not JSON, and pydantic's
+        ``ValidationError`` IS one.  Catching the superset is exact here
+        and keeps the two from needing separate arms that could drift.
+    
+        A body this adapter cannot read is a forge failure like any
+        other, and it carries the status the response really had — the
+        request was answered, and what came back was unusable.
+        """
+        response = await self._request_with_retry(
+            method,
+            url,
+            json=json,
+            params=params,
+            retryable=retryable,
+        )
+        try:
+            return parse(response.json())
+        except ValueError as exc:
+>           raise ForgeAPIError(
+                f"Forge answered with a body this adapter cannot read: "
+                f"{type(exc).__name__}",
+                status_code=response.status_code,
+                detail=f"{method} {url}",
+            ) from exc
+E           kodezart.domain.errors.ForgeAPIError: Forge answered with a body this adapter cannot read: ValidationError (status: 200; request: GET /repos/example/project/pulls/7)
+
+src/kodezart/adapters/github_api.py:340: ForgeAPIError
+_ test_closed_unmerged_pr_is_a_discrepancy_despite_recorded_pr_state[github-linear-mcp] _
+
+self = <kodezart.adapters.github_api.GitHubAPIClient object at 0x10f42ac90>
+method = 'GET', url = '/repos/example/project/pulls/7'
+parse = <bound method BaseModel.model_validate of <class 'kodezart.adapters.github_types.PullRequestStateResponse'>>
+
+    async def _parsed_with_retry(
+        self,
+        method: str,
+        url: str,
+        parse: Callable[[object], _WireT],
+        *,
+        json: dict[str, object] | None = None,
+        params: dict[str, str | int] | None = None,
+        retryable: bool = True,
+    ) -> _WireT:
+        """One request, with its body decoded and validated.
+    
+        The single seam every body read goes through, so the translation
+        below is stated ONCE rather than at each reader.  Both ways a
+        payload fails to become a wire model are ``ValueError``: the JSON
+        decoder raises one on bytes that are not JSON, and pydantic's
+        ``ValidationError`` IS one.  Catching the superset is exact here
+        and keeps the two from needing separate arms that could drift.
+    
+        A body this adapter cannot read is a forge failure like any
+        other, and it carries the status the response really had — the
+        request was answered, and what came back was unusable.
+        """
+        response = await self._request_with_retry(
+            method,
+            url,
+            json=json,
+            params=params,
+            retryable=retryable,
+        )
+        try:
+>           return parse(response.json())
+                   ^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 1 validation error for PullRequestStateResponse
+E           base
+E             Field required [type=missing, input_value={'html_url': 'https://git...e': 'example/project'}}}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.12/v/missing
+
+src/kodezart/adapters/github_api.py:338: ValidationError
+
+The above exception was the direct cause of the following exception:
+
+setup = (<kodezart.services.audit_terminal.AuditTerminalReader object at 0x10f42ad20>, <tests.fakes.FakeGitService object at 0...y failing criteria drive new work.', created_at=datetime.datetime(2026, 3, 1, 12, 0, tzinfo=TzInfo(0)), reply_to=None))
+forge = (<kodezart.adapters.github_api.GitHubAPIClient object at 0x10f42ac90>, {('https://github.com/example/project', 7): PRS.../project', base_branch='main', lifecycle=<PRLifecycle.CLOSED: 'closed'>)}, [('https://github.com/example/project', 7)])
+
+    async def test_closed_unmerged_pr_is_a_discrepancy_despite_recorded_pr_state(
+        setup, forge
+    ):
+        reader, *_ = setup
+        forge[1][(REPO, 7)] = forge[1][(REPO, 7)].model_copy(
+            update={"lifecycle": PRLifecycle.CLOSED}
+        )
+>       result = await reader.observe(REQUEST)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/chains/test_audit_pass.py:168: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/services/audit_terminal.py:89: in observe
+    pr = await self._forge.read_pr_state(
+src/kodezart/adapters/github_api.py:471: in read_pr_state
+    native = await self._parsed_with_retry(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.github_api.GitHubAPIClient object at 0x10f42ac90>
+method = 'GET', url = '/repos/example/project/pulls/7'
+parse = <bound method BaseModel.model_validate of <class 'kodezart.adapters.github_types.PullRequestStateResponse'>>
+
+    async def _parsed_with_retry(
+        self,
+        method: str,
+        url: str,
+        parse: Callable[[object], _WireT],
+        *,
+        json: dict[str, object] | None = None,
+        params: dict[str, str | int] | None = None,
+        retryable: bool = True,
+    ) -> _WireT:
+        """One request, with its body decoded and validated.
+    
+        The single seam every body read goes through, so the translation
+        below is stated ONCE rather than at each reader.  Both ways a
+        payload fails to become a wire model are ``ValueError``: the JSON
+        decoder raises one on bytes that are not JSON, and pydantic's
+        ``ValidationError`` IS one.  Catching the superset is exact here
+        and keeps the two from needing separate arms that could drift.
+    
+        A body this adapter cannot read is a forge failure like any
+        other, and it carries the status the response really had — the
+        request was answered, and what came back was unusable.
+        """
+        response = await self._request_with_retry(
+            method,
+            url,
+            json=json,
+            params=params,
+            retryable=retryable,
+        )
+        try:
+            return parse(response.json())
+        except ValueError as exc:
+>           raise ForgeAPIError(
+                f"Forge answered with a body this adapter cannot read: "
+                f"{type(exc).__name__}",
+                status_code=response.status_code,
+                detail=f"{method} {url}",
+            ) from exc
+E           kodezart.domain.errors.ForgeAPIError: Forge answered with a body this adapter cannot read: ValidationError (status: 200; request: GET /repos/example/project/pulls/7)
+
+src/kodezart/adapters/github_api.py:340: ForgeAPIError
+_ test_same_name_and_sha_in_foreign_head_repository_never_verify[github-fake-port] _
+
+self = <kodezart.adapters.github_api.GitHubAPIClient object at 0x10f3ea960>
+method = 'GET', url = '/repos/example/project/pulls/7'
+parse = <bound method BaseModel.model_validate of <class 'kodezart.adapters.github_types.PullRequestStateResponse'>>
+
+    async def _parsed_with_retry(
+        self,
+        method: str,
+        url: str,
+        parse: Callable[[object], _WireT],
+        *,
+        json: dict[str, object] | None = None,
+        params: dict[str, str | int] | None = None,
+        retryable: bool = True,
+    ) -> _WireT:
+        """One request, with its body decoded and validated.
+    
+        The single seam every body read goes through, so the translation
+        below is stated ONCE rather than at each reader.  Both ways a
+        payload fails to become a wire model are ``ValueError``: the JSON
+        decoder raises one on bytes that are not JSON, and pydantic's
+        ``ValidationError`` IS one.  Catching the superset is exact here
+        and keeps the two from needing separate arms that could drift.
+    
+        A body this adapter cannot read is a forge failure like any
+        other, and it carries the status the response really had — the
+        request was answered, and what came back was unusable.
+        """
+        response = await self._request_with_retry(
+            method,
+            url,
+            json=json,
+            params=params,
+            retryable=retryable,
+        )
+        try:
+>           return parse(response.json())
+                   ^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 1 validation error for PullRequestStateResponse
+E           base
+E             Field required [type=missing, input_value={'html_url': 'https://git...name': 'foreign/fork'}}}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.12/v/missing
+
+src/kodezart/adapters/github_api.py:338: ValidationError
+
+The above exception was the direct cause of the following exception:
+
+setup = (<kodezart.services.audit_terminal.AuditTerminalReader object at 0x10f3e9070>, <tests.fakes.FakeGitService object at 0...iteria drive new work.', created_at=datetime.datetime(2026, 3, 1, 12, 0, tzinfo=datetime.timezone.utc), reply_to=None))
+forge = (<kodezart.adapters.github_api.GitHubAPIClient object at 0x10f3ea960>, {('https://github.com/example/project', 7): PRS...mple/project', base_branch='main', lifecycle=<PRLifecycle.OPEN: 'open'>)}, [('https://github.com/example/project', 7)])
+tracker_writes = <function tracker_writes.<locals>.<lambda> at 0x10f3e31a0>
+
+    async def test_same_name_and_sha_in_foreign_head_repository_never_verify(
+        setup, forge, tracker_writes
+    ):
+        reader, git, *_ = setup
+        original = forge[1][(REPO, 7)]
+        forge[1][(REPO, 7)] = original.model_copy(
+            update={"head_repo_url": "https://github.com/foreign/fork"}
+        )
+        assert original.head_branch == BRANCH
+        assert original.head_sha == git._remote_branch_shas[BRANCH] == HEAD
+        before = tracker_writes()
+        with pytest.raises(PRStateReadError, match="another repository"):
+>           await reader.observe(REQUEST)
+
+tests/chains/test_audit_pass.py:185: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/services/audit_terminal.py:89: in observe
+    pr = await self._forge.read_pr_state(
+src/kodezart/adapters/github_api.py:471: in read_pr_state
+    native = await self._parsed_with_retry(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.github_api.GitHubAPIClient object at 0x10f3ea960>
+method = 'GET', url = '/repos/example/project/pulls/7'
+parse = <bound method BaseModel.model_validate of <class 'kodezart.adapters.github_types.PullRequestStateResponse'>>
+
+    async def _parsed_with_retry(
+        self,
+        method: str,
+        url: str,
+        parse: Callable[[object], _WireT],
+        *,
+        json: dict[str, object] | None = None,
+        params: dict[str, str | int] | None = None,
+        retryable: bool = True,
+    ) -> _WireT:
+        """One request, with its body decoded and validated.
+    
+        The single seam every body read goes through, so the translation
+        below is stated ONCE rather than at each reader.  Both ways a
+        payload fails to become a wire model are ``ValueError``: the JSON
+        decoder raises one on bytes that are not JSON, and pydantic's
+        ``ValidationError`` IS one.  Catching the superset is exact here
+        and keeps the two from needing separate arms that could drift.
+    
+        A body this adapter cannot read is a forge failure like any
+        other, and it carries the status the response really had — the
+        request was answered, and what came back was unusable.
+        """
+        response = await self._request_with_retry(
+            method,
+            url,
+            json=json,
+            params=params,
+            retryable=retryable,
+        )
+        try:
+            return parse(response.json())
+        except ValueError as exc:
+>           raise ForgeAPIError(
+                f"Forge answered with a body this adapter cannot read: "
+                f"{type(exc).__name__}",
+                status_code=response.status_code,
+                detail=f"{method} {url}",
+            ) from exc
+E           kodezart.domain.errors.ForgeAPIError: Forge answered with a body this adapter cannot read: ValidationError (status: 200; request: GET /repos/example/project/pulls/7)
+
+src/kodezart/adapters/github_api.py:340: ForgeAPIError
+_ test_same_name_and_sha_in_foreign_head_repository_never_verify[github-linear-mcp] _
+
+self = <kodezart.adapters.github_api.GitHubAPIClient object at 0x10f429280>
+method = 'GET', url = '/repos/example/project/pulls/7'
+parse = <bound method BaseModel.model_validate of <class 'kodezart.adapters.github_types.PullRequestStateResponse'>>
+
+    async def _parsed_with_retry(
+        self,
+        method: str,
+        url: str,
+        parse: Callable[[object], _WireT],
+        *,
+        json: dict[str, object] | None = None,
+        params: dict[str, str | int] | None = None,
+        retryable: bool = True,
+    ) -> _WireT:
+        """One request, with its body decoded and validated.
+    
+        The single seam every body read goes through, so the translation
+        below is stated ONCE rather than at each reader.  Both ways a
+        payload fails to become a wire model are ``ValueError``: the JSON
+        decoder raises one on bytes that are not JSON, and pydantic's
+        ``ValidationError`` IS one.  Catching the superset is exact here
+        and keeps the two from needing separate arms that could drift.
+    
+        A body this adapter cannot read is a forge failure like any
+        other, and it carries the status the response really had — the
+        request was answered, and what came back was unusable.
+        """
+        response = await self._request_with_retry(
+            method,
+            url,
+            json=json,
+            params=params,
+            retryable=retryable,
+        )
+        try:
+>           return parse(response.json())
+                   ^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 1 validation error for PullRequestStateResponse
+E           base
+E             Field required [type=missing, input_value={'html_url': 'https://git...name': 'foreign/fork'}}}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.12/v/missing
+
+src/kodezart/adapters/github_api.py:338: ValidationError
+
+The above exception was the direct cause of the following exception:
+
+setup = (<kodezart.services.audit_terminal.AuditTerminalReader object at 0x10f429490>, <tests.fakes.FakeGitService object at 0...y failing criteria drive new work.', created_at=datetime.datetime(2026, 3, 1, 12, 0, tzinfo=TzInfo(0)), reply_to=None))
+forge = (<kodezart.adapters.github_api.GitHubAPIClient object at 0x10f429280>, {('https://github.com/example/project', 7): PRS...mple/project', base_branch='main', lifecycle=<PRLifecycle.OPEN: 'open'>)}, [('https://github.com/example/project', 7)])
+tracker_writes = <function tracker_writes.<locals>.<lambda> at 0x10f3e2f20>
+
+    async def test_same_name_and_sha_in_foreign_head_repository_never_verify(
+        setup, forge, tracker_writes
+    ):
+        reader, git, *_ = setup
+        original = forge[1][(REPO, 7)]
+        forge[1][(REPO, 7)] = original.model_copy(
+            update={"head_repo_url": "https://github.com/foreign/fork"}
+        )
+        assert original.head_branch == BRANCH
+        assert original.head_sha == git._remote_branch_shas[BRANCH] == HEAD
+        before = tracker_writes()
+        with pytest.raises(PRStateReadError, match="another repository"):
+>           await reader.observe(REQUEST)
+
+tests/chains/test_audit_pass.py:185: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/services/audit_terminal.py:89: in observe
+    pr = await self._forge.read_pr_state(
+src/kodezart/adapters/github_api.py:471: in read_pr_state
+    native = await self._parsed_with_retry(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.github_api.GitHubAPIClient object at 0x10f429280>
+method = 'GET', url = '/repos/example/project/pulls/7'
+parse = <bound method BaseModel.model_validate of <class 'kodezart.adapters.github_types.PullRequestStateResponse'>>
+
+    async def _parsed_with_retry(
+        self,
+        method: str,
+        url: str,
+        parse: Callable[[object], _WireT],
+        *,
+        json: dict[str, object] | None = None,
+        params: dict[str, str | int] | None = None,
+        retryable: bool = True,
+    ) -> _WireT:
+        """One request, with its body decoded and validated.
+    
+        The single seam every body read goes through, so the translation
+        below is stated ONCE rather than at each reader.  Both ways a
+        payload fails to become a wire model are ``ValueError``: the JSON
+        decoder raises one on bytes that are not JSON, and pydantic's
+        ``ValidationError`` IS one.  Catching the superset is exact here
+        and keeps the two from needing separate arms that could drift.
+    
+        A body this adapter cannot read is a forge failure like any
+        other, and it carries the status the response really had — the
+        request was answered, and what came back was unusable.
+        """
+        response = await self._request_with_retry(
+            method,
+            url,
+            json=json,
+            params=params,
+            retryable=retryable,
+        )
+        try:
+            return parse(response.json())
+        except ValueError as exc:
+>           raise ForgeAPIError(
+                f"Forge answered with a body this adapter cannot read: "
+                f"{type(exc).__name__}",
+                status_code=response.status_code,
+                detail=f"{method} {url}",
+            ) from exc
+E           kodezart.domain.errors.ForgeAPIError: Forge answered with a body this adapter cannot read: ValidationError (status: 200; request: GET /repos/example/project/pulls/7)
+
+src/kodezart/adapters/github_api.py:340: ForgeAPIError
+_ test_merged_is_distinct_from_closed_unmerged_but_never_required[github-fake-port] _
+
+self = <kodezart.adapters.github_api.GitHubAPIClient object at 0x10f3e8d40>
+method = 'GET', url = '/repos/example/project/pulls/7'
+parse = <bound method BaseModel.model_validate of <class 'kodezart.adapters.github_types.PullRequestStateResponse'>>
+
+    async def _parsed_with_retry(
+        self,
+        method: str,
+        url: str,
+        parse: Callable[[object], _WireT],
+        *,
+        json: dict[str, object] | None = None,
+        params: dict[str, str | int] | None = None,
+        retryable: bool = True,
+    ) -> _WireT:
+        """One request, with its body decoded and validated.
+    
+        The single seam every body read goes through, so the translation
+        below is stated ONCE rather than at each reader.  Both ways a
+        payload fails to become a wire model are ``ValueError``: the JSON
+        decoder raises one on bytes that are not JSON, and pydantic's
+        ``ValidationError`` IS one.  Catching the superset is exact here
+        and keeps the two from needing separate arms that could drift.
+    
+        A body this adapter cannot read is a forge failure like any
+        other, and it carries the status the response really had — the
+        request was answered, and what came back was unusable.
+        """
+        response = await self._request_with_retry(
+            method,
+            url,
+            json=json,
+            params=params,
+            retryable=retryable,
+        )
+        try:
+>           return parse(response.json())
+                   ^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 1 validation error for PullRequestStateResponse
+E           base
+E             Field required [type=missing, input_value={'html_url': 'https://git...e': 'example/project'}}}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.12/v/missing
+
+src/kodezart/adapters/github_api.py:338: ValidationError
+
+The above exception was the direct cause of the following exception:
+
+setup = (<kodezart.services.audit_terminal.AuditTerminalReader object at 0x10f3e8b00>, <tests.fakes.FakeGitService object at 0...iteria drive new work.', created_at=datetime.datetime(2026, 3, 1, 12, 0, tzinfo=datetime.timezone.utc), reply_to=None))
+forge = (<kodezart.adapters.github_api.GitHubAPIClient object at 0x10f3e8d40>, {('https://github.com/example/project', 7): PRS.../project', base_branch='main', lifecycle=<PRLifecycle.MERGED: 'merged'>)}, [('https://github.com/example/project', 7)])
+
+    async def test_merged_is_distinct_from_closed_unmerged_but_never_required(setup, forge):
+        reader, *_ = setup
+        forge[1][(REPO, 7)] = forge[1][(REPO, 7)].model_copy(
+            update={"lifecycle": PRLifecycle.MERGED}
+        )
+>       result = await reader.observe(REQUEST)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/chains/test_audit_pass.py:194: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/services/audit_terminal.py:89: in observe
+    pr = await self._forge.read_pr_state(
+src/kodezart/adapters/github_api.py:471: in read_pr_state
+    native = await self._parsed_with_retry(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.github_api.GitHubAPIClient object at 0x10f3e8d40>
+method = 'GET', url = '/repos/example/project/pulls/7'
+parse = <bound method BaseModel.model_validate of <class 'kodezart.adapters.github_types.PullRequestStateResponse'>>
+
+    async def _parsed_with_retry(
+        self,
+        method: str,
+        url: str,
+        parse: Callable[[object], _WireT],
+        *,
+        json: dict[str, object] | None = None,
+        params: dict[str, str | int] | None = None,
+        retryable: bool = True,
+    ) -> _WireT:
+        """One request, with its body decoded and validated.
+    
+        The single seam every body read goes through, so the translation
+        below is stated ONCE rather than at each reader.  Both ways a
+        payload fails to become a wire model are ``ValueError``: the JSON
+        decoder raises one on bytes that are not JSON, and pydantic's
+        ``ValidationError`` IS one.  Catching the superset is exact here
+        and keeps the two from needing separate arms that could drift.
+    
+        A body this adapter cannot read is a forge failure like any
+        other, and it carries the status the response really had — the
+        request was answered, and what came back was unusable.
+        """
+        response = await self._request_with_retry(
+            method,
+            url,
+            json=json,
+            params=params,
+            retryable=retryable,
+        )
+        try:
+            return parse(response.json())
+        except ValueError as exc:
+>           raise ForgeAPIError(
+                f"Forge answered with a body this adapter cannot read: "
+                f"{type(exc).__name__}",
+                status_code=response.status_code,
+                detail=f"{method} {url}",
+            ) from exc
+E           kodezart.domain.errors.ForgeAPIError: Forge answered with a body this adapter cannot read: ValidationError (status: 200; request: GET /repos/example/project/pulls/7)
+
+src/kodezart/adapters/github_api.py:340: ForgeAPIError
+_ test_merged_is_distinct_from_closed_unmerged_but_never_required[github-linear-mcp] _
+
+self = <kodezart.adapters.github_api.GitHubAPIClient object at 0x10f3853d0>
+method = 'GET', url = '/repos/example/project/pulls/7'
+parse = <bound method BaseModel.model_validate of <class 'kodezart.adapters.github_types.PullRequestStateResponse'>>
+
+    async def _parsed_with_retry(
+        self,
+        method: str,
+        url: str,
+        parse: Callable[[object], _WireT],
+        *,
+        json: dict[str, object] | None = None,
+        params: dict[str, str | int] | None = None,
+        retryable: bool = True,
+    ) -> _WireT:
+        """One request, with its body decoded and validated.
+    
+        The single seam every body read goes through, so the translation
+        below is stated ONCE rather than at each reader.  Both ways a
+        payload fails to become a wire model are ``ValueError``: the JSON
+        decoder raises one on bytes that are not JSON, and pydantic's
+        ``ValidationError`` IS one.  Catching the superset is exact here
+        and keeps the two from needing separate arms that could drift.
+    
+        A body this adapter cannot read is a forge failure like any
+        other, and it carries the status the response really had — the
+        request was answered, and what came back was unusable.
+        """
+        response = await self._request_with_retry(
+            method,
+            url,
+            json=json,
+            params=params,
+            retryable=retryable,
+        )
+        try:
+>           return parse(response.json())
+                   ^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 1 validation error for PullRequestStateResponse
+E           base
+E             Field required [type=missing, input_value={'html_url': 'https://git...e': 'example/project'}}}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.12/v/missing
+
+src/kodezart/adapters/github_api.py:338: ValidationError
+
+The above exception was the direct cause of the following exception:
+
+setup = (<kodezart.services.audit_terminal.AuditTerminalReader object at 0x10f385ee0>, <tests.fakes.FakeGitService object at 0...y failing criteria drive new work.', created_at=datetime.datetime(2026, 3, 1, 12, 0, tzinfo=TzInfo(0)), reply_to=None))
+forge = (<kodezart.adapters.github_api.GitHubAPIClient object at 0x10f3853d0>, {('https://github.com/example/project', 7): PRS.../project', base_branch='main', lifecycle=<PRLifecycle.MERGED: 'merged'>)}, [('https://github.com/example/project', 7)])
+
+    async def test_merged_is_distinct_from_closed_unmerged_but_never_required(setup, forge):
+        reader, *_ = setup
+        forge[1][(REPO, 7)] = forge[1][(REPO, 7)].model_copy(
+            update={"lifecycle": PRLifecycle.MERGED}
+        )
+>       result = await reader.observe(REQUEST)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/chains/test_audit_pass.py:194: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/services/audit_terminal.py:89: in observe
+    pr = await self._forge.read_pr_state(
+src/kodezart/adapters/github_api.py:471: in read_pr_state
+    native = await self._parsed_with_retry(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.github_api.GitHubAPIClient object at 0x10f3853d0>
+method = 'GET', url = '/repos/example/project/pulls/7'
+parse = <bound method BaseModel.model_validate of <class 'kodezart.adapters.github_types.PullRequestStateResponse'>>
+
+    async def _parsed_with_retry(
+        self,
+        method: str,
+        url: str,
+        parse: Callable[[object], _WireT],
+        *,
+        json: dict[str, object] | None = None,
+        params: dict[str, str | int] | None = None,
+        retryable: bool = True,
+    ) -> _WireT:
+        """One request, with its body decoded and validated.
+    
+        The single seam every body read goes through, so the translation
+        below is stated ONCE rather than at each reader.  Both ways a
+        payload fails to become a wire model are ``ValueError``: the JSON
+        decoder raises one on bytes that are not JSON, and pydantic's
+        ``ValidationError`` IS one.  Catching the superset is exact here
+        and keeps the two from needing separate arms that could drift.
+    
+        A body this adapter cannot read is a forge failure like any
+        other, and it carries the status the response really had — the
+        request was answered, and what came back was unusable.
+        """
+        response = await self._request_with_retry(
+            method,
+            url,
+            json=json,
+            params=params,
+            retryable=retryable,
+        )
+        try:
+            return parse(response.json())
+        except ValueError as exc:
+>           raise ForgeAPIError(
+                f"Forge answered with a body this adapter cannot read: "
+                f"{type(exc).__name__}",
+                status_code=response.status_code,
+                detail=f"{method} {url}",
+            ) from exc
+E           kodezart.domain.errors.ForgeAPIError: Forge answered with a body this adapter cannot read: ValidationError (status: 200; request: GET /repos/example/project/pulls/7)
+
+src/kodezart/adapters/github_api.py:340: ForgeAPIError
+_ test_missing_branch_is_measured_from_remote_not_recorded_sha[fake-port-github] _
+
+self = <kodezart.adapters.github_api.GitHubAPIClient object at 0x10f393d70>
+method = 'GET', url = '/repos/example/project/pulls/7'
+parse = <bound method BaseModel.model_validate of <class 'kodezart.adapters.github_types.PullRequestStateResponse'>>
+
+    async def _parsed_with_retry(
+        self,
+        method: str,
+        url: str,
+        parse: Callable[[object], _WireT],
+        *,
+        json: dict[str, object] | None = None,
+        params: dict[str, str | int] | None = None,
+        retryable: bool = True,
+    ) -> _WireT:
+        """One request, with its body decoded and validated.
+    
+        The single seam every body read goes through, so the translation
+        below is stated ONCE rather than at each reader.  Both ways a
+        payload fails to become a wire model are ``ValueError``: the JSON
+        decoder raises one on bytes that are not JSON, and pydantic's
+        ``ValidationError`` IS one.  Catching the superset is exact here
+        and keeps the two from needing separate arms that could drift.
+    
+        A body this adapter cannot read is a forge failure like any
+        other, and it carries the status the response really had — the
+        request was answered, and what came back was unusable.
+        """
+        response = await self._request_with_retry(
+            method,
+            url,
+            json=json,
+            params=params,
+            retryable=retryable,
+        )
+        try:
+>           return parse(response.json())
+                   ^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 1 validation error for PullRequestStateResponse
+E           base
+E             Field required [type=missing, input_value={'html_url': 'https://git...e': 'example/project'}}}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.12/v/missing
+
+src/kodezart/adapters/github_api.py:338: ValidationError
+
+The above exception was the direct cause of the following exception:
+
+setup = (<kodezart.services.audit_terminal.AuditTerminalReader object at 0x10f392de0>, <tests.fakes.FakeGitService object at 0...iteria drive new work.', created_at=datetime.datetime(2026, 3, 1, 12, 0, tzinfo=datetime.timezone.utc), reply_to=None))
+
+    async def test_missing_branch_is_measured_from_remote_not_recorded_sha(setup):
+        reader, git, *_ = setup
+        git._remote_branch_shas[BRANCH] = None
+>       result = await reader.observe(REQUEST)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/chains/test_audit_pass.py:202: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/services/audit_terminal.py:89: in observe
+    pr = await self._forge.read_pr_state(
+src/kodezart/adapters/github_api.py:471: in read_pr_state
+    native = await self._parsed_with_retry(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.github_api.GitHubAPIClient object at 0x10f393d70>
+method = 'GET', url = '/repos/example/project/pulls/7'
+parse = <bound method BaseModel.model_validate of <class 'kodezart.adapters.github_types.PullRequestStateResponse'>>
+
+    async def _parsed_with_retry(
+        self,
+        method: str,
+        url: str,
+        parse: Callable[[object], _WireT],
+        *,
+        json: dict[str, object] | None = None,
+        params: dict[str, str | int] | None = None,
+        retryable: bool = True,
+    ) -> _WireT:
+        """One request, with its body decoded and validated.
+    
+        The single seam every body read goes through, so the translation
+        below is stated ONCE rather than at each reader.  Both ways a
+        payload fails to become a wire model are ``ValueError``: the JSON
+        decoder raises one on bytes that are not JSON, and pydantic's
+        ``ValidationError`` IS one.  Catching the superset is exact here
+        and keeps the two from needing separate arms that could drift.
+    
+        A body this adapter cannot read is a forge failure like any
+        other, and it carries the status the response really had — the
+        request was answered, and what came back was unusable.
+        """
+        response = await self._request_with_retry(
+            method,
+            url,
+            json=json,
+            params=params,
+            retryable=retryable,
+        )
+        try:
+            return parse(response.json())
+        except ValueError as exc:
+>           raise ForgeAPIError(
+                f"Forge answered with a body this adapter cannot read: "
+                f"{type(exc).__name__}",
+                status_code=response.status_code,
+                detail=f"{method} {url}",
+            ) from exc
+E           kodezart.domain.errors.ForgeAPIError: Forge answered with a body this adapter cannot read: ValidationError (status: 200; request: GET /repos/example/project/pulls/7)
+
+src/kodezart/adapters/github_api.py:340: ForgeAPIError
+_ test_missing_branch_is_measured_from_remote_not_recorded_sha[linear-mcp-github] _
+
+self = <kodezart.adapters.github_api.GitHubAPIClient object at 0x10f387800>
+method = 'GET', url = '/repos/example/project/pulls/7'
+parse = <bound method BaseModel.model_validate of <class 'kodezart.adapters.github_types.PullRequestStateResponse'>>
+
+    async def _parsed_with_retry(
+        self,
+        method: str,
+        url: str,
+        parse: Callable[[object], _WireT],
+        *,
+        json: dict[str, object] | None = None,
+        params: dict[str, str | int] | None = None,
+        retryable: bool = True,
+    ) -> _WireT:
+        """One request, with its body decoded and validated.
+    
+        The single seam every body read goes through, so the translation
+        below is stated ONCE rather than at each reader.  Both ways a
+        payload fails to become a wire model are ``ValueError``: the JSON
+        decoder raises one on bytes that are not JSON, and pydantic's
+        ``ValidationError`` IS one.  Catching the superset is exact here
+        and keeps the two from needing separate arms that could drift.
+    
+        A body this adapter cannot read is a forge failure like any
+        other, and it carries the status the response really had — the
+        request was answered, and what came back was unusable.
+        """
+        response = await self._request_with_retry(
+            method,
+            url,
+            json=json,
+            params=params,
+            retryable=retryable,
+        )
+        try:
+>           return parse(response.json())
+                   ^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 1 validation error for PullRequestStateResponse
+E           base
+E             Field required [type=missing, input_value={'html_url': 'https://git...e': 'example/project'}}}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.12/v/missing
+
+src/kodezart/adapters/github_api.py:338: ValidationError
+
+The above exception was the direct cause of the following exception:
+
+setup = (<kodezart.services.audit_terminal.AuditTerminalReader object at 0x10f3853a0>, <tests.fakes.FakeGitService object at 0...y failing criteria drive new work.', created_at=datetime.datetime(2026, 3, 1, 12, 0, tzinfo=TzInfo(0)), reply_to=None))
+
+    async def test_missing_branch_is_measured_from_remote_not_recorded_sha(setup):
+        reader, git, *_ = setup
+        git._remote_branch_shas[BRANCH] = None
+>       result = await reader.observe(REQUEST)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/chains/test_audit_pass.py:202: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/services/audit_terminal.py:89: in observe
+    pr = await self._forge.read_pr_state(
+src/kodezart/adapters/github_api.py:471: in read_pr_state
+    native = await self._parsed_with_retry(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.github_api.GitHubAPIClient object at 0x10f387800>
+method = 'GET', url = '/repos/example/project/pulls/7'
+parse = <bound method BaseModel.model_validate of <class 'kodezart.adapters.github_types.PullRequestStateResponse'>>
+
+    async def _parsed_with_retry(
+        self,
+        method: str,
+        url: str,
+        parse: Callable[[object], _WireT],
+        *,
+        json: dict[str, object] | None = None,
+        params: dict[str, str | int] | None = None,
+        retryable: bool = True,
+    ) -> _WireT:
+        """One request, with its body decoded and validated.
+    
+        The single seam every body read goes through, so the translation
+        below is stated ONCE rather than at each reader.  Both ways a
+        payload fails to become a wire model are ``ValueError``: the JSON
+        decoder raises one on bytes that are not JSON, and pydantic's
+        ``ValidationError`` IS one.  Catching the superset is exact here
+        and keeps the two from needing separate arms that could drift.
+    
+        A body this adapter cannot read is a forge failure like any
+        other, and it carries the status the response really had — the
+        request was answered, and what came back was unusable.
+        """
+        response = await self._request_with_retry(
+            method,
+            url,
+            json=json,
+            params=params,
+            retryable=retryable,
+        )
+        try:
+            return parse(response.json())
+        except ValueError as exc:
+>           raise ForgeAPIError(
+                f"Forge answered with a body this adapter cannot read: "
+                f"{type(exc).__name__}",
+                status_code=response.status_code,
+                detail=f"{method} {url}",
+            ) from exc
+E           kodezart.domain.errors.ForgeAPIError: Forge answered with a body this adapter cannot read: ValidationError (status: 200; request: GET /repos/example/project/pulls/7)
+
+src/kodezart/adapters/github_api.py:340: ForgeAPIError
+__ test_pr_head_outside_recorded_associations_is_unresolved[github-fake-port] __
+
+self = <kodezart.adapters.github_api.GitHubAPIClient object at 0x10f429cd0>
+method = 'GET', url = '/repos/example/project/pulls/7'
+parse = <bound method BaseModel.model_validate of <class 'kodezart.adapters.github_types.PullRequestStateResponse'>>
+
+    async def _parsed_with_retry(
+        self,
+        method: str,
+        url: str,
+        parse: Callable[[object], _WireT],
+        *,
+        json: dict[str, object] | None = None,
+        params: dict[str, str | int] | None = None,
+        retryable: bool = True,
+    ) -> _WireT:
+        """One request, with its body decoded and validated.
+    
+        The single seam every body read goes through, so the translation
+        below is stated ONCE rather than at each reader.  Both ways a
+        payload fails to become a wire model are ``ValueError``: the JSON
+        decoder raises one on bytes that are not JSON, and pydantic's
+        ``ValidationError`` IS one.  Catching the superset is exact here
+        and keeps the two from needing separate arms that could drift.
+    
+        A body this adapter cannot read is a forge failure like any
+        other, and it carries the status the response really had — the
+        request was answered, and what came back was unusable.
+        """
+        response = await self._request_with_retry(
+            method,
+            url,
+            json=json,
+            params=params,
+            retryable=retryable,
+        )
+        try:
+>           return parse(response.json())
+                   ^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 1 validation error for PullRequestStateResponse
+E           base
+E             Field required [type=missing, input_value={'html_url': 'https://git...e': 'example/project'}}}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.12/v/missing
+
+src/kodezart/adapters/github_api.py:338: ValidationError
+
+The above exception was the direct cause of the following exception:
+
+setup = (<kodezart.services.audit_terminal.AuditTerminalReader object at 0x10f4293a0>, <tests.fakes.FakeGitService object at 0...iteria drive new work.', created_at=datetime.datetime(2026, 3, 1, 12, 0, tzinfo=datetime.timezone.utc), reply_to=None))
+forge = (<kodezart.adapters.github_api.GitHubAPIClient object at 0x10f429cd0>, {('https://github.com/example/project', 7): PRS...mple/project', base_branch='main', lifecycle=<PRLifecycle.OPEN: 'open'>)}, [('https://github.com/example/project', 7)])
+
+    async def test_pr_head_outside_recorded_associations_is_unresolved(setup, forge):
+        reader, git, *_ = setup
+        git._remote_branch_shas["unassociated"] = HEAD
+        forge[1][(REPO, 7)] = forge[1][(REPO, 7)].model_copy(
+            update={"head_branch": "unassociated"}
+        )
+>       result = await reader.observe(REQUEST)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/chains/test_audit_pass.py:214: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/services/audit_terminal.py:89: in observe
+    pr = await self._forge.read_pr_state(
+src/kodezart/adapters/github_api.py:471: in read_pr_state
+    native = await self._parsed_with_retry(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.github_api.GitHubAPIClient object at 0x10f429cd0>
+method = 'GET', url = '/repos/example/project/pulls/7'
+parse = <bound method BaseModel.model_validate of <class 'kodezart.adapters.github_types.PullRequestStateResponse'>>
+
+    async def _parsed_with_retry(
+        self,
+        method: str,
+        url: str,
+        parse: Callable[[object], _WireT],
+        *,
+        json: dict[str, object] | None = None,
+        params: dict[str, str | int] | None = None,
+        retryable: bool = True,
+    ) -> _WireT:
+        """One request, with its body decoded and validated.
+    
+        The single seam every body read goes through, so the translation
+        below is stated ONCE rather than at each reader.  Both ways a
+        payload fails to become a wire model are ``ValueError``: the JSON
+        decoder raises one on bytes that are not JSON, and pydantic's
+        ``ValidationError`` IS one.  Catching the superset is exact here
+        and keeps the two from needing separate arms that could drift.
+    
+        A body this adapter cannot read is a forge failure like any
+        other, and it carries the status the response really had — the
+        request was answered, and what came back was unusable.
+        """
+        response = await self._request_with_retry(
+            method,
+            url,
+            json=json,
+            params=params,
+            retryable=retryable,
+        )
+        try:
+            return parse(response.json())
+        except ValueError as exc:
+>           raise ForgeAPIError(
+                f"Forge answered with a body this adapter cannot read: "
+                f"{type(exc).__name__}",
+                status_code=response.status_code,
+                detail=f"{method} {url}",
+            ) from exc
+E           kodezart.domain.errors.ForgeAPIError: Forge answered with a body this adapter cannot read: ValidationError (status: 200; request: GET /repos/example/project/pulls/7)
+
+src/kodezart/adapters/github_api.py:340: ForgeAPIError
+_ test_pr_head_outside_recorded_associations_is_unresolved[github-linear-mcp] __
+
+self = <kodezart.adapters.github_api.GitHubAPIClient object at 0x10f390f20>
+method = 'GET', url = '/repos/example/project/pulls/7'
+parse = <bound method BaseModel.model_validate of <class 'kodezart.adapters.github_types.PullRequestStateResponse'>>
+
+    async def _parsed_with_retry(
+        self,
+        method: str,
+        url: str,
+        parse: Callable[[object], _WireT],
+        *,
+        json: dict[str, object] | None = None,
+        params: dict[str, str | int] | None = None,
+        retryable: bool = True,
+    ) -> _WireT:
+        """One request, with its body decoded and validated.
+    
+        The single seam every body read goes through, so the translation
+        below is stated ONCE rather than at each reader.  Both ways a
+        payload fails to become a wire model are ``ValueError``: the JSON
+        decoder raises one on bytes that are not JSON, and pydantic's
+        ``ValidationError`` IS one.  Catching the superset is exact here
+        and keeps the two from needing separate arms that could drift.
+    
+        A body this adapter cannot read is a forge failure like any
+        other, and it carries the status the response really had — the
+        request was answered, and what came back was unusable.
+        """
+        response = await self._request_with_retry(
+            method,
+            url,
+            json=json,
+            params=params,
+            retryable=retryable,
+        )
+        try:
+>           return parse(response.json())
+                   ^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 1 validation error for PullRequestStateResponse
+E           base
+E             Field required [type=missing, input_value={'html_url': 'https://git...e': 'example/project'}}}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.12/v/missing
+
+src/kodezart/adapters/github_api.py:338: ValidationError
+
+The above exception was the direct cause of the following exception:
+
+setup = (<kodezart.services.audit_terminal.AuditTerminalReader object at 0x10f390080>, <tests.fakes.FakeGitService object at 0...y failing criteria drive new work.', created_at=datetime.datetime(2026, 3, 1, 12, 0, tzinfo=TzInfo(0)), reply_to=None))
+forge = (<kodezart.adapters.github_api.GitHubAPIClient object at 0x10f390f20>, {('https://github.com/example/project', 7): PRS...mple/project', base_branch='main', lifecycle=<PRLifecycle.OPEN: 'open'>)}, [('https://github.com/example/project', 7)])
+
+    async def test_pr_head_outside_recorded_associations_is_unresolved(setup, forge):
+        reader, git, *_ = setup
+        git._remote_branch_shas["unassociated"] = HEAD
+        forge[1][(REPO, 7)] = forge[1][(REPO, 7)].model_copy(
+            update={"head_branch": "unassociated"}
+        )
+>       result = await reader.observe(REQUEST)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/chains/test_audit_pass.py:214: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/services/audit_terminal.py:89: in observe
+    pr = await self._forge.read_pr_state(
+src/kodezart/adapters/github_api.py:471: in read_pr_state
+    native = await self._parsed_with_retry(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.github_api.GitHubAPIClient object at 0x10f390f20>
+method = 'GET', url = '/repos/example/project/pulls/7'
+parse = <bound method BaseModel.model_validate of <class 'kodezart.adapters.github_types.PullRequestStateResponse'>>
+
+    async def _parsed_with_retry(
+        self,
+        method: str,
+        url: str,
+        parse: Callable[[object], _WireT],
+        *,
+        json: dict[str, object] | None = None,
+        params: dict[str, str | int] | None = None,
+        retryable: bool = True,
+    ) -> _WireT:
+        """One request, with its body decoded and validated.
+    
+        The single seam every body read goes through, so the translation
+        below is stated ONCE rather than at each reader.  Both ways a
+        payload fails to become a wire model are ``ValueError``: the JSON
+        decoder raises one on bytes that are not JSON, and pydantic's
+        ``ValidationError`` IS one.  Catching the superset is exact here
+        and keeps the two from needing separate arms that could drift.
+    
+        A body this adapter cannot read is a forge failure like any
+        other, and it carries the status the response really had — the
+        request was answered, and what came back was unusable.
+        """
+        response = await self._request_with_retry(
+            method,
+            url,
+            json=json,
+            params=params,
+            retryable=retryable,
+        )
+        try:
+            return parse(response.json())
+        except ValueError as exc:
+>           raise ForgeAPIError(
+                f"Forge answered with a body this adapter cannot read: "
+                f"{type(exc).__name__}",
+                status_code=response.status_code,
+                detail=f"{method} {url}",
+            ) from exc
+E           kodezart.domain.errors.ForgeAPIError: Forge answered with a body this adapter cannot read: ValidationError (status: 200; request: GET /repos/example/project/pulls/7)
+
+src/kodezart/adapters/github_api.py:340: ForgeAPIError
+__ test_reaped_and_prior_associations_do_not_need_live_refs[fake-port-github] __
+
+self = <kodezart.adapters.github_api.GitHubAPIClient object at 0x10f358da0>
+method = 'GET', url = '/repos/example/project/pulls/7'
+parse = <bound method BaseModel.model_validate of <class 'kodezart.adapters.github_types.PullRequestStateResponse'>>
+
+    async def _parsed_with_retry(
+        self,
+        method: str,
+        url: str,
+        parse: Callable[[object], _WireT],
+        *,
+        json: dict[str, object] | None = None,
+        params: dict[str, str | int] | None = None,
+        retryable: bool = True,
+    ) -> _WireT:
+        """One request, with its body decoded and validated.
+    
+        The single seam every body read goes through, so the translation
+        below is stated ONCE rather than at each reader.  Both ways a
+        payload fails to become a wire model are ``ValueError``: the JSON
+        decoder raises one on bytes that are not JSON, and pydantic's
+        ``ValidationError`` IS one.  Catching the superset is exact here
+        and keeps the two from needing separate arms that could drift.
+    
+        A body this adapter cannot read is a forge failure like any
+        other, and it carries the status the response really had — the
+        request was answered, and what came back was unusable.
+        """
+        response = await self._request_with_retry(
+            method,
+            url,
+            json=json,
+            params=params,
+            retryable=retryable,
+        )
+        try:
+>           return parse(response.json())
+                   ^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 1 validation error for PullRequestStateResponse
+E           base
+E             Field required [type=missing, input_value={'html_url': 'https://git...e': 'example/project'}}}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.12/v/missing
+
+src/kodezart/adapters/github_api.py:338: ValidationError
+
+The above exception was the direct cause of the following exception:
+
+setup = (<kodezart.services.audit_terminal.AuditTerminalReader object at 0x10f359520>, <tests.fakes.FakeGitService object at 0...iteria drive new work.', created_at=datetime.datetime(2026, 3, 1, 12, 0, tzinfo=datetime.timezone.utc), reply_to=None))
+
+    async def test_reaped_and_prior_associations_do_not_need_live_refs(setup):
+        reader, git, record, _ = setup
+        assert "reaped-ref" in {item.branch for item in record.associations}
+>       result = await reader.observe(REQUEST)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/chains/test_audit_pass.py:221: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/services/audit_terminal.py:89: in observe
+    pr = await self._forge.read_pr_state(
+src/kodezart/adapters/github_api.py:471: in read_pr_state
+    native = await self._parsed_with_retry(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.github_api.GitHubAPIClient object at 0x10f358da0>
+method = 'GET', url = '/repos/example/project/pulls/7'
+parse = <bound method BaseModel.model_validate of <class 'kodezart.adapters.github_types.PullRequestStateResponse'>>
+
+    async def _parsed_with_retry(
+        self,
+        method: str,
+        url: str,
+        parse: Callable[[object], _WireT],
+        *,
+        json: dict[str, object] | None = None,
+        params: dict[str, str | int] | None = None,
+        retryable: bool = True,
+    ) -> _WireT:
+        """One request, with its body decoded and validated.
+    
+        The single seam every body read goes through, so the translation
+        below is stated ONCE rather than at each reader.  Both ways a
+        payload fails to become a wire model are ``ValueError``: the JSON
+        decoder raises one on bytes that are not JSON, and pydantic's
+        ``ValidationError`` IS one.  Catching the superset is exact here
+        and keeps the two from needing separate arms that could drift.
+    
+        A body this adapter cannot read is a forge failure like any
+        other, and it carries the status the response really had — the
+        request was answered, and what came back was unusable.
+        """
+        response = await self._request_with_retry(
+            method,
+            url,
+            json=json,
+            params=params,
+            retryable=retryable,
+        )
+        try:
+            return parse(response.json())
+        except ValueError as exc:
+>           raise ForgeAPIError(
+                f"Forge answered with a body this adapter cannot read: "
+                f"{type(exc).__name__}",
+                status_code=response.status_code,
+                detail=f"{method} {url}",
+            ) from exc
+E           kodezart.domain.errors.ForgeAPIError: Forge answered with a body this adapter cannot read: ValidationError (status: 200; request: GET /repos/example/project/pulls/7)
+
+src/kodezart/adapters/github_api.py:340: ForgeAPIError
+_ test_reaped_and_prior_associations_do_not_need_live_refs[linear-mcp-github] __
+
+self = <kodezart.adapters.github_api.GitHubAPIClient object at 0x10f42b7d0>
+method = 'GET', url = '/repos/example/project/pulls/7'
+parse = <bound method BaseModel.model_validate of <class 'kodezart.adapters.github_types.PullRequestStateResponse'>>
+
+    async def _parsed_with_retry(
+        self,
+        method: str,
+        url: str,
+        parse: Callable[[object], _WireT],
+        *,
+        json: dict[str, object] | None = None,
+        params: dict[str, str | int] | None = None,
+        retryable: bool = True,
+    ) -> _WireT:
+        """One request, with its body decoded and validated.
+    
+        The single seam every body read goes through, so the translation
+        below is stated ONCE rather than at each reader.  Both ways a
+        payload fails to become a wire model are ``ValueError``: the JSON
+        decoder raises one on bytes that are not JSON, and pydantic's
+        ``ValidationError`` IS one.  Catching the superset is exact here
+        and keeps the two from needing separate arms that could drift.
+    
+        A body this adapter cannot read is a forge failure like any
+        other, and it carries the status the response really had — the
+        request was answered, and what came back was unusable.
+        """
+        response = await self._request_with_retry(
+            method,
+            url,
+            json=json,
+            params=params,
+            retryable=retryable,
+        )
+        try:
+>           return parse(response.json())
+                   ^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 1 validation error for PullRequestStateResponse
+E           base
+E             Field required [type=missing, input_value={'html_url': 'https://git...e': 'example/project'}}}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.12/v/missing
+
+src/kodezart/adapters/github_api.py:338: ValidationError
+
+The above exception was the direct cause of the following exception:
+
+setup = (<kodezart.services.audit_terminal.AuditTerminalReader object at 0x10f42a420>, <tests.fakes.FakeGitService object at 0...y failing criteria drive new work.', created_at=datetime.datetime(2026, 3, 1, 12, 0, tzinfo=TzInfo(0)), reply_to=None))
+
+    async def test_reaped_and_prior_associations_do_not_need_live_refs(setup):
+        reader, git, record, _ = setup
+        assert "reaped-ref" in {item.branch for item in record.associations}
+>       result = await reader.observe(REQUEST)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/chains/test_audit_pass.py:221: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/services/audit_terminal.py:89: in observe
+    pr = await self._forge.read_pr_state(
+src/kodezart/adapters/github_api.py:471: in read_pr_state
+    native = await self._parsed_with_retry(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.github_api.GitHubAPIClient object at 0x10f42b7d0>
+method = 'GET', url = '/repos/example/project/pulls/7'
+parse = <bound method BaseModel.model_validate of <class 'kodezart.adapters.github_types.PullRequestStateResponse'>>
+
+    async def _parsed_with_retry(
+        self,
+        method: str,
+        url: str,
+        parse: Callable[[object], _WireT],
+        *,
+        json: dict[str, object] | None = None,
+        params: dict[str, str | int] | None = None,
+        retryable: bool = True,
+    ) -> _WireT:
+        """One request, with its body decoded and validated.
+    
+        The single seam every body read goes through, so the translation
+        below is stated ONCE rather than at each reader.  Both ways a
+        payload fails to become a wire model are ``ValueError``: the JSON
+        decoder raises one on bytes that are not JSON, and pydantic's
+        ``ValidationError`` IS one.  Catching the superset is exact here
+        and keeps the two from needing separate arms that could drift.
+    
+        A body this adapter cannot read is a forge failure like any
+        other, and it carries the status the response really had — the
+        request was answered, and what came back was unusable.
+        """
+        response = await self._request_with_retry(
+            method,
+            url,
+            json=json,
+            params=params,
+            retryable=retryable,
+        )
+        try:
+            return parse(response.json())
+        except ValueError as exc:
+>           raise ForgeAPIError(
+                f"Forge answered with a body this adapter cannot read: "
+                f"{type(exc).__name__}",
+                status_code=response.status_code,
+                detail=f"{method} {url}",
+            ) from exc
+E           kodezart.domain.errors.ForgeAPIError: Forge answered with a body this adapter cannot read: ValidationError (status: 200; request: GET /repos/example/project/pulls/7)
+
+src/kodezart/adapters/github_api.py:340: ForgeAPIError
+___ test_current_pr_may_use_a_recorded_deliverable_branch[github-fake-port] ____
+
+self = <kodezart.adapters.github_api.GitHubAPIClient object at 0x10f387410>
+method = 'GET', url = '/repos/example/project/pulls/7'
+parse = <bound method BaseModel.model_validate of <class 'kodezart.adapters.github_types.PullRequestStateResponse'>>
+
+    async def _parsed_with_retry(
+        self,
+        method: str,
+        url: str,
+        parse: Callable[[object], _WireT],
+        *,
+        json: dict[str, object] | None = None,
+        params: dict[str, str | int] | None = None,
+        retryable: bool = True,
+    ) -> _WireT:
+        """One request, with its body decoded and validated.
+    
+        The single seam every body read goes through, so the translation
+        below is stated ONCE rather than at each reader.  Both ways a
+        payload fails to become a wire model are ``ValueError``: the JSON
+        decoder raises one on bytes that are not JSON, and pydantic's
+        ``ValidationError`` IS one.  Catching the superset is exact here
+        and keeps the two from needing separate arms that could drift.
+    
+        A body this adapter cannot read is a forge failure like any
+        other, and it carries the status the response really had — the
+        request was answered, and what came back was unusable.
+        """
+        response = await self._request_with_retry(
+            method,
+            url,
+            json=json,
+            params=params,
+            retryable=retryable,
+        )
+        try:
+>           return parse(response.json())
+                   ^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 1 validation error for PullRequestStateResponse
+E           base
+E             Field required [type=missing, input_value={'html_url': 'https://git...e': 'example/project'}}}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.12/v/missing
+
+src/kodezart/adapters/github_api.py:338: ValidationError
+
+The above exception was the direct cause of the following exception:
+
+setup = (<kodezart.services.audit_terminal.AuditTerminalReader object at 0x10f3861b0>, <tests.fakes.FakeGitService object at 0...iteria drive new work.', created_at=datetime.datetime(2026, 3, 1, 12, 0, tzinfo=datetime.timezone.utc), reply_to=None))
+forge = (<kodezart.adapters.github_api.GitHubAPIClient object at 0x10f387410>, {('https://github.com/example/project', 7): PRS...mple/project', base_branch='main', lifecycle=<PRLifecycle.OPEN: 'open'>)}, [('https://github.com/example/project', 7)])
+
+    async def test_current_pr_may_use_a_recorded_deliverable_branch(setup, forge):
+        reader, git, *_ = setup
+        branch = "has-ralph-in-its-name"
+        git._remote_branch_shas[branch] = HEAD
+        forge[1][(REPO, 7)] = forge[1][(REPO, 7)].model_copy(update={"head_branch": branch})
+>       assert (await reader.observe(REQUEST)).verdict is AuditVerdict.HOLDS
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/chains/test_audit_pass.py:231: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/services/audit_terminal.py:89: in observe
+    pr = await self._forge.read_pr_state(
+src/kodezart/adapters/github_api.py:471: in read_pr_state
+    native = await self._parsed_with_retry(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.github_api.GitHubAPIClient object at 0x10f387410>
+method = 'GET', url = '/repos/example/project/pulls/7'
+parse = <bound method BaseModel.model_validate of <class 'kodezart.adapters.github_types.PullRequestStateResponse'>>
+
+    async def _parsed_with_retry(
+        self,
+        method: str,
+        url: str,
+        parse: Callable[[object], _WireT],
+        *,
+        json: dict[str, object] | None = None,
+        params: dict[str, str | int] | None = None,
+        retryable: bool = True,
+    ) -> _WireT:
+        """One request, with its body decoded and validated.
+    
+        The single seam every body read goes through, so the translation
+        below is stated ONCE rather than at each reader.  Both ways a
+        payload fails to become a wire model are ``ValueError``: the JSON
+        decoder raises one on bytes that are not JSON, and pydantic's
+        ``ValidationError`` IS one.  Catching the superset is exact here
+        and keeps the two from needing separate arms that could drift.
+    
+        A body this adapter cannot read is a forge failure like any
+        other, and it carries the status the response really had — the
+        request was answered, and what came back was unusable.
+        """
+        response = await self._request_with_retry(
+            method,
+            url,
+            json=json,
+            params=params,
+            retryable=retryable,
+        )
+        try:
+            return parse(response.json())
+        except ValueError as exc:
+>           raise ForgeAPIError(
+                f"Forge answered with a body this adapter cannot read: "
+                f"{type(exc).__name__}",
+                status_code=response.status_code,
+                detail=f"{method} {url}",
+            ) from exc
+E           kodezart.domain.errors.ForgeAPIError: Forge answered with a body this adapter cannot read: ValidationError (status: 200; request: GET /repos/example/project/pulls/7)
+
+src/kodezart/adapters/github_api.py:340: ForgeAPIError
+___ test_current_pr_may_use_a_recorded_deliverable_branch[github-linear-mcp] ___
+
+self = <kodezart.adapters.github_api.GitHubAPIClient object at 0x10f3171a0>
+method = 'GET', url = '/repos/example/project/pulls/7'
+parse = <bound method BaseModel.model_validate of <class 'kodezart.adapters.github_types.PullRequestStateResponse'>>
+
+    async def _parsed_with_retry(
+        self,
+        method: str,
+        url: str,
+        parse: Callable[[object], _WireT],
+        *,
+        json: dict[str, object] | None = None,
+        params: dict[str, str | int] | None = None,
+        retryable: bool = True,
+    ) -> _WireT:
+        """One request, with its body decoded and validated.
+    
+        The single seam every body read goes through, so the translation
+        below is stated ONCE rather than at each reader.  Both ways a
+        payload fails to become a wire model are ``ValueError``: the JSON
+        decoder raises one on bytes that are not JSON, and pydantic's
+        ``ValidationError`` IS one.  Catching the superset is exact here
+        and keeps the two from needing separate arms that could drift.
+    
+        A body this adapter cannot read is a forge failure like any
+        other, and it carries the status the response really had — the
+        request was answered, and what came back was unusable.
+        """
+        response = await self._request_with_retry(
+            method,
+            url,
+            json=json,
+            params=params,
+            retryable=retryable,
+        )
+        try:
+>           return parse(response.json())
+                   ^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 1 validation error for PullRequestStateResponse
+E           base
+E             Field required [type=missing, input_value={'html_url': 'https://git...e': 'example/project'}}}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.12/v/missing
+
+src/kodezart/adapters/github_api.py:338: ValidationError
+
+The above exception was the direct cause of the following exception:
+
+setup = (<kodezart.services.audit_terminal.AuditTerminalReader object at 0x10f314d10>, <tests.fakes.FakeGitService object at 0...y failing criteria drive new work.', created_at=datetime.datetime(2026, 3, 1, 12, 0, tzinfo=TzInfo(0)), reply_to=None))
+forge = (<kodezart.adapters.github_api.GitHubAPIClient object at 0x10f3171a0>, {('https://github.com/example/project', 7): PRS...mple/project', base_branch='main', lifecycle=<PRLifecycle.OPEN: 'open'>)}, [('https://github.com/example/project', 7)])
+
+    async def test_current_pr_may_use_a_recorded_deliverable_branch(setup, forge):
+        reader, git, *_ = setup
+        branch = "has-ralph-in-its-name"
+        git._remote_branch_shas[branch] = HEAD
+        forge[1][(REPO, 7)] = forge[1][(REPO, 7)].model_copy(update={"head_branch": branch})
+>       assert (await reader.observe(REQUEST)).verdict is AuditVerdict.HOLDS
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/chains/test_audit_pass.py:231: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/services/audit_terminal.py:89: in observe
+    pr = await self._forge.read_pr_state(
+src/kodezart/adapters/github_api.py:471: in read_pr_state
+    native = await self._parsed_with_retry(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.github_api.GitHubAPIClient object at 0x10f3171a0>
+method = 'GET', url = '/repos/example/project/pulls/7'
+parse = <bound method BaseModel.model_validate of <class 'kodezart.adapters.github_types.PullRequestStateResponse'>>
+
+    async def _parsed_with_retry(
+        self,
+        method: str,
+        url: str,
+        parse: Callable[[object], _WireT],
+        *,
+        json: dict[str, object] | None = None,
+        params: dict[str, str | int] | None = None,
+        retryable: bool = True,
+    ) -> _WireT:
+        """One request, with its body decoded and validated.
+    
+        The single seam every body read goes through, so the translation
+        below is stated ONCE rather than at each reader.  Both ways a
+        payload fails to become a wire model are ``ValueError``: the JSON
+        decoder raises one on bytes that are not JSON, and pydantic's
+        ``ValidationError`` IS one.  Catching the superset is exact here
+        and keeps the two from needing separate arms that could drift.
+    
+        A body this adapter cannot read is a forge failure like any
+        other, and it carries the status the response really had — the
+        request was answered, and what came back was unusable.
+        """
+        response = await self._request_with_retry(
+            method,
+            url,
+            json=json,
+            params=params,
+            retryable=retryable,
+        )
+        try:
+            return parse(response.json())
+        except ValueError as exc:
+>           raise ForgeAPIError(
+                f"Forge answered with a body this adapter cannot read: "
+                f"{type(exc).__name__}",
+                status_code=response.status_code,
+                detail=f"{method} {url}",
+            ) from exc
+E           kodezart.domain.errors.ForgeAPIError: Forge answered with a body this adapter cannot read: ValidationError (status: 200; request: GET /repos/example/project/pulls/7)
+
+src/kodezart/adapters/github_api.py:340: ForgeAPIError
+_ test_changing_terminal_never_returns_healthy_observation[fake-port-github-issue] _
+
+self = <kodezart.adapters.github_api.GitHubAPIClient object at 0x10f42bfe0>
+method = 'GET', url = '/repos/example/project/pulls/7'
+parse = <bound method BaseModel.model_validate of <class 'kodezart.adapters.github_types.PullRequestStateResponse'>>
+
+    async def _parsed_with_retry(
+        self,
+        method: str,
+        url: str,
+        parse: Callable[[object], _WireT],
+        *,
+        json: dict[str, object] | None = None,
+        params: dict[str, str | int] | None = None,
+        retryable: bool = True,
+    ) -> _WireT:
+        """One request, with its body decoded and validated.
+    
+        The single seam every body read goes through, so the translation
+        below is stated ONCE rather than at each reader.  Both ways a
+        payload fails to become a wire model are ``ValueError``: the JSON
+        decoder raises one on bytes that are not JSON, and pydantic's
+        ``ValidationError`` IS one.  Catching the superset is exact here
+        and keeps the two from needing separate arms that could drift.
+    
+        A body this adapter cannot read is a forge failure like any
+        other, and it carries the status the response really had — the
+        request was answered, and what came back was unusable.
+        """
+        response = await self._request_with_retry(
+            method,
+            url,
+            json=json,
+            params=params,
+            retryable=retryable,
+        )
+        try:
+>           return parse(response.json())
+                   ^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 1 validation error for PullRequestStateResponse
+E           base
+E             Field required [type=missing, input_value={'html_url': 'https://git...e': 'example/project'}}}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.12/v/missing
+
+src/kodezart/adapters/github_api.py:338: ValidationError
+
+The above exception was the direct cause of the following exception:
+
+setup = (<kodezart.services.audit_terminal.AuditTerminalReader object at 0x10f448ce0>, <tests.fakes.FakeGitService object at 0...iteria drive new work.', created_at=datetime.datetime(2026, 3, 1, 12, 0, tzinfo=datetime.timezone.utc), reply_to=None))
+tracker = <tests.fakes.FakeTrackerPort object at 0x10f3e9ee0>
+forge = (<kodezart.adapters.github_api.GitHubAPIClient object at 0x10f42bfe0>, {('https://github.com/example/project', 7): PRS...mple/project', base_branch='main', lifecycle=<PRLifecycle.OPEN: 'open'>)}, [('https://github.com/example/project', 7)])
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10f448950>
+damage = 'issue'
+
+    @pytest.mark.parametrize("damage", ["issue", "criterion", "record", "pr", "branch"])
+    async def test_changing_terminal_never_returns_healthy_observation(
+        setup, tracker, forge, monkeypatch, damage
+    ):
+        reader, git, record, comment = setup
+        original = reader._head
+        count = 0
+    
+        async def changing(repository, branch):
+            nonlocal count
+            count += 1
+            if count == 2:
+                if damage == "issue":
+                    await tracker.update_issue(issue_key=ISSUE, body="changed")
+                elif damage == "criterion":
+                    await tracker.update_issue(issue_key=CHILD, body="changed Check")
+                elif damage == "record":
+                    changed = record.model_copy(update={"head_sha": "new-recorded-head"})
+                    await tracker.upsert_comment(
+                        target=ISSUE,
+                        marker=comment.body.splitlines()[0],
+                        body=render_lane_record(
+                            record=changed, marker_prefixes=PREFIXES
+                        ).partition("\n")[2],
+                    )
+                elif damage == "pr":
+                    forge[1][(REPO, 7)] = forge[1][(REPO, 7)].model_copy(
+                        update={"lifecycle": PRLifecycle.CLOSED}
+                    )
+                else:
+                    git._remote_branch_shas[BRANCH] = "b" * 40
+            return await original(repository, branch)
+    
+        monkeypatch.setattr(reader, "_head", changing)
+        with pytest.raises(AuditClaimReadError):
+>           await reader.observe(REQUEST)
+
+tests/chains/test_audit_pass.py:269: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/services/audit_terminal.py:89: in observe
+    pr = await self._forge.read_pr_state(
+src/kodezart/adapters/github_api.py:471: in read_pr_state
+    native = await self._parsed_with_retry(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.github_api.GitHubAPIClient object at 0x10f42bfe0>
+method = 'GET', url = '/repos/example/project/pulls/7'
+parse = <bound method BaseModel.model_validate of <class 'kodezart.adapters.github_types.PullRequestStateResponse'>>
+
+    async def _parsed_with_retry(
+        self,
+        method: str,
+        url: str,
+        parse: Callable[[object], _WireT],
+        *,
+        json: dict[str, object] | None = None,
+        params: dict[str, str | int] | None = None,
+        retryable: bool = True,
+    ) -> _WireT:
+        """One request, with its body decoded and validated.
+    
+        The single seam every body read goes through, so the translation
+        below is stated ONCE rather than at each reader.  Both ways a
+        payload fails to become a wire model are ``ValueError``: the JSON
+        decoder raises one on bytes that are not JSON, and pydantic's
+        ``ValidationError`` IS one.  Catching the superset is exact here
+        and keeps the two from needing separate arms that could drift.
+    
+        A body this adapter cannot read is a forge failure like any
+        other, and it carries the status the response really had — the
+        request was answered, and what came back was unusable.
+        """
+        response = await self._request_with_retry(
+            method,
+            url,
+            json=json,
+            params=params,
+            retryable=retryable,
+        )
+        try:
+            return parse(response.json())
+        except ValueError as exc:
+>           raise ForgeAPIError(
+                f"Forge answered with a body this adapter cannot read: "
+                f"{type(exc).__name__}",
+                status_code=response.status_code,
+                detail=f"{method} {url}",
+            ) from exc
+E           kodezart.domain.errors.ForgeAPIError: Forge answered with a body this adapter cannot read: ValidationError (status: 200; request: GET /repos/example/project/pulls/7)
+
+src/kodezart/adapters/github_api.py:340: ForgeAPIError
+_ test_changing_terminal_never_returns_healthy_observation[fake-port-github-criterion] _
+
+self = <kodezart.adapters.github_api.GitHubAPIClient object at 0x10f317530>
+method = 'GET', url = '/repos/example/project/pulls/7'
+parse = <bound method BaseModel.model_validate of <class 'kodezart.adapters.github_types.PullRequestStateResponse'>>
+
+    async def _parsed_with_retry(
+        self,
+        method: str,
+        url: str,
+        parse: Callable[[object], _WireT],
+        *,
+        json: dict[str, object] | None = None,
+        params: dict[str, str | int] | None = None,
+        retryable: bool = True,
+    ) -> _WireT:
+        """One request, with its body decoded and validated.
+    
+        The single seam every body read goes through, so the translation
+        below is stated ONCE rather than at each reader.  Both ways a
+        payload fails to become a wire model are ``ValueError``: the JSON
+        decoder raises one on bytes that are not JSON, and pydantic's
+        ``ValidationError`` IS one.  Catching the superset is exact here
+        and keeps the two from needing separate arms that could drift.
+    
+        A body this adapter cannot read is a forge failure like any
+        other, and it carries the status the response really had — the
+        request was answered, and what came back was unusable.
+        """
+        response = await self._request_with_retry(
+            method,
+            url,
+            json=json,
+            params=params,
+            retryable=retryable,
+        )
+        try:
+>           return parse(response.json())
+                   ^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 1 validation error for PullRequestStateResponse
+E           base
+E             Field required [type=missing, input_value={'html_url': 'https://git...e': 'example/project'}}}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.12/v/missing
+
+src/kodezart/adapters/github_api.py:338: ValidationError
+
+The above exception was the direct cause of the following exception:
+
+setup = (<kodezart.services.audit_terminal.AuditTerminalReader object at 0x10f384890>, <tests.fakes.FakeGitService object at 0...iteria drive new work.', created_at=datetime.datetime(2026, 3, 1, 12, 0, tzinfo=datetime.timezone.utc), reply_to=None))
+tracker = <tests.fakes.FakeTrackerPort object at 0x10f316090>
+forge = (<kodezart.adapters.github_api.GitHubAPIClient object at 0x10f317530>, {('https://github.com/example/project', 7): PRS...mple/project', base_branch='main', lifecycle=<PRLifecycle.OPEN: 'open'>)}, [('https://github.com/example/project', 7)])
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10f315bb0>
+damage = 'criterion'
+
+    @pytest.mark.parametrize("damage", ["issue", "criterion", "record", "pr", "branch"])
+    async def test_changing_terminal_never_returns_healthy_observation(
+        setup, tracker, forge, monkeypatch, damage
+    ):
+        reader, git, record, comment = setup
+        original = reader._head
+        count = 0
+    
+        async def changing(repository, branch):
+            nonlocal count
+            count += 1
+            if count == 2:
+                if damage == "issue":
+                    await tracker.update_issue(issue_key=ISSUE, body="changed")
+                elif damage == "criterion":
+                    await tracker.update_issue(issue_key=CHILD, body="changed Check")
+                elif damage == "record":
+                    changed = record.model_copy(update={"head_sha": "new-recorded-head"})
+                    await tracker.upsert_comment(
+                        target=ISSUE,
+                        marker=comment.body.splitlines()[0],
+                        body=render_lane_record(
+                            record=changed, marker_prefixes=PREFIXES
+                        ).partition("\n")[2],
+                    )
+                elif damage == "pr":
+                    forge[1][(REPO, 7)] = forge[1][(REPO, 7)].model_copy(
+                        update={"lifecycle": PRLifecycle.CLOSED}
+                    )
+                else:
+                    git._remote_branch_shas[BRANCH] = "b" * 40
+            return await original(repository, branch)
+    
+        monkeypatch.setattr(reader, "_head", changing)
+        with pytest.raises(AuditClaimReadError):
+>           await reader.observe(REQUEST)
+
+tests/chains/test_audit_pass.py:269: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/services/audit_terminal.py:89: in observe
+    pr = await self._forge.read_pr_state(
+src/kodezart/adapters/github_api.py:471: in read_pr_state
+    native = await self._parsed_with_retry(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.github_api.GitHubAPIClient object at 0x10f317530>
+method = 'GET', url = '/repos/example/project/pulls/7'
+parse = <bound method BaseModel.model_validate of <class 'kodezart.adapters.github_types.PullRequestStateResponse'>>
+
+    async def _parsed_with_retry(
+        self,
+        method: str,
+        url: str,
+        parse: Callable[[object], _WireT],
+        *,
+        json: dict[str, object] | None = None,
+        params: dict[str, str | int] | None = None,
+        retryable: bool = True,
+    ) -> _WireT:
+        """One request, with its body decoded and validated.
+    
+        The single seam every body read goes through, so the translation
+        below is stated ONCE rather than at each reader.  Both ways a
+        payload fails to become a wire model are ``ValueError``: the JSON
+        decoder raises one on bytes that are not JSON, and pydantic's
+        ``ValidationError`` IS one.  Catching the superset is exact here
+        and keeps the two from needing separate arms that could drift.
+    
+        A body this adapter cannot read is a forge failure like any
+        other, and it carries the status the response really had — the
+        request was answered, and what came back was unusable.
+        """
+        response = await self._request_with_retry(
+            method,
+            url,
+            json=json,
+            params=params,
+            retryable=retryable,
+        )
+        try:
+            return parse(response.json())
+        except ValueError as exc:
+>           raise ForgeAPIError(
+                f"Forge answered with a body this adapter cannot read: "
+                f"{type(exc).__name__}",
+                status_code=response.status_code,
+                detail=f"{method} {url}",
+            ) from exc
+E           kodezart.domain.errors.ForgeAPIError: Forge answered with a body this adapter cannot read: ValidationError (status: 200; request: GET /repos/example/project/pulls/7)
+
+src/kodezart/adapters/github_api.py:340: ForgeAPIError
+_ test_changing_terminal_never_returns_healthy_observation[fake-port-github-record] _
+
+self = <kodezart.adapters.github_api.GitHubAPIClient object at 0x10f2c0a40>
+method = 'GET', url = '/repos/example/project/pulls/7'
+parse = <bound method BaseModel.model_validate of <class 'kodezart.adapters.github_types.PullRequestStateResponse'>>
+
+    async def _parsed_with_retry(
+        self,
+        method: str,
+        url: str,
+        parse: Callable[[object], _WireT],
+        *,
+        json: dict[str, object] | None = None,
+        params: dict[str, str | int] | None = None,
+        retryable: bool = True,
+    ) -> _WireT:
+        """One request, with its body decoded and validated.
+    
+        The single seam every body read goes through, so the translation
+        below is stated ONCE rather than at each reader.  Both ways a
+        payload fails to become a wire model are ``ValueError``: the JSON
+        decoder raises one on bytes that are not JSON, and pydantic's
+        ``ValidationError`` IS one.  Catching the superset is exact here
+        and keeps the two from needing separate arms that could drift.
+    
+        A body this adapter cannot read is a forge failure like any
+        other, and it carries the status the response really had — the
+        request was answered, and what came back was unusable.
+        """
+        response = await self._request_with_retry(
+            method,
+            url,
+            json=json,
+            params=params,
+            retryable=retryable,
+        )
+        try:
+>           return parse(response.json())
+                   ^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 1 validation error for PullRequestStateResponse
+E           base
+E             Field required [type=missing, input_value={'html_url': 'https://git...e': 'example/project'}}}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.12/v/missing
+
+src/kodezart/adapters/github_api.py:338: ValidationError
+
+The above exception was the direct cause of the following exception:
+
+setup = (<kodezart.services.audit_terminal.AuditTerminalReader object at 0x10f314260>, <tests.fakes.FakeGitService object at 0...iteria drive new work.', created_at=datetime.datetime(2026, 3, 1, 12, 0, tzinfo=datetime.timezone.utc), reply_to=None))
+tracker = <tests.fakes.FakeTrackerPort object at 0x10f2c1e20>
+forge = (<kodezart.adapters.github_api.GitHubAPIClient object at 0x10f2c0a40>, {('https://github.com/example/project', 7): PRS...mple/project', base_branch='main', lifecycle=<PRLifecycle.OPEN: 'open'>)}, [('https://github.com/example/project', 7)])
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10f2c2210>
+damage = 'record'
+
+    @pytest.mark.parametrize("damage", ["issue", "criterion", "record", "pr", "branch"])
+    async def test_changing_terminal_never_returns_healthy_observation(
+        setup, tracker, forge, monkeypatch, damage
+    ):
+        reader, git, record, comment = setup
+        original = reader._head
+        count = 0
+    
+        async def changing(repository, branch):
+            nonlocal count
+            count += 1
+            if count == 2:
+                if damage == "issue":
+                    await tracker.update_issue(issue_key=ISSUE, body="changed")
+                elif damage == "criterion":
+                    await tracker.update_issue(issue_key=CHILD, body="changed Check")
+                elif damage == "record":
+                    changed = record.model_copy(update={"head_sha": "new-recorded-head"})
+                    await tracker.upsert_comment(
+                        target=ISSUE,
+                        marker=comment.body.splitlines()[0],
+                        body=render_lane_record(
+                            record=changed, marker_prefixes=PREFIXES
+                        ).partition("\n")[2],
+                    )
+                elif damage == "pr":
+                    forge[1][(REPO, 7)] = forge[1][(REPO, 7)].model_copy(
+                        update={"lifecycle": PRLifecycle.CLOSED}
+                    )
+                else:
+                    git._remote_branch_shas[BRANCH] = "b" * 40
+            return await original(repository, branch)
+    
+        monkeypatch.setattr(reader, "_head", changing)
+        with pytest.raises(AuditClaimReadError):
+>           await reader.observe(REQUEST)
+
+tests/chains/test_audit_pass.py:269: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/services/audit_terminal.py:89: in observe
+    pr = await self._forge.read_pr_state(
+src/kodezart/adapters/github_api.py:471: in read_pr_state
+    native = await self._parsed_with_retry(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.github_api.GitHubAPIClient object at 0x10f2c0a40>
+method = 'GET', url = '/repos/example/project/pulls/7'
+parse = <bound method BaseModel.model_validate of <class 'kodezart.adapters.github_types.PullRequestStateResponse'>>
+
+    async def _parsed_with_retry(
+        self,
+        method: str,
+        url: str,
+        parse: Callable[[object], _WireT],
+        *,
+        json: dict[str, object] | None = None,
+        params: dict[str, str | int] | None = None,
+        retryable: bool = True,
+    ) -> _WireT:
+        """One request, with its body decoded and validated.
+    
+        The single seam every body read goes through, so the translation
+        below is stated ONCE rather than at each reader.  Both ways a
+        payload fails to become a wire model are ``ValueError``: the JSON
+        decoder raises one on bytes that are not JSON, and pydantic's
+        ``ValidationError`` IS one.  Catching the superset is exact here
+        and keeps the two from needing separate arms that could drift.
+    
+        A body this adapter cannot read is a forge failure like any
+        other, and it carries the status the response really had — the
+        request was answered, and what came back was unusable.
+        """
+        response = await self._request_with_retry(
+            method,
+            url,
+            json=json,
+            params=params,
+            retryable=retryable,
+        )
+        try:
+            return parse(response.json())
+        except ValueError as exc:
+>           raise ForgeAPIError(
+                f"Forge answered with a body this adapter cannot read: "
+                f"{type(exc).__name__}",
+                status_code=response.status_code,
+                detail=f"{method} {url}",
+            ) from exc
+E           kodezart.domain.errors.ForgeAPIError: Forge answered with a body this adapter cannot read: ValidationError (status: 200; request: GET /repos/example/project/pulls/7)
+
+src/kodezart/adapters/github_api.py:340: ForgeAPIError
+_ test_changing_terminal_never_returns_healthy_observation[fake-port-github-pr] _
+
+self = <kodezart.adapters.github_api.GitHubAPIClient object at 0x10f3145f0>
+method = 'GET', url = '/repos/example/project/pulls/7'
+parse = <bound method BaseModel.model_validate of <class 'kodezart.adapters.github_types.PullRequestStateResponse'>>
+
+    async def _parsed_with_retry(
+        self,
+        method: str,
+        url: str,
+        parse: Callable[[object], _WireT],
+        *,
+        json: dict[str, object] | None = None,
+        params: dict[str, str | int] | None = None,
+        retryable: bool = True,
+    ) -> _WireT:
+        """One request, with its body decoded and validated.
+    
+        The single seam every body read goes through, so the translation
+        below is stated ONCE rather than at each reader.  Both ways a
+        payload fails to become a wire model are ``ValueError``: the JSON
+        decoder raises one on bytes that are not JSON, and pydantic's
+        ``ValidationError`` IS one.  Catching the superset is exact here
+        and keeps the two from needing separate arms that could drift.
+    
+        A body this adapter cannot read is a forge failure like any
+        other, and it carries the status the response really had — the
+        request was answered, and what came back was unusable.
+        """
+        response = await self._request_with_retry(
+            method,
+            url,
+            json=json,
+            params=params,
+            retryable=retryable,
+        )
+        try:
+>           return parse(response.json())
+                   ^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 1 validation error for PullRequestStateResponse
+E           base
+E             Field required [type=missing, input_value={'html_url': 'https://git...e': 'example/project'}}}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.12/v/missing
+
+src/kodezart/adapters/github_api.py:338: ValidationError
+
+The above exception was the direct cause of the following exception:
+
+setup = (<kodezart.services.audit_terminal.AuditTerminalReader object at 0x10f314920>, <tests.fakes.FakeGitService object at 0...iteria drive new work.', created_at=datetime.datetime(2026, 3, 1, 12, 0, tzinfo=datetime.timezone.utc), reply_to=None))
+tracker = <tests.fakes.FakeTrackerPort object at 0x10f3155b0>
+forge = (<kodezart.adapters.github_api.GitHubAPIClient object at 0x10f3145f0>, {('https://github.com/example/project', 7): PRS...mple/project', base_branch='main', lifecycle=<PRLifecycle.OPEN: 'open'>)}, [('https://github.com/example/project', 7)])
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10f315f40>
+damage = 'pr'
+
+    @pytest.mark.parametrize("damage", ["issue", "criterion", "record", "pr", "branch"])
+    async def test_changing_terminal_never_returns_healthy_observation(
+        setup, tracker, forge, monkeypatch, damage
+    ):
+        reader, git, record, comment = setup
+        original = reader._head
+        count = 0
+    
+        async def changing(repository, branch):
+            nonlocal count
+            count += 1
+            if count == 2:
+                if damage == "issue":
+                    await tracker.update_issue(issue_key=ISSUE, body="changed")
+                elif damage == "criterion":
+                    await tracker.update_issue(issue_key=CHILD, body="changed Check")
+                elif damage == "record":
+                    changed = record.model_copy(update={"head_sha": "new-recorded-head"})
+                    await tracker.upsert_comment(
+                        target=ISSUE,
+                        marker=comment.body.splitlines()[0],
+                        body=render_lane_record(
+                            record=changed, marker_prefixes=PREFIXES
+                        ).partition("\n")[2],
+                    )
+                elif damage == "pr":
+                    forge[1][(REPO, 7)] = forge[1][(REPO, 7)].model_copy(
+                        update={"lifecycle": PRLifecycle.CLOSED}
+                    )
+                else:
+                    git._remote_branch_shas[BRANCH] = "b" * 40
+            return await original(repository, branch)
+    
+        monkeypatch.setattr(reader, "_head", changing)
+        with pytest.raises(AuditClaimReadError):
+>           await reader.observe(REQUEST)
+
+tests/chains/test_audit_pass.py:269: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/services/audit_terminal.py:89: in observe
+    pr = await self._forge.read_pr_state(
+src/kodezart/adapters/github_api.py:471: in read_pr_state
+    native = await self._parsed_with_retry(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.github_api.GitHubAPIClient object at 0x10f3145f0>
+method = 'GET', url = '/repos/example/project/pulls/7'
+parse = <bound method BaseModel.model_validate of <class 'kodezart.adapters.github_types.PullRequestStateResponse'>>
+
+    async def _parsed_with_retry(
+        self,
+        method: str,
+        url: str,
+        parse: Callable[[object], _WireT],
+        *,
+        json: dict[str, object] | None = None,
+        params: dict[str, str | int] | None = None,
+        retryable: bool = True,
+    ) -> _WireT:
+        """One request, with its body decoded and validated.
+    
+        The single seam every body read goes through, so the translation
+        below is stated ONCE rather than at each reader.  Both ways a
+        payload fails to become a wire model are ``ValueError``: the JSON
+        decoder raises one on bytes that are not JSON, and pydantic's
+        ``ValidationError`` IS one.  Catching the superset is exact here
+        and keeps the two from needing separate arms that could drift.
+    
+        A body this adapter cannot read is a forge failure like any
+        other, and it carries the status the response really had — the
+        request was answered, and what came back was unusable.
+        """
+        response = await self._request_with_retry(
+            method,
+            url,
+            json=json,
+            params=params,
+            retryable=retryable,
+        )
+        try:
+            return parse(response.json())
+        except ValueError as exc:
+>           raise ForgeAPIError(
+                f"Forge answered with a body this adapter cannot read: "
+                f"{type(exc).__name__}",
+                status_code=response.status_code,
+                detail=f"{method} {url}",
+            ) from exc
+E           kodezart.domain.errors.ForgeAPIError: Forge answered with a body this adapter cannot read: ValidationError (status: 200; request: GET /repos/example/project/pulls/7)
+
+src/kodezart/adapters/github_api.py:340: ForgeAPIError
+_ test_changing_terminal_never_returns_healthy_observation[fake-port-github-branch] _
+
+self = <kodezart.adapters.github_api.GitHubAPIClient object at 0x10f384f80>
+method = 'GET', url = '/repos/example/project/pulls/7'
+parse = <bound method BaseModel.model_validate of <class 'kodezart.adapters.github_types.PullRequestStateResponse'>>
+
+    async def _parsed_with_retry(
+        self,
+        method: str,
+        url: str,
+        parse: Callable[[object], _WireT],
+        *,
+        json: dict[str, object] | None = None,
+        params: dict[str, str | int] | None = None,
+        retryable: bool = True,
+    ) -> _WireT:
+        """One request, with its body decoded and validated.
+    
+        The single seam every body read goes through, so the translation
+        below is stated ONCE rather than at each reader.  Both ways a
+        payload fails to become a wire model are ``ValueError``: the JSON
+        decoder raises one on bytes that are not JSON, and pydantic's
+        ``ValidationError`` IS one.  Catching the superset is exact here
+        and keeps the two from needing separate arms that could drift.
+    
+        A body this adapter cannot read is a forge failure like any
+        other, and it carries the status the response really had — the
+        request was answered, and what came back was unusable.
+        """
+        response = await self._request_with_retry(
+            method,
+            url,
+            json=json,
+            params=params,
+            retryable=retryable,
+        )
+        try:
+>           return parse(response.json())
+                   ^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 1 validation error for PullRequestStateResponse
+E           base
+E             Field required [type=missing, input_value={'html_url': 'https://git...e': 'example/project'}}}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.12/v/missing
+
+src/kodezart/adapters/github_api.py:338: ValidationError
+
+The above exception was the direct cause of the following exception:
+
+setup = (<kodezart.services.audit_terminal.AuditTerminalReader object at 0x10f3e81d0>, <tests.fakes.FakeGitService object at 0...iteria drive new work.', created_at=datetime.datetime(2026, 3, 1, 12, 0, tzinfo=datetime.timezone.utc), reply_to=None))
+tracker = <tests.fakes.FakeTrackerPort object at 0x10f386a80>
+forge = (<kodezart.adapters.github_api.GitHubAPIClient object at 0x10f384f80>, {('https://github.com/example/project', 7): PRS...mple/project', base_branch='main', lifecycle=<PRLifecycle.OPEN: 'open'>)}, [('https://github.com/example/project', 7)])
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10f386300>
+damage = 'branch'
+
+    @pytest.mark.parametrize("damage", ["issue", "criterion", "record", "pr", "branch"])
+    async def test_changing_terminal_never_returns_healthy_observation(
+        setup, tracker, forge, monkeypatch, damage
+    ):
+        reader, git, record, comment = setup
+        original = reader._head
+        count = 0
+    
+        async def changing(repository, branch):
+            nonlocal count
+            count += 1
+            if count == 2:
+                if damage == "issue":
+                    await tracker.update_issue(issue_key=ISSUE, body="changed")
+                elif damage == "criterion":
+                    await tracker.update_issue(issue_key=CHILD, body="changed Check")
+                elif damage == "record":
+                    changed = record.model_copy(update={"head_sha": "new-recorded-head"})
+                    await tracker.upsert_comment(
+                        target=ISSUE,
+                        marker=comment.body.splitlines()[0],
+                        body=render_lane_record(
+                            record=changed, marker_prefixes=PREFIXES
+                        ).partition("\n")[2],
+                    )
+                elif damage == "pr":
+                    forge[1][(REPO, 7)] = forge[1][(REPO, 7)].model_copy(
+                        update={"lifecycle": PRLifecycle.CLOSED}
+                    )
+                else:
+                    git._remote_branch_shas[BRANCH] = "b" * 40
+            return await original(repository, branch)
+    
+        monkeypatch.setattr(reader, "_head", changing)
+        with pytest.raises(AuditClaimReadError):
+>           await reader.observe(REQUEST)
+
+tests/chains/test_audit_pass.py:269: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/services/audit_terminal.py:89: in observe
+    pr = await self._forge.read_pr_state(
+src/kodezart/adapters/github_api.py:471: in read_pr_state
+    native = await self._parsed_with_retry(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.github_api.GitHubAPIClient object at 0x10f384f80>
+method = 'GET', url = '/repos/example/project/pulls/7'
+parse = <bound method BaseModel.model_validate of <class 'kodezart.adapters.github_types.PullRequestStateResponse'>>
+
+    async def _parsed_with_retry(
+        self,
+        method: str,
+        url: str,
+        parse: Callable[[object], _WireT],
+        *,
+        json: dict[str, object] | None = None,
+        params: dict[str, str | int] | None = None,
+        retryable: bool = True,
+    ) -> _WireT:
+        """One request, with its body decoded and validated.
+    
+        The single seam every body read goes through, so the translation
+        below is stated ONCE rather than at each reader.  Both ways a
+        payload fails to become a wire model are ``ValueError``: the JSON
+        decoder raises one on bytes that are not JSON, and pydantic's
+        ``ValidationError`` IS one.  Catching the superset is exact here
+        and keeps the two from needing separate arms that could drift.
+    
+        A body this adapter cannot read is a forge failure like any
+        other, and it carries the status the response really had — the
+        request was answered, and what came back was unusable.
+        """
+        response = await self._request_with_retry(
+            method,
+            url,
+            json=json,
+            params=params,
+            retryable=retryable,
+        )
+        try:
+            return parse(response.json())
+        except ValueError as exc:
+>           raise ForgeAPIError(
+                f"Forge answered with a body this adapter cannot read: "
+                f"{type(exc).__name__}",
+                status_code=response.status_code,
+                detail=f"{method} {url}",
+            ) from exc
+E           kodezart.domain.errors.ForgeAPIError: Forge answered with a body this adapter cannot read: ValidationError (status: 200; request: GET /repos/example/project/pulls/7)
+
+src/kodezart/adapters/github_api.py:340: ForgeAPIError
+_ test_changing_terminal_never_returns_healthy_observation[linear-mcp-github-issue] _
+
+self = <kodezart.adapters.github_api.GitHubAPIClient object at 0x10f2a5d00>
+method = 'GET', url = '/repos/example/project/pulls/7'
+parse = <bound method BaseModel.model_validate of <class 'kodezart.adapters.github_types.PullRequestStateResponse'>>
+
+    async def _parsed_with_retry(
+        self,
+        method: str,
+        url: str,
+        parse: Callable[[object], _WireT],
+        *,
+        json: dict[str, object] | None = None,
+        params: dict[str, str | int] | None = None,
+        retryable: bool = True,
+    ) -> _WireT:
+        """One request, with its body decoded and validated.
+    
+        The single seam every body read goes through, so the translation
+        below is stated ONCE rather than at each reader.  Both ways a
+        payload fails to become a wire model are ``ValueError``: the JSON
+        decoder raises one on bytes that are not JSON, and pydantic's
+        ``ValidationError`` IS one.  Catching the superset is exact here
+        and keeps the two from needing separate arms that could drift.
+    
+        A body this adapter cannot read is a forge failure like any
+        other, and it carries the status the response really had — the
+        request was answered, and what came back was unusable.
+        """
+        response = await self._request_with_retry(
+            method,
+            url,
+            json=json,
+            params=params,
+            retryable=retryable,
+        )
+        try:
+>           return parse(response.json())
+                   ^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 1 validation error for PullRequestStateResponse
+E           base
+E             Field required [type=missing, input_value={'html_url': 'https://git...e': 'example/project'}}}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.12/v/missing
+
+src/kodezart/adapters/github_api.py:338: ValidationError
+
+The above exception was the direct cause of the following exception:
+
+setup = (<kodezart.services.audit_terminal.AuditTerminalReader object at 0x10f2a75f0>, <tests.fakes.FakeGitService object at 0...y failing criteria drive new work.', created_at=datetime.datetime(2026, 3, 1, 12, 0, tzinfo=TzInfo(0)), reply_to=None))
+tracker = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10f2a64e0>
+forge = (<kodezart.adapters.github_api.GitHubAPIClient object at 0x10f2a5d00>, {('https://github.com/example/project', 7): PRS...mple/project', base_branch='main', lifecycle=<PRLifecycle.OPEN: 'open'>)}, [('https://github.com/example/project', 7)])
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10f2a4350>
+damage = 'issue'
+
+    @pytest.mark.parametrize("damage", ["issue", "criterion", "record", "pr", "branch"])
+    async def test_changing_terminal_never_returns_healthy_observation(
+        setup, tracker, forge, monkeypatch, damage
+    ):
+        reader, git, record, comment = setup
+        original = reader._head
+        count = 0
+    
+        async def changing(repository, branch):
+            nonlocal count
+            count += 1
+            if count == 2:
+                if damage == "issue":
+                    await tracker.update_issue(issue_key=ISSUE, body="changed")
+                elif damage == "criterion":
+                    await tracker.update_issue(issue_key=CHILD, body="changed Check")
+                elif damage == "record":
+                    changed = record.model_copy(update={"head_sha": "new-recorded-head"})
+                    await tracker.upsert_comment(
+                        target=ISSUE,
+                        marker=comment.body.splitlines()[0],
+                        body=render_lane_record(
+                            record=changed, marker_prefixes=PREFIXES
+                        ).partition("\n")[2],
+                    )
+                elif damage == "pr":
+                    forge[1][(REPO, 7)] = forge[1][(REPO, 7)].model_copy(
+                        update={"lifecycle": PRLifecycle.CLOSED}
+                    )
+                else:
+                    git._remote_branch_shas[BRANCH] = "b" * 40
+            return await original(repository, branch)
+    
+        monkeypatch.setattr(reader, "_head", changing)
+        with pytest.raises(AuditClaimReadError):
+>           await reader.observe(REQUEST)
+
+tests/chains/test_audit_pass.py:269: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/services/audit_terminal.py:89: in observe
+    pr = await self._forge.read_pr_state(
+src/kodezart/adapters/github_api.py:471: in read_pr_state
+    native = await self._parsed_with_retry(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.github_api.GitHubAPIClient object at 0x10f2a5d00>
+method = 'GET', url = '/repos/example/project/pulls/7'
+parse = <bound method BaseModel.model_validate of <class 'kodezart.adapters.github_types.PullRequestStateResponse'>>
+
+    async def _parsed_with_retry(
+        self,
+        method: str,
+        url: str,
+        parse: Callable[[object], _WireT],
+        *,
+        json: dict[str, object] | None = None,
+        params: dict[str, str | int] | None = None,
+        retryable: bool = True,
+    ) -> _WireT:
+        """One request, with its body decoded and validated.
+    
+        The single seam every body read goes through, so the translation
+        below is stated ONCE rather than at each reader.  Both ways a
+        payload fails to become a wire model are ``ValueError``: the JSON
+        decoder raises one on bytes that are not JSON, and pydantic's
+        ``ValidationError`` IS one.  Catching the superset is exact here
+        and keeps the two from needing separate arms that could drift.
+    
+        A body this adapter cannot read is a forge failure like any
+        other, and it carries the status the response really had — the
+        request was answered, and what came back was unusable.
+        """
+        response = await self._request_with_retry(
+            method,
+            url,
+            json=json,
+            params=params,
+            retryable=retryable,
+        )
+        try:
+            return parse(response.json())
+        except ValueError as exc:
+>           raise ForgeAPIError(
+                f"Forge answered with a body this adapter cannot read: "
+                f"{type(exc).__name__}",
+                status_code=response.status_code,
+                detail=f"{method} {url}",
+            ) from exc
+E           kodezart.domain.errors.ForgeAPIError: Forge answered with a body this adapter cannot read: ValidationError (status: 200; request: GET /repos/example/project/pulls/7)
+
+src/kodezart/adapters/github_api.py:340: ForgeAPIError
+_ test_changing_terminal_never_returns_healthy_observation[linear-mcp-github-criterion] _
+
+self = <kodezart.adapters.github_api.GitHubAPIClient object at 0x10f3847d0>
+method = 'GET', url = '/repos/example/project/pulls/7'
+parse = <bound method BaseModel.model_validate of <class 'kodezart.adapters.github_types.PullRequestStateResponse'>>
+
+    async def _parsed_with_retry(
+        self,
+        method: str,
+        url: str,
+        parse: Callable[[object], _WireT],
+        *,
+        json: dict[str, object] | None = None,
+        params: dict[str, str | int] | None = None,
+        retryable: bool = True,
+    ) -> _WireT:
+        """One request, with its body decoded and validated.
+    
+        The single seam every body read goes through, so the translation
+        below is stated ONCE rather than at each reader.  Both ways a
+        payload fails to become a wire model are ``ValueError``: the JSON
+        decoder raises one on bytes that are not JSON, and pydantic's
+        ``ValidationError`` IS one.  Catching the superset is exact here
+        and keeps the two from needing separate arms that could drift.
+    
+        A body this adapter cannot read is a forge failure like any
+        other, and it carries the status the response really had — the
+        request was answered, and what came back was unusable.
+        """
+        response = await self._request_with_retry(
+            method,
+            url,
+            json=json,
+            params=params,
+            retryable=retryable,
+        )
+        try:
+>           return parse(response.json())
+                   ^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 1 validation error for PullRequestStateResponse
+E           base
+E             Field required [type=missing, input_value={'html_url': 'https://git...e': 'example/project'}}}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.12/v/missing
+
+src/kodezart/adapters/github_api.py:338: ValidationError
+
+The above exception was the direct cause of the following exception:
+
+setup = (<kodezart.services.audit_terminal.AuditTerminalReader object at 0x10f385a00>, <tests.fakes.FakeGitService object at 0...y failing criteria drive new work.', created_at=datetime.datetime(2026, 3, 1, 12, 0, tzinfo=TzInfo(0)), reply_to=None))
+tracker = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10f3ea840>
+forge = (<kodezart.adapters.github_api.GitHubAPIClient object at 0x10f3847d0>, {('https://github.com/example/project', 7): PRS...mple/project', base_branch='main', lifecycle=<PRLifecycle.OPEN: 'open'>)}, [('https://github.com/example/project', 7)])
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10f385340>
+damage = 'criterion'
+
+    @pytest.mark.parametrize("damage", ["issue", "criterion", "record", "pr", "branch"])
+    async def test_changing_terminal_never_returns_healthy_observation(
+        setup, tracker, forge, monkeypatch, damage
+    ):
+        reader, git, record, comment = setup
+        original = reader._head
+        count = 0
+    
+        async def changing(repository, branch):
+            nonlocal count
+            count += 1
+            if count == 2:
+                if damage == "issue":
+                    await tracker.update_issue(issue_key=ISSUE, body="changed")
+                elif damage == "criterion":
+                    await tracker.update_issue(issue_key=CHILD, body="changed Check")
+                elif damage == "record":
+                    changed = record.model_copy(update={"head_sha": "new-recorded-head"})
+                    await tracker.upsert_comment(
+                        target=ISSUE,
+                        marker=comment.body.splitlines()[0],
+                        body=render_lane_record(
+                            record=changed, marker_prefixes=PREFIXES
+                        ).partition("\n")[2],
+                    )
+                elif damage == "pr":
+                    forge[1][(REPO, 7)] = forge[1][(REPO, 7)].model_copy(
+                        update={"lifecycle": PRLifecycle.CLOSED}
+                    )
+                else:
+                    git._remote_branch_shas[BRANCH] = "b" * 40
+            return await original(repository, branch)
+    
+        monkeypatch.setattr(reader, "_head", changing)
+        with pytest.raises(AuditClaimReadError):
+>           await reader.observe(REQUEST)
+
+tests/chains/test_audit_pass.py:269: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/services/audit_terminal.py:89: in observe
+    pr = await self._forge.read_pr_state(
+src/kodezart/adapters/github_api.py:471: in read_pr_state
+    native = await self._parsed_with_retry(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.github_api.GitHubAPIClient object at 0x10f3847d0>
+method = 'GET', url = '/repos/example/project/pulls/7'
+parse = <bound method BaseModel.model_validate of <class 'kodezart.adapters.github_types.PullRequestStateResponse'>>
+
+    async def _parsed_with_retry(
+        self,
+        method: str,
+        url: str,
+        parse: Callable[[object], _WireT],
+        *,
+        json: dict[str, object] | None = None,
+        params: dict[str, str | int] | None = None,
+        retryable: bool = True,
+    ) -> _WireT:
+        """One request, with its body decoded and validated.
+    
+        The single seam every body read goes through, so the translation
+        below is stated ONCE rather than at each reader.  Both ways a
+        payload fails to become a wire model are ``ValueError``: the JSON
+        decoder raises one on bytes that are not JSON, and pydantic's
+        ``ValidationError`` IS one.  Catching the superset is exact here
+        and keeps the two from needing separate arms that could drift.
+    
+        A body this adapter cannot read is a forge failure like any
+        other, and it carries the status the response really had — the
+        request was answered, and what came back was unusable.
+        """
+        response = await self._request_with_retry(
+            method,
+            url,
+            json=json,
+            params=params,
+            retryable=retryable,
+        )
+        try:
+            return parse(response.json())
+        except ValueError as exc:
+>           raise ForgeAPIError(
+                f"Forge answered with a body this adapter cannot read: "
+                f"{type(exc).__name__}",
+                status_code=response.status_code,
+                detail=f"{method} {url}",
+            ) from exc
+E           kodezart.domain.errors.ForgeAPIError: Forge answered with a body this adapter cannot read: ValidationError (status: 200; request: GET /repos/example/project/pulls/7)
+
+src/kodezart/adapters/github_api.py:340: ForgeAPIError
+_ test_changing_terminal_never_returns_healthy_observation[linear-mcp-github-record] _
+
+self = <kodezart.adapters.github_api.GitHubAPIClient object at 0x10f3176e0>
+method = 'GET', url = '/repos/example/project/pulls/7'
+parse = <bound method BaseModel.model_validate of <class 'kodezart.adapters.github_types.PullRequestStateResponse'>>
+
+    async def _parsed_with_retry(
+        self,
+        method: str,
+        url: str,
+        parse: Callable[[object], _WireT],
+        *,
+        json: dict[str, object] | None = None,
+        params: dict[str, str | int] | None = None,
+        retryable: bool = True,
+    ) -> _WireT:
+        """One request, with its body decoded and validated.
+    
+        The single seam every body read goes through, so the translation
+        below is stated ONCE rather than at each reader.  Both ways a
+        payload fails to become a wire model are ``ValueError``: the JSON
+        decoder raises one on bytes that are not JSON, and pydantic's
+        ``ValidationError`` IS one.  Catching the superset is exact here
+        and keeps the two from needing separate arms that could drift.
+    
+        A body this adapter cannot read is a forge failure like any
+        other, and it carries the status the response really had — the
+        request was answered, and what came back was unusable.
+        """
+        response = await self._request_with_retry(
+            method,
+            url,
+            json=json,
+            params=params,
+            retryable=retryable,
+        )
+        try:
+>           return parse(response.json())
+                   ^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 1 validation error for PullRequestStateResponse
+E           base
+E             Field required [type=missing, input_value={'html_url': 'https://git...e': 'example/project'}}}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.12/v/missing
+
+src/kodezart/adapters/github_api.py:338: ValidationError
+
+The above exception was the direct cause of the following exception:
+
+setup = (<kodezart.services.audit_terminal.AuditTerminalReader object at 0x10f314f20>, <tests.fakes.FakeGitService object at 0...y failing criteria drive new work.', created_at=datetime.datetime(2026, 3, 1, 12, 0, tzinfo=TzInfo(0)), reply_to=None))
+tracker = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10f314da0>
+forge = (<kodezart.adapters.github_api.GitHubAPIClient object at 0x10f3176e0>, {('https://github.com/example/project', 7): PRS...mple/project', base_branch='main', lifecycle=<PRLifecycle.OPEN: 'open'>)}, [('https://github.com/example/project', 7)])
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10f316bd0>
+damage = 'record'
+
+    @pytest.mark.parametrize("damage", ["issue", "criterion", "record", "pr", "branch"])
+    async def test_changing_terminal_never_returns_healthy_observation(
+        setup, tracker, forge, monkeypatch, damage
+    ):
+        reader, git, record, comment = setup
+        original = reader._head
+        count = 0
+    
+        async def changing(repository, branch):
+            nonlocal count
+            count += 1
+            if count == 2:
+                if damage == "issue":
+                    await tracker.update_issue(issue_key=ISSUE, body="changed")
+                elif damage == "criterion":
+                    await tracker.update_issue(issue_key=CHILD, body="changed Check")
+                elif damage == "record":
+                    changed = record.model_copy(update={"head_sha": "new-recorded-head"})
+                    await tracker.upsert_comment(
+                        target=ISSUE,
+                        marker=comment.body.splitlines()[0],
+                        body=render_lane_record(
+                            record=changed, marker_prefixes=PREFIXES
+                        ).partition("\n")[2],
+                    )
+                elif damage == "pr":
+                    forge[1][(REPO, 7)] = forge[1][(REPO, 7)].model_copy(
+                        update={"lifecycle": PRLifecycle.CLOSED}
+                    )
+                else:
+                    git._remote_branch_shas[BRANCH] = "b" * 40
+            return await original(repository, branch)
+    
+        monkeypatch.setattr(reader, "_head", changing)
+        with pytest.raises(AuditClaimReadError):
+>           await reader.observe(REQUEST)
+
+tests/chains/test_audit_pass.py:269: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/services/audit_terminal.py:89: in observe
+    pr = await self._forge.read_pr_state(
+src/kodezart/adapters/github_api.py:471: in read_pr_state
+    native = await self._parsed_with_retry(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.github_api.GitHubAPIClient object at 0x10f3176e0>
+method = 'GET', url = '/repos/example/project/pulls/7'
+parse = <bound method BaseModel.model_validate of <class 'kodezart.adapters.github_types.PullRequestStateResponse'>>
+
+    async def _parsed_with_retry(
+        self,
+        method: str,
+        url: str,
+        parse: Callable[[object], _WireT],
+        *,
+        json: dict[str, object] | None = None,
+        params: dict[str, str | int] | None = None,
+        retryable: bool = True,
+    ) -> _WireT:
+        """One request, with its body decoded and validated.
+    
+        The single seam every body read goes through, so the translation
+        below is stated ONCE rather than at each reader.  Both ways a
+        payload fails to become a wire model are ``ValueError``: the JSON
+        decoder raises one on bytes that are not JSON, and pydantic's
+        ``ValidationError`` IS one.  Catching the superset is exact here
+        and keeps the two from needing separate arms that could drift.
+    
+        A body this adapter cannot read is a forge failure like any
+        other, and it carries the status the response really had — the
+        request was answered, and what came back was unusable.
+        """
+        response = await self._request_with_retry(
+            method,
+            url,
+            json=json,
+            params=params,
+            retryable=retryable,
+        )
+        try:
+            return parse(response.json())
+        except ValueError as exc:
+>           raise ForgeAPIError(
+                f"Forge answered with a body this adapter cannot read: "
+                f"{type(exc).__name__}",
+                status_code=response.status_code,
+                detail=f"{method} {url}",
+            ) from exc
+E           kodezart.domain.errors.ForgeAPIError: Forge answered with a body this adapter cannot read: ValidationError (status: 200; request: GET /repos/example/project/pulls/7)
+
+src/kodezart/adapters/github_api.py:340: ForgeAPIError
+_ test_changing_terminal_never_returns_healthy_observation[linear-mcp-github-pr] _
+
+self = <kodezart.adapters.github_api.GitHubAPIClient object at 0x10f25fd70>
+method = 'GET', url = '/repos/example/project/pulls/7'
+parse = <bound method BaseModel.model_validate of <class 'kodezart.adapters.github_types.PullRequestStateResponse'>>
+
+    async def _parsed_with_retry(
+        self,
+        method: str,
+        url: str,
+        parse: Callable[[object], _WireT],
+        *,
+        json: dict[str, object] | None = None,
+        params: dict[str, str | int] | None = None,
+        retryable: bool = True,
+    ) -> _WireT:
+        """One request, with its body decoded and validated.
+    
+        The single seam every body read goes through, so the translation
+        below is stated ONCE rather than at each reader.  Both ways a
+        payload fails to become a wire model are ``ValueError``: the JSON
+        decoder raises one on bytes that are not JSON, and pydantic's
+        ``ValidationError`` IS one.  Catching the superset is exact here
+        and keeps the two from needing separate arms that could drift.
+    
+        A body this adapter cannot read is a forge failure like any
+        other, and it carries the status the response really had — the
+        request was answered, and what came back was unusable.
+        """
+        response = await self._request_with_retry(
+            method,
+            url,
+            json=json,
+            params=params,
+            retryable=retryable,
+        )
+        try:
+>           return parse(response.json())
+                   ^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 1 validation error for PullRequestStateResponse
+E           base
+E             Field required [type=missing, input_value={'html_url': 'https://git...e': 'example/project'}}}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.12/v/missing
+
+src/kodezart/adapters/github_api.py:338: ValidationError
+
+The above exception was the direct cause of the following exception:
+
+setup = (<kodezart.services.audit_terminal.AuditTerminalReader object at 0x10f25fa10>, <tests.fakes.FakeGitService object at 0...y failing criteria drive new work.', created_at=datetime.datetime(2026, 3, 1, 12, 0, tzinfo=TzInfo(0)), reply_to=None))
+tracker = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10f2a40b0>
+forge = (<kodezart.adapters.github_api.GitHubAPIClient object at 0x10f25fd70>, {('https://github.com/example/project', 7): PRS...mple/project', base_branch='main', lifecycle=<PRLifecycle.OPEN: 'open'>)}, [('https://github.com/example/project', 7)])
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10f2a7d70>
+damage = 'pr'
+
+    @pytest.mark.parametrize("damage", ["issue", "criterion", "record", "pr", "branch"])
+    async def test_changing_terminal_never_returns_healthy_observation(
+        setup, tracker, forge, monkeypatch, damage
+    ):
+        reader, git, record, comment = setup
+        original = reader._head
+        count = 0
+    
+        async def changing(repository, branch):
+            nonlocal count
+            count += 1
+            if count == 2:
+                if damage == "issue":
+                    await tracker.update_issue(issue_key=ISSUE, body="changed")
+                elif damage == "criterion":
+                    await tracker.update_issue(issue_key=CHILD, body="changed Check")
+                elif damage == "record":
+                    changed = record.model_copy(update={"head_sha": "new-recorded-head"})
+                    await tracker.upsert_comment(
+                        target=ISSUE,
+                        marker=comment.body.splitlines()[0],
+                        body=render_lane_record(
+                            record=changed, marker_prefixes=PREFIXES
+                        ).partition("\n")[2],
+                    )
+                elif damage == "pr":
+                    forge[1][(REPO, 7)] = forge[1][(REPO, 7)].model_copy(
+                        update={"lifecycle": PRLifecycle.CLOSED}
+                    )
+                else:
+                    git._remote_branch_shas[BRANCH] = "b" * 40
+            return await original(repository, branch)
+    
+        monkeypatch.setattr(reader, "_head", changing)
+        with pytest.raises(AuditClaimReadError):
+>           await reader.observe(REQUEST)
+
+tests/chains/test_audit_pass.py:269: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/services/audit_terminal.py:89: in observe
+    pr = await self._forge.read_pr_state(
+src/kodezart/adapters/github_api.py:471: in read_pr_state
+    native = await self._parsed_with_retry(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.github_api.GitHubAPIClient object at 0x10f25fd70>
+method = 'GET', url = '/repos/example/project/pulls/7'
+parse = <bound method BaseModel.model_validate of <class 'kodezart.adapters.github_types.PullRequestStateResponse'>>
+
+    async def _parsed_with_retry(
+        self,
+        method: str,
+        url: str,
+        parse: Callable[[object], _WireT],
+        *,
+        json: dict[str, object] | None = None,
+        params: dict[str, str | int] | None = None,
+        retryable: bool = True,
+    ) -> _WireT:
+        """One request, with its body decoded and validated.
+    
+        The single seam every body read goes through, so the translation
+        below is stated ONCE rather than at each reader.  Both ways a
+        payload fails to become a wire model are ``ValueError``: the JSON
+        decoder raises one on bytes that are not JSON, and pydantic's
+        ``ValidationError`` IS one.  Catching the superset is exact here
+        and keeps the two from needing separate arms that could drift.
+    
+        A body this adapter cannot read is a forge failure like any
+        other, and it carries the status the response really had — the
+        request was answered, and what came back was unusable.
+        """
+        response = await self._request_with_retry(
+            method,
+            url,
+            json=json,
+            params=params,
+            retryable=retryable,
+        )
+        try:
+            return parse(response.json())
+        except ValueError as exc:
+>           raise ForgeAPIError(
+                f"Forge answered with a body this adapter cannot read: "
+                f"{type(exc).__name__}",
+                status_code=response.status_code,
+                detail=f"{method} {url}",
+            ) from exc
+E           kodezart.domain.errors.ForgeAPIError: Forge answered with a body this adapter cannot read: ValidationError (status: 200; request: GET /repos/example/project/pulls/7)
+
+src/kodezart/adapters/github_api.py:340: ForgeAPIError
+_ test_changing_terminal_never_returns_healthy_observation[linear-mcp-github-branch] _
+
+self = <kodezart.adapters.github_api.GitHubAPIClient object at 0x10f25e300>
+method = 'GET', url = '/repos/example/project/pulls/7'
+parse = <bound method BaseModel.model_validate of <class 'kodezart.adapters.github_types.PullRequestStateResponse'>>
+
+    async def _parsed_with_retry(
+        self,
+        method: str,
+        url: str,
+        parse: Callable[[object], _WireT],
+        *,
+        json: dict[str, object] | None = None,
+        params: dict[str, str | int] | None = None,
+        retryable: bool = True,
+    ) -> _WireT:
+        """One request, with its body decoded and validated.
+    
+        The single seam every body read goes through, so the translation
+        below is stated ONCE rather than at each reader.  Both ways a
+        payload fails to become a wire model are ``ValueError``: the JSON
+        decoder raises one on bytes that are not JSON, and pydantic's
+        ``ValidationError`` IS one.  Catching the superset is exact here
+        and keeps the two from needing separate arms that could drift.
+    
+        A body this adapter cannot read is a forge failure like any
+        other, and it carries the status the response really had — the
+        request was answered, and what came back was unusable.
+        """
+        response = await self._request_with_retry(
+            method,
+            url,
+            json=json,
+            params=params,
+            retryable=retryable,
+        )
+        try:
+>           return parse(response.json())
+                   ^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 1 validation error for PullRequestStateResponse
+E           base
+E             Field required [type=missing, input_value={'html_url': 'https://git...e': 'example/project'}}}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.12/v/missing
+
+src/kodezart/adapters/github_api.py:338: ValidationError
+
+The above exception was the direct cause of the following exception:
+
+setup = (<kodezart.services.audit_terminal.AuditTerminalReader object at 0x10f25f020>, <tests.fakes.FakeGitService object at 0...y failing criteria drive new work.', created_at=datetime.datetime(2026, 3, 1, 12, 0, tzinfo=TzInfo(0)), reply_to=None))
+tracker = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10f25f770>
+forge = (<kodezart.adapters.github_api.GitHubAPIClient object at 0x10f25e300>, {('https://github.com/example/project', 7): PRS...mple/project', base_branch='main', lifecycle=<PRLifecycle.OPEN: 'open'>)}, [('https://github.com/example/project', 7)])
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10f25d1c0>
+damage = 'branch'
+
+    @pytest.mark.parametrize("damage", ["issue", "criterion", "record", "pr", "branch"])
+    async def test_changing_terminal_never_returns_healthy_observation(
+        setup, tracker, forge, monkeypatch, damage
+    ):
+        reader, git, record, comment = setup
+        original = reader._head
+        count = 0
+    
+        async def changing(repository, branch):
+            nonlocal count
+            count += 1
+            if count == 2:
+                if damage == "issue":
+                    await tracker.update_issue(issue_key=ISSUE, body="changed")
+                elif damage == "criterion":
+                    await tracker.update_issue(issue_key=CHILD, body="changed Check")
+                elif damage == "record":
+                    changed = record.model_copy(update={"head_sha": "new-recorded-head"})
+                    await tracker.upsert_comment(
+                        target=ISSUE,
+                        marker=comment.body.splitlines()[0],
+                        body=render_lane_record(
+                            record=changed, marker_prefixes=PREFIXES
+                        ).partition("\n")[2],
+                    )
+                elif damage == "pr":
+                    forge[1][(REPO, 7)] = forge[1][(REPO, 7)].model_copy(
+                        update={"lifecycle": PRLifecycle.CLOSED}
+                    )
+                else:
+                    git._remote_branch_shas[BRANCH] = "b" * 40
+            return await original(repository, branch)
+    
+        monkeypatch.setattr(reader, "_head", changing)
+        with pytest.raises(AuditClaimReadError):
+>           await reader.observe(REQUEST)
+
+tests/chains/test_audit_pass.py:269: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/services/audit_terminal.py:89: in observe
+    pr = await self._forge.read_pr_state(
+src/kodezart/adapters/github_api.py:471: in read_pr_state
+    native = await self._parsed_with_retry(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.github_api.GitHubAPIClient object at 0x10f25e300>
+method = 'GET', url = '/repos/example/project/pulls/7'
+parse = <bound method BaseModel.model_validate of <class 'kodezart.adapters.github_types.PullRequestStateResponse'>>
+
+    async def _parsed_with_retry(
+        self,
+        method: str,
+        url: str,
+        parse: Callable[[object], _WireT],
+        *,
+        json: dict[str, object] | None = None,
+        params: dict[str, str | int] | None = None,
+        retryable: bool = True,
+    ) -> _WireT:
+        """One request, with its body decoded and validated.
+    
+        The single seam every body read goes through, so the translation
+        below is stated ONCE rather than at each reader.  Both ways a
+        payload fails to become a wire model are ``ValueError``: the JSON
+        decoder raises one on bytes that are not JSON, and pydantic's
+        ``ValidationError`` IS one.  Catching the superset is exact here
+        and keeps the two from needing separate arms that could drift.
+    
+        A body this adapter cannot read is a forge failure like any
+        other, and it carries the status the response really had — the
+        request was answered, and what came back was unusable.
+        """
+        response = await self._request_with_retry(
+            method,
+            url,
+            json=json,
+            params=params,
+            retryable=retryable,
+        )
+        try:
+            return parse(response.json())
+        except ValueError as exc:
+>           raise ForgeAPIError(
+                f"Forge answered with a body this adapter cannot read: "
+                f"{type(exc).__name__}",
+                status_code=response.status_code,
+                detail=f"{method} {url}",
+            ) from exc
+E           kodezart.domain.errors.ForgeAPIError: Forge answered with a body this adapter cannot read: ValidationError (status: 200; request: GET /repos/example/project/pulls/7)
+
+src/kodezart/adapters/github_api.py:340: ForgeAPIError
+_ test_current_native_pr_sha_must_equal_its_resolved_branch[github-fake-port] __
+
+self = <kodezart.adapters.github_api.GitHubAPIClient object at 0x10f246f00>
+method = 'GET', url = '/repos/example/project/pulls/7'
+parse = <bound method BaseModel.model_validate of <class 'kodezart.adapters.github_types.PullRequestStateResponse'>>
+
+    async def _parsed_with_retry(
+        self,
+        method: str,
+        url: str,
+        parse: Callable[[object], _WireT],
+        *,
+        json: dict[str, object] | None = None,
+        params: dict[str, str | int] | None = None,
+        retryable: bool = True,
+    ) -> _WireT:
+        """One request, with its body decoded and validated.
+    
+        The single seam every body read goes through, so the translation
+        below is stated ONCE rather than at each reader.  Both ways a
+        payload fails to become a wire model are ``ValueError``: the JSON
+        decoder raises one on bytes that are not JSON, and pydantic's
+        ``ValidationError`` IS one.  Catching the superset is exact here
+        and keeps the two from needing separate arms that could drift.
+    
+        A body this adapter cannot read is a forge failure like any
+        other, and it carries the status the response really had — the
+        request was answered, and what came back was unusable.
+        """
+        response = await self._request_with_retry(
+            method,
+            url,
+            json=json,
+            params=params,
+            retryable=retryable,
+        )
+        try:
+>           return parse(response.json())
+                   ^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 1 validation error for PullRequestStateResponse
+E           base
+E             Field required [type=missing, input_value={'html_url': 'https://git...e': 'example/project'}}}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.12/v/missing
+
+src/kodezart/adapters/github_api.py:338: ValidationError
+
+The above exception was the direct cause of the following exception:
+
+setup = (<kodezart.services.audit_terminal.AuditTerminalReader object at 0x10f244e60>, <tests.fakes.FakeGitService object at 0...iteria drive new work.', created_at=datetime.datetime(2026, 3, 1, 12, 0, tzinfo=datetime.timezone.utc), reply_to=None))
+forge = (<kodezart.adapters.github_api.GitHubAPIClient object at 0x10f246f00>, {('https://github.com/example/project', 7): PRS...mple/project', base_branch='main', lifecycle=<PRLifecycle.OPEN: 'open'>)}, [('https://github.com/example/project', 7)])
+
+    async def test_current_native_pr_sha_must_equal_its_resolved_branch(setup, forge):
+        reader, *_ = setup
+        forge[1][(REPO, 7)] = forge[1][(REPO, 7)].model_copy(update={"head_sha": "b" * 40})
+        with pytest.raises(AuditClaimReadError, match="do not agree"):
+>           await reader.observe(REQUEST)
+
+tests/chains/test_audit_pass.py:311: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/services/audit_terminal.py:89: in observe
+    pr = await self._forge.read_pr_state(
+src/kodezart/adapters/github_api.py:471: in read_pr_state
+    native = await self._parsed_with_retry(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.github_api.GitHubAPIClient object at 0x10f246f00>
+method = 'GET', url = '/repos/example/project/pulls/7'
+parse = <bound method BaseModel.model_validate of <class 'kodezart.adapters.github_types.PullRequestStateResponse'>>
+
+    async def _parsed_with_retry(
+        self,
+        method: str,
+        url: str,
+        parse: Callable[[object], _WireT],
+        *,
+        json: dict[str, object] | None = None,
+        params: dict[str, str | int] | None = None,
+        retryable: bool = True,
+    ) -> _WireT:
+        """One request, with its body decoded and validated.
+    
+        The single seam every body read goes through, so the translation
+        below is stated ONCE rather than at each reader.  Both ways a
+        payload fails to become a wire model are ``ValueError``: the JSON
+        decoder raises one on bytes that are not JSON, and pydantic's
+        ``ValidationError`` IS one.  Catching the superset is exact here
+        and keeps the two from needing separate arms that could drift.
+    
+        A body this adapter cannot read is a forge failure like any
+        other, and it carries the status the response really had — the
+        request was answered, and what came back was unusable.
+        """
+        response = await self._request_with_retry(
+            method,
+            url,
+            json=json,
+            params=params,
+            retryable=retryable,
+        )
+        try:
+            return parse(response.json())
+        except ValueError as exc:
+>           raise ForgeAPIError(
+                f"Forge answered with a body this adapter cannot read: "
+                f"{type(exc).__name__}",
+                status_code=response.status_code,
+                detail=f"{method} {url}",
+            ) from exc
+E           kodezart.domain.errors.ForgeAPIError: Forge answered with a body this adapter cannot read: ValidationError (status: 200; request: GET /repos/example/project/pulls/7)
+
+src/kodezart/adapters/github_api.py:340: ForgeAPIError
+_ test_current_native_pr_sha_must_equal_its_resolved_branch[github-linear-mcp] _
+
+self = <kodezart.adapters.github_api.GitHubAPIClient object at 0x10f245340>
+method = 'GET', url = '/repos/example/project/pulls/7'
+parse = <bound method BaseModel.model_validate of <class 'kodezart.adapters.github_types.PullRequestStateResponse'>>
+
+    async def _parsed_with_retry(
+        self,
+        method: str,
+        url: str,
+        parse: Callable[[object], _WireT],
+        *,
+        json: dict[str, object] | None = None,
+        params: dict[str, str | int] | None = None,
+        retryable: bool = True,
+    ) -> _WireT:
+        """One request, with its body decoded and validated.
+    
+        The single seam every body read goes through, so the translation
+        below is stated ONCE rather than at each reader.  Both ways a
+        payload fails to become a wire model are ``ValueError``: the JSON
+        decoder raises one on bytes that are not JSON, and pydantic's
+        ``ValidationError`` IS one.  Catching the superset is exact here
+        and keeps the two from needing separate arms that could drift.
+    
+        A body this adapter cannot read is a forge failure like any
+        other, and it carries the status the response really had — the
+        request was answered, and what came back was unusable.
+        """
+        response = await self._request_with_retry(
+            method,
+            url,
+            json=json,
+            params=params,
+            retryable=retryable,
+        )
+        try:
+>           return parse(response.json())
+                   ^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 1 validation error for PullRequestStateResponse
+E           base
+E             Field required [type=missing, input_value={'html_url': 'https://git...e': 'example/project'}}}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.12/v/missing
+
+src/kodezart/adapters/github_api.py:338: ValidationError
+
+The above exception was the direct cause of the following exception:
+
+setup = (<kodezart.services.audit_terminal.AuditTerminalReader object at 0x10e9f0a70>, <tests.fakes.FakeGitService object at 0...y failing criteria drive new work.', created_at=datetime.datetime(2026, 3, 1, 12, 0, tzinfo=TzInfo(0)), reply_to=None))
+forge = (<kodezart.adapters.github_api.GitHubAPIClient object at 0x10f245340>, {('https://github.com/example/project', 7): PRS...mple/project', base_branch='main', lifecycle=<PRLifecycle.OPEN: 'open'>)}, [('https://github.com/example/project', 7)])
+
+    async def test_current_native_pr_sha_must_equal_its_resolved_branch(setup, forge):
+        reader, *_ = setup
+        forge[1][(REPO, 7)] = forge[1][(REPO, 7)].model_copy(update={"head_sha": "b" * 40})
+        with pytest.raises(AuditClaimReadError, match="do not agree"):
+>           await reader.observe(REQUEST)
+
+tests/chains/test_audit_pass.py:311: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/services/audit_terminal.py:89: in observe
+    pr = await self._forge.read_pr_state(
+src/kodezart/adapters/github_api.py:471: in read_pr_state
+    native = await self._parsed_with_retry(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.github_api.GitHubAPIClient object at 0x10f245340>
+method = 'GET', url = '/repos/example/project/pulls/7'
+parse = <bound method BaseModel.model_validate of <class 'kodezart.adapters.github_types.PullRequestStateResponse'>>
+
+    async def _parsed_with_retry(
+        self,
+        method: str,
+        url: str,
+        parse: Callable[[object], _WireT],
+        *,
+        json: dict[str, object] | None = None,
+        params: dict[str, str | int] | None = None,
+        retryable: bool = True,
+    ) -> _WireT:
+        """One request, with its body decoded and validated.
+    
+        The single seam every body read goes through, so the translation
+        below is stated ONCE rather than at each reader.  Both ways a
+        payload fails to become a wire model are ``ValueError``: the JSON
+        decoder raises one on bytes that are not JSON, and pydantic's
+        ``ValidationError`` IS one.  Catching the superset is exact here
+        and keeps the two from needing separate arms that could drift.
+    
+        A body this adapter cannot read is a forge failure like any
+        other, and it carries the status the response really had — the
+        request was answered, and what came back was unusable.
+        """
+        response = await self._request_with_retry(
+            method,
+            url,
+            json=json,
+            params=params,
+            retryable=retryable,
+        )
+        try:
+            return parse(response.json())
+        except ValueError as exc:
+>           raise ForgeAPIError(
+                f"Forge answered with a body this adapter cannot read: "
+                f"{type(exc).__name__}",
+                status_code=response.status_code,
+                detail=f"{method} {url}",
+            ) from exc
+E           kodezart.domain.errors.ForgeAPIError: Forge answered with a body this adapter cannot read: ValidationError (status: 200; request: GET /repos/example/project/pulls/7)
+
+src/kodezart/adapters/github_api.py:340: ForgeAPIError
+=========================== short test summary info ============================
+FAILED tests/chains/test_audit_pass.py::test_open_unmerged_review_terminal_has_no_discrepancy[github-fake-port]
+FAILED tests/chains/test_audit_pass.py::test_open_unmerged_review_terminal_has_no_discrepancy[github-linear-mcp]
+FAILED tests/chains/test_audit_pass.py::test_closed_unmerged_pr_is_a_discrepancy_despite_recorded_pr_state[github-fake-port]
+FAILED tests/chains/test_audit_pass.py::test_closed_unmerged_pr_is_a_discrepancy_despite_recorded_pr_state[github-linear-mcp]
+FAILED tests/chains/test_audit_pass.py::test_same_name_and_sha_in_foreign_head_repository_never_verify[github-fake-port]
+FAILED tests/chains/test_audit_pass.py::test_same_name_and_sha_in_foreign_head_repository_never_verify[github-linear-mcp]
+FAILED tests/chains/test_audit_pass.py::test_merged_is_distinct_from_closed_unmerged_but_never_required[github-fake-port]
+FAILED tests/chains/test_audit_pass.py::test_merged_is_distinct_from_closed_unmerged_but_never_required[github-linear-mcp]
+FAILED tests/chains/test_audit_pass.py::test_missing_branch_is_measured_from_remote_not_recorded_sha[fake-port-github]
+FAILED tests/chains/test_audit_pass.py::test_missing_branch_is_measured_from_remote_not_recorded_sha[linear-mcp-github]
+FAILED tests/chains/test_audit_pass.py::test_pr_head_outside_recorded_associations_is_unresolved[github-fake-port]
+FAILED tests/chains/test_audit_pass.py::test_pr_head_outside_recorded_associations_is_unresolved[github-linear-mcp]
+FAILED tests/chains/test_audit_pass.py::test_reaped_and_prior_associations_do_not_need_live_refs[fake-port-github]
+FAILED tests/chains/test_audit_pass.py::test_reaped_and_prior_associations_do_not_need_live_refs[linear-mcp-github]
+FAILED tests/chains/test_audit_pass.py::test_current_pr_may_use_a_recorded_deliverable_branch[github-fake-port]
+FAILED tests/chains/test_audit_pass.py::test_current_pr_may_use_a_recorded_deliverable_branch[github-linear-mcp]
+FAILED tests/chains/test_audit_pass.py::test_changing_terminal_never_returns_healthy_observation[fake-port-github-issue]
+FAILED tests/chains/test_audit_pass.py::test_changing_terminal_never_returns_healthy_observation[fake-port-github-criterion]
+FAILED tests/chains/test_audit_pass.py::test_changing_terminal_never_returns_healthy_observation[fake-port-github-record]
+FAILED tests/chains/test_audit_pass.py::test_changing_terminal_never_returns_healthy_observation[fake-port-github-pr]
+FAILED tests/chains/test_audit_pass.py::test_changing_terminal_never_returns_healthy_observation[fake-port-github-branch]
+FAILED tests/chains/test_audit_pass.py::test_changing_terminal_never_returns_healthy_observation[linear-mcp-github-issue]
+FAILED tests/chains/test_audit_pass.py::test_changing_terminal_never_returns_healthy_observation[linear-mcp-github-criterion]
+FAILED tests/chains/test_audit_pass.py::test_changing_terminal_never_returns_healthy_observation[linear-mcp-github-record]
+FAILED tests/chains/test_audit_pass.py::test_changing_terminal_never_returns_healthy_observation[linear-mcp-github-pr]
+FAILED tests/chains/test_audit_pass.py::test_changing_terminal_never_returns_healthy_observation[linear-mcp-github-branch]
+FAILED tests/chains/test_audit_pass.py::test_current_native_pr_sha_must_equal_its_resolved_branch[github-fake-port]
+FAILED tests/chains/test_audit_pass.py::test_current_native_pr_sha_must_equal_its_resolved_branch[github-linear-mcp]
+28 failed, 226 passed in 19.74s

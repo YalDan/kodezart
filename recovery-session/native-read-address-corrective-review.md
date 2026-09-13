@@ -1,0 +1,31 @@
+# Native reader address correction — independent-review handoff
+
+Frozen clean b84d43ba44131c8d43d2f3689844cf928ca2276e, tree c00364c07cf4bbf642c397edd3e51185903e80ed, parent stack starts47af373d8006849cbf773ab3cd3f5ebf5910e297. Worktree `/private/tmp/kodezart-v03-native-read-address-corrective`. Root approved the exact shared wire and paired canonical consumers. No maintained/canonical tree was edited.
+
+## Findings and changes
+
+Canonical7892's criterion family reader silently treats an explicitly blank criterion mapping as empty membership and follows a substituted parent response. Original3 controls:3failed13.23s, `m1-native-read-canonical-before.log`. Additional reported-UUID controls:3failed1passed3.76s, `m1-native-read-alias-canonical-before.log`. These use the actual Linear adapter with only the external MCP server doubled.
+
+The existing canonical approval path also rejects a legitimate UUID alias: `_read_scope_issue` compares the displayed id to the requested UUID, and `resolve_execution_approval` requires canonical input identity. Before the paired correction, two actual entry controls failed and six canonical/foreign controls passed13.76s (`native-read-approval-alias-before.log`). This is the actual production adapter and both execution_approved/read_fire_spec consumers, not a helper-only test.
+
+0aad6e64891d14c2440bf7a852f0e5633a1a5c4f is the source-only blank guard (same source hunk as extracted f3c3dd3). a05c169a12c70b5e18961fd3313ba54ce1961427 is the source-only addressed wire and family validation (same source as extracted fd19b9a, with both existing canonical imports preserved during a single import conflict). 7cd8e703b3360c0a2f9255eb66989ed95cf5c5d3 is the source-only paired approval correction: LinearApprovalIssueWire inherits the addressed wire, `_read_scope_issue` checks its reported identity, `_read_execution_approval` uses the normalized subject key in its existing cache and unchanged domain ancestry resolver, and read_fire_spec passes that canonical key to the supplied-subject family arm. b84d43ba44131c8d43d2f3689844cf928ca2276e retains three test files only.
+
+The helper accepts a canonical id or UUID parsed to the same actual reported UUID; a missing or different UUID cannot attest a foreign response. Live connector get_issue(nativeUUID) for KOD-73 reported canonical id plus the same separate uuid. No invented vendor identifier field, guessed alias, extra parent fetch, approval source, new state authority, or semantic criterion inference is introduced.
+
+## Actual verification
+
+`PYTHONPATH=.:src /Users/kodezart/.local/bin/uv run --locked pytest -c pyproject.toml -q /private/tmp/kodezart-recovery-session/test_native_approval_aliases.py /private/tmp/kodezart-recovery-session/test_criterion_family_identity.py /private/tmp/kodezart-recovery-session/test_criterion_family_aliases.py tests/tracker/test_fire_spec_reader.py tests/tracker/test_fire_spec_approval.py tests/tracker/test_fire_spec_approval_ancestry.py tests/tracker/test_scope_approval.py tests/tracker/test_criterion_reader_boundary.py tests/tracker/test_scope_alias_identity.py`
+
+173passed4.72s, `native-read-address-corrective-focused.log`. All original15 new controls are included. Tests also preserve current native membership, approval ancestry, source/body/version identity, invalid child/phase/config refusals, actual cancellation and one-subject-read behavior. Original external probes are immutable; family tests are byte-identical copies and the committed approval test differs only in Ruff formatting, verified AST-identical. Probe hashes are in `native-read-original-probe-digests.json`.
+
+`uv run --locked mypy src/kodezart/adapters/linear_mcp_tracker.py src/kodezart/adapters/linear_mcp_types.py src/kodezart/adapters/linear_scope_types.py`:3source files clean, `native-read-address-corrective-mypy.log`. Ruff/format on all6 changed files pass. Source and tests stayed immutable during every running test/type check. No canonical full-suite claim is made; this is a narrow corrective verification. Full M1 extraction gate separately passed onfec7:3493passed16skipped597.09s, strict178/Ruff363; it is not a full-suite claim for this canonical corrective tree.
+
+## Eight lenses / type impact
+
+SOLID: identity validation belongs to the adapter wire, while existing domain approval arithmetic remains strict and unchanged. DRY: one matches_requested method, reused by both actual raw-read consumers; no redundant fetch/cache or retry loop. Hexagonal: vendor UUID remains in the Linear wire, neutral TrackerIssue remains canonical. KISS: deterministic equality and typed UUID parsing only. Typed agent calls: no call/schema change. Official framework: locked Pydantic2.12.5 UUID support checked at https://raw.githubusercontent.com/pydantic/pydantic/v2.12.5/docs/api/standard_library_types.md; dependencies unchanged. Type safety: UUID|None models actual optional evidence, foreign/malformed aliases refuse, no Any/cast/ignore/model_copy introduced; cancellation and domain/protocol refusal behavior remains. Hygiene: six exact files/hashes/patches in native-read-address-corrective-provenance.json, original regression hashes retained, source-only corrections separate from extraction and tests.
+
+## Integration and limits
+
+Root can independently review and cherry-pick allfour commits in order onto full canonical; do not copy M1 extraction6346911 orfec7 wholesale there. The shared wire/family patch alone requires its paired canonical approval consumer correction before acceptance. In maintained M1, the minimal read closure already carries the first two source corrections; later M3 approval consumer extraction must use7cd8e70, not the obsolete raw-key caller. No M2 runtime dependency is introduced. This correction does not grant writes or promise transactional membership/lease fencing. Owning evidence: KOD-73, KOD-386; author report is not independent acceptance. Requested High/inherited, effective metadata unverified.
+
+Own bounded author evidence: [https://linear.app/duckburg/issue/KOD-73/v03-l1-scope-input-scoperef-tracker-port-container-vocabulary#comment-9d4de14d-7647-4a6f-a487-2f266d4aa3c6](https://linear.app/duckburg/issue/KOD-73/v03-l1-scope-input-scoperef-tracker-port-container-vocabulary#comment-9d4de14d-7647-4a6f-a487-2f266d4aa3c6). No issue state changed.

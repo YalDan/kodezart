@@ -1,0 +1,10 @@
+Using CPython 3.12.13
+Creating virtual environment at: .venv
+   Building kodezart @ file:///private/tmp/kodezart-v03-delivery-native-review
+warning: `build_system.requires = ["uv-build>=0.10.9,<0.11.0"]` does not contain the current uv version 0.11.6
+      Built kodezart @ file:///private/tmp/kodezart-v03-delivery-native-review
+Installed 174 packages in 1.19s
+ERROR: file or directory not found: tests/domain/test_delivery_types.py
+
+
+no tests ran in 0.01s

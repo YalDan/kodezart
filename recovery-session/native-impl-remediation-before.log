@@ -1,0 +1,63 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_____ test_native_remediation_receives_the_final_inner_evaluation_snapshot _____
+
+    async def test_native_remediation_receives_the_final_inner_evaluation_snapshot():
+        port = CountingTracker()
+        executor = NativeExecutor(
+            [
+                native_evaluation(failed=True),
+                native_evaluation(failed=True),
+                native_evaluation(),
+                native_evaluation(),
+            ]
+        )
+        executor.on_evaluation = lambda count: (
+            change_tracker(port, "changed-check") if count == 1 else None
+        )
+        fire = engine(
+            criteria=TrackerCriteria(tracker=port),
+            executor=executor,
+            real_loop=True,
+            max_iterations=2,
+            remediation_rounds=1,
+        )
+        await drive(fire, scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
+        assert len(executor.remediation_prompts) == 1
+>       assert "changed live Check with  spaces" in executor.remediation_prompts[0]
+E       AssertionError: assert 'changed live Check with  spaces' in '── SKILLS AVAILABLE FOR THIS ROLE ──\nLoad each skill below when its subject matter is in play; ignore the ones that ...ed-direct, fire/owed-direct-2, fire/owed-nested.\n\nOutput ONLY the structured JSON conforming to the provided schema.'
+
+tests/chains/test_native_fire.py:1086: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 14:26:02 [info     ] repo_visibility_resolved       repo_url=https://github.com/owner/repo.git visibility=unknown
+2026-09-12 14:26:02 [info     ] scope_base_resolved            base_branch=main base_role=None input_count=0
+2026-09-12 14:26:02 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:26:02 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 14:26:02 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=branch_name
+2026-09-12 14:26:02 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 14:26:02 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 14:26:02 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 14:26:02 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 14:26:02 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:26:02 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=ralph_evaluator stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 14:26:02 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 14:26:02 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 14:26:02 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:26:02 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=ralph_evaluator stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 14:26:03 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:26:03 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=remediation_ticket stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 14:26:03 [info     ] remediation_ticket_drafted     base_ref=main entry=loop_not_accepted native=True round_index=0
+2026-09-12 14:26:03 [info     ] remediation_round_opened       base_ref=main entry=loop_not_accepted round_index=0 rounds_remaining=0
+2026-09-12 14:26:03 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 14:26:03 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 14:26:03 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 14:26:03 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 14:26:03 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:26:03 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=ralph_evaluator stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 14:26:03 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 14:26:03 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:26:03 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=post_merge_review stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 14:26:03 [info     ] backup_cleanup_starting        prefix=kodezart/test-branch-3c5eb429
+=========================== short test summary info ============================
+FAILED tests/chains/test_native_fire.py::test_native_remediation_receives_the_final_inner_evaluation_snapshot
+1 failed, 46 deselected in 3.59s

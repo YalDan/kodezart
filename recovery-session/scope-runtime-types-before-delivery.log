@@ -1,0 +1,7 @@
+src/kodezart/services/scope_runtime.py:9: error: Skipping analyzing "kodezart.chains.native_delivery": module is installed, but missing library stubs or py.typed marker  [import-untyped]
+src/kodezart/services/scope_runtime.py:18: error: Skipping analyzing "kodezart.types.domain.native_delivery": module is installed, but missing library stubs or py.typed marker  [import-untyped]
+src/kodezart/services/scope_runtime.py:18: note: See https://mypy.readthedocs.io/en/stable/running_mypy.html#missing-imports
+src/kodezart/services/scope_runtime.py:24: error: Module "kodezart.types.domain.run_records" does not explicitly export attribute "RunKind"  [attr-defined]
+src/kodezart/composition/scope_runtime.py:6: error: Skipping analyzing "kodezart.chains.native_delivery": module is installed, but missing library stubs or py.typed marker  [import-untyped]
+src/kodezart/composition/engine.py:24: error: Skipping analyzing "kodezart.composition.delivery": module is installed, but missing library stubs or py.typed marker  [import-untyped]
+Found 5 errors in 3 files (checked 5 source files)

@@ -1,0 +1,140 @@
+........................................................................ [ 41%]
+........................................................FFFF............ [ 82%]
+..............................                                           [100%]
+=================================== FAILURES ===================================
+_ test_a_callers_earlier_green_rerun_cannot_replace_a_new_red_watch[fake-port-fake] _
+
+setup = <function setup.<locals>.build at 0x10cfb05e0>, backend = 'fake'
+
+    @pytest.mark.parametrize("backend", ["fake", "github"])
+    async def test_a_callers_earlier_green_rerun_cannot_replace_a_new_red_watch(
+        setup, backend
+    ):
+        if backend == "fake":
+            ci = FakeCIMonitor(
+                passed=False,
+                failed_names=NAMES,
+                rerun_results=[(True, "old green", frozenset())],
+                observed_sha_by_ref={SHA: SHA},
+                check_names=NAMES,
+            )
+            await ci.rerun_checks(repo_url=REPO, ref=SHA)
+>           assert (await ci.wait_for_checks(repo_url=REPO, ref=SHA))[0] is True
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           TypeError: 'ObservedChecks' object is not subscriptable
+
+tests/tracker/test_audit_forge.py:272: TypeError
+_ test_a_callers_earlier_green_rerun_cannot_replace_a_new_red_watch[fake-port-github] _
+
+setup = <function setup.<locals>.build at 0x10d285bc0>, backend = 'github'
+
+    @pytest.mark.parametrize("backend", ["fake", "github"])
+    async def test_a_callers_earlier_green_rerun_cannot_replace_a_new_red_watch(
+        setup, backend
+    ):
+        if backend == "fake":
+            ci = FakeCIMonitor(
+                passed=False,
+                failed_names=NAMES,
+                rerun_results=[(True, "old green", frozenset())],
+                observed_sha_by_ref={SHA: SHA},
+                check_names=NAMES,
+            )
+            await ci.rerun_checks(repo_url=REPO, ref=SHA)
+            assert (await ci.wait_for_checks(repo_url=REPO, ref=SHA))[0] is True
+            result = await setup(ci, bound=0).observe(REQUEST)
+        else:
+    
+            class TimelineAPI(ActionsAPI):
+                def run(self, run_id, attempt):
+                    row = super().run(run_id, attempt)
+                    row["conclusion"] = "success" if attempt == 2 else "failure"
+                    return row
+    
+                def jobs(self, run_id, attempt):
+                    rows = super().jobs(run_id, attempt)
+                    for row in rows:
+                        row["conclusion"] = "success" if attempt == 2 else "failure"
+                    return rows
+    
+            api = TimelineAPI(names=tuple(sorted(NAMES)))
+            api.latest_checks = True
+            ci = _make_client(api)
+            try:
+                await ci.rerun_checks(repo_url=REPO, ref=SHA)
+>               assert (await ci.wait_for_checks(repo_url=REPO, ref=SHA))[0] is True
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E               TypeError: 'ObservedChecks' object is not subscriptable
+
+tests/tracker/test_audit_forge.py:293: TypeError
+_ test_a_callers_earlier_green_rerun_cannot_replace_a_new_red_watch[linear-mcp-fake] _
+
+setup = <function setup.<locals>.build at 0x10d285b20>, backend = 'fake'
+
+    @pytest.mark.parametrize("backend", ["fake", "github"])
+    async def test_a_callers_earlier_green_rerun_cannot_replace_a_new_red_watch(
+        setup, backend
+    ):
+        if backend == "fake":
+            ci = FakeCIMonitor(
+                passed=False,
+                failed_names=NAMES,
+                rerun_results=[(True, "old green", frozenset())],
+                observed_sha_by_ref={SHA: SHA},
+                check_names=NAMES,
+            )
+            await ci.rerun_checks(repo_url=REPO, ref=SHA)
+>           assert (await ci.wait_for_checks(repo_url=REPO, ref=SHA))[0] is True
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           TypeError: 'ObservedChecks' object is not subscriptable
+
+tests/tracker/test_audit_forge.py:272: TypeError
+_ test_a_callers_earlier_green_rerun_cannot_replace_a_new_red_watch[linear-mcp-github] _
+
+setup = <function setup.<locals>.build at 0x10d2867a0>, backend = 'github'
+
+    @pytest.mark.parametrize("backend", ["fake", "github"])
+    async def test_a_callers_earlier_green_rerun_cannot_replace_a_new_red_watch(
+        setup, backend
+    ):
+        if backend == "fake":
+            ci = FakeCIMonitor(
+                passed=False,
+                failed_names=NAMES,
+                rerun_results=[(True, "old green", frozenset())],
+                observed_sha_by_ref={SHA: SHA},
+                check_names=NAMES,
+            )
+            await ci.rerun_checks(repo_url=REPO, ref=SHA)
+            assert (await ci.wait_for_checks(repo_url=REPO, ref=SHA))[0] is True
+            result = await setup(ci, bound=0).observe(REQUEST)
+        else:
+    
+            class TimelineAPI(ActionsAPI):
+                def run(self, run_id, attempt):
+                    row = super().run(run_id, attempt)
+                    row["conclusion"] = "success" if attempt == 2 else "failure"
+                    return row
+    
+                def jobs(self, run_id, attempt):
+                    rows = super().jobs(run_id, attempt)
+                    for row in rows:
+                        row["conclusion"] = "success" if attempt == 2 else "failure"
+                    return rows
+    
+            api = TimelineAPI(names=tuple(sorted(NAMES)))
+            api.latest_checks = True
+            ci = _make_client(api)
+            try:
+                await ci.rerun_checks(repo_url=REPO, ref=SHA)
+>               assert (await ci.wait_for_checks(repo_url=REPO, ref=SHA))[0] is True
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E               TypeError: 'ObservedChecks' object is not subscriptable
+
+tests/tracker/test_audit_forge.py:293: TypeError
+=========================== short test summary info ============================
+FAILED tests/tracker/test_audit_forge.py::test_a_callers_earlier_green_rerun_cannot_replace_a_new_red_watch[fake-port-fake]
+FAILED tests/tracker/test_audit_forge.py::test_a_callers_earlier_green_rerun_cannot_replace_a_new_red_watch[fake-port-github]
+FAILED tests/tracker/test_audit_forge.py::test_a_callers_earlier_green_rerun_cannot_replace_a_new_red_watch[linear-mcp-fake]
+FAILED tests/tracker/test_audit_forge.py::test_a_callers_earlier_green_rerun_cannot_replace_a_new_red_watch[linear-mcp-github]
+4 failed, 170 passed in 7.56s

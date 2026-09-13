@@ -1,0 +1,6 @@
+   Building kodezart @ file:///private/tmp/kodezart-v03-m1-git-settings-extraction
+warning: `build_system.requires = ["uv-build>=0.10.9,<0.11.0"]` does not contain the current uv version 0.11.6
+      Built kodezart @ file:///private/tmp/kodezart-v03-m1-git-settings-extraction
+Uninstalled 1 package in 3ms
+Installed 1 package in 3ms
+373 files already formatted

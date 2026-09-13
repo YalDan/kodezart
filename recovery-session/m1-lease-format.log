@@ -1,0 +1,2 @@
+error: Failed to parse tests/tracker/test_tracker_boot.py:111:9: Duplicate keyword argument "agent_identities"
+19 files reformatted, 333 files left unchanged

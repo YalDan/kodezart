@@ -1,0 +1,686 @@
+FFFFFFFFFFFFFF                                                           [100%]
+=================================== FAILURES ===================================
+_ test_real_factory_dispatches_declared_groom_rubric_with_native_inputs[claude-opus] _
+
+prompt_set = 'claude-opus'
+
+    @pytest.mark.parametrize("prompt_set", ["claude-opus", "anthropic_v5"])
+    async def test_real_factory_dispatches_declared_groom_rubric_with_native_inputs(prompt_set):
+        owner, board, executor, registry = build(prompt_set=prompt_set)
+        with pytest.raises(NoStructuredOutputError):
+>           await run_owner(owner)
+
+../kodezart-v03-m2-groom-rubric-correction/tests/chains/test_organize_rubric.py:99: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../kodezart-v03-m2-groom-rubric-correction/tests/chains/test_organize_owner.py:191: in run_owner
+    return await owner.run(
+src/kodezart/services/organize_owner.py:1012: in run
+    request = await self._request(
+src/kodezart/services/organize_owner.py:251: in _request
+    rubric = self._prompts.template_for(phase.spec.rubric_prompt_key).render(
+src/kodezart/core/prompt_rendering.py:206: in render
+    return render_template(self.body, merged)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+body = '<role>\nYou are the project-management grooming pass for the {{operation_name}} delivery operation — you own the corr... an empty pass is a finding, and\na gap in the log is indistinguishable from a pass that never ran.\n</notion_logging>'
+bindings = {'agent_identities': {'0': '@example-agent', '1': 'example-agent'}, 'agent_identities_absent': None, 'base_ref': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'criterion_issue_bodies': (), ...}
+
+    def render_template(body: str, bindings: Mapping[str, object]) -> str:
+        """Render *body* against *bindings* — the one substitution implementation.
+    
+        Raises :class:`PromptRenderError` naming every unconditional reference
+        that had no binding.
+        """
+        nodes = _parse(body)
+        missing: list[str] = []
+        scopes: list[_Scope] = [_Scope(names=bindings, item=_ABSENT)]
+        rendered = _render_nodes(nodes, scopes, missing)
+        if missing:
+            msg = "Unbound template placeholders: " + ", ".join(missing)
+>           raise PromptRenderError(msg, missing=missing)
+E           kodezart.core.errors.PromptRenderError: Unbound template placeholders: record_title
+
+src/kodezart/core/prompt_rendering.py:184: PromptRenderError
+_ test_real_factory_dispatches_declared_groom_rubric_with_native_inputs[anthropic_v5] _
+
+prompt_set = 'anthropic_v5'
+
+    @pytest.mark.parametrize("prompt_set", ["claude-opus", "anthropic_v5"])
+    async def test_real_factory_dispatches_declared_groom_rubric_with_native_inputs(prompt_set):
+        owner, board, executor, registry = build(prompt_set=prompt_set)
+        with pytest.raises(NoStructuredOutputError):
+>           await run_owner(owner)
+
+../kodezart-v03-m2-groom-rubric-correction/tests/chains/test_organize_rubric.py:99: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../kodezart-v03-m2-groom-rubric-correction/tests/chains/test_organize_owner.py:191: in run_owner
+    return await owner.run(
+src/kodezart/services/organize_owner.py:1012: in run
+    request = await self._request(
+src/kodezart/services/organize_owner.py:251: in _request
+    rubric = self._prompts.template_for(phase.spec.rubric_prompt_key).render(
+src/kodezart/core/prompt_rendering.py:206: in render
+    return render_template(self.body, merged)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+body = "Groom the backlog of operation {{operation_name}}.\n\n{{#if issue_labels.criterion}}Read an issue's criteria from its...Ultrathink. Deeper reasoning is requested for this work — reason as thoroughly\nas the task warrants before you act.\n"
+bindings = {'agent_identities': {'0': '@example-agent', '1': 'example-agent'}, 'agent_identities_absent': None, 'base_ref': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'criterion_issue_bodies': (), ...}
+
+    def render_template(body: str, bindings: Mapping[str, object]) -> str:
+        """Render *body* against *bindings* — the one substitution implementation.
+    
+        Raises :class:`PromptRenderError` naming every unconditional reference
+        that had no binding.
+        """
+        nodes = _parse(body)
+        missing: list[str] = []
+        scopes: list[_Scope] = [_Scope(names=bindings, item=_ABSENT)]
+        rendered = _render_nodes(nodes, scopes, missing)
+        if missing:
+            msg = "Unbound template placeholders: " + ", ".join(missing)
+>           raise PromptRenderError(msg, missing=missing)
+E           kodezart.core.errors.PromptRenderError: Unbound template placeholders: record_title
+
+src/kodezart/core/prompt_rendering.py:184: PromptRenderError
+_____ test_boot_rejects_incompatible_native_admission_roles[ticket_review] _____
+
+key = 'ticket_review'
+
+    @pytest.mark.parametrize("key", ["ticket_review", "commit_message"])
+    def test_boot_rejects_incompatible_native_admission_roles(key):
+        fields = native_fields()
+        fields["organize_mandates"][0]["admission_prompt_key"] = key
+>       with pytest.raises(PromptResolutionError, match=key):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'kodezart.core.errors.PromptResolutionError'>
+
+../kodezart-v03-m2-groom-rubric-correction/tests/chains/test_organize_rubric.py:117: Failed
+____ test_boot_rejects_incompatible_native_admission_roles[commit_message] _____
+
+key = 'commit_message'
+
+    @pytest.mark.parametrize("key", ["ticket_review", "commit_message"])
+    def test_boot_rejects_incompatible_native_admission_roles(key):
+        fields = native_fields()
+        fields["organize_mandates"][0]["admission_prompt_key"] = key
+>       with pytest.raises(PromptResolutionError, match=key):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'kodezart.core.errors.PromptResolutionError'>
+
+../kodezart-v03-m2-groom-rubric-correction/tests/chains/test_organize_rubric.py:117: Failed
+___________ test_boot_rejects_key_without_a_declared_rubric_supplier ___________
+
+    def test_boot_rejects_key_without_a_declared_rubric_supplier():
+        fields = native_fields()
+        fields["organize_mandates"][0]["rubric_prompt_key"] = "organize_assess"
+>       with pytest.raises(PromptResolutionError, match="organize_assess"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'kodezart.core.errors.PromptResolutionError'>
+
+../kodezart-v03-m2-groom-rubric-correction/tests/chains/test_organize_rubric.py:124: Failed
+_ test_boot_rejects_unavailable_rubric_inputs[Read {{task}} and {{draft_md}}.-draft_md, task] _
+
+body = 'Read {{task}} and {{draft_md}}.', missing = 'draft_md, task'
+
+    @pytest.mark.parametrize(
+        "body, missing",
+        [
+            ("Read {{task}} and {{draft_md}}.", "draft_md, task"),
+            ("{{#if unavailable}}{{unavailable}}{{/if}}", "unavailable"),
+            ("{{mandate_rubric}}", "own per-call binding"),
+            ("{{issue_body.draft_md}}", "issue_body.draft_md"),
+        ],
+    )
+    def test_boot_rejects_unavailable_rubric_inputs(body, missing):
+        with pytest.raises(PromptResolutionError, match=missing):
+>           build(changes={PromptKey.GROOMING_PASS: {"rubric_body": body}})
+
+../kodezart-v03-m2-groom-rubric-correction/tests/chains/test_organize_rubric.py:139: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../kodezart-v03-m2-groom-rubric-correction/tests/chains/test_organize_rubric.py:68: in build
+    templates[key] = replace(templates[key], **updates)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+obj = PromptTemplate(key=<PromptKey.GROOMING_PASS: 'grooming_pass'>, source='claude-opus', body='<role>\nYou are the project...ends_on': 'build', 'depends_on_absent': None}], 'checks_absent': None}], 'repos_absent': None, 'skills_reference': ''})
+changes = {'bindings': {'agent_identities': {'0': '@example-agent', '1': 'example-agent'}, 'agent_identities_absent': None, 'doc...on_logging>', 'key': <PromptKey.GROOMING_PASS: 'grooming_pass'>, 'rubric_body': 'Read {{task}} and {{draft_md}}.', ...}
+f = Field(name='bindings',type=collections.abc.Mapping[str, object],default=<dataclasses._MISSING_TYPE object at 0x100dc76... at 0x100dc7650>,init=True,repr=True,hash=None,compare=True,metadata=mappingproxy({}),kw_only=False,_field_type=_FIELD)
+
+    def replace(obj, /, **changes):
+        """Return a new object replacing specified fields with new values.
+    
+        This is especially useful for frozen classes.  Example usage::
+    
+          @dataclass(frozen=True)
+          class C:
+              x: int
+              y: int
+    
+          c = C(1, 2)
+          c1 = replace(c, x=3)
+          assert c1.x == 3 and c1.y == 2
+        """
+    
+        # We're going to mutate 'changes', but that's okay because it's a
+        # new dict, even if called with 'replace(obj, **my_changes)'.
+    
+        if not _is_dataclass_instance(obj):
+            raise TypeError("replace() should be called on dataclass instances")
+    
+        # It's an error to have init=False fields in 'changes'.
+        # If a field is not in 'changes', read its value from the provided obj.
+    
+        for f in getattr(obj, _FIELDS).values():
+            # Only consider normal fields or InitVars.
+            if f._field_type is _FIELD_CLASSVAR:
+                continue
+    
+            if not f.init:
+                # Error if this field is specified in changes.
+                if f.name in changes:
+                    raise ValueError(f'field {f.name} is declared with '
+                                     'init=False, it cannot be specified with '
+                                     'replace()')
+                continue
+    
+            if f.name not in changes:
+                if f._field_type is _FIELD_INITVAR and f.default is MISSING:
+                    raise ValueError(f"InitVar {f.name!r} "
+                                     'must be specified with replace()')
+                changes[f.name] = getattr(obj, f.name)
+    
+        # Create the new object, which calls __init__() and
+        # __post_init__() (if defined), using all of the init fields we've
+        # added and/or left in 'changes'.  If there are values supplied in
+        # changes that aren't fields, this will correctly raise a
+        # TypeError.
+>       return obj.__class__(**changes)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: PromptTemplate.__init__() got an unexpected keyword argument 'rubric_body'
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/dataclasses.py:1588: TypeError
+_ test_boot_rejects_unavailable_rubric_inputs[{{#if unavailable}}{{unavailable}}{{/if}}-unavailable] _
+
+body = '{{#if unavailable}}{{unavailable}}{{/if}}', missing = 'unavailable'
+
+    @pytest.mark.parametrize(
+        "body, missing",
+        [
+            ("Read {{task}} and {{draft_md}}.", "draft_md, task"),
+            ("{{#if unavailable}}{{unavailable}}{{/if}}", "unavailable"),
+            ("{{mandate_rubric}}", "own per-call binding"),
+            ("{{issue_body.draft_md}}", "issue_body.draft_md"),
+        ],
+    )
+    def test_boot_rejects_unavailable_rubric_inputs(body, missing):
+        with pytest.raises(PromptResolutionError, match=missing):
+>           build(changes={PromptKey.GROOMING_PASS: {"rubric_body": body}})
+
+../kodezart-v03-m2-groom-rubric-correction/tests/chains/test_organize_rubric.py:139: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../kodezart-v03-m2-groom-rubric-correction/tests/chains/test_organize_rubric.py:68: in build
+    templates[key] = replace(templates[key], **updates)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+obj = PromptTemplate(key=<PromptKey.GROOMING_PASS: 'grooming_pass'>, source='claude-opus', body='<role>\nYou are the project...ends_on': 'build', 'depends_on_absent': None}], 'checks_absent': None}], 'repos_absent': None, 'skills_reference': ''})
+changes = {'bindings': {'agent_identities': {'0': '@example-agent', '1': 'example-agent'}, 'agent_identities_absent': None, 'doc...>', 'key': <PromptKey.GROOMING_PASS: 'grooming_pass'>, 'rubric_body': '{{#if unavailable}}{{unavailable}}{{/if}}', ...}
+f = Field(name='bindings',type=collections.abc.Mapping[str, object],default=<dataclasses._MISSING_TYPE object at 0x100dc76... at 0x100dc7650>,init=True,repr=True,hash=None,compare=True,metadata=mappingproxy({}),kw_only=False,_field_type=_FIELD)
+
+    def replace(obj, /, **changes):
+        """Return a new object replacing specified fields with new values.
+    
+        This is especially useful for frozen classes.  Example usage::
+    
+          @dataclass(frozen=True)
+          class C:
+              x: int
+              y: int
+    
+          c = C(1, 2)
+          c1 = replace(c, x=3)
+          assert c1.x == 3 and c1.y == 2
+        """
+    
+        # We're going to mutate 'changes', but that's okay because it's a
+        # new dict, even if called with 'replace(obj, **my_changes)'.
+    
+        if not _is_dataclass_instance(obj):
+            raise TypeError("replace() should be called on dataclass instances")
+    
+        # It's an error to have init=False fields in 'changes'.
+        # If a field is not in 'changes', read its value from the provided obj.
+    
+        for f in getattr(obj, _FIELDS).values():
+            # Only consider normal fields or InitVars.
+            if f._field_type is _FIELD_CLASSVAR:
+                continue
+    
+            if not f.init:
+                # Error if this field is specified in changes.
+                if f.name in changes:
+                    raise ValueError(f'field {f.name} is declared with '
+                                     'init=False, it cannot be specified with '
+                                     'replace()')
+                continue
+    
+            if f.name not in changes:
+                if f._field_type is _FIELD_INITVAR and f.default is MISSING:
+                    raise ValueError(f"InitVar {f.name!r} "
+                                     'must be specified with replace()')
+                changes[f.name] = getattr(obj, f.name)
+    
+        # Create the new object, which calls __init__() and
+        # __post_init__() (if defined), using all of the init fields we've
+        # added and/or left in 'changes'.  If there are values supplied in
+        # changes that aren't fields, this will correctly raise a
+        # TypeError.
+>       return obj.__class__(**changes)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: PromptTemplate.__init__() got an unexpected keyword argument 'rubric_body'
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/dataclasses.py:1588: TypeError
+_ test_boot_rejects_unavailable_rubric_inputs[{{mandate_rubric}}-own per-call binding] _
+
+body = '{{mandate_rubric}}', missing = 'own per-call binding'
+
+    @pytest.mark.parametrize(
+        "body, missing",
+        [
+            ("Read {{task}} and {{draft_md}}.", "draft_md, task"),
+            ("{{#if unavailable}}{{unavailable}}{{/if}}", "unavailable"),
+            ("{{mandate_rubric}}", "own per-call binding"),
+            ("{{issue_body.draft_md}}", "issue_body.draft_md"),
+        ],
+    )
+    def test_boot_rejects_unavailable_rubric_inputs(body, missing):
+        with pytest.raises(PromptResolutionError, match=missing):
+>           build(changes={PromptKey.GROOMING_PASS: {"rubric_body": body}})
+
+../kodezart-v03-m2-groom-rubric-correction/tests/chains/test_organize_rubric.py:139: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../kodezart-v03-m2-groom-rubric-correction/tests/chains/test_organize_rubric.py:68: in build
+    templates[key] = replace(templates[key], **updates)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+obj = PromptTemplate(key=<PromptKey.GROOMING_PASS: 'grooming_pass'>, source='claude-opus', body='<role>\nYou are the project...ends_on': 'build', 'depends_on_absent': None}], 'checks_absent': None}], 'repos_absent': None, 'skills_reference': ''})
+changes = {'bindings': {'agent_identities': {'0': '@example-agent', '1': 'example-agent'}, 'agent_identities_absent': None, 'doc... ran.\n</notion_logging>', 'key': <PromptKey.GROOMING_PASS: 'grooming_pass'>, 'rubric_body': '{{mandate_rubric}}', ...}
+f = Field(name='bindings',type=collections.abc.Mapping[str, object],default=<dataclasses._MISSING_TYPE object at 0x100dc76... at 0x100dc7650>,init=True,repr=True,hash=None,compare=True,metadata=mappingproxy({}),kw_only=False,_field_type=_FIELD)
+
+    def replace(obj, /, **changes):
+        """Return a new object replacing specified fields with new values.
+    
+        This is especially useful for frozen classes.  Example usage::
+    
+          @dataclass(frozen=True)
+          class C:
+              x: int
+              y: int
+    
+          c = C(1, 2)
+          c1 = replace(c, x=3)
+          assert c1.x == 3 and c1.y == 2
+        """
+    
+        # We're going to mutate 'changes', but that's okay because it's a
+        # new dict, even if called with 'replace(obj, **my_changes)'.
+    
+        if not _is_dataclass_instance(obj):
+            raise TypeError("replace() should be called on dataclass instances")
+    
+        # It's an error to have init=False fields in 'changes'.
+        # If a field is not in 'changes', read its value from the provided obj.
+    
+        for f in getattr(obj, _FIELDS).values():
+            # Only consider normal fields or InitVars.
+            if f._field_type is _FIELD_CLASSVAR:
+                continue
+    
+            if not f.init:
+                # Error if this field is specified in changes.
+                if f.name in changes:
+                    raise ValueError(f'field {f.name} is declared with '
+                                     'init=False, it cannot be specified with '
+                                     'replace()')
+                continue
+    
+            if f.name not in changes:
+                if f._field_type is _FIELD_INITVAR and f.default is MISSING:
+                    raise ValueError(f"InitVar {f.name!r} "
+                                     'must be specified with replace()')
+                changes[f.name] = getattr(obj, f.name)
+    
+        # Create the new object, which calls __init__() and
+        # __post_init__() (if defined), using all of the init fields we've
+        # added and/or left in 'changes'.  If there are values supplied in
+        # changes that aren't fields, this will correctly raise a
+        # TypeError.
+>       return obj.__class__(**changes)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: PromptTemplate.__init__() got an unexpected keyword argument 'rubric_body'
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/dataclasses.py:1588: TypeError
+_ test_boot_rejects_unavailable_rubric_inputs[{{issue_body.draft_md}}-issue_body.draft_md] _
+
+body = '{{issue_body.draft_md}}', missing = 'issue_body.draft_md'
+
+    @pytest.mark.parametrize(
+        "body, missing",
+        [
+            ("Read {{task}} and {{draft_md}}.", "draft_md, task"),
+            ("{{#if unavailable}}{{unavailable}}{{/if}}", "unavailable"),
+            ("{{mandate_rubric}}", "own per-call binding"),
+            ("{{issue_body.draft_md}}", "issue_body.draft_md"),
+        ],
+    )
+    def test_boot_rejects_unavailable_rubric_inputs(body, missing):
+        with pytest.raises(PromptResolutionError, match=missing):
+>           build(changes={PromptKey.GROOMING_PASS: {"rubric_body": body}})
+
+../kodezart-v03-m2-groom-rubric-correction/tests/chains/test_organize_rubric.py:139: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../kodezart-v03-m2-groom-rubric-correction/tests/chains/test_organize_rubric.py:68: in build
+    templates[key] = replace(templates[key], **updates)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+obj = PromptTemplate(key=<PromptKey.GROOMING_PASS: 'grooming_pass'>, source='claude-opus', body='<role>\nYou are the project...ends_on': 'build', 'depends_on_absent': None}], 'checks_absent': None}], 'repos_absent': None, 'skills_reference': ''})
+changes = {'bindings': {'agent_identities': {'0': '@example-agent', '1': 'example-agent'}, 'agent_identities_absent': None, 'doc...\n</notion_logging>', 'key': <PromptKey.GROOMING_PASS: 'grooming_pass'>, 'rubric_body': '{{issue_body.draft_md}}', ...}
+f = Field(name='bindings',type=collections.abc.Mapping[str, object],default=<dataclasses._MISSING_TYPE object at 0x100dc76... at 0x100dc7650>,init=True,repr=True,hash=None,compare=True,metadata=mappingproxy({}),kw_only=False,_field_type=_FIELD)
+
+    def replace(obj, /, **changes):
+        """Return a new object replacing specified fields with new values.
+    
+        This is especially useful for frozen classes.  Example usage::
+    
+          @dataclass(frozen=True)
+          class C:
+              x: int
+              y: int
+    
+          c = C(1, 2)
+          c1 = replace(c, x=3)
+          assert c1.x == 3 and c1.y == 2
+        """
+    
+        # We're going to mutate 'changes', but that's okay because it's a
+        # new dict, even if called with 'replace(obj, **my_changes)'.
+    
+        if not _is_dataclass_instance(obj):
+            raise TypeError("replace() should be called on dataclass instances")
+    
+        # It's an error to have init=False fields in 'changes'.
+        # If a field is not in 'changes', read its value from the provided obj.
+    
+        for f in getattr(obj, _FIELDS).values():
+            # Only consider normal fields or InitVars.
+            if f._field_type is _FIELD_CLASSVAR:
+                continue
+    
+            if not f.init:
+                # Error if this field is specified in changes.
+                if f.name in changes:
+                    raise ValueError(f'field {f.name} is declared with '
+                                     'init=False, it cannot be specified with '
+                                     'replace()')
+                continue
+    
+            if f.name not in changes:
+                if f._field_type is _FIELD_INITVAR and f.default is MISSING:
+                    raise ValueError(f"InitVar {f.name!r} "
+                                     'must be specified with replace()')
+                changes[f.name] = getattr(obj, f.name)
+    
+        # Create the new object, which calls __init__() and
+        # __post_init__() (if defined), using all of the init fields we've
+        # added and/or left in 'changes'.  If there are values supplied in
+        # changes that aren't fields, this will correctly raise a
+        # TypeError.
+>       return obj.__class__(**changes)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: PromptTemplate.__init__() got an unexpected keyword argument 'rubric_body'
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/dataclasses.py:1588: TypeError
+_______________ test_boot_rejects_unavailable_native_role_input ________________
+
+    def test_boot_rejects_unavailable_native_role_input():
+>       with pytest.raises(PromptResolutionError, match="draft_md"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'kodezart.core.errors.PromptResolutionError'>
+
+../kodezart-v03-m2-groom-rubric-correction/tests/chains/test_organize_rubric.py:143: Failed
+____ test_each_organizational_refusal_prevents_groom_convergence[blockers] _____
+
+defect = 'blockers'
+
+    @pytest.mark.parametrize("defect", ORGANIZATIONAL_EVIDENCE)
+    async def test_each_organizational_refusal_prevents_groom_convergence(defect):
+        evidence = ORGANIZATIONAL_EVIDENCE[defect]
+        # A typed grader response is an input oracle for the owner. No prompt-text
+        # classifier or fake model judgment is used to derive it.
+        verdict = result(
+            structured_output={
+                "issue_id": CLAIMED_ISSUE,
+                "verdict": "not_buildable",
+                "evidence": evidence,
+                "refusal_kind": "spec_gap",
+                "invented_decision": evidence,
+            }
+        )
+        owner, board, executor, _ = build(events=[verdict], body=evidence)
+>       report = await run_owner(owner)
+                 ^^^^^^^^^^^^^^^^^^^^^^
+
+../kodezart-v03-m2-groom-rubric-correction/tests/chains/test_organize_rubric.py:170: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../kodezart-v03-m2-groom-rubric-correction/tests/chains/test_organize_owner.py:191: in run_owner
+    return await owner.run(
+src/kodezart/services/organize_owner.py:1012: in run
+    request = await self._request(
+src/kodezart/services/organize_owner.py:251: in _request
+    rubric = self._prompts.template_for(phase.spec.rubric_prompt_key).render(
+src/kodezart/core/prompt_rendering.py:206: in render
+    return render_template(self.body, merged)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+body = '<role>\nYou are the project-management grooming pass for the {{operation_name}} delivery operation — you own the corr... an empty pass is a finding, and\na gap in the log is indistinguishable from a pass that never ran.\n</notion_logging>'
+bindings = {'agent_identities': {'0': '@example-agent', '1': 'example-agent'}, 'agent_identities_absent': None, 'base_ref': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'criterion_issue_bodies': (), ...}
+
+    def render_template(body: str, bindings: Mapping[str, object]) -> str:
+        """Render *body* against *bindings* — the one substitution implementation.
+    
+        Raises :class:`PromptRenderError` naming every unconditional reference
+        that had no binding.
+        """
+        nodes = _parse(body)
+        missing: list[str] = []
+        scopes: list[_Scope] = [_Scope(names=bindings, item=_ABSENT)]
+        rendered = _render_nodes(nodes, scopes, missing)
+        if missing:
+            msg = "Unbound template placeholders: " + ", ".join(missing)
+>           raise PromptRenderError(msg, missing=missing)
+E           kodezart.core.errors.PromptRenderError: Unbound template placeholders: record_title
+
+src/kodezart/core/prompt_rendering.py:184: PromptRenderError
+____ test_each_organizational_refusal_prevents_groom_convergence[decisions] ____
+
+defect = 'decisions'
+
+    @pytest.mark.parametrize("defect", ORGANIZATIONAL_EVIDENCE)
+    async def test_each_organizational_refusal_prevents_groom_convergence(defect):
+        evidence = ORGANIZATIONAL_EVIDENCE[defect]
+        # A typed grader response is an input oracle for the owner. No prompt-text
+        # classifier or fake model judgment is used to derive it.
+        verdict = result(
+            structured_output={
+                "issue_id": CLAIMED_ISSUE,
+                "verdict": "not_buildable",
+                "evidence": evidence,
+                "refusal_kind": "spec_gap",
+                "invented_decision": evidence,
+            }
+        )
+        owner, board, executor, _ = build(events=[verdict], body=evidence)
+>       report = await run_owner(owner)
+                 ^^^^^^^^^^^^^^^^^^^^^^
+
+../kodezart-v03-m2-groom-rubric-correction/tests/chains/test_organize_rubric.py:170: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../kodezart-v03-m2-groom-rubric-correction/tests/chains/test_organize_owner.py:191: in run_owner
+    return await owner.run(
+src/kodezart/services/organize_owner.py:1012: in run
+    request = await self._request(
+src/kodezart/services/organize_owner.py:251: in _request
+    rubric = self._prompts.template_for(phase.spec.rubric_prompt_key).render(
+src/kodezart/core/prompt_rendering.py:206: in render
+    return render_template(self.body, merged)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+body = '<role>\nYou are the project-management grooming pass for the {{operation_name}} delivery operation — you own the corr... an empty pass is a finding, and\na gap in the log is indistinguishable from a pass that never ran.\n</notion_logging>'
+bindings = {'agent_identities': {'0': '@example-agent', '1': 'example-agent'}, 'agent_identities_absent': None, 'base_ref': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'criterion_issue_bodies': (), ...}
+
+    def render_template(body: str, bindings: Mapping[str, object]) -> str:
+        """Render *body* against *bindings* — the one substitution implementation.
+    
+        Raises :class:`PromptRenderError` naming every unconditional reference
+        that had no binding.
+        """
+        nodes = _parse(body)
+        missing: list[str] = []
+        scopes: list[_Scope] = [_Scope(names=bindings, item=_ABSENT)]
+        rendered = _render_nodes(nodes, scopes, missing)
+        if missing:
+            msg = "Unbound template placeholders: " + ", ".join(missing)
+>           raise PromptRenderError(msg, missing=missing)
+E           kodezart.core.errors.PromptRenderError: Unbound template placeholders: record_title
+
+src/kodezart/core/prompt_rendering.py:184: PromptRenderError
+___ test_each_organizational_refusal_prevents_groom_convergence[dates_order] ___
+
+defect = 'dates_order'
+
+    @pytest.mark.parametrize("defect", ORGANIZATIONAL_EVIDENCE)
+    async def test_each_organizational_refusal_prevents_groom_convergence(defect):
+        evidence = ORGANIZATIONAL_EVIDENCE[defect]
+        # A typed grader response is an input oracle for the owner. No prompt-text
+        # classifier or fake model judgment is used to derive it.
+        verdict = result(
+            structured_output={
+                "issue_id": CLAIMED_ISSUE,
+                "verdict": "not_buildable",
+                "evidence": evidence,
+                "refusal_kind": "spec_gap",
+                "invented_decision": evidence,
+            }
+        )
+        owner, board, executor, _ = build(events=[verdict], body=evidence)
+>       report = await run_owner(owner)
+                 ^^^^^^^^^^^^^^^^^^^^^^
+
+../kodezart-v03-m2-groom-rubric-correction/tests/chains/test_organize_rubric.py:170: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../kodezart-v03-m2-groom-rubric-correction/tests/chains/test_organize_owner.py:191: in run_owner
+    return await owner.run(
+src/kodezart/services/organize_owner.py:1012: in run
+    request = await self._request(
+src/kodezart/services/organize_owner.py:251: in _request
+    rubric = self._prompts.template_for(phase.spec.rubric_prompt_key).render(
+src/kodezart/core/prompt_rendering.py:206: in render
+    return render_template(self.body, merged)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+body = '<role>\nYou are the project-management grooming pass for the {{operation_name}} delivery operation — you own the corr... an empty pass is a finding, and\na gap in the log is indistinguishable from a pass that never ran.\n</notion_logging>'
+bindings = {'agent_identities': {'0': '@example-agent', '1': 'example-agent'}, 'agent_identities_absent': None, 'base_ref': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'criterion_issue_bodies': (), ...}
+
+    def render_template(body: str, bindings: Mapping[str, object]) -> str:
+        """Render *body* against *bindings* — the one substitution implementation.
+    
+        Raises :class:`PromptRenderError` naming every unconditional reference
+        that had no binding.
+        """
+        nodes = _parse(body)
+        missing: list[str] = []
+        scopes: list[_Scope] = [_Scope(names=bindings, item=_ABSENT)]
+        rendered = _render_nodes(nodes, scopes, missing)
+        if missing:
+            msg = "Unbound template placeholders: " + ", ".join(missing)
+>           raise PromptRenderError(msg, missing=missing)
+E           kodezart.core.errors.PromptRenderError: Unbound template placeholders: record_title
+
+src/kodezart/core/prompt_rendering.py:184: PromptRenderError
+_ test_each_organizational_refusal_prevents_groom_convergence[measurable_goal] _
+
+defect = 'measurable_goal'
+
+    @pytest.mark.parametrize("defect", ORGANIZATIONAL_EVIDENCE)
+    async def test_each_organizational_refusal_prevents_groom_convergence(defect):
+        evidence = ORGANIZATIONAL_EVIDENCE[defect]
+        # A typed grader response is an input oracle for the owner. No prompt-text
+        # classifier or fake model judgment is used to derive it.
+        verdict = result(
+            structured_output={
+                "issue_id": CLAIMED_ISSUE,
+                "verdict": "not_buildable",
+                "evidence": evidence,
+                "refusal_kind": "spec_gap",
+                "invented_decision": evidence,
+            }
+        )
+        owner, board, executor, _ = build(events=[verdict], body=evidence)
+>       report = await run_owner(owner)
+                 ^^^^^^^^^^^^^^^^^^^^^^
+
+../kodezart-v03-m2-groom-rubric-correction/tests/chains/test_organize_rubric.py:170: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../kodezart-v03-m2-groom-rubric-correction/tests/chains/test_organize_owner.py:191: in run_owner
+    return await owner.run(
+src/kodezart/services/organize_owner.py:1012: in run
+    request = await self._request(
+src/kodezart/services/organize_owner.py:251: in _request
+    rubric = self._prompts.template_for(phase.spec.rubric_prompt_key).render(
+src/kodezart/core/prompt_rendering.py:206: in render
+    return render_template(self.body, merged)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+body = '<role>\nYou are the project-management grooming pass for the {{operation_name}} delivery operation — you own the corr... an empty pass is a finding, and\na gap in the log is indistinguishable from a pass that never ran.\n</notion_logging>'
+bindings = {'agent_identities': {'0': '@example-agent', '1': 'example-agent'}, 'agent_identities_absent': None, 'base_ref': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'criterion_issue_bodies': (), ...}
+
+    def render_template(body: str, bindings: Mapping[str, object]) -> str:
+        """Render *body* against *bindings* — the one substitution implementation.
+    
+        Raises :class:`PromptRenderError` naming every unconditional reference
+        that had no binding.
+        """
+        nodes = _parse(body)
+        missing: list[str] = []
+        scopes: list[_Scope] = [_Scope(names=bindings, item=_ABSENT)]
+        rendered = _render_nodes(nodes, scopes, missing)
+        if missing:
+            msg = "Unbound template placeholders: " + ", ".join(missing)
+>           raise PromptRenderError(msg, missing=missing)
+E           kodezart.core.errors.PromptRenderError: Unbound template placeholders: record_title
+
+src/kodezart/core/prompt_rendering.py:184: PromptRenderError
+=========================== short test summary info ============================
+FAILED ::test_real_factory_dispatches_declared_groom_rubric_with_native_inputs[claude-opus]
+FAILED ::test_real_factory_dispatches_declared_groom_rubric_with_native_inputs[anthropic_v5]
+FAILED ::test_boot_rejects_incompatible_native_admission_roles[ticket_review]
+FAILED ::test_boot_rejects_incompatible_native_admission_roles[commit_message]
+FAILED ::test_boot_rejects_key_without_a_declared_rubric_supplier - Failed: D...
+FAILED ::test_boot_rejects_unavailable_rubric_inputs[Read {{task}} and {{draft_md}}.-draft_md, task]
+FAILED ::test_boot_rejects_unavailable_rubric_inputs[{{#if unavailable}}{{unavailable}}{{/if}}-unavailable]
+FAILED ::test_boot_rejects_unavailable_rubric_inputs[{{mandate_rubric}}-own per-call binding]
+FAILED ::test_boot_rejects_unavailable_rubric_inputs[{{issue_body.draft_md}}-issue_body.draft_md]
+FAILED ::test_boot_rejects_unavailable_native_role_input - Failed: DID NOT RA...
+FAILED ::test_each_organizational_refusal_prevents_groom_convergence[blockers]
+FAILED ::test_each_organizational_refusal_prevents_groom_convergence[decisions]
+FAILED ::test_each_organizational_refusal_prevents_groom_convergence[dates_order]
+FAILED ::test_each_organizational_refusal_prevents_groom_convergence[measurable_goal]
+14 failed in 5.30s

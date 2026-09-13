@@ -1,0 +1,13 @@
+{"candidate": "a15b33484bc0f88975c910c1706edf20805d98f8", "candidate_tree": "c756178d9dc8cb4fd80c9b0eaa6b69343c51590b", "comparison_base": "73cc5def12a2daa4e0ba319660db76cdad781882", "donor": "36083f83f42c03240ebb5861fe284da2c9f04180", "changed_file_count": 5}
+{
+  "original_test_changes": {},
+  "nonidentical_added_test_oracles": {
+    "tests/tracker/test_criterion_receipt_boundary.py": [
+      "test_criterion_completed_save_readback_failure_does_not_resend"
+    ],
+    "tests/tracker/test_criterion_retry_independent.py": [
+      "test_criterion_unsent_retry_rechecks_surface_ownership"
+    ]
+  },
+  "total_added_test_functions": 2
+}

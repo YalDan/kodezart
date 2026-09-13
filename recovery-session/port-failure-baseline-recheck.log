@@ -1,0 +1,48 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+_______ test_tracker_refusal_does_not_escape_as_a_transport_type[False] ________
+
+credential = False
+
+    @pytest.mark.parametrize("credential", [False, True])
+    async def test_tracker_refusal_does_not_escape_as_a_transport_type(credential):
+        server = FakeLinearMcpServer(
+            issues=[FakeMcpIssue(id="T-1")],
+            state_types=STATE_TYPES,
+            credential_refused_after={"get_issue": 0} if credential else {},
+            transport_failures={} if credential else {"get_issue": 1},
+        )
+        with pytest.raises(Exception) as caught:
+            await tracker_over(server).read_issue(issue_key="T-1")
+>       assert not isinstance(caught.value, (McpTransportError, McpCredentialRefusedError))
+E       AssertionError: assert not True
+E        +  where True = isinstance(McpTransportError('fake transport failure (fake-linear/get_issue)'), (<class 'kodezart.core.errors.McpTransportError'>, <class 'kodezart.core.errors.McpCredentialRefusedError'>))
+E        +    where McpTransportError('fake transport failure (fake-linear/get_issue)') = <ExceptionInfo McpTransportError('fake transport failure (fake-linear/get_issue)') tblen=5>.value
+
+../kodezart-recovery-session/test_port_failure_before.py:21: AssertionError
+________ test_tracker_refusal_does_not_escape_as_a_transport_type[True] ________
+
+credential = True
+
+    @pytest.mark.parametrize("credential", [False, True])
+    async def test_tracker_refusal_does_not_escape_as_a_transport_type(credential):
+        server = FakeLinearMcpServer(
+            issues=[FakeMcpIssue(id="T-1")],
+            state_types=STATE_TYPES,
+            credential_refused_after={"get_issue": 0} if credential else {},
+            transport_failures={} if credential else {"get_issue": 1},
+        )
+        with pytest.raises(Exception) as caught:
+            await tracker_over(server).read_issue(issue_key="T-1")
+>       assert not isinstance(caught.value, (McpTransportError, McpCredentialRefusedError))
+E       AssertionError: assert not True
+E        +  where True = isinstance(McpCredentialRefusedError('the MCP server refused the configured credential (fake-linear/get_issue)'), (<class 'kodezart.core.errors.McpTransportError'>, <class 'kodezart.core.errors.McpCredentialRefusedError'>))
+E        +    where McpCredentialRefusedError('the MCP server refused the configured credential (fake-linear/get_issue)') = <ExceptionInfo McpCredentialRefusedError('the MCP server refused the configured credential (fake-linear/get_issue)') tblen=5>.value
+
+../kodezart-recovery-session/test_port_failure_before.py:21: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 14:08:18 [error    ] tracker_credential_refused     server_name=fake-linear tool=get_issue
+=========================== short test summary info ============================
+FAILED ::test_tracker_refusal_does_not_escape_as_a_transport_type[False] - As...
+FAILED ::test_tracker_refusal_does_not_escape_as_a_transport_type[True] - Ass...
+2 failed in 29.72s

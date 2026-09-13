@@ -1,0 +1,11 @@
+E501 Line too long (133 > 88)
+  --> src/kodezart/types/domain/audit_runtime.py:50:89
+   |
+48 |     model_config = ConfigDict(frozen=True, extra="forbid")
+49 |     kind: Literal["forge"] = "forge"
+50 |     graded_sha: str = Field(pattern=r"^[0-9a-f]{40}$", description="Actual historical Evidence commit observed by the forge reader.")
+   |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+51 |     report: AuditClaimReport
+   |
+
+Found 1 error.

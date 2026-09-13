@@ -1,0 +1,46 @@
+........................................................................ [  5%]
+...................................................................F.... [ 11%]
+........................................................................ [ 17%]
+........................................................................ [ 23%]
+........................................................................ [ 29%]
+........................................................................ [ 35%]
+........................................................................ [ 41%]
+............................................F........................... [ 47%]
+........................................................................ [ 53%]
+........................................................................ [ 59%]
+........................................................................ [ 65%]
+........................................................................ [ 70%]
+........................................................................ [ 76%]
+........................................................................ [ 82%]
+........................................................................ [ 88%]
+........................................................................ [ 94%]
+.................................................................        [100%]
+=================================== FAILURES ===================================
+___________ test_claude_opus_completeness_passes_at_the_full_census ____________
+
+    def test_claude_opus_completeness_passes_at_the_full_census() -> None:
+        """KOD-63's completeness rule obliges the default set to supply both."""
+>       assert {key.value for key in PromptKey} == PROMPT_FUNCTION_NAMES
+E       AssertionError: assert {'acceptance_...mandate', ...} == frozenset({'a...rclaim', ...})
+E         
+E         Extra items in the left set:
+E         'amendment_author'
+E         Use -v to get more diff
+
+tests/prompts/test_operation_config.py:539: AssertionError
+_________________________ test_the_census_is_the_enum __________________________
+
+    def test_the_census_is_the_enum() -> None:
+        """The independent role names exactly match the registered enum."""
+>       assert {key.value for key in PromptKey} == PROMPT_FUNCTION_NAMES
+E       AssertionError: assert {'acceptance_...mandate', ...} == frozenset({'a...rclaim', ...})
+E         
+E         Extra items in the left set:
+E         'amendment_author'
+E         Use -v to get more diff
+
+tests/prompts/test_set_completeness.py:38: AssertionError
+=========================== short test summary info ============================
+FAILED tests/prompts/test_operation_config.py::test_claude_opus_completeness_passes_at_the_full_census
+FAILED tests/prompts/test_set_completeness.py::test_the_census_is_the_enum - ...
+2 failed, 1215 passed in 203.29s (0:03:23)

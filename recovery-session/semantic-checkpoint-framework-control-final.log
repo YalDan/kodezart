@@ -1,0 +1,4 @@
+FRAMEWORK_CONTROL {'resume': True, 'calls': ['parent', 'read', 'judge', 'read', 'read', 'apply', 'parent', 'read', 'apply', 'read']}
+.FRAMEWORK_CONTROL {'resume': False, 'calls': ['parent', 'read', 'judge', 'read', 'read', 'apply', 'parent', 'read', 'judge', 'read', 'read', 'apply', 'read']}
+.
+2 passed in 1.48s

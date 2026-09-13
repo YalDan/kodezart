@@ -1,0 +1,399 @@
+............FFF......................................................... [ 87%]
+..........                                                               [100%]
+=================================== FAILURES ===================================
+_______________ test_stream_query_handler_catches_executor_error _______________
+tests/api/v1/test_agent.py:373: in test_stream_query_handler_catches_executor_error
+    assert "transient failure" in error_event.error
+E   assert 'transient failure' in "FakeRaisingExecutor.stream() got an unexpected keyword argument 'run_identity'"
+E    +  where "FakeRaisingExecutor.stream() got an unexpected keyword argument 'run_identity'" = ErrorEvent(type='error', error="FakeRaisingExecutor.stream() got an unexpected keyword argument 'run_identity'", error...e=None, stderr_tail=None, result_event_observed=None, subtype=None, num_turns=None, duration_ms=None, result_tail=None).error
+----------------------------- Captured stdout call -----------------------------
+2026-09-13 02:06:11 [debug    ] stream_query_endpoint
+2026-09-13 02:06:11 [debug    ] agent_query_requested
+2026-09-13 02:06:11 [error    ] stream_failed                  cause=None cause_class=None duration_ms=None error="FakeRaisingExecutor.stream() got an unexpected keyword argument 'run_identity'" error_kind=TypeError exit_code=None num_turns=None raise_site=None rate_limit_rejected=None result_event_observed=None result_tail=None stderr_tail=None stop_reason=None subtype=None
+╭───────────────────── [1mTraceback [0m[1;2m(most recent call last)[0m ──────────────────────╮
+│ [2m/private/tmp/kodezart-v03-m3-plan-walk-census/src/kodezart/handlers/[0m[1magent_ha[0m │
+│ [1mndler.py[0m:100 in stream_query                                                 │
+│                                                                              │
+│   [2m 97 [0m[2m│   │   │   │   [0mif request.output_schema is not None                   │
+│   [2m 98 [0m[2m│   │   │   │   [0melse None                                              │
+│   [2m 99 [0m[2m│   │   │   [0m)                                                          │
+│ ❱ 100 [2m│   │   │   [0masync for event in self._service.stream(                   │
+│   [2m101 [0m[2m│   │   │   │   [0mprompt=request.prompt,                                 │
+│   [2m102 [0m[2m│   │   │   │   [0mrepo_path=request.repo_path,                           │
+│   [2m103 [0m[2m│   │   │   │   [0mrepo_url=request.repo_url,                             │
+│                                                                              │
+│ ╭───────────────────────────────── locals ─────────────────────────────────╮ │
+│ │     [3mcache_key[0m = '9bff54124ee2424a8972419c87803b13'                       │ │
+│ │           [3mexc[0m = [1mTypeError[0m[1m([0m"FakeRaisingExecutor.stream() got an           │ │
+│ │                 unexpected keyword argument 'run_identity'"[1m)[0m             │ │
+│ │ [3moutput_format[0m = [3mNone[0m                                                     │ │
+│ │       [3mrequest[0m = [1mQueryRequest[0m[1m([0m                                            │ │
+│ │                 [2m│   [0mprompt='analyze',                                    │ │
+│ │                 [2m│   [0mrepo_path='/tmp/fake',                               │ │
+│ │                 [2m│   [0mrepo_url=[3mNone[0m,                                       │ │
+│ │                 [2m│   [0mbranch=[3mNone[0m,                                         │ │
+│ │                 [2m│   [0mpermission_mode='plan',                              │ │
+│ │                 [2m│   [0msession_id=[3mNone[0m,                                     │ │
+│ │                 [2m│   [0mallowed_tools=[1m[[0m'Read', 'Glob', 'Grep', 'Bash'[1m][0m,      │ │
+│ │                 [2m│   [0moutput_schema=[3mNone[0m                                   │ │
+│ │                 [1m)[0m                                                        │ │
+│ │          [3mself[0m = [1m<[0m[1mkodezart.handlers.agent_handler.AgentHandler[0m object at  │ │
+│ │                 [1m0x10a483ad0[0m[1m>[0m                                             │ │
+│ ╰──────────────────────────────────────────────────────────────────────────╯ │
+│                                                                              │
+│ [2m/private/tmp/kodezart-v03-m3-plan-walk-census/src/kodezart/services/[0m[1magent_se[0m │
+│ [1mrvice.py[0m:79 in stream                                                        │
+│                                                                              │
+│   [2m 76 [0m[2m│   │   │   │   [0mformat_type=output_format.get("type"),                 │
+│   [2m 77 [0m[2m│   │   │   [0m)                                                          │
+│   [2m 78 [0m[2m│   │   [0meffective_ref = branch or "HEAD"                               │
+│ ❱  79 [2m│   │   [0masync for event in [1;4mself[0m[1;4m._run_in_workspace([0m                     │
+│   [2m 80 [0m[2m│   │   │   [0m[1;4mprompt=prompt,[0m                                             │
+│   [2m 81 [0m[2m│   │   │   [0m[1;4mrepo_path=repo_path,[0m                                       │
+│   [2m 82 [0m[2m│   │   │   [0m[1;4mrepo_url=repo_url,[0m                                         │
+│                                                                              │
+│ ╭───────────────────────────────── locals ─────────────────────────────────╮ │
+│ │          [3magents[0m = [1m([0m[1m)[0m                                                     │ │
+│ │   [3mallowed_tools[0m = [1m[[0m'Read', 'Glob', 'Grep', 'Bash'[1m][0m                       │ │
+│ │          [3mbranch[0m = [3mNone[0m                                                   │ │
+│ │       [3mcache_key[0m = '9bff54124ee2424a8972419c87803b13'                     │ │
+│ │   [3meffective_ref[0m = 'HEAD'                                                 │ │
+│ │   [3moutput_format[0m = [3mNone[0m                                                   │ │
+│ │ [3mpermission_mode[0m = [1m<[0m[1mPermissionMode.PLAN:[0m 'plan'[1m>[0m                          │ │
+│ │          [3mprompt[0m = 'analyze'                                              │ │
+│ │       [3mrepo_path[0m = '/tmp/fake'                                            │ │
+│ │        [3mrepo_url[0m = [3mNone[0m                                                   │ │
+│ │    [3mrun_identity[0m = [3mNone[0m                                                   │ │
+│ │            [3mself[0m = [1m<[0m[1mkodezart.services.agent_service.AgentService[0m object   │ │
+│ │                   at [1m0x10a480350[0m[1m>[0m                                        │ │
+│ │      [3msession_id[0m = [3mNone[0m                                                   │ │
+│ │  [3msession_policy[0m = [1mSessionPolicy[0m[1m([0m                                         │ │
+│ │                   [2m│   [0msystem_prompt_append=[3mNone[0m,                         │ │
+│ │                   [2m│   [0meffort=[3mNone[0m,                                       │ │
+│ │                   [2m│   [0mmodel=[3mNone[0m,                                        │ │
+│ │                   [2m│   [0mfallback_model=[3mNone[0m,                               │ │
+│ │                   [2m│   [0mworkflow_access=[3mNone[0m                               │ │
+│ │                   [1m)[0m                                                      │ │
+│ │    [3msession_type[0m = [1m<[0m[1mSessionType.API_QUERY:[0m 'api_query'[1m>[0m                   │ │
+│ │          [3mskills[0m = [1mSkillsSelection[0m[1m([0m                                       │ │
+│ │                   [2m│   [0mmode=[1m<[0m[1mSkillsMode.NONE:[0m 'none'[1m>[0m,                    │ │
+│ │                   [2m│   [0mallowlist=[1m([0m[1m)[0m                                       │ │
+│ │                   [1m)[0m                                                      │ │
+│ ╰──────────────────────────────────────────────────────────────────────────╯ │
+│                                                                              │
+│ [2m/private/tmp/kodezart-v03-m3-plan-walk-census/src/kodezart/services/[0m[1magent_se[0m │
+│ [1mrvice.py[0m:268 in _run_in_workspace                                            │
+│                                                                              │
+│   [2m265 [0m[2m│   │   [0m                                                               │
+│   [2m266 [0m[2m│   │   [0mtry:                                                           │
+│   [2m267 [0m[2m│   │   │   [0mbuffered_result: ResultEvent | None = None                 │
+│ ❱ 268 [2m│   │   │   [0masync for event in self._executor.stream(                  │
+│   [2m269 [0m[2m│   │   │   │   [0mprompt=prompt,                                         │
+│   [2m270 [0m[2m│   │   │   │   [0mcwd=workspace_path,                                    │
+│   [2m271 [0m[2m│   │   │   │   [0mpermission_mode=permission_mode,                       │
+│                                                                              │
+│ ╭───────────────────────────────── locals ─────────────────────────────────╮ │
+│ │          [3magents[0m = [1m([0m[1m)[0m                                                     │ │
+│ │   [3mallowed_tools[0m = [1m[[0m'Read', 'Glob', 'Grep', 'Bash'[1m][0m                       │ │
+│ │     [3mbranch_name[0m = [3mNone[0m                                                   │ │
+│ │ [3mbuffered_result[0m = [3mNone[0m                                                   │ │
+│ │       [3mcache_key[0m = '9bff54124ee2424a8972419c87803b13'                     │ │
+│ │   [3mcreate_branch[0m = [3mTrue[0m                                                   │ │
+│ │    [3mnative_guard[0m = [3mNone[0m                                                   │ │
+│ │   [3moutput_format[0m = [3mNone[0m                                                   │ │
+│ │ [3mpermission_mode[0m = [1m<[0m[1mPermissionMode.PLAN:[0m 'plan'[1m>[0m                          │ │
+│ │  [3mpersist_branch[0m = [3mNone[0m                                                   │ │
+│ │          [3mprompt[0m = 'analyze'                                              │ │
+│ │             [3mref[0m = 'HEAD'                                                 │ │
+│ │       [3mrepo_path[0m = '/tmp/fake'                                            │ │
+│ │        [3mrepo_url[0m = [3mNone[0m                                                   │ │
+│ │    [3mrun_identity[0m = [3mNone[0m                                                   │ │
+│ │            [3mself[0m = [1m<[0m[1mkodezart.services.agent_service.AgentService[0m object   │ │
+│ │                   at [1m0x10a480350[0m[1m>[0m                                        │ │
+│ │      [3msession_id[0m = [3mNone[0m                                                   │ │
+│ │  [3msession_policy[0m = [1mSessionPolicy[0m[1m([0m                                         │ │
+│ │                   [2m│   [0msystem_prompt_append=[3mNone[0m,                         │ │
+│ │                   [2m│   [0meffort=[3mNone[0m,                                       │ │
+│ │                   [2m│   [0mmodel=[3mNone[0m,                                        │ │
+│ │                   [2m│   [0mfallback_model=[3mNone[0m,                               │ │
+│ │                   [2m│   [0mworkflow_access=[3mNone[0m                               │ │
+│ │                   [1m)[0m                                                      │ │
+│ │    [3msession_type[0m = [1m<[0m[1mSessionType.API_QUERY:[0m 'api_query'[1m>[0m                   │ │
+│ │          [3mskills[0m = [1mSkillsSelection[0m[1m([0m                                       │ │
+│ │                   [2m│   [0mmode=[1m<[0m[1mSkillsMode.NONE:[0m 'none'[1m>[0m,                    │ │
+│ │                   [2m│   [0mallowlist=[1m([0m[1m)[0m                                       │ │
+│ │                   [1m)[0m                                                      │ │
+│ │      [3mvisibility[0m = [1m<[0m[1mRepoVisibility.UNKNOWN:[0m 'unknown'[1m>[0m                    │ │
+│ │  [3mworkspace_path[0m = '/tmp/fake-workspace'                                  │ │
+│ ╰──────────────────────────────────────────────────────────────────────────╯ │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[1mTypeError: [0m[1mFakeRaisingExecutor.stream[0m[1m([0m[1m)[0m got an unexpected keyword argument 
+'run_identity'
+
+___________ test_error_event_carries_exception_class_on_runtime_path ___________
+tests/api/v1/test_agent.py:399: in test_error_event_carries_exception_class_on_runtime_path
+    assert error_event.error == "x"
+E   assert "FakeRaisingE...run_identity'" == 'x'
+E     
+E     - x
+E     + FakeRaisingExecutor.stream() got an unexpected keyword argument 'run_identity'
+----------------------------- Captured stdout call -----------------------------
+2026-09-13 02:06:11 [debug    ] stream_query_endpoint
+2026-09-13 02:06:11 [debug    ] agent_query_requested
+2026-09-13 02:06:11 [error    ] stream_failed                  cause=None cause_class=None duration_ms=None error="FakeRaisingExecutor.stream() got an unexpected keyword argument 'run_identity'" error_kind=TypeError exit_code=None num_turns=None raise_site=None rate_limit_rejected=None result_event_observed=None result_tail=None stderr_tail=None stop_reason=None subtype=None
+╭───────────────────── [1mTraceback [0m[1;2m(most recent call last)[0m ──────────────────────╮
+│ [2m/private/tmp/kodezart-v03-m3-plan-walk-census/src/kodezart/handlers/[0m[1magent_ha[0m │
+│ [1mndler.py[0m:100 in stream_query                                                 │
+│                                                                              │
+│   [2m 97 [0m[2m│   │   │   │   [0mif request.output_schema is not None                   │
+│   [2m 98 [0m[2m│   │   │   │   [0melse None                                              │
+│   [2m 99 [0m[2m│   │   │   [0m)                                                          │
+│ ❱ 100 [2m│   │   │   [0masync for event in self._service.stream(                   │
+│   [2m101 [0m[2m│   │   │   │   [0mprompt=request.prompt,                                 │
+│   [2m102 [0m[2m│   │   │   │   [0mrepo_path=request.repo_path,                           │
+│   [2m103 [0m[2m│   │   │   │   [0mrepo_url=request.repo_url,                             │
+│                                                                              │
+│ ╭───────────────────────────────── locals ─────────────────────────────────╮ │
+│ │     [3mcache_key[0m = 'b5a2223e8bf84c02b98720daff16e230'                       │ │
+│ │           [3mexc[0m = [1mTypeError[0m[1m([0m"FakeRaisingExecutor.stream() got an           │ │
+│ │                 unexpected keyword argument 'run_identity'"[1m)[0m             │ │
+│ │ [3moutput_format[0m = [3mNone[0m                                                     │ │
+│ │       [3mrequest[0m = [1mQueryRequest[0m[1m([0m                                            │ │
+│ │                 [2m│   [0mprompt='analyze',                                    │ │
+│ │                 [2m│   [0mrepo_path='/tmp/fake',                               │ │
+│ │                 [2m│   [0mrepo_url=[3mNone[0m,                                       │ │
+│ │                 [2m│   [0mbranch=[3mNone[0m,                                         │ │
+│ │                 [2m│   [0mpermission_mode='plan',                              │ │
+│ │                 [2m│   [0msession_id=[3mNone[0m,                                     │ │
+│ │                 [2m│   [0mallowed_tools=[1m[[0m'Read', 'Glob', 'Grep', 'Bash'[1m][0m,      │ │
+│ │                 [2m│   [0moutput_schema=[3mNone[0m                                   │ │
+│ │                 [1m)[0m                                                        │ │
+│ │          [3mself[0m = [1m<[0m[1mkodezart.handlers.agent_handler.AgentHandler[0m object at  │ │
+│ │                 [1m0x10a477110[0m[1m>[0m                                             │ │
+│ ╰──────────────────────────────────────────────────────────────────────────╯ │
+│                                                                              │
+│ [2m/private/tmp/kodezart-v03-m3-plan-walk-census/src/kodezart/services/[0m[1magent_se[0m │
+│ [1mrvice.py[0m:79 in stream                                                        │
+│                                                                              │
+│   [2m 76 [0m[2m│   │   │   │   [0mformat_type=output_format.get("type"),                 │
+│   [2m 77 [0m[2m│   │   │   [0m)                                                          │
+│   [2m 78 [0m[2m│   │   [0meffective_ref = branch or "HEAD"                               │
+│ ❱  79 [2m│   │   [0masync for event in [1;4mself[0m[1;4m._run_in_workspace([0m                     │
+│   [2m 80 [0m[2m│   │   │   [0m[1;4mprompt=prompt,[0m                                             │
+│   [2m 81 [0m[2m│   │   │   [0m[1;4mrepo_path=repo_path,[0m                                       │
+│   [2m 82 [0m[2m│   │   │   [0m[1;4mrepo_url=repo_url,[0m                                         │
+│                                                                              │
+│ ╭───────────────────────────────── locals ─────────────────────────────────╮ │
+│ │          [3magents[0m = [1m([0m[1m)[0m                                                     │ │
+│ │   [3mallowed_tools[0m = [1m[[0m'Read', 'Glob', 'Grep', 'Bash'[1m][0m                       │ │
+│ │          [3mbranch[0m = [3mNone[0m                                                   │ │
+│ │       [3mcache_key[0m = 'b5a2223e8bf84c02b98720daff16e230'                     │ │
+│ │   [3meffective_ref[0m = 'HEAD'                                                 │ │
+│ │   [3moutput_format[0m = [3mNone[0m                                                   │ │
+│ │ [3mpermission_mode[0m = [1m<[0m[1mPermissionMode.PLAN:[0m 'plan'[1m>[0m                          │ │
+│ │          [3mprompt[0m = 'analyze'                                              │ │
+│ │       [3mrepo_path[0m = '/tmp/fake'                                            │ │
+│ │        [3mrepo_url[0m = [3mNone[0m                                                   │ │
+│ │    [3mrun_identity[0m = [3mNone[0m                                                   │ │
+│ │            [3mself[0m = [1m<[0m[1mkodezart.services.agent_service.AgentService[0m object   │ │
+│ │                   at [1m0x10a3482c0[0m[1m>[0m                                        │ │
+│ │      [3msession_id[0m = [3mNone[0m                                                   │ │
+│ │  [3msession_policy[0m = [1mSessionPolicy[0m[1m([0m                                         │ │
+│ │                   [2m│   [0msystem_prompt_append=[3mNone[0m,                         │ │
+│ │                   [2m│   [0meffort=[3mNone[0m,                                       │ │
+│ │                   [2m│   [0mmodel=[3mNone[0m,                                        │ │
+│ │                   [2m│   [0mfallback_model=[3mNone[0m,                               │ │
+│ │                   [2m│   [0mworkflow_access=[3mNone[0m                               │ │
+│ │                   [1m)[0m                                                      │ │
+│ │    [3msession_type[0m = [1m<[0m[1mSessionType.API_QUERY:[0m 'api_query'[1m>[0m                   │ │
+│ │          [3mskills[0m = [1mSkillsSelection[0m[1m([0m                                       │ │
+│ │                   [2m│   [0mmode=[1m<[0m[1mSkillsMode.NONE:[0m 'none'[1m>[0m,                    │ │
+│ │                   [2m│   [0mallowlist=[1m([0m[1m)[0m                                       │ │
+│ │                   [1m)[0m                                                      │ │
+│ ╰──────────────────────────────────────────────────────────────────────────╯ │
+│                                                                              │
+│ [2m/private/tmp/kodezart-v03-m3-plan-walk-census/src/kodezart/services/[0m[1magent_se[0m │
+│ [1mrvice.py[0m:268 in _run_in_workspace                                            │
+│                                                                              │
+│   [2m265 [0m[2m│   │   [0m                                                               │
+│   [2m266 [0m[2m│   │   [0mtry:                                                           │
+│   [2m267 [0m[2m│   │   │   [0mbuffered_result: ResultEvent | None = None                 │
+│ ❱ 268 [2m│   │   │   [0masync for event in self._executor.stream(                  │
+│   [2m269 [0m[2m│   │   │   │   [0mprompt=prompt,                                         │
+│   [2m270 [0m[2m│   │   │   │   [0mcwd=workspace_path,                                    │
+│   [2m271 [0m[2m│   │   │   │   [0mpermission_mode=permission_mode,                       │
+│                                                                              │
+│ ╭───────────────────────────────── locals ─────────────────────────────────╮ │
+│ │          [3magents[0m = [1m([0m[1m)[0m                                                     │ │
+│ │   [3mallowed_tools[0m = [1m[[0m'Read', 'Glob', 'Grep', 'Bash'[1m][0m                       │ │
+│ │     [3mbranch_name[0m = [3mNone[0m                                                   │ │
+│ │ [3mbuffered_result[0m = [3mNone[0m                                                   │ │
+│ │       [3mcache_key[0m = 'b5a2223e8bf84c02b98720daff16e230'                     │ │
+│ │   [3mcreate_branch[0m = [3mTrue[0m                                                   │ │
+│ │    [3mnative_guard[0m = [3mNone[0m                                                   │ │
+│ │   [3moutput_format[0m = [3mNone[0m                                                   │ │
+│ │ [3mpermission_mode[0m = [1m<[0m[1mPermissionMode.PLAN:[0m 'plan'[1m>[0m                          │ │
+│ │  [3mpersist_branch[0m = [3mNone[0m                                                   │ │
+│ │          [3mprompt[0m = 'analyze'                                              │ │
+│ │             [3mref[0m = 'HEAD'                                                 │ │
+│ │       [3mrepo_path[0m = '/tmp/fake'                                            │ │
+│ │        [3mrepo_url[0m = [3mNone[0m                                                   │ │
+│ │    [3mrun_identity[0m = [3mNone[0m                                                   │ │
+│ │            [3mself[0m = [1m<[0m[1mkodezart.services.agent_service.AgentService[0m object   │ │
+│ │                   at [1m0x10a3482c0[0m[1m>[0m                                        │ │
+│ │      [3msession_id[0m = [3mNone[0m                                                   │ │
+│ │  [3msession_policy[0m = [1mSessionPolicy[0m[1m([0m                                         │ │
+│ │                   [2m│   [0msystem_prompt_append=[3mNone[0m,                         │ │
+│ │                   [2m│   [0meffort=[3mNone[0m,                                       │ │
+│ │                   [2m│   [0mmodel=[3mNone[0m,                                        │ │
+│ │                   [2m│   [0mfallback_model=[3mNone[0m,                               │ │
+│ │                   [2m│   [0mworkflow_access=[3mNone[0m                               │ │
+│ │                   [1m)[0m                                                      │ │
+│ │    [3msession_type[0m = [1m<[0m[1mSessionType.API_QUERY:[0m 'api_query'[1m>[0m                   │ │
+│ │          [3mskills[0m = [1mSkillsSelection[0m[1m([0m                                       │ │
+│ │                   [2m│   [0mmode=[1m<[0m[1mSkillsMode.NONE:[0m 'none'[1m>[0m,                    │ │
+│ │                   [2m│   [0mallowlist=[1m([0m[1m)[0m                                       │ │
+│ │                   [1m)[0m                                                      │ │
+│ │      [3mvisibility[0m = [1m<[0m[1mRepoVisibility.UNKNOWN:[0m 'unknown'[1m>[0m                    │ │
+│ │  [3mworkspace_path[0m = '/tmp/fake-workspace'                                  │ │
+│ ╰──────────────────────────────────────────────────────────────────────────╯ │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[1mTypeError: [0m[1mFakeRaisingExecutor.stream[0m[1m([0m[1m)[0m got an unexpected keyword argument 
+'run_identity'
+
+____________ test_error_event_carries_no_structured_output_payload _____________
+tests/api/v1/test_agent.py:441: in test_error_event_carries_no_structured_output_payload
+    assert error_event.error_kind == "NoStructuredOutputError"
+E   AssertionError: assert 'TypeError' == 'NoStructuredOutputError'
+E     
+E     - NoStructuredOutputError
+E     + TypeError
+----------------------------- Captured stdout call -----------------------------
+2026-09-13 02:06:11 [debug    ] stream_query_endpoint
+2026-09-13 02:06:11 [debug    ] agent_query_requested
+2026-09-13 02:06:11 [error    ] stream_failed                  cause=None cause_class=None duration_ms=None error="FakeRaisingExecutor.stream() got an unexpected keyword argument 'run_identity'" error_kind=TypeError exit_code=None num_turns=None raise_site=None rate_limit_rejected=None result_event_observed=None result_tail=None stderr_tail=None stop_reason=None subtype=None
+╭───────────────────── [1mTraceback [0m[1;2m(most recent call last)[0m ──────────────────────╮
+│ [2m/private/tmp/kodezart-v03-m3-plan-walk-census/src/kodezart/handlers/[0m[1magent_ha[0m │
+│ [1mndler.py[0m:100 in stream_query                                                 │
+│                                                                              │
+│   [2m 97 [0m[2m│   │   │   │   [0mif request.output_schema is not None                   │
+│   [2m 98 [0m[2m│   │   │   │   [0melse None                                              │
+│   [2m 99 [0m[2m│   │   │   [0m)                                                          │
+│ ❱ 100 [2m│   │   │   [0masync for event in self._service.stream(                   │
+│   [2m101 [0m[2m│   │   │   │   [0mprompt=request.prompt,                                 │
+│   [2m102 [0m[2m│   │   │   │   [0mrepo_path=request.repo_path,                           │
+│   [2m103 [0m[2m│   │   │   │   [0mrepo_url=request.repo_url,                             │
+│                                                                              │
+│ ╭───────────────────────────────── locals ─────────────────────────────────╮ │
+│ │     [3mcache_key[0m = 'b9702cc76839489fa9ff259b58bddac8'                       │ │
+│ │           [3mexc[0m = [1mTypeError[0m[1m([0m"FakeRaisingExecutor.stream() got an           │ │
+│ │                 unexpected keyword argument 'run_identity'"[1m)[0m             │ │
+│ │ [3moutput_format[0m = [3mNone[0m                                                     │ │
+│ │       [3mrequest[0m = [1mQueryRequest[0m[1m([0m                                            │ │
+│ │                 [2m│   [0mprompt='analyze',                                    │ │
+│ │                 [2m│   [0mrepo_path='/tmp/fake',                               │ │
+│ │                 [2m│   [0mrepo_url=[3mNone[0m,                                       │ │
+│ │                 [2m│   [0mbranch=[3mNone[0m,                                         │ │
+│ │                 [2m│   [0mpermission_mode='plan',                              │ │
+│ │                 [2m│   [0msession_id=[3mNone[0m,                                     │ │
+│ │                 [2m│   [0mallowed_tools=[1m[[0m'Read', 'Glob', 'Grep', 'Bash'[1m][0m,      │ │
+│ │                 [2m│   [0moutput_schema=[3mNone[0m                                   │ │
+│ │                 [1m)[0m                                                        │ │
+│ │          [3mself[0m = [1m<[0m[1mkodezart.handlers.agent_handler.AgentHandler[0m object at  │ │
+│ │                 [1m0x10a425880[0m[1m>[0m                                             │ │
+│ ╰──────────────────────────────────────────────────────────────────────────╯ │
+│                                                                              │
+│ [2m/private/tmp/kodezart-v03-m3-plan-walk-census/src/kodezart/services/[0m[1magent_se[0m │
+│ [1mrvice.py[0m:79 in stream                                                        │
+│                                                                              │
+│   [2m 76 [0m[2m│   │   │   │   [0mformat_type=output_format.get("type"),                 │
+│   [2m 77 [0m[2m│   │   │   [0m)                                                          │
+│   [2m 78 [0m[2m│   │   [0meffective_ref = branch or "HEAD"                               │
+│ ❱  79 [2m│   │   [0masync for event in [1;4mself[0m[1;4m._run_in_workspace([0m                     │
+│   [2m 80 [0m[2m│   │   │   [0m[1;4mprompt=prompt,[0m                                             │
+│   [2m 81 [0m[2m│   │   │   [0m[1;4mrepo_path=repo_path,[0m                                       │
+│   [2m 82 [0m[2m│   │   │   [0m[1;4mrepo_url=repo_url,[0m                                         │
+│                                                                              │
+│ ╭───────────────────────────────── locals ─────────────────────────────────╮ │
+│ │          [3magents[0m = [1m([0m[1m)[0m                                                     │ │
+│ │   [3mallowed_tools[0m = [1m[[0m'Read', 'Glob', 'Grep', 'Bash'[1m][0m                       │ │
+│ │          [3mbranch[0m = [3mNone[0m                                                   │ │
+│ │       [3mcache_key[0m = 'b9702cc76839489fa9ff259b58bddac8'                     │ │
+│ │   [3meffective_ref[0m = 'HEAD'                                                 │ │
+│ │   [3moutput_format[0m = [3mNone[0m                                                   │ │
+│ │ [3mpermission_mode[0m = [1m<[0m[1mPermissionMode.PLAN:[0m 'plan'[1m>[0m                          │ │
+│ │          [3mprompt[0m = 'analyze'                                              │ │
+│ │       [3mrepo_path[0m = '/tmp/fake'                                            │ │
+│ │        [3mrepo_url[0m = [3mNone[0m                                                   │ │
+│ │    [3mrun_identity[0m = [3mNone[0m                                                   │ │
+│ │            [3mself[0m = [1m<[0m[1mkodezart.services.agent_service.AgentService[0m object   │ │
+│ │                   at [1m0x10a34b8c0[0m[1m>[0m                                        │ │
+│ │      [3msession_id[0m = [3mNone[0m                                                   │ │
+│ │  [3msession_policy[0m = [1mSessionPolicy[0m[1m([0m                                         │ │
+│ │                   [2m│   [0msystem_prompt_append=[3mNone[0m,                         │ │
+│ │                   [2m│   [0meffort=[3mNone[0m,                                       │ │
+│ │                   [2m│   [0mmodel=[3mNone[0m,                                        │ │
+│ │                   [2m│   [0mfallback_model=[3mNone[0m,                               │ │
+│ │                   [2m│   [0mworkflow_access=[3mNone[0m                               │ │
+│ │                   [1m)[0m                                                      │ │
+│ │    [3msession_type[0m = [1m<[0m[1mSessionType.API_QUERY:[0m 'api_query'[1m>[0m                   │ │
+│ │          [3mskills[0m = [1mSkillsSelection[0m[1m([0m                                       │ │
+│ │                   [2m│   [0mmode=[1m<[0m[1mSkillsMode.NONE:[0m 'none'[1m>[0m,                    │ │
+│ │                   [2m│   [0mallowlist=[1m([0m[1m)[0m                                       │ │
+│ │                   [1m)[0m                                                      │ │
+│ ╰──────────────────────────────────────────────────────────────────────────╯ │
+│                                                                              │
+│ [2m/private/tmp/kodezart-v03-m3-plan-walk-census/src/kodezart/services/[0m[1magent_se[0m │
+│ [1mrvice.py[0m:268 in _run_in_workspace                                            │
+│                                                                              │
+│   [2m265 [0m[2m│   │   [0m                                                               │
+│   [2m266 [0m[2m│   │   [0mtry:                                                           │
+│   [2m267 [0m[2m│   │   │   [0mbuffered_result: ResultEvent | None = None                 │
+│ ❱ 268 [2m│   │   │   [0masync for event in self._executor.stream(                  │
+│   [2m269 [0m[2m│   │   │   │   [0mprompt=prompt,                                         │
+│   [2m270 [0m[2m│   │   │   │   [0mcwd=workspace_path,                                    │
+│   [2m271 [0m[2m│   │   │   │   [0mpermission_mode=permission_mode,                       │
+│                                                                              │
+│ ╭───────────────────────────────── locals ─────────────────────────────────╮ │
+│ │          [3magents[0m = [1m([0m[1m)[0m                                                     │ │
+│ │   [3mallowed_tools[0m = [1m[[0m'Read', 'Glob', 'Grep', 'Bash'[1m][0m                       │ │
+│ │     [3mbranch_name[0m = [3mNone[0m                                                   │ │
+│ │ [3mbuffered_result[0m = [3mNone[0m                                                   │ │
+│ │       [3mcache_key[0m = 'b9702cc76839489fa9ff259b58bddac8'                     │ │
+│ │   [3mcreate_branch[0m = [3mTrue[0m                                                   │ │
+│ │    [3mnative_guard[0m = [3mNone[0m                                                   │ │
+│ │   [3moutput_format[0m = [3mNone[0m                                                   │ │
+│ │ [3mpermission_mode[0m = [1m<[0m[1mPermissionMode.PLAN:[0m 'plan'[1m>[0m                          │ │
+│ │  [3mpersist_branch[0m = [3mNone[0m                                                   │ │
+│ │          [3mprompt[0m = 'analyze'                                              │ │
+│ │             [3mref[0m = 'HEAD'                                                 │ │
+│ │       [3mrepo_path[0m = '/tmp/fake'                                            │ │
+│ │        [3mrepo_url[0m = [3mNone[0m                                                   │ │
+│ │    [3mrun_identity[0m = [3mNone[0m                                                   │ │
+│ │            [3mself[0m = [1m<[0m[1mkodezart.services.agent_service.AgentService[0m object   │ │
+│ │                   at [1m0x10a34b8c0[0m[1m>[0m                                        │ │
+│ │      [3msession_id[0m = [3mNone[0m                                                   │ │
+│ │  [3msession_policy[0m = [1mSessionPolicy[0m[1m([0m                                         │ │
+│ │                   [2m│   [0msystem_prompt_append=[3mNone[0m,                         │ │
+│ │                   [2m│   [0meffort=[3mNone[0m,                                       │ │
+│ │                   [2m│   [0mmodel=[3mNone[0m,                                        │ │
+│ │                   [2m│   [0mfallback_model=[3mNone[0m,                               │ │
+│ │                   [2m│   [0mworkflow_access=[3mNone[0m                               │ │
+│ │                   [1m)[0m                                                      │ │
+│ │    [3msession_type[0m = [1m<[0m[1mSessionType.API_QUERY:[0m 'api_query'[1m>[0m                   │ │
+│ │          [3mskills[0m = [1mSkillsSelection[0m[1m([0m                                       │ │
+│ │                   [2m│   [0mmode=[1m<[0m[1mSkillsMode.NONE:[0m 'none'[1m>[0m,                    │ │
+│ │                   [2m│   [0mallowlist=[1m([0m[1m)[0m                                       │ │
+│ │                   [1m)[0m                                                      │ │
+│ │      [3mvisibility[0m = [1m<[0m[1mRepoVisibility.UNKNOWN:[0m 'unknown'[1m>[0m                    │ │
+│ │  [3mworkspace_path[0m = '/tmp/fake-workspace'                                  │ │
+│ ╰──────────────────────────────────────────────────────────────────────────╯ │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[1mTypeError: [0m[1mFakeRaisingExecutor.stream[0m[1m([0m[1m)[0m got an unexpected keyword argument 
+'run_identity'
+
+=========================== short test summary info ============================
+FAILED tests/api/v1/test_agent.py::test_stream_query_handler_catches_executor_error
+FAILED tests/api/v1/test_agent.py::test_error_event_carries_exception_class_on_runtime_path
+FAILED tests/api/v1/test_agent.py::test_error_event_carries_no_structured_output_payload
+3 failed, 79 passed in 10.02s

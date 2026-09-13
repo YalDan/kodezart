@@ -1,0 +1,388 @@
+.FFFFFFFFF                                                               [100%]
+=================================== FAILURES ===================================
+_______ test_actual_scheduled_audit_collects_and_verifies_native_summary _______
+
+    async def test_actual_scheduled_audit_collects_and_verifies_native_summary():
+>       config, operation, server, tracker, forge = dependencies()
+                                                    ^^^^^^^^^^^^^^
+
+tests/integration/test_audit_scheduler.py:139: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def dependencies():
+        fields = base_operation().model_dump()
+        fields["marker_prefixes"]["audit"] = "configured-audit-record"
+        fields["workflow_states"] = WORKFLOW_STATE_NAMES
+        fields["audit_scopes"] = [
+            {
+                "scope": EMPTY_PROJECT.model_dump(),
+                "repo_url": fields["repos"][0]["url"],
+                "report_issue_key": ROOT.key,
+            }
+        ]
+        operation = OperationConfig.model_validate(fields)
+        config = AppConfig(
+            _env_file=None,
+            audit={"timeout_seconds": 17},
+            write_back={"max_verify_rounds": 2},
+            audit_sweep_interval_seconds=60,
+            audit_full_sweep_interval_seconds=120,
+            fire_prep_pass_gate_signals=[],
+            grooming_pass_gate_signals=[],
+        )
+        server = ScopeMcpServer()
+        tracker = linear_over_fake_mcp(server)
+>       forge = FakePRStateReader()
+                ^^^^^^^^^^^^^^^^^^^
+E       TypeError: FakePRStateReader.__init__() missing 1 required keyword-only argument: 'records'
+
+tests/integration/test_audit_scheduler.py:89: TypeError
+__ test_summary_exhaustion_retains_actual_rounds_and_repeats_uncovered_window __
+
+    async def test_summary_exhaustion_retains_actual_rounds_and_repeats_uncovered_window():
+>       scheduled, executor = await runtime(*dependencies(), verdict="refuted")
+                                             ^^^^^^^^^^^^^^
+
+tests/integration/test_audit_scheduler.py:174: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def dependencies():
+        fields = base_operation().model_dump()
+        fields["marker_prefixes"]["audit"] = "configured-audit-record"
+        fields["workflow_states"] = WORKFLOW_STATE_NAMES
+        fields["audit_scopes"] = [
+            {
+                "scope": EMPTY_PROJECT.model_dump(),
+                "repo_url": fields["repos"][0]["url"],
+                "report_issue_key": ROOT.key,
+            }
+        ]
+        operation = OperationConfig.model_validate(fields)
+        config = AppConfig(
+            _env_file=None,
+            audit={"timeout_seconds": 17},
+            write_back={"max_verify_rounds": 2},
+            audit_sweep_interval_seconds=60,
+            audit_full_sweep_interval_seconds=120,
+            fire_prep_pass_gate_signals=[],
+            grooming_pass_gate_signals=[],
+        )
+        server = ScopeMcpServer()
+        tracker = linear_over_fake_mcp(server)
+>       forge = FakePRStateReader()
+                ^^^^^^^^^^^^^^^^^^^
+E       TypeError: FakePRStateReader.__init__() missing 1 required keyword-only argument: 'records'
+
+tests/integration/test_audit_scheduler.py:89: TypeError
+_______ test_partial_configuration_refuses_before_scheduling[operation] ________
+
+missing = 'operation'
+
+    @pytest.mark.parametrize(
+        "missing",
+        ["operation", "tracker", "forge", "audit", "write_back", "audit_scopes", "marker"],
+    )
+    def test_partial_configuration_refuses_before_scheduling(missing):
+>       config, operation, _, tracker, forge = dependencies()
+                                               ^^^^^^^^^^^^^^
+
+tests/integration/test_audit_scheduler.py:192: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def dependencies():
+        fields = base_operation().model_dump()
+        fields["marker_prefixes"]["audit"] = "configured-audit-record"
+        fields["workflow_states"] = WORKFLOW_STATE_NAMES
+        fields["audit_scopes"] = [
+            {
+                "scope": EMPTY_PROJECT.model_dump(),
+                "repo_url": fields["repos"][0]["url"],
+                "report_issue_key": ROOT.key,
+            }
+        ]
+        operation = OperationConfig.model_validate(fields)
+        config = AppConfig(
+            _env_file=None,
+            audit={"timeout_seconds": 17},
+            write_back={"max_verify_rounds": 2},
+            audit_sweep_interval_seconds=60,
+            audit_full_sweep_interval_seconds=120,
+            fire_prep_pass_gate_signals=[],
+            grooming_pass_gate_signals=[],
+        )
+        server = ScopeMcpServer()
+        tracker = linear_over_fake_mcp(server)
+>       forge = FakePRStateReader()
+                ^^^^^^^^^^^^^^^^^^^
+E       TypeError: FakePRStateReader.__init__() missing 1 required keyword-only argument: 'records'
+
+tests/integration/test_audit_scheduler.py:89: TypeError
+________ test_partial_configuration_refuses_before_scheduling[tracker] _________
+
+missing = 'tracker'
+
+    @pytest.mark.parametrize(
+        "missing",
+        ["operation", "tracker", "forge", "audit", "write_back", "audit_scopes", "marker"],
+    )
+    def test_partial_configuration_refuses_before_scheduling(missing):
+>       config, operation, _, tracker, forge = dependencies()
+                                               ^^^^^^^^^^^^^^
+
+tests/integration/test_audit_scheduler.py:192: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def dependencies():
+        fields = base_operation().model_dump()
+        fields["marker_prefixes"]["audit"] = "configured-audit-record"
+        fields["workflow_states"] = WORKFLOW_STATE_NAMES
+        fields["audit_scopes"] = [
+            {
+                "scope": EMPTY_PROJECT.model_dump(),
+                "repo_url": fields["repos"][0]["url"],
+                "report_issue_key": ROOT.key,
+            }
+        ]
+        operation = OperationConfig.model_validate(fields)
+        config = AppConfig(
+            _env_file=None,
+            audit={"timeout_seconds": 17},
+            write_back={"max_verify_rounds": 2},
+            audit_sweep_interval_seconds=60,
+            audit_full_sweep_interval_seconds=120,
+            fire_prep_pass_gate_signals=[],
+            grooming_pass_gate_signals=[],
+        )
+        server = ScopeMcpServer()
+        tracker = linear_over_fake_mcp(server)
+>       forge = FakePRStateReader()
+                ^^^^^^^^^^^^^^^^^^^
+E       TypeError: FakePRStateReader.__init__() missing 1 required keyword-only argument: 'records'
+
+tests/integration/test_audit_scheduler.py:89: TypeError
+_________ test_partial_configuration_refuses_before_scheduling[forge] __________
+
+missing = 'forge'
+
+    @pytest.mark.parametrize(
+        "missing",
+        ["operation", "tracker", "forge", "audit", "write_back", "audit_scopes", "marker"],
+    )
+    def test_partial_configuration_refuses_before_scheduling(missing):
+>       config, operation, _, tracker, forge = dependencies()
+                                               ^^^^^^^^^^^^^^
+
+tests/integration/test_audit_scheduler.py:192: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def dependencies():
+        fields = base_operation().model_dump()
+        fields["marker_prefixes"]["audit"] = "configured-audit-record"
+        fields["workflow_states"] = WORKFLOW_STATE_NAMES
+        fields["audit_scopes"] = [
+            {
+                "scope": EMPTY_PROJECT.model_dump(),
+                "repo_url": fields["repos"][0]["url"],
+                "report_issue_key": ROOT.key,
+            }
+        ]
+        operation = OperationConfig.model_validate(fields)
+        config = AppConfig(
+            _env_file=None,
+            audit={"timeout_seconds": 17},
+            write_back={"max_verify_rounds": 2},
+            audit_sweep_interval_seconds=60,
+            audit_full_sweep_interval_seconds=120,
+            fire_prep_pass_gate_signals=[],
+            grooming_pass_gate_signals=[],
+        )
+        server = ScopeMcpServer()
+        tracker = linear_over_fake_mcp(server)
+>       forge = FakePRStateReader()
+                ^^^^^^^^^^^^^^^^^^^
+E       TypeError: FakePRStateReader.__init__() missing 1 required keyword-only argument: 'records'
+
+tests/integration/test_audit_scheduler.py:89: TypeError
+_________ test_partial_configuration_refuses_before_scheduling[audit] __________
+
+missing = 'audit'
+
+    @pytest.mark.parametrize(
+        "missing",
+        ["operation", "tracker", "forge", "audit", "write_back", "audit_scopes", "marker"],
+    )
+    def test_partial_configuration_refuses_before_scheduling(missing):
+>       config, operation, _, tracker, forge = dependencies()
+                                               ^^^^^^^^^^^^^^
+
+tests/integration/test_audit_scheduler.py:192: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def dependencies():
+        fields = base_operation().model_dump()
+        fields["marker_prefixes"]["audit"] = "configured-audit-record"
+        fields["workflow_states"] = WORKFLOW_STATE_NAMES
+        fields["audit_scopes"] = [
+            {
+                "scope": EMPTY_PROJECT.model_dump(),
+                "repo_url": fields["repos"][0]["url"],
+                "report_issue_key": ROOT.key,
+            }
+        ]
+        operation = OperationConfig.model_validate(fields)
+        config = AppConfig(
+            _env_file=None,
+            audit={"timeout_seconds": 17},
+            write_back={"max_verify_rounds": 2},
+            audit_sweep_interval_seconds=60,
+            audit_full_sweep_interval_seconds=120,
+            fire_prep_pass_gate_signals=[],
+            grooming_pass_gate_signals=[],
+        )
+        server = ScopeMcpServer()
+        tracker = linear_over_fake_mcp(server)
+>       forge = FakePRStateReader()
+                ^^^^^^^^^^^^^^^^^^^
+E       TypeError: FakePRStateReader.__init__() missing 1 required keyword-only argument: 'records'
+
+tests/integration/test_audit_scheduler.py:89: TypeError
+_______ test_partial_configuration_refuses_before_scheduling[write_back] _______
+
+missing = 'write_back'
+
+    @pytest.mark.parametrize(
+        "missing",
+        ["operation", "tracker", "forge", "audit", "write_back", "audit_scopes", "marker"],
+    )
+    def test_partial_configuration_refuses_before_scheduling(missing):
+>       config, operation, _, tracker, forge = dependencies()
+                                               ^^^^^^^^^^^^^^
+
+tests/integration/test_audit_scheduler.py:192: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def dependencies():
+        fields = base_operation().model_dump()
+        fields["marker_prefixes"]["audit"] = "configured-audit-record"
+        fields["workflow_states"] = WORKFLOW_STATE_NAMES
+        fields["audit_scopes"] = [
+            {
+                "scope": EMPTY_PROJECT.model_dump(),
+                "repo_url": fields["repos"][0]["url"],
+                "report_issue_key": ROOT.key,
+            }
+        ]
+        operation = OperationConfig.model_validate(fields)
+        config = AppConfig(
+            _env_file=None,
+            audit={"timeout_seconds": 17},
+            write_back={"max_verify_rounds": 2},
+            audit_sweep_interval_seconds=60,
+            audit_full_sweep_interval_seconds=120,
+            fire_prep_pass_gate_signals=[],
+            grooming_pass_gate_signals=[],
+        )
+        server = ScopeMcpServer()
+        tracker = linear_over_fake_mcp(server)
+>       forge = FakePRStateReader()
+                ^^^^^^^^^^^^^^^^^^^
+E       TypeError: FakePRStateReader.__init__() missing 1 required keyword-only argument: 'records'
+
+tests/integration/test_audit_scheduler.py:89: TypeError
+______ test_partial_configuration_refuses_before_scheduling[audit_scopes] ______
+
+missing = 'audit_scopes'
+
+    @pytest.mark.parametrize(
+        "missing",
+        ["operation", "tracker", "forge", "audit", "write_back", "audit_scopes", "marker"],
+    )
+    def test_partial_configuration_refuses_before_scheduling(missing):
+>       config, operation, _, tracker, forge = dependencies()
+                                               ^^^^^^^^^^^^^^
+
+tests/integration/test_audit_scheduler.py:192: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def dependencies():
+        fields = base_operation().model_dump()
+        fields["marker_prefixes"]["audit"] = "configured-audit-record"
+        fields["workflow_states"] = WORKFLOW_STATE_NAMES
+        fields["audit_scopes"] = [
+            {
+                "scope": EMPTY_PROJECT.model_dump(),
+                "repo_url": fields["repos"][0]["url"],
+                "report_issue_key": ROOT.key,
+            }
+        ]
+        operation = OperationConfig.model_validate(fields)
+        config = AppConfig(
+            _env_file=None,
+            audit={"timeout_seconds": 17},
+            write_back={"max_verify_rounds": 2},
+            audit_sweep_interval_seconds=60,
+            audit_full_sweep_interval_seconds=120,
+            fire_prep_pass_gate_signals=[],
+            grooming_pass_gate_signals=[],
+        )
+        server = ScopeMcpServer()
+        tracker = linear_over_fake_mcp(server)
+>       forge = FakePRStateReader()
+                ^^^^^^^^^^^^^^^^^^^
+E       TypeError: FakePRStateReader.__init__() missing 1 required keyword-only argument: 'records'
+
+tests/integration/test_audit_scheduler.py:89: TypeError
+_________ test_partial_configuration_refuses_before_scheduling[marker] _________
+
+missing = 'marker'
+
+    @pytest.mark.parametrize(
+        "missing",
+        ["operation", "tracker", "forge", "audit", "write_back", "audit_scopes", "marker"],
+    )
+    def test_partial_configuration_refuses_before_scheduling(missing):
+>       config, operation, _, tracker, forge = dependencies()
+                                               ^^^^^^^^^^^^^^
+
+tests/integration/test_audit_scheduler.py:192: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def dependencies():
+        fields = base_operation().model_dump()
+        fields["marker_prefixes"]["audit"] = "configured-audit-record"
+        fields["workflow_states"] = WORKFLOW_STATE_NAMES
+        fields["audit_scopes"] = [
+            {
+                "scope": EMPTY_PROJECT.model_dump(),
+                "repo_url": fields["repos"][0]["url"],
+                "report_issue_key": ROOT.key,
+            }
+        ]
+        operation = OperationConfig.model_validate(fields)
+        config = AppConfig(
+            _env_file=None,
+            audit={"timeout_seconds": 17},
+            write_back={"max_verify_rounds": 2},
+            audit_sweep_interval_seconds=60,
+            audit_full_sweep_interval_seconds=120,
+            fire_prep_pass_gate_signals=[],
+            grooming_pass_gate_signals=[],
+        )
+        server = ScopeMcpServer()
+        tracker = linear_over_fake_mcp(server)
+>       forge = FakePRStateReader()
+                ^^^^^^^^^^^^^^^^^^^
+E       TypeError: FakePRStateReader.__init__() missing 1 required keyword-only argument: 'records'
+
+tests/integration/test_audit_scheduler.py:89: TypeError
+=========================== short test summary info ============================
+FAILED tests/integration/test_audit_scheduler.py::test_actual_scheduled_audit_collects_and_verifies_native_summary
+FAILED tests/integration/test_audit_scheduler.py::test_summary_exhaustion_retains_actual_rounds_and_repeats_uncovered_window
+FAILED tests/integration/test_audit_scheduler.py::test_partial_configuration_refuses_before_scheduling[operation]
+FAILED tests/integration/test_audit_scheduler.py::test_partial_configuration_refuses_before_scheduling[tracker]
+FAILED tests/integration/test_audit_scheduler.py::test_partial_configuration_refuses_before_scheduling[forge]
+FAILED tests/integration/test_audit_scheduler.py::test_partial_configuration_refuses_before_scheduling[audit]
+FAILED tests/integration/test_audit_scheduler.py::test_partial_configuration_refuses_before_scheduling[write_back]
+FAILED tests/integration/test_audit_scheduler.py::test_partial_configuration_refuses_before_scheduling[audit_scopes]
+FAILED tests/integration/test_audit_scheduler.py::test_partial_configuration_refuses_before_scheduling[marker]
+9 failed, 1 passed in 1.21s

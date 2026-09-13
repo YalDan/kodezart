@@ -1,0 +1,46 @@
+.FFF                                                                     [100%]
+=================================== FAILURES ===================================
+________ test_foreign_parent_without_matching_native_uuid_refuses[None] ________
+
+reported_uuid = None
+
+    @pytest.mark.parametrize("reported_uuid", [None, OTHER_UUID, "not-a-uuid"])
+    async def test_foreign_parent_without_matching_native_uuid_refuses(reported_uuid):
+        server = AliasServer(reported_uuid=reported_uuid)
+        tracker = tracker_over(server, issue_labels={"criterion": "acceptance-condition"})
+>       with pytest.raises(CriterionReadError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'kodezart.domain.errors.CriterionReadError'>
+
+../kodezart-recovery-session/test_criterion_family_aliases.py:52: Failed
+_ test_foreign_parent_without_matching_native_uuid_refuses[00000000-0000-4000-8000-000000000074] _
+
+reported_uuid = '00000000-0000-4000-8000-000000000074'
+
+    @pytest.mark.parametrize("reported_uuid", [None, OTHER_UUID, "not-a-uuid"])
+    async def test_foreign_parent_without_matching_native_uuid_refuses(reported_uuid):
+        server = AliasServer(reported_uuid=reported_uuid)
+        tracker = tracker_over(server, issue_labels={"criterion": "acceptance-condition"})
+>       with pytest.raises(CriterionReadError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'kodezart.domain.errors.CriterionReadError'>
+
+../kodezart-recovery-session/test_criterion_family_aliases.py:52: Failed
+_____ test_foreign_parent_without_matching_native_uuid_refuses[not-a-uuid] _____
+
+reported_uuid = 'not-a-uuid'
+
+    @pytest.mark.parametrize("reported_uuid", [None, OTHER_UUID, "not-a-uuid"])
+    async def test_foreign_parent_without_matching_native_uuid_refuses(reported_uuid):
+        server = AliasServer(reported_uuid=reported_uuid)
+        tracker = tracker_over(server, issue_labels={"criterion": "acceptance-condition"})
+>       with pytest.raises(CriterionReadError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'kodezart.domain.errors.CriterionReadError'>
+
+../kodezart-recovery-session/test_criterion_family_aliases.py:52: Failed
+=========================== short test summary info ============================
+FAILED ::test_foreign_parent_without_matching_native_uuid_refuses[None] - Fai...
+FAILED ::test_foreign_parent_without_matching_native_uuid_refuses[00000000-0000-4000-8000-000000000074]
+FAILED ::test_foreign_parent_without_matching_native_uuid_refuses[not-a-uuid]
+3 failed, 1 passed in 3.76s

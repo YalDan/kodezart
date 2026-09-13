@@ -1,0 +1,38 @@
+[
+  {
+    "path": "tests/fakes.py",
+    "symbol": "FakeForgeQuery",
+    "parent": null,
+    "donor_lines": [
+      1764,
+      1797
+    ]
+  },
+  {
+    "path": "tests/fakes.py",
+    "symbol": "FakePRStateReader",
+    "parent": null,
+    "donor_lines": [
+      5288,
+      5319
+    ]
+  },
+  {
+    "path": "tests/fakes.py",
+    "symbol": "FakeDeliveryProbe",
+    "parent": null,
+    "donor_lines": [
+      4803,
+      4831
+    ]
+  },
+  {
+    "path": "tests/fakes.py",
+    "symbol": "merge_scratch_head",
+    "parent": "FakeGitService",
+    "donor_lines": [
+      595,
+      607
+    ]
+  }
+]

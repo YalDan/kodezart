@@ -1,0 +1,741 @@
+check	Set up job	﻿2026-09-12T16:59:19.3891816Z Current runner version: '2.337.0'
+check	Set up job	2026-09-12T16:59:19.3918416Z ##[group]Runner Image Provisioner
+check	Set up job	2026-09-12T16:59:19.3919367Z Hosted Compute Agent
+check	Set up job	2026-09-12T16:59:19.3919983Z Version: 20260828.587
+check	Set up job	2026-09-12T16:59:19.3920703Z Commit: abac92662cab4cc7352de4f9f9d2e2419aad9c29
+check	Set up job	2026-09-12T16:59:19.3921479Z Build Date: 2026-08-28T16:44:25Z
+check	Set up job	2026-09-12T16:59:19.3922179Z Worker ID: {16be1aa5-35f4-4606-abe2-77f862c53567}
+check	Set up job	2026-09-12T16:59:19.3923222Z Azure Region: westcentralus
+check	Set up job	2026-09-12T16:59:19.3923877Z ##[endgroup]
+check	Set up job	2026-09-12T16:59:19.3925302Z ##[group]Operating System
+check	Set up job	2026-09-12T16:59:19.3926005Z Ubuntu
+check	Set up job	2026-09-12T16:59:19.3926538Z 24.04.5
+check	Set up job	2026-09-12T16:59:19.3927171Z LTS
+check	Set up job	2026-09-12T16:59:19.3927711Z ##[endgroup]
+check	Set up job	2026-09-12T16:59:19.3928318Z ##[group]Runner Image
+check	Set up job	2026-09-12T16:59:19.3928960Z Image: ubuntu-24.04
+check	Set up job	2026-09-12T16:59:19.3929551Z Version: 20260907.300.1
+check	Set up job	2026-09-12T16:59:19.3930753Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260907.300/images/ubuntu/Ubuntu2404-Readme.md
+check	Set up job	2026-09-12T16:59:19.3932575Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260907.300
+check	Set up job	2026-09-12T16:59:19.3933845Z ##[endgroup]
+check	Set up job	2026-09-12T16:59:19.3935076Z ##[group]GITHUB_TOKEN Permissions
+check	Set up job	2026-09-12T16:59:19.3937255Z Contents: read
+check	Set up job	2026-09-12T16:59:19.3937884Z Metadata: read
+check	Set up job	2026-09-12T16:59:19.3938614Z ##[endgroup]
+check	Set up job	2026-09-12T16:59:19.3940680Z Secret source: Actions
+check	Set up job	2026-09-12T16:59:19.3941746Z Cache mode: write
+check	Set up job	2026-09-12T16:59:19.3942444Z Prepare workflow directory
+check	Set up job	2026-09-12T16:59:19.4278368Z Prepare all required actions
+check	Set up job	2026-09-12T16:59:19.4325139Z Getting action download info
+check	Set up job	2026-09-12T16:59:19.7292578Z Download action repository 'actions/checkout@v4' (SHA:11d5960a326750d5838078e36cf38b85af677262)
+check	Set up job	2026-09-12T16:59:19.8404899Z Download action repository 'astral-sh/setup-uv@v6' (SHA:d0cc045d04ccac9d8b7881df0226f9e82c39688e)
+check	Set up job	2026-09-12T16:59:20.7677263Z Download action repository 'actions/setup-node@v4' (SHA:49933ea5288caeca8642d1e84afbd3f7d6820020)
+check	Set up job	2026-09-12T16:59:20.9595634Z Complete job name: check
+check	Run actions/checkout@v4	﻿2026-09-12T16:59:21.0375057Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+check	Run actions/checkout@v4	2026-09-12T16:59:21.0384522Z ##[group]Run actions/checkout@v4
+check	Run actions/checkout@v4	2026-09-12T16:59:21.0385302Z with:
+check	Run actions/checkout@v4	2026-09-12T16:59:21.0385773Z   fetch-depth: 0
+check	Run actions/checkout@v4	2026-09-12T16:59:21.0386278Z   repository: YalDan/kodezart
+check	Run actions/checkout@v4	2026-09-12T16:59:21.0390478Z   token: ***
+check	Run actions/checkout@v4	2026-09-12T16:59:21.0390956Z   ssh-strict: true
+check	Run actions/checkout@v4	2026-09-12T16:59:21.0391443Z   ssh-user: git
+check	Run actions/checkout@v4	2026-09-12T16:59:21.0391932Z   persist-credentials: true
+check	Run actions/checkout@v4	2026-09-12T16:59:21.0392467Z   clean: true
+check	Run actions/checkout@v4	2026-09-12T16:59:21.0393160Z   sparse-checkout-cone-mode: true
+check	Run actions/checkout@v4	2026-09-12T16:59:21.0393725Z   fetch-tags: false
+check	Run actions/checkout@v4	2026-09-12T16:59:21.0394212Z   show-progress: true
+check	Run actions/checkout@v4	2026-09-12T16:59:21.0394711Z   lfs: false
+check	Run actions/checkout@v4	2026-09-12T16:59:21.0395195Z   submodules: false
+check	Run actions/checkout@v4	2026-09-12T16:59:21.0395724Z   set-safe-directory: true
+check	Run actions/checkout@v4	2026-09-12T16:59:21.0396276Z   allow-unsafe-pr-checkout: false
+check	Run actions/checkout@v4	2026-09-12T16:59:21.0397108Z ##[endgroup]
+check	Run actions/checkout@v4	2026-09-12T16:59:21.1430724Z Syncing repository: YalDan/kodezart
+check	Run actions/checkout@v4	2026-09-12T16:59:21.1433447Z ##[group]Getting Git version info
+check	Run actions/checkout@v4	2026-09-12T16:59:21.1434287Z Working directory is '/home/runner/work/kodezart/kodezart'
+check	Run actions/checkout@v4	2026-09-12T16:59:21.1435766Z [command]/usr/bin/git version
+check	Run actions/checkout@v4	2026-09-12T16:59:21.1487013Z git version 2.55.0
+check	Run actions/checkout@v4	2026-09-12T16:59:21.1508928Z ##[endgroup]
+check	Run actions/checkout@v4	2026-09-12T16:59:21.1525357Z Temporarily overriding HOME='/home/runner/work/_temp/cfac1938-ded6-4996-a006-218d493ae0c6' before making global git config changes
+check	Run actions/checkout@v4	2026-09-12T16:59:21.1527609Z Adding repository directory to the temporary git global config as a safe directory
+check	Run actions/checkout@v4	2026-09-12T16:59:21.1530729Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/kodezart/kodezart
+check	Run actions/checkout@v4	2026-09-12T16:59:21.1614397Z Deleting the contents of '/home/runner/work/kodezart/kodezart'
+check	Run actions/checkout@v4	2026-09-12T16:59:21.1617358Z ##[group]Initializing the repository
+check	Run actions/checkout@v4	2026-09-12T16:59:21.1618821Z [command]/usr/bin/git init /home/runner/work/kodezart/kodezart
+check	Run actions/checkout@v4	2026-09-12T16:59:21.1677698Z hint: Using 'master' as the name for the initial branch. This default branch name
+check	Run actions/checkout@v4	2026-09-12T16:59:21.1679395Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+check	Run actions/checkout@v4	2026-09-12T16:59:21.1680800Z hint: to use in all of your new repositories, which will suppress this warning,
+check	Run actions/checkout@v4	2026-09-12T16:59:21.1681613Z hint: call:
+check	Run actions/checkout@v4	2026-09-12T16:59:21.1682058Z hint:
+check	Run actions/checkout@v4	2026-09-12T16:59:21.1682624Z hint: 	git config --global init.defaultBranch <name>
+check	Run actions/checkout@v4	2026-09-12T16:59:21.1683887Z hint:
+check	Run actions/checkout@v4	2026-09-12T16:59:21.1684953Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+check	Run actions/checkout@v4	2026-09-12T16:59:21.1686691Z hint: 'development'. The just-created branch can be renamed via this command:
+check	Run actions/checkout@v4	2026-09-12T16:59:21.1688186Z hint:
+check	Run actions/checkout@v4	2026-09-12T16:59:21.1688999Z hint: 	git branch -m <name>
+check	Run actions/checkout@v4	2026-09-12T16:59:21.1689957Z hint:
+check	Run actions/checkout@v4	2026-09-12T16:59:21.1691216Z hint: Disable this message with "git config set advice.defaultBranchName false"
+check	Run actions/checkout@v4	2026-09-12T16:59:21.1693460Z Initialized empty Git repository in /home/runner/work/kodezart/kodezart/.git/
+check	Run actions/checkout@v4	2026-09-12T16:59:21.1708529Z [command]/usr/bin/git remote add origin https://github.com/YalDan/kodezart
+check	Run actions/checkout@v4	2026-09-12T16:59:21.1749197Z ##[endgroup]
+check	Run actions/checkout@v4	2026-09-12T16:59:21.1750651Z ##[group]Disabling automatic garbage collection
+check	Run actions/checkout@v4	2026-09-12T16:59:21.1754432Z [command]/usr/bin/git config --local gc.auto 0
+check	Run actions/checkout@v4	2026-09-12T16:59:21.1789638Z ##[endgroup]
+check	Run actions/checkout@v4	2026-09-12T16:59:21.1790967Z ##[group]Setting up auth
+check	Run actions/checkout@v4	2026-09-12T16:59:21.1795813Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+check	Run actions/checkout@v4	2026-09-12T16:59:21.1833695Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+check	Run actions/checkout@v4	2026-09-12T16:59:21.2201124Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+check	Run actions/checkout@v4	2026-09-12T16:59:21.2242352Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+check	Run actions/checkout@v4	2026-09-12T16:59:21.2492938Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+check	Run actions/checkout@v4	2026-09-12T16:59:21.2530884Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+check	Run actions/checkout@v4	2026-09-12T16:59:21.2772576Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+check	Run actions/checkout@v4	2026-09-12T16:59:21.2814050Z ##[endgroup]
+check	Run actions/checkout@v4	2026-09-12T16:59:21.2814924Z ##[group]Fetching the repository
+check	Run actions/checkout@v4	2026-09-12T16:59:21.2825520Z [command]/usr/bin/git -c protocol.version=2 fetch --prune --no-recurse-submodules origin +refs/heads/*:refs/remotes/origin/* +refs/tags/*:refs/tags/* +64e5db4a49c00fc53da9f27726e89af933f2ac56:refs/remotes/pull/119/merge
+check	Run actions/checkout@v4	2026-09-12T16:59:23.1950166Z From https://github.com/YalDan/kodezart
+check	Run actions/checkout@v4	2026-09-12T16:59:23.1952054Z  * [new branch]      codex/kod-73-scope-input                 -> origin/codex/kod-73-scope-input
+check	Run actions/checkout@v4	2026-09-12T16:59:23.1954622Z  * [new branch]      codex/v03-audit-evidence-consumers       -> origin/codex/v03-audit-evidence-consumers
+check	Run actions/checkout@v4	2026-09-12T16:59:23.1957397Z  * [new branch]      codex/v03-audit-record-pr-replay         -> origin/codex/v03-audit-record-pr-replay
+check	Run actions/checkout@v4	2026-09-12T16:59:23.1959873Z  * [new branch]      codex/v03-ci-locked-uv                   -> origin/codex/v03-ci-locked-uv
+check	Run actions/checkout@v4	2026-09-12T16:59:23.1963106Z  * [new branch]      codex/v03-criteria-mandates-terminal     -> origin/codex/v03-criteria-mandates-terminal
+check	Run actions/checkout@v4	2026-09-12T16:59:23.1966626Z  * [new branch]      codex/v03-fire-audit-consumers           -> origin/codex/v03-fire-audit-consumers
+check	Run actions/checkout@v4	2026-09-12T16:59:23.1969967Z  * [new branch]      codex/v03-fire-criterion-consumers       -> origin/codex/v03-fire-criterion-consumers
+check	Run actions/checkout@v4	2026-09-12T16:59:23.1974722Z  * [new branch]      codex/v03-focused-readers-and-admission  -> origin/codex/v03-focused-readers-and-admission
+check	Run actions/checkout@v4	2026-09-12T16:59:23.1978479Z  * [new branch]      codex/v03-gap-revisions-alarms           -> origin/codex/v03-gap-revisions-alarms
+check	Run actions/checkout@v4	2026-09-12T16:59:23.1981852Z  * [new branch]      codex/v03-m1-scope-ports                 -> origin/codex/v03-m1-scope-ports
+check	Run actions/checkout@v4	2026-09-12T16:59:23.1985183Z  * [new branch]      codex/v03-mandate-evidence-terminal      -> origin/codex/v03-mandate-evidence-terminal
+check	Run actions/checkout@v4	2026-09-12T16:59:23.1988496Z  * [new branch]      codex/v03-native-audit-fire-preparation  -> origin/codex/v03-native-audit-fire-preparation
+check	Run actions/checkout@v4	2026-09-12T16:59:23.1992082Z  * [new branch]      codex/v03-native-ruling-consumers        -> origin/codex/v03-native-ruling-consumers
+check	Run actions/checkout@v4	2026-09-12T16:59:23.1996108Z  * [new branch]      codex/v03-native-session-writeback       -> origin/codex/v03-native-session-writeback
+check	Run actions/checkout@v4	2026-09-12T16:59:23.1999621Z  * [new branch]      codex/v03-native-supervisor-collectors   -> origin/codex/v03-native-supervisor-collectors
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2003532Z  * [new branch]      codex/v03-orchestration-foundations      -> origin/codex/v03-orchestration-foundations
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2006646Z  * [new branch]      codex/v03-organize-gap-lane-reports      -> origin/codex/v03-organize-gap-lane-reports
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2009956Z  * [new branch]      codex/v03-permissions-and-fixed-admission -> origin/codex/v03-permissions-and-fixed-admission
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2013514Z  * [new branch]      codex/v03-readers-prompts-fire-log       -> origin/codex/v03-readers-prompts-fire-log
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2016540Z  * [new branch]      codex/v03-ready-spec-escalations         -> origin/codex/v03-ready-spec-escalations
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2019540Z  * [new branch]      codex/v03-recovery-integration           -> origin/codex/v03-recovery-integration
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2023438Z  * [new branch]      codex/v03-recovery-rulings-writeback     -> origin/codex/v03-recovery-rulings-writeback
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2028194Z  * [new branch]      codex/v03-runtime-claims-fire-spec       -> origin/codex/v03-runtime-claims-fire-spec
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2033243Z  * [new branch]      codex/v03-runtime-simplification         -> origin/codex/v03-runtime-simplification
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2037837Z  * [new branch]      codex/v03-scope-native-consumers         -> origin/codex/v03-scope-native-consumers
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2041621Z  * [new branch]      codex/v03-session-admission-ci-delivery  -> origin/codex/v03-session-admission-ci-delivery
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2046845Z  * [new branch]      codex/v03-session-failures-and-agent-settings -> origin/codex/v03-session-failures-and-agent-settings
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2052180Z  * [new branch]      codex/v03-shared-policies-and-sessions   -> origin/codex/v03-shared-policies-and-sessions
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2056422Z  * [new branch]      codex/v03-tracker-identity-admission     -> origin/codex/v03-tracker-identity-admission
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2059695Z  * [new branch]      codex/v03-typed-runtime-boundaries       -> origin/codex/v03-typed-runtime-boundaries
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2063367Z  * [new branch]      codex/v03-union-record-delivery          -> origin/codex/v03-union-record-delivery
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2066923Z  * [new branch]      codex/v03-union-workspace-protection     -> origin/codex/v03-union-workspace-protection
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2070193Z  * [new branch]      codex/v03-workflow-phases-and-settings   -> origin/codex/v03-workflow-phases-and-settings
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2073344Z  * [new branch]      kodezart/kod86-probes                    -> origin/kodezart/kod86-probes
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2076823Z  * [new branch]      kodezart/pr1-adapter-reliability         -> origin/kodezart/pr1-adapter-reliability
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2081060Z  * [new branch]      kodezart/pr2-job-lifecycle               -> origin/kodezart/pr2-job-lifecycle
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2085792Z  * [new branch]      kodezart/pr5-orchestration-foundation    -> origin/kodezart/pr5-orchestration-foundation
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2090413Z  * [new branch]      kodezart/v03-integration                 -> origin/kodezart/v03-integration
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2094412Z  * [new branch]      kodezart/v03-kill-class                  -> origin/kodezart/v03-kill-class
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2097212Z  * [new branch]      kodezart/v03-lane-delivery               -> origin/kodezart/v03-lane-delivery
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2100078Z  * [new branch]      kodezart/v03-lane-lifecycle              -> origin/kodezart/v03-lane-lifecycle
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2103608Z  * [new branch]      kodezart/v03-lane-organize               -> origin/kodezart/v03-lane-organize
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2106574Z  * [new branch]      kodezart/v03-lane-planner                -> origin/kodezart/v03-lane-planner
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2109261Z  * [new branch]      kodezart/v03-lane-runshape               -> origin/kodezart/v03-lane-runshape
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2111965Z  * [new branch]      kodezart/v03-live-ownership              -> origin/kodezart/v03-live-ownership
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2190547Z  * [new branch]      kodezart/v03-r1-02                       -> origin/kodezart/v03-r1-02
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2193346Z  * [new branch]      kodezart/v03-r1-04                       -> origin/kodezart/v03-r1-04
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2195726Z  * [new branch]      kodezart/v03-r1-06                       -> origin/kodezart/v03-r1-06
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2198054Z  * [new branch]      kodezart/v03-r2-01                       -> origin/kodezart/v03-r2-01
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2200404Z  * [new branch]      kodezart/v03-trunk                       -> origin/kodezart/v03-trunk
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2202697Z  * [new branch]      kodezart/v03-w2-01                       -> origin/kodezart/v03-w2-01
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2205153Z  * [new branch]      kodezart/v03-w2-02                       -> origin/kodezart/v03-w2-02
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2207471Z  * [new branch]      kodezart/v03-w2-04                       -> origin/kodezart/v03-w2-04
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2209608Z  * [new branch]      main                                     -> origin/main
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2211737Z  * [new tag]         v0.1.0                                   -> v0.1.0
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2213687Z  * [new tag]         v0.1.1                                   -> v0.1.1
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2215412Z  * [new tag]         v0.1.2                                   -> v0.1.2
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2217126Z  * [new tag]         v0.1.3                                   -> v0.1.3
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2218832Z  * [new tag]         v0.1.4                                   -> v0.1.4
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2220537Z  * [new tag]         v0.2.0                                   -> v0.2.0
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2222461Z  * [new ref]         64e5db4a49c00fc53da9f27726e89af933f2ac56 -> pull/119/merge
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2226498Z ##[endgroup]
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2228051Z ##[group]Determining the checkout info
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2229793Z ##[endgroup]
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2230822Z [command]/usr/bin/git sparse-checkout disable
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2234191Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2237718Z ##[group]Checking out the ref
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2239335Z [command]/usr/bin/git checkout --progress --force refs/remotes/pull/119/merge
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2574576Z Note: switching to 'refs/remotes/pull/119/merge'.
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2576008Z 
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2577218Z You are in 'detached HEAD' state. You can look around, make experimental
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2580171Z changes and commit them, and you can discard any commits you make in this
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2583323Z state without impacting any branches by switching back to a branch.
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2584998Z 
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2586179Z If you want to create a new branch to retain commits you create, you may
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2588946Z do so (now or later) by using -c with the switch command. Example:
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2590521Z 
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2591160Z   git switch -c <new-branch-name>
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2591930Z 
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2592666Z Or undo this operation with:
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2593632Z 
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2594043Z   git switch -
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2594790Z 
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2595933Z Turn off this advice by setting config variable advice.detachedHead to false
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2597324Z 
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2598888Z HEAD is now at 64e5db4 Merge 3c477a3489bd0bf555ae7b3a08569c2c5bf049be into 4661a24b599d75503a997f3ce122f3ad2da77048
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2603279Z ##[endgroup]
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2643832Z [command]/usr/bin/git log -1 --format=%H
+check	Run actions/checkout@v4	2026-09-12T16:59:23.2672498Z 64e5db4a49c00fc53da9f27726e89af933f2ac56
+check	Run astral-sh/setup-uv@v6	﻿2026-09-12T16:59:23.3076697Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+check	Run astral-sh/setup-uv@v6	2026-09-12T16:59:23.3082159Z ##[group]Run astral-sh/setup-uv@v6
+check	Run astral-sh/setup-uv@v6	2026-09-12T16:59:23.3083444Z with:
+check	Run astral-sh/setup-uv@v6	2026-09-12T16:59:23.3084236Z   enable-cache: true
+check	Run astral-sh/setup-uv@v6	2026-09-12T16:59:23.3085164Z   activate-environment: false
+check	Run astral-sh/setup-uv@v6	2026-09-12T16:59:23.3086394Z   working-directory: /home/runner/work/kodezart/kodezart
+check	Run astral-sh/setup-uv@v6	2026-09-12T16:59:23.3087755Z   server-url: https://github.com
+check	Run astral-sh/setup-uv@v6	2026-09-12T16:59:23.3096993Z   github-token: ***
+check	Run astral-sh/setup-uv@v6	2026-09-12T16:59:23.3099159Z   cache-dependency-glob: **/*requirements*.txt
+check	Run astral-sh/setup-uv@v6	**/*requirements*.in
+check	Run astral-sh/setup-uv@v6	**/*constraints*.txt
+check	Run astral-sh/setup-uv@v6	**/*constraints*.in
+check	Run astral-sh/setup-uv@v6	**/pyproject.toml
+check	Run astral-sh/setup-uv@v6	**/uv.lock
+check	Run astral-sh/setup-uv@v6	**/*.py.lock
+check	Run astral-sh/setup-uv@v6	
+check	Run astral-sh/setup-uv@v6	2026-09-12T16:59:23.3101547Z   restore-cache: true
+check	Run astral-sh/setup-uv@v6	2026-09-12T16:59:23.3102452Z   save-cache: true
+check	Run astral-sh/setup-uv@v6	2026-09-12T16:59:23.3103576Z   prune-cache: true
+check	Run astral-sh/setup-uv@v6	2026-09-12T16:59:23.3104485Z   ignore-nothing-to-cache: false
+check	Run astral-sh/setup-uv@v6	2026-09-12T16:59:23.3105538Z   ignore-empty-workdir: false
+check	Run astral-sh/setup-uv@v6	2026-09-12T16:59:23.3106561Z   add-problem-matchers: true
+check	Run astral-sh/setup-uv@v6	2026-09-12T16:59:23.3107530Z ##[endgroup]
+check	Run astral-sh/setup-uv@v6	2026-09-12T16:59:23.4955977Z (node:2333) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+check	Run astral-sh/setup-uv@v6	2026-09-12T16:59:23.4959058Z (Use `node --trace-deprecation ...` to show where the warning was created)
+check	Run astral-sh/setup-uv@v6	2026-09-12T16:59:23.5113036Z Trying to find version for uv in: /home/runner/work/kodezart/kodezart/uv.toml
+check	Run astral-sh/setup-uv@v6	2026-09-12T16:59:23.5154296Z Could not find file: /home/runner/work/kodezart/kodezart/uv.toml
+check	Run astral-sh/setup-uv@v6	2026-09-12T16:59:23.5174554Z Trying to find version for uv in: /home/runner/work/kodezart/kodezart/pyproject.toml
+check	Run astral-sh/setup-uv@v6	2026-09-12T16:59:23.5184831Z Could not determine uv version from uv.toml or pyproject.toml. Falling back to latest.
+check	Run astral-sh/setup-uv@v6	2026-09-12T16:59:23.5244043Z Getting latest version from GitHub API...
+check	Run astral-sh/setup-uv@v6	2026-09-12T16:59:23.8449817Z manifest-file not provided, reading from local file.
+check	Run astral-sh/setup-uv@v6	2026-09-12T16:59:23.8506656Z manifest-file does not contain version 0.12.13, arch x86_64, platform unknown-linux-gnu. Falling back to GitHub releases.
+check	Run astral-sh/setup-uv@v6	2026-09-12T16:59:23.8510301Z Downloading uv from "https://github.com/astral-sh/uv/releases/download/0.12.13/uv-x86_64-unknown-linux-gnu.tar.gz" ...
+check	Run astral-sh/setup-uv@v6	2026-09-12T16:59:24.4619666Z [command]/usr/bin/tar xz --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/0d20063e-77b1-49ae-be9d-bd9af4d2171b -f /home/runner/work/_temp/38e1ac14-1b73-4cd7-bfb8-788a8055d48d
+check	Run astral-sh/setup-uv@v6	2026-09-12T16:59:24.8608309Z Added /home/runner/.local/bin to the path
+check	Run astral-sh/setup-uv@v6	2026-09-12T16:59:24.8611105Z Added /opt/hostedtoolcache/uv/0.12.13/x86_64 to the path
+check	Run astral-sh/setup-uv@v6	2026-09-12T16:59:24.8635878Z Set UV_CACHE_DIR to /home/runner/work/_temp/setup-uv-cache
+check	Run astral-sh/setup-uv@v6	2026-09-12T16:59:24.8636308Z Successfully installed uv version 0.12.13
+check	Run astral-sh/setup-uv@v6	2026-09-12T16:59:24.8637996Z Searching files using cache dependency glob: /home/runner/work/kodezart/kodezart/**/*requirements*.txt,/home/runner/work/kodezart/kodezart/**/*requirements*.in,/home/runner/work/kodezart/kodezart/**/*constraints*.txt,/home/runner/work/kodezart/kodezart/**/*constraints*.in,/home/runner/work/kodezart/kodezart/**/pyproject.toml,/home/runner/work/kodezart/kodezart/**/uv.lock,/home/runner/work/kodezart/kodezart/**/*.py.lock
+check	Run astral-sh/setup-uv@v6	2026-09-12T16:59:24.8957073Z /home/runner/work/kodezart/kodezart/pyproject.toml
+check	Run astral-sh/setup-uv@v6	2026-09-12T16:59:24.9456444Z /home/runner/work/kodezart/kodezart/uv.lock
+check	Run astral-sh/setup-uv@v6	2026-09-12T16:59:24.9475845Z Found 2 files to hash.
+check	Run astral-sh/setup-uv@v6	2026-09-12T16:59:25.0146460Z Trying to restore uv cache from GitHub Actions cache with key: setup-uv-1-x86_64-unknown-linux-gnu-3.12.3-pruned-af68a09123d5af441c86d7a4d0c5ebaefb841770393f98473687e0f8cc233959
+check	Run astral-sh/setup-uv@v6	2026-09-12T16:59:25.1988894Z Cache hit for: setup-uv-1-x86_64-unknown-linux-gnu-3.12.3-pruned-af68a09123d5af441c86d7a4d0c5ebaefb841770393f98473687e0f8cc233959
+check	Run astral-sh/setup-uv@v6	2026-09-12T16:59:25.2091272Z (node:2333) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+check	Run astral-sh/setup-uv@v6	2026-09-12T16:59:25.4729995Z Received 21640 of 21640 (100.0%), 0.3 MBs/sec
+check	Run astral-sh/setup-uv@v6	2026-09-12T16:59:25.4730541Z Cache Size: ~0 MB (21640 B)
+check	Run astral-sh/setup-uv@v6	2026-09-12T16:59:25.4755181Z [command]/usr/bin/tar -xf /home/runner/work/_temp/3bb4c0ae-f912-40df-a402-fe1632c15732/cache.tzst -P -C /home/runner/work/kodezart/kodezart --use-compress-program unzstd
+check	Run astral-sh/setup-uv@v6	2026-09-12T16:59:25.4830833Z Cache restored successfully
+check	Run astral-sh/setup-uv@v6	2026-09-12T16:59:25.4835728Z uv cache restored from GitHub Actions cache with key: setup-uv-1-x86_64-unknown-linux-gnu-3.12.3-pruned-af68a09123d5af441c86d7a4d0c5ebaefb841770393f98473687e0f8cc233959
+check	Run actions/setup-node@v4	﻿2026-09-12T16:59:25.5048749Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+check	Run actions/setup-node@v4	2026-09-12T16:59:25.5049959Z ##[group]Run actions/setup-node@v4
+check	Run actions/setup-node@v4	2026-09-12T16:59:25.5050233Z with:
+check	Run actions/setup-node@v4	2026-09-12T16:59:25.5050440Z   node-version: 22
+check	Run actions/setup-node@v4	2026-09-12T16:59:25.5050670Z   always-auth: false
+check	Run actions/setup-node@v4	2026-09-12T16:59:25.5050896Z   check-latest: false
+check	Run actions/setup-node@v4	2026-09-12T16:59:25.5053551Z   token: ***
+check	Run actions/setup-node@v4	2026-09-12T16:59:25.5053775Z env:
+check	Run actions/setup-node@v4	2026-09-12T16:59:25.5054041Z   UV_CACHE_DIR: /home/runner/work/_temp/setup-uv-cache
+check	Run actions/setup-node@v4	2026-09-12T16:59:25.5054359Z ##[endgroup]
+check	Run actions/setup-node@v4	2026-09-12T16:59:25.6487406Z Found in cache @ /opt/hostedtoolcache/node/22.23.2/x64
+check	Run actions/setup-node@v4	2026-09-12T16:59:25.6490836Z (node:2364) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+check	Run actions/setup-node@v4	2026-09-12T16:59:25.6491654Z (Use `node --trace-deprecation ...` to show where the warning was created)
+check	Run actions/setup-node@v4	2026-09-12T16:59:25.6494422Z ##[group]Environment details
+check	Run actions/setup-node@v4	2026-09-12T16:59:25.9809330Z node: v22.23.2
+check	Run actions/setup-node@v4	2026-09-12T16:59:25.9809924Z npm: 10.9.8
+check	Run actions/setup-node@v4	2026-09-12T16:59:25.9810258Z yarn: 1.22.22
+check	Run actions/setup-node@v4	2026-09-12T16:59:25.9810984Z ##[endgroup]
+check	Run make install	﻿2026-09-12T16:59:25.9954853Z ##[group]Run make install
+check	Run make install	2026-09-12T16:59:25.9955212Z [36;1mmake install[0m
+check	Run make install	2026-09-12T16:59:26.0006486Z shell: /usr/bin/bash -e {0}
+check	Run make install	2026-09-12T16:59:26.0006783Z env:
+check	Run make install	2026-09-12T16:59:26.0007057Z   UV_CACHE_DIR: /home/runner/work/_temp/setup-uv-cache
+check	Run make install	2026-09-12T16:59:26.0007388Z ##[endgroup]
+check	Run make install	2026-09-12T16:59:26.0119413Z uv sync --all-groups
+check	Run make install	2026-09-12T16:59:26.0186048Z Using CPython 3.12.3 interpreter at: /usr/bin/python3.12
+check	Run make install	2026-09-12T16:59:26.0186852Z Creating virtual environment at: .venv
+check	Run make install	2026-09-12T16:59:26.0230148Z Resolved 180 packages in 0.87ms
+check	Run make install	2026-09-12T16:59:26.0486677Z    Building kodezart @ file:///home/runner/work/kodezart/kodezart
+check	Run make install	2026-09-12T16:59:26.0494486Z warning: `build_system.requires = ["uv-build>=0.10.9,<0.11.0"]` does not contain the current uv version 0.12.13
+check	Run make install	2026-09-12T16:59:26.0516736Z       Built kodezart @ file:///home/runner/work/kodezart/kodezart
+check	Run make install	2026-09-12T16:59:26.1765034Z Downloading zstandard (5.3MiB)
+check	Run make install	2026-09-12T16:59:26.1765793Z Downloading pygments (1.2MiB)
+check	Run make install	2026-09-12T16:59:26.1767815Z Downloading tiktoken (1.1MiB)
+check	Run make install	2026-09-12T16:59:26.2099821Z Downloading beartype (1.3MiB)
+check	Run make install	2026-09-12T16:59:26.2104774Z Downloading aiohttp (1.7MiB)
+check	Run make install	2026-09-12T16:59:26.2107382Z Downloading openai (1.1MiB)
+check	Run make install	2026-09-12T16:59:26.2116312Z Downloading uvloop (4.2MiB)
+check	Run make install	2026-09-12T16:59:26.2119871Z Downloading fastavro (3.3MiB)
+check	Run make install	2026-09-12T16:59:26.2121189Z Downloading pydantic-core (2.0MiB)
+check	Run make install	2026-09-12T16:59:26.2123049Z Downloading mypy (13.0MiB)
+check	Run make install	2026-09-12T16:59:26.2124448Z Downloading ruff (10.7MiB)
+check	Run make install	2026-09-12T16:59:26.2126665Z Downloading tokenizers (3.1MiB)
+check	Run make install	2026-09-12T16:59:26.2130278Z Downloading cryptography (4.3MiB)
+check	Run make install	2026-09-12T16:59:26.2137579Z Downloading grpcio (6.4MiB)
+check	Run make install	2026-09-12T16:59:26.2139449Z Downloading hf-xet (4.0MiB)
+check	Run make install	2026-09-12T16:59:26.2141149Z Downloading psycopg-binary (4.9MiB)
+check	Run make install	2026-09-12T16:59:26.2144481Z Downloading claude-agent-sdk (91.0MiB)
+check	Run make install	2026-09-12T16:59:26.2147517Z Downloading botocore (14.0MiB)
+check	Run make install	2026-09-12T16:59:26.2149299Z Downloading temporalio (11.6MiB)
+check	Run make install	2026-09-12T16:59:27.2114159Z  Downloaded openai
+check	Run make install	2026-09-12T16:59:27.2183611Z  Downloaded tiktoken
+check	Run make install	2026-09-12T16:59:27.2200600Z  Downloaded pygments
+check	Run make install	2026-09-12T16:59:27.2701297Z  Downloaded beartype
+check	Run make install	2026-09-12T16:59:27.3097009Z  Downloaded aiohttp
+check	Run make install	2026-09-12T16:59:27.3401016Z  Downloaded pydantic-core
+check	Run make install	2026-09-12T16:59:27.4313954Z  Downloaded tokenizers
+check	Run make install	2026-09-12T16:59:27.4395723Z  Downloaded fastavro
+check	Run make install	2026-09-12T16:59:27.4741577Z  Downloaded hf-xet
+check	Run make install	2026-09-12T16:59:27.4829063Z  Downloaded uvloop
+check	Run make install	2026-09-12T16:59:27.4941781Z  Downloaded cryptography
+check	Run make install	2026-09-12T16:59:27.5138820Z  Downloaded psycopg-binary
+check	Run make install	2026-09-12T16:59:27.5218624Z  Downloaded zstandard
+check	Run make install	2026-09-12T16:59:27.5563177Z  Downloaded grpcio
+check	Run make install	2026-09-12T16:59:27.6503974Z  Downloaded ruff
+check	Run make install	2026-09-12T16:59:27.6964597Z  Downloaded temporalio
+check	Run make install	2026-09-12T16:59:27.7163876Z  Downloaded botocore
+check	Run make install	2026-09-12T16:59:27.7326153Z  Downloaded mypy
+check	Run make install	2026-09-12T16:59:28.6564139Z  Downloaded claude-agent-sdk
+check	Run make install	2026-09-12T16:59:28.6566326Z Prepared 176 packages in 2.63s
+check	Run make install	2026-09-12T16:59:28.8164111Z Installed 176 packages in 159ms
+check	Run make install	2026-09-12T16:59:28.8165036Z  + ag-ui-protocol==0.1.13
+check	Run make install	2026-09-12T16:59:28.8165743Z  + aiofile==3.9.0
+check	Run make install	2026-09-12T16:59:28.8166176Z  + aiohappyeyeballs==2.6.1
+check	Run make install	2026-09-12T16:59:28.8166618Z  + aiohttp==3.13.3
+check	Run make install	2026-09-12T16:59:28.8166990Z  + aiosignal==1.4.0
+check	Run make install	2026-09-12T16:59:28.8167400Z  + annotated-doc==0.0.4
+check	Run make install	2026-09-12T16:59:28.8167863Z  + annotated-types==0.7.0
+check	Run make install	2026-09-12T16:59:28.8168270Z  + anthropic==0.84.0
+check	Run make install	2026-09-12T16:59:28.8168795Z  + anyio==4.12.1
+check	Run make install	2026-09-12T16:59:28.8169190Z  + argcomplete==3.6.3
+check	Run make install	2026-09-12T16:59:28.8169591Z  + attrs==25.4.0
+check	Run make install	2026-09-12T16:59:28.8169956Z  + authlib==1.6.9
+check	Run make install	2026-09-12T16:59:28.8170354Z  + beartype==0.22.9
+check	Run make install	2026-09-12T16:59:28.8170699Z  + boto3==1.42.63
+check	Run make install	2026-09-12T16:59:28.8171040Z  + botocore==1.42.63
+check	Run make install	2026-09-12T16:59:28.8171410Z  + cachetools==7.0.4
+check	Run make install	2026-09-12T16:59:28.8171756Z  + caio==0.9.25
+check	Run make install	2026-09-12T16:59:28.8172134Z  + certifi==2026.2.25
+check	Run make install	2026-09-12T16:59:28.8172512Z  + cffi==2.0.0
+check	Run make install	2026-09-12T16:59:28.8173032Z  + charset-normalizer==3.4.5
+check	Run make install	2026-09-12T16:59:28.8173895Z  + claude-agent-sdk==0.2.151
+check	Run make install	2026-09-12T16:59:28.8174335Z  + click==8.3.1
+check	Run make install	2026-09-12T16:59:28.8174823Z  + cohere==5.20.7
+check	Run make install	2026-09-12T16:59:28.8175234Z  + cryptography==46.0.5
+check	Run make install	2026-09-12T16:59:28.8175666Z  + cyclopts==4.8.0
+check	Run make install	2026-09-12T16:59:28.8176030Z  + distro==1.9.0
+check	Run make install	2026-09-12T16:59:28.8176388Z  + dnspython==2.8.0
+check	Run make install	2026-09-12T16:59:28.8176809Z  + docstring-parser==0.17.0
+check	Run make install	2026-09-12T16:59:28.8177234Z  + docutils==0.22.4
+check	Run make install	2026-09-12T16:59:28.8177618Z  + email-validator==2.3.0
+check	Run make install	2026-09-12T16:59:28.8178040Z  + eval-type-backport==0.3.1
+check	Run make install	2026-09-12T16:59:28.8178473Z  + exceptiongroup==1.3.1
+check	Run make install	2026-09-12T16:59:28.8178860Z  + executing==2.2.1
+check	Run make install	2026-09-12T16:59:28.8200791Z  + fastapi==0.135.1
+check	Run make install	2026-09-12T16:59:28.8201264Z  + fastavro==1.12.1
+check	Run make install	2026-09-12T16:59:28.8201621Z  + fastmcp==3.1.0
+check	Run make install	2026-09-12T16:59:28.8201981Z  + filelock==3.25.0
+check	Run make install	2026-09-12T16:59:28.8202308Z  + frozenlist==1.8.0
+check	Run make install	2026-09-12T16:59:28.8202644Z  + fsspec==2026.2.0
+check	Run make install	2026-09-12T16:59:28.8203188Z  + genai-prices==0.0.55
+check	Run make install	2026-09-12T16:59:28.8203545Z  + google-auth==2.49.0
+check	Run make install	2026-09-12T16:59:28.8203879Z  + google-genai==1.66.0
+check	Run make install	2026-09-12T16:59:28.8204277Z  + googleapis-common-protos==1.73.0
+check	Run make install	2026-09-12T16:59:28.8204677Z  + griffelib==2.0.0
+check	Run make install	2026-09-12T16:59:28.8204979Z  + groq==1.1.0
+check	Run make install	2026-09-12T16:59:28.8205291Z  + grpcio==1.78.0
+check	Run make install	2026-09-12T16:59:28.8205930Z  + h11==0.16.0
+check	Run make install	2026-09-12T16:59:28.8206259Z  + hf-xet==1.3.2
+check	Run make install	2026-09-12T16:59:28.8206617Z  + httpcore==1.0.9
+check	Run make install	2026-09-12T16:59:28.8206960Z  + httptools==0.7.1
+check	Run make install	2026-09-12T16:59:28.8207311Z  + httpx==0.28.1
+check	Run make install	2026-09-12T16:59:28.8207660Z  + httpx-sse==0.4.3
+check	Run make install	2026-09-12T16:59:28.8208025Z  + huggingface-hub==1.6.0
+check	Run make install	2026-09-12T16:59:28.8208408Z  + idna==3.11
+check	Run make install	2026-09-12T16:59:28.8208761Z  + importlib-metadata==8.7.1
+check	Run make install	2026-09-12T16:59:28.8209170Z  + iniconfig==2.3.0
+check	Run make install	2026-09-12T16:59:28.8209509Z  + invoke==2.2.1
+check	Run make install	2026-09-12T16:59:28.8209866Z  + jaraco-classes==3.4.0
+check	Run make install	2026-09-12T16:59:28.8210267Z  + jaraco-context==6.1.1
+check	Run make install	2026-09-12T16:59:28.8210659Z  + jaraco-functools==4.4.0
+check	Run make install	2026-09-12T16:59:28.8211064Z  + jeepney==0.9.0
+check	Run make install	2026-09-12T16:59:28.8211420Z  + jiter==0.13.0
+check	Run make install	2026-09-12T16:59:28.8211759Z  + jmespath==1.1.0
+check	Run make install	2026-09-12T16:59:28.8212118Z  + jsonpatch==1.33
+check	Run make install	2026-09-12T16:59:28.8212469Z  + jsonpointer==3.0.0
+check	Run make install	2026-09-12T16:59:28.8213074Z  + jsonref==1.1.0
+check	Run make install	2026-09-12T16:59:28.8213428Z  + jsonschema==4.26.0
+check	Run make install	2026-09-12T16:59:28.8213817Z  + jsonschema-path==0.4.5
+check	Run make install	2026-09-12T16:59:28.8214308Z  + jsonschema-specifications==2025.9.1
+check	Run make install	2026-09-12T16:59:28.8214774Z  + keyring==25.7.0
+check	Run make install	2026-09-12T16:59:28.8215352Z  + kodezart==0.2.0 (from file:///home/runner/work/kodezart/kodezart)
+check	Run make install	2026-09-12T16:59:28.8215970Z  + langchain==1.2.10
+check	Run make install	2026-09-12T16:59:28.8216420Z  + langchain-core==1.2.17
+check	Run make install	2026-09-12T16:59:28.8217069Z  + langgraph==1.0.10
+check	Run make install	2026-09-12T16:59:28.8217569Z  + langgraph-checkpoint==4.0.1
+check	Run make install	2026-09-12T16:59:28.8218088Z  + langgraph-checkpoint-postgres==3.0.5
+check	Run make install	2026-09-12T16:59:28.8218578Z  + langgraph-prebuilt==1.0.8
+check	Run make install	2026-09-12T16:59:28.8219009Z  + langgraph-sdk==0.3.9
+check	Run make install	2026-09-12T16:59:28.8219383Z  + langsmith==0.7.14
+check	Run make install	2026-09-12T16:59:28.8219744Z  + librt==0.8.1
+check	Run make install	2026-09-12T16:59:28.8220105Z  + logfire==4.27.0
+check	Run make install	2026-09-12T16:59:28.8220461Z  + logfire-api==4.27.0
+check	Run make install	2026-09-12T16:59:28.8220842Z  + markdown-it-py==4.0.0
+check	Run make install	2026-09-12T16:59:28.8221219Z  + mcp==1.26.0
+check	Run make install	2026-09-12T16:59:28.8221571Z  + mdurl==0.1.2
+check	Run make install	2026-09-12T16:59:28.8221931Z  + mistralai==1.12.4
+check	Run make install	2026-09-12T16:59:28.8222314Z  + more-itertools==10.8.0
+check	Run make install	2026-09-12T16:59:28.8222928Z  + multidict==6.7.1
+check	Run make install	2026-09-12T16:59:28.8223243Z  + mypy==1.19.1
+check	Run make install	2026-09-12T16:59:28.8223554Z  + mypy-extensions==1.1.0
+check	Run make install	2026-09-12T16:59:28.8223939Z  + nexus-rpc==1.2.0
+check	Run make install	2026-09-12T16:59:28.8224527Z  + openai==2.26.0
+check	Run make install	2026-09-12T16:59:28.8225063Z  + openapi-pydantic==0.5.1
+check	Run make install	2026-09-12T16:59:28.8225620Z  + opentelemetry-api==1.39.1
+check	Run make install	2026-09-12T16:59:28.8226178Z  + opentelemetry-exporter-otlp-proto-common==1.39.1
+check	Run make install	2026-09-12T16:59:28.8226868Z  + opentelemetry-exporter-otlp-proto-http==1.39.1
+check	Run make install	2026-09-12T16:59:28.8227575Z  + opentelemetry-instrumentation==0.60b1
+check	Run make install	2026-09-12T16:59:28.8228234Z  + opentelemetry-instrumentation-httpx==0.60b1
+check	Run make install	2026-09-12T16:59:28.8229140Z  + opentelemetry-proto==1.39.1
+check	Run make install	2026-09-12T16:59:28.8229624Z  + opentelemetry-sdk==1.39.1
+check	Run make install	2026-09-12T16:59:28.8230196Z  + opentelemetry-semantic-conventions==0.60b1
+check	Run make install	2026-09-12T16:59:28.8230813Z  + opentelemetry-util-http==0.60b1
+check	Run make install	2026-09-12T16:59:28.8231265Z  + orjson==3.11.7
+check	Run make install	2026-09-12T16:59:28.8232200Z  + ormsgpack==1.12.2
+check	Run make install	2026-09-12T16:59:28.8232595Z  + packaging==25.0
+check	Run make install	2026-09-12T16:59:28.8233113Z  + pathable==0.5.0
+check	Run make install	2026-09-12T16:59:28.8233480Z  + pathspec==1.0.4
+check	Run make install	2026-09-12T16:59:28.8233835Z  + platformdirs==4.9.4
+check	Run make install	2026-09-12T16:59:28.8234212Z  + pluggy==1.6.0
+check	Run make install	2026-09-12T16:59:28.8234587Z  + prompt-toolkit==3.0.52
+check	Run make install	2026-09-12T16:59:28.8234991Z  + propcache==0.4.1
+check	Run make install	2026-09-12T16:59:28.8235351Z  + protobuf==6.33.5
+check	Run make install	2026-09-12T16:59:28.8235718Z  + psycopg==3.3.3
+check	Run make install	2026-09-12T16:59:28.8236101Z  + psycopg-binary==3.3.3
+check	Run make install	2026-09-12T16:59:28.8236514Z  + psycopg-pool==3.3.0
+check	Run make install	2026-09-12T16:59:28.8236913Z  + py-key-value-aio==0.4.4
+check	Run make install	2026-09-12T16:59:28.8237329Z  + pyasn1==0.6.2
+check	Run make install	2026-09-12T16:59:28.8237675Z  + pyasn1-modules==0.4.2
+check	Run make install	2026-09-12T16:59:28.8238046Z  + pycparser==3.0
+check	Run make install	2026-09-12T16:59:28.8238407Z  + pydantic==2.12.5
+check	Run make install	2026-09-12T16:59:28.8238771Z  + pydantic-ai==1.67.0
+check	Run make install	2026-09-12T16:59:28.8239170Z  + pydantic-ai-slim==1.67.0
+check	Run make install	2026-09-12T16:59:28.8239592Z  + pydantic-core==2.41.5
+check	Run make install	2026-09-12T16:59:28.8240279Z  + pydantic-evals==1.67.0
+check	Run make install	2026-09-12T16:59:28.8240715Z  + pydantic-graph==1.67.0
+check	Run make install	2026-09-12T16:59:28.8241131Z  + pydantic-settings==2.13.1
+check	Run make install	2026-09-12T16:59:28.8241565Z  + pygments==2.19.2
+check	Run make install	2026-09-12T16:59:28.8241938Z  + pyjwt==2.11.0
+check	Run make install	2026-09-12T16:59:28.8242383Z  + pyperclip==1.11.0
+check	Run make install	2026-09-12T16:59:28.8242948Z  + pytest==9.0.2
+check	Run make install	2026-09-12T16:59:28.8243332Z  + pytest-asyncio==1.3.0
+check	Run make install	2026-09-12T16:59:28.8243766Z  + python-dateutil==2.9.0.post0
+check	Run make install	2026-09-12T16:59:28.8244212Z  + python-dotenv==1.2.2
+check	Run make install	2026-09-12T16:59:28.8244625Z  + python-multipart==0.0.22
+check	Run make install	2026-09-12T16:59:28.8245024Z  + pyyaml==6.0.3
+check	Run make install	2026-09-12T16:59:28.8245415Z  + referencing==0.37.0
+check	Run make install	2026-09-12T16:59:28.8245799Z  + regex==2026.2.28
+check	Run make install	2026-09-12T16:59:28.8246169Z  + requests==2.32.5
+check	Run make install	2026-09-12T16:59:28.8246546Z  + requests-toolbelt==1.0.0
+check	Run make install	2026-09-12T16:59:28.8246933Z  + rich==14.3.3
+check	Run make install	2026-09-12T16:59:28.8247270Z  + rich-rst==1.3.2
+check	Run make install	2026-09-12T16:59:28.8247618Z  + rpds-py==0.30.0
+check	Run make install	2026-09-12T16:59:28.8247945Z  + rsa==4.9.1
+check	Run make install	2026-09-12T16:59:28.8248290Z  + ruff==0.15.5
+check	Run make install	2026-09-12T16:59:28.8248633Z  + s3transfer==0.16.0
+check	Run make install	2026-09-12T16:59:28.8249002Z  + secretstorage==3.5.0
+check	Run make install	2026-09-12T16:59:28.8249373Z  + shellingham==1.5.4
+check	Run make install	2026-09-12T16:59:28.8249748Z  + six==1.17.0
+check	Run make install	2026-09-12T16:59:28.8250077Z  + sniffio==1.3.1
+check	Run make install	2026-09-12T16:59:28.8250410Z  + sse-starlette==3.3.2
+check	Run make install	2026-09-12T16:59:28.8250777Z  + starlette==0.52.1
+check	Run make install	2026-09-12T16:59:28.8251096Z  + structlog==25.5.0
+check	Run make install	2026-09-12T16:59:28.8251415Z  + temporalio==1.20.0
+check	Run make install	2026-09-12T16:59:28.8251787Z  + tenacity==9.1.4
+check	Run make install	2026-09-12T16:59:28.8252132Z  + tiktoken==0.12.0
+check	Run make install	2026-09-12T16:59:28.8252477Z  + tokenizers==0.22.2
+check	Run make install	2026-09-12T16:59:28.8253015Z  + tqdm==4.67.3
+check	Run make install	2026-09-12T16:59:28.8253348Z  + typer==0.24.1
+check	Run make install	2026-09-12T16:59:28.8253726Z  + types-protobuf==6.32.1.20260221
+check	Run make install	2026-09-12T16:59:28.8254190Z  + types-requests==2.32.4.20260107
+check	Run make install	2026-09-12T16:59:28.8254629Z  + typing-extensions==4.15.0
+check	Run make install	2026-09-12T16:59:28.8255027Z  + typing-inspection==0.4.2
+check	Run make install	2026-09-12T16:59:28.8255399Z  + uncalled-for==0.2.0
+check	Run make install	2026-09-12T16:59:28.8255755Z  + urllib3==2.6.3
+check	Run make install	2026-09-12T16:59:28.8256080Z  + uuid-utils==0.14.1
+check	Run make install	2026-09-12T16:59:28.8256412Z  + uvicorn==0.41.0
+check	Run make install	2026-09-12T16:59:28.8256737Z  + uvloop==0.22.1
+check	Run make install	2026-09-12T16:59:28.8257057Z  + watchfiles==1.1.1
+check	Run make install	2026-09-12T16:59:28.8257384Z  + wcwidth==0.6.0
+check	Run make install	2026-09-12T16:59:28.8257698Z  + websockets==16.0
+check	Run make install	2026-09-12T16:59:28.8258019Z  + wrapt==1.17.3
+check	Run make install	2026-09-12T16:59:28.8258336Z  + xai-sdk==1.8.0
+check	Run make install	2026-09-12T16:59:28.8258648Z  + xxhash==3.6.0
+check	Run make install	2026-09-12T16:59:28.8258965Z  + yarl==1.23.0
+check	Run make install	2026-09-12T16:59:28.8259281Z  + zipp==3.23.0
+check	Run make install	2026-09-12T16:59:28.8259582Z  + zstandard==0.25.0
+check	Run make check	﻿2026-09-12T16:59:28.8341242Z ##[group]Run make check
+check	Run make check	2026-09-12T16:59:28.8341531Z [36;1mmake check[0m
+check	Run make check	2026-09-12T16:59:28.8381866Z shell: /usr/bin/bash -e {0}
+check	Run make check	2026-09-12T16:59:28.8382140Z env:
+check	Run make check	2026-09-12T16:59:28.8382408Z   UV_CACHE_DIR: /home/runner/work/_temp/setup-uv-cache
+check	Run make check	2026-09-12T16:59:28.8382918Z ##[endgroup]
+check	Run make check	2026-09-12T16:59:28.8515045Z uv run ruff format --check src/ tests/
+check	Run make check	2026-09-12T16:59:28.9441308Z 323 files already formatted
+check	Run make check	2026-09-12T16:59:28.9465014Z uv run ruff check src/ tests/
+check	Run make check	2026-09-12T16:59:29.0518873Z All checks passed!
+check	Run make check	2026-09-12T16:59:29.0543002Z uv run mypy src/
+check	Run make check	2026-09-12T16:59:42.2837089Z Success: no issues found in 166 source files
+check	Run make check	2026-09-12T16:59:42.3178817Z uv run pytest
+check	Run make check	2026-09-12T16:59:50.6840026Z ============================= test session starts ==============================
+check	Run make check	2026-09-12T16:59:50.6841035Z platform linux -- Python 3.12.3, pytest-9.0.2, pluggy-1.6.0
+check	Run make check	2026-09-12T16:59:50.6841794Z rootdir: /home/runner/work/kodezart/kodezart
+check	Run make check	2026-09-12T16:59:50.6842360Z configfile: pyproject.toml
+check	Run make check	2026-09-12T16:59:50.6843427Z testpaths: tests
+check	Run make check	2026-09-12T16:59:50.6844065Z plugins: anyio-4.12.1, langsmith-0.7.14, logfire-4.27.0, asyncio-1.3.0
+check	Run make check	2026-09-12T16:59:50.6845309Z asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=session, asyncio_default_test_loop_scope=function
+check	Run make check	2026-09-12T16:59:50.6846251Z collected 3089 items
+check	Run make check	2026-09-12T16:59:50.6846935Z 
+check	Run make check	2026-09-12T16:59:50.7041464Z tests/adapters/test_claude_client_executor.py .........                  [  0%]
+check	Run make check	2026-09-12T16:59:50.7566753Z tests/adapters/test_claude_executors.py ................................ [  1%]
+check	Run make check	2026-09-12T16:59:50.8116148Z ..................................                                       [  2%]
+check	Run make check	2026-09-12T16:59:51.3733202Z tests/adapters/test_git_artifact_persister.py ......                     [  2%]
+check	Run make check	2026-09-12T16:59:51.9611174Z tests/adapters/test_git_branch_merger.py ..............                  [  3%]
+check	Run make check	2026-09-12T16:59:52.3166301Z tests/adapters/test_git_change_persister.py ...............              [  3%]
+check	Run make check	2026-09-12T16:59:52.3226341Z tests/adapters/test_git_ref_publisher.py .....                           [  3%]
+check	Run make check	2026-09-12T16:59:52.4688132Z tests/adapters/test_git_worktree_provider.py ...........                 [  4%]
+check	Run make check	2026-09-12T16:59:52.5779405Z tests/adapters/test_github_api.py ...................................... [  5%]
+check	Run make check	2026-09-12T16:59:52.8772285Z ...................................................................      [  7%]
+check	Run make check	2026-09-12T16:59:52.9060076Z tests/adapters/test_host_skill_inventory.py ................             [  7%]
+check	Run make check	2026-09-12T16:59:53.9535758Z tests/adapters/test_hosted_mcp_session.py .......                        [  8%]
+check	Run make check	2026-09-12T16:59:54.0929866Z tests/adapters/test_http_mcp_tool_caller.py ............................ [  9%]
+check	Run make check	2026-09-12T17:00:05.8964474Z ..............................                                           [ 10%]
+check	Run make check	2026-09-12T17:00:06.0477316Z tests/adapters/test_judgment_scanner.py ................................ [ 11%]
+check	Run make check	2026-09-12T17:00:06.1481134Z .....................                                                    [ 11%]
+check	Run make check	2026-09-12T17:00:06.1818269Z tests/adapters/test_knowledge_transport.py ..................            [ 12%]
+check	Run make check	2026-09-12T17:00:07.2566456Z tests/adapters/test_mcp_strictness.py ...................                [ 13%]
+check	Run make check	2026-09-12T17:00:07.2612949Z tests/adapters/test_no_forge_delivery.py ...                             [ 13%]
+check	Run make check	2026-09-12T17:00:07.3403616Z tests/adapters/test_outbound_corpus.py ....................              [ 13%]
+check	Run make check	2026-09-12T17:00:07.4103206Z tests/adapters/test_outbound_gate.py .....................               [ 14%]
+check	Run make check	2026-09-12T17:00:07.4257527Z tests/adapters/test_sdk_mapping.py .......................               [ 15%]
+check	Run make check	2026-09-12T17:00:11.8600582Z tests/adapters/test_stdio_mcp_tool_caller.py ..................          [ 15%]
+check	Run make check	2026-09-12T17:00:12.5023419Z tests/adapters/test_subprocess_git.py .................................. [ 16%]
+check	Run make check	2026-09-12T17:00:12.5564525Z .....                                                                    [ 17%]
+check	Run make check	2026-09-12T17:00:12.5717947Z tests/adapters/test_tracker_self_writes.py ...........                   [ 17%]
+check	Run make check	2026-09-12T17:00:12.7887248Z tests/api/v1/test_agent.py .........2026-09-12 17:00:12 [info     ] job_finished                   job_id=fea67652888b4c2daba43fdad6090e14 lane=workflow outcome=review_passed_no_pr_adapter
+check	Run make check	2026-09-12T17:00:12.8352260Z .2026-09-12 17:00:12 [info     ] job_finished                   job_id=1b2ee1ceea1943c6856791419bc65316 lane=workflow outcome=review_passed_no_pr_adapter
+check	Run make check	2026-09-12T17:00:13.3646623Z ......2026-09-12 17:00:13 [info     ] job_finished                   job_id=06f91de82f44433cb8c612fde4917b82 lane=workflow outcome=ci_not_configured
+check	Run make check	2026-09-12T17:00:13.4090008Z .2026-09-12 17:00:13 [info     ] job_finished                   job_id=55241eb9f6994205867085748548968d lane=workflow outcome=merge_divergent
+check	Run make check	2026-09-12T17:00:13.4954249Z .2026-09-12 17:00:13 [info     ] job_finished                   job_id=b59288bf2fba4fe1a61aafc9a51c24af lane=workflow outcome=merge_divergent
+check	Run make check	2026-09-12T17:00:13.5508936Z .2026-09-12 17:00:13 [info     ] job_finished                   job_id=47cf894c173044c6985f2facbb19c98d lane=workflow outcome=review_passed_no_pr_adapter
+check	Run make check	2026-09-12T17:00:13.5527356Z .                          [ 18%]
+check	Run make check	2026-09-12T17:00:13.5723599Z tests/api/v1/test_health.py .....                                        [ 18%]
+check	Run make check	2026-09-12T17:00:15.0424448Z tests/api/v1/test_jobs.py .............................................. [ 19%]
+check	Run make check	2026-09-12T17:00:15.1698363Z ..........                                                               [ 20%]
+check	Run make check	2026-09-12T17:00:15.4123325Z tests/chains/test_accept_gate.py ......................                  [ 20%]
+check	Run make check	2026-09-12T17:00:16.5315741Z tests/chains/test_criteria_validation.py ..............................  [ 21%]
+check	Run make check	2026-09-12T17:00:16.5895258Z tests/chains/test_dispatch_definitions.py .............                  [ 22%]
+check	Run make check	2026-09-12T17:00:17.1258226Z tests/chains/test_outbound_gating.py ..............                      [ 22%]
+check	Run make check	2026-09-12T17:00:17.4797476Z tests/chains/test_ralph_loop.py ........................................ [ 23%]
+check	Run make check	2026-09-12T17:00:17.7134262Z ........                                                                 [ 24%]
+check	Run make check	2026-09-12T17:00:18.9564671Z tests/chains/test_ralph_workflow.py .................................... [ 25%]
+check	Run make check	2026-09-12T17:00:23.3551216Z ........................................................................ [ 27%]
+check	Run make check	2026-09-12T17:00:23.5653718Z ......                                                                   [ 27%]
+check	Run make check	2026-09-12T17:00:23.5967116Z tests/chains/test_remediation.py .......                                 [ 28%]
+check	Run make check	2026-09-12T17:00:23.6396242Z tests/chains/test_retry_floor_wiring.py ......                           [ 28%]
+check	Run make check	2026-09-12T17:00:23.7470861Z tests/chains/test_shorthand_url_resolution.py ...                        [ 28%]
+check	Run make check	2026-09-12T17:00:24.1610741Z tests/chains/test_ticket_generation.py ................................. [ 29%]
+check	Run make check	2026-09-12T17:00:24.3611682Z ....                                                                     [ 29%]
+check	Run make check	2026-09-12T17:00:24.4562930Z tests/core/test_bare_mode.py .                                           [ 29%]
+check	Run make check	2026-09-12T17:00:24.5466792Z tests/core/test_config.py ..........................                     [ 30%]
+check	Run make check	2026-09-12T17:00:24.5550749Z tests/core/test_config_error_redaction.py ....                           [ 30%]
+check	Run make check	2026-09-12T17:00:24.5810878Z tests/core/test_credential_shapes.py .........                           [ 30%]
+check	Run make check	2026-09-12T17:00:24.6820582Z tests/core/test_docs_prompt_knobs.py ...........                         [ 31%]
+check	Run make check	2026-09-12T17:00:24.7025454Z tests/core/test_error_egress.py ................................         [ 32%]
+check	Run make check	2026-09-12T17:00:24.7374798Z tests/core/test_knowledge_connection.py ................................ [ 33%]
+check	Run make check	2026-09-12T17:00:24.9721621Z ..............................                                           [ 34%]
+check	Run make check	2026-09-12T17:00:25.0682350Z tests/core/test_knowledge_grant.py .........                             [ 34%]
+check	Run make check	2026-09-12T17:00:26.4223960Z tests/core/test_log_emitter.py .......                                   [ 34%]
+check	Run make check	2026-09-12T17:00:26.4243105Z tests/core/test_logging.py .                                             [ 34%]
+check	Run make check	2026-09-12T17:00:26.4563406Z tests/core/test_logging_chain.py ....                                    [ 34%]
+check	Run make check	2026-09-12T17:00:26.5408862Z tests/core/test_notion_credential.py ......                              [ 35%]
+check	Run make check	2026-09-12T17:00:26.7622614Z tests/core/test_prompt_boot.py ......                                    [ 35%]
+check	Run make check	2026-09-12T17:00:26.8880295Z tests/core/test_retry.py .............................                   [ 36%]
+check	Run make check	2026-09-12T17:00:26.9020428Z tests/core/test_stream_drain.py ........                                 [ 36%]
+check	Run make check	2026-09-12T17:00:26.9914930Z tests/core/test_tracker_credential.py .......                            [ 36%]
+check	Run make check	2026-09-12T17:00:26.9957313Z tests/docs/test_api_event_reference.py ....                              [ 36%]
+check	Run make check	2026-09-12T17:00:27.4200447Z tests/docs/test_documented_surface.py ....................               [ 37%]
+check	Run make check	2026-09-12T17:00:27.4810530Z tests/docs/test_parity_checklist.py .........                            [ 37%]
+check	Run make check	2026-09-12T17:00:27.5121074Z tests/docs/test_setup_guide.py ...............                           [ 38%]
+check	Run make check	2026-09-12T17:00:27.5138794Z tests/domain/test_agent.py ..                                            [ 38%]
+check	Run make check	2026-09-12T17:00:28.3923465Z tests/domain/test_base_resolution.py ............................        [ 39%]
+check	Run make check	2026-09-12T17:00:28.4005624Z tests/domain/test_base_scope.py ...........                              [ 39%]
+check	Run make check	2026-09-12T17:00:28.4106048Z tests/domain/test_base_staleness.py ......                               [ 39%]
+check	Run make check	2026-09-12T17:00:28.4140397Z tests/domain/test_branch.py .....                                        [ 39%]
+check	Run make check	2026-09-12T17:00:28.4370234Z tests/domain/test_criteria_feasibility.py .............................. [ 40%]
+check	Run make check	2026-09-12T17:00:28.4644023Z ......................................                                   [ 42%]
+check	Run make check	2026-09-12T17:00:28.4695720Z tests/domain/test_criteria_grading.py .......                            [ 42%]
+check	Run make check	2026-09-12T17:00:28.6598436Z tests/domain/test_criterion_identity.py ........                         [ 42%]
+check	Run make check	2026-09-12T17:00:28.6795172Z tests/domain/test_dispatch_predicate.py ................................ [ 43%]
+check	Run make check	2026-09-12T17:00:28.6819090Z ...                                                                      [ 43%]
+check	Run make check	2026-09-12T17:00:28.6975283Z tests/domain/test_git_url.py .........................                   [ 44%]
+check	Run make check	2026-09-12T17:00:28.8714438Z tests/domain/test_no_ref_parsing.py ....                                 [ 44%]
+check	Run make check	2026-09-12T17:00:28.8877431Z tests/domain/test_operation_optionality.py .......................       [ 45%]
+check	Run make check	2026-09-12T17:00:28.9009196Z tests/domain/test_outcome.py ....................                        [ 46%]
+check	Run make check	2026-09-12T17:00:28.9134445Z tests/domain/test_scope_ref.py .................                         [ 46%]
+check	Run make check	2026-09-12T17:00:28.9213620Z tests/domain/test_stall_report.py .........                              [ 46%]
+check	Run make check	2026-09-12T17:00:28.9320364Z tests/domain/test_surface_lease.py .................                     [ 47%]
+check	Run make check	2026-09-12T17:00:28.9334844Z tests/integration/test_checkpointer_postgres.py ss                       [ 47%]
+check	Run make check	2026-09-12T17:00:29.0505631Z tests/integration/test_criteria_oracle.py ...                            [ 47%]
+check	Run make check	2026-09-12T17:00:29.0519202Z tests/integration/test_live_criteria_probes.py ss                        [ 47%]
+check	Run make check	2026-09-12T17:00:29.0906769Z tests/integration/test_self_running_chain.py ...                         [ 47%]
+check	Run make check	2026-09-12T17:00:29.0925598Z tests/integration/test_session_resume.py sss                             [ 47%]
+check	Run make check	2026-09-12T17:00:30.9926785Z tests/integration/test_stacked_scope.py .....                            [ 48%]
+check	Run make check	2026-09-12T17:00:34.0376808Z tests/integration/test_workflow_e2e.py .................                 [ 48%]
+check	Run make check	2026-09-12T17:00:34.0413061Z tests/probes/test_ab_failure_capture.py ...                              [ 48%]
+check	Run make check	2026-09-12T17:00:34.0421219Z tests/probes/test_ab_smoke.py s                                          [ 48%]
+check	Run make check	2026-09-12T17:00:34.0498993Z tests/probes/test_harness_capabilities.py .ssssss                        [ 48%]
+check	Run make check	2026-09-12T17:00:34.0547053Z tests/probes/test_strict_output_enforcement.py .s                        [ 49%]
+check	Run make check	2026-09-12T17:00:34.0555198Z tests/probes/test_v5_orchestration_live.py s                             [ 49%]
+check	Run make check	2026-09-12T17:00:34.1040948Z tests/prompts/test_absence_bindings.py ................................  [ 50%]
+check	Run make check	2026-09-12T17:00:34.1723738Z tests/prompts/test_criteria_generation_prompts.py ...............        [ 50%]
+check	Run make check	2026-09-12T17:00:34.1949046Z tests/prompts/test_initiative_target_date.py .....                       [ 50%]
+check	Run make check	2026-09-12T17:00:34.3169969Z tests/prompts/test_knowledge_map.py ..........................           [ 51%]
+check	Run make check	2026-09-12T17:00:34.3205348Z tests/prompts/test_minimal_floor.py ....                                 [ 51%]
+check	Run make check	2026-09-12T17:00:34.4381079Z tests/prompts/test_operation_config.py ................................. [ 52%]
+check	Run make check	2026-09-12T17:00:34.6504926Z .................                                                        [ 53%]
+check	Run make check	2026-09-12T17:00:34.7379440Z tests/prompts/test_pass_roster.py ...................................... [ 54%]
+check	Run make check	2026-09-12T17:00:35.2005961Z ........................................                                 [ 55%]
+check	Run make check	2026-09-12T17:00:35.2243594Z tests/prompts/test_principal_roles.py ..........                         [ 56%]
+check	Run make check	2026-09-12T17:00:35.3108919Z tests/prompts/test_prompt_wiring.py .................................... [ 57%]
+check	Run make check	2026-09-12T17:00:35.4122236Z .................                                                        [ 57%]
+check	Run make check	2026-09-12T17:00:35.4825778Z tests/prompts/test_resolvable_identifiers.py ...........                 [ 58%]
+check	Run make check	2026-09-12T17:00:35.5927704Z tests/prompts/test_rollback.py ........                                  [ 58%]
+check	Run make check	2026-09-12T17:00:35.7393337Z tests/prompts/test_session_policy.py ................................... [ 59%]
+check	Run make check	2026-09-12T17:00:45.9799207Z .......................................                                  [ 60%]
+check	Run make check	2026-09-12T17:00:46.0119894Z tests/prompts/test_set_completeness.py .........                         [ 61%]
+check	Run make check	2026-09-12T17:00:46.1184663Z tests/prompts/test_skills_loadouts.py .....................              [ 61%]
+check	Run make check	2026-09-12T17:00:46.2712050Z tests/prompts/test_v5_fragments.py ............................          [ 62%]
+check	Run make check	2026-09-12T17:00:46.3138377Z tests/prompts/test_v5_lenses.py ........                                 [ 63%]
+check	Run make check	2026-09-12T17:00:46.4156030Z tests/prompts/test_v5_orchestration.py ....................              [ 63%]
+check	Run make check	2026-09-12T17:00:46.6275313Z tests/prompts/test_v5_style_rules.py ................................... [ 64%]
+check	Run make check	2026-09-12T17:00:47.2485508Z ........................................................................ [ 67%]
+check	Run make check	2026-09-12T17:00:47.8695557Z ........................................................................ [ 69%]
+check	Run make check	2026-09-12T17:00:48.2409104Z ............................................                             [ 70%]
+check	Run make check	2026-09-12T17:00:48.4521961Z tests/prompts/test_v5_wiring.py ........................................ [ 72%]
+check	Run make check	2026-09-12T17:00:48.5919335Z .....................                                                    [ 72%]
+check	Run make check	2026-09-12T17:00:48.5968763Z tests/services/test_agent_service.py ...                                 [ 73%]
+check	Run make check	2026-09-12T17:00:48.6279507Z Message: {'issue_key': 'K-1', 'holder': 'pass-a', 'server_name': 'fixture-tracker', 'error': 'the MCP server refused the configured credential (fixture-tracker/save_comment)', 'event': 'claim_renewal_credential_refused', 'level': 'error', 'logger': 'kodezart.services.claim_heartbeat', 'timestamp': '2026-09-12T17:00:48.626928Z'}
+check	Run make check	2026-09-12T17:00:48.6281739Z Arguments: ()
+check	Run make check	2026-09-12T17:00:48.6881709Z tests/services/test_claim_heartbeat.py .....................             [ 73%]
+check	Run make check	2026-09-12T17:00:48.7163464Z Call stack:
+check	Run make check	2026-09-12T17:00:48.7164688Z   File "/usr/lib/python3.12/threading.py", line 1030, in _bootstrap
+check	Run make check	2026-09-12T17:00:48.7165476Z     self._bootstrap_inner()
+check	Run make check	2026-09-12T17:00:48.7166248Z   File "/usr/lib/python3.12/threading.py", line 1073, in _bootstrap_inner
+check	Run make check	2026-09-12T17:00:48.7166879Z     self.run()
+check	Run make check	2026-09-12T17:00:48.7167494Z   File "/usr/lib/python3.12/threading.py", line 1010, in run
+check	Run make check	2026-09-12T17:00:48.7168119Z     self._target(*self._args, **self._kwargs)
+check	Run make check	2026-09-12T17:00:48.7168925Z   File "/usr/lib/python3.12/concurrent/futures/thread.py", line 92, in _worker
+check	Run make check	2026-09-12T17:00:48.7169464Z     work_item.run()
+check	Run make check	2026-09-12T17:00:48.7170147Z   File "/usr/lib/python3.12/concurrent/futures/thread.py", line 58, in run
+check	Run make check	2026-09-12T17:00:48.7170761Z     result = self.fn(*self.args, **self.kwargs)
+check	Run make check	2026-09-12T17:00:48.7171710Z   File "/home/runner/work/kodezart/kodezart/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+check	Run make check	2026-09-12T17:00:48.7172526Z     lambda: ctx.run(lambda: meth(event, *args, **kw)),
+check	Run make check	2026-09-12T17:00:48.7173831Z   File "/home/runner/work/kodezart/kodezart/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+check	Run make check	2026-09-12T17:00:48.7174870Z     lambda: ctx.run(lambda: meth(event, *args, **kw)),
+check	Run make check	2026-09-12T17:00:48.7175936Z   File "/home/runner/work/kodezart/kodezart/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 216, in info
+check	Run make check	2026-09-12T17:00:48.7177225Z     return self._proxy_to_logger("info", event, *args, **kw)
+check	Run make check	2026-09-12T17:00:48.7178003Z   File "/home/runner/work/kodezart/kodezart/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 280, in _proxy_to_logger
+check	Run make check	2026-09-12T17:00:48.7178735Z     return super()._proxy_to_logger(method_name, event=event, **event_kw)
+check	Run make check	2026-09-12T17:00:48.7179509Z   File "/home/runner/work/kodezart/kodezart/.venv/lib/python3.12/site-packages/structlog/_base.py", line 223, in _proxy_to_logger
+check	Run make check	2026-09-12T17:00:48.7180171Z     return getattr(self._logger, method_name)(*args, **kw)
+check	Run make check	2026-09-12T17:00:48.7181403Z Message: {'issue_key': 'K-1', 'job_id': 'job-0001', 'run_started': False, 'terminal_outcome': False, 'event': 'lifecycle_watch_finished', 'level': 'info', 'logger': 'kodezart.services.lifecycle_watcher', 'timestamp': '2026-09-12T17:00:48.715550Z'}
+check	Run make check	2026-09-12T17:00:48.7182304Z Arguments: ()
+check	Run make check	2026-09-12T17:00:48.7368143Z Call stack:
+check	Run make check	2026-09-12T17:00:48.7369741Z   File "/usr/lib/python3.12/threading.py", line 1030, in _bootstrap
+check	Run make check	2026-09-12T17:00:48.7370232Z     self._bootstrap_inner()
+check	Run make check	2026-09-12T17:00:48.7370701Z   File "/usr/lib/python3.12/threading.py", line 1073, in _bootstrap_inner
+check	Run make check	2026-09-12T17:00:48.7371195Z     self.run()
+check	Run make check	2026-09-12T17:00:48.7371596Z   File "/usr/lib/python3.12/threading.py", line 1010, in run
+check	Run make check	2026-09-12T17:00:48.7372047Z     self._target(*self._args, **self._kwargs)
+check	Run make check	2026-09-12T17:00:48.7372581Z   File "/usr/lib/python3.12/concurrent/futures/thread.py", line 92, in _worker
+check	Run make check	2026-09-12T17:00:48.7373437Z     work_item.run()
+check	Run make check	2026-09-12T17:00:48.7373831Z   File "/usr/lib/python3.12/concurrent/futures/thread.py", line 58, in run
+check	Run make check	2026-09-12T17:00:48.7374290Z     result = self.fn(*self.args, **self.kwargs)
+check	Run make check	2026-09-12T17:00:48.7374948Z   File "/home/runner/work/kodezart/kodezart/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+check	Run make check	2026-09-12T17:00:48.7375985Z     lambda: ctx.run(lambda: meth(event, *args, **kw)),
+check	Run make check	2026-09-12T17:00:48.7376807Z   File "/home/runner/work/kodezart/kodezart/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+check	Run make check	2026-09-12T17:00:48.7377925Z     lambda: ctx.run(lambda: meth(event, *args, **kw)),
+check	Run make check	2026-09-12T17:00:48.7379003Z   File "/home/runner/work/kodezart/kodezart/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 216, in info
+check	Run make check	2026-09-12T17:00:48.7380063Z     return self._proxy_to_logger("info", event, *args, **kw)
+check	Run make check	2026-09-12T17:00:48.7381279Z   File "/home/runner/work/kodezart/kodezart/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 280, in _proxy_to_logger
+check	Run make check	2026-09-12T17:00:48.7383049Z     return super()._proxy_to_logger(method_name, event=event, **event_kw)
+check	Run make check	2026-09-12T17:00:48.7384344Z   File "/home/runner/work/kodezart/kodezart/.venv/lib/python3.12/site-packages/structlog/_base.py", line 223, in _proxy_to_logger
+check	Run make check	2026-09-12T17:00:48.7385456Z     return getattr(self._logger, method_name)(*args, **kw)
+check	Run make check	2026-09-12T17:00:48.7387530Z Message: {'issue_key': 'K-1', 'job_id': 'job-0001', 'run_started': False, 'terminal_outcome': False, 'event': 'lifecycle_watch_finished', 'level': 'info', 'logger': 'kodezart.services.lifecycle_watcher', 'timestamp': '2026-09-12T17:00:48.736196Z'}
+check	Run make check	2026-09-12T17:00:48.7389018Z Arguments: ()
+check	Run make check	2026-09-12T17:00:48.8814183Z tests/services/test_dispatch_pass.py .............................       [ 74%]
+check	Run make check	2026-09-12T17:00:48.9808442Z tests/services/test_fire_context.py .....................                [ 75%]
+check	Run make check	2026-09-12T17:00:49.0784876Z tests/services/test_fire_dispatcher.py ................................. [ 76%]
+check	Run make check	2026-09-12T17:00:49.2597513Z ..................................................                       [ 77%]
+check	Run make check	2026-09-12T17:00:49.3840253Z tests/services/test_lifecycle_watcher.py ............................... [ 78%]
+check	Run make check	2026-09-12T17:00:49.4197588Z .........                                                                [ 79%]
+check	Run make check	2026-09-12T17:00:49.4988300Z tests/services/test_pass_gate.py .....................................   [ 80%]
+check	Run make check	2026-09-12T17:00:49.7591507Z tests/services/test_pass_scheduler.py ........................           [ 81%]
+check	Run make check	2026-09-12T17:00:50.0483421Z tests/services/test_prompt_pass.py ......................                [ 81%]
+check	Run make check	2026-09-12T17:00:50.3975470Z tests/services/test_prompt_passes.py .........................           [ 82%]
+check	Run make check	2026-09-12T17:00:50.4365063Z tests/services/test_run_recorder.py .............................        [ 83%]
+check	Run make check	2026-09-12T17:00:50.8067137Z tests/services/test_session_grant_threading.py ...................       [ 84%]
+check	Run make check	2026-09-12T17:00:50.8668065Z tests/services/test_tracker_lifecycle.py .........................       [ 85%]
+check	Run make check	2026-09-12T17:00:50.9581031Z tests/test_composition_root.py ................                          [ 85%]
+check	Run make check	2026-09-12T17:00:51.5101626Z tests/test_forge_origin_selection.py .............                       [ 86%]
+check	Run make check	2026-09-12T17:00:51.5491033Z tests/test_lane_verification.py ......                                   [ 86%]
+check	Run make check	2026-09-12T17:00:51.6456812Z tests/test_release.py ....                                               [ 86%]
+check	Run make check	2026-09-12T17:00:51.6895482Z tests/tracker/test_linear_mcp_tracker.py ............................... [ 87%]
+check	Run make check	2026-09-12T17:00:51.7708142Z .....................................                                    [ 88%]
+check	Run make check	2026-09-12T17:00:51.7814327Z tests/tracker/test_linear_tool_arguments.py ......                       [ 88%]
+check	Run make check	2026-09-12T17:00:51.8255721Z tests/tracker/test_linear_tool_roster.py .....                           [ 88%]
+check	Run make check	2026-09-12T17:00:51.8461535Z tests/tracker/test_linear_wire_shapes.py ............................... [ 89%]
+check	Run make check	2026-09-12T17:00:51.8487293Z ..                                                                       [ 90%]
+check	Run make check	2026-09-12T17:00:51.8997681Z tests/tracker/test_tracker_boot.py ....................................  [ 91%]
+check	Run make check	2026-09-12T17:00:52.9565878Z tests/tracker/test_tracker_boot_wiring.py ..................             [ 91%]
+check	Run make check	2026-09-12T17:00:53.0078721Z tests/tracker/test_tracker_conformance.py .............................. [ 92%]
+check	Run make check	2026-09-12T17:00:53.1396329Z ........................................................................ [ 95%]
+check	Run make check	2026-09-12T17:00:53.2649503Z .....................................................................    [ 97%]
+check	Run make check	2026-09-12T17:00:53.2749806Z tests/types/test_output_descriptions.py ............                     [ 97%]
+check	Run make check	2026-09-12T17:00:53.7200820Z tests/types/test_wire_renames.py ......                                  [ 97%]
+check	Run make check	2026-09-12T17:00:53.7700388Z tests/types/test_wire_schemas.py ............................            [ 98%]
+check	Run make check	2026-09-12T17:00:53.7884201Z tests/types/test_writable_surface.py ..........................          [ 99%]
+check	Run make check	2026-09-12T17:00:54.8572187Z tests/workflows/test_investigate_fan_in.py ...........                   [100%]
+check	Run make check	2026-09-12T17:00:54.8573092Z 
+check	Run make check	2026-09-12T17:00:54.8573599Z ================= 3073 passed, 16 skipped in 67.95s (0:01:07) ==================
+check	Post Run actions/setup-node@v4	﻿2026-09-12T17:00:55.4528553Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+check	Post Run actions/setup-node@v4	2026-09-12T17:00:55.4529753Z Post job cleanup.
+check	Post Run actions/setup-node@v4	2026-09-12T17:00:55.5778502Z (node:7829) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+check	Post Run actions/setup-node@v4	2026-09-12T17:00:55.5779371Z (Use `node --trace-deprecation ...` to show where the warning was created)
+check	Post Run astral-sh/setup-uv@v6	﻿2026-09-12T17:00:55.5952642Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+check	Post Run astral-sh/setup-uv@v6	2026-09-12T17:00:55.5953963Z Post job cleanup.
+check	Post Run astral-sh/setup-uv@v6	2026-09-12T17:00:55.7295635Z (node:7837) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+check	Post Run astral-sh/setup-uv@v6	2026-09-12T17:00:55.7297538Z (Use `node --trace-deprecation ...` to show where the warning was created)
+check	Post Run astral-sh/setup-uv@v6	2026-09-12T17:00:55.7301698Z Cache hit occurred on key setup-uv-1-x86_64-unknown-linux-gnu-3.12.3-pruned-af68a09123d5af441c86d7a4d0c5ebaefb841770393f98473687e0f8cc233959, not saving cache.
+check	Post Run actions/checkout@v4	﻿2026-09-12T17:00:55.7457612Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+check	Post Run actions/checkout@v4	2026-09-12T17:00:55.7458787Z Post job cleanup.
+check	Post Run actions/checkout@v4	2026-09-12T17:00:55.8345391Z [command]/usr/bin/git version
+check	Post Run actions/checkout@v4	2026-09-12T17:00:55.8383522Z git version 2.55.0
+check	Post Run actions/checkout@v4	2026-09-12T17:00:55.8419408Z Temporarily overriding HOME='/home/runner/work/_temp/87c29f8e-d063-4386-8282-5a11448e01b0' before making global git config changes
+check	Post Run actions/checkout@v4	2026-09-12T17:00:55.8421012Z Adding repository directory to the temporary git global config as a safe directory
+check	Post Run actions/checkout@v4	2026-09-12T17:00:55.8424735Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/kodezart/kodezart
+check	Post Run actions/checkout@v4	2026-09-12T17:00:55.8464766Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+check	Post Run actions/checkout@v4	2026-09-12T17:00:55.8501710Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+check	Post Run actions/checkout@v4	2026-09-12T17:00:55.8779422Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+check	Post Run actions/checkout@v4	2026-09-12T17:00:55.8812983Z http.https://github.com/.extraheader
+check	Post Run actions/checkout@v4	2026-09-12T17:00:55.8825239Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
+check	Post Run actions/checkout@v4	2026-09-12T17:00:55.8862679Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+check	Post Run actions/checkout@v4	2026-09-12T17:00:55.9127767Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+check	Post Run actions/checkout@v4	2026-09-12T17:00:55.9166675Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+check	Complete job	﻿2026-09-12T17:00:55.9591163Z Cleaning up orphan processes
+check	Complete job	2026-09-12T17:00:55.9894499Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-node@v4, astral-sh/setup-uv@v6. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/

@@ -1,0 +1,1939 @@
+........................................................................ [ 39%]
+.................................................................FF.F.FF [ 78%]
+F...................................F.F                                  [100%]
+=================================== FAILURES ===================================
+_ TestCapabilityProbe.test_a_transport_failure_that_says_nothing_about_scope_propagates _
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10ad01e80>
+tool = 'list_issues', arguments = {'limit': 1}
+
+    async def _call(
+        self,
+        tool: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        attempt = 0
+        while True:
+            try:
+>               return await self._caller.call_tool(name=tool, arguments=arguments)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+src/kodezart/adapters/linear_mcp_tracker.py:1604: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <tests.fakes.FakeLinearMcpServer object at 0x10ad01ca0>
+
+    async def call_tool(
+        self,
+        *,
+        name: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        # Yield to the scheduler at every tool boundary so concurrent callers
+        # genuinely interleave: a claim race that never interleaves proves
+        # nothing about exactly-once semantics.
+        await asyncio.sleep(0)
+        self.calls.append((name, dict(arguments)))
+        served = self._credential_refused_after.get(name)
+        if served is not None and len(self.tool_calls(name)) > served:
+            raise McpCredentialRefusedError(
+                "the MCP server refused the configured credential",
+                server_name="fake-linear",
+                tool_name=name,
+            )
+        remaining = self._transient_failures.get(name, 0)
+        if remaining > 0:
+            self._transient_failures[name] = remaining - 1
+            raise TransientAPIError(f"fake transient failure on {name}")
+        failing = self._transport_failures.get(name, 0)
+        if failing > 0:
+            self._transport_failures[name] = failing - 1
+>           raise McpTransportError(
+                "fake transport failure",
+                server_name="fake-linear",
+                tool_name=name,
+            )
+E           kodezart.core.errors.McpTransportError: fake transport failure (fake-linear/list_issues)
+
+tests/fakes.py:2344: McpTransportError
+
+The above exception was the direct cause of the following exception:
+
+self = <tests.tracker.test_linear_mcp_tracker.TestCapabilityProbe object at 0x10ac6dee0>
+
+    async def test_a_transport_failure_that_says_nothing_about_scope_propagates(
+        self,
+    ) -> None:
+        """An outage is not a refusal: reporting it as one silences a pass."""
+        server = FakeLinearMcpServer(
+            issues=[],
+            state_types=STATE_TYPES,
+            transport_failures={"list_issues": 1},
+        )
+    
+        with pytest.raises(McpTransportError):
+>           await tracker_over(server).verify_scan_capability(
+                signals=[PassSignal.issues_changed],
+            )
+
+tests/tracker/test_linear_mcp_tracker.py:425: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/adapters/linear_mcp_tracker.py:588: in verify_scan_capability
+    probed[tool] = await self._probe_scope(tool)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/adapters/linear_mcp_tracker.py:608: in _probe_scope
+    await self._call(tool, {"limit": _SCOPE_PROBE_LIMIT})
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10ad01e80>
+tool = 'list_issues', arguments = {'limit': 1}
+
+    async def _call(
+        self,
+        tool: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        attempt = 0
+        while True:
+            try:
+                return await self._caller.call_tool(name=tool, arguments=arguments)
+            except McpCredentialRefusedError as exc:
+                # Named once and raised, never retried: the refusal is the
+                # same on every attempt, so a budget spent on it buys the
+                # first answer again and delays the one event an operator
+                # can act on by the whole back-off (KOD-171).
+                await self._log.aerror(
+                    "tracker_credential_refused",
+                    tool=tool,
+                    server_name=exc.server_name,
+                )
+                raise TrackerAccessDeniedError(str(exc)) from exc
+            except (McpTransportError, TransientAPIError) as exc:
+                if attempt >= self._max_retries or not _may_resend(tool, exc):
+>                   raise TrackerUnavailableError(str(exc)) from exc
+E                   kodezart.core.errors.TrackerUnavailableError: fake transport failure (fake-linear/list_issues)
+
+src/kodezart/adapters/linear_mcp_tracker.py:1618: TrackerUnavailableError
+_ TestCapabilityProbe.test_a_refusal_the_vendor_did_not_diagnose_as_scope_propagates _
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10ad038c0>
+tool = 'list_issues', arguments = {'limit': 1}
+
+    async def _call(
+        self,
+        tool: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        attempt = 0
+        while True:
+            try:
+>               return await self._caller.call_tool(name=tool, arguments=arguments)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+src/kodezart/adapters/linear_mcp_tracker.py:1604: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <tests.fakes.FakeLinearMcpServer object at 0x10ad03740>
+
+    async def call_tool(
+        self,
+        *,
+        name: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        # Yield to the scheduler at every tool boundary so concurrent callers
+        # genuinely interleave: a claim race that never interleaves proves
+        # nothing about exactly-once semantics.
+        await asyncio.sleep(0)
+        self.calls.append((name, dict(arguments)))
+        served = self._credential_refused_after.get(name)
+        if served is not None and len(self.tool_calls(name)) > served:
+            raise McpCredentialRefusedError(
+                "the MCP server refused the configured credential",
+                server_name="fake-linear",
+                tool_name=name,
+            )
+        remaining = self._transient_failures.get(name, 0)
+        if remaining > 0:
+            self._transient_failures[name] = remaining - 1
+            raise TransientAPIError(f"fake transient failure on {name}")
+        failing = self._transport_failures.get(name, 0)
+        if failing > 0:
+            self._transport_failures[name] = failing - 1
+            raise McpTransportError(
+                "fake transport failure",
+                server_name="fake-linear",
+                tool_name=name,
+            )
+        reported = self._tool_errors.get(name)
+        if reported is not None:
+            # The shape a real tool error arrives in: an error RESULT, which
+            # the transport turns into this exception carrying the server's
+            # own words. A caller cannot tell a refused scope from an outage
+            # by type — only those words distinguish them.
+>           raise McpTransportError(
+                f"the MCP server reported a tool error: {reported}",
+                server_name="fake-linear",
+                tool_name=name,
+            )
+E           kodezart.core.errors.McpTransportError: the MCP server reported a tool error: the request failed with status 403 (fake-linear/list_issues)
+
+tests/fakes.py:2355: McpTransportError
+
+The above exception was the direct cause of the following exception:
+
+self = <tests.tracker.test_linear_mcp_tracker.TestCapabilityProbe object at 0x10ac6d6d0>
+
+    async def test_a_refusal_the_vendor_did_not_diagnose_as_scope_propagates(
+        self,
+    ) -> None:
+        """A status code is not a diagnosis, so it is not read as one.
+    
+        The tool answered with an error and said nothing about a scope.
+        What is known is that the call failed, so boot fails on it:
+        classifying it as a scope refusal would tell an operator to widen a
+        credential that was never the problem, and would do it on the
+        strength of three characters.
+        """
+        server = FakeLinearMcpServer(
+            issues=[],
+            state_types=STATE_TYPES,
+            tool_errors={"list_issues": "the request failed with status 403"},
+        )
+    
+        with pytest.raises(McpTransportError, match="403"):
+>           await tracker_over(server).verify_scan_capability(
+                signals=[PassSignal.issues_changed],
+            )
+
+tests/tracker/test_linear_mcp_tracker.py:447: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/adapters/linear_mcp_tracker.py:588: in verify_scan_capability
+    probed[tool] = await self._probe_scope(tool)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/adapters/linear_mcp_tracker.py:608: in _probe_scope
+    await self._call(tool, {"limit": _SCOPE_PROBE_LIMIT})
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10ad038c0>
+tool = 'list_issues', arguments = {'limit': 1}
+
+    async def _call(
+        self,
+        tool: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        attempt = 0
+        while True:
+            try:
+                return await self._caller.call_tool(name=tool, arguments=arguments)
+            except McpCredentialRefusedError as exc:
+                # Named once and raised, never retried: the refusal is the
+                # same on every attempt, so a budget spent on it buys the
+                # first answer again and delays the one event an operator
+                # can act on by the whole back-off (KOD-171).
+                await self._log.aerror(
+                    "tracker_credential_refused",
+                    tool=tool,
+                    server_name=exc.server_name,
+                )
+                raise TrackerAccessDeniedError(str(exc)) from exc
+            except (McpTransportError, TransientAPIError) as exc:
+                if attempt >= self._max_retries or not _may_resend(tool, exc):
+>                   raise TrackerUnavailableError(str(exc)) from exc
+E                   kodezart.core.errors.TrackerUnavailableError: the MCP server reported a tool error: the request failed with status 403 (fake-linear/list_issues)
+
+src/kodezart/adapters/linear_mcp_tracker.py:1618: TrackerUnavailableError
+___ TestTransientRetry.test_exhausting_the_budget_raises_the_transient_error ___
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10ad96420>
+tool = 'get_issue', arguments = {'id': 'T-3', 'includeRelations': True}
+
+    async def _call(
+        self,
+        tool: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        attempt = 0
+        while True:
+            try:
+>               return await self._caller.call_tool(name=tool, arguments=arguments)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+src/kodezart/adapters/linear_mcp_tracker.py:1604: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <tests.fakes.FakeLinearMcpServer object at 0x10ad94260>
+
+    async def call_tool(
+        self,
+        *,
+        name: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        # Yield to the scheduler at every tool boundary so concurrent callers
+        # genuinely interleave: a claim race that never interleaves proves
+        # nothing about exactly-once semantics.
+        await asyncio.sleep(0)
+        self.calls.append((name, dict(arguments)))
+        served = self._credential_refused_after.get(name)
+        if served is not None and len(self.tool_calls(name)) > served:
+            raise McpCredentialRefusedError(
+                "the MCP server refused the configured credential",
+                server_name="fake-linear",
+                tool_name=name,
+            )
+        remaining = self._transient_failures.get(name, 0)
+        if remaining > 0:
+            self._transient_failures[name] = remaining - 1
+>           raise TransientAPIError(f"fake transient failure on {name}")
+E           kodezart.domain.errors.TransientAPIError: fake transient failure on get_issue
+
+tests/fakes.py:2340: TransientAPIError
+
+The above exception was the direct cause of the following exception:
+
+self = <tests.tracker.test_linear_mcp_tracker.TestTransientRetry object at 0x10ac6f740>
+
+    async def test_exhausting_the_budget_raises_the_transient_error(self) -> None:
+        from kodezart.domain.errors import TransientAPIError
+    
+        server = FakeLinearMcpServer(
+            issues=[FakeMcpIssue(id="T-3")],
+            state_types=STATE_TYPES,
+            transient_failures={"get_issue": 5},
+        )
+        tracker = tracker_over(server, max_retries=1)
+        with pytest.raises(TransientAPIError):
+>           await tracker.read_issue(issue_key="T-3")
+
+tests/tracker/test_linear_mcp_tracker.py:476: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/adapters/linear_mcp_tracker.py:637: in read_issue
+    return self._to_issue(await self._read_issue_wire(issue_key))
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/adapters/linear_mcp_tracker.py:1585: in _read_issue_wire
+    payload = await self._call(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10ad96420>
+tool = 'get_issue', arguments = {'id': 'T-3', 'includeRelations': True}
+
+    async def _call(
+        self,
+        tool: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        attempt = 0
+        while True:
+            try:
+                return await self._caller.call_tool(name=tool, arguments=arguments)
+            except McpCredentialRefusedError as exc:
+                # Named once and raised, never retried: the refusal is the
+                # same on every attempt, so a budget spent on it buys the
+                # first answer again and delays the one event an operator
+                # can act on by the whole back-off (KOD-171).
+                await self._log.aerror(
+                    "tracker_credential_refused",
+                    tool=tool,
+                    server_name=exc.server_name,
+                )
+                raise TrackerAccessDeniedError(str(exc)) from exc
+            except (McpTransportError, TransientAPIError) as exc:
+                if attempt >= self._max_retries or not _may_resend(tool, exc):
+>                   raise TrackerUnavailableError(str(exc)) from exc
+E                   kodezart.core.errors.TrackerUnavailableError: fake transient failure on get_issue
+
+src/kodezart/adapters/linear_mcp_tracker.py:1618: TrackerUnavailableError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 19:46:52 [warning  ] tracker_mcp_retry              attempt=0 delay_seconds=0.0 tool=get_issue
+___ TestTransportRetry.test_exhausting_the_budget_raises_the_transport_error ___
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10ad03ec0>
+tool = 'get_issue', arguments = {'id': 'T-5', 'includeRelations': True}
+
+    async def _call(
+        self,
+        tool: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        attempt = 0
+        while True:
+            try:
+>               return await self._caller.call_tool(name=tool, arguments=arguments)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+src/kodezart/adapters/linear_mcp_tracker.py:1604: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <tests.fakes.FakeLinearMcpServer object at 0x10ad03980>
+
+    async def call_tool(
+        self,
+        *,
+        name: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        # Yield to the scheduler at every tool boundary so concurrent callers
+        # genuinely interleave: a claim race that never interleaves proves
+        # nothing about exactly-once semantics.
+        await asyncio.sleep(0)
+        self.calls.append((name, dict(arguments)))
+        served = self._credential_refused_after.get(name)
+        if served is not None and len(self.tool_calls(name)) > served:
+            raise McpCredentialRefusedError(
+                "the MCP server refused the configured credential",
+                server_name="fake-linear",
+                tool_name=name,
+            )
+        remaining = self._transient_failures.get(name, 0)
+        if remaining > 0:
+            self._transient_failures[name] = remaining - 1
+            raise TransientAPIError(f"fake transient failure on {name}")
+        failing = self._transport_failures.get(name, 0)
+        if failing > 0:
+            self._transport_failures[name] = failing - 1
+>           raise McpTransportError(
+                "fake transport failure",
+                server_name="fake-linear",
+                tool_name=name,
+            )
+E           kodezart.core.errors.McpTransportError: fake transport failure (fake-linear/get_issue)
+
+tests/fakes.py:2344: McpTransportError
+
+The above exception was the direct cause of the following exception:
+
+self = <tests.tracker.test_linear_mcp_tracker.TestTransportRetry object at 0x10ac88050>
+
+    async def test_exhausting_the_budget_raises_the_transport_error(self) -> None:
+        server = FakeLinearMcpServer(
+            issues=[FakeMcpIssue(id="T-5")],
+            state_types=STATE_TYPES,
+            transport_failures={"get_issue": 5},
+        )
+        tracker = tracker_over(server, max_retries=1)
+        with pytest.raises(McpTransportError):
+>           await tracker.read_issue(issue_key="T-5")
+
+tests/tracker/test_linear_mcp_tracker.py:507: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/adapters/linear_mcp_tracker.py:637: in read_issue
+    return self._to_issue(await self._read_issue_wire(issue_key))
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/adapters/linear_mcp_tracker.py:1585: in _read_issue_wire
+    payload = await self._call(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10ad03ec0>
+tool = 'get_issue', arguments = {'id': 'T-5', 'includeRelations': True}
+
+    async def _call(
+        self,
+        tool: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        attempt = 0
+        while True:
+            try:
+                return await self._caller.call_tool(name=tool, arguments=arguments)
+            except McpCredentialRefusedError as exc:
+                # Named once and raised, never retried: the refusal is the
+                # same on every attempt, so a budget spent on it buys the
+                # first answer again and delays the one event an operator
+                # can act on by the whole back-off (KOD-171).
+                await self._log.aerror(
+                    "tracker_credential_refused",
+                    tool=tool,
+                    server_name=exc.server_name,
+                )
+                raise TrackerAccessDeniedError(str(exc)) from exc
+            except (McpTransportError, TransientAPIError) as exc:
+                if attempt >= self._max_retries or not _may_resend(tool, exc):
+>                   raise TrackerUnavailableError(str(exc)) from exc
+E                   kodezart.core.errors.TrackerUnavailableError: fake transport failure (fake-linear/get_issue)
+
+src/kodezart/adapters/linear_mcp_tracker.py:1618: TrackerUnavailableError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 19:46:52 [warning  ] tracker_mcp_retry              attempt=0 delay_seconds=0.0 tool=get_issue
+_ TestARefusedCredentialIsNeverRetried.test_the_refusal_stops_the_loop_on_the_attempt_that_met_it _
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10ad97d10>
+tool = 'get_issue', arguments = {'id': 'T-6', 'includeRelations': True}
+
+    async def _call(
+        self,
+        tool: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        attempt = 0
+        while True:
+            try:
+>               return await self._caller.call_tool(name=tool, arguments=arguments)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+src/kodezart/adapters/linear_mcp_tracker.py:1604: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <tests.fakes.FakeLinearMcpServer object at 0x10ad944a0>
+
+    async def call_tool(
+        self,
+        *,
+        name: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        # Yield to the scheduler at every tool boundary so concurrent callers
+        # genuinely interleave: a claim race that never interleaves proves
+        # nothing about exactly-once semantics.
+        await asyncio.sleep(0)
+        self.calls.append((name, dict(arguments)))
+        served = self._credential_refused_after.get(name)
+        if served is not None and len(self.tool_calls(name)) > served:
+>           raise McpCredentialRefusedError(
+                "the MCP server refused the configured credential",
+                server_name="fake-linear",
+                tool_name=name,
+            )
+E           kodezart.core.errors.McpCredentialRefusedError: the MCP server refused the configured credential (fake-linear/get_issue)
+
+tests/fakes.py:2332: McpCredentialRefusedError
+
+The above exception was the direct cause of the following exception:
+
+self = <tests.tracker.test_linear_mcp_tracker.TestARefusedCredentialIsNeverRetried object at 0x10ac88470>
+
+    async def test_the_refusal_stops_the_loop_on_the_attempt_that_met_it(
+        self,
+    ) -> None:
+        server = FakeLinearMcpServer(
+            issues=[FakeMcpIssue(id="T-6")],
+            state_types=STATE_TYPES,
+            credential_refused_after={"get_issue": 1},
+        )
+        tracker = tracker_over(server, max_retries=3)
+    
+        served = await tracker.read_issue(issue_key="T-6")
+        with pytest.raises(McpCredentialRefusedError):
+>           await tracker.read_issue(issue_key="T-6")
+
+tests/tracker/test_linear_mcp_tracker.py:531: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/adapters/linear_mcp_tracker.py:637: in read_issue
+    return self._to_issue(await self._read_issue_wire(issue_key))
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/adapters/linear_mcp_tracker.py:1585: in _read_issue_wire
+    payload = await self._call(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10ad97d10>
+tool = 'get_issue', arguments = {'id': 'T-6', 'includeRelations': True}
+
+    async def _call(
+        self,
+        tool: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        attempt = 0
+        while True:
+            try:
+                return await self._caller.call_tool(name=tool, arguments=arguments)
+            except McpCredentialRefusedError as exc:
+                # Named once and raised, never retried: the refusal is the
+                # same on every attempt, so a budget spent on it buys the
+                # first answer again and delays the one event an operator
+                # can act on by the whole back-off (KOD-171).
+                await self._log.aerror(
+                    "tracker_credential_refused",
+                    tool=tool,
+                    server_name=exc.server_name,
+                )
+>               raise TrackerAccessDeniedError(str(exc)) from exc
+E               kodezart.core.errors.TrackerAccessDeniedError: the MCP server refused the configured credential (fake-linear/get_issue)
+
+src/kodezart/adapters/linear_mcp_tracker.py:1615: TrackerAccessDeniedError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 19:46:52 [error    ] tracker_credential_refused     server_name=fake-linear tool=get_issue
+_ TestARefusedCredentialIsNeverRetried.test_the_refusal_names_the_credential_once _
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10ad96540>
+tool = 'get_issue', arguments = {'id': 'T-7', 'includeRelations': True}
+
+    async def _call(
+        self,
+        tool: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        attempt = 0
+        while True:
+            try:
+>               return await self._caller.call_tool(name=tool, arguments=arguments)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+src/kodezart/adapters/linear_mcp_tracker.py:1604: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <tests.fakes.FakeLinearMcpServer object at 0x10ad964e0>
+
+    async def call_tool(
+        self,
+        *,
+        name: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        # Yield to the scheduler at every tool boundary so concurrent callers
+        # genuinely interleave: a claim race that never interleaves proves
+        # nothing about exactly-once semantics.
+        await asyncio.sleep(0)
+        self.calls.append((name, dict(arguments)))
+        served = self._credential_refused_after.get(name)
+        if served is not None and len(self.tool_calls(name)) > served:
+>           raise McpCredentialRefusedError(
+                "the MCP server refused the configured credential",
+                server_name="fake-linear",
+                tool_name=name,
+            )
+E           kodezart.core.errors.McpCredentialRefusedError: the MCP server refused the configured credential (fake-linear/get_issue)
+
+tests/fakes.py:2332: McpCredentialRefusedError
+
+The above exception was the direct cause of the following exception:
+
+self = <tests.tracker.test_linear_mcp_tracker.TestARefusedCredentialIsNeverRetried object at 0x10ac88890>
+
+    async def test_the_refusal_names_the_credential_once(self) -> None:
+        server = FakeLinearMcpServer(
+            issues=[FakeMcpIssue(id="T-7")],
+            state_types=STATE_TYPES,
+            credential_refused_after={"get_issue": 0},
+        )
+        tracker = tracker_over(server, max_retries=3)
+    
+        with (
+            structlog.testing.capture_logs() as logs,
+            pytest.raises(McpCredentialRefusedError),
+        ):
+>           await tracker.read_issue(issue_key="T-7")
+
+tests/tracker/test_linear_mcp_tracker.py:550: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/adapters/linear_mcp_tracker.py:637: in read_issue
+    return self._to_issue(await self._read_issue_wire(issue_key))
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/adapters/linear_mcp_tracker.py:1585: in _read_issue_wire
+    payload = await self._call(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10ad96540>
+tool = 'get_issue', arguments = {'id': 'T-7', 'includeRelations': True}
+
+    async def _call(
+        self,
+        tool: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        attempt = 0
+        while True:
+            try:
+                return await self._caller.call_tool(name=tool, arguments=arguments)
+            except McpCredentialRefusedError as exc:
+                # Named once and raised, never retried: the refusal is the
+                # same on every attempt, so a budget spent on it buys the
+                # first answer again and delays the one event an operator
+                # can act on by the whole back-off (KOD-171).
+                await self._log.aerror(
+                    "tracker_credential_refused",
+                    tool=tool,
+                    server_name=exc.server_name,
+                )
+>               raise TrackerAccessDeniedError(str(exc)) from exc
+E               kodezart.core.errors.TrackerAccessDeniedError: the MCP server refused the configured credential (fake-linear/get_issue)
+
+src/kodezart/adapters/linear_mcp_tracker.py:1615: TrackerAccessDeniedError
+_ TestARetryBudgetIsNotSpentOnASessionThatDied.test_the_call_the_death_landed_under_is_told_and_the_next_call_reaches _
+kodezart.core.errors.McpSessionClosedError: the session ended (fake-linear)
+
+The above exception was the direct cause of the following exception:
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10af0be60>
+tool = 'get_issue', arguments = {'id': 'T-9', 'includeRelations': True}
+
+    async def _call(
+        self,
+        tool: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        attempt = 0
+        while True:
+            try:
+>               return await self._caller.call_tool(name=tool, arguments=arguments)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+src/kodezart/adapters/linear_mcp_tracker.py:1604: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/adapters/http_mcp_tool_caller.py:460: in call_tool
+    return await self._hosted.call_tool(name=name, arguments=arguments)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.hosted_mcp_session.HostedMcpSession object at 0x10af09e50>
+
+    async def call_tool(
+        self,
+        *,
+        name: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        """Hand the call to the host task and wait for its answer.
+    
+        A session that ENDS under a call in flight is answered rather than
+        abandoned: every call the host still owes is resolved with the
+        closed-session class on its way out, so a worker waiting here is
+        told rather than left (KOD-270, KOD-272).
+    
+        Handing the call over is SYNCHRONOUS up to the wait, so a host
+        that has already drained cannot be handed a call afterwards.
+    
+        A session that has ENDED is reopened and the call goes again —
+        once per call, never once per boot (KOD-300, KOD-177, KOD-287).
+        """
+        inbox = self._inbox
+        if inbox is None or self._phase is not _Phase.SERVING:
+            return await self._call_on_a_reopened_session(
+                name=name,
+                arguments=arguments,
+            )
+        try:
+>           return await self._post(inbox, name=name, arguments=arguments).reply
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           kodezart.core.errors.McpCallUnansweredError: the MCP call was written and never answered (fake-linear/get_issue)
+
+src/kodezart/adapters/hosted_mcp_session.py:545: McpCallUnansweredError
+
+The above exception was the direct cause of the following exception:
+
+self = <tests.tracker.test_linear_mcp_tracker.TestARetryBudgetIsNotSpentOnASessionThatDied object at 0x10acb0110>
+
+    async def test_the_call_the_death_landed_under_is_told_and_the_next_call_reaches(
+        self,
+    ) -> None:
+        """Within no retries: the dropped call is unanswered, the next reopens.
+    
+        The request had been written when the stream dropped, so it is not
+        made again on the reopened session (KOD-305); what KOD-300 holds is
+        that the caller is still in service — the next call reopens and
+        reaches the server without spending any budget.
+        """
+        workspace, endpoint, caller = self._over_a_dying_endpoint()
+        await caller.open()
+        try:
+            tracker = tracker_over(workspace, caller=caller, max_retries=0)
+            with structlog.testing.capture_logs() as logs:
+                with pytest.raises(McpCallUnansweredError):
+>                   await tracker.read_issue(issue_key="T-9")
+
+tests/tracker/test_linear_mcp_tracker.py:1413: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/adapters/linear_mcp_tracker.py:637: in read_issue
+    return self._to_issue(await self._read_issue_wire(issue_key))
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/adapters/linear_mcp_tracker.py:1585: in _read_issue_wire
+    payload = await self._call(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10af0be60>
+tool = 'get_issue', arguments = {'id': 'T-9', 'includeRelations': True}
+
+    async def _call(
+        self,
+        tool: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        attempt = 0
+        while True:
+            try:
+                return await self._caller.call_tool(name=tool, arguments=arguments)
+            except McpCredentialRefusedError as exc:
+                # Named once and raised, never retried: the refusal is the
+                # same on every attempt, so a budget spent on it buys the
+                # first answer again and delays the one event an operator
+                # can act on by the whole back-off (KOD-171).
+                await self._log.aerror(
+                    "tracker_credential_refused",
+                    tool=tool,
+                    server_name=exc.server_name,
+                )
+                raise TrackerAccessDeniedError(str(exc)) from exc
+            except (McpTransportError, TransientAPIError) as exc:
+                if attempt >= self._max_retries or not _may_resend(tool, exc):
+>                   raise TrackerUnavailableError(str(exc)) from exc
+E                   kodezart.core.errors.TrackerUnavailableError: the MCP call was written and never answered (fake-linear/get_issue)
+
+src/kodezart/adapters/linear_mcp_tracker.py:1618: TrackerUnavailableError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 19:46:53 [info     ] mcp_session_opened             address=https://tracker.invalid/mcp server_name=fake-linear
+2026-09-12 19:46:53 [error    ] mcp_session_ended              server_name=fake-linear
+╭───────────────────── [1mTraceback [0m[1;2m(most recent call last)[0m ──────────────────────╮
+│ [2m/private/tmp/kodezart-v03-m1-scope-ports/src/kodezart/adapters/[0m[1mhosted_mcp_se[0m │
+│ [1mssion.py[0m:701 in _host_session                                                │
+│                                                                              │
+│   [2m698 [0m[2m│   │   [0mbut the garbage collector.                                     │
+│   [2m699 [0m[2m│   │   [0m"""                                                            │
+│   [2m700 [0m[2m│   │   [0mtry:                                                           │
+│ ❱ 701 [2m│   │   │   [0masync with posted, self._transport.session() as session:   │
+│   [2m702 [0m[2m│   │   │   │   [0mif not self._is_current(generation):                   │
+│   [2m703 [0m[2m│   │   │   │   │   [0mreturn                                             │
+│   [2m704 [0m[2m│   │   │   │   [0mself._phase = _Phase.SERVING                           │
+│                                                                              │
+│ ╭───────────────────────────────── locals ─────────────────────────────────╮ │
+│ │        [3mexc[0m = [1mExceptionGroup[0m[1m([0m'unhandled errors in a TaskGroup',           │ │
+│ │              [1m[[0m[1mReadError[0m[1m([0m'the server dropped the stream mid-call'[1m)[0m[1m][0m[1m)[0m      │ │
+│ │ [3mgeneration[0m = [1m1[0m                                                           │ │
+│ │     [3mposted[0m = [1mMemoryObjectReceiveStream[0m[1m([0m                                  │ │
+│ │              [2m│   [0m_state=[1m_MemoryObjectStreamState[0m[1m([0m                        │ │
+│ │              [2m│   │   [0mmax_buffer_size=inf,                                │ │
+│ │              [2m│   │   [0mbuffer=[1mdeque[0m[1m([0m[1m)[0m,                                     │ │
+│ │              [2m│   │   [0mopen_send_channels=[1m0[0m,                               │ │
+│ │              [2m│   │   [0mopen_receive_channels=[1m0[0m,                            │ │
+│ │              [2m│   │   [0mwaiting_receivers=[1mOrderedDict[0m[1m([0m[1m)[0m,                    │ │
+│ │              [2m│   │   [0mwaiting_senders=[1mOrderedDict[0m[1m([0m[1m)[0m                       │ │
+│ │              [2m│   [0m[1m)[0m,                                                      │ │
+│ │              [2m│   [0m_closed=[3mTrue[0m                                            │ │
+│ │              [1m)[0m                                                           │ │
+│ │      [3mready[0m = [1m<[0m[1mFuture[0m finished result=[3mNone[0m[1m>[0m                               │ │
+│ │       [3mself[0m = [1m<[0m[1mkodezart.adapters.hosted_mcp_session.HostedMcpSession[0m      │ │
+│ │              object at [1m0x10af09e50[0m[1m>[0m                                      │ │
+│ │    [3msession[0m = [1m<[0m[1mmcp.client.session.ClientSession[0m object at [1m0x10af0a930[0m[1m>[0m    │ │
+│ ╰──────────────────────────────────────────────────────────────────────────╯ │
+│                                                                              │
+│ [2m/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/li[0m │
+│ [2mb/python3.12/[0m[1mcontextlib.py[0m:231 in __aexit__                                  │
+│                                                                              │
+│   [2m228 [0m[2m│   │   │   │   [0m[2m# tell if we get the same exception back[0m               │
+│   [2m229 [0m[2m│   │   │   │   [0mvalue = typ()                                          │
+│   [2m230 [0m[2m│   │   │   [0mtry:                                                       │
+│ ❱ 231 [2m│   │   │   │   [0mawait self.gen.athrow(value)                           │
+│   [2m232 [0m[2m│   │   │   [0mexcept StopAsyncIteration as exc:                          │
+│   [2m233 [0m[2m│   │   │   │   [0m[2m# Suppress StopIteration *unless* it's the same except[0m │
+│   [2m234 [0m[2m│   │   │   │   [0m[2m# was passed to throw().  This prevents a StopIteratio[0m │
+│                                                                              │
+│ ╭───────────────────────────────── locals ─────────────────────────────────╮ │
+│ │      [3mself[0m = [1m<[0m[1mcontextlib._AsyncGeneratorContextManager[0m object at          │ │
+│ │             [1m0x10af0a210[0m[1m>[0m                                                 │ │
+│ │ [3mtraceback[0m = [1m<[0m[1mtraceback[0m object at [1m0x10acff500[0m[1m>[0m                            │ │
+│ │     [3mvalue[0m = [1mCancelledError[0m[1m([0m'Cancelled via cancel scope 10af0a750'[1m)[0m       │ │
+│ ╰──────────────────────────────────────────────────────────────────────────╯ │
+│                                                                              │
+│ [2m/private/tmp/kodezart-v03-m1-scope-ports/src/kodezart/adapters/[0m[1mhttp_mcp_tool[0m │
+│ [1m_caller.py[0m:236 in session                                                    │
+│                                                                              │
+│   [2m233 [0m[2m│   │   [0mself._last_error_status = None                                 │
+│   [2m234 [0m[2m│   │   [0masync with (                                                   │
+│   [2m235 [0m[2m│   │   │   [0mclient,                                                    │
+│ ❱ 236 [2m│   │   │   [0m[1;4mstreamable_http_client([0m[1;4mself[0m[1;4m._url, http_client=client)[0m as ( │
+│   [2m237 [0m[2m│   │   │   [0mClientSession(                                             │
+│   [2m238 [0m[2m│   │   │   │   [0mread,                                                  │
+│   [2m239 [0m[2m│   │   │   │   [0mwrite,                                                 │
+│                                                                              │
+│ ╭───────────────────────────────── locals ─────────────────────────────────╮ │
+│ │       [3m_[0m = [1m<[0m[1mbound[0m method StreamableHTTPTransport.get_session_id of        │ │
+│ │           <mcp.client.streamable_http.StreamableHTTPTransport object at  │ │
+│ │           [1m0x10af0a6f0[0m>[1m>[0m                                                  │ │
+│ │  [3mclient[0m = [1m<[0m[1mhttpx.AsyncClient[0m object at [1m0x10af0a1e0[0m[1m>[0m                      │ │
+│ │    [3mread[0m = [1mMemoryObjectReceiveStream[0m[1m([0m                                     │ │
+│ │           [2m│   [0m_state=[1m_MemoryObjectStreamState[0m[1m([0m                           │ │
+│ │           [2m│   │   [0mmax_buffer_size=[1m0[0m,                                     │ │
+│ │           [2m│   │   [0mbuffer=[1mdeque[0m[1m([0m[1m)[0m,                                        │ │
+│ │           [2m│   │   [0mopen_send_channels=[1m0[0m,                                  │ │
+│ │           [2m│   │   [0mopen_receive_channels=[1m0[0m,                               │ │
+│ │           [2m│   │   [0mwaiting_receivers=[1mOrderedDict[0m[1m([0m[1m)[0m,                       │ │
+│ │           [2m│   │   [0mwaiting_senders=[1mOrderedDict[0m[1m([0m[1m)[0m                          │ │
+│ │           [2m│   [0m[1m)[0m,                                                         │ │
+│ │           [2m│   [0m_closed=[3mTrue[0m                                               │ │
+│ │           [1m)[0m                                                              │ │
+│ │    [3mself[0m = [1m<[0m[1mkodezart.adapters.http_mcp_tool_caller._RemoteServer[0m object   │ │
+│ │           at [1m0x10af09250[0m[1m>[0m                                                │ │
+│ │ [3msession[0m = [1m<[0m[1mmcp.client.session.ClientSession[0m object at [1m0x10af0a930[0m[1m>[0m       │ │
+│ │   [3mwrite[0m = [1mMemoryObjectSendStream[0m[1m([0m                                        │ │
+│ │           [2m│   [0m_state=[1m_MemoryObjectStreamState[0m[1m([0m                           │ │
+│ │           [2m│   │   [0mmax_buffer_size=[1m0[0m,                                     │ │
+│ │           [2m│   │   [0mbuffer=[1mdeque[0m[1m([0m[1m)[0m,                                        │ │
+│ │           [2m│   │   [0mopen_send_channels=[1m0[0m,                                  │ │
+│ │           [2m│   │   [0mopen_receive_channels=[1m0[0m,                               │ │
+│ │           [2m│   │   [0mwaiting_receivers=[1mOrderedDict[0m[1m([0m[1m)[0m,                       │ │
+│ │           [2m│   │   [0mwaiting_senders=[1mOrderedDict[0m[1m([0m[1m)[0m                          │ │
+│ │           [2m│   [0m[1m)[0m,                                                         │ │
+│ │           [2m│   [0m_closed=[3mTrue[0m                                               │ │
+│ │           [1m)[0m                                                              │ │
+│ ╰──────────────────────────────────────────────────────────────────────────╯ │
+│                                                                              │
+│ [2m/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/li[0m │
+│ [2mb/python3.12/[0m[1mcontextlib.py[0m:231 in __aexit__                                  │
+│                                                                              │
+│   [2m228 [0m[2m│   │   │   │   [0m[2m# tell if we get the same exception back[0m               │
+│   [2m229 [0m[2m│   │   │   │   [0mvalue = typ()                                          │
+│   [2m230 [0m[2m│   │   │   [0mtry:                                                       │
+│ ❱ 231 [2m│   │   │   │   [0mawait self.gen.athrow(value)                           │
+│   [2m232 [0m[2m│   │   │   [0mexcept StopAsyncIteration as exc:                          │
+│   [2m233 [0m[2m│   │   │   │   [0m[2m# Suppress StopIteration *unless* it's the same except[0m │
+│   [2m234 [0m[2m│   │   │   │   [0m[2m# was passed to throw().  This prevents a StopIteratio[0m │
+│                                                                              │
+│ ╭───────────────────────────────── locals ─────────────────────────────────╮ │
+│ │      [3mself[0m = [1m<[0m[1mcontextlib._AsyncGeneratorContextManager[0m object at          │ │
+│ │             [1m0x10acb3110[0m[1m>[0m                                                 │ │
+│ │ [3mtraceback[0m = [1m<[0m[1mtraceback[0m object at [1m0x10b082f00[0m[1m>[0m                            │ │
+│ │     [3mvalue[0m = [1mCancelledError[0m[1m([0m'Cancelled via cancel scope 10af0a750'[1m)[0m       │ │
+│ ╰──────────────────────────────────────────────────────────────────────────╯ │
+│                                                                              │
+│ [2m/private/tmp/kodezart-v03-m1-scope-ports/.venv/lib/python3.12/site-packages/[0m │
+│ [2mmcp/client/[0m[1mstreamable_http.py[0m:647 in streamable_http_client                  │
+│                                                                              │
+│   [2m644 [0m[2m│   [0m                                                                   │
+│   [2m645 [0m[2m│   [0mtransport = StreamableHTTPTransport(url)                           │
+│   [2m646 [0m[2m│   [0m                                                                   │
+│ ❱ 647 [2m│   [0masync with [1;4manyio.create_task_group()[0m as tg:                        │
+│   [2m648 [0m[2m│   │   [0mtry:                                                           │
+│   [2m649 [0m[2m│   │   │   [0mlogger.debug(f"Connecting to StreamableHTTP endpoint: {url │
+│   [2m650 [0m                                                                       │
+│                                                                              │
+│ ╭───────────────────────────────── locals ─────────────────────────────────╮ │
+│ │              [3mclient[0m = [1m<[0m[1mhttpx.AsyncClient[0m object at [1m0x10af0a1e0[0m[1m>[0m          │ │
+│ │     [3mclient_provided[0m = [3mTrue[0m                                               │ │
+│ │         [3mhttp_client[0m = [1m<[0m[1mhttpx.AsyncClient[0m object at [1m0x10af0a1e0[0m[1m>[0m          │ │
+│ │         [3mread_stream[0m = [1mMemoryObjectReceiveStream[0m[1m([0m                         │ │
+│ │                       [2m│   [0m_state=[1m_MemoryObjectStreamState[0m[1m([0m               │ │
+│ │                       [2m│   │   [0mmax_buffer_size=[1m0[0m,                         │ │
+│ │                       [2m│   │   [0mbuffer=[1mdeque[0m[1m([0m[1m)[0m,                            │ │
+│ │                       [2m│   │   [0mopen_send_channels=[1m0[0m,                      │ │
+│ │                       [2m│   │   [0mopen_receive_channels=[1m0[0m,                   │ │
+│ │                       [2m│   │   [0mwaiting_receivers=[1mOrderedDict[0m[1m([0m[1m)[0m,           │ │
+│ │                       [2m│   │   [0mwaiting_senders=[1mOrderedDict[0m[1m([0m[1m)[0m              │ │
+│ │                       [2m│   [0m[1m)[0m,                                             │ │
+│ │                       [2m│   [0m_closed=[3mTrue[0m                                   │ │
+│ │                       [1m)[0m                                                  │ │
+│ │  [3mread_stream_writer[0m = [1mMemoryObjectSendStream[0m[1m([0m                            │ │
+│ │                       [2m│   [0m_state=[1m_MemoryObjectStreamState[0m[1m([0m               │ │
+│ │                       [2m│   │   [0mmax_buffer_size=[1m0[0m,                         │ │
+│ │                       [2m│   │   [0mbuffer=[1mdeque[0m[1m([0m[1m)[0m,                            │ │
+│ │                       [2m│   │   [0mopen_send_channels=[1m0[0m,                      │ │
+│ │                       [2m│   │   [0mopen_receive_channels=[1m0[0m,                   │ │
+│ │                       [2m│   │   [0mwaiting_receivers=[1mOrderedDict[0m[1m([0m[1m)[0m,           │ │
+│ │                       [2m│   │   [0mwaiting_senders=[1mOrderedDict[0m[1m([0m[1m)[0m              │ │
+│ │                       [2m│   [0m[1m)[0m,                                             │ │
+│ │                       [2m│   [0m_closed=[3mTrue[0m                                   │ │
+│ │                       [1m)[0m                                                  │ │
+│ │               [3mstack[0m = [1m<[0m[1mcontextlib.AsyncExitStack[0m object at [1m0x10af0a780[0m[1m>[0m  │ │
+│ │  [3mterminate_on_close[0m = [3mTrue[0m                                               │ │
+│ │                  [3mtg[0m = [1m<[0m[1manyio._backends._asyncio.TaskGroup[0m object at      │ │
+│ │                       [1m0x10af0a720[0m[1m>[0m                                       │ │
+│ │           [3mtransport[0m = [1m<[0m[1mmcp.client.streamable_http.StreamableHTTPTranspo…[0m │ │
+│ │                       object at [1m0x10af0a6f0[0m[1m>[0m                             │ │
+│ │                 [3murl[0m = 'https://tracker.invalid/mcp'                      │ │
+│ │        [3mwrite_stream[0m = [1mMemoryObjectSendStream[0m[1m([0m                            │ │
+│ │                       [2m│   [0m_state=[1m_MemoryObjectStreamState[0m[1m([0m               │ │
+│ │                       [2m│   │   [0mmax_buffer_size=[1m0[0m,                         │ │
+│ │                       [2m│   │   [0mbuffer=[1mdeque[0m[1m([0m[1m)[0m,                            │ │
+│ │                       [2m│   │   [0mopen_send_channels=[1m0[0m,                      │ │
+│ │                       [2m│   │   [0mopen_receive_channels=[1m0[0m,                   │ │
+│ │                       [2m│   │   [0mwaiting_receivers=[1mOrderedDict[0m[1m([0m[1m)[0m,           │ │
+│ │                       [2m│   │   [0mwaiting_senders=[1mOrderedDict[0m[1m([0m[1m)[0m              │ │
+│ │                       [2m│   [0m[1m)[0m,                                             │ │
+│ │                       [2m│   [0m_closed=[3mTrue[0m                                   │ │
+│ │                       [1m)[0m                                                  │ │
+│ │ [3mwrite_stream_reader[0m = [1mMemoryObjectReceiveStream[0m[1m([0m                         │ │
+│ │                       [2m│   [0m_state=[1m_MemoryObjectStreamState[0m[1m([0m               │ │
+│ │                       [2m│   │   [0mmax_buffer_size=[1m0[0m,                         │ │
+│ │                       [2m│   │   [0mbuffer=[1mdeque[0m[1m([0m[1m)[0m,                            │ │
+│ │                       [2m│   │   [0mopen_send_channels=[1m0[0m,                      │ │
+│ │                       [2m│   │   [0mopen_receive_channels=[1m0[0m,                   │ │
+│ │                       [2m│   │   [0mwaiting_receivers=[1mOrderedDict[0m[1m([0m[1m)[0m,           │ │
+│ │                       [2m│   │   [0mwaiting_senders=[1mOrderedDict[0m[1m([0m[1m)[0m              │ │
+│ │                       [2m│   [0m[1m)[0m,                                             │ │
+│ │                       [2m│   [0m_closed=[3mTrue[0m                                   │ │
+│ │                       [1m)[0m                                                  │ │
+│ ╰──────────────────────────────────────────────────────────────────────────╯ │
+│                                                                              │
+│ [2m/private/tmp/kodezart-v03-m1-scope-ports/.venv/lib/python3.12/site-packages/[0m │
+│ [2manyio/_backends/[0m[1m_asyncio.py[0m:783 in __aexit__                                 │
+│                                                                              │
+│   [2m 780 [0m[2m│   │   │   │   │   [0m[2m# added to self._exceptions so it's ok to break e[0m │
+│   [2m 781 [0m[2m│   │   │   │   │   [0m[2m# chaining and avoid adding a "During handling of[0m │
+│   [2m 782 [0m[2m│   │   │   │   │   [0m[2m# for each nesting level.[0m                         │
+│ ❱  783 [2m│   │   │   │   │   [0mraise BaseExceptionGroup(                         │
+│   [2m 784 [0m[2m│   │   │   │   │   │   [0m"unhandled errors in a TaskGroup", self._exce │
+│   [2m 785 [0m[2m│   │   │   │   │   [0m) from None                                       │
+│   [2m 786 [0m[2m│   │   │   │   [0melif exc_val:                                         │
+│                                                                              │
+│ ╭─────────────────────────────── locals ────────────────────────────────╮    │
+│ │ [3mloop[0m = [1m<[0m[1m_UnixSelectorEventLoop[0m running=[3mTrue[0m closed=[3mFalse[0m debug=[3mFalse[0m[1m>[0m │    │
+│ │ [3mself[0m = [1m<[0m[1manyio._backends._asyncio.TaskGroup[0m object at [1m0x10af0a720[0m[1m>[0m     │    │
+│ ╰───────────────────────────────────────────────────────────────────────╯    │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[1mExceptionGroup: [0munhandled errors in a TaskGroup [1m([0m[1m1[0m sub-exception[1m)[0m
+
+╭────────────────────────────── Sub-exception #1 ──────────────────────────────╮
+│ ╭─────────────────── [1mTraceback [0m[1;2m(most recent call last)[0m ────────────────────╮ │
+│ │ [2m/private/tmp/kodezart-v03-m1-scope-ports/.venv/lib/python3.12/site-packa[0m │ │
+│ │ [2mges/mcp/client/[0m[1mstreamable_http.py[0m:565 in handle_request_async            │ │
+│ │                                                                          │ │
+│ │   [2m562 [0m[2m│   │   │   │   │   │   [0mif is_resumption:                          │ │
+│ │   [2m563 [0m[2m│   │   │   │   │   │   │   [0mawait self._handle_resumption_request( │ │
+│ │   [2m564 [0m[2m│   │   │   │   │   │   [0melse:                                      │ │
+│ │ ❱ 565 [2m│   │   │   │   │   │   │   [0m[1;4mawait[0m[1;4m [0m[1;4mself[0m[1;4m._handle_post_request(ctx)[0m   │ │
+│ │   [2m566 [0m[2m│   │   │   │   │   [0m                                               │ │
+│ │   [2m567 [0m[2m│   │   │   │   │   [0m[2m# If this is a request, start a new task to ha[0m │ │
+│ │   [2m568 [0m[2m│   │   │   │   │   [0mif isinstance(message.root, JSONRPCRequest):   │ │
+│ │                                                                          │ │
+│ │ ╭─────────────────────────────── locals ───────────────────────────────╮ │ │
+│ │ │           [3mctx[0m = [1mRequestContext[0m[1m([0m                                      │ │ │
+│ │ │                 [2m│   [0mclient=[1m<[0m[1mhttpx.AsyncClient[0m object at              │ │ │
+│ │ │                 [1m0x10af0a1e0[0m[1m>[0m,                                        │ │ │
+│ │ │                 [2m│   [0msession_id=[3mNone[0m,                                 │ │ │
+│ │ │                 [2m│   [0msession_message=[1mSessionMessage[0m[1m([0m                  │ │ │
+│ │ │                 [2m│   │   [0mmessage=[1mJSONRPCMessage[0m[1m([0m                      │ │ │
+│ │ │                 [2m│   │   │   [0mroot=[1mJSONRPCRequest[0m[1m([0m                     │ │ │
+│ │ │                 [2m│   │   │   │   [0mmethod='tools/call',                 │ │ │
+│ │ │                 [2m│   │   │   │   [0mparams=[1m{[0m                             │ │ │
+│ │ │                 [2m│   │   │   │   │   [0m'name': 'get_issue',             │ │ │
+│ │ │                 [2m│   │   │   │   │   [0m'arguments': [1m{[0m                   │ │ │
+│ │ │                 [2m│   │   │   │   │   │   [0m'id': 'T-9',                 │ │ │
+│ │ │                 [2m│   │   │   │   │   │   [0m'includeRelations': [3mTrue[0m     │ │ │
+│ │ │                 [2m│   │   │   │   │   [0m[1m}[0m                                │ │ │
+│ │ │                 [2m│   │   │   │   [0m[1m}[0m,                                   │ │ │
+│ │ │                 [2m│   │   │   │   [0mjsonrpc='2.0',                       │ │ │
+│ │ │                 [2m│   │   │   │   [0mid=[1m1[0m                                 │ │ │
+│ │ │                 [2m│   │   │   [0m[1m)[0m                                        │ │ │
+│ │ │                 [2m│   │   [0m[1m)[0m,                                           │ │ │
+│ │ │                 [2m│   │   [0mmetadata=[3mNone[0m                                │ │ │
+│ │ │                 [2m│   [0m[1m)[0m,                                               │ │ │
+│ │ │                 [2m│   [0mmetadata=[3mNone[0m,                                   │ │ │
+│ │ │                 [2m│   [0mread_stream_writer=[1mMemoryObjectSendStream[0m[1m([0m       │ │ │
+│ │ │                 [2m│   │   [0m_state=[1m_MemoryObjectStreamState[0m[1m([0m             │ │ │
+│ │ │                 [2m│   │   │   [0mmax_buffer_size=[1m0[0m,                       │ │ │
+│ │ │                 [2m│   │   │   [0mbuffer=[1mdeque[0m[1m([0m[1m)[0m,                          │ │ │
+│ │ │                 [2m│   │   │   [0mopen_send_channels=[1m0[0m,                    │ │ │
+│ │ │                 [2m│   │   │   [0mopen_receive_channels=[1m0[0m,                 │ │ │
+│ │ │                 [2m│   │   │   [0mwaiting_receivers=[1mOrderedDict[0m[1m([0m[1m)[0m,         │ │ │
+│ │ │                 [2m│   │   │   [0mwaiting_senders=[1mOrderedDict[0m[1m([0m[1m)[0m            │ │ │
+│ │ │                 [2m│   │   [0m[1m)[0m,                                           │ │ │
+│ │ │                 [2m│   │   [0m_closed=[3mTrue[0m                                 │ │ │
+│ │ │                 [2m│   [0m[1m)[0m,                                               │ │ │
+│ │ │                 [2m│   [0mheaders=[3mNone[0m,                                    │ │ │
+│ │ │                 [2m│   [0msse_read_timeout=[3mNone[0m                            │ │ │
+│ │ │                 [1m)[0m                                                    │ │ │
+│ │ │ [3mis_resumption[0m = [3mFalse[0m                                                │ │ │
+│ │ │          [3mself[0m = [1m<[0m[1mmcp.client.streamable_http.StreamableHTTPTransport[0m  │ │ │
+│ │ │                 object at [1m0x10af0a6f0[0m[1m>[0m                               │ │ │
+│ │ ╰──────────────────────────────────────────────────────────────────────╯ │ │
+│ │                                                                          │ │
+│ │ [2m/private/tmp/kodezart-v03-m1-scope-ports/.venv/lib/python3.12/site-packa[0m │ │
+│ │ [2mges/mcp/client/[0m[1mstreamable_http.py[0m:340 in _handle_post_request            │ │
+│ │                                                                          │ │
+│ │   [2m337 [0m[2m│   │   [0mmessage = ctx.session_message.message                      │ │
+│ │   [2m338 [0m[2m│   │   [0mis_initialization = self._is_initialization_request(messag │ │
+│ │   [2m339 [0m[2m│   │   [0m                                                           │ │
+│ │ ❱ 340 [2m│   │   [0masync with [1;4mctx.client.stream([0m                              │ │
+│ │   [2m341 [0m[2m│   │   │   [0m[1;4m"[0m[1;4mPOST[0m[1;4m"[0m[1;4m,[0m                                                │ │
+│ │   [2m342 [0m[2m│   │   │   [0m[1;4mself[0m[1;4m.url,[0m                                              │ │
+│ │   [2m343 [0m[2m│   │   │   [0m[1;4mjson=message.model_dump(by_alias=[0m[1;4mTrue[0m[1;4m, mode=[0m[1;4m"[0m[1;4mjson[0m[1;4m"[0m[1;4m, ex[0m │ │
+│ │                                                                          │ │
+│ │ ╭─────────────────────────────── locals ───────────────────────────────╮ │ │
+│ │ │               [3mctx[0m = [1mRequestContext[0m[1m([0m                                  │ │ │
+│ │ │                     [2m│   [0mclient=[1m<[0m[1mhttpx.AsyncClient[0m object at          │ │ │
+│ │ │                     [1m0x10af0a1e0[0m[1m>[0m,                                    │ │ │
+│ │ │                     [2m│   [0msession_id=[3mNone[0m,                             │ │ │
+│ │ │                     [2m│   [0msession_message=[1mSessionMessage[0m[1m([0m              │ │ │
+│ │ │                     [2m│   │   [0mmessage=[1mJSONRPCMessage[0m[1m([0m                  │ │ │
+│ │ │                     [2m│   │   │   [0mroot=[1mJSONRPCRequest[0m[1m([0m                 │ │ │
+│ │ │                     [2m│   │   │   │   [0mmethod='tools/call',             │ │ │
+│ │ │                     [2m│   │   │   │   [0mparams=[1m{[0m                         │ │ │
+│ │ │                     [2m│   │   │   │   │   [0m'name': 'get_issue',         │ │ │
+│ │ │                     [2m│   │   │   │   │   [0m'arguments': [1m{[0m               │ │ │
+│ │ │                     [2m│   │   │   │   │   │   [0m'id': 'T-9',             │ │ │
+│ │ │                     [2m│   │   │   │   │   │   [0m'includeRelations': [3mTrue[0m │ │ │
+│ │ │                     [2m│   │   │   │   │   [0m[1m}[0m                            │ │ │
+│ │ │                     [2m│   │   │   │   [0m[1m}[0m,                               │ │ │
+│ │ │                     [2m│   │   │   │   [0mjsonrpc='2.0',                   │ │ │
+│ │ │                     [2m│   │   │   │   [0mid=[1m1[0m                             │ │ │
+│ │ │                     [2m│   │   │   [0m[1m)[0m                                    │ │ │
+│ │ │                     [2m│   │   [0m[1m)[0m,                                       │ │ │
+│ │ │                     [2m│   │   [0mmetadata=[3mNone[0m                            │ │ │
+│ │ │                     [2m│   [0m[1m)[0m,                                           │ │ │
+│ │ │                     [2m│   [0mmetadata=[3mNone[0m,                               │ │ │
+│ │ │                     [2m│   [0mread_stream_writer=[1mMemoryObjectSendStream[0m[1m([0m   │ │ │
+│ │ │                     [2m│   │   [0m_state=[1m_MemoryObjectStreamState[0m[1m([0m         │ │ │
+│ │ │                     [2m│   │   │   [0mmax_buffer_size=[1m0[0m,                   │ │ │
+│ │ │                     [2m│   │   │   [0mbuffer=[1mdeque[0m[1m([0m[1m)[0m,                      │ │ │
+│ │ │                     [2m│   │   │   [0mopen_send_channels=[1m0[0m,                │ │ │
+│ │ │                     [2m│   │   │   [0mopen_receive_channels=[1m0[0m,             │ │ │
+│ │ │                     [2m│   │   │   [0mwaiting_receivers=[1mOrderedDict[0m[1m([0m[1m)[0m,     │ │ │
+│ │ │                     [2m│   │   │   [0mwaiting_senders=[1mOrderedDict[0m[1m([0m[1m)[0m        │ │ │
+│ │ │                     [2m│   │   [0m[1m)[0m,                                       │ │ │
+│ │ │                     [2m│   │   [0m_closed=[3mTrue[0m                             │ │ │
+│ │ │                     [2m│   [0m[1m)[0m,                                           │ │ │
+│ │ │                     [2m│   [0mheaders=[3mNone[0m,                                │ │ │
+│ │ │                     [2m│   [0msse_read_timeout=[3mNone[0m                        │ │ │
+│ │ │                     [1m)[0m                                                │ │ │
+│ │ │           [3mheaders[0m = [1m{[0m                                                │ │ │
+│ │ │                     [2m│   [0m'accept': 'application/json,                 │ │ │
+│ │ │                     text/event-stream',                              │ │ │
+│ │ │                     [2m│   [0m'content-type': 'application/json',          │ │ │
+│ │ │                     [2m│   [0m'mcp-protocol-version': '2025-11-25'         │ │ │
+│ │ │                     [1m}[0m                                                │ │ │
+│ │ │ [3mis_initialization[0m = [3mFalse[0m                                            │ │ │
+│ │ │           [3mmessage[0m = [1mJSONRPCMessage[0m[1m([0m                                  │ │ │
+│ │ │                     [2m│   [0mroot=[1mJSONRPCRequest[0m[1m([0m                         │ │ │
+│ │ │                     [2m│   │   [0mmethod='tools/call',                     │ │ │
+│ │ │                     [2m│   │   [0mparams=[1m{[0m                                 │ │ │
+│ │ │                     [2m│   │   │   [0m'name': 'get_issue',                 │ │ │
+│ │ │                     [2m│   │   │   [0m'arguments': [1m{[0m                       │ │ │
+│ │ │                     [2m│   │   │   │   [0m'id': 'T-9',                     │ │ │
+│ │ │                     [2m│   │   │   │   [0m'includeRelations': [3mTrue[0m         │ │ │
+│ │ │                     [2m│   │   │   [0m[1m}[0m                                    │ │ │
+│ │ │                     [2m│   │   [0m[1m}[0m,                                       │ │ │
+│ │ │                     [2m│   │   [0mjsonrpc='2.0',                           │ │ │
+│ │ │                     [2m│   │   [0mid=[1m1[0m                                     │ │ │
+│ │ │                     [2m│   [0m[1m)[0m                                            │ │ │
+│ │ │                     [1m)[0m                                                │ │ │
+│ │ │              [3mself[0m = [1m<[0m[1mmcp.client.streamable_http.StreamableHTTPTrans…[0m │ │ │
+│ │ │                     object at [1m0x10af0a6f0[0m[1m>[0m                           │ │ │
+│ │ ╰──────────────────────────────────────────────────────────────────────╯ │ │
+│ │                                                                          │ │
+│ │ [2m/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-non[0m │ │
+│ │ [2me/lib/python3.12/[0m[1mcontextlib.py[0m:210 in __aenter__                         │ │
+│ │                                                                          │ │
+│ │   [2m207 [0m[2m│   │   [0m[2m# they are only needed for recreation, which is not possib[0m │ │
+│ │   [2m208 [0m[2m│   │   [0mdel self.args, self.kwds, self.func                        │ │
+│ │   [2m209 [0m[2m│   │   [0mtry:                                                       │ │
+│ │ ❱ 210 [2m│   │   │   [0mreturn await anext(self.gen)                           │ │
+│ │   [2m211 [0m[2m│   │   [0m[1;4mexcept[0m[1;4m [0m[1;4mStopAsyncIteration[0m[1;4m:[0m                                 │ │
+│ │   [2m212 [0m[2m│   │   │   [0m[1;4mraise[0m[1;4m [0m[1;4mRuntimeError[0m[1;4m([0m[1;4m"[0m[1;4mgenerator didn[0m[1;4m'[0m[1;4mt yield[0m[1;4m"[0m[1;4m) [0m[1;4mfrom[0m[1;4m [0m[1;4mNone[0m │ │
+│ │   [2m213 [0m                                                                   │ │
+│ │                                                                          │ │
+│ │ ╭─────────────────────────────── locals ───────────────────────────────╮ │ │
+│ │ │ [3mself[0m = [1m<[0m[1mcontextlib._AsyncGeneratorContextManager[0m object at           │ │ │
+│ │ │        [1m0x10aed8440[0m[1m>[0m                                                  │ │ │
+│ │ ╰──────────────────────────────────────────────────────────────────────╯ │ │
+│ │                                                                          │ │
+│ │ [2m/private/tmp/kodezart-v03-m1-scope-ports/.venv/lib/python3.12/site-packa[0m │ │
+│ │ [2mges/httpx/[0m[1m_client.py[0m:1583 in stream                                      │ │
+│ │                                                                          │ │
+│ │   [2m1580 [0m[2m│   │   │   [0mtimeout=timeout,                                      │ │
+│ │   [2m1581 [0m[2m│   │   │   [0mextensions=extensions,                                │ │
+│ │   [2m1582 [0m[2m│   │   [0m)                                                         │ │
+│ │ ❱ 1583 [2m│   │   [0mresponse = [1;4mawait[0m[1;4m [0m[1;4mself[0m[1;4m.send([0m                               │ │
+│ │   [2m1584 [0m[2m│   │   │   [0m[1;4mrequest=request,[0m                                      │ │
+│ │   [2m1585 [0m[2m│   │   │   [0m[1;4mauth=auth,[0m                                            │ │
+│ │   [2m1586 [0m[2m│   │   │   [0m[1;4mfollow_redirects=follow_redirects,[0m                    │ │
+│ │                                                                          │ │
+│ │ ╭─────────────────────────────── locals ───────────────────────────────╮ │ │
+│ │ │             [3mauth[0m = [1m<[0m[1mhttpx._client.UseClientDefault[0m object at         │ │ │
+│ │ │                    [1m0x1023b4380[0m[1m>[0m                                      │ │ │
+│ │ │          [3mcontent[0m = [3mNone[0m                                              │ │ │
+│ │ │          [3mcookies[0m = [3mNone[0m                                              │ │ │
+│ │ │             [3mdata[0m = [3mNone[0m                                              │ │ │
+│ │ │       [3mextensions[0m = [3mNone[0m                                              │ │ │
+│ │ │            [3mfiles[0m = [3mNone[0m                                              │ │ │
+│ │ │ [3mfollow_redirects[0m = [1m<[0m[1mhttpx._client.UseClientDefault[0m object at         │ │ │
+│ │ │                    [1m0x1023b4380[0m[1m>[0m                                      │ │ │
+│ │ │          [3mheaders[0m = [1m{[0m                                                 │ │ │
+│ │ │                    [2m│   [0m'accept': 'application/json,                  │ │ │
+│ │ │                    text/event-stream',                               │ │ │
+│ │ │                    [2m│   [0m'content-type': 'application/json',           │ │ │
+│ │ │                    [2m│   [0m'mcp-protocol-version': '2025-11-25'          │ │ │
+│ │ │                    [1m}[0m                                                 │ │ │
+│ │ │             [3mjson[0m = [1m{[0m                                                 │ │ │
+│ │ │                    [2m│   [0m'method': 'tools/call',                       │ │ │
+│ │ │                    [2m│   [0m'params': [1m{[0m                                   │ │ │
+│ │ │                    [2m│   │   [0m'name': 'get_issue',                      │ │ │
+│ │ │                    [2m│   │   [0m'arguments': [1m{[0m                            │ │ │
+│ │ │                    [2m│   │   │   [0m'id': 'T-9',                          │ │ │
+│ │ │                    [2m│   │   │   [0m'includeRelations': [3mTrue[0m              │ │ │
+│ │ │                    [2m│   │   [0m[1m}[0m                                         │ │ │
+│ │ │                    [2m│   [0m[1m}[0m,                                            │ │ │
+│ │ │                    [2m│   [0m'jsonrpc': '2.0',                             │ │ │
+│ │ │                    [2m│   [0m'id': [1m1[0m                                       │ │ │
+│ │ │                    [1m}[0m                                                 │ │ │
+│ │ │           [3mmethod[0m = 'POST'                                            │ │ │
+│ │ │           [3mparams[0m = [3mNone[0m                                              │ │ │
+│ │ │          [3mrequest[0m = [1m<[0m[1mRequest[0m[1m([0m'POST', 'https://tracker.invalid/mcp'[1m)[0m[1m>[0m  │ │ │
+│ │ │             [3mself[0m = [1m<[0m[1mhttpx.AsyncClient[0m object at [1m0x10af0a1e0[0m[1m>[0m         │ │ │
+│ │ │          [3mtimeout[0m = [1m<[0m[1mhttpx._client.UseClientDefault[0m object at         │ │ │
+│ │ │                    [1m0x1023b4380[0m[1m>[0m                                      │ │ │
+│ │ │              [3murl[0m = 'https://tracker.invalid/mcp'                     │ │ │
+│ │ ╰──────────────────────────────────────────────────────────────────────╯ │ │
+│ │                                                                          │ │
+│ │ [2m/private/tmp/kodezart-v03-m1-scope-ports/.venv/lib/python3.12/site-packa[0m │ │
+│ │ [2mges/httpx/[0m[1m_client.py[0m:1629 in send                                        │ │
+│ │                                                                          │ │
+│ │   [2m1626 [0m[2m│   │   [0m                                                          │ │
+│ │   [2m1627 [0m[2m│   │   [0mauth = self._build_request_auth(request, auth)            │ │
+│ │   [2m1628 [0m[2m│   │   [0m                                                          │ │
+│ │ ❱ 1629 [2m│   │   [0mresponse = [1;4mawait[0m[1;4m [0m[1;4mself[0m[1;4m._send_handling_auth([0m                │ │
+│ │   [2m1630 [0m[2m│   │   │   [0m[1;4mrequest,[0m                                              │ │
+│ │   [2m1631 [0m[2m│   │   │   [0m[1;4mauth=auth,[0m                                            │ │
+│ │   [2m1632 [0m[2m│   │   │   [0m[1;4mfollow_redirects=follow_redirects,[0m                    │ │
+│ │                                                                          │ │
+│ │ ╭────────────────────────────── locals ───────────────────────────────╮  │ │
+│ │ │             [3mauth[0m = [1m<[0m[1mhttpx.Auth[0m object at [1m0x10aed8560[0m[1m>[0m               │  │ │
+│ │ │ [3mfollow_redirects[0m = [3mTrue[0m                                             │  │ │
+│ │ │          [3mrequest[0m = [1m<[0m[1mRequest[0m[1m([0m'POST', 'https://tracker.invalid/mcp'[1m)[0m[1m>[0m │  │ │
+│ │ │             [3mself[0m = [1m<[0m[1mhttpx.AsyncClient[0m object at [1m0x10af0a1e0[0m[1m>[0m        │  │ │
+│ │ │           [3mstream[0m = [3mTrue[0m                                             │  │ │
+│ │ ╰─────────────────────────────────────────────────────────────────────╯  │ │
+│ │                                                                          │ │
+│ │ [2m/private/tmp/kodezart-v03-m1-scope-ports/.venv/lib/python3.12/site-packa[0m │ │
+│ │ [2mges/httpx/[0m[1m_client.py[0m:1657 in _send_handling_auth                         │ │
+│ │                                                                          │ │
+│ │   [2m1654 [0m[2m│   │   │   [0mrequest = await auth_flow.__anext__()                 │ │
+│ │   [2m1655 [0m[2m│   │   │   [0m                                                      │ │
+│ │   [2m1656 [0m[2m│   │   │   [0mwhile True:                                           │ │
+│ │ ❱ 1657 [2m│   │   │   │   [0mresponse = await self._send_handling_redirects(   │ │
+│ │   [2m1658 [0m[2m│   │   │   │   │   [0mrequest,                                      │ │
+│ │   [2m1659 [0m[2m│   │   │   │   │   [0mfollow_redirects=follow_redirects,            │ │
+│ │   [2m1660 [0m[2m│   │   │   │   │   [0mhistory=history,                              │ │
+│ │                                                                          │ │
+│ │ ╭─────────────────────────────── locals ───────────────────────────────╮ │ │
+│ │ │             [3mauth[0m = [1m<[0m[1mhttpx.Auth[0m object at [1m0x10aed8560[0m[1m>[0m                │ │ │
+│ │ │        [3mauth_flow[0m = [1m<[0m[1masync_generator[0m object Auth.async_auth_flow at   │ │ │
+│ │ │                    [1m0x10af11540[0m[1m>[0m                                      │ │ │
+│ │ │ [3mfollow_redirects[0m = [3mTrue[0m                                              │ │ │
+│ │ │          [3mhistory[0m = [1m[[0m[1m][0m                                                │ │ │
+│ │ │          [3mrequest[0m = [1m<[0m[1mRequest[0m[1m([0m'POST', 'https://tracker.invalid/mcp'[1m)[0m[1m>[0m  │ │ │
+│ │ │             [3mself[0m = [1m<[0m[1mhttpx.AsyncClient[0m object at [1m0x10af0a1e0[0m[1m>[0m         │ │ │
+│ │ ╰──────────────────────────────────────────────────────────────────────╯ │ │
+│ │                                                                          │ │
+│ │ [2m/private/tmp/kodezart-v03-m1-scope-ports/.venv/lib/python3.12/site-packa[0m │ │
+│ │ [2mges/httpx/[0m[1m_client.py[0m:1694 in _send_handling_redirects                    │ │
+│ │                                                                          │ │
+│ │   [2m1691 [0m[2m│   │   │   [0mfor hook in self._event_hooks["request"]:             │ │
+│ │   [2m1692 [0m[2m│   │   │   │   [0mawait hook(request)                               │ │
+│ │   [2m1693 [0m[2m│   │   │   [0m                                                      │ │
+│ │ ❱ 1694 [2m│   │   │   [0mresponse = [1;4mawait[0m[1;4m [0m[1;4mself[0m[1;4m._send_single_request(request)[0m   │ │
+│ │   [2m1695 [0m[2m│   │   │   [0mtry:                                                  │ │
+│ │   [2m1696 [0m[2m│   │   │   │   [0mfor hook in self._event_hooks["response"]:        │ │
+│ │   [2m1697 [0m[2m│   │   │   │   │   [0mawait hook(response)                          │ │
+│ │                                                                          │ │
+│ │ ╭────────────────────────────── locals ───────────────────────────────╮  │ │
+│ │ │ [3mfollow_redirects[0m = [3mTrue[0m                                             │  │ │
+│ │ │          [3mhistory[0m = [1m[[0m[1m][0m                                               │  │ │
+│ │ │          [3mrequest[0m = [1m<[0m[1mRequest[0m[1m([0m'POST', 'https://tracker.invalid/mcp'[1m)[0m[1m>[0m │  │ │
+│ │ │             [3mself[0m = [1m<[0m[1mhttpx.AsyncClient[0m object at [1m0x10af0a1e0[0m[1m>[0m        │  │ │
+│ │ ╰─────────────────────────────────────────────────────────────────────╯  │ │
+│ │                                                                          │ │
+│ │ [2m/private/tmp/kodezart-v03-m1-scope-ports/.venv/lib/python3.12/site-packa[0m │ │
+│ │ [2mges/httpx/[0m[1m_client.py[0m:1730 in _send_single_request                        │ │
+│ │                                                                          │ │
+│ │   [2m1727 [0m[2m│   │   │   [0m)                                                     │ │
+│ │   [2m1728 [0m[2m│   │   [0m                                                          │ │
+│ │   [2m1729 [0m[2m│   │   [0mwith request_context(request=request):                    │ │
+│ │ ❱ 1730 [2m│   │   │   [0mresponse = [1;4mawait[0m[1;4m transport.handle_async_request(reque[0m │ │
+│ │   [2m1731 [0m[2m│   │   [0m                                                          │ │
+│ │   [2m1732 [0m[2m│   │   [0massert isinstance(response.stream, AsyncByteStream)       │ │
+│ │   [2m1733 [0m[2m│   │   [0mresponse.request = request                                │ │
+│ │                                                                          │ │
+│ │ ╭─────────────────────────── locals ───────────────────────────╮         │ │
+│ │ │   [3mrequest[0m = [1m<[0m[1mRequest[0m[1m([0m'POST', 'https://tracker.invalid/mcp'[1m)[0m[1m>[0m │         │ │
+│ │ │      [3mself[0m = [1m<[0m[1mhttpx.AsyncClient[0m object at [1m0x10af0a1e0[0m[1m>[0m        │         │ │
+│ │ │     [3mstart[0m = [1m1651733.132114166[0m                                │         │ │
+│ │ │ [3mtransport[0m = [1m<[0m[1mhttpx.MockTransport[0m object at [1m0x10af090d0[0m[1m>[0m      │         │ │
+│ │ ╰──────────────────────────────────────────────────────────────╯         │ │
+│ │                                                                          │ │
+│ │ [2m/private/tmp/kodezart-v03-m1-scope-ports/.venv/lib/python3.12/site-packa[0m │ │
+│ │ [2mges/httpx/_transports/[0m[1mmock.py[0m:41 in handle_async_request                 │ │
+│ │                                                                          │ │
+│ │   [2m38 [0m[2m│   │   [0m[2m# return the result.[0m                                        │ │
+│ │   [2m39 [0m[2m│   │   [0m                                                            │ │
+│ │   [2m40 [0m[2m│   │   [0mif not isinstance(response, Response):                      │ │
+│ │ ❱ 41 [2m│   │   │   [0mresponse = [1;4mawait[0m[1;4m response[0m                               │ │
+│ │   [2m42 [0m[2m│   │   [0m                                                            │ │
+│ │   [2m43 [0m[2m│   │   [0mreturn response                                             │ │
+│ │   [2m44 [0m                                                                    │ │
+│ │                                                                          │ │
+│ │ ╭─────────────────────────────── locals ───────────────────────────────╮ │ │
+│ │ │  [3mrequest[0m = [1m<[0m[1mRequest[0m[1m([0m'POST', 'https://tracker.invalid/mcp'[1m)[0m[1m>[0m          │ │ │
+│ │ │ [3mresponse[0m = [1m<[0m[1mcoroutine[0m object _StreamableEndpointOver._answer at      │ │ │
+│ │ │            [1m0x10abe8700[0m[1m>[0m                                              │ │ │
+│ │ │     [3mself[0m = [1m<[0m[1mhttpx.MockTransport[0m object at [1m0x10af090d0[0m[1m>[0m               │ │ │
+│ │ ╰──────────────────────────────────────────────────────────────────────╯ │ │
+│ │                                                                          │ │
+│ │ [2m/private/tmp/kodezart-v03-m1-scope-ports/tests/tracker/[0m[1mtest_linear_mcp_t[0m │ │
+│ │ [1mracker.py[0m:1333 in _answer                                                │ │
+│ │                                                                          │ │
+│ │   [2m1330 [0m[2m│   │   │   [0mreturn self._frame(message["id"], {"tools": roster})  │ │
+│ │   [2m1331 [0m[2m│   │   [0mif not self.dropped:                                      │ │
+│ │   [2m1332 [0m[2m│   │   │   [0mself.dropped = True                                   │ │
+│ │ ❱ 1333 [2m│   │   │   [0m[1;4mraise[0m[1;4m httpx.ReadError([0m[1;4m"[0m[1;4mthe server dropped the stream [0m │ │
+│ │   [2m1334 [0m[2m│   │   [0mparams = message["params"]                                │ │
+│ │   [2m1335 [0m[2m│   │   [0mresult = await self._workspace.call_tool(                 │ │
+│ │   [2m1336 [0m[2m│   │   │   [0mname=params["name"],                                  │ │
+│ │                                                                          │ │
+│ │ ╭─────────────────────────────── locals ───────────────────────────────╮ │ │
+│ │ │ [3mmessage[0m = [1m{[0m                                                          │ │ │
+│ │ │           [2m│   [0m'method': 'tools/call',                                │ │ │
+│ │ │           [2m│   [0m'params': [1m{[0m                                            │ │ │
+│ │ │           [2m│   │   [0m'name': 'get_issue',                               │ │ │
+│ │ │           [2m│   │   [0m'arguments': [1m{[0m                                     │ │ │
+│ │ │           [2m│   │   │   [0m'id': 'T-9',                                   │ │ │
+│ │ │           [2m│   │   │   [0m'includeRelations': [3mTrue[0m                       │ │ │
+│ │ │           [2m│   │   [0m[1m}[0m                                                  │ │ │
+│ │ │           [2m│   [0m[1m}[0m,                                                     │ │ │
+│ │ │           [2m│   [0m'jsonrpc': '2.0',                                      │ │ │
+│ │ │           [2m│   [0m'id': [1m1[0m                                                │ │ │
+│ │ │           [1m}[0m                                                          │ │ │
+│ │ │  [3mmethod[0m = 'tools/call'                                               │ │ │
+│ │ │ [3mrequest[0m = [1m<[0m[1mRequest[0m[1m([0m'POST', 'https://tracker.invalid/mcp'[1m)[0m[1m>[0m           │ │ │
+│ │ │    [3mself[0m = [1m<[0m[1mtests.tracker.test_linear_mcp_tracker._StreamableEndpoin…[0m │ │ │
+│ │ │           object at [1m0x10af08a10[0m[1m>[0m                                     │ │ │
+│ │ ╰──────────────────────────────────────────────────────────────────────╯ │ │
+│ ╰──────────────────────────────────────────────────────────────────────────╯ │
+│ [1mReadError: [0mthe server dropped the stream mid-call                            │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+2026-09-12 19:46:57 [info     ] mcp_session_closed             server_name=fake-linear
+_ TestARetryBudgetIsNotSpentOnASessionThatDied.test_an_unanswered_write_is_not_made_again_within_any_budget _
+kodezart.core.errors.McpSessionClosedError: the session ended (fake-linear)
+
+The above exception was the direct cause of the following exception:
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10b13ee40>
+tool = 'save_issue', arguments = {'id': 'T-9', 'title': 'renamed'}
+
+    async def _call(
+        self,
+        tool: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        attempt = 0
+        while True:
+            try:
+>               return await self._caller.call_tool(name=tool, arguments=arguments)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+src/kodezart/adapters/linear_mcp_tracker.py:1604: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/adapters/http_mcp_tool_caller.py:460: in call_tool
+    return await self._hosted.call_tool(name=name, arguments=arguments)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.hosted_mcp_session.HostedMcpSession object at 0x10aeaf2f0>
+
+    async def call_tool(
+        self,
+        *,
+        name: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        """Hand the call to the host task and wait for its answer.
+    
+        A session that ENDS under a call in flight is answered rather than
+        abandoned: every call the host still owes is resolved with the
+        closed-session class on its way out, so a worker waiting here is
+        told rather than left (KOD-270, KOD-272).
+    
+        Handing the call over is SYNCHRONOUS up to the wait, so a host
+        that has already drained cannot be handed a call afterwards.
+    
+        A session that has ENDED is reopened and the call goes again —
+        once per call, never once per boot (KOD-300, KOD-177, KOD-287).
+        """
+        inbox = self._inbox
+        if inbox is None or self._phase is not _Phase.SERVING:
+            return await self._call_on_a_reopened_session(
+                name=name,
+                arguments=arguments,
+            )
+        try:
+>           return await self._post(inbox, name=name, arguments=arguments).reply
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           kodezart.core.errors.McpCallUnansweredError: the MCP call was written and never answered (fake-linear/save_issue)
+
+src/kodezart/adapters/hosted_mcp_session.py:545: McpCallUnansweredError
+
+The above exception was the direct cause of the following exception:
+
+self = <tests.tracker.test_linear_mcp_tracker.TestARetryBudgetIsNotSpentOnASessionThatDied object at 0x10acb0950>
+
+    async def test_an_unanswered_write_is_not_made_again_within_any_budget(
+        self,
+    ) -> None:
+        """A write the server may have performed is not performed twice (KOD-305).
+    
+        The transport's ruling — a request written and never answered is
+        not re-sent — would be undone one layer up if the tracker's own
+        retry loop sent it again.  Measured 2026-09-05: with the budget
+        alone deciding, an unanswered `save_issue` was re-sent and answered.
+        """
+        workspace, endpoint, caller = self._over_a_dying_endpoint()
+        await caller.open()
+        try:
+            tracker = tracker_over(workspace, caller=caller, max_retries=2)
+            with structlog.testing.capture_logs() as logs:
+                with pytest.raises(McpCallUnansweredError):
+>                   await tracker.update_issue(issue_key="T-9", title="renamed")
+
+tests/tracker/test_linear_mcp_tracker.py:1459: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/adapters/linear_mcp_tracker.py:727: in update_issue
+    payload = await self._call(_TOOL_SAVE_ISSUE, arguments)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10b13ee40>
+tool = 'save_issue', arguments = {'id': 'T-9', 'title': 'renamed'}
+
+    async def _call(
+        self,
+        tool: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        attempt = 0
+        while True:
+            try:
+                return await self._caller.call_tool(name=tool, arguments=arguments)
+            except McpCredentialRefusedError as exc:
+                # Named once and raised, never retried: the refusal is the
+                # same on every attempt, so a budget spent on it buys the
+                # first answer again and delays the one event an operator
+                # can act on by the whole back-off (KOD-171).
+                await self._log.aerror(
+                    "tracker_credential_refused",
+                    tool=tool,
+                    server_name=exc.server_name,
+                )
+                raise TrackerAccessDeniedError(str(exc)) from exc
+            except (McpTransportError, TransientAPIError) as exc:
+                if attempt >= self._max_retries or not _may_resend(tool, exc):
+>                   raise TrackerUnavailableError(str(exc)) from exc
+E                   kodezart.core.errors.TrackerUnavailableError: the MCP call was written and never answered (fake-linear/save_issue)
+
+src/kodezart/adapters/linear_mcp_tracker.py:1618: TrackerUnavailableError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 19:46:58 [info     ] mcp_session_opened             address=https://tracker.invalid/mcp server_name=fake-linear
+2026-09-12 19:46:58 [error    ] mcp_session_ended              server_name=fake-linear
+╭───────────────────── [1mTraceback [0m[1;2m(most recent call last)[0m ──────────────────────╮
+│ [2m/private/tmp/kodezart-v03-m1-scope-ports/src/kodezart/adapters/[0m[1mhosted_mcp_se[0m │
+│ [1mssion.py[0m:701 in _host_session                                                │
+│                                                                              │
+│   [2m698 [0m[2m│   │   [0mbut the garbage collector.                                     │
+│   [2m699 [0m[2m│   │   [0m"""                                                            │
+│   [2m700 [0m[2m│   │   [0mtry:                                                           │
+│ ❱ 701 [2m│   │   │   [0masync with posted, self._transport.session() as session:   │
+│   [2m702 [0m[2m│   │   │   │   [0mif not self._is_current(generation):                   │
+│   [2m703 [0m[2m│   │   │   │   │   [0mreturn                                             │
+│   [2m704 [0m[2m│   │   │   │   [0mself._phase = _Phase.SERVING                           │
+│                                                                              │
+│ ╭───────────────────────────────── locals ─────────────────────────────────╮ │
+│ │        [3mexc[0m = [1mExceptionGroup[0m[1m([0m'unhandled errors in a TaskGroup',           │ │
+│ │              [1m[[0m[1mReadError[0m[1m([0m'the server dropped the stream mid-call'[1m)[0m[1m][0m[1m)[0m      │ │
+│ │ [3mgeneration[0m = [1m1[0m                                                           │ │
+│ │     [3mposted[0m = [1mMemoryObjectReceiveStream[0m[1m([0m                                  │ │
+│ │              [2m│   [0m_state=[1m_MemoryObjectStreamState[0m[1m([0m                        │ │
+│ │              [2m│   │   [0mmax_buffer_size=inf,                                │ │
+│ │              [2m│   │   [0mbuffer=[1mdeque[0m[1m([0m[1m)[0m,                                     │ │
+│ │              [2m│   │   [0mopen_send_channels=[1m0[0m,                               │ │
+│ │              [2m│   │   [0mopen_receive_channels=[1m0[0m,                            │ │
+│ │              [2m│   │   [0mwaiting_receivers=[1mOrderedDict[0m[1m([0m[1m)[0m,                    │ │
+│ │              [2m│   │   [0mwaiting_senders=[1mOrderedDict[0m[1m([0m[1m)[0m                       │ │
+│ │              [2m│   [0m[1m)[0m,                                                      │ │
+│ │              [2m│   [0m_closed=[3mTrue[0m                                            │ │
+│ │              [1m)[0m                                                           │ │
+│ │      [3mready[0m = [1m<[0m[1mFuture[0m finished result=[3mNone[0m[1m>[0m                               │ │
+│ │       [3mself[0m = [1m<[0m[1mkodezart.adapters.hosted_mcp_session.HostedMcpSession[0m      │ │
+│ │              object at [1m0x10aeaf2f0[0m[1m>[0m                                      │ │
+│ │    [3msession[0m = [1m<[0m[1mmcp.client.session.ClientSession[0m object at [1m0x10b13d310[0m[1m>[0m    │ │
+│ ╰──────────────────────────────────────────────────────────────────────────╯ │
+│                                                                              │
+│ [2m/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/li[0m │
+│ [2mb/python3.12/[0m[1mcontextlib.py[0m:231 in __aexit__                                  │
+│                                                                              │
+│   [2m228 [0m[2m│   │   │   │   [0m[2m# tell if we get the same exception back[0m               │
+│   [2m229 [0m[2m│   │   │   │   [0mvalue = typ()                                          │
+│   [2m230 [0m[2m│   │   │   [0mtry:                                                       │
+│ ❱ 231 [2m│   │   │   │   [0mawait self.gen.athrow(value)                           │
+│   [2m232 [0m[2m│   │   │   [0mexcept StopAsyncIteration as exc:                          │
+│   [2m233 [0m[2m│   │   │   │   [0m[2m# Suppress StopIteration *unless* it's the same except[0m │
+│   [2m234 [0m[2m│   │   │   │   [0m[2m# was passed to throw().  This prevents a StopIteratio[0m │
+│                                                                              │
+│ ╭───────────────────────────────── locals ─────────────────────────────────╮ │
+│ │      [3mself[0m = [1m<[0m[1mcontextlib._AsyncGeneratorContextManager[0m object at          │ │
+│ │             [1m0x10aeaf7a0[0m[1m>[0m                                                 │ │
+│ │ [3mtraceback[0m = [1m<[0m[1mtraceback[0m object at [1m0x10ae25a40[0m[1m>[0m                            │ │
+│ │     [3mvalue[0m = [1mCancelledError[0m[1m([0m'Cancelled via cancel scope 10aeacfb0'[1m)[0m       │ │
+│ ╰──────────────────────────────────────────────────────────────────────────╯ │
+│                                                                              │
+│ [2m/private/tmp/kodezart-v03-m1-scope-ports/src/kodezart/adapters/[0m[1mhttp_mcp_tool[0m │
+│ [1m_caller.py[0m:236 in session                                                    │
+│                                                                              │
+│   [2m233 [0m[2m│   │   [0mself._last_error_status = None                                 │
+│   [2m234 [0m[2m│   │   [0masync with (                                                   │
+│   [2m235 [0m[2m│   │   │   [0mclient,                                                    │
+│ ❱ 236 [2m│   │   │   [0m[1;4mstreamable_http_client([0m[1;4mself[0m[1;4m._url, http_client=client)[0m as ( │
+│   [2m237 [0m[2m│   │   │   [0mClientSession(                                             │
+│   [2m238 [0m[2m│   │   │   │   [0mread,                                                  │
+│   [2m239 [0m[2m│   │   │   │   [0mwrite,                                                 │
+│                                                                              │
+│ ╭───────────────────────────────── locals ─────────────────────────────────╮ │
+│ │       [3m_[0m = [1m<[0m[1mbound[0m method StreamableHTTPTransport.get_session_id of        │ │
+│ │           <mcp.client.streamable_http.StreamableHTTPTransport object at  │ │
+│ │           [1m0x10aeaffb0[0m>[1m>[0m                                                  │ │
+│ │  [3mclient[0m = [1m<[0m[1mhttpx.AsyncClient[0m object at [1m0x10aeadf70[0m[1m>[0m                      │ │
+│ │    [3mread[0m = [1mMemoryObjectReceiveStream[0m[1m([0m                                     │ │
+│ │           [2m│   [0m_state=[1m_MemoryObjectStreamState[0m[1m([0m                           │ │
+│ │           [2m│   │   [0mmax_buffer_size=[1m0[0m,                                     │ │
+│ │           [2m│   │   [0mbuffer=[1mdeque[0m[1m([0m[1m)[0m,                                        │ │
+│ │           [2m│   │   [0mopen_send_channels=[1m0[0m,                                  │ │
+│ │           [2m│   │   [0mopen_receive_channels=[1m0[0m,                               │ │
+│ │           [2m│   │   [0mwaiting_receivers=[1mOrderedDict[0m[1m([0m[1m)[0m,                       │ │
+│ │           [2m│   │   [0mwaiting_senders=[1mOrderedDict[0m[1m([0m[1m)[0m                          │ │
+│ │           [2m│   [0m[1m)[0m,                                                         │ │
+│ │           [2m│   [0m_closed=[3mTrue[0m                                               │ │
+│ │           [1m)[0m                                                              │ │
+│ │    [3mself[0m = [1m<[0m[1mkodezart.adapters.http_mcp_tool_caller._RemoteServer[0m object   │ │
+│ │           at [1m0x10aeaff20[0m[1m>[0m                                                │ │
+│ │ [3msession[0m = [1m<[0m[1mmcp.client.session.ClientSession[0m object at [1m0x10b13d310[0m[1m>[0m       │ │
+│ │   [3mwrite[0m = [1mMemoryObjectSendStream[0m[1m([0m                                        │ │
+│ │           [2m│   [0m_state=[1m_MemoryObjectStreamState[0m[1m([0m                           │ │
+│ │           [2m│   │   [0mmax_buffer_size=[1m0[0m,                                     │ │
+│ │           [2m│   │   [0mbuffer=[1mdeque[0m[1m([0m[1m)[0m,                                        │ │
+│ │           [2m│   │   [0mopen_send_channels=[1m0[0m,                                  │ │
+│ │           [2m│   │   [0mopen_receive_channels=[1m0[0m,                               │ │
+│ │           [2m│   │   [0mwaiting_receivers=[1mOrderedDict[0m[1m([0m[1m)[0m,                       │ │
+│ │           [2m│   │   [0mwaiting_senders=[1mOrderedDict[0m[1m([0m[1m)[0m                          │ │
+│ │           [2m│   [0m[1m)[0m,                                                         │ │
+│ │           [2m│   [0m_closed=[3mTrue[0m                                               │ │
+│ │           [1m)[0m                                                              │ │
+│ ╰──────────────────────────────────────────────────────────────────────────╯ │
+│                                                                              │
+│ [2m/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/li[0m │
+│ [2mb/python3.12/[0m[1mcontextlib.py[0m:231 in __aexit__                                  │
+│                                                                              │
+│   [2m228 [0m[2m│   │   │   │   [0m[2m# tell if we get the same exception back[0m               │
+│   [2m229 [0m[2m│   │   │   │   [0mvalue = typ()                                          │
+│   [2m230 [0m[2m│   │   │   [0mtry:                                                       │
+│ ❱ 231 [2m│   │   │   │   [0mawait self.gen.athrow(value)                           │
+│   [2m232 [0m[2m│   │   │   [0mexcept StopAsyncIteration as exc:                          │
+│   [2m233 [0m[2m│   │   │   │   [0m[2m# Suppress StopIteration *unless* it's the same except[0m │
+│   [2m234 [0m[2m│   │   │   │   [0m[2m# was passed to throw().  This prevents a StopIteratio[0m │
+│                                                                              │
+│ ╭───────────────────────────────── locals ─────────────────────────────────╮ │
+│ │      [3mself[0m = [1m<[0m[1mcontextlib._AsyncGeneratorContextManager[0m object at          │ │
+│ │             [1m0x10aeaf320[0m[1m>[0m                                                 │ │
+│ │ [3mtraceback[0m = [1m<[0m[1mtraceback[0m object at [1m0x10b140dc0[0m[1m>[0m                            │ │
+│ │     [3mvalue[0m = [1mCancelledError[0m[1m([0m'Cancelled via cancel scope 10aeacfb0'[1m)[0m       │ │
+│ ╰──────────────────────────────────────────────────────────────────────────╯ │
+│                                                                              │
+│ [2m/private/tmp/kodezart-v03-m1-scope-ports/.venv/lib/python3.12/site-packages/[0m │
+│ [2mmcp/client/[0m[1mstreamable_http.py[0m:647 in streamable_http_client                  │
+│                                                                              │
+│   [2m644 [0m[2m│   [0m                                                                   │
+│   [2m645 [0m[2m│   [0mtransport = StreamableHTTPTransport(url)                           │
+│   [2m646 [0m[2m│   [0m                                                                   │
+│ ❱ 647 [2m│   [0masync with [1;4manyio.create_task_group()[0m as tg:                        │
+│   [2m648 [0m[2m│   │   [0mtry:                                                           │
+│   [2m649 [0m[2m│   │   │   [0mlogger.debug(f"Connecting to StreamableHTTP endpoint: {url │
+│   [2m650 [0m                                                                       │
+│                                                                              │
+│ ╭───────────────────────────────── locals ─────────────────────────────────╮ │
+│ │              [3mclient[0m = [1m<[0m[1mhttpx.AsyncClient[0m object at [1m0x10aeadf70[0m[1m>[0m          │ │
+│ │     [3mclient_provided[0m = [3mTrue[0m                                               │ │
+│ │         [3mhttp_client[0m = [1m<[0m[1mhttpx.AsyncClient[0m object at [1m0x10aeadf70[0m[1m>[0m          │ │
+│ │         [3mread_stream[0m = [1mMemoryObjectReceiveStream[0m[1m([0m                         │ │
+│ │                       [2m│   [0m_state=[1m_MemoryObjectStreamState[0m[1m([0m               │ │
+│ │                       [2m│   │   [0mmax_buffer_size=[1m0[0m,                         │ │
+│ │                       [2m│   │   [0mbuffer=[1mdeque[0m[1m([0m[1m)[0m,                            │ │
+│ │                       [2m│   │   [0mopen_send_channels=[1m0[0m,                      │ │
+│ │                       [2m│   │   [0mopen_receive_channels=[1m0[0m,                   │ │
+│ │                       [2m│   │   [0mwaiting_receivers=[1mOrderedDict[0m[1m([0m[1m)[0m,           │ │
+│ │                       [2m│   │   [0mwaiting_senders=[1mOrderedDict[0m[1m([0m[1m)[0m              │ │
+│ │                       [2m│   [0m[1m)[0m,                                             │ │
+│ │                       [2m│   [0m_closed=[3mTrue[0m                                   │ │
+│ │                       [1m)[0m                                                  │ │
+│ │  [3mread_stream_writer[0m = [1mMemoryObjectSendStream[0m[1m([0m                            │ │
+│ │                       [2m│   [0m_state=[1m_MemoryObjectStreamState[0m[1m([0m               │ │
+│ │                       [2m│   │   [0mmax_buffer_size=[1m0[0m,                         │ │
+│ │                       [2m│   │   [0mbuffer=[1mdeque[0m[1m([0m[1m)[0m,                            │ │
+│ │                       [2m│   │   [0mopen_send_channels=[1m0[0m,                      │ │
+│ │                       [2m│   │   [0mopen_receive_channels=[1m0[0m,                   │ │
+│ │                       [2m│   │   [0mwaiting_receivers=[1mOrderedDict[0m[1m([0m[1m)[0m,           │ │
+│ │                       [2m│   │   [0mwaiting_senders=[1mOrderedDict[0m[1m([0m[1m)[0m              │ │
+│ │                       [2m│   [0m[1m)[0m,                                             │ │
+│ │                       [2m│   [0m_closed=[3mTrue[0m                                   │ │
+│ │                       [1m)[0m                                                  │ │
+│ │               [3mstack[0m = [1m<[0m[1mcontextlib.AsyncExitStack[0m object at [1m0x10aeae270[0m[1m>[0m  │ │
+│ │  [3mterminate_on_close[0m = [3mTrue[0m                                               │ │
+│ │                  [3mtg[0m = [1m<[0m[1manyio._backends._asyncio.TaskGroup[0m object at      │ │
+│ │                       [1m0x10aeacb00[0m[1m>[0m                                       │ │
+│ │           [3mtransport[0m = [1m<[0m[1mmcp.client.streamable_http.StreamableHTTPTranspo…[0m │ │
+│ │                       object at [1m0x10aeaffb0[0m[1m>[0m                             │ │
+│ │                 [3murl[0m = 'https://tracker.invalid/mcp'                      │ │
+│ │        [3mwrite_stream[0m = [1mMemoryObjectSendStream[0m[1m([0m                            │ │
+│ │                       [2m│   [0m_state=[1m_MemoryObjectStreamState[0m[1m([0m               │ │
+│ │                       [2m│   │   [0mmax_buffer_size=[1m0[0m,                         │ │
+│ │                       [2m│   │   [0mbuffer=[1mdeque[0m[1m([0m[1m)[0m,                            │ │
+│ │                       [2m│   │   [0mopen_send_channels=[1m0[0m,                      │ │
+│ │                       [2m│   │   [0mopen_receive_channels=[1m0[0m,                   │ │
+│ │                       [2m│   │   [0mwaiting_receivers=[1mOrderedDict[0m[1m([0m[1m)[0m,           │ │
+│ │                       [2m│   │   [0mwaiting_senders=[1mOrderedDict[0m[1m([0m[1m)[0m              │ │
+│ │                       [2m│   [0m[1m)[0m,                                             │ │
+│ │                       [2m│   [0m_closed=[3mTrue[0m                                   │ │
+│ │                       [1m)[0m                                                  │ │
+│ │ [3mwrite_stream_reader[0m = [1mMemoryObjectReceiveStream[0m[1m([0m                         │ │
+│ │                       [2m│   [0m_state=[1m_MemoryObjectStreamState[0m[1m([0m               │ │
+│ │                       [2m│   │   [0mmax_buffer_size=[1m0[0m,                         │ │
+│ │                       [2m│   │   [0mbuffer=[1mdeque[0m[1m([0m[1m)[0m,                            │ │
+│ │                       [2m│   │   [0mopen_send_channels=[1m0[0m,                      │ │
+│ │                       [2m│   │   [0mopen_receive_channels=[1m0[0m,                   │ │
+│ │                       [2m│   │   [0mwaiting_receivers=[1mOrderedDict[0m[1m([0m[1m)[0m,           │ │
+│ │                       [2m│   │   [0mwaiting_senders=[1mOrderedDict[0m[1m([0m[1m)[0m              │ │
+│ │                       [2m│   [0m[1m)[0m,                                             │ │
+│ │                       [2m│   [0m_closed=[3mTrue[0m                                   │ │
+│ │                       [1m)[0m                                                  │ │
+│ ╰──────────────────────────────────────────────────────────────────────────╯ │
+│                                                                              │
+│ [2m/private/tmp/kodezart-v03-m1-scope-ports/.venv/lib/python3.12/site-packages/[0m │
+│ [2manyio/_backends/[0m[1m_asyncio.py[0m:783 in __aexit__                                 │
+│                                                                              │
+│   [2m 780 [0m[2m│   │   │   │   │   [0m[2m# added to self._exceptions so it's ok to break e[0m │
+│   [2m 781 [0m[2m│   │   │   │   │   [0m[2m# chaining and avoid adding a "During handling of[0m │
+│   [2m 782 [0m[2m│   │   │   │   │   [0m[2m# for each nesting level.[0m                         │
+│ ❱  783 [2m│   │   │   │   │   [0mraise BaseExceptionGroup(                         │
+│   [2m 784 [0m[2m│   │   │   │   │   │   [0m"unhandled errors in a TaskGroup", self._exce │
+│   [2m 785 [0m[2m│   │   │   │   │   [0m) from None                                       │
+│   [2m 786 [0m[2m│   │   │   │   [0melif exc_val:                                         │
+│                                                                              │
+│ ╭─────────────────────────────── locals ────────────────────────────────╮    │
+│ │ [3mloop[0m = [1m<[0m[1m_UnixSelectorEventLoop[0m running=[3mTrue[0m closed=[3mFalse[0m debug=[3mFalse[0m[1m>[0m │    │
+│ │ [3mself[0m = [1m<[0m[1manyio._backends._asyncio.TaskGroup[0m object at [1m0x10aeacb00[0m[1m>[0m     │    │
+│ ╰───────────────────────────────────────────────────────────────────────╯    │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[1mExceptionGroup: [0munhandled errors in a TaskGroup [1m([0m[1m1[0m sub-exception[1m)[0m
+
+╭────────────────────────────── Sub-exception #1 ──────────────────────────────╮
+│ ╭─────────────────── [1mTraceback [0m[1;2m(most recent call last)[0m ────────────────────╮ │
+│ │ [2m/private/tmp/kodezart-v03-m1-scope-ports/.venv/lib/python3.12/site-packa[0m │ │
+│ │ [2mges/mcp/client/[0m[1mstreamable_http.py[0m:565 in handle_request_async            │ │
+│ │                                                                          │ │
+│ │   [2m562 [0m[2m│   │   │   │   │   │   [0mif is_resumption:                          │ │
+│ │   [2m563 [0m[2m│   │   │   │   │   │   │   [0mawait self._handle_resumption_request( │ │
+│ │   [2m564 [0m[2m│   │   │   │   │   │   [0melse:                                      │ │
+│ │ ❱ 565 [2m│   │   │   │   │   │   │   [0m[1;4mawait[0m[1;4m [0m[1;4mself[0m[1;4m._handle_post_request(ctx)[0m   │ │
+│ │   [2m566 [0m[2m│   │   │   │   │   [0m                                               │ │
+│ │   [2m567 [0m[2m│   │   │   │   │   [0m[2m# If this is a request, start a new task to ha[0m │ │
+│ │   [2m568 [0m[2m│   │   │   │   │   [0mif isinstance(message.root, JSONRPCRequest):   │ │
+│ │                                                                          │ │
+│ │ ╭─────────────────────────────── locals ───────────────────────────────╮ │ │
+│ │ │           [3mctx[0m = [1mRequestContext[0m[1m([0m                                      │ │ │
+│ │ │                 [2m│   [0mclient=[1m<[0m[1mhttpx.AsyncClient[0m object at              │ │ │
+│ │ │                 [1m0x10aeadf70[0m[1m>[0m,                                        │ │ │
+│ │ │                 [2m│   [0msession_id=[3mNone[0m,                                 │ │ │
+│ │ │                 [2m│   [0msession_message=[1mSessionMessage[0m[1m([0m                  │ │ │
+│ │ │                 [2m│   │   [0mmessage=[1mJSONRPCMessage[0m[1m([0m                      │ │ │
+│ │ │                 [2m│   │   │   [0mroot=[1mJSONRPCRequest[0m[1m([0m                     │ │ │
+│ │ │                 [2m│   │   │   │   [0mmethod='tools/call',                 │ │ │
+│ │ │                 [2m│   │   │   │   [0mparams=[1m{[0m                             │ │ │
+│ │ │                 [2m│   │   │   │   │   [0m'name': 'save_issue',            │ │ │
+│ │ │                 [2m│   │   │   │   │   [0m'arguments': [1m{[0m                   │ │ │
+│ │ │                 [2m│   │   │   │   │   │   [0m'id': 'T-9',                 │ │ │
+│ │ │                 [2m│   │   │   │   │   │   [0m'title': 'renamed'           │ │ │
+│ │ │                 [2m│   │   │   │   │   [0m[1m}[0m                                │ │ │
+│ │ │                 [2m│   │   │   │   [0m[1m}[0m,                                   │ │ │
+│ │ │                 [2m│   │   │   │   [0mjsonrpc='2.0',                       │ │ │
+│ │ │                 [2m│   │   │   │   [0mid=[1m1[0m                                 │ │ │
+│ │ │                 [2m│   │   │   [0m[1m)[0m                                        │ │ │
+│ │ │                 [2m│   │   [0m[1m)[0m,                                           │ │ │
+│ │ │                 [2m│   │   [0mmetadata=[3mNone[0m                                │ │ │
+│ │ │                 [2m│   [0m[1m)[0m,                                               │ │ │
+│ │ │                 [2m│   [0mmetadata=[3mNone[0m,                                   │ │ │
+│ │ │                 [2m│   [0mread_stream_writer=[1mMemoryObjectSendStream[0m[1m([0m       │ │ │
+│ │ │                 [2m│   │   [0m_state=[1m_MemoryObjectStreamState[0m[1m([0m             │ │ │
+│ │ │                 [2m│   │   │   [0mmax_buffer_size=[1m0[0m,                       │ │ │
+│ │ │                 [2m│   │   │   [0mbuffer=[1mdeque[0m[1m([0m[1m)[0m,                          │ │ │
+│ │ │                 [2m│   │   │   [0mopen_send_channels=[1m0[0m,                    │ │ │
+│ │ │                 [2m│   │   │   [0mopen_receive_channels=[1m0[0m,                 │ │ │
+│ │ │                 [2m│   │   │   [0mwaiting_receivers=[1mOrderedDict[0m[1m([0m[1m)[0m,         │ │ │
+│ │ │                 [2m│   │   │   [0mwaiting_senders=[1mOrderedDict[0m[1m([0m[1m)[0m            │ │ │
+│ │ │                 [2m│   │   [0m[1m)[0m,                                           │ │ │
+│ │ │                 [2m│   │   [0m_closed=[3mTrue[0m                                 │ │ │
+│ │ │                 [2m│   [0m[1m)[0m,                                               │ │ │
+│ │ │                 [2m│   [0mheaders=[3mNone[0m,                                    │ │ │
+│ │ │                 [2m│   [0msse_read_timeout=[3mNone[0m                            │ │ │
+│ │ │                 [1m)[0m                                                    │ │ │
+│ │ │ [3mis_resumption[0m = [3mFalse[0m                                                │ │ │
+│ │ │          [3mself[0m = [1m<[0m[1mmcp.client.streamable_http.StreamableHTTPTransport[0m  │ │ │
+│ │ │                 object at [1m0x10aeaffb0[0m[1m>[0m                               │ │ │
+│ │ ╰──────────────────────────────────────────────────────────────────────╯ │ │
+│ │                                                                          │ │
+│ │ [2m/private/tmp/kodezart-v03-m1-scope-ports/.venv/lib/python3.12/site-packa[0m │ │
+│ │ [2mges/mcp/client/[0m[1mstreamable_http.py[0m:340 in _handle_post_request            │ │
+│ │                                                                          │ │
+│ │   [2m337 [0m[2m│   │   [0mmessage = ctx.session_message.message                      │ │
+│ │   [2m338 [0m[2m│   │   [0mis_initialization = self._is_initialization_request(messag │ │
+│ │   [2m339 [0m[2m│   │   [0m                                                           │ │
+│ │ ❱ 340 [2m│   │   [0masync with [1;4mctx.client.stream([0m                              │ │
+│ │   [2m341 [0m[2m│   │   │   [0m[1;4m"[0m[1;4mPOST[0m[1;4m"[0m[1;4m,[0m                                                │ │
+│ │   [2m342 [0m[2m│   │   │   [0m[1;4mself[0m[1;4m.url,[0m                                              │ │
+│ │   [2m343 [0m[2m│   │   │   [0m[1;4mjson=message.model_dump(by_alias=[0m[1;4mTrue[0m[1;4m, mode=[0m[1;4m"[0m[1;4mjson[0m[1;4m"[0m[1;4m, ex[0m │ │
+│ │                                                                          │ │
+│ │ ╭─────────────────────────────── locals ───────────────────────────────╮ │ │
+│ │ │               [3mctx[0m = [1mRequestContext[0m[1m([0m                                  │ │ │
+│ │ │                     [2m│   [0mclient=[1m<[0m[1mhttpx.AsyncClient[0m object at          │ │ │
+│ │ │                     [1m0x10aeadf70[0m[1m>[0m,                                    │ │ │
+│ │ │                     [2m│   [0msession_id=[3mNone[0m,                             │ │ │
+│ │ │                     [2m│   [0msession_message=[1mSessionMessage[0m[1m([0m              │ │ │
+│ │ │                     [2m│   │   [0mmessage=[1mJSONRPCMessage[0m[1m([0m                  │ │ │
+│ │ │                     [2m│   │   │   [0mroot=[1mJSONRPCRequest[0m[1m([0m                 │ │ │
+│ │ │                     [2m│   │   │   │   [0mmethod='tools/call',             │ │ │
+│ │ │                     [2m│   │   │   │   [0mparams=[1m{[0m                         │ │ │
+│ │ │                     [2m│   │   │   │   │   [0m'name': 'save_issue',        │ │ │
+│ │ │                     [2m│   │   │   │   │   [0m'arguments': [1m{[0m               │ │ │
+│ │ │                     [2m│   │   │   │   │   │   [0m'id': 'T-9',             │ │ │
+│ │ │                     [2m│   │   │   │   │   │   [0m'title': 'renamed'       │ │ │
+│ │ │                     [2m│   │   │   │   │   [0m[1m}[0m                            │ │ │
+│ │ │                     [2m│   │   │   │   [0m[1m}[0m,                               │ │ │
+│ │ │                     [2m│   │   │   │   [0mjsonrpc='2.0',                   │ │ │
+│ │ │                     [2m│   │   │   │   [0mid=[1m1[0m                             │ │ │
+│ │ │                     [2m│   │   │   [0m[1m)[0m                                    │ │ │
+│ │ │                     [2m│   │   [0m[1m)[0m,                                       │ │ │
+│ │ │                     [2m│   │   [0mmetadata=[3mNone[0m                            │ │ │
+│ │ │                     [2m│   [0m[1m)[0m,                                           │ │ │
+│ │ │                     [2m│   [0mmetadata=[3mNone[0m,                               │ │ │
+│ │ │                     [2m│   [0mread_stream_writer=[1mMemoryObjectSendStream[0m[1m([0m   │ │ │
+│ │ │                     [2m│   │   [0m_state=[1m_MemoryObjectStreamState[0m[1m([0m         │ │ │
+│ │ │                     [2m│   │   │   [0mmax_buffer_size=[1m0[0m,                   │ │ │
+│ │ │                     [2m│   │   │   [0mbuffer=[1mdeque[0m[1m([0m[1m)[0m,                      │ │ │
+│ │ │                     [2m│   │   │   [0mopen_send_channels=[1m0[0m,                │ │ │
+│ │ │                     [2m│   │   │   [0mopen_receive_channels=[1m0[0m,             │ │ │
+│ │ │                     [2m│   │   │   [0mwaiting_receivers=[1mOrderedDict[0m[1m([0m[1m)[0m,     │ │ │
+│ │ │                     [2m│   │   │   [0mwaiting_senders=[1mOrderedDict[0m[1m([0m[1m)[0m        │ │ │
+│ │ │                     [2m│   │   [0m[1m)[0m,                                       │ │ │
+│ │ │                     [2m│   │   [0m_closed=[3mTrue[0m                             │ │ │
+│ │ │                     [2m│   [0m[1m)[0m,                                           │ │ │
+│ │ │                     [2m│   [0mheaders=[3mNone[0m,                                │ │ │
+│ │ │                     [2m│   [0msse_read_timeout=[3mNone[0m                        │ │ │
+│ │ │                     [1m)[0m                                                │ │ │
+│ │ │           [3mheaders[0m = [1m{[0m                                                │ │ │
+│ │ │                     [2m│   [0m'accept': 'application/json,                 │ │ │
+│ │ │                     text/event-stream',                              │ │ │
+│ │ │                     [2m│   [0m'content-type': 'application/json',          │ │ │
+│ │ │                     [2m│   [0m'mcp-protocol-version': '2025-11-25'         │ │ │
+│ │ │                     [1m}[0m                                                │ │ │
+│ │ │ [3mis_initialization[0m = [3mFalse[0m                                            │ │ │
+│ │ │           [3mmessage[0m = [1mJSONRPCMessage[0m[1m([0m                                  │ │ │
+│ │ │                     [2m│   [0mroot=[1mJSONRPCRequest[0m[1m([0m                         │ │ │
+│ │ │                     [2m│   │   [0mmethod='tools/call',                     │ │ │
+│ │ │                     [2m│   │   [0mparams=[1m{[0m                                 │ │ │
+│ │ │                     [2m│   │   │   [0m'name': 'save_issue',                │ │ │
+│ │ │                     [2m│   │   │   [0m'arguments': [1m{[0m                       │ │ │
+│ │ │                     [2m│   │   │   │   [0m'id': 'T-9',                     │ │ │
+│ │ │                     [2m│   │   │   │   [0m'title': 'renamed'               │ │ │
+│ │ │                     [2m│   │   │   [0m[1m}[0m                                    │ │ │
+│ │ │                     [2m│   │   [0m[1m}[0m,                                       │ │ │
+│ │ │                     [2m│   │   [0mjsonrpc='2.0',                           │ │ │
+│ │ │                     [2m│   │   [0mid=[1m1[0m                                     │ │ │
+│ │ │                     [2m│   [0m[1m)[0m                                            │ │ │
+│ │ │                     [1m)[0m                                                │ │ │
+│ │ │              [3mself[0m = [1m<[0m[1mmcp.client.streamable_http.StreamableHTTPTrans…[0m │ │ │
+│ │ │                     object at [1m0x10aeaffb0[0m[1m>[0m                           │ │ │
+│ │ ╰──────────────────────────────────────────────────────────────────────╯ │ │
+│ │                                                                          │ │
+│ │ [2m/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-non[0m │ │
+│ │ [2me/lib/python3.12/[0m[1mcontextlib.py[0m:210 in __aenter__                         │ │
+│ │                                                                          │ │
+│ │   [2m207 [0m[2m│   │   [0m[2m# they are only needed for recreation, which is not possib[0m │ │
+│ │   [2m208 [0m[2m│   │   [0mdel self.args, self.kwds, self.func                        │ │
+│ │   [2m209 [0m[2m│   │   [0mtry:                                                       │ │
+│ │ ❱ 210 [2m│   │   │   [0mreturn await anext(self.gen)                           │ │
+│ │   [2m211 [0m[2m│   │   [0m[1;4mexcept[0m[1;4m [0m[1;4mStopAsyncIteration[0m[1;4m:[0m                                 │ │
+│ │   [2m212 [0m[2m│   │   │   [0m[1;4mraise[0m[1;4m [0m[1;4mRuntimeError[0m[1;4m([0m[1;4m"[0m[1;4mgenerator didn[0m[1;4m'[0m[1;4mt yield[0m[1;4m"[0m[1;4m) [0m[1;4mfrom[0m[1;4m [0m[1;4mNone[0m │ │
+│ │   [2m213 [0m                                                                   │ │
+│ │                                                                          │ │
+│ │ ╭─────────────────────────────── locals ───────────────────────────────╮ │ │
+│ │ │ [3mself[0m = [1m<[0m[1mcontextlib._AsyncGeneratorContextManager[0m object at           │ │ │
+│ │ │        [1m0x10b13f680[0m[1m>[0m                                                  │ │ │
+│ │ ╰──────────────────────────────────────────────────────────────────────╯ │ │
+│ │                                                                          │ │
+│ │ [2m/private/tmp/kodezart-v03-m1-scope-ports/.venv/lib/python3.12/site-packa[0m │ │
+│ │ [2mges/httpx/[0m[1m_client.py[0m:1583 in stream                                      │ │
+│ │                                                                          │ │
+│ │   [2m1580 [0m[2m│   │   │   [0mtimeout=timeout,                                      │ │
+│ │   [2m1581 [0m[2m│   │   │   [0mextensions=extensions,                                │ │
+│ │   [2m1582 [0m[2m│   │   [0m)                                                         │ │
+│ │ ❱ 1583 [2m│   │   [0mresponse = [1;4mawait[0m[1;4m [0m[1;4mself[0m[1;4m.send([0m                               │ │
+│ │   [2m1584 [0m[2m│   │   │   [0m[1;4mrequest=request,[0m                                      │ │
+│ │   [2m1585 [0m[2m│   │   │   [0m[1;4mauth=auth,[0m                                            │ │
+│ │   [2m1586 [0m[2m│   │   │   [0m[1;4mfollow_redirects=follow_redirects,[0m                    │ │
+│ │                                                                          │ │
+│ │ ╭─────────────────────────────── locals ───────────────────────────────╮ │ │
+│ │ │             [3mauth[0m = [1m<[0m[1mhttpx._client.UseClientDefault[0m object at         │ │ │
+│ │ │                    [1m0x1023b4380[0m[1m>[0m                                      │ │ │
+│ │ │          [3mcontent[0m = [3mNone[0m                                              │ │ │
+│ │ │          [3mcookies[0m = [3mNone[0m                                              │ │ │
+│ │ │             [3mdata[0m = [3mNone[0m                                              │ │ │
+│ │ │       [3mextensions[0m = [3mNone[0m                                              │ │ │
+│ │ │            [3mfiles[0m = [3mNone[0m                                              │ │ │
+│ │ │ [3mfollow_redirects[0m = [1m<[0m[1mhttpx._client.UseClientDefault[0m object at         │ │ │
+│ │ │                    [1m0x1023b4380[0m[1m>[0m                                      │ │ │
+│ │ │          [3mheaders[0m = [1m{[0m                                                 │ │ │
+│ │ │                    [2m│   [0m'accept': 'application/json,                  │ │ │
+│ │ │                    text/event-stream',                               │ │ │
+│ │ │                    [2m│   [0m'content-type': 'application/json',           │ │ │
+│ │ │                    [2m│   [0m'mcp-protocol-version': '2025-11-25'          │ │ │
+│ │ │                    [1m}[0m                                                 │ │ │
+│ │ │             [3mjson[0m = [1m{[0m                                                 │ │ │
+│ │ │                    [2m│   [0m'method': 'tools/call',                       │ │ │
+│ │ │                    [2m│   [0m'params': [1m{[0m                                   │ │ │
+│ │ │                    [2m│   │   [0m'name': 'save_issue',                     │ │ │
+│ │ │                    [2m│   │   [0m'arguments': [1m{[0m                            │ │ │
+│ │ │                    [2m│   │   │   [0m'id': 'T-9',                          │ │ │
+│ │ │                    [2m│   │   │   [0m'title': 'renamed'                    │ │ │
+│ │ │                    [2m│   │   [0m[1m}[0m                                         │ │ │
+│ │ │                    [2m│   [0m[1m}[0m,                                            │ │ │
+│ │ │                    [2m│   [0m'jsonrpc': '2.0',                             │ │ │
+│ │ │                    [2m│   [0m'id': [1m1[0m                                       │ │ │
+│ │ │                    [1m}[0m                                                 │ │ │
+│ │ │           [3mmethod[0m = 'POST'                                            │ │ │
+│ │ │           [3mparams[0m = [3mNone[0m                                              │ │ │
+│ │ │          [3mrequest[0m = [1m<[0m[1mRequest[0m[1m([0m'POST', 'https://tracker.invalid/mcp'[1m)[0m[1m>[0m  │ │ │
+│ │ │             [3mself[0m = [1m<[0m[1mhttpx.AsyncClient[0m object at [1m0x10aeadf70[0m[1m>[0m         │ │ │
+│ │ │          [3mtimeout[0m = [1m<[0m[1mhttpx._client.UseClientDefault[0m object at         │ │ │
+│ │ │                    [1m0x1023b4380[0m[1m>[0m                                      │ │ │
+│ │ │              [3murl[0m = 'https://tracker.invalid/mcp'                     │ │ │
+│ │ ╰──────────────────────────────────────────────────────────────────────╯ │ │
+│ │                                                                          │ │
+│ │ [2m/private/tmp/kodezart-v03-m1-scope-ports/.venv/lib/python3.12/site-packa[0m │ │
+│ │ [2mges/httpx/[0m[1m_client.py[0m:1629 in send                                        │ │
+│ │                                                                          │ │
+│ │   [2m1626 [0m[2m│   │   [0m                                                          │ │
+│ │   [2m1627 [0m[2m│   │   [0mauth = self._build_request_auth(request, auth)            │ │
+│ │   [2m1628 [0m[2m│   │   [0m                                                          │ │
+│ │ ❱ 1629 [2m│   │   [0mresponse = [1;4mawait[0m[1;4m [0m[1;4mself[0m[1;4m._send_handling_auth([0m                │ │
+│ │   [2m1630 [0m[2m│   │   │   [0m[1;4mrequest,[0m                                              │ │
+│ │   [2m1631 [0m[2m│   │   │   [0m[1;4mauth=auth,[0m                                            │ │
+│ │   [2m1632 [0m[2m│   │   │   [0m[1;4mfollow_redirects=follow_redirects,[0m                    │ │
+│ │                                                                          │ │
+│ │ ╭────────────────────────────── locals ───────────────────────────────╮  │ │
+│ │ │             [3mauth[0m = [1m<[0m[1mhttpx.Auth[0m object at [1m0x10b13f7a0[0m[1m>[0m               │  │ │
+│ │ │ [3mfollow_redirects[0m = [3mTrue[0m                                             │  │ │
+│ │ │          [3mrequest[0m = [1m<[0m[1mRequest[0m[1m([0m'POST', 'https://tracker.invalid/mcp'[1m)[0m[1m>[0m │  │ │
+│ │ │             [3mself[0m = [1m<[0m[1mhttpx.AsyncClient[0m object at [1m0x10aeadf70[0m[1m>[0m        │  │ │
+│ │ │           [3mstream[0m = [3mTrue[0m                                             │  │ │
+│ │ ╰─────────────────────────────────────────────────────────────────────╯  │ │
+│ │                                                                          │ │
+│ │ [2m/private/tmp/kodezart-v03-m1-scope-ports/.venv/lib/python3.12/site-packa[0m │ │
+│ │ [2mges/httpx/[0m[1m_client.py[0m:1657 in _send_handling_auth                         │ │
+│ │                                                                          │ │
+│ │   [2m1654 [0m[2m│   │   │   [0mrequest = await auth_flow.__anext__()                 │ │
+│ │   [2m1655 [0m[2m│   │   │   [0m                                                      │ │
+│ │   [2m1656 [0m[2m│   │   │   [0mwhile True:                                           │ │
+│ │ ❱ 1657 [2m│   │   │   │   [0mresponse = await self._send_handling_redirects(   │ │
+│ │   [2m1658 [0m[2m│   │   │   │   │   [0mrequest,                                      │ │
+│ │   [2m1659 [0m[2m│   │   │   │   │   [0mfollow_redirects=follow_redirects,            │ │
+│ │   [2m1660 [0m[2m│   │   │   │   │   [0mhistory=history,                              │ │
+│ │                                                                          │ │
+│ │ ╭─────────────────────────────── locals ───────────────────────────────╮ │ │
+│ │ │             [3mauth[0m = [1m<[0m[1mhttpx.Auth[0m object at [1m0x10b13f7a0[0m[1m>[0m                │ │ │
+│ │ │        [3mauth_flow[0m = [1m<[0m[1masync_generator[0m object Auth.async_auth_flow at   │ │ │
+│ │ │                    [1m0x10afd10e0[0m[1m>[0m                                      │ │ │
+│ │ │ [3mfollow_redirects[0m = [3mTrue[0m                                              │ │ │
+│ │ │          [3mhistory[0m = [1m[[0m[1m][0m                                                │ │ │
+│ │ │          [3mrequest[0m = [1m<[0m[1mRequest[0m[1m([0m'POST', 'https://tracker.invalid/mcp'[1m)[0m[1m>[0m  │ │ │
+│ │ │             [3mself[0m = [1m<[0m[1mhttpx.AsyncClient[0m object at [1m0x10aeadf70[0m[1m>[0m         │ │ │
+│ │ ╰──────────────────────────────────────────────────────────────────────╯ │ │
+│ │                                                                          │ │
+│ │ [2m/private/tmp/kodezart-v03-m1-scope-ports/.venv/lib/python3.12/site-packa[0m │ │
+│ │ [2mges/httpx/[0m[1m_client.py[0m:1694 in _send_handling_redirects                    │ │
+│ │                                                                          │ │
+│ │   [2m1691 [0m[2m│   │   │   [0mfor hook in self._event_hooks["request"]:             │ │
+│ │   [2m1692 [0m[2m│   │   │   │   [0mawait hook(request)                               │ │
+│ │   [2m1693 [0m[2m│   │   │   [0m                                                      │ │
+│ │ ❱ 1694 [2m│   │   │   [0mresponse = [1;4mawait[0m[1;4m [0m[1;4mself[0m[1;4m._send_single_request(request)[0m   │ │
+│ │   [2m1695 [0m[2m│   │   │   [0mtry:                                                  │ │
+│ │   [2m1696 [0m[2m│   │   │   │   [0mfor hook in self._event_hooks["response"]:        │ │
+│ │   [2m1697 [0m[2m│   │   │   │   │   [0mawait hook(response)                          │ │
+│ │                                                                          │ │
+│ │ ╭────────────────────────────── locals ───────────────────────────────╮  │ │
+│ │ │ [3mfollow_redirects[0m = [3mTrue[0m                                             │  │ │
+│ │ │          [3mhistory[0m = [1m[[0m[1m][0m                                               │  │ │
+│ │ │          [3mrequest[0m = [1m<[0m[1mRequest[0m[1m([0m'POST', 'https://tracker.invalid/mcp'[1m)[0m[1m>[0m │  │ │
+│ │ │             [3mself[0m = [1m<[0m[1mhttpx.AsyncClient[0m object at [1m0x10aeadf70[0m[1m>[0m        │  │ │
+│ │ ╰─────────────────────────────────────────────────────────────────────╯  │ │
+│ │                                                                          │ │
+│ │ [2m/private/tmp/kodezart-v03-m1-scope-ports/.venv/lib/python3.12/site-packa[0m │ │
+│ │ [2mges/httpx/[0m[1m_client.py[0m:1730 in _send_single_request                        │ │
+│ │                                                                          │ │
+│ │   [2m1727 [0m[2m│   │   │   [0m)                                                     │ │
+│ │   [2m1728 [0m[2m│   │   [0m                                                          │ │
+│ │   [2m1729 [0m[2m│   │   [0mwith request_context(request=request):                    │ │
+│ │ ❱ 1730 [2m│   │   │   [0mresponse = [1;4mawait[0m[1;4m transport.handle_async_request(reque[0m │ │
+│ │   [2m1731 [0m[2m│   │   [0m                                                          │ │
+│ │   [2m1732 [0m[2m│   │   [0massert isinstance(response.stream, AsyncByteStream)       │ │
+│ │   [2m1733 [0m[2m│   │   [0mresponse.request = request                                │ │
+│ │                                                                          │ │
+│ │ ╭─────────────────────────── locals ───────────────────────────╮         │ │
+│ │ │   [3mrequest[0m = [1m<[0m[1mRequest[0m[1m([0m'POST', 'https://tracker.invalid/mcp'[1m)[0m[1m>[0m │         │ │
+│ │ │      [3mself[0m = [1m<[0m[1mhttpx.AsyncClient[0m object at [1m0x10aeadf70[0m[1m>[0m        │         │ │
+│ │ │     [3mstart[0m = [1m1651737.629069[0m                                   │         │ │
+│ │ │ [3mtransport[0m = [1m<[0m[1mhttpx.MockTransport[0m object at [1m0x10aeaf200[0m[1m>[0m      │         │ │
+│ │ ╰──────────────────────────────────────────────────────────────╯         │ │
+│ │                                                                          │ │
+│ │ [2m/private/tmp/kodezart-v03-m1-scope-ports/.venv/lib/python3.12/site-packa[0m │ │
+│ │ [2mges/httpx/_transports/[0m[1mmock.py[0m:41 in handle_async_request                 │ │
+│ │                                                                          │ │
+│ │   [2m38 [0m[2m│   │   [0m[2m# return the result.[0m                                        │ │
+│ │   [2m39 [0m[2m│   │   [0m                                                            │ │
+│ │   [2m40 [0m[2m│   │   [0mif not isinstance(response, Response):                      │ │
+│ │ ❱ 41 [2m│   │   │   [0mresponse = [1;4mawait[0m[1;4m response[0m                               │ │
+│ │   [2m42 [0m[2m│   │   [0m                                                            │ │
+│ │   [2m43 [0m[2m│   │   [0mreturn response                                             │ │
+│ │   [2m44 [0m                                                                    │ │
+│ │                                                                          │ │
+│ │ ╭─────────────────────────────── locals ───────────────────────────────╮ │ │
+│ │ │  [3mrequest[0m = [1m<[0m[1mRequest[0m[1m([0m'POST', 'https://tracker.invalid/mcp'[1m)[0m[1m>[0m          │ │ │
+│ │ │ [3mresponse[0m = [1m<[0m[1mcoroutine[0m object _StreamableEndpointOver._answer at      │ │ │
+│ │ │            [1m0x10abe9c60[0m[1m>[0m                                              │ │ │
+│ │ │     [3mself[0m = [1m<[0m[1mhttpx.MockTransport[0m object at [1m0x10aeaf200[0m[1m>[0m               │ │ │
+│ │ ╰──────────────────────────────────────────────────────────────────────╯ │ │
+│ │                                                                          │ │
+│ │ [2m/private/tmp/kodezart-v03-m1-scope-ports/tests/tracker/[0m[1mtest_linear_mcp_t[0m │ │
+│ │ [1mracker.py[0m:1333 in _answer                                                │ │
+│ │                                                                          │ │
+│ │   [2m1330 [0m[2m│   │   │   [0mreturn self._frame(message["id"], {"tools": roster})  │ │
+│ │   [2m1331 [0m[2m│   │   [0mif not self.dropped:                                      │ │
+│ │   [2m1332 [0m[2m│   │   │   [0mself.dropped = True                                   │ │
+│ │ ❱ 1333 [2m│   │   │   [0m[1;4mraise[0m[1;4m httpx.ReadError([0m[1;4m"[0m[1;4mthe server dropped the stream [0m │ │
+│ │   [2m1334 [0m[2m│   │   [0mparams = message["params"]                                │ │
+│ │   [2m1335 [0m[2m│   │   [0mresult = await self._workspace.call_tool(                 │ │
+│ │   [2m1336 [0m[2m│   │   │   [0mname=params["name"],                                  │ │
+│ │                                                                          │ │
+│ │ ╭─────────────────────────────── locals ───────────────────────────────╮ │ │
+│ │ │ [3mmessage[0m = [1m{[0m                                                          │ │ │
+│ │ │           [2m│   [0m'method': 'tools/call',                                │ │ │
+│ │ │           [2m│   [0m'params': [1m{[0m                                            │ │ │
+│ │ │           [2m│   │   [0m'name': 'save_issue',                              │ │ │
+│ │ │           [2m│   │   [0m'arguments': [1m{[0m'id': 'T-9', 'title': 'renamed'[1m}[0m     │ │ │
+│ │ │           [2m│   [0m[1m}[0m,                                                     │ │ │
+│ │ │           [2m│   [0m'jsonrpc': '2.0',                                      │ │ │
+│ │ │           [2m│   [0m'id': [1m1[0m                                                │ │ │
+│ │ │           [1m}[0m                                                          │ │ │
+│ │ │  [3mmethod[0m = 'tools/call'                                               │ │ │
+│ │ │ [3mrequest[0m = [1m<[0m[1mRequest[0m[1m([0m'POST', 'https://tracker.invalid/mcp'[1m)[0m[1m>[0m           │ │ │
+│ │ │    [3mself[0m = [1m<[0m[1mtests.tracker.test_linear_mcp_tracker._StreamableEndpoin…[0m │ │ │
+│ │ │           object at [1m0x10aeae3f0[0m[1m>[0m                                     │ │ │
+│ │ ╰──────────────────────────────────────────────────────────────────────╯ │ │
+│ ╰──────────────────────────────────────────────────────────────────────────╯ │
+│ [1mReadError: [0mthe server dropped the stream mid-call                            │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+2026-09-12 19:47:01 [info     ] mcp_session_closed             server_name=fake-linear
+=========================== short test summary info ============================
+FAILED tests/tracker/test_linear_mcp_tracker.py::TestCapabilityProbe::test_a_transport_failure_that_says_nothing_about_scope_propagates
+FAILED tests/tracker/test_linear_mcp_tracker.py::TestCapabilityProbe::test_a_refusal_the_vendor_did_not_diagnose_as_scope_propagates
+FAILED tests/tracker/test_linear_mcp_tracker.py::TestTransientRetry::test_exhausting_the_budget_raises_the_transient_error
+FAILED tests/tracker/test_linear_mcp_tracker.py::TestTransportRetry::test_exhausting_the_budget_raises_the_transport_error
+FAILED tests/tracker/test_linear_mcp_tracker.py::TestARefusedCredentialIsNeverRetried::test_the_refusal_stops_the_loop_on_the_attempt_that_met_it
+FAILED tests/tracker/test_linear_mcp_tracker.py::TestARefusedCredentialIsNeverRetried::test_the_refusal_names_the_credential_once
+FAILED tests/tracker/test_linear_mcp_tracker.py::TestARetryBudgetIsNotSpentOnASessionThatDied::test_the_call_the_death_landed_under_is_told_and_the_next_call_reaches
+FAILED tests/tracker/test_linear_mcp_tracker.py::TestARetryBudgetIsNotSpentOnASessionThatDied::test_an_unanswered_write_is_not_made_again_within_any_budget
+8 failed, 175 passed in 11.74s

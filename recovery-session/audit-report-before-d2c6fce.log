@@ -1,0 +1,38 @@
+......FF                                                                 [100%]
+=================================== FAILURES ===================================
+_____ test_json_schema_expresses_required_mandate_and_nested_verdict[True] _____
+
+refuted = True
+
+    @pytest.mark.parametrize("refuted", [True, False])
+    def test_json_schema_expresses_required_mandate_and_nested_verdict(refuted):
+        schema = AuditClaimReport.model_json_schema()
+    
+        def resolve(node):
+            return schema["$defs"][node["$ref"].rsplit("/", 1)[1]]
+    
+>       arms = [resolve(node) for node in schema["anyOf"]]
+                                          ^^^^^^^^^^^^^^^
+E       KeyError: 'anyOf'
+
+tests/types/test_audit_report_contract.py:65: KeyError
+____ test_json_schema_expresses_required_mandate_and_nested_verdict[False] _____
+
+refuted = False
+
+    @pytest.mark.parametrize("refuted", [True, False])
+    def test_json_schema_expresses_required_mandate_and_nested_verdict(refuted):
+        schema = AuditClaimReport.model_json_schema()
+    
+        def resolve(node):
+            return schema["$defs"][node["$ref"].rsplit("/", 1)[1]]
+    
+>       arms = [resolve(node) for node in schema["anyOf"]]
+                                          ^^^^^^^^^^^^^^^
+E       KeyError: 'anyOf'
+
+tests/types/test_audit_report_contract.py:65: KeyError
+=========================== short test summary info ============================
+FAILED tests/types/test_audit_report_contract.py::test_json_schema_expresses_required_mandate_and_nested_verdict[True]
+FAILED tests/types/test_audit_report_contract.py::test_json_schema_expresses_required_mandate_and_nested_verdict[False]
+2 failed, 6 passed in 0.37s

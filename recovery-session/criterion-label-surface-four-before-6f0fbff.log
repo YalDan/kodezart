@@ -1,0 +1,159 @@
+FFFF                                                                     [100%]
+=================================== FAILURES ===================================
+_________ test_criterion_holder_can_classify_its_own_complete_surface __________
+
+    async def test_criterion_holder_can_classify_its_own_complete_surface():
+        board, tracker = criterion_board()
+        async with RunSurfaceLease(
+            tracker=tracker,
+            job_id="criterion-owner",
+            lease_seconds=900,
+            surfaces=frozenset({surface(SurfaceKind.CRITERION_SUB_ISSUE)}),
+        ):
+>           result = await tracker.set_issue_classification(
+                issue_key=CLAIMED_ISSUE, classification="decision", holder="criterion-owner"
+            )
+
+tests/tracker/test_criterion_label_surface.py:45: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/adapters/linear_mcp_tracker.py:2174: in set_issue_classification
+    receipt = await self._retry_call(_TOOL_SAVE_ISSUE, attempt)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/adapters/linear_mcp_tracker.py:4180: in _retry_call
+    return await invoke()
+           ^^^^^^^^^^^^^^
+src/kodezart/adapters/linear_mcp_tracker.py:2163: in attempt
+    await self._require_surface_holder(surface=surface, holder=holder)
+src/kodezart/adapters/linear_mcp_tracker.py:2448: in _require_surface_holder
+    self._assert_surface_holder(surface=surface, holder=holder, markers=markers)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10a9a3200>
+
+    def _assert_surface_holder(
+        self,
+        *,
+        surface: WritableSurface,
+        holder: str | None,
+        markers: Sequence[_GrantMarker],
+    ) -> None:
+        """Apply the existing lease arithmetic to the final native snapshot."""
+        encoded = _LEASE_ADDRESSING.encode(surface)
+        now = self._clock()
+        live = [
+            entry
+            for entry in markers
+            if not entry.retracted
+            and entry.in_force
+            and entry.deadline > now
+            and encoded in entry.addresses
+        ]
+        owner: str | None = None
+        if live:
+            earliest = min(live, key=lambda entry: entry.order)
+            tying = {
+                entry.holder
+                for entry in live
+                if entry.created_at == earliest.created_at
+            }
+            if earliest.state is _GrantState.HELD and len(tying) == 1:
+                owner = earliest.holder
+        if holder is None or owner != holder:
+>           raise SurfaceLeaseError(
+                "the writing job does not hold this live surface",
+                surface=surface,
+                current_holder=owner,
+            )
+E           kodezart.domain.errors.SurfaceLeaseError: the writing job does not hold this live surface (surface: issue_label_set:issue:FIX-1; current holder: none)
+
+src/kodezart/adapters/linear_mcp_tracker.py:2479: SurfaceLeaseError
+______ test_separate_label_holder_cannot_write_another_holders_criterion _______
+
+    async def test_separate_label_holder_cannot_write_another_holders_criterion():
+        board, tracker = criterion_board()
+        async with RunSurfaceLease(
+            tracker=tracker,
+            job_id="criterion-owner",
+            lease_seconds=900,
+            surfaces=frozenset({surface(SurfaceKind.CRITERION_SUB_ISSUE)}),
+        ):
+            async with RunSurfaceLease(
+                tracker=tracker,
+                job_id="label-owner",
+                lease_seconds=900,
+                surfaces=frozenset({surface(SurfaceKind.ISSUE_LABEL_SET)}),
+            ):
+>               with pytest.raises(SurfaceLeaseError):
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E               Failed: DID NOT RAISE <class 'kodezart.domain.errors.SurfaceLeaseError'>
+
+tests/tracker/test_criterion_label_surface.py:66: Failed
+______ test_actual_escalation_cannot_bypass_the_existing_criterion_holder ______
+
+    async def test_actual_escalation_cannot_bypass_the_existing_criterion_holder():
+        board, tracker = criterion_board()
+        writer = LaneEscalationWriter(
+            tracker=tracker,
+            gate=PassThroughGate(),
+            surface_lease_seconds=900,
+            operation=OperationConfig(
+                operation_name="fixture",
+                workspace="fixture",
+                marker_prefixes={"escalation": "escalation"},
+                issue_labels={
+                    "criterion": "native-criterion",
+                    "decision": "decision-needed",
+                },
+            ),
+        )
+        async with RunSurfaceLease(
+            tracker=tracker,
+            job_id="criterion-owner",
+            lease_seconds=900,
+            surfaces=frozenset({surface(SurfaceKind.CRITERION_SUB_ISSUE)}),
+        ):
+>           with pytest.raises(SurfaceLeaseError):
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           Failed: DID NOT RAISE <class 'kodezart.domain.errors.SurfaceLeaseError'>
+
+tests/tracker/test_criterion_label_surface.py:98: Failed
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 20:33:20 [info     ] outbound_content_gated         categories=[] content_digest=2617ea338c04a95bb34aaa73cec8a9a1ba6d25bee12de753dfbcbf82c2b026db failure=None hits=[] surface=tracker verdict=clean visibility=public writer=tracker_comment
+___ test_classification_changed_during_grant_read_needs_its_current_surface ____
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10aa0ac30>
+
+    async def test_classification_changed_during_grant_read_needs_its_current_surface(
+        monkeypatch,
+    ):
+        board, tracker = criterion_board()
+        board.server.issues[CLAIMED_ISSUE].labels.remove("native-criterion")
+        async with RunSurfaceLease(
+            tracker=tracker,
+            job_id="label-owner",
+            lease_seconds=900,
+            surfaces=frozenset({surface(SurfaceKind.ISSUE_LABEL_SET)}),
+        ):
+            actual = board.call_tool
+            changed = False
+    
+            async def call(*, name, arguments):
+                nonlocal changed
+                result = await actual(name=name, arguments=arguments)
+                if name == "list_comments" and not changed:
+                    changed = True
+                    board.server.issues[CLAIMED_ISSUE].labels.append("native-criterion")
+                return result
+    
+            monkeypatch.setattr(board, "call_tool", call)
+>           with pytest.raises(SurfaceLeaseError):
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           Failed: DID NOT RAISE <class 'kodezart.domain.errors.SurfaceLeaseError'>
+
+tests/tracker/test_criterion_label_surface.py:140: Failed
+=========================== short test summary info ============================
+FAILED tests/tracker/test_criterion_label_surface.py::test_criterion_holder_can_classify_its_own_complete_surface
+FAILED tests/tracker/test_criterion_label_surface.py::test_separate_label_holder_cannot_write_another_holders_criterion
+FAILED tests/tracker/test_criterion_label_surface.py::test_actual_escalation_cannot_bypass_the_existing_criterion_holder
+FAILED tests/tracker/test_criterion_label_surface.py::test_classification_changed_during_grant_read_needs_its_current_surface
+4 failed in 1.09s

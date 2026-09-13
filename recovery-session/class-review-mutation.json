@@ -1,0 +1,26 @@
+{
+  "head": "b714b984112efd8471f73985300864d66a3eb814",
+  "mutation": "In-memory only: omit AC-2 failures from _failures, simulating a privileged non-blocking second criterion. No source or test edits.",
+  "cases": [
+    {
+      "case": "second criterion failure",
+      "baseline": "pass",
+      "mutant": "detected"
+    },
+    {
+      "case": "missing second result",
+      "baseline": "pass",
+      "mutant": "detected"
+    },
+    {
+      "case": "flag cannot downgrade: vacuous_at_base",
+      "baseline": "pass",
+      "mutant": "detected"
+    },
+    {
+      "case": "flag cannot downgrade: literal_pinning",
+      "baseline": "pass",
+      "mutant": "detected"
+    }
+  ]
+}

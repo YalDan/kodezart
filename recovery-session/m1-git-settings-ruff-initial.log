@@ -1,0 +1,23 @@
+S108 Probable insecure usage of temporary file or directory: "/tmp/kodezart-clones"
+  --> src/kodezart/core/git_settings.py:18:17
+   |
+16 |     )
+17 |     clone_cache_dir: str = Field(
+18 |         default="/tmp/kodezart-clones",
+   |                 ^^^^^^^^^^^^^^^^^^^^^^
+19 |         description="Local bare repository cache directory.",
+20 |     )
+   |
+
+S108 Probable insecure usage of temporary file or directory: "/tmp/kodezart-integration"
+  --> src/kodezart/core/git_settings.py:22:17
+   |
+20 |     )
+21 |     integration_workspace_dir: str = Field(
+22 |         default="/tmp/kodezart-integration",
+   |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+23 |         description="Directory for temporary base integration worktrees.",
+24 |     )
+   |
+
+Found 2 errors.

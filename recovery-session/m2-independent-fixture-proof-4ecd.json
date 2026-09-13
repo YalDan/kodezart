@@ -1,0 +1,19 @@
+{
+  "base": "a15b33484bc0f88975c910c1706edf20805d98f8",
+  "candidate": "4ecd7c72d155fb9acedc832c32ee016db7ef6749",
+  "tree": "27e691f7316bd4be0bd4fcddaa248a4d4d74bac5",
+  "rows": [
+    {
+      "path": "tests/core/test_git_settings.py",
+      "count": 29,
+      "exact_oracles_unchanged": true
+    },
+    {
+      "path": "tests/services/test_prompt_passes.py",
+      "count": 66,
+      "exact_oracles_unchanged": true
+    }
+  ],
+  "total": 95,
+  "verdict": "accept fixture bindings; author-only 69 pass in 19.62s"
+}

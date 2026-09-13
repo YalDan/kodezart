@@ -1,0 +1,24 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+________ test_unregistered_copy_cannot_supply_native_worktree_identity _________
+
+repository = (PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1947/test_unregistered_copy_cannot_0/repo'), 'f10505ef95348dfd37b8d58dcc4d6bab2689e1d9')
+tmp_path = PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1947/test_unregistered_copy_cannot_0')
+
+    async def test_unregistered_copy_cannot_supply_native_worktree_identity(repository, tmp_path):
+        service, _cache, owner, workspace = await acquired(repository)
+        copied = tmp_path / "copied-native-worktree"
+        shutil.copytree(workspace, copied, symlinks=True)
+        assert (copied / ".git").read_bytes() == Path(workspace, ".git").read_bytes()
+        try:
+>           with pytest.raises(WorkspaceError):
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           Failed: DID NOT RAISE <class 'kodezart.domain.errors.WorkspaceError'>
+
+../kodezart-recovery-session/test_native_unregistered_worktree.py:21: Failed
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 22:27:04 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-66a1983285d147e5a45e719bdd82eb58 workspace_id=66a1983285d147e5a45e719bdd82eb58
+2026-09-12 22:27:06 [info     ] workspace_released             workspace_id=66a1983285d147e5a45e719bdd82eb58
+=========================== short test summary info ============================
+FAILED ::test_unregistered_copy_cannot_supply_native_worktree_identity - Fail...
+1 failed in 13.62s

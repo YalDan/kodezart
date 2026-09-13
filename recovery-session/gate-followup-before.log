@@ -1,0 +1,320 @@
+Using CPython 3.12.13
+Creating virtual environment at: .venv
+   Building kodezart @ file:///private/tmp/kodezart-v03-recovery-gate-followup
+warning: `build_system.requires = ["uv-build>=0.10.9,<0.11.0"]` does not contain the current uv version 0.11.6
+      Built kodezart @ file:///private/tmp/kodezart-v03-recovery-gate-followup
+Installed 174 packages in 1.44s
+FFFFF                                                                    [100%]
+=================================== FAILURES ===================================
+_______ test_an_approved_issue_walks_the_whole_chain_back_to_its_ticket ________
+
+    async def test_an_approved_issue_walks_the_whole_chain_back_to_its_ticket() -> None:
+        config = AppConfig()
+        tracker = FakeTrackerPort(
+            issues=[make_tracker_issue(ISSUE)],
+        )
+        engine = _MergingEngine()
+        queue = AsyncioJobQueue(
+            engine=engine,
+            max_concurrent_runs_per_lane=config.queue.max_concurrent_runs_per_lane,
+            max_depth_per_lane=config.queue.max_depth_per_lane,
+            terminal_retention_seconds=config.queue.terminal_retention_seconds,
+            event_buffer_retention_seconds=config.queue.event_buffer_retention_seconds,
+            event_buffer_capacity=config.queue.event_buffer_capacity,
+        )
+        await queue.start()
+        try:
+            built = await build_dispatch_passes(
+                recorder=RunRecorder(records={}, sinks={}),
+                config=config,
+                operation=operation_config(),
+                tracker=tracker,
+                ledger=SelfWriteLedger(),
+                delivery=FakeDeliveryProbe(),
+                queue=queue,
+                registry=queue,
+                gate=PassThroughGate(),
+                git=FakeGitService(),
+                cache=FakeRepoCache(),
+                integration_workspace_dir=INTEGRATION_DIR,
+            )
+    
+            await built.passes[0].run(TICK_STARTED_AT)
+    
+            # 1. the claim was granted, to this deployment's configured holder.
+            #    Read while the run is in flight, which is the whole window the
+            #    claim is meant to cover: it is handed back at the end of it.
+            assert tracker.claims[ISSUE].holder == config.dispatch_holder
+    
+            await _until(lambda: bool(tracker.comments))
+    
+            # 2. the fire reached the queue, on the base the graph implied
+            assert engine.base_branches == [operation_config().repos[0].trunk]
+    
+            # 3. the lifecycle walked, in the run's own order
+>           assert tracker.workflow_writes == [
+                (ISSUE, LifecycleStage.IN_PROGRESS),
+                (ISSUE, LifecycleStage.IN_REVIEW),
+                (ISSUE, LifecycleStage.DONE),
+            ]
+E           AssertionError: assert [('K-1', <Lif...'in_review'>)] == [('K-1', <Lif...ONE: 'done'>)]
+E             
+E             Right contains one more item: ('K-1', <LifecycleStage.DONE: 'done'>)
+E             Use -v to get more diff
+
+tests/integration/test_self_running_chain.py:181: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 16:04:48 [info     ] pass_gate_delta                changed=['K-1'] mark=2026-01-01T00:00:00+00:00 signals=['approved_changed'] unanswerable=[]
+2026-09-12 16:04:48 [info     ] dispatch_ranked                order=['K-1'] tied=['K-1'] winner=K-1
+2026-09-12 16:04:48 [info     ] fire_context_assembled         asset_keys=[] issue_key=K-1
+2026-09-12 16:04:48 [info     ] job_submitted                  job_id=028339b94e99455db14d6f2bec5ba0d8 lane=tracker queue_position=1
+2026-09-12 16:04:48 [info     ] job_started                    job_id=028339b94e99455db14d6f2bec5ba0d8 lane=tracker
+2026-09-12 16:04:48 [info     ] dispatch_fire_enqueued         base_branch=trunk base_role=None issue_key=K-1 job_id=028339b94e99455db14d6f2bec5ba0d8 outcome=fire_enqueued
+2026-09-12 16:04:48 [info     ] job_finished                   job_id=028339b94e99455db14d6f2bec5ba0d8 lane=tracker outcome=ci_passed
+2026-09-12 16:04:48 [info     ] dispatch_pass_completed        changed=['K-1'] claimed_issue_key=K-1 job_id=028339b94e99455db14d6f2bec5ba0d8 outcome=fire_enqueued
+2026-09-12 16:04:48 [info     ] lifecycle_in_progress          issue_key=K-1
+2026-09-12 16:04:48 [info     ] lifecycle_deliverable_ref      branch=kodezart/k-1 issue_key=K-1 pushed_head_sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+2026-09-12 16:04:48 [info     ] lifecycle_in_review            issue_key=K-1
+2026-09-12 16:04:48 [info     ] lifecycle_queue_finished       issue_key=K-1
+2026-09-12 16:04:48 [info     ] outbound_content_gated         categories=[] content_digest=1c154ec57ea9a1444b13830d84360aff4a8ae25be44576608bb2127d983af384 failure=None hits=[] surface=tracker verdict=clean visibility=public writer=tracker_comment
+2026-09-12 16:04:48 [info     ] job_queue_stopped              abandoned=0 lanes=2 outcome=shutdown_abandoned
+2026-09-12 16:04:48 [info     ] lifecycle_outcome_comment      issue_key=K-1 job_id=028339b94e99455db14d6f2bec5ba0d8 outcome=ci_passed
+--------------------------- Captured stdout teardown ---------------------------
+2026-09-12 16:04:48 [info     ] claim_released                 holder=kodezart issue_key=K-1
+2026-09-12 16:04:48 [info     ] lifecycle_watch_finished       issue_key=K-1 job_id=028339b94e99455db14d6f2bec5ba0d8 run_started=True terminal_outcome=True
+2026-09-12 16:04:48 [info     ] run_record_destination_undeclared kind=fire name=K-1 outcome=completed
+_______________ test_no_label_or_status_literal_lives_in_source ________________
+
+    def test_no_label_or_status_literal_lives_in_source() -> None:
+        """Code addresses members via enum members, never via a label string."""
+        src = REPO_ROOT / "src" / "kodezart"
+        labels = {
+            *example_config().queue_states.values(),
+            *example_config().scope_labels.values(),
+            *example_config().workflow_states.values(),
+        }
+        for path in src.rglob("*.py"):
+            text = path.read_text(encoding="utf-8")
+            for label in labels:
+>               assert label not in text, f"{path} hardcodes {label!r}"
+E               AssertionError: /private/tmp/kodezart-v03-recovery-gate-followup/src/kodezart/services/tracker_lifecycle.py hardcodes 'Done'
+E               assert 'Done' not in '"""Ticket l...n        )\n'
+E                 
+E                 'Done' is contained here:
+E                   criterion Done states.
+E                 ?           ++++
+E                   
+E                   **The pull-request arm also records the delivery — when there is one.**  A
+E                   ``DELIVERABLE`` work ref is what a dependent lane's base resolves through,...
+E                 
+E                 ...Full output truncated (306 lines hidden), use '-vv' to show
+
+tests/prompts/test_operation_config.py:337: AssertionError
+____________ test_a_pass_the_root_built_follows_the_run_it_enqueued ____________
+
+    async def test_a_pass_the_root_built_follows_the_run_it_enqueued() -> None:
+        """The lifecycle write-back is reached from the composition root.
+    
+        Nothing here calls ``TrackerLifecycleWriter``.  The only input is a
+        dispatch pass built by ``build_dispatch_passes`` running over a queue
+        whose job emits a completed run, and the observable is the transition
+        on the tracker — so a root that constructs the writer without wiring
+        it fails this.
+        """
+        tracker = FakeTrackerPort(
+            issues=[make_tracker_issue("K-1")],
+        )
+        queue = FakeJobQueue(
+            events=[
+                WorkflowCompleteEvent(
+                    feature_branch="feature",
+                    ralph_branch="ralph",
+                    total_iterations=1,
+                    accepted=True,
+                    outcome=WorkflowOutcome.ci_passed,
+                    merged=True,
+                ),
+            ],
+        )
+        built = await build_dispatch_passes(
+            recorder=RunRecorder(records={}, sinks={}),
+            config=AppConfig(),
+            operation=operation_config(),
+            tracker=tracker,
+            ledger=tracker.self_writes,
+            delivery=FakeDeliveryProbe(),
+            queue=queue,
+            registry=queue,
+            gate=PassThroughGate(),
+            git=FakeGitService(),
+            cache=FakeRepoCache(),
+            integration_workspace_dir=INTEGRATION_DIR,
+        )
+    
+        await built.passes[0].run(TICK_STARTED_AT)
+        # The write-back runs in a background watch, so the test waits for the
+        # terminal chain it asserts on: the DONE transition, then the comment
+        # that ``LifecycleWatcher`` posts after it.
+        await settled(
+            lambda: (
+                ("K-1", LifecycleStage.DONE) in tracker.workflow_writes
+                and bool(tracker.comments)
+            ),
+        )
+    
+        assert queue.attached == ["job-0001"]
+>       assert tracker.workflow_writes == [
+            ("K-1", LifecycleStage.IN_PROGRESS),
+            ("K-1", LifecycleStage.DONE),
+        ]
+E       AssertionError: assert [('K-1', <Lif...n_progress'>)] == [('K-1', <Lif...ONE: 'done'>)]
+E         
+E         Right contains one more item: ('K-1', <LifecycleStage.DONE: 'done'>)
+E         Use -v to get more diff
+
+tests/services/test_dispatch_pass.py:902: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 16:04:48 [info     ] pass_gate_delta                changed=['K-1'] mark=2026-01-01T00:00:00+00:00 signals=['approved_changed'] unanswerable=[]
+2026-09-12 16:04:48 [info     ] dispatch_ranked                order=['K-1'] tied=['K-1'] winner=K-1
+2026-09-12 16:04:48 [info     ] fire_context_assembled         asset_keys=[] issue_key=K-1
+2026-09-12 16:04:48 [info     ] dispatch_fire_enqueued         base_branch=trunk base_role=None issue_key=K-1 job_id=job-0001 outcome=fire_enqueued
+2026-09-12 16:04:48 [info     ] dispatch_pass_completed        changed=['K-1'] claimed_issue_key=K-1 job_id=job-0001 outcome=fire_enqueued
+2026-09-12 16:04:48 [info     ] lifecycle_in_progress          issue_key=K-1
+2026-09-12 16:04:48 [info     ] lifecycle_queue_finished       issue_key=K-1
+2026-09-12 16:04:48 [info     ] outbound_content_gated         categories=[] content_digest=fdfd09ada3e6d93a2f2e6c1cc13db95ffcdb0cdb1495ec29b06ab7d0a66a2f97 failure=None hits=[] surface=tracker verdict=clean visibility=public writer=tracker_comment
+2026-09-12 16:04:48 [info     ] lifecycle_outcome_comment      issue_key=K-1 job_id=job-0001 outcome=ci_passed
+2026-09-12 16:04:48 [info     ] claim_released                 holder=kodezart issue_key=K-1
+2026-09-12 16:04:48 [info     ] lifecycle_watch_finished       issue_key=K-1 job_id=job-0001 run_started=True terminal_outcome=True
+2026-09-12 16:04:48 [info     ] run_record_destination_undeclared kind=fire name=K-1 outcome=completed
+____________ test_cold_clients_read_current_native_bytes[fake-port] ____________
+
+tracker = <tests.fakes.FakeTrackerPort object at 0x10c7f0a70>
+server = <tests.fakes.FakeLinearMcpServer object at 0x10c7ebf80>
+
+    async def test_cold_clients_read_current_native_bytes(tracker, server):
+        stored = await seed(tracker, data={**record_data(), "filesChanged": 11})
+        if isinstance(tracker, FakeTrackerPort):
+            issues = [
+                TrackerIssue.model_validate_json(item.model_dump_json())
+                for item in tracker.issues.values()
+            ]
+            comments = [
+                TrackerComment.model_validate_json(item.model_dump_json())
+                for item in tracker.comments
+            ]
+            tracker = FakeTrackerPort(issues=issues)
+            tracker.comments = comments
+        else:
+            tracker = linear_over_fake_mcp(server)
+        result = await observe_recorded_barren_tick(
+            tracker=tracker, **arguments(record_ref=stored.comment_key)
+        )
+        assert result.readings[2].source_ref == stored.comment_key
+>       await seed(tracker, data={**record_data(), "filesChanged": 0, "commitsAhead": 0})
+
+tests/tracker/test_barren_record_collector.py:169: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/tracker/test_lane_records.py:43: in seed
+    return await leased_comment(
+tests/tracker/lease_fixtures.py:40: in leased_comment
+    return await tracker.upsert_comment(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <tests.fakes.FakeTrackerPort object at 0x10c7f0a70>
+
+    async def upsert_comment(
+        self, *, target: str, marker: str, body: str, holder: str | None = None
+    ) -> TrackerComment:
+        content = marked_comment_body(marker=marker, body=body)
+        existing = comment_under_marker(
+            target=target,
+            marker=marker,
+            comments=await self.list_comments(issue_key=target),
+        )
+        surface = WritableSurface(
+            kind=SurfaceKind.MARKER_COMMENT,
+            ref=ScopeRef(kind=ScopeKind.ISSUE, key=target),
+            marker=marker,
+        )
+        if existing is not None and existing.body != content:
+            if existing.author_key not in await self.writer_identity():
+>               raise SurfaceWriteAttributionError(
+                    surface=surface, author=existing.author_key
+                )
+E               kodezart.domain.errors.SurfaceWriteAttributionError: the protected tracker record is not attributable to this writer (author: 'fixture-approver')
+
+tests/fakes.py:3804: SurfaceWriteAttributionError
+_______ test_boot_starts_a_scheduler_carrying_one_dispatch_pass_per_repo _______
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10c7f3950>
+tmp_path = PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1728/test_boot_starts_a_scheduler_c0')
+wired = <tests.fakes.ManagedFakeLinearMcpServer object at 0x10c7f32f0>
+
+    async def test_boot_starts_a_scheduler_carrying_one_dispatch_pass_per_repo(
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+        wired: ManagedFakeLinearMcpServer,
+    ) -> None:
+        """AC-20: the scheduler is constructed, driven and stopped by the root.
+    
+        The interval asserted here is a value no default would produce, so the
+        assertion is about the knob's consumer and not about a coincidence.
+        """
+        monkeypatch.setenv("KODEZART_GITHUB_TOKEN", "fixture-forge-token")
+        monkeypatch.setenv(
+            "KODEZART_DISPATCH_PASS_INTERVAL_SECONDS",
+            str(UNUSUAL_INTERVAL),
+        )
+        _configure(monkeypatch, tmp_path, _operation_toml())
+        app = create_app()
+        assert app.state.config.dispatch_pass_interval_seconds == UNUSUAL_INTERVAL
+    
+>       async with lifespan(app):
+                   ^^^^^^^^^^^^^
+
+tests/tracker/test_tracker_boot_wiring.py:732: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/contextlib.py:210: in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/main.py:253: in lifespan
+    raise cleanup_error from cleanup_error.__context__
+src/kodezart/main.py:242: in unwind
+    raise failure
+src/kodezart/main.py:198: in lifespan
+    dispatch = await build_dispatch_runtime(
+src/kodezart/composition/passes.py:754: in build_dispatch_runtime
+    built = await build_dispatch_passes(
+src/kodezart/composition/passes.py:479: in build_dispatch_passes
+    writer=TrackerLifecycleWriter(
+src/kodezart/services/tracker_lifecycle.py:85: in __init__
+    configured_marker_prefix(marker_prefixes, purpose="run_outcome")
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+prefixes = {}
+
+    def configured_marker_prefix(prefixes: Mapping[str, str], *, purpose: str) -> str:
+        """Refuse an absent purpose where it is needed, never guess its prefix."""
+        if purpose not in prefixes:
+>           raise OperationMemberAbsentError(
+                missing=f"marker_prefixes[{purpose!r}]",
+                stops="this tracker comment identity cannot be read or written",
+            )
+E           kodezart.types.domain.operation.OperationMemberAbsentError: operation config declares no marker_prefixes['run_outcome']; this tracker comment identity cannot be read or written
+
+src/kodezart/domain/comment_markers.py:12: OperationMemberAbsentError
+----------------------------- Captured stdout call -----------------------------
+{"backend": "linear", "adopted": ["document 'checkpoint' -> 'doc-1'", "queue_state 'approved' -> 'queue:approved'", "queue_state 'decision' -> 'queue:decision'", "queue_state 'done' -> 'queue:done'", "queue_state 'proposed' -> 'queue:proposed'", "queue_state 'triage' -> 'queue:triage'"], "created": [], "event": "tracker_mappings_reconciled", "level": "info", "logger": "kodezart.main", "timestamp": "2026-09-12T14:04:55.154771Z"}
+{"table": {"branch_name": "anthropic_v5", "ticket_create": "anthropic_v5", "ticket_review": "anthropic_v5", "ticket_revision": "anthropic_v5", "acceptance_criteria": "anthropic_v5", "criteria_validation": "anthropic_v5", "implementation": "anthropic_v5", "evaluation": "anthropic_v5", "iteration_feedback": "anthropic_v5", "post_merge_review": "anthropic_v5", "fix": "anthropic_v5", "remediation_ticket": "anthropic_v5", "commit_message": "anthropic_v5", "pr_description": "anthropic_v5", "fire_prep_pass": "anthropic_v5", "grooming_pass": "anthropic_v5", "content_audit": "anthropic_v5", "organize_assess": "anthropic_v5", "organize_author": "anthropic_v5", "organize_verify": "anthropic_v5", "audit_claim": "anthropic_v5", "audit_overclaim": "anthropic_v5", "audit_mandate": "anthropic_v5", "audit_detection_removal": "anthropic_v5", "organize_criteria_author": "anthropic_v5", "knowledge_map": "anthropic_v5", "fire_record": "anthropic_v5"}, "event": "prompt_resolution_table", "level": "info", "logger": "kodezart.main", "timestamp": "2026-09-12T14:04:55.177485Z"}
+{"prompt_set": "anthropic_v5", "declared_engines": ["opus-5", "fable-5", "sonnet-5"], "model": null, "session_models": null, "event": "prompt_set_engine_mismatch", "level": "info", "logger": "kodezart.main", "timestamp": "2026-09-12T14:04:55.178279Z"}
+{"mode": "none", "allowlist": [], "setting_sources": ["user", "project", "local"], "event": "skills_selection_resolved", "level": "info", "logger": "kodezart.main", "timestamp": "2026-09-12T14:04:55.180412Z"}
+{"detail": "no session type is granted the knowledge MCP server; the service runs without the capability and nothing substitutes for it", "event": "knowledge_capability_unconfigured", "level": "info", "logger": "kodezart.main", "timestamp": "2026-09-12T14:04:55.180891Z"}
+{"privacy_judgment_enabled": false, "event": "outbound_content_admission_resolved", "level": "info", "logger": "kodezart.main", "timestamp": "2026-09-12T14:04:55.181689Z"}
+{"lanes": 1, "abandoned": 0, "outcome": "shutdown_abandoned", "event": "job_queue_stopped", "level": "info", "logger": "kodezart.adapters.asyncio_job_queue", "timestamp": "2026-09-12T14:04:55.634079Z"}
+=========================== short test summary info ============================
+FAILED tests/integration/test_self_running_chain.py::test_an_approved_issue_walks_the_whole_chain_back_to_its_ticket
+FAILED tests/prompts/test_operation_config.py::test_no_label_or_status_literal_lives_in_source
+FAILED tests/services/test_dispatch_pass.py::test_a_pass_the_root_built_follows_the_run_it_enqueued
+FAILED tests/tracker/test_barren_record_collector.py::test_cold_clients_read_current_native_bytes[fake-port]
+FAILED tests/tracker/test_tracker_boot_wiring.py::test_boot_starts_a_scheduler_carrying_one_dispatch_pass_per_repo
+5 failed in 9.02s

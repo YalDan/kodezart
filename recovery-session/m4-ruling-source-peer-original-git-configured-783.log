@@ -1,0 +1,43 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+______ test_native_read_preserves_exact_bytes_and_refuses_symlink_or_tree ______
+
+repo = PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1999/test_native_read_preserves_exa0/repo')
+
+    async def test_native_read_preserves_exact_bytes_and_refuses_symlink_or_tree(repo):
+        raw = b'\n# coding: latin-1\n\nvalue = "caf\xe9"\r\n\n'
+        (repo / PATH).write_bytes(raw)
+        git(repo, "add", "--all")
+        git(repo, "commit", "-qm", "raw source")
+        sha = git(repo, "rev-parse", "HEAD")
+        reader = SubprocessGitSourceReader()
+>       assert isinstance(reader, GitSourceReader)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+../kodezart-recovery-session/test_m4_git_source_original_peer.py:15: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+cls = <class 'kodezart.core.protocols.GitSourceReader'>
+instance = <kodezart.adapters.subprocess_git_source_reader.SubprocessGitSourceReader object at 0x10947f860>
+
+    def __instancecheck__(cls, instance):
+        # We need this method for situations where attributes are
+        # assigned in __init__.
+        if cls is Protocol:
+            return type.__instancecheck__(cls, instance)
+        if not getattr(cls, "_is_protocol", False):
+            # i.e., it's a concrete subclass of a protocol
+            return super().__instancecheck__(instance)
+    
+        if (
+            not getattr(cls, '_is_runtime_protocol', False) and
+            not _allow_reckless_class_checks()
+        ):
+>           raise TypeError("Instance and class checks can only be used with"
+                            " @runtime_checkable protocols")
+E           TypeError: Instance and class checks can only be used with @runtime_checkable protocols
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/typing.py:1917: TypeError
+=========================== short test summary info ============================
+FAILED ::test_native_read_preserves_exact_bytes_and_refuses_symlink_or_tree
+1 failed in 1.91s

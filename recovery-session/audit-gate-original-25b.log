@@ -1,0 +1,858 @@
+Using CPython 3.12.13
+Creating virtual environment at: .venv
+   Building kodezart @ file:///private/tmp/kodezart-v03-audit-gate-corrective
+warning: `build_system.requires = ["uv-build>=0.10.9,<0.11.0"]` does not contain the current uv version 0.11.6
+      Built kodezart @ file:///private/tmp/kodezart-v03-audit-gate-corrective
+Installed 174 packages in 1.88s
+..F........................F.............FFFFFFFF..........FF........... [ 98%]
+.                                                                        [100%]
+=================================== FAILURES ===================================
+______ test_no_module_the_union_step_reaches_asks_a_pull_request_anything ______
+
+    def test_no_module_the_union_step_reaches_asks_a_pull_request_anything() -> None:
+        """The whole reachable closure, computed: nobody on it consults the forge."""
+        closure = union_import_closure()
+    
+        assert "kodezart.services.union_composition" in closure
+        assert "kodezart.services.union_tick" in closure
+        assert "kodezart.services.audit_terminal" not in closure
+        for name in closure:
+            module = importlib.import_module(name)
+            tree = ast.parse(inspect.getsource(module))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Attribute):
+                    assert node.attr not in FORGE_METHODS, (name, node.attr)
+                if isinstance(node, ast.ImportFrom):
+                    held = {alias.name for alias in node.names}
+>                   assert held & MERGE_STATE_NAMES <= DECLARED_BY.get(name, frozenset()), (
+                        name
+                    )
+E                   AssertionError: kodezart.types.domain.audit_terminal
+E                   assert {'PRState'} <= frozenset()
+E                     
+E                     Extra items in the left set:
+E                     'PRState'
+
+tests/chains/test_union_forge_isolation.py:188: AssertionError
+__________ test_a_records_key_outside_the_kind_vocabulary_is_refused ___________
+
+    def test_a_records_key_outside_the_kind_vocabulary_is_refused() -> None:
+        """Record keys are the run kinds; absence is legal, a free name is not.
+    
+        The old rule required a stable run_log key; the kind vocabulary
+        replaced it (KOD-170) — every declared key must BE a kind, and no
+        kind is required.
+        """
+>       with pytest.raises(ValueError, match="is not a run kind"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/domain/test_operation_optionality.py:141: Failed
+_ test_independent_failure_retains_every_other_available_arm[fake-port-claim] __
+
+setup = (<function setup.<locals>.build at 0x10ef2f240>, <tests.tracker.test_audit_sweep.Executor object at 0x10ea3c530>, <tes... <tests.fakes.FakeWorkspaceProvider object at 0x10ea3f410>, <tests.fakes.FakePRStateReader object at 0x10ea3e930>, ...)
+tracker = <tests.fakes.FakeTrackerPort object at 0x10e94fc80>
+server = <tests.fakes.FakeLinearMcpServer object at 0x10e94ca70>
+failed = 'claim'
+
+    @pytest.mark.parametrize("failed", ["claim", "overclaim", "removal", "mandate"])
+    async def test_independent_failure_retains_every_other_available_arm(
+        setup, tracker, server, failed
+    ):
+        build, executor, *_ = setup
+        await ready(tracker, server)
+        executor.removal_output = payload()
+        executor.overclaim_output = overclaim_payload()
+        reached = []
+    
+        async def during(kwargs):
+            schema = kwargs["output_format"]["schema"]
+            reached.append(schema)
+            if (
+                schema
+                == {
+                    "claim": AUDIT_CLAIM_SCHEMA,
+                    "overclaim": AUDIT_OVERCLAIM_SCHEMA,
+                    "removal": DETECTOR_REMOVAL_SCHEMA,
+                    "mandate": AUDIT_MANDATE_SCHEMA,
+                }[failed]
+            ):
+                raise RuntimeError(f"unavailable {failed} session")
+    
+        executor.during = during
+        child = (
+>           await build(
+                include_removals=True,
+                include_overclaims=True,
+                selected_source=RevisionSource(),
+            ).run()
+        ).observations[0]
+
+tests/tracker/test_detector_removal_sweep.py:186: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/chains/audit_sweep.py:468: in run
+    await self.observe_target(snapshot=snapshot, target=target)
+src/kodezart/chains/audit_sweep.py:420: in observe_target
+    observation = await self._observe(target, surfaces)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/audit_sweep.py:217: in _observe
+    evidence = await self._evidence.observe(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/audit_evidence.py:101: in observe
+    return await self._observe(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/audit_evidence.py:140: in _observe
+    claim = await self._claims.verify(
+src/kodezart/chains/audit_pass.py:132: in verify
+    structured = await judge_in_workspace(
+src/kodezart/services/audit_sessions.py:43: in judge_in_workspace
+    result, rate_limited = await drain(
+src/kodezart/core/stream_drain.py:57: in drain
+    async for event in stream:
+src/kodezart/services/agent_service.py:117: in stream_in_workspace
+    async for event in self._executor.stream(
+tests/tracker/test_audit_sweep.py:90: in stream
+    await self.during(kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+kwargs = {'agents': (), 'allowed_tools': <ToolPreset.EVALUATION: 'evaluation'>, 'cwd': '/tmp/fake-workspace', 'output_format': ..., 'description': 'Holds, refuted or unverifiable from fresh repository evidence.'}}, ...}, 'type': 'json_schema'}, ...}
+
+    async def during(kwargs):
+        schema = kwargs["output_format"]["schema"]
+        reached.append(schema)
+        if (
+            schema
+            == {
+                "claim": AUDIT_CLAIM_SCHEMA,
+                "overclaim": AUDIT_OVERCLAIM_SCHEMA,
+                "removal": DETECTOR_REMOVAL_SCHEMA,
+                "mandate": AUDIT_MANDATE_SCHEMA,
+            }[failed]
+        ):
+>           raise RuntimeError(f"unavailable {failed} session")
+E           RuntimeError: unavailable claim session
+
+tests/tracker/test_detector_removal_sweep.py:182: RuntimeError
+_ test_independent_failure_retains_every_other_available_arm[fake-port-overclaim] _
+
+setup = (<function setup.<locals>.build at 0x10ef2e7a0>, <tests.tracker.test_audit_sweep.Executor object at 0x10e933020>, <tes... <tests.fakes.FakeWorkspaceProvider object at 0x10e9335f0>, <tests.fakes.FakePRStateReader object at 0x10e946bd0>, ...)
+tracker = <tests.fakes.FakeTrackerPort object at 0x10e9334d0>
+server = <tests.fakes.FakeLinearMcpServer object at 0x10e924e00>
+failed = 'overclaim'
+
+    @pytest.mark.parametrize("failed", ["claim", "overclaim", "removal", "mandate"])
+    async def test_independent_failure_retains_every_other_available_arm(
+        setup, tracker, server, failed
+    ):
+        build, executor, *_ = setup
+        await ready(tracker, server)
+        executor.removal_output = payload()
+        executor.overclaim_output = overclaim_payload()
+        reached = []
+    
+        async def during(kwargs):
+            schema = kwargs["output_format"]["schema"]
+            reached.append(schema)
+            if (
+                schema
+                == {
+                    "claim": AUDIT_CLAIM_SCHEMA,
+                    "overclaim": AUDIT_OVERCLAIM_SCHEMA,
+                    "removal": DETECTOR_REMOVAL_SCHEMA,
+                    "mandate": AUDIT_MANDATE_SCHEMA,
+                }[failed]
+            ):
+                raise RuntimeError(f"unavailable {failed} session")
+    
+        executor.during = during
+        child = (
+>           await build(
+                include_removals=True,
+                include_overclaims=True,
+                selected_source=RevisionSource(),
+            ).run()
+        ).observations[0]
+
+tests/tracker/test_detector_removal_sweep.py:186: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/chains/audit_sweep.py:468: in run
+    await self.observe_target(snapshot=snapshot, target=target)
+src/kodezart/chains/audit_sweep.py:434: in observe_target
+    overclaims = await self._observe_overclaims(target, surfaces)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/audit_sweep.py:246: in _observe_overclaims
+    observed = await self._overclaims.observe(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/audit_overclaim.py:119: in observe
+    output = await self._sessions.judge(
+src/kodezart/services/audit_sessions.py:122: in judge
+    structured = await judge_in_workspace(
+src/kodezart/services/audit_sessions.py:43: in judge_in_workspace
+    result, rate_limited = await drain(
+src/kodezart/core/stream_drain.py:57: in drain
+    async for event in stream:
+src/kodezart/services/agent_service.py:117: in stream_in_workspace
+    async for event in self._executor.stream(
+tests/tracker/test_audit_sweep.py:90: in stream
+    await self.during(kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+kwargs = {'agents': (), 'allowed_tools': <ToolPreset.EVALUATION: 'evaluation'>, 'cwd': '/tmp/fake-workspace', 'output_format': ...native criterion key.', 'minLength': 1, 'title': 'Criterionkey', 'type': 'string'}}, ...}, 'type': 'json_schema'}, ...}
+
+    async def during(kwargs):
+        schema = kwargs["output_format"]["schema"]
+        reached.append(schema)
+        if (
+            schema
+            == {
+                "claim": AUDIT_CLAIM_SCHEMA,
+                "overclaim": AUDIT_OVERCLAIM_SCHEMA,
+                "removal": DETECTOR_REMOVAL_SCHEMA,
+                "mandate": AUDIT_MANDATE_SCHEMA,
+            }[failed]
+        ):
+>           raise RuntimeError(f"unavailable {failed} session")
+E           RuntimeError: unavailable overclaim session
+
+tests/tracker/test_detector_removal_sweep.py:182: RuntimeError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 22:30:58 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fresh-result site=audit_claim stop_reason=None subtype=success total_cost_usd=None usage=None
+_ test_independent_failure_retains_every_other_available_arm[fake-port-removal] _
+
+setup = (<function setup.<locals>.build at 0x10ef68220>, <tests.tracker.test_audit_sweep.Executor object at 0x10eb0bbf0>, <tes... <tests.fakes.FakeWorkspaceProvider object at 0x10e9253a0>, <tests.fakes.FakePRStateReader object at 0x10eb0d010>, ...)
+tracker = <tests.fakes.FakeTrackerPort object at 0x10e925700>
+server = <tests.fakes.FakeLinearMcpServer object at 0x10eb0b860>
+failed = 'removal'
+
+    @pytest.mark.parametrize("failed", ["claim", "overclaim", "removal", "mandate"])
+    async def test_independent_failure_retains_every_other_available_arm(
+        setup, tracker, server, failed
+    ):
+        build, executor, *_ = setup
+        await ready(tracker, server)
+        executor.removal_output = payload()
+        executor.overclaim_output = overclaim_payload()
+        reached = []
+    
+        async def during(kwargs):
+            schema = kwargs["output_format"]["schema"]
+            reached.append(schema)
+            if (
+                schema
+                == {
+                    "claim": AUDIT_CLAIM_SCHEMA,
+                    "overclaim": AUDIT_OVERCLAIM_SCHEMA,
+                    "removal": DETECTOR_REMOVAL_SCHEMA,
+                    "mandate": AUDIT_MANDATE_SCHEMA,
+                }[failed]
+            ):
+                raise RuntimeError(f"unavailable {failed} session")
+    
+        executor.during = during
+        child = (
+>           await build(
+                include_removals=True,
+                include_overclaims=True,
+                selected_source=RevisionSource(),
+            ).run()
+        ).observations[0]
+
+tests/tracker/test_detector_removal_sweep.py:186: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/chains/audit_sweep.py:468: in run
+    await self.observe_target(snapshot=snapshot, target=target)
+src/kodezart/chains/audit_sweep.py:438: in observe_target
+    removals = await self._observe_removals(target, surfaces)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/audit_sweep.py:286: in _observe_removals
+    observed = await self._removals.observe(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/audit_detection_removal.py:79: in observe
+    payload = await self._sessions.judge(
+src/kodezart/services/audit_sessions.py:122: in judge
+    structured = await judge_in_workspace(
+src/kodezart/services/audit_sessions.py:43: in judge_in_workspace
+    result, rate_limited = await drain(
+src/kodezart/core/stream_drain.py:57: in drain
+    async for event in stream:
+src/kodezart/services/agent_service.py:117: in stream_in_workspace
+    async for event in self._executor.stream(
+tests/tracker/test_audit_sweep.py:90: in stream
+    await self.during(kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+kwargs = {'agents': (), 'allowed_tools': <ToolPreset.EVALUATION: 'evaluation'>, 'cwd': '/tmp/fake-workspace', 'output_format': ...hen this arm finds none; unverifiable when the comparison cannot be established.'}}, ...}, 'type': 'json_schema'}, ...}
+
+    async def during(kwargs):
+        schema = kwargs["output_format"]["schema"]
+        reached.append(schema)
+        if (
+            schema
+            == {
+                "claim": AUDIT_CLAIM_SCHEMA,
+                "overclaim": AUDIT_OVERCLAIM_SCHEMA,
+                "removal": DETECTOR_REMOVAL_SCHEMA,
+                "mandate": AUDIT_MANDATE_SCHEMA,
+            }[failed]
+        ):
+>           raise RuntimeError(f"unavailable {failed} session")
+E           RuntimeError: unavailable removal session
+
+tests/tracker/test_detector_removal_sweep.py:182: RuntimeError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 22:30:58 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fresh-result site=audit_claim stop_reason=None subtype=success total_cost_usd=None usage=None
+2026-09-12 22:30:58 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fresh-result site=audit_overclaim stop_reason=None subtype=success total_cost_usd=None usage=None
+_ test_independent_failure_retains_every_other_available_arm[fake-port-mandate] _
+
+setup = (<function setup.<locals>.build at 0x10ef685e0>, <tests.tracker.test_audit_sweep.Executor object at 0x10eb085f0>, <tes... <tests.fakes.FakeWorkspaceProvider object at 0x10eb09970>, <tests.fakes.FakePRStateReader object at 0x10eb0a3c0>, ...)
+tracker = <tests.fakes.FakeTrackerPort object at 0x10eb09a30>
+server = <tests.fakes.FakeLinearMcpServer object at 0x10eb090a0>
+failed = 'mandate'
+
+    @pytest.mark.parametrize("failed", ["claim", "overclaim", "removal", "mandate"])
+    async def test_independent_failure_retains_every_other_available_arm(
+        setup, tracker, server, failed
+    ):
+        build, executor, *_ = setup
+        await ready(tracker, server)
+        executor.removal_output = payload()
+        executor.overclaim_output = overclaim_payload()
+        reached = []
+    
+        async def during(kwargs):
+            schema = kwargs["output_format"]["schema"]
+            reached.append(schema)
+            if (
+                schema
+                == {
+                    "claim": AUDIT_CLAIM_SCHEMA,
+                    "overclaim": AUDIT_OVERCLAIM_SCHEMA,
+                    "removal": DETECTOR_REMOVAL_SCHEMA,
+                    "mandate": AUDIT_MANDATE_SCHEMA,
+                }[failed]
+            ):
+                raise RuntimeError(f"unavailable {failed} session")
+    
+        executor.during = during
+        child = (
+>           await build(
+                include_removals=True,
+                include_overclaims=True,
+                selected_source=RevisionSource(),
+            ).run()
+        ).observations[0]
+
+tests/tracker/test_detector_removal_sweep.py:186: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/chains/audit_sweep.py:468: in run
+    await self.observe_target(snapshot=snapshot, target=target)
+src/kodezart/chains/audit_sweep.py:438: in observe_target
+    removals = await self._observe_removals(target, surfaces)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/audit_sweep.py:289: in _observe_removals
+    report = await self._mandates.complete(
+src/kodezart/chains/audit_pass.py:228: in complete
+    mandate = await self.observe(
+src/kodezart/chains/audit_pass.py:292: in observe
+    structured = await judge_in_workspace(
+src/kodezart/services/audit_sessions.py:43: in judge_in_workspace
+    result, rate_limited = await drain(
+src/kodezart/core/stream_drain.py:57: in drain
+    async for event in stream:
+src/kodezart/services/agent_service.py:117: in stream_in_workspace
+    async for event in self._executor.stream(
+tests/tracker/test_audit_sweep.py:90: in stream
+    await self.during(kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+kwargs = {'agents': (), 'allowed_tools': <ToolPreset.EVALUATION: 'evaluation'>, 'cwd': '/tmp/fake-workspace', 'output_format': ...se verdict requires exactly its corresponding payload.', 'title': 'AuditMandateJudgment'}, 'type': 'json_schema'}, ...}
+
+    async def during(kwargs):
+        schema = kwargs["output_format"]["schema"]
+        reached.append(schema)
+        if (
+            schema
+            == {
+                "claim": AUDIT_CLAIM_SCHEMA,
+                "overclaim": AUDIT_OVERCLAIM_SCHEMA,
+                "removal": DETECTOR_REMOVAL_SCHEMA,
+                "mandate": AUDIT_MANDATE_SCHEMA,
+            }[failed]
+        ):
+>           raise RuntimeError(f"unavailable {failed} session")
+E           RuntimeError: unavailable mandate session
+
+tests/tracker/test_detector_removal_sweep.py:182: RuntimeError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 22:30:59 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fresh-result site=audit_claim stop_reason=None subtype=success total_cost_usd=None usage=None
+2026-09-12 22:30:59 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fresh-result site=audit_overclaim stop_reason=None subtype=success total_cost_usd=None usage=None
+2026-09-12 22:30:59 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fresh-result site=audit_detection_removal stop_reason=None subtype=success total_cost_usd=None usage=None
+_ test_independent_failure_retains_every_other_available_arm[linear-mcp-claim] _
+
+setup = (<function setup.<locals>.build at 0x10ef69580>, <tests.tracker.test_audit_sweep.Executor object at 0x10eb0a2d0>, <tes... <tests.fakes.FakeWorkspaceProvider object at 0x10e930560>, <tests.fakes.FakePRStateReader object at 0x10eb0e180>, ...)
+tracker = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10ec193d0>
+server = <tests.fakes.FakeLinearMcpServer object at 0x10ec1aa20>
+failed = 'claim'
+
+    @pytest.mark.parametrize("failed", ["claim", "overclaim", "removal", "mandate"])
+    async def test_independent_failure_retains_every_other_available_arm(
+        setup, tracker, server, failed
+    ):
+        build, executor, *_ = setup
+        await ready(tracker, server)
+        executor.removal_output = payload()
+        executor.overclaim_output = overclaim_payload()
+        reached = []
+    
+        async def during(kwargs):
+            schema = kwargs["output_format"]["schema"]
+            reached.append(schema)
+            if (
+                schema
+                == {
+                    "claim": AUDIT_CLAIM_SCHEMA,
+                    "overclaim": AUDIT_OVERCLAIM_SCHEMA,
+                    "removal": DETECTOR_REMOVAL_SCHEMA,
+                    "mandate": AUDIT_MANDATE_SCHEMA,
+                }[failed]
+            ):
+                raise RuntimeError(f"unavailable {failed} session")
+    
+        executor.during = during
+        child = (
+>           await build(
+                include_removals=True,
+                include_overclaims=True,
+                selected_source=RevisionSource(),
+            ).run()
+        ).observations[0]
+
+tests/tracker/test_detector_removal_sweep.py:186: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/chains/audit_sweep.py:468: in run
+    await self.observe_target(snapshot=snapshot, target=target)
+src/kodezart/chains/audit_sweep.py:420: in observe_target
+    observation = await self._observe(target, surfaces)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/audit_sweep.py:217: in _observe
+    evidence = await self._evidence.observe(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/audit_evidence.py:101: in observe
+    return await self._observe(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/audit_evidence.py:140: in _observe
+    claim = await self._claims.verify(
+src/kodezart/chains/audit_pass.py:132: in verify
+    structured = await judge_in_workspace(
+src/kodezart/services/audit_sessions.py:43: in judge_in_workspace
+    result, rate_limited = await drain(
+src/kodezart/core/stream_drain.py:57: in drain
+    async for event in stream:
+src/kodezart/services/agent_service.py:117: in stream_in_workspace
+    async for event in self._executor.stream(
+tests/tracker/test_audit_sweep.py:90: in stream
+    await self.during(kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+kwargs = {'agents': (), 'allowed_tools': <ToolPreset.EVALUATION: 'evaluation'>, 'cwd': '/tmp/fake-workspace', 'output_format': ..., 'description': 'Holds, refuted or unverifiable from fresh repository evidence.'}}, ...}, 'type': 'json_schema'}, ...}
+
+    async def during(kwargs):
+        schema = kwargs["output_format"]["schema"]
+        reached.append(schema)
+        if (
+            schema
+            == {
+                "claim": AUDIT_CLAIM_SCHEMA,
+                "overclaim": AUDIT_OVERCLAIM_SCHEMA,
+                "removal": DETECTOR_REMOVAL_SCHEMA,
+                "mandate": AUDIT_MANDATE_SCHEMA,
+            }[failed]
+        ):
+>           raise RuntimeError(f"unavailable {failed} session")
+E           RuntimeError: unavailable claim session
+
+tests/tracker/test_detector_removal_sweep.py:182: RuntimeError
+_ test_independent_failure_retains_every_other_available_arm[linear-mcp-overclaim] _
+
+setup = (<function setup.<locals>.build at 0x10ef6a020>, <tests.tracker.test_audit_sweep.Executor object at 0x10eb08470>, <tes... <tests.fakes.FakeWorkspaceProvider object at 0x10eb09970>, <tests.fakes.FakePRStateReader object at 0x10eb0a3c0>, ...)
+tracker = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10eb08ce0>
+server = <tests.fakes.FakeLinearMcpServer object at 0x10e932a50>
+failed = 'overclaim'
+
+    @pytest.mark.parametrize("failed", ["claim", "overclaim", "removal", "mandate"])
+    async def test_independent_failure_retains_every_other_available_arm(
+        setup, tracker, server, failed
+    ):
+        build, executor, *_ = setup
+        await ready(tracker, server)
+        executor.removal_output = payload()
+        executor.overclaim_output = overclaim_payload()
+        reached = []
+    
+        async def during(kwargs):
+            schema = kwargs["output_format"]["schema"]
+            reached.append(schema)
+            if (
+                schema
+                == {
+                    "claim": AUDIT_CLAIM_SCHEMA,
+                    "overclaim": AUDIT_OVERCLAIM_SCHEMA,
+                    "removal": DETECTOR_REMOVAL_SCHEMA,
+                    "mandate": AUDIT_MANDATE_SCHEMA,
+                }[failed]
+            ):
+                raise RuntimeError(f"unavailable {failed} session")
+    
+        executor.during = during
+        child = (
+>           await build(
+                include_removals=True,
+                include_overclaims=True,
+                selected_source=RevisionSource(),
+            ).run()
+        ).observations[0]
+
+tests/tracker/test_detector_removal_sweep.py:186: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/chains/audit_sweep.py:468: in run
+    await self.observe_target(snapshot=snapshot, target=target)
+src/kodezart/chains/audit_sweep.py:434: in observe_target
+    overclaims = await self._observe_overclaims(target, surfaces)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/audit_sweep.py:246: in _observe_overclaims
+    observed = await self._overclaims.observe(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/audit_overclaim.py:119: in observe
+    output = await self._sessions.judge(
+src/kodezart/services/audit_sessions.py:122: in judge
+    structured = await judge_in_workspace(
+src/kodezart/services/audit_sessions.py:43: in judge_in_workspace
+    result, rate_limited = await drain(
+src/kodezart/core/stream_drain.py:57: in drain
+    async for event in stream:
+src/kodezart/services/agent_service.py:117: in stream_in_workspace
+    async for event in self._executor.stream(
+tests/tracker/test_audit_sweep.py:90: in stream
+    await self.during(kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+kwargs = {'agents': (), 'allowed_tools': <ToolPreset.EVALUATION: 'evaluation'>, 'cwd': '/tmp/fake-workspace', 'output_format': ...native criterion key.', 'minLength': 1, 'title': 'Criterionkey', 'type': 'string'}}, ...}, 'type': 'json_schema'}, ...}
+
+    async def during(kwargs):
+        schema = kwargs["output_format"]["schema"]
+        reached.append(schema)
+        if (
+            schema
+            == {
+                "claim": AUDIT_CLAIM_SCHEMA,
+                "overclaim": AUDIT_OVERCLAIM_SCHEMA,
+                "removal": DETECTOR_REMOVAL_SCHEMA,
+                "mandate": AUDIT_MANDATE_SCHEMA,
+            }[failed]
+        ):
+>           raise RuntimeError(f"unavailable {failed} session")
+E           RuntimeError: unavailable overclaim session
+
+tests/tracker/test_detector_removal_sweep.py:182: RuntimeError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 22:31:02 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fresh-result site=audit_claim stop_reason=None subtype=success total_cost_usd=None usage=None
+_ test_independent_failure_retains_every_other_available_arm[linear-mcp-removal] _
+
+setup = (<function setup.<locals>.build at 0x10ef6b100>, <tests.tracker.test_audit_sweep.Executor object at 0x10ec1aff0>, <tes... <tests.fakes.FakeWorkspaceProvider object at 0x10ec1e1b0>, <tests.fakes.FakePRStateReader object at 0x10ec1c830>, ...)
+tracker = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10ec1c410>
+server = <tests.fakes.FakeLinearMcpServer object at 0x10ec1ea20>
+failed = 'removal'
+
+    @pytest.mark.parametrize("failed", ["claim", "overclaim", "removal", "mandate"])
+    async def test_independent_failure_retains_every_other_available_arm(
+        setup, tracker, server, failed
+    ):
+        build, executor, *_ = setup
+        await ready(tracker, server)
+        executor.removal_output = payload()
+        executor.overclaim_output = overclaim_payload()
+        reached = []
+    
+        async def during(kwargs):
+            schema = kwargs["output_format"]["schema"]
+            reached.append(schema)
+            if (
+                schema
+                == {
+                    "claim": AUDIT_CLAIM_SCHEMA,
+                    "overclaim": AUDIT_OVERCLAIM_SCHEMA,
+                    "removal": DETECTOR_REMOVAL_SCHEMA,
+                    "mandate": AUDIT_MANDATE_SCHEMA,
+                }[failed]
+            ):
+                raise RuntimeError(f"unavailable {failed} session")
+    
+        executor.during = during
+        child = (
+>           await build(
+                include_removals=True,
+                include_overclaims=True,
+                selected_source=RevisionSource(),
+            ).run()
+        ).observations[0]
+
+tests/tracker/test_detector_removal_sweep.py:186: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/chains/audit_sweep.py:468: in run
+    await self.observe_target(snapshot=snapshot, target=target)
+src/kodezart/chains/audit_sweep.py:438: in observe_target
+    removals = await self._observe_removals(target, surfaces)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/audit_sweep.py:286: in _observe_removals
+    observed = await self._removals.observe(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/audit_detection_removal.py:79: in observe
+    payload = await self._sessions.judge(
+src/kodezart/services/audit_sessions.py:122: in judge
+    structured = await judge_in_workspace(
+src/kodezart/services/audit_sessions.py:43: in judge_in_workspace
+    result, rate_limited = await drain(
+src/kodezart/core/stream_drain.py:57: in drain
+    async for event in stream:
+src/kodezart/services/agent_service.py:117: in stream_in_workspace
+    async for event in self._executor.stream(
+tests/tracker/test_audit_sweep.py:90: in stream
+    await self.during(kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+kwargs = {'agents': (), 'allowed_tools': <ToolPreset.EVALUATION: 'evaluation'>, 'cwd': '/tmp/fake-workspace', 'output_format': ...hen this arm finds none; unverifiable when the comparison cannot be established.'}}, ...}, 'type': 'json_schema'}, ...}
+
+    async def during(kwargs):
+        schema = kwargs["output_format"]["schema"]
+        reached.append(schema)
+        if (
+            schema
+            == {
+                "claim": AUDIT_CLAIM_SCHEMA,
+                "overclaim": AUDIT_OVERCLAIM_SCHEMA,
+                "removal": DETECTOR_REMOVAL_SCHEMA,
+                "mandate": AUDIT_MANDATE_SCHEMA,
+            }[failed]
+        ):
+>           raise RuntimeError(f"unavailable {failed} session")
+E           RuntimeError: unavailable removal session
+
+tests/tracker/test_detector_removal_sweep.py:182: RuntimeError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 22:31:03 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fresh-result site=audit_claim stop_reason=None subtype=success total_cost_usd=None usage=None
+2026-09-12 22:31:03 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fresh-result site=audit_overclaim stop_reason=None subtype=success total_cost_usd=None usage=None
+_ test_independent_failure_retains_every_other_available_arm[linear-mcp-mandate] _
+
+setup = (<function setup.<locals>.build at 0x10ef6b560>, <tests.tracker.test_audit_sweep.Executor object at 0x10ec27bc0>, <tes... <tests.fakes.FakeWorkspaceProvider object at 0x10ec272c0>, <tests.fakes.FakePRStateReader object at 0x10ec25ac0>, ...)
+tracker = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10ec276e0>
+server = <tests.fakes.FakeLinearMcpServer object at 0x10ec249e0>
+failed = 'mandate'
+
+    @pytest.mark.parametrize("failed", ["claim", "overclaim", "removal", "mandate"])
+    async def test_independent_failure_retains_every_other_available_arm(
+        setup, tracker, server, failed
+    ):
+        build, executor, *_ = setup
+        await ready(tracker, server)
+        executor.removal_output = payload()
+        executor.overclaim_output = overclaim_payload()
+        reached = []
+    
+        async def during(kwargs):
+            schema = kwargs["output_format"]["schema"]
+            reached.append(schema)
+            if (
+                schema
+                == {
+                    "claim": AUDIT_CLAIM_SCHEMA,
+                    "overclaim": AUDIT_OVERCLAIM_SCHEMA,
+                    "removal": DETECTOR_REMOVAL_SCHEMA,
+                    "mandate": AUDIT_MANDATE_SCHEMA,
+                }[failed]
+            ):
+                raise RuntimeError(f"unavailable {failed} session")
+    
+        executor.during = during
+        child = (
+>           await build(
+                include_removals=True,
+                include_overclaims=True,
+                selected_source=RevisionSource(),
+            ).run()
+        ).observations[0]
+
+tests/tracker/test_detector_removal_sweep.py:186: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/chains/audit_sweep.py:468: in run
+    await self.observe_target(snapshot=snapshot, target=target)
+src/kodezart/chains/audit_sweep.py:438: in observe_target
+    removals = await self._observe_removals(target, surfaces)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/audit_sweep.py:289: in _observe_removals
+    report = await self._mandates.complete(
+src/kodezart/chains/audit_pass.py:228: in complete
+    mandate = await self.observe(
+src/kodezart/chains/audit_pass.py:292: in observe
+    structured = await judge_in_workspace(
+src/kodezart/services/audit_sessions.py:43: in judge_in_workspace
+    result, rate_limited = await drain(
+src/kodezart/core/stream_drain.py:57: in drain
+    async for event in stream:
+src/kodezart/services/agent_service.py:117: in stream_in_workspace
+    async for event in self._executor.stream(
+tests/tracker/test_audit_sweep.py:90: in stream
+    await self.during(kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+kwargs = {'agents': (), 'allowed_tools': <ToolPreset.EVALUATION: 'evaluation'>, 'cwd': '/tmp/fake-workspace', 'output_format': ...se verdict requires exactly its corresponding payload.', 'title': 'AuditMandateJudgment'}, 'type': 'json_schema'}, ...}
+
+    async def during(kwargs):
+        schema = kwargs["output_format"]["schema"]
+        reached.append(schema)
+        if (
+            schema
+            == {
+                "claim": AUDIT_CLAIM_SCHEMA,
+                "overclaim": AUDIT_OVERCLAIM_SCHEMA,
+                "removal": DETECTOR_REMOVAL_SCHEMA,
+                "mandate": AUDIT_MANDATE_SCHEMA,
+            }[failed]
+        ):
+>           raise RuntimeError(f"unavailable {failed} session")
+E           RuntimeError: unavailable mandate session
+
+tests/tracker/test_detector_removal_sweep.py:182: RuntimeError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 22:31:04 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fresh-result site=audit_claim stop_reason=None subtype=success total_cost_usd=None usage=None
+2026-09-12 22:31:04 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fresh-result site=audit_overclaim stop_reason=None subtype=success total_cost_usd=None usage=None
+2026-09-12 22:31:04 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fresh-result site=audit_detection_removal stop_reason=None subtype=success total_cost_usd=None usage=None
+_ test_only_successful_removal_report_still_pins_its_observed_head[fake-port] __
+
+setup = (<function setup.<locals>.build at 0x10ef6be20>, <tests.tracker.test_audit_sweep.Executor object at 0x10e9327e0>, <tes... <tests.fakes.FakeWorkspaceProvider object at 0x10e933320>, <tests.fakes.FakePRStateReader object at 0x10ec25cd0>, ...)
+tracker = <tests.fakes.FakeTrackerPort object at 0x10eb0dee0>
+server = <tests.fakes.FakeLinearMcpServer object at 0x10ec261b0>
+
+    async def test_only_successful_removal_report_still_pins_its_observed_head(
+        setup, tracker, server
+    ):
+        build, executor, git, *_ = setup
+        await ready(tracker, server)
+        executor.removal_output = payload()
+    
+        async def during(kwargs):
+            if kwargs["output_format"]["schema"] == AUDIT_CLAIM_SCHEMA:
+                raise RuntimeError("Claim session unavailable.")
+            if kwargs["output_format"]["schema"] == AUDIT_MANDATE_SCHEMA:
+                git._remote_branch_shas["ordinary-name"] = "c" * 40
+    
+        executor.during = during
+        with pytest.raises(AuditClaimReadError, match="observed branch changed"):
+>           await build(include_removals=True, selected_source=RevisionSource()).run()
+
+tests/tracker/test_detector_removal_sweep.py:289: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/chains/audit_sweep.py:468: in run
+    await self.observe_target(snapshot=snapshot, target=target)
+src/kodezart/chains/audit_sweep.py:420: in observe_target
+    observation = await self._observe(target, surfaces)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/audit_sweep.py:217: in _observe
+    evidence = await self._evidence.observe(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/audit_evidence.py:101: in observe
+    return await self._observe(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/audit_evidence.py:140: in _observe
+    claim = await self._claims.verify(
+src/kodezart/chains/audit_pass.py:132: in verify
+    structured = await judge_in_workspace(
+src/kodezart/services/audit_sessions.py:43: in judge_in_workspace
+    result, rate_limited = await drain(
+src/kodezart/core/stream_drain.py:57: in drain
+    async for event in stream:
+src/kodezart/services/agent_service.py:117: in stream_in_workspace
+    async for event in self._executor.stream(
+tests/tracker/test_audit_sweep.py:90: in stream
+    await self.during(kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+kwargs = {'agents': (), 'allowed_tools': <ToolPreset.EVALUATION: 'evaluation'>, 'cwd': '/tmp/fake-workspace', 'output_format': ..., 'description': 'Holds, refuted or unverifiable from fresh repository evidence.'}}, ...}, 'type': 'json_schema'}, ...}
+
+    async def during(kwargs):
+        if kwargs["output_format"]["schema"] == AUDIT_CLAIM_SCHEMA:
+>           raise RuntimeError("Claim session unavailable.")
+E           RuntimeError: Claim session unavailable.
+
+tests/tracker/test_detector_removal_sweep.py:283: RuntimeError
+_ test_only_successful_removal_report_still_pins_its_observed_head[linear-mcp] _
+
+setup = (<function setup.<locals>.build at 0x10f0c0400>, <tests.tracker.test_audit_sweep.Executor object at 0x10ec393a0>, <tes... <tests.fakes.FakeWorkspaceProvider object at 0x10ec380e0>, <tests.fakes.FakePRStateReader object at 0x10ec38440>, ...)
+tracker = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10ec3a390>
+server = <tests.fakes.FakeLinearMcpServer object at 0x10ec38320>
+
+    async def test_only_successful_removal_report_still_pins_its_observed_head(
+        setup, tracker, server
+    ):
+        build, executor, git, *_ = setup
+        await ready(tracker, server)
+        executor.removal_output = payload()
+    
+        async def during(kwargs):
+            if kwargs["output_format"]["schema"] == AUDIT_CLAIM_SCHEMA:
+                raise RuntimeError("Claim session unavailable.")
+            if kwargs["output_format"]["schema"] == AUDIT_MANDATE_SCHEMA:
+                git._remote_branch_shas["ordinary-name"] = "c" * 40
+    
+        executor.during = during
+        with pytest.raises(AuditClaimReadError, match="observed branch changed"):
+>           await build(include_removals=True, selected_source=RevisionSource()).run()
+
+tests/tracker/test_detector_removal_sweep.py:289: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/chains/audit_sweep.py:468: in run
+    await self.observe_target(snapshot=snapshot, target=target)
+src/kodezart/chains/audit_sweep.py:420: in observe_target
+    observation = await self._observe(target, surfaces)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/audit_sweep.py:217: in _observe
+    evidence = await self._evidence.observe(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/audit_evidence.py:101: in observe
+    return await self._observe(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/audit_evidence.py:140: in _observe
+    claim = await self._claims.verify(
+src/kodezart/chains/audit_pass.py:132: in verify
+    structured = await judge_in_workspace(
+src/kodezart/services/audit_sessions.py:43: in judge_in_workspace
+    result, rate_limited = await drain(
+src/kodezart/core/stream_drain.py:57: in drain
+    async for event in stream:
+src/kodezart/services/agent_service.py:117: in stream_in_workspace
+    async for event in self._executor.stream(
+tests/tracker/test_audit_sweep.py:90: in stream
+    await self.during(kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+kwargs = {'agents': (), 'allowed_tools': <ToolPreset.EVALUATION: 'evaluation'>, 'cwd': '/tmp/fake-workspace', 'output_format': ..., 'description': 'Holds, refuted or unverifiable from fresh repository evidence.'}}, ...}, 'type': 'json_schema'}, ...}
+
+    async def during(kwargs):
+        if kwargs["output_format"]["schema"] == AUDIT_CLAIM_SCHEMA:
+>           raise RuntimeError("Claim session unavailable.")
+E           RuntimeError: Claim session unavailable.
+
+tests/tracker/test_detector_removal_sweep.py:283: RuntimeError
+=========================== short test summary info ============================
+FAILED tests/chains/test_union_forge_isolation.py::test_no_module_the_union_step_reaches_asks_a_pull_request_anything
+FAILED tests/domain/test_operation_optionality.py::test_a_records_key_outside_the_kind_vocabulary_is_refused
+FAILED tests/tracker/test_detector_removal_sweep.py::test_independent_failure_retains_every_other_available_arm[fake-port-claim]
+FAILED tests/tracker/test_detector_removal_sweep.py::test_independent_failure_retains_every_other_available_arm[fake-port-overclaim]
+FAILED tests/tracker/test_detector_removal_sweep.py::test_independent_failure_retains_every_other_available_arm[fake-port-removal]
+FAILED tests/tracker/test_detector_removal_sweep.py::test_independent_failure_retains_every_other_available_arm[fake-port-mandate]
+FAILED tests/tracker/test_detector_removal_sweep.py::test_independent_failure_retains_every_other_available_arm[linear-mcp-claim]
+FAILED tests/tracker/test_detector_removal_sweep.py::test_independent_failure_retains_every_other_available_arm[linear-mcp-overclaim]
+FAILED tests/tracker/test_detector_removal_sweep.py::test_independent_failure_retains_every_other_available_arm[linear-mcp-removal]
+FAILED tests/tracker/test_detector_removal_sweep.py::test_independent_failure_retains_every_other_available_arm[linear-mcp-mandate]
+FAILED tests/tracker/test_detector_removal_sweep.py::test_only_successful_removal_report_still_pins_its_observed_head[fake-port]
+FAILED tests/tracker/test_detector_removal_sweep.py::test_only_successful_removal_report_still_pins_its_observed_head[linear-mcp]
+12 failed, 61 passed in 47.99s

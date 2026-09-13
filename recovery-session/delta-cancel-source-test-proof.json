@@ -1,0 +1,24 @@
+{
+  "dispatch": {
+    "original_sha256": "c91ae6efb9c2c6dde16ab92b2c1ca7985e6098de8be471df9dac232fcd2512b2",
+    "committed_sha256": "c91ae6efb9c2c6dde16ab92b2c1ca7985e6098de8be471df9dac232fcd2512b2",
+    "ast_identical": true
+  },
+  "prompt": {
+    "original_sha256": "0dcf0cbc95218ddd178068c56771a86698af00ab1e4887a2d74de8dddd30c0de",
+    "committed_sha256": "11096072f34d06f67689087b59617d3909c993147f4c8e7cb30437e50b9736da",
+    "ast_identical": true
+  },
+  "tests/services/test_dispatch_pass.py": {
+    "byte_identical_parent": true
+  },
+  "tests/services/test_prompt_pass.py": {
+    "byte_identical_parent": true
+  },
+  "src/kodezart/services/pass_gate.py": {
+    "byte_identical_parent": true
+  },
+  "src/kodezart/services/pass_scheduler.py": {
+    "byte_identical_parent": true
+  }
+}

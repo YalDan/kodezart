@@ -1,0 +1,58 @@
+FFFFFF                                                                   [100%]
+=================================== FAILURES ===================================
+__ test_base_input_is_validated_before_domain_queue_submission[missing-fire] ___
+async def functions are not natively supported.
+You need to install a suitable plugin for your async framework, for example:
+  - anyio
+  - pytest-asyncio
+  - pytest-tornasync
+  - pytest-trio
+  - pytest-twisted
+_ test_base_input_is_validated_before_domain_queue_submission[missing-workflow] _
+async def functions are not natively supported.
+You need to install a suitable plugin for your async framework, for example:
+  - anyio
+  - pytest-asyncio
+  - pytest-tornasync
+  - pytest-trio
+  - pytest-twisted
+___ test_base_input_is_validated_before_domain_queue_submission[empty-fire] ____
+async def functions are not natively supported.
+You need to install a suitable plugin for your async framework, for example:
+  - anyio
+  - pytest-asyncio
+  - pytest-tornasync
+  - pytest-trio
+  - pytest-twisted
+_ test_base_input_is_validated_before_domain_queue_submission[empty-workflow] __
+async def functions are not natively supported.
+You need to install a suitable plugin for your async framework, for example:
+  - anyio
+  - pytest-asyncio
+  - pytest-tornasync
+  - pytest-trio
+  - pytest-twisted
+__ test_base_input_is_validated_before_domain_queue_submission[recorded-fire] __
+async def functions are not natively supported.
+You need to install a suitable plugin for your async framework, for example:
+  - anyio
+  - pytest-asyncio
+  - pytest-tornasync
+  - pytest-trio
+  - pytest-twisted
+_ test_base_input_is_validated_before_domain_queue_submission[recorded-workflow] _
+async def functions are not natively supported.
+You need to install a suitable plugin for your async framework, for example:
+  - anyio
+  - pytest-asyncio
+  - pytest-tornasync
+  - pytest-trio
+  - pytest-twisted
+=========================== short test summary info ============================
+FAILED ../kodezart-recovery-session/test_session_policy_base_boundary.py::test_base_input_is_validated_before_domain_queue_submission[missing-fire]
+FAILED ../kodezart-recovery-session/test_session_policy_base_boundary.py::test_base_input_is_validated_before_domain_queue_submission[missing-workflow]
+FAILED ../kodezart-recovery-session/test_session_policy_base_boundary.py::test_base_input_is_validated_before_domain_queue_submission[empty-fire]
+FAILED ../kodezart-recovery-session/test_session_policy_base_boundary.py::test_base_input_is_validated_before_domain_queue_submission[empty-workflow]
+FAILED ../kodezart-recovery-session/test_session_policy_base_boundary.py::test_base_input_is_validated_before_domain_queue_submission[recorded-fire]
+FAILED ../kodezart-recovery-session/test_session_policy_base_boundary.py::test_base_input_is_validated_before_domain_queue_submission[recorded-workflow]
+6 failed in 4.94s

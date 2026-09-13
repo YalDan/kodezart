@@ -1,0 +1,196 @@
+FFFF                                                                     [100%]
+=================================== FAILURES ===================================
+_ test_native_entry_preserves_tracker_port_failure[TrackerUnavailableError-read_spec] _
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a2d92e0>
+boundary = 'read_spec'
+error_type = <class 'kodezart.core.errors.TrackerUnavailableError'>
+
+    @pytest.mark.parametrize("boundary", ["read_spec", "read_current"])
+    @pytest.mark.parametrize("error_type", [TrackerUnavailableError, TrackerAccessDeniedError])
+    async def test_native_entry_preserves_tracker_port_failure(
+        monkeypatch: pytest.MonkeyPatch,
+        boundary: Literal["read_spec", "read_current"],
+        error_type: type[TrackerUnavailableError] | type[TrackerAccessDeniedError],
+    ) -> None:
+        port = tracker()
+        source = TrackerCriteria(tracker=port)
+        spec = await source.read_spec(issue_key=SUBJECT)
+        failure = error_type("the current tracker read cannot be authorized")
+    
+        async def unavailable(**_kwargs: object) -> None:
+            raise failure
+    
+        monkeypatch.setattr(
+            port, "read_fire_spec" if boundary == "read_spec" else "scope_issues", unavailable
+        )
+        with pytest.raises(FireSpecEntryError) as raised:
+            if boundary == "read_spec":
+>               await source.read_spec(issue_key=SUBJECT)
+
+tests/chains/test_native_port_failures.py:33: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/chains/criteria.py:105: in read_spec
+    return await self._tracker.read_fire_spec(issue_key=issue_key)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+_kwargs = {'issue_key': 'fire/subject'}
+
+    async def unavailable(**_kwargs: object) -> None:
+>       raise failure
+E       kodezart.core.errors.TrackerUnavailableError: the current tracker read cannot be authorized
+
+tests/chains/test_native_port_failures.py:26: TrackerUnavailableError
+_ test_native_entry_preserves_tracker_port_failure[TrackerUnavailableError-read_current] _
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a2d85f0>
+boundary = 'read_current'
+error_type = <class 'kodezart.core.errors.TrackerUnavailableError'>
+
+    @pytest.mark.parametrize("boundary", ["read_spec", "read_current"])
+    @pytest.mark.parametrize("error_type", [TrackerUnavailableError, TrackerAccessDeniedError])
+    async def test_native_entry_preserves_tracker_port_failure(
+        monkeypatch: pytest.MonkeyPatch,
+        boundary: Literal["read_spec", "read_current"],
+        error_type: type[TrackerUnavailableError] | type[TrackerAccessDeniedError],
+    ) -> None:
+        port = tracker()
+        source = TrackerCriteria(tracker=port)
+        spec = await source.read_spec(issue_key=SUBJECT)
+        failure = error_type("the current tracker read cannot be authorized")
+    
+        async def unavailable(**_kwargs: object) -> None:
+            raise failure
+    
+        monkeypatch.setattr(
+            port, "read_fire_spec" if boundary == "read_spec" else "scope_issues", unavailable
+        )
+        with pytest.raises(FireSpecEntryError) as raised:
+            if boundary == "read_spec":
+                await source.read_spec(issue_key=SUBJECT)
+            else:
+>               await source.read_current(spec=spec)
+
+tests/chains/test_native_port_failures.py:35: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/chains/criteria.py:115: in read_current
+    owed = await self._read_owed_criteria(spec)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/criteria.py:72: in _read_owed_criteria
+    subtree = await read_scope_members(
+src/kodezart/services/scope_membership.py:16: in read_scope_members
+    scoped = (await resolve_scope(ref=scope, tracker=tracker)).issues
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/services/scope_resolution.py:14: in resolve_scope
+    issues = await tracker.scope_issues(ref=ref)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+_kwargs = {'ref': ScopeRef(kind=<ScopeKind.ISSUE: 'issue'>, key='fire/subject')}
+
+    async def unavailable(**_kwargs: object) -> None:
+>       raise failure
+E       kodezart.core.errors.TrackerUnavailableError: the current tracker read cannot be authorized
+
+tests/chains/test_native_port_failures.py:26: TrackerUnavailableError
+_ test_native_entry_preserves_tracker_port_failure[TrackerAccessDeniedError-read_spec] _
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a297bc0>
+boundary = 'read_spec'
+error_type = <class 'kodezart.core.errors.TrackerAccessDeniedError'>
+
+    @pytest.mark.parametrize("boundary", ["read_spec", "read_current"])
+    @pytest.mark.parametrize("error_type", [TrackerUnavailableError, TrackerAccessDeniedError])
+    async def test_native_entry_preserves_tracker_port_failure(
+        monkeypatch: pytest.MonkeyPatch,
+        boundary: Literal["read_spec", "read_current"],
+        error_type: type[TrackerUnavailableError] | type[TrackerAccessDeniedError],
+    ) -> None:
+        port = tracker()
+        source = TrackerCriteria(tracker=port)
+        spec = await source.read_spec(issue_key=SUBJECT)
+        failure = error_type("the current tracker read cannot be authorized")
+    
+        async def unavailable(**_kwargs: object) -> None:
+            raise failure
+    
+        monkeypatch.setattr(
+            port, "read_fire_spec" if boundary == "read_spec" else "scope_issues", unavailable
+        )
+        with pytest.raises(FireSpecEntryError) as raised:
+            if boundary == "read_spec":
+>               await source.read_spec(issue_key=SUBJECT)
+
+tests/chains/test_native_port_failures.py:33: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/chains/criteria.py:105: in read_spec
+    return await self._tracker.read_fire_spec(issue_key=issue_key)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+_kwargs = {'issue_key': 'fire/subject'}
+
+    async def unavailable(**_kwargs: object) -> None:
+>       raise failure
+E       kodezart.core.errors.TrackerAccessDeniedError: the current tracker read cannot be authorized
+
+tests/chains/test_native_port_failures.py:26: TrackerAccessDeniedError
+_ test_native_entry_preserves_tracker_port_failure[TrackerAccessDeniedError-read_current] _
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a296930>
+boundary = 'read_current'
+error_type = <class 'kodezart.core.errors.TrackerAccessDeniedError'>
+
+    @pytest.mark.parametrize("boundary", ["read_spec", "read_current"])
+    @pytest.mark.parametrize("error_type", [TrackerUnavailableError, TrackerAccessDeniedError])
+    async def test_native_entry_preserves_tracker_port_failure(
+        monkeypatch: pytest.MonkeyPatch,
+        boundary: Literal["read_spec", "read_current"],
+        error_type: type[TrackerUnavailableError] | type[TrackerAccessDeniedError],
+    ) -> None:
+        port = tracker()
+        source = TrackerCriteria(tracker=port)
+        spec = await source.read_spec(issue_key=SUBJECT)
+        failure = error_type("the current tracker read cannot be authorized")
+    
+        async def unavailable(**_kwargs: object) -> None:
+            raise failure
+    
+        monkeypatch.setattr(
+            port, "read_fire_spec" if boundary == "read_spec" else "scope_issues", unavailable
+        )
+        with pytest.raises(FireSpecEntryError) as raised:
+            if boundary == "read_spec":
+                await source.read_spec(issue_key=SUBJECT)
+            else:
+>               await source.read_current(spec=spec)
+
+tests/chains/test_native_port_failures.py:35: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/chains/criteria.py:115: in read_current
+    owed = await self._read_owed_criteria(spec)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/criteria.py:72: in _read_owed_criteria
+    subtree = await read_scope_members(
+src/kodezart/services/scope_membership.py:16: in read_scope_members
+    scoped = (await resolve_scope(ref=scope, tracker=tracker)).issues
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/services/scope_resolution.py:14: in resolve_scope
+    issues = await tracker.scope_issues(ref=ref)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+_kwargs = {'ref': ScopeRef(kind=<ScopeKind.ISSUE: 'issue'>, key='fire/subject')}
+
+    async def unavailable(**_kwargs: object) -> None:
+>       raise failure
+E       kodezart.core.errors.TrackerAccessDeniedError: the current tracker read cannot be authorized
+
+tests/chains/test_native_port_failures.py:26: TrackerAccessDeniedError
+=========================== short test summary info ============================
+FAILED tests/chains/test_native_port_failures.py::test_native_entry_preserves_tracker_port_failure[TrackerUnavailableError-read_spec]
+FAILED tests/chains/test_native_port_failures.py::test_native_entry_preserves_tracker_port_failure[TrackerUnavailableError-read_current]
+FAILED tests/chains/test_native_port_failures.py::test_native_entry_preserves_tracker_port_failure[TrackerAccessDeniedError-read_spec]
+FAILED tests/chains/test_native_port_failures.py::test_native_entry_preserves_tracker_port_failure[TrackerAccessDeniedError-read_current]
+4 failed in 0.49s

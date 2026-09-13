@@ -1,0 +1,74 @@
+....................FFFFF                                                [100%]
+=================================== FAILURES ===================================
+_______________ test_source_index_requires_actual_integer[True] ________________
+
+index = True
+
+    @pytest.mark.parametrize("index", [True, 1.0, "1"])
+    def test_source_index_requires_actual_integer(index):
+>       with pytest.raises(ValidationError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'pydantic_core._pydantic_core.ValidationError'>
+
+tests/types/test_audit_mandate_independent.py:104: Failed
+________________ test_source_index_requires_actual_integer[1.0] ________________
+
+index = 1.0
+
+    @pytest.mark.parametrize("index", [True, 1.0, "1"])
+    def test_source_index_requires_actual_integer(index):
+>       with pytest.raises(ValidationError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'pydantic_core._pydantic_core.ValidationError'>
+
+tests/types/test_audit_mandate_independent.py:104: Failed
+_________________ test_source_index_requires_actual_integer[1] _________________
+
+index = '1'
+
+    @pytest.mark.parametrize("index", [True, 1.0, "1"])
+    def test_source_index_requires_actual_integer(index):
+>       with pytest.raises(ValidationError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'pydantic_core._pydantic_core.ValidationError'>
+
+tests/types/test_audit_mandate_independent.py:104: Failed
+___ test_holds_observation_cannot_claim_an_uncovered_source[empty-coverage] ____
+
+damage = 'empty-coverage'
+
+    @pytest.mark.parametrize("damage", ["empty-coverage", "foreign-source"])
+    def test_holds_observation_cannot_claim_an_uncovered_source(damage):
+        raw = observation()
+        if damage == "empty-coverage":
+            raw["covered"] = []
+        else:
+            raw["finding_surface"] = SURFACES[0]
+>       with pytest.raises(ValidationError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'pydantic_core._pydantic_core.ValidationError'>
+
+tests/types/test_audit_mandate_independent.py:115: Failed
+___ test_holds_observation_cannot_claim_an_uncovered_source[foreign-source] ____
+
+damage = 'foreign-source'
+
+    @pytest.mark.parametrize("damage", ["empty-coverage", "foreign-source"])
+    def test_holds_observation_cannot_claim_an_uncovered_source(damage):
+        raw = observation()
+        if damage == "empty-coverage":
+            raw["covered"] = []
+        else:
+            raw["finding_surface"] = SURFACES[0]
+>       with pytest.raises(ValidationError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'pydantic_core._pydantic_core.ValidationError'>
+
+tests/types/test_audit_mandate_independent.py:115: Failed
+=========================== short test summary info ============================
+FAILED tests/types/test_audit_mandate_independent.py::test_source_index_requires_actual_integer[True]
+FAILED tests/types/test_audit_mandate_independent.py::test_source_index_requires_actual_integer[1.0]
+FAILED tests/types/test_audit_mandate_independent.py::test_source_index_requires_actual_integer[1]
+FAILED tests/types/test_audit_mandate_independent.py::test_holds_observation_cannot_claim_an_uncovered_source[empty-coverage]
+FAILED tests/types/test_audit_mandate_independent.py::test_holds_observation_cannot_claim_an_uncovered_source[foreign-source]
+5 failed, 20 passed in 0.94s

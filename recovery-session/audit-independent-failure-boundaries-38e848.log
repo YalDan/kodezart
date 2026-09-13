@@ -1,0 +1,174 @@
+F..F                                                                     [100%]
+=================================== FAILURES ===================================
+__________ test_native_lane_discovery_keeps_failure_kind[programmer] ___________
+
+native_audit = (<kodezart.services.audit_runtime.AuditScheduledPass object at 0x10c3047a0>, <tests.integration.test_audit_runtime_nat...rvice object at 0x10c2b7020>, <kodezart.adapters.git_worktree_provider.GitWorktreeProvider object at 0x10c2b7260>, ...)
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10c2b69f0>
+failure_kind = 'programmer'
+
+    @pytest.mark.parametrize("failure_kind", ["programmer", "cancel", "outage"])
+    async def test_native_lane_discovery_keeps_failure_kind(native_audit, monkeypatch, failure_kind):
+        audit, executor, backend, tracker, git, workspace, repository = native_audit
+        original = backend.call_tool
+        error = RuntimeError("independent adapter implementation defect") if failure_kind == "programmer" else asyncio.CancelledError()
+        reached = False
+    
+        async def call(*, name, arguments):
+            nonlocal reached
+            if name == "list_comments":
+                reached = True
+                if failure_kind == "outage":
+                    backend._tool_errors["list_comments"] = "independent unavailable service"
+                else:
+                    raise error
+            return await original(name=name, arguments=arguments)
+    
+        monkeypatch.setattr(backend, "call_tool", call)
+        if failure_kind == "outage":
+            with pytest.raises(AuditRunIncompleteError) as caught:
+                await audit.run(FIXTURE_NOW)
+            assert caught.value.report.scopes[0].status == "incomplete"
+            assert any("independent unavailable" in row.reason for row in caught.value.report.scopes[0].unavailable)
+        else:
+            with pytest.raises(type(error)) as caught:
+>               await audit.run(FIXTURE_NOW)
+
+../kodezart-recovery-session/test_audit_failure_boundary_independent.py:39: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.services.audit_runtime.AuditScheduledPass object at 0x10c3047a0>
+started_at = datetime.datetime(2026, 3, 1, 12, 0, tzinfo=datetime.timezone.utc)
+
+    async def run(self, started_at: datetime) -> PassRun:
+        identity = RunIdentity(kind=RunKind.AUDIT, name="audit", started_at=started_at)
+        self._last_report = None
+        scopes = tuple(
+            [await self._scope(target, identity) for target in self._targets]
+        )
+        report = AuditRunReport(identity=identity, scopes=scopes)
+        self._last_report = report
+        await self._log.ainfo(
+            "audit_run_finished",
+            run_identity=identity.title(),
+            report=report.model_dump(mode="json"),
+        )
+        if any(isinstance(scope, AuditScopeIncomplete) for scope in scopes):
+>           raise AuditRunIncompleteError(report=report)
+E           kodezart.domain.errors.AuditRunIncompleteError: audit run 'audit — audit @ 2026-03-01T12:00:00Z' is incomplete
+
+src/kodezart/services/audit_runtime.py:643: AuditRunIncompleteError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 21:20:09 [info     ] audit_run_finished             report={'identity': {'kind': 'audit', 'name': 'audit', 'started_at': '2026-03-01T12:00:00Z'}, 'scopes': [{'scope': {'kind': 'issue', 'key': 'audit/root'}, 'writes': [], 'observations': [], 'raw_observations': [], 'status': 'incomplete', 'unavailable': [{'subject': {'kind': 'issue', 'key': 'audit/criterion'}, 'reason': 'RuntimeError: independent adapter implementation defect'}, {'subject': {'kind': 'issue', 'key': 'audit/criterion'}, 'reason': 'AuditClaimReadError: over-claim verification requires a native criterion request'}, {'subject': {'kind': 'issue', 'key': 'audit/criterion'}, 'reason': 'AuditClaimReadError: detector-removal verification requires a native criterion request'}, {'subject': {'kind': 'issue', 'key': 'audit/criterion'}, 'reason': 'AuditClaimReadError: forge verification requires a native criterion request and record'}, {'subject': {'kind': 'issue', 'key': 'audit/root'}, 'reason': 'RuntimeError: independent adapter implementation defect'}], 'repair_inputs': []}]} run_identity='audit — audit @ 2026-03-01T12:00:00Z'
+_____________ test_actual_git_remote_loss_is_scope_unavailability ______________
+
+native_audit = (<kodezart.services.audit_runtime.AuditScheduledPass object at 0x10c3cfb90>, <tests.integration.test_audit_runtime_nat...rvice object at 0x10c3cf830>, <kodezart.adapters.git_worktree_provider.GitWorktreeProvider object at 0x10c3ce870>, ...)
+
+    async def test_actual_git_remote_loss_is_scope_unavailability(native_audit):
+        audit, executor, backend, tracker, git, workspace, repository = native_audit
+        remote = repository[0]
+        unavailable = remote.with_name(remote.name + "-unavailable")
+        reached = False
+    
+        async def during(kwargs):
+            nonlocal reached
+            if kwargs["output_format"]["schema"] == AUDIT_CLAIM_SCHEMA and not reached:
+                reached = True
+                remote.rename(unavailable)
+    
+        executor.during = during
+        try:
+            with pytest.raises(AuditRunIncompleteError) as caught:
+>               await audit.run(FIXTURE_NOW)
+
+../kodezart-recovery-session/test_audit_failure_boundary_independent.py:62: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/services/audit_runtime.py:633: in run
+    [await self._scope(target, identity) for target in self._targets]
+     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/services/audit_runtime.py:448: in _scope
+    coverage = await self._coverage.cover(
+src/kodezart/services/audit_coverage.py:76: in cover
+    await visit(candidate)
+src/kodezart/services/audit_runtime.py:302: in visit
+    await target.sweep.observe_target(
+src/kodezart/chains/audit_sweep.py:420: in observe_target
+    observation = await self._observe(target, surfaces)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/audit_sweep.py:217: in _observe
+    evidence = await self._evidence.observe(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/audit_evidence.py:101: in observe
+    return await self._observe(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/audit_evidence.py:140: in _observe
+    claim = await self._claims.verify(
+src/kodezart/chains/audit_pass.py:160: in verify
+    if await read_remote_head(
+src/kodezart/services/git_observations.py:17: in read_remote_head
+    head = await settle(git.remote_branch_sha(repository, remote, branch))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/owned_tasks.py:25: in settle
+    result, cancelled = await finish_owned(asyncio.create_task(operation))
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/owned_tasks.py:12: in finish_owned
+    return await asyncio.shield(task), cancelled
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/adapters/subprocess_git_service.py:334: in remote_branch_sha
+    exit_code, stdout = await self._run_with_exit_codes(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.subprocess_git_service.SubprocessGitService object at 0x10c3cf830>
+cmd = ['git', 'ls-remote', '--exit-code', '--heads', 'configured-remote', 'refs/heads/ordinary-name']
+cwd = '/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1897/test_actual_git_remote_loss_i...lders--lv--b1m7q5dj1yd5gn9s9rknw43h0000gq--T--pytest-of-kodezart--pytest-1897--test_actual_git_remote_loss_is0--remote'
+allowed = frozenset({0, 2}), env = None
+
+    async def _run_with_exit_codes(
+        self,
+        cmd: list[str],
+        cwd: str,
+        allowed: frozenset[int],
+        env: dict[str, str] | None = None,
+    ) -> tuple[int, str]:
+        """Run *cmd*, allow declared exit codes, return ``(exit_code, stdout)``.
+    
+        Raises ``RuntimeError`` if the exit code is not in *allowed*.  Used
+        by ``is_ancestor`` (exit 1 valid) and ``remote_branch_sha``
+        (exit 2 valid) — the existing ``_run`` and ``_run_output`` continue
+        to raise on any non-zero exit.
+        """
+        process_env: dict[str, str] | None = None
+        if env is not None:
+            process_env = {**os.environ, **env}
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            cwd=cwd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            env=process_env,
+        )
+        stdout, stderr = await proc.communicate()
+        returncode = (
+            proc.returncode if proc.returncode is not None else _UNKNOWN_EXIT_CODE
+        )
+        if returncode not in allowed:
+            detail = self._failure_detail(stdout, stderr, proc.returncode)
+            msg = (
+                f"{' '.join(cmd[:3])} exited {returncode} "
+                f"(allowed {sorted(allowed)}): {detail}"
+            )
+>           raise RuntimeError(msg)
+E           RuntimeError: git ls-remote --exit-code exited 128 (allowed [0, 2]): fatal: '/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1897/test_actual_git_remote_loss_is0/remote' does not appear to be a git repository
+E           fatal: Could not read from remote repository.
+E           
+E           Please make sure you have the correct access rights
+E           and the repository exists.
+
+src/kodezart/adapters/subprocess_git_service.py:534: RuntimeError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 21:20:19 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-95494c3c5055460ea922c140a86141f3 workspace_id=95494c3c5055460ea922c140a86141f3
+2026-09-12 21:20:19 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=audit_claim stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 21:20:19 [info     ] workspace_released             workspace_id=95494c3c5055460ea922c140a86141f3
+=========================== short test summary info ============================
+FAILED ::test_native_lane_discovery_keeps_failure_kind[programmer] - kodezart...
+FAILED ::test_actual_git_remote_loss_is_scope_unavailability - RuntimeError: ...
+2 failed, 2 passed in 19.18s

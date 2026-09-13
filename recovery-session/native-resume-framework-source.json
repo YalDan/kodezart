@@ -1,0 +1,52 @@
+{
+  "versions": {
+    "langgraph": "1.0.10",
+    "langgraph-checkpoint": "4.0.1",
+    "langchain-core": "1.2.17",
+    "langgraph-prebuilt": "1.0.8"
+  },
+  "files": [
+    {
+      "path": "pregel/main.py",
+      "official_url": "https://raw.githubusercontent.com/langchain-ai/langgraph/1.0.10/libs/langgraph/langgraph/pregel/main.py",
+      "installed_sha256": "a477a8c54dbd07bf2ebb8c448227131aed974d1b2e9ae64bee8d3b6783c33c44",
+      "official_sha256": "a477a8c54dbd07bf2ebb8c448227131aed974d1b2e9ae64bee8d3b6783c33c44",
+      "identical": true
+    },
+    {
+      "path": "pregel/_loop.py",
+      "official_url": "https://raw.githubusercontent.com/langchain-ai/langgraph/1.0.10/libs/langgraph/langgraph/pregel/_loop.py",
+      "installed_sha256": "da1c20e8b213712ab11c2477b8bc74b3abaec6c07a634583b02b877d7efe2c07",
+      "official_sha256": "da1c20e8b213712ab11c2477b8bc74b3abaec6c07a634583b02b877d7efe2c07",
+      "identical": true
+    },
+    {
+      "path": "pregel/_algo.py",
+      "official_url": "https://raw.githubusercontent.com/langchain-ai/langgraph/1.0.10/libs/langgraph/langgraph/pregel/_algo.py",
+      "installed_sha256": "742dd0072205861e9808f809ecaf46267268ef2ef6f98b67315fa5dc7c4fad38",
+      "official_sha256": "742dd0072205861e9808f809ecaf46267268ef2ef6f98b67315fa5dc7c4fad38",
+      "identical": true
+    },
+    {
+      "path": "_internal/_config.py",
+      "official_url": "https://raw.githubusercontent.com/langchain-ai/langgraph/1.0.10/libs/langgraph/langgraph/_internal/_config.py",
+      "installed_sha256": "2f2f572594baf511e3c5324d2c44b75ccc2891c344b91579528dd302e3386cb0",
+      "official_sha256": "2f2f572594baf511e3c5324d2c44b75ccc2891c344b91579528dd302e3386cb0",
+      "identical": true
+    },
+    {
+      "path": "pregel/_runner.py",
+      "official_url": "https://raw.githubusercontent.com/langchain-ai/langgraph/1.0.10/libs/langgraph/langgraph/pregel/_runner.py",
+      "installed_sha256": "ee69240ff47a0c2a90c60e0ba920ed842786cf5f141ee291223d07357e190dcf",
+      "official_sha256": "ee69240ff47a0c2a90c60e0ba920ed842786cf5f141ee291223d07357e190dcf",
+      "identical": true
+    },
+    {
+      "path": "pregel/_retry.py",
+      "official_url": "https://raw.githubusercontent.com/langchain-ai/langgraph/1.0.10/libs/langgraph/langgraph/pregel/_retry.py",
+      "installed_sha256": "74aec5c0cb2e56291fdce8ae3a5ecb5ebc1cf05fb23f8823b7c7f349f0520707",
+      "official_sha256": "74aec5c0cb2e56291fdce8ae3a5ecb5ebc1cf05fb23f8823b7c7f349f0520707",
+      "identical": true
+    }
+  ]
+}

@@ -1,0 +1,546 @@
+diff --git a/tests/prompts/test_operation_config.py b/tests/prompts/test_operation_config.py
+index 572cff9..3794148 100644
+--- a/tests/prompts/test_operation_config.py
++++ b/tests/prompts/test_operation_config.py
+@@ -6,8 +6,6 @@ from pathlib import Path
+ 
+ import pytest
+ 
+-from kodezart.adapters.pattern_outbound_gate import PatternOutboundContentGate
+-from kodezart.adapters.regex_content_scanner import RegexContentScanner
+ from kodezart.adapters.toml_operation_config import load_operation_config
+ from kodezart.core.config import AppConfig
+ from kodezart.core.errors import (
+@@ -40,7 +38,8 @@ from kodezart.types.domain.operation import (
+     RunKind,
+ )
+ from kodezart.types.domain.prompts import PromptKey
+-from tests.prompt_census import PROMPT_FUNCTION_COUNT
++from tests.outbound import make_admission
++from tests.prompt_census import PROMPT_FUNCTION_NAMES
+ from tests.prompts.sets import PER_RUN
+ from tests.prompts.test_prompt_wiring import load_registry
+ 
+@@ -141,14 +140,15 @@ def test_all_fields_are_present_with_the_stated_types() -> None:
+         "issue_labels",
+         "organize_mandates",
+         "organize_scopes",
++        "audit_scopes",
+         "workflow_states",
++        "run_event_states",
+         "marker_prefixes",
+         "repos",
+         "documents",
+         "records",
+         "knowledge",
+         "endpoints",
+-        "initiatives",
+         "private_surface",
+     }
+     config = example_config()
+@@ -156,8 +156,9 @@ def test_all_fields_are_present_with_the_stated_types() -> None:
+     assert isinstance(config.workspace, str)
+     assert isinstance(config.queue_states, dict)
+     assert isinstance(config.scope_labels, dict)
++    assert config.organize_mandates == ()
++    assert isinstance(config.issue_labels, dict)
+     assert set(config.workflow_states) == set(LifecycleStage)
+-    assert config.initiatives[0].target_date == date(2026, 12, 31)
+     assert config.repos[0].checks
+     assert config.records[RunKind.FIRE_PREP.value].append_only is True
+ 
+@@ -536,7 +537,7 @@ def test_pass_templates_resolve_through_the_port_and_render(
+ 
+ def test_claude_opus_completeness_passes_at_the_full_census() -> None:
+     """KOD-63's completeness rule obliges the default set to supply both."""
+-    assert len(PromptKey) == PROMPT_FUNCTION_COUNT
++    assert {key.value for key in PromptKey} == PROMPT_FUNCTION_NAMES
+     members = {path.stem for path in SET_DIR.glob("*.md")}
+     assert members == {key.value for key in PromptKey}
+ 
+@@ -547,17 +548,12 @@ def test_claude_opus_completeness_passes_at_the_full_census() -> None:
+ 
+ 
+ @pytest.mark.parametrize("key", PASS_KEYS)
+-async def test_ported_templates_pass_the_deny_pattern_engine(key: PromptKey) -> None:
++async def test_ported_templates_contain_no_resolved_org_values(key: PromptKey) -> None:
+     """Zero resolved org-shaped values in repository content."""
+-    config = AppConfig()
+-    gate = PatternOutboundContentGate(
+-        scanners=[
+-            RegexContentScanner(patterns=config.deny_patterns),
+-            RegexContentScanner(patterns=ORG_SHAPED_PATTERNS),
+-        ],
+-        verdicts=config.deny_pattern_verdicts,
+-    )
++    gate = make_admission()
+     body = (SET_DIR / f"{key.value}.md").read_text(encoding="utf-8")
++    for patterns in ORG_SHAPED_PATTERNS.values():
++        assert not any(re.search(pattern, body) for pattern in patterns)
+     decision = await gate.gate(
+         content=body,
+         visibility=RepoVisibility.PUBLIC,
+@@ -639,21 +635,31 @@ def test_placeholder_mapping_is_total_in_both_directions() -> None:
+     # Direction 2 — read off the MODEL, never off the table's own rows, so
+     # the mapping can no longer be checked against what it was derived from.
+     native = dict(markdown_rows("## Native OperationConfig consumers"))
+-    assert native == {"organize_scopes": "composition/organize.py::build_organize_tick"}
++    assert native == {
++        "organize_scopes": "composition/organize.py::build_organize_tick",
++        "audit_scopes": "composition/audit.py::build_audit_pass",
++        "workflow_states.done": "adapters/linear_mcp_tracker.py::set_workflow_state",
++    }
+     assert set(mapped).isdisjoint(native)
+-    assert set(mapped.values()) | set(native) == set(OperationConfig.model_fields)
++    assert set(mapped.values()) | {name.split(".")[0] for name in native} == set(
++        OperationConfig.model_fields
++    )
+ 
+ 
+ def test_every_operation_config_field_is_reachable_from_a_pass_template() -> None:
+     """Direction 2 again, straight from the templates to the model.
+ 
+-    R2 added four fields — principals, agent_identities, repos, initiatives —
++    The principals, agent_identities and repos fields were introduced
+     on the reasoning that the passes consume them.  A field no template can
+     reach is a field the port did not actually port.
+     """
+     reachable = {name.split(".")[0] for name in template_placeholders()}
+     native = dict(markdown_rows("## Native OperationConfig consumers"))
+-    unreachable = set(OperationConfig.model_fields) - reachable - set(native)
++    unreachable = (
++        set(OperationConfig.model_fields)
++        - reachable
++        - {name.split(".")[0] for name in native}
++    )
+     assert unreachable == set(), f"no pass template reaches {sorted(unreachable)}"
+ 
+ 
+@@ -696,24 +702,26 @@ def _to_toml(raw: dict[str, object]) -> str:
+     lines: list[str] = []
+     for key, value in raw.items():
+         if isinstance(value, str | int | float | bool):
+-            lines.append(f"{key} = {_scalar(value)}")
++            lines.append(f"{_scalar(key)} = {_scalar(value)}")
+         elif isinstance(value, list) and all(isinstance(v, str) for v in value):
+-            lines.append(f"{key} = [{', '.join(_scalar(v) for v in value)}]")
++            lines.append(f"{_scalar(key)} = [{', '.join(_scalar(v) for v in value)}]")
+     for key, value in raw.items():
+         if isinstance(value, dict):
+             for sub_key, sub_value in value.items():
+                 if isinstance(sub_value, dict):
+-                    lines.append(f"\n[{key}.{sub_key}]")
+-                    lines.extend(f"{k} = {_scalar(v)}" for k, v in sub_value.items())
++                    lines.append(f"\n[{_scalar(key)}.{_scalar(sub_key)}]")
++                    lines.extend(
++                        f"{_scalar(k)} = {_scalar(v)}" for k, v in sub_value.items()
++                    )
+             scalars = {k: v for k, v in value.items() if not isinstance(v, dict)}
+             if scalars:
+-                lines.append(f"\n[{key}]")
+-                lines.extend(f"{k} = {_scalar(v)}" for k, v in scalars.items())
++                lines.append(f"\n[{_scalar(key)}]")
++                lines.extend(f"{_scalar(k)} = {_scalar(v)}" for k, v in scalars.items())
+         elif isinstance(value, list) and value and isinstance(value[0], dict):
+             for item in value:
+-                lines.append(f"\n[[{key}]]")
++                lines.append(f"\n[[{_scalar(key)}]]")
+                 lines.extend(
+-                    f"{k} = {_scalar(v)}"
++                    f"{_scalar(k)} = {_scalar(v)}"
+                     for k, v in item.items()
+                     if not _is_table_array(v)
+                 )
+@@ -722,8 +730,10 @@ def _to_toml(raw: dict[str, object]) -> str:
+                         continue
+                     sub_items: list[dict[str, object]] = sub_value
+                     for sub_item in sub_items:
+-                        lines.append(f"\n[[{key}.{sub_key}]]")
+-                        lines.extend(f"{k} = {_scalar(v)}" for k, v in sub_item.items())
++                        lines.append(f"\n[[{_scalar(key)}.{_scalar(sub_key)}]]")
++                        lines.extend(
++                            f"{_scalar(k)} = {_scalar(v)}" for k, v in sub_item.items()
++                        )
+     return "\n".join(lines) + "\n"
+ 
+ 
+diff --git a/tests/services/test_prompt_pass.py b/tests/services/test_prompt_pass.py
+index 62250eb..3907912 100644
+--- a/tests/services/test_prompt_pass.py
++++ b/tests/services/test_prompt_pass.py
+@@ -44,7 +44,7 @@ from kodezart.types.domain.dispatch import PassRun, PassSignal
+ from kodezart.types.domain.operation import OperationConfig, QueueState
+ from kodezart.types.domain.prompts import PromptKey
+ from kodezart.types.domain.run_records import RunIdentity
+-from kodezart.types.domain.session import SessionType
++from kodezart.types.domain.session import PermissionMode, SessionType
+ from kodezart.types.domain.skills import SkillsMode, SkillsSelection
+ from tests.fakes import (
+     FIXTURE_EPOCH,
+@@ -60,7 +60,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
+ EXAMPLE = REPO_ROOT / "docs" / "operation.example.toml"
+ 
+ WORKSPACE = "/tmp/kodezart-scheduled-pass"
+-PERMISSION_MODE = "bypassPermissions"
++PERMISSION_MODE = PermissionMode.UNATTENDED
+ PAGE_SIZE = 50
+ LATER = FIXTURE_EPOCH + timedelta(hours=1)
+ #: The shipped set that declares a session role covering both pass keys.
+@@ -112,6 +112,7 @@ class HangingRunner:
+ 
+     def __init__(self) -> None:
+         self.cancelled: bool = False
++        self.entered = asyncio.Event()
+ 
+     async def stream_in_workspace(
+         self,
+@@ -119,6 +120,7 @@ class HangingRunner:
+     ) -> AsyncGenerator[AgentEvent, None]:
+         yield AssistantTextEvent(text="working", model=MODEL)
+         try:
++            self.entered.set()
+             await asyncio.Event().wait()
+         except asyncio.CancelledError:
+             self.cancelled = True
+@@ -253,6 +255,7 @@ async def test_the_session_receives_the_rendered_prompt_and_its_grant() -> None:
+             "workspace_path": WORKSPACE,
+             "session_id": None,
+             "session_type": SessionType.SCHEDULED_PASS,
++            "run_identity": None,
+             "skills": SUPPRESS_ALL_SKILLS,
+             "session_policy": registry.session_policy(PromptKey.GROOMING_PASS),
+         },
+@@ -630,9 +633,56 @@ class TestAFailedPassGivesTheWakeUpBack:
+         gate = pass_gate(tracker, PassSignal.issues_changed)
+         runner = HangingRunner()
+ 
+-        with pytest.raises(TimeoutError):
+-            async with asyncio.timeout(CANCEL_TIMEOUT):
+-                await run(prompts=bound_registry(), runner=runner, gate=gate)
++        running = asyncio.create_task(
++            run(prompts=bound_registry(), runner=runner, gate=gate)
++        )
++        try:
++            await asyncio.wait_for(runner.entered.wait(), timeout=5.0)
++            with pytest.raises(TimeoutError):
++                await asyncio.wait_for(running, timeout=CANCEL_TIMEOUT)
++        finally:
++            running.cancel()
++            await asyncio.gather(running, return_exceptions=True)
+ 
+         assert runner.cancelled
+         assert gate.mark(PassSignal.issues_changed, container=team_key) is None
++
++    async def test_budget_cancellation_during_gate_logging_gives_the_window_back(
++        self, monkeypatch: pytest.MonkeyPatch
++    ) -> None:
++        team_key = example_config().team_keys()[0]
++        tracker = FakeTrackerPort(
++            issues=[make_tracker_issue("FIX-1", team_key=team_key, created_at=LATER)]
++        )
++        gate = pass_gate(tracker, PassSignal.issues_changed)
++        runner = FakeAgentRunner(events=[])
++        logging = asyncio.Event()
++        original = gate._log.ainfo
++
++        async def delayed(event: str, **fields: object) -> None:
++            await original(event, **fields)
++            if event == "pass_gate_delta":
++                logging.set()
++                await asyncio.Event().wait()
++
++        monkeypatch.setattr(gate._log, "ainfo", delayed)
++        running = asyncio.create_task(
++            run(prompts=bound_registry(), runner=runner, gate=gate)
++        )
++        try:
++            await asyncio.wait_for(logging.wait(), timeout=5.0)
++            assert gate.mark(PassSignal.issues_changed, container=team_key) == LATER
++            with pytest.raises(TimeoutError):
++                await asyncio.wait_for(running, timeout=CANCEL_TIMEOUT)
++        finally:
++            running.cancel()
++            await asyncio.gather(running, return_exceptions=True)
++
++        assert runner.calls == []
++        assert gate.mark(PassSignal.issues_changed, container=team_key) is None
++        monkeypatch.setattr(gate._log, "ainfo", original)
++        assert (
++            await run(prompts=bound_registry(), runner=runner, gate=gate) is PassRun.RAN
++        )
++        assert len(runner.calls) == 1
++        assert tracker.scans[-1].updated_since is None
+diff --git a/tests/test_forge_origin_selection.py b/tests/test_forge_origin_selection.py
+index c1231c6..503bc0f 100644
+--- a/tests/test_forge_origin_selection.py
++++ b/tests/test_forge_origin_selection.py
+@@ -15,10 +15,12 @@ it is chosen by the same predicate.
+ """
+ 
+ import ast
++import asyncio
+ import uuid
+ from collections.abc import AsyncIterator
+ from pathlib import Path
+ 
++import httpx
+ import pytest
+ 
+ from kodezart.adapters.github_api import GitHubAPIClient
+@@ -27,29 +29,40 @@ from kodezart.composition.engine import (
+     OriginRoutedWorkflowEngine,
+     build_workflow_engine,
+ )
+-from kodezart.composition.forge import build_forge_client
++from kodezart.composition.forge import (
++    build_forge_client,
++    pr_state_reader_for_origin,
++)
++from kodezart.composition.jobs import build_job_queue
+ from kodezart.core import protocols
+ from kodezart.core.config import AppConfig
++from kodezart.core.constants import DEFAULT_LANE
+ from kodezart.core.protocols import (
+     CIMonitor,
+     DeliveryProbe,
++    ForgeQuery,
+     PRCreator,
++    PRStateReader,
+     RepoVisibilityResolver,
+     WorkflowEngine,
+ )
++from kodezart.domain.errors import ScopedExecutionUnavailableError
+ from kodezart.services.agent_service import AgentService
+ from kodezart.types.domain.agent import (
+     AgentEvent,
++    ErrorEvent,
+     WorkflowCompleteEvent,
+     WorkflowPREvent,
+ )
+ from kodezart.types.domain.branch import trunk_base
+ from kodezart.types.domain.check_observation import ObservedChecks
+ from kodezart.types.domain.gating import RepoVisibility
++from kodezart.types.domain.job import JobState
+ from kodezart.types.domain.outcome import WorkflowOutcome
+-from kodezart.types.domain.scope import ScopeRef
++from kodezart.types.domain.scope import ScopeKind, ScopeRef
+ from kodezart.types.domain.session import PermissionMode
+ from kodezart.types.domain.ticket_review import TicketReviewMode
++from kodezart.types.domain.workflow import WorkflowSubmission
+ from tests.fakes import (
+     SUPPRESS_ALL_SKILLS,
+     FakeAgentExecutor,
+@@ -73,6 +86,7 @@ from tests.workflow_factory import make_authored_workflow
+ #: the sanctioned smoke shape, with no forge behind it to be asked.
+ FILE_ORIGIN = "file:///tmp/smoke-origin.git"
+ FORGE_ORIGIN = "https://github.com/owner/repo"
++SETTLE_SECONDS = 5.0
+ 
+ SRC = Path(__file__).resolve().parents[1] / "src" / "kodezart"
+ COMPOSITION = SRC / "composition"
+@@ -94,12 +108,15 @@ FAKE_TOKEN = "not-a-real-token"
+ 
+ #: Every protocol the forge adapter answers, against the per-origin
+ #: selection that covers it.  ``DeliveryProbe`` is the dispatch tick's,
+-#: repaired under KOD-145; the other three are the engine's.
++#: repaired under KOD-145; three are the engine's and queries have an
++#: explicit per-origin selector for their downstream consumer.
+ COVERED_BY_ORIGIN: dict[type, str] = {
+     PRCreator: "pr_creator",
+     CIMonitor: "ci_monitor",
+     RepoVisibilityResolver: "visibility_resolver",
+     DeliveryProbe: "delivery",
++    PRStateReader: "pr_state",
++    ForgeQuery: "forge_query",
+ }
+ 
+ 
+@@ -217,6 +234,80 @@ async def _drive(
+     ]
+ 
+ 
++class ForbiddenWorkflowEngine:
++    """A scoped entry must never select a legacy execution arm."""
++
++    def run(self, *, scope: ScopeRef | None, **_: object) -> AsyncIterator[AgentEvent]:
++        raise AssertionError("a scoped submission entered the legacy workflow arm")
++
++
++@pytest.mark.parametrize("kind", tuple(ScopeKind))
++@pytest.mark.parametrize("repo_url", [FILE_ORIGIN, FORGE_ORIGIN])
++async def test_scoped_queue_jobs_publish_typed_refusal_without_resolving(
++    kind: ScopeKind,
++    repo_url: str,
++) -> None:
++    """Unsupported scopes fail at dequeue before I/O or the legacy pipeline."""
++    ref = ScopeRef(kind=kind, key="opaque-address")
++    queue = build_job_queue(
++        settings=AppConfig().queue,
++        workflow_engine=OriginRoutedWorkflowEngine(
++            forge_arm=ForbiddenWorkflowEngine(),
++            forge_less_arm=ForbiddenWorkflowEngine(),
++        ),
++    )
++    await queue.start()
++    try:
++        record = await queue.submit(
++            lane=DEFAULT_LANE,
++            request=WorkflowSubmission(
++                prompt="execute the scope",
++                repo_path=None,
++                repo_url=repo_url,
++                base_spec=trunk_base("main"),
++                implied_base=None,
++                scope=ref,
++                permission_mode=PermissionMode.UNATTENDED,
++                allowed_tools=["Read"],
++            ),
++        )
++        async with asyncio.timeout(SETTLE_SECONDS):
++            events = [event async for event in queue.attach(job_id=record.job_id)]
++        (error,) = events
++        assert isinstance(error, ErrorEvent)
++        assert error.error_kind == "ScopedExecutionUnavailableError"
++        assert f"scope: {ref.kind.value}:{ref.key}" in error.error
++        assert "not implemented" in error.error
++        terminal = await queue.get(job_id=record.job_id)
++        assert terminal is not None
++        assert terminal.state is JobState.TERMINAL
++        assert terminal.outcome is WorkflowOutcome.engine_error
++    finally:
++        await queue.stop()
++
++
++async def test_scope_without_a_tracker_refuses_before_selecting_a_legacy_arm() -> None:
++    ref = ScopeRef(kind=ScopeKind.ISSUE, key="ENG-1")
++    engine = OriginRoutedWorkflowEngine(
++        forge_arm=ForbiddenWorkflowEngine(),
++        forge_less_arm=ForbiddenWorkflowEngine(),
++    )
++
++    with pytest.raises(ScopedExecutionUnavailableError, match="not implemented"):
++        await _drive(engine, repo_url=FORGE_ORIGIN, scope=ref)
++
++
++async def test_direct_legacy_engine_calls_cannot_drop_an_addressed_scope() -> None:
++    forge = RecordingForge()
++    engine = _arm(forge=forge)
++    ref = ScopeRef(kind=ScopeKind.PROJECT, key="project-address")
++
++    with pytest.raises(ScopedExecutionUnavailableError, match="scope entry pipeline"):
++        await _drive(engine, repo_url=FORGE_ORIGIN, scope=ref)
++
++    assert forge.calls == []
++
++
+ # ---------------------------------------------------------------------------
+ # The two arms, asserted at the wiring
+ # ---------------------------------------------------------------------------
+@@ -295,25 +386,31 @@ def test_everything_else_keeps_the_forge_arm(repo_url: str | None) -> None:
+     assert engine.arm_for(repo_url) is forge_arm
+ 
+ 
+-async def test_the_builder_wires_both_arms_and_routes_between_them() -> None:
++@pytest.mark.parametrize("kind", tuple(ScopeKind))
++async def test_the_builder_wires_both_arms_and_refuses_scope_without_io(kind) -> None:
+     """The composition root's own builder, not a hand-assembled analogue."""
+     client = build_forge_client(config=AppConfig(github_token=FAKE_TOKEN))
+     assert client is not None
++    executor = FakeAgentExecutor(events=[])
++    workspace = FakeWorkspaceProvider()
++    cache = FakeRepoCache()
++    git = FakeGitService()
+     try:
+         engine = build_workflow_engine(
+             # The shared prompt fixture resolves its set for the reviewed
+             # mode, and the ticket loop refuses a config that asks for a
+             # guarantee the resolved set cannot deliver.
++            repositories=(),
+             config=AppConfig(ticket_review_mode=TicketReviewMode.REVIEWED),
+             agent_service=AgentService(
+                 git_base_url="https://github.com",
+-                executor=FakeAgentExecutor(events=[]),
+-                workspace=FakeWorkspaceProvider(),
++                executor=executor,
++                workspace=workspace,
+                 persister=FakeChangePersister(),
+             ),
+-            git=FakeGitService(),
+-            cache=FakeRepoCache(),
+-            workspace=FakeWorkspaceProvider(),
++            git=git,
++            cache=cache,
++            workspace=workspace,
+             merger=FakeBranchMerger(),
+             artifact_persister=FakeArtifactPersister(),
+             ref_publisher=FakeRefPublisher(),
+@@ -327,6 +424,13 @@ async def test_the_builder_wires_both_arms_and_routes_between_them() -> None:
+         assert isinstance(engine, OriginRoutedWorkflowEngine)
+         assert engine.arm_for(FILE_ORIGIN) is not engine.arm_for(FORGE_ORIGIN)
+         assert engine.arm_for(None) is engine.arm_for(FORGE_ORIGIN)
++        ref = ScopeRef(kind=kind, key="opaque-scope")
++        with pytest.raises(ScopedExecutionUnavailableError, match="not implemented"):
++            await _drive(engine, repo_url=FORGE_ORIGIN, scope=ref)
++        assert executor.calls == []
++        assert workspace.calls == []
++        assert cache.calls == []
++        assert git.calls == []
+     finally:
+         await client.close()
+ 
+@@ -403,15 +507,19 @@ def test_no_engine_forge_slot_is_bound_to_the_forge_client() -> None:
+             )
+ 
+ 
+-def test_only_the_engine_builder_binds_an_engine_forge_slot() -> None:
+-    """One selection site for the set, findable by this test."""
++def test_only_delivery_builders_bind_the_engine_forge_slots() -> None:
++    """Authored and native builders receive the one selected capability set."""
+     binding = sorted(
+         module.name
+         for module in COMPOSITION.glob("*.py")
+         if _forge_slot_keywords(module)
+     )
+ 
+-    assert binding == ["engine.py"]
++    assert binding == ["delivery.py", "engine.py"]
++    assert {
++        ast.unparse(keyword.value)
++        for keyword in _forge_slot_keywords(COMPOSITION / "delivery.py")
++    } == {"forge"}
+ 
+ 
+ def test_the_delivery_capability_is_selected_by_the_same_predicate() -> None:
+@@ -439,8 +547,28 @@ def test_the_delivery_capability_is_selected_by_the_same_predicate() -> None:
+     assert delivery.value.func.id == "delivery_probe_for"
+ 
+ 
+-class ForbiddenWorkflowEngine:
+-    """A scoped entry must never select a legacy execution arm."""
++async def test_native_pr_state_reader_is_selected_before_any_forge_read():
++    from tests.adapters.test_github_api import _make_client
++    from tests.adapters.test_pr_state_reader import REPO, payload
+ 
+-    def run(self, *, scope: ScopeRef | None, **_: object) -> AsyncIterator[AgentEvent]:
+-        raise AssertionError("a scoped submission entered the legacy workflow arm")
++    requests = []
++
++    def handler(request):
++        requests.append(request)
++        return httpx.Response(200, json=payload())
++
++    client = _make_client(handler)
++    try:
++        assert pr_state_reader_for_origin(client=None, repo_url=REPO) is None
++        assert pr_state_reader_for_origin(client=client, repo_url=FILE_ORIGIN) is None
++        assert requests == []
++        selected = pr_state_reader_for_origin(client=client, repo_url=REPO)
++        assert selected is client
++        observed = await selected.read_pr_state(repo_url=REPO, pr_number=7)
++        assert observed.url == f"{REPO}/pull/7"
++        assert observed.head_repo_url == REPO
++        assert [(request.method, request.url.path) for request in requests] == [
++            ("GET", "/repos/example/project/pulls/7")
++        ]
++    finally:
++        await client.close()

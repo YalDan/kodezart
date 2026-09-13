@@ -1,0 +1,186 @@
+..........F                                                              [100%]
+=================================== FAILURES ===================================
+____________ test_actual_main_lifespan_registers_and_executes_audit ____________
+
+    def _assert_renders(*, key: PromptKey, prompts: PromptSetProvider) -> None:
+        """Render *key* and discard it, or refuse naming the pass and its holes.
+    
+        The rendered text is not kept: what is being established is that one
+        exists at all.  The refusal carries the same type and the same
+        ``missing`` list a tick would raise, with the pass named in the message
+        because a boot wiring several of them owes an operator that.
+    
+        Bound the way a TICK binds, off the identity a run beginning at this
+        instant would carry: the render a boot proves has to be the render a
+        pass will actually make, or the two namespaces differ and boot proves
+        the wrong one.
+        """
+        identity = RunIdentity(
+            kind=_record_kind_for(key),
+            name=key.value,
+            started_at=datetime.now(UTC),
+        )
+        try:
+>           prompts.template_for(key).render(pass_render_bindings(identity))
+
+src/kodezart/composition/passes.py:197: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/core/prompt_rendering.py:206: in render
+    return render_template(self.body, merged)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+body = '<role>\nYou are the fire-prep engine for the {{operation_name}} engineering operation — a project manager and archite...n empty run is a finding, and a gap in the log cannot be told apart from a run that never happened.\n</notion_logging>'
+bindings = {'record_title': 'fire_prep — fire_prep_pass @ 2026-09-12T17:55:45.303782Z', 'skills_reference': ''}
+
+    def render_template(body: str, bindings: Mapping[str, object]) -> str:
+        """Render *body* against *bindings* — the one substitution implementation.
+    
+        Raises :class:`PromptRenderError` naming every unconditional reference
+        that had no binding.
+        """
+        nodes = _parse(body)
+        missing: list[str] = []
+        scopes: list[_Scope] = [_Scope(names=bindings, item=_ABSENT)]
+        rendered = _render_nodes(nodes, scopes, missing)
+        if missing:
+            msg = "Unbound template placeholders: " + ", ".join(missing)
+>           raise PromptRenderError(msg, missing=missing)
+E           kodezart.core.errors.PromptRenderError: Unbound template placeholders: operation_name, agent_identities.0, agent_identities.1, workspace, repos, endpoints.host_runner, queue_states.proposed, principals.approver.tracker_user, principals.approver.forge_handle, queue_states.approved, queue_states.triage, teams, principals.assignee.tracker_user, endpoints.cloudflare_docs_mcp, documents.constitution.id, knowledge.constitution, records.fire_prep.name, records.fire_prep.id, principals.1.tracker_user, principals.2.tracker_user, principals.2.handle, queue_states.decision
+
+src/kodezart/core/prompt_rendering.py:184: PromptRenderError
+
+The above exception was the direct cause of the following exception:
+
+tmp_path = PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1830/test_actual_main_lifespan_regi0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a402120>
+
+    async def test_actual_main_lifespan_registers_and_executes_audit(tmp_path, monkeypatch):
+        from kodezart import main
+        from kodezart.composition.records import BuiltRecorder
+        from kodezart.composition.workspace import GitStack
+        from tests.fakes import (
+            FakeArtifactPersister,
+            FakeBranchMerger,
+            FakeChangePersister,
+            FakeRefPublisher,
+            ManagedFakeLinearMcpServer,
+        )
+        from tests.services.test_prompt_passes import _config
+    
+        _, operation, server, tracker, _ = dependencies()
+        config = _config(
+            tmp_path,
+            audit={"timeout_seconds": 17},
+            write_back={"max_verify_rounds": 2},
+            github_token="fixture-audit-token",
+            fire_prep_pass_gate_signals=[],
+            grooming_pass_gate_signals=[],
+        )
+        workspace = RecordingWorkspace()
+        executor = RecordingExecutor(
+            [
+                result(
+                    structured_output={
+                        "verdict": "holds",
+                        "evidence": "Read actual native record references.",
+                        "cited_refs": [],
+                    }
+                )
+            ]
+        )
+        stack = GitStack(
+            git=FakeGitService(remote_branch_shas={operation.repos[0].trunk: "a" * 40}),
+            cache=FakeRepoCache(),
+            workspace=workspace,
+            persister=FakeChangePersister(),
+            merger=FakeBranchMerger(),
+            artifact_persister=FakeArtifactPersister(),
+            ref_publisher=FakeRefPublisher(),
+        )
+    
+        async def tracker_boot(**_kwargs):
+            return DialledTracker(
+                tracker=tracker,
+                caller=ManagedFakeLinearMcpServer(),
+                operation=operation,
+                ledger=SelfWriteLedger(),
+            )
+    
+        async def prompt_boot(**_kwargs):
+            return load_registry()
+    
+        async def recorder_boot(**_kwargs):
+            return BuiltRecorder(RunRecorder(records={}, sinks={}), None)
+    
+        async def knowledge_boot(**_kwargs):
+            return None
+    
+        async def gate_boot(**_kwargs):
+            return PassThroughGate()
+    
+        monkeypatch.setattr(main, "boot_tracker", tracker_boot)
+        monkeypatch.setattr(main, "boot_prompts", prompt_boot)
+        monkeypatch.setattr(main, "build_run_recorder", recorder_boot)
+        monkeypatch.setattr(main, "boot_knowledge_grant", knowledge_boot)
+        monkeypatch.setattr(main, "build_outbound_gate", gate_boot)
+        monkeypatch.setattr(main, "ClaudeClientExecutor", lambda **_kwargs: executor)
+        monkeypatch.setattr(main, "build_git_stack", lambda **_kwargs: stack)
+        app = main.create_app()
+        app.state.config = config
+>       async with app.router.lifespan_context(app):
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/integration/test_audit_scheduler.py:294: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/contextlib.py:210: in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/fastapi/routing.py:212: in merged_lifespan
+    async with original_context(app) as maybe_original_state:
+               ^^^^^^^^^^^^^^^^^^^^^
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/contextlib.py:210: in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/main.py:265: in lifespan
+    raise cleanup_error from cleanup_error.__context__
+src/kodezart/main.py:254: in unwind
+    raise failure
+src/kodezart/main.py:100: in lifespan
+    await verify_pass_preflight(
+src/kodezart/composition/passes.py:718: in verify_pass_preflight
+    _assert_renders(key=key, prompts=prompts)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _assert_renders(*, key: PromptKey, prompts: PromptSetProvider) -> None:
+        """Render *key* and discard it, or refuse naming the pass and its holes.
+    
+        The rendered text is not kept: what is being established is that one
+        exists at all.  The refusal carries the same type and the same
+        ``missing`` list a tick would raise, with the pass named in the message
+        because a boot wiring several of them owes an operator that.
+    
+        Bound the way a TICK binds, off the identity a run beginning at this
+        instant would carry: the render a boot proves has to be the render a
+        pass will actually make, or the two namespaces differ and boot proves
+        the wrong one.
+        """
+        identity = RunIdentity(
+            kind=_record_kind_for(key),
+            name=key.value,
+            started_at=datetime.now(UTC),
+        )
+        try:
+            prompts.template_for(key).render(pass_render_bindings(identity))
+        except PromptRenderError as error:
+            msg = (
+                f"scheduled pass {key.value} cannot render from this operation "
+                f"configuration; unbound: {', '.join(error.missing)}"
+            )
+>           raise PromptRenderError(msg, missing=error.missing) from error
+E           kodezart.core.errors.PromptRenderError: scheduled pass fire_prep_pass cannot render from this operation configuration; unbound: operation_name, agent_identities.0, agent_identities.1, workspace, repos, endpoints.host_runner, queue_states.proposed, principals.approver.tracker_user, principals.approver.forge_handle, queue_states.approved, queue_states.triage, teams, principals.assignee.tracker_user, endpoints.cloudflare_docs_mcp, documents.constitution.id, knowledge.constitution, records.fire_prep.name, records.fire_prep.id, principals.1.tracker_user, principals.2.tracker_user, principals.2.handle, queue_states.decision
+
+src/kodezart/composition/passes.py:203: PromptRenderError
+=========================== short test summary info ============================
+FAILED tests/integration/test_audit_scheduler.py::test_actual_main_lifespan_registers_and_executes_audit
+1 failed, 10 passed in 3.52s

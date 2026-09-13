@@ -1,0 +1,43 @@
+........................................................................ [ 26%]
+........................................................................ [ 53%]
+.............................................................F.......... [ 80%]
+...................................................                      [100%]
+=================================== FAILURES ===================================
+______________ test_house_rules_delivered_as_system_prompt_append ______________
+
+    def test_house_rules_delivered_as_system_prompt_append() -> None:
+        """The paired assertion: moving the rules can neither drop nor duplicate them.
+    
+        One half is mechanical over the shipped source — every dispatch reads
+        its session policy from the set, so none can quietly opt out — and the
+        other is the rendered corpus, where the text must now be absent.  A
+        check on only one half would pass while the rules were both appended
+        and still baked into every template.
+        """
+        from kodezart.types.domain.prompts import PromptKey
+        from tests.prompts.sets import ALL_CASES, V5_SET, render_v5_case
+        from tests.prompts.test_prompt_wiring import load_registry
+        from tests.prompts.test_session_policy import v5_metadata
+    
+        house_rules = v5_metadata().fragments.house_rules
+        assert house_rules is not None
+    
+        registry = load_registry(default_set=V5_SET)
+        for key in PromptKey:
+            assert registry.session_policy(key).system_prompt_append == house_rules
+    
+        sites = _dispatch_sites()
+        from collections import Counter
+    
+>       assert Counter(name for name, _ in sites) == KEYED_DISPATCH_COUNTS
+E       AssertionError: assert Counter({'fir..._pass.py': 1}) == {'agent_conte...w.py': 1, ...}
+E         
+E         Omitting 10 identical items, use -vv to show
+E         Right contains 1 more item:
+E         {'lane_delivery.py': 1}
+E         Use -v to get more diff
+
+tests/chains/test_ralph_workflow.py:4954: AssertionError
+=========================== short test summary info ============================
+FAILED tests/chains/test_ralph_workflow.py::test_house_rules_delivered_as_system_prompt_append
+1 failed, 266 passed in 306.26s (0:05:06)

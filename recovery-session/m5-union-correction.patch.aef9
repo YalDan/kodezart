@@ -1,0 +1,740 @@
+diff --git a/src/kodezart/chains/delivery_coordinator.py b/src/kodezart/chains/delivery_coordinator.py
+index de16252..6ec8d8a 100644
+--- a/src/kodezart/chains/delivery_coordinator.py
++++ b/src/kodezart/chains/delivery_coordinator.py
+@@ -1,20 +1,18 @@
+-"""Compose a scope's ready lanes, in the order the planner ranked them.
++"""Observe a scope's retained lane heads independently of dispatch readiness.
+ 
+-This is the union step's production constructor: it builds the scratch
+-composition and its tick from configuration, reads the planner's ranked
+-ready set, and hands that ranking to the composition unchanged.
+-
+-It holds the tracker, the git port and the check-chain runner, and no
+-forge port of any kind. Composing a scope is a measurement: nothing here
+-can push, open, merge or read the state of a pull request, so the order a
+-scope composes in can only be the planner's, never the order the lanes'
+-pull requests happen to have been opened in.
++Membership comes from the complete scope plan. The existing topology policy
++orders those participants; approval, criterion gaps and live blockers decide
++future dispatch, not whether a retained branch belongs in this measurement.
++The consumer holds tracker, Git and check-runner ports without forge or
++lane-delivery authority. Composition changes only a disposable scratch tree.
+ """
+ 
+-from kodezart.chains.scope_walker import read_scope_ready
+ from kodezart.core.config import AppConfig
+ from kodezart.core.protocols import CheckChainRunner, GitService, TrackerPort
+ from kodezart.domain.errors import UnionHeadReadError
++from kodezart.domain.issue_tree import RECORD_KINDS
++from kodezart.domain.topology import plan_topology
++from kodezart.services.scope_planning import read_scope_plan
+ from kodezart.services.union_composition import UnionComposition
+ from kodezart.services.union_tick import UnionTick
+ from kodezart.types.domain.branch import WorkRefRole
+@@ -23,8 +21,8 @@ from kodezart.types.domain.union import UnionCompositionResult
+ from kodezart.types.domain.union_tick import UnionLaneBranch, UnionTickContext
+ 
+ 
+-class DeliveryCoordinator:
+-    """One scope's union observations, taken over the planner's own ranking.
++class ScopeUnionCoordinator:
++    """One scope's union observations, separate from individual lane delivery.
+ 
+     The scope is named once, by the union context this consumer was
+     configured with; the kind of container that key addresses is the only
+@@ -58,24 +56,47 @@ class DeliveryCoordinator:
+         )
+ 
+     async def verify(self) -> UnionCompositionResult:
+-        """Observe whether the planner's current ready lanes compose.
++        """Return an observation only while its participant roster remains current."""
++        roster = await self._roster()
++        result = await self._tick.verify(lane_branches=roster)
++        if await self._roster() != roster:
++            raise UnionHeadReadError(
++                scope_key=self._scope.key,
++                branch=None,
++                reason="the scope union roster changed during verification",
++            )
++        return result
++
++    async def _roster(self) -> tuple[UnionLaneBranch, ...]:
++        """Rank complete ordinary membership without dispatch eligibility.
+ 
+-        The roster is the ready set in the planner's own order. Nothing
+-        here sorts, filters or reverses it, so a lane's position in the
+-        composition is the position the planner's ranking gave it.
++        A retained lane still participates when it has no current work or
++        is blocked from another dispatch. Structural criterion and record
++        issues are facts for planning, not independent delivery branches.
+         """
+-        selection = await read_scope_ready(ref=self._scope, tracker=self._tracker)
+-        if not selection.ready:
++        plan = await read_scope_plan(ref=self._scope, tracker=self._tracker)
++        participants = frozenset(
++            issue.issue_key
++            for issue in plan.scope.issues
++            if "criterion" not in issue.issue_labels
++            and not issue.issue_labels & RECORD_KINDS
++        )
++        if not participants:
+             raise UnionHeadReadError(
+                 scope_key=self._scope.key,
+                 branch=None,
+-                reason="the planner ranked no ready lane to compose",
++                reason="the scope contains no participating lane to compose",
+             )
++        ranking = plan_topology(
++            issues=(*plan.scope.issues, *plan.dependencies),
++            candidate_keys=participants,
++            blocking_issue_keys=frozenset(),
++        )
+         roster = [
+             await self._lane_branch(issue_key=lane.issue.issue_key)
+-            for lane in selection.ready
++            for lane in ranking.ready
+         ]
+-        return await self._tick.verify(lane_branches=roster)
++        return tuple(roster)
+ 
+     async def _lane_branch(self, *, issue_key: str) -> UnionLaneBranch:
+         """The one deliverable ref the lane recorded, or a typed refusal."""
+diff --git a/tests/chains/test_delivery_coordinator.py b/tests/chains/test_delivery_coordinator.py
+index 1d03c7a..26bc6dd 100644
+--- a/tests/chains/test_delivery_coordinator.py
++++ b/tests/chains/test_delivery_coordinator.py
+@@ -7,13 +7,14 @@ production constructor, so an implementation that sorted the roster, or took
+ the order the refs were recorded in, composes in the wrong order and fails.
+ """
+ 
++import sys
+ from datetime import UTC, datetime
+ from pathlib import Path
+ 
+ import pytest
+ 
+ from kodezart.adapters.subprocess_check_chain import SubprocessCheckChainRunner
+-from kodezart.chains.delivery_coordinator import DeliveryCoordinator
++from kodezart.chains.delivery_coordinator import ScopeUnionCoordinator
+ from kodezart.chains.scope_walker import read_scope_ready
+ from kodezart.core.config import AppConfig
+ from kodezart.domain.errors import CheckChainExecutionError, UnionHeadReadError
+@@ -141,8 +142,8 @@ class Fixture:
+         self.context = context
+         self.tracker = scope.tracker()
+ 
+-    def coordinator(self, runner: object = None) -> DeliveryCoordinator:
+-        return DeliveryCoordinator(
++    def coordinator(self, runner: object = None) -> ScopeUnionCoordinator:
++        return ScopeUnionCoordinator(
+             scope_kind=PROJECT.kind,
+             tracker=self.tracker,
+             git=self.git,
+@@ -251,13 +252,147 @@ async def test_a_lane_with_two_recorded_deliverable_refs_refuses(delivery):
+     assert delivery.git.created == []
+ 
+ 
+-async def test_a_scope_the_planner_ranks_nothing_in_refuses_to_compose(delivery):
++async def test_completed_lanes_with_retained_heads_are_checked_together(
++    delivery, repository
++):
+     delivery.scope.close_every_criterion()
+     delivery.tracker = delivery.scope.tracker()
+     assert (await read_scope_ready(ref=PROJECT, tracker=delivery.tracker)).ready == ()
++    command = (
++        f'{sys.executable} -c "from pathlib import Path; '
++        "assert not (Path('a.txt').exists() and Path('z.txt').exists())\""
++    )
++    checks = pinned.entry(command)
++    delivery.context = delivery.context.model_copy(
++        update={
++            "repo": delivery.context.repo.model_copy(update={"checks": checks.checks})
++        }
++    )
++    author, base, heads = repository
++    for head in heads:
++        alone = await pinned.service(pinned.ObservedGit()).verify(
++            scope_key=PROJECT.key,
++            repo_path=str(author),
++            repo=checks,
++            base_sha=base,
++            lane_heads=(head,),
++        )
++        assert alone.outcome is UnionOutcome.GREEN
++        assert not Path(alone.scratch_path).exists()
+ 
+-    with pytest.raises(UnionHeadReadError) as raised:
++    result = await delivery.coordinator().verify()
++
++    assert result.composition_order == ("z", "a")
++    assert result.lane_heads == (
++        delivery.scope.by_lane["z"],
++        delivery.scope.by_lane["a"],
++    )
++    assert result.outcome is UnionOutcome.RED
++    assert result.checks.failed_step_names == frozenset({"gate"})
++    assert result.remediation.root_step_names == ("gate",)
++    assert delivery.git.merged == [delivery.sha("z"), delivery.sha("a")]
++    assert delivery.git.created == delivery.git.removed == [result.scratch_path]
++    assert not Path(result.scratch_path).exists()
++
++
++@pytest.mark.parametrize("completed", OPENED_ORDER)
++async def test_completed_and_unfinished_retained_lanes_each_participate_once(
++    delivery, completed
++):
++    key = f"{completed}-check"
++    delivery.tracker.issues[key] = delivery.tracker.issues[key].model_copy(
++        update={"state_name": "Done", "state_kind": WorkflowStateKind.COMPLETED}
++    )
++    ready = await read_scope_ready(ref=PROJECT, tracker=delivery.tracker)
++    assert tuple(lane.issue.issue_key for lane in ready.ready) == tuple(
++        lane for lane in ("z", "a") if lane != completed
++    )
++
++    result = await delivery.coordinator().verify()
++
++    assert result.composition_order == ("z", "a")
++    assert result.outcome is UnionOutcome.GREEN
++    assert delivery.git.merged == [delivery.sha("z"), delivery.sha("a")]
++    assert delivery.git.created == delivery.git.removed == [result.scratch_path]
++    assert not Path(result.scratch_path).exists()
++
++
++@pytest.mark.parametrize("changed", ["membership", "reference"])
++async def test_roster_change_during_measurement_refuses_before_return(
++    delivery, changed
++):
++    class MovingRosterRunner(SubprocessCheckChainRunner):
++        async def run_chain(self, *, cwd, steps):
++            result = await super().run_chain(cwd=cwd, steps=steps)
++            if changed == "membership":
++                delivery.tracker.scope_memberships[PROJECT] = ("z",)
++            else:
++                delivery.tracker.recorded_work_refs["z"] = [
++                    work_ref("z", "work/a", delivery.sha("a"))
++                ]
++            return result
++
++    runner = MovingRosterRunner(timeout=AppConfig().union_check_step_timeout_seconds)
++    with pytest.raises(UnionHeadReadError, match="roster changed"):
++        await delivery.coordinator(runner).verify()
++    assert delivery.git.created == delivery.git.removed
++    assert all(not Path(path).exists() for path in delivery.git.created)
++
++
++async def test_retained_unapproved_lanes_still_participate(delivery):
++    delivery.tracker.scope_label_members.clear()
++    assert (await read_scope_ready(ref=PROJECT, tracker=delivery.tracker)).ready == ()
++    result = await delivery.coordinator().verify()
++    assert result.composition_order == ("z", "a")
++    assert result.outcome is UnionOutcome.GREEN
++
++
++async def test_only_structural_artifacts_is_a_genuinely_empty_roster(delivery):
++    delivery.tracker.scope_memberships[PROJECT] = ("a-check", "z-check")
++    with pytest.raises(UnionHeadReadError, match="no participating lane"):
++        await delivery.coordinator().verify()
++    assert delivery.git.created == []
++
++
++async def test_cyclic_parentage_is_refused_before_any_union_work(delivery):
++    from kodezart.domain.errors import ScopeReadError
++
++    for lane, parent in (("a", "z"), ("z", "a")):
++        delivery.tracker.issues[lane] = delivery.tracker.issues[lane].model_copy(
++            update={"parent_key": parent}
++        )
++    with pytest.raises(ScopeReadError):
++        await delivery.coordinator().verify()
++    assert delivery.git.created == []
++
++
++async def test_dependency_cycle_is_refused_before_any_union_work(delivery):
++    from kodezart.domain.errors import ScopeCycleError
++    from kodezart.types.domain.tracker import IssueRelation, IssueRelationKind
++
++    for lane, blocker in (("a", "z"), ("z", "a")):
++        delivery.tracker.issues[lane] = delivery.tracker.issues[lane].model_copy(
++            update={
++                "relations": (
++                    IssueRelation(kind=IssueRelationKind.BLOCKED_BY, issue_key=blocker),
++                )
++            }
++        )
++    with pytest.raises(ScopeCycleError):
+         await delivery.coordinator().verify()
++    assert delivery.git.created == []
+ 
+-    assert "no ready lane" in raised.value.reason
++
++async def test_missing_dependency_is_not_dropped_by_empty_blocking_predicate(delivery):
++    from kodezart.types.domain.tracker import IssueRelation, IssueRelationKind
++
++    delivery.tracker.issues["a"] = delivery.tracker.issues["a"].model_copy(
++        update={
++            "relations": (
++                IssueRelation(kind=IssueRelationKind.BLOCKED_BY, issue_key="absent"),
++            )
++        }
++    )
++    with pytest.raises(KeyError, match="absent"):
++        await delivery.coordinator().verify()
+     assert delivery.git.created == []
+diff --git a/tests/chains/test_union_exit_invariance.py b/tests/chains/test_union_exit_invariance.py
+new file mode 100644
+index 0000000..4753b84
+--- /dev/null
++++ b/tests/chains/test_union_exit_invariance.py
+@@ -0,0 +1,315 @@
++"""PR114 real-Git exit and ref-invariance scenarios, without source scanners.
++
++The named scenarios exercise cleanup and publication invariance directly;
++no AST inventory or object-holdings heuristic is treated as runtime proof.
++"""
++
++import asyncio
++from pathlib import Path
++
++import pytest
++
++from kodezart.adapters.subprocess_check_chain import SubprocessCheckChainRunner
++from kodezart.chains.delivery_coordinator import ScopeUnionCoordinator
++from kodezart.core.config import AppConfig
++from kodezart.domain.errors import CheckChainExecutionError, MergeConflictError
++from kodezart.types.domain.operation import CheckStep
++from kodezart.types.domain.union import UnionLaneHead, UnionOutcome
++from kodezart.types.domain.union_tick import UnionTickContext
++from tests.chains.test_delivery_coordinator import (
++    OPENED_ORDER,
++    PROJECT,
++    RaisingRunner,
++    Scope,
++)
++from tests.services import test_union_composition as pinned
++
++INDEPENDENT_EDITS = {lane: (f"{lane}.txt", lane) for lane in OPENED_ORDER}
++CONFLICTING_EDITS = {
++    "z": ("api.py", "def build(timeout):\n    return timeout\n"),
++    "a": ("api.py", "def build(credentials):\n    return credentials\n"),
++}
++COMPOSED_CHECK = pinned.entry().checks[0].command
++
++
++class Fixture:
++    """A whole delivery world: author repository, remote, and the observer."""
++
++    def __init__(
++        self,
++        *,
++        scope: Scope,
++        git: pinned.ObservedGit,
++        context: UnionTickContext,
++        author: Path,
++        remote: Path,
++        observer: Path,
++    ) -> None:
++        self.scope = scope
++        self.git = git
++        self.context = context
++        self.author = author
++        self.remote = remote
++        self.observer = observer
++        self.tracker = scope.tracker()
++
++    def coordinator(self, runner: object = None) -> ScopeUnionCoordinator:
++        return ScopeUnionCoordinator(
++            scope_kind=PROJECT.kind,
++            tracker=self.tracker,
++            git=self.git,
++            runner=runner
++            or SubprocessCheckChainRunner(
++                timeout=AppConfig().union_check_step_timeout_seconds
++            ),
++            context=self.context,
++            config=AppConfig(),
++            committer_name="Union Fixture",
++            committer_email="union@example.invalid",
++        )
++
++    def sha(self, lane: str) -> str:
++        return self.scope.by_lane[lane].head_sha
++
++    def with_checks(self, checks: object) -> None:
++        """Replace the declared chain on the repository this scope composes."""
++        self.context = self.context.model_copy(
++            update={"repo": self.context.repo.model_copy(update={"checks": checks})}
++        )
++
++    async def refs(self) -> tuple[str, ...]:
++        """Every ref in every repository — what any publication would move."""
++        return tuple(
++            [
++                await pinned.git(path, "show-ref")
++                for path in (self.author, self.remote, self.observer)
++            ]
++        )
++
++    async def merge_graph_order(self, scratch_sha: str) -> tuple[str, ...]:
++        """The lanes the composed commit actually merged, oldest merge first.
++
++        Read out of the merge graph the scratch tree left behind rather than
++        out of the port double's call log, so an order recorded correctly and
++        composed differently is still caught.
++        """
++        by_sha = {head.head_sha: lane for lane, head in self.scope.by_lane.items()}
++        merged: list[str] = []
++        cursor = scratch_sha
++        while True:
++            parents = (
++                await pinned.git(self.observer, "show", "-s", "--format=%P", cursor)
++            ).split()
++            if len(parents) != 2:
++                return tuple(reversed(merged))
++            merged.append(by_sha[parents[1]])
++            cursor = parents[0]
++
++
++async def make_repository(
++    root: Path, *, edits: dict[str, tuple[str, str]]
++) -> tuple[Path, str, tuple[UnionLaneHead, ...]]:
++    """One branch per lane off a shared base, in the opened order."""
++    repo = root / "repo"
++    repo.mkdir(parents=True)
++    await pinned.git(repo, "init", "-b", "main")
++    (repo / "base.txt").write_text("base\n")
++    await pinned.git(repo, "add", ".")
++    await pinned.git(repo, "commit", "-m", "base")
++    base = await pinned.git(repo, "rev-parse", "HEAD")
++    heads: list[UnionLaneHead] = []
++    for lane in OPENED_ORDER:
++        path, text = edits[lane]
++        await pinned.git(repo, "checkout", "-b", f"work/{lane}", base)
++        (repo / path).write_text(text)
++        await pinned.git(repo, "add", ".")
++        await pinned.git(repo, "commit", "-m", lane)
++        heads.append(
++            UnionLaneHead(
++                lane_key=lane,
++                branch=f"work/{lane}",
++                head_sha=await pinned.git(repo, "rev-parse", "HEAD"),
++            )
++        )
++    await pinned.git(repo, "checkout", "main")
++    return repo, base, tuple(heads)
++
++
++async def build_delivery(
++    root: Path,
++    *,
++    edits: dict[str, tuple[str, str]] | None = None,
++    git: pinned.ObservedGit | None = None,
++) -> Fixture:
++    """The production wiring over a real repository, remote and observer."""
++    root.mkdir(parents=True, exist_ok=True)
++    author, base, heads = await make_repository(root, edits=edits or INDEPENDENT_EDITS)
++    remote, observer = root / "remote.git", root / "observer.git"
++    await pinned.git(root, "clone", "--bare", str(author), str(remote))
++    await pinned.git(
++        root, "clone", "--bare", "--origin", "upstream", str(remote), str(observer)
++    )
++    # Settle the observer's remote-tracking refs through the same port the
++    # union step fetches with. Fetching is a read the step is entitled to
++    # make; leaving its first one until then would put a legitimate read
++    # inside any before/after comparison of the world's refs.
++    await pinned.SubprocessGitService(remote="upstream").fetch(str(observer))
++    return Fixture(
++        scope=Scope(heads),
++        git=git or pinned.ObservedGit(),
++        context=UnionTickContext(
++            scope_key=PROJECT.key,
++            repo_path=str(observer),
++            base_sha=base,
++            git_remote="upstream",
++            repo=pinned.entry(COMPOSED_CHECK).model_copy(
++                update={"url": remote.as_uri()}
++            ),
++        ),
++        author=author,
++        remote=remote,
++        observer=observer,
++    )
++
++
++class ForbiddenPublisher(pinned.ObservedGit):
++    """The git port the union step actually holds, with publication fatal.
++
++    Every one of these is reachable on the object the composition is given,
++    so a step that grew a publish makes the case fail rather than pass
++    quietly against a double that could not have been asked.
++    """
++
++    async def push(self, cwd: str, branch: str) -> None:
++        raise AssertionError("the union step pushed a branch")
++
++    async def merge_branch(self, cwd: str, source_branch: str) -> None:
++        raise AssertionError("the union step merged a branch")
++
++    async def delete_remote_branch(self, repo_path: str, branch: str) -> None:
++        raise AssertionError("the union step deleted a remote branch")
++
++
++class PathlessConflict(ForbiddenPublisher):
++    """A refused merge git named no conflicting path for."""
++
++    async def merge_scratch_head(self, **kwargs: object) -> None:
++        raise MergeConflictError(
++            "the scratch head could not be merged",
++            source_branch=str(kwargs["head_sha"]),
++            paths=(),
++        )
++
++
++class BlockedCreate(ForbiddenPublisher):
++    """A git port that parks inside worktree creation until released."""
++
++    def __init__(self) -> None:
++        super().__init__()
++        self.entered = asyncio.Event()
++        self.release = asyncio.Event()
++
++    async def create_worktree(self, *args: object, **kwargs: object) -> None:
++        await super().create_worktree(*args, **kwargs)
++        self.entered.set()
++        await self.release.wait()
++
++
++async def drive_green(fixture) -> None:
++    result = await fixture.coordinator().verify()
++    assert result.outcome is UnionOutcome.GREEN
++
++
++async def drive_merge_conflict(fixture) -> None:
++    result = await fixture.coordinator().verify()
++    assert result.outcome is UnionOutcome.RED
++    assert result.merge_conflict is not None
++
++
++async def drive_pathless_conflict(fixture) -> None:
++    with pytest.raises(MergeConflictError):
++        await fixture.coordinator().verify()
++
++
++async def drive_unclassifiable_chain(fixture) -> None:
++    repeated = CheckStep(name="gate", command="true")
++    fixture.with_checks((repeated, repeated))
++    with pytest.raises(CheckChainExecutionError):
++        await fixture.coordinator().verify()
++
++
++async def drive_undeclared_chain(fixture) -> None:
++    fixture.with_checks(())
++    with pytest.raises(CheckChainExecutionError):
++        await fixture.coordinator().verify()
++
++
++async def drive_unobservable_chain(fixture) -> None:
++    with pytest.raises(CheckChainExecutionError):
++        await fixture.coordinator(RaisingRunner()).verify()
++
++
++async def drive_cancellation(fixture) -> None:
++    task = asyncio.create_task(fixture.coordinator().verify())
++    try:
++        await asyncio.wait_for(fixture.git.entered.wait(), 10)
++        task.cancel()
++        await asyncio.sleep(0)
++        task.cancel()
++        await asyncio.sleep(0)
++        assert not task.done()
++    finally:
++        fixture.git.release.set()
++        with pytest.raises(asyncio.CancelledError):
++            await asyncio.wait_for(task, 10)
++
++
++EXIT_SCENARIOS = (
++    ("a green union", None, ForbiddenPublisher, drive_green),
++    ("a merge conflict", CONFLICTING_EDITS, ForbiddenPublisher, drive_merge_conflict),
++    ("a conflict naming no path", None, PathlessConflict, drive_pathless_conflict),
++    (
++        "a chain that cannot be classified",
++        None,
++        ForbiddenPublisher,
++        drive_unclassifiable_chain,
++    ),
++    (
++        "a repository declaring no chain",
++        None,
++        ForbiddenPublisher,
++        drive_undeclared_chain,
++    ),
++    (
++        "a chain that cannot be observed",
++        None,
++        ForbiddenPublisher,
++        drive_unobservable_chain,
++    ),
++    ("cancellation while composing", None, BlockedCreate, drive_cancellation),
++)
++
++
++@pytest.mark.parametrize(
++    "name, edits, publisher, drive",
++    EXIT_SCENARIOS,
++    ids=[row[0] for row in EXIT_SCENARIOS],
++)
++async def test_named_union_exit_preserves_real_refs_and_removes_scratch(
++    tmp_path,
++    name,
++    edits,
++    publisher,
++    drive,
++):
++    fixture = await build_delivery(tmp_path / "world", edits=edits, git=publisher())
++    before = await fixture.refs()
++
++    await drive(fixture)
++
++    assert await fixture.refs() == before, name
++    assert fixture.git.created == fixture.git.removed, name
++    assert all(not Path(path).exists() for path in fixture.git.created), name
++    assert (
++        await pinned.git(fixture.observer, "worktree", "list", "--porcelain")
++    ).count("worktree ") == 1
+diff --git a/tests/chains/test_union_participant_order.py b/tests/chains/test_union_participant_order.py
+new file mode 100644
+index 0000000..c0009a2
+--- /dev/null
++++ b/tests/chains/test_union_participant_order.py
+@@ -0,0 +1,129 @@
++"""Complete participants retain PR114's inherited-priority ordering oracle."""
++
++import sys
++from datetime import UTC, datetime
++
++import pytest
++
++from kodezart.chains.scope_walker import read_scope_ready
++from kodezart.types.domain.tracker import (
++    IssuePriority,
++    IssueRelation,
++    IssueRelationKind,
++    priority_rank,
++)
++from kodezart.types.domain.union import UnionOutcome
++from tests.chains.test_delivery_coordinator import PROJECT, issue, work_ref
++from tests.chains.test_union_exit_invariance import build_delivery
++from tests.services import test_union_composition as pinned
++
++OPENED = ("a", "b", "c", "d", "e")
++ORDER = ("c", "e", "a", "d", "b")
++PRIORITIES = {
++    "a": IssuePriority.HIGH,
++    "b": IssuePriority.MEDIUM,
++    "c": IssuePriority.LOW,
++    "d": IssuePriority.HIGH,
++    "e": IssuePriority.URGENT,
++}
++
++
++async def test_complete_order_uses_inherited_priority_and_includes_blocked_head(
++    tmp_path,
++):
++    fixture = await build_delivery(tmp_path / "world")
++    # Extend the real two-lane fixture to the four-lane PR114 priority oracle
++    # plus the urgent blocked member. It is ordinary and retains a branch,
++    # so complete union membership includes it as well as its prerequisite.
++    await pinned.git(fixture.author, "remote", "add", "upstream", str(fixture.remote))
++    rows = []
++    refs = {}
++    for position, lane in enumerate(OPENED):
++        branch = f"ordered/{lane}"
++        await pinned.git(
++            fixture.author, "checkout", "-b", branch, fixture.context.base_sha
++        )
++        (fixture.author / f"{lane}.txt").write_text(lane)
++        await pinned.git(fixture.author, "add", ".")
++        await pinned.git(fixture.author, "commit", "-m", lane)
++        await pinned.git(fixture.author, "push", "upstream", branch)
++        sha = await pinned.git(fixture.author, "rev-parse", "HEAD")
++        refs[lane] = [work_ref(lane, branch, sha)]
++        rows.append(
++            issue(
++                lane,
++                priority=PRIORITIES[lane],
++                created_at=datetime(2026, 1, position + 1, tzinfo=UTC),
++                relations=(
++                    IssueRelation(kind=IssueRelationKind.BLOCKED_BY, issue_key="c"),
++                )
++                if lane == "e"
++                else (),
++            )
++        )
++        rows.append(
++            issue(
++                f"{lane}-check", parent_key=lane, issue_labels=frozenset({"criterion"})
++            )
++        )
++    fixture.tracker.issues = {row.issue_key: row for row in rows}
++    fixture.tracker.scope_memberships[PROJECT] = OPENED
++    fixture.tracker.recorded_work_refs = refs
++    # Existing fixture's chain checks its original two files; this one states
++    # the complete intended five-lane evidence explicitly.
++    command = (
++        f'{sys.executable} -c "from pathlib import Path; '
++        + "; ".join(f"assert Path('{lane}.txt').exists()" for lane in OPENED)
++        + '"'
++    )
++    fixture.with_checks(pinned.entry(command).checks)
++    await fixture.git.fetch(str(fixture.observer))
++    before = await fixture.refs()
++    ready = await read_scope_ready(ref=PROJECT, tracker=fixture.tracker)
++    assert tuple(lane.issue.issue_key for lane in ready.ready) == ("c", "a", "d", "b")
++    assert ORDER != OPENED
++    assert ORDER != tuple(sorted(OPENED, reverse=True))
++    assert ORDER != tuple(reversed(ORDER))
++    assert ORDER != tuple(
++        sorted(OPENED, key=lambda key: priority_rank(PRIORITIES[key]))
++    )
++
++    result = await fixture.coordinator().verify()
++
++    assert result.composition_order == ORDER
++    assert len(result.lane_heads) == len(set(OPENED))
++    assert result.outcome is UnionOutcome.GREEN
++    expected = [refs[key][0].pushed_head_sha for key in ORDER]
++    assert fixture.git.merged == expected
++    # Read actual merge parents: a forged call log cannot satisfy the oracle.
++    cursor = result.scratch_sha
++    reverse_merged = []
++    for _ in ORDER:
++        parents = (
++            await pinned.git(fixture.observer, "show", "-s", "--format=%P", cursor)
++        ).split()
++        assert len(parents) == 2
++        reverse_merged.append(parents[1])
++        cursor = parents[0]
++    assert tuple(reversed(reverse_merged)) == tuple(expected)
++    assert cursor == fixture.context.base_sha
++    assert await fixture.refs() == before
++    assert fixture.git.created == fixture.git.removed == [result.scratch_path]
++
++
++@pytest.mark.parametrize("classification", ["tracker", "decision"])
++async def test_record_artifacts_do_not_add_a_delivery_branch(tmp_path, classification):
++    fixture = await build_delivery(tmp_path / "world")
++    from kodezart.types.domain.tracker import WorkflowStateKind
++
++    record = issue(
++        "record",
++        issue_labels=frozenset({classification}),
++        state_kind=WorkflowStateKind.COMPLETED,
++        state_name="Done",
++    )
++    fixture.tracker.issues[record.issue_key] = record
++    fixture.tracker.scope_memberships[PROJECT] = ("a", "z", "record")
++    result = await fixture.coordinator().verify()
++    assert result.composition_order == ("z", "a")
++    assert result.outcome is UnionOutcome.GREEN

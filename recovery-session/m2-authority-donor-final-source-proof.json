@@ -1,0 +1,42 @@
+[
+  {
+    "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "changed": [
+      "LinearMcpTracker.update_issue_graph",
+      "LinearMcpTracker.create_split_if_absent",
+      "LinearMcpTracker.create_criterion_if_absent",
+      "LinearMcpTracker.edit_description",
+      "LinearMcpTracker._retry_call"
+    ],
+    "missing_original": [],
+    "duplicates": [],
+    "all_changed_match_accepted": true
+  },
+  {
+    "path": "src/kodezart/core/protocols.py",
+    "changed": [
+      "TrackerPort.update_issue_graph",
+      "TrackerPort.create_split_if_absent",
+      "TrackerPort.create_criterion_if_absent"
+    ],
+    "missing_original": [],
+    "duplicates": [],
+    "all_changed_match_accepted": true
+  },
+  {
+    "path": "src/kodezart/services/organize_owner.py",
+    "changed": [
+      "OrganizeOwner._author_write"
+    ],
+    "missing_original": [],
+    "duplicates": [],
+    "all_changed_match_accepted": true
+  },
+  {
+    "path": "src/kodezart/types/domain/surface.py",
+    "changed": [],
+    "missing_original": [],
+    "duplicates": [],
+    "all_changed_match_accepted": true
+  }
+]

@@ -1,0 +1,165 @@
+commit 57dcc8c3ae4836207307a715812fe389c301e130
+Author:     Kodezart <275551396+wringtretsina@users.noreply.github.com>
+AuthorDate: Sat Sep 12 21:06:42 2026 +0200
+Commit:     Kodezart <275551396+wringtretsina@users.noreply.github.com>
+CommitDate: Sat Sep 12 21:06:42 2026 +0200
+
+    Complete M1 configured marker prompt and fixture closure
+
+diff --git a/docs/cutover_mapping.md b/docs/cutover_mapping.md
+index 37158d8..ecba307 100644
+--- a/docs/cutover_mapping.md
++++ b/docs/cutover_mapping.md
+@@ -85,6 +85,7 @@ registries.
+ | workflow_states.in_progress | workflow_states |
+ | workflow_states.in_review | workflow_states |
+ | workflow_states.done | workflow_states |
++| marker_prefixes.repository | marker_prefixes |
+ | repos | repos |
+ | documents.constitution.id | documents |
+ | records.fire_prep.id | records |
+diff --git a/src/kodezart/core/prompt_namespaces.py b/src/kodezart/core/prompt_namespaces.py
+index a5c5fd7..49c48c4 100644
+--- a/src/kodezart/core/prompt_namespaces.py
++++ b/src/kodezart/core/prompt_namespaces.py
+@@ -123,6 +123,12 @@ def operation_bindings(config: OperationConfig) -> dict[str, object]:
+         dict(config.queue_states),
+         absent=not config.queue_states,
+     )
++    _bind_absentable(
++        bindings,
++        "marker_prefixes",
++        dict(config.marker_prefixes),
++        absent=not config.marker_prefixes,
++    )
+     _bind_absentable(
+         bindings,
+         "workflow_states",
+diff --git a/src/kodezart/prompts/sets/anthropic_v5/fire_prep_pass.md b/src/kodezart/prompts/sets/anthropic_v5/fire_prep_pass.md
+index 9378b21..a0c6686 100644
+--- a/src/kodezart/prompts/sets/anthropic_v5/fire_prep_pass.md
++++ b/src/kodezart/prompts/sets/anthropic_v5/fire_prep_pass.md
+@@ -9,7 +9,7 @@ on:
+ {{/each}}
+ {{#if recorded_routing}}A team above with no bound repository routes per issue: when you stage a fire on such
+ a team, decide which declared repository the work belongs to and record that decision on
+-the issue as a marker comment — `<!-- kodezart-repo url="..." -->`, the url exactly as
++the issue as a marker comment — `<!-- {{marker_prefixes.repository}} url="..." -->`, the url exactly as
+ declared above. Dispatch fires only what carries a marker: an approved issue without one
+ is refused by name until this pass records it, so a staged fire with no recorded
+ repository is not staged.
+diff --git a/src/kodezart/prompts/sets/claude-opus/fire_prep_pass.md b/src/kodezart/prompts/sets/claude-opus/fire_prep_pass.md
+index 3da6c20..bc12dbf 100644
+--- a/src/kodezart/prompts/sets/claude-opus/fire_prep_pass.md
++++ b/src/kodezart/prompts/sets/claude-opus/fire_prep_pass.md
+@@ -28,7 +28,7 @@ Decide a question a principal has posed or reserved as theirs — policy, spend,
+ </authority>
+ <placement>
+ Any issue you create or convert, whatever the trigger — a consult outcome, a principal's "flag this" instruction in a thread or a review, a split from an epic: one of the teams this operation declares, parented into the project it belongs to, or related into the owning initiative's tree when no project fits — never teamless and projectless. The declared teams, each with the repository its issues are fired into:
+-{{#each teams}}- {{this.name}} ({{this.key}}) — fires into{{#if this.repository}} {{this.repository}}{{/if}}{{#if this.repository_absent}} the only repository this operation declares{{/if}}{{#if this.repository_recorded}} the repository recorded on each staged issue as a `<!-- kodezart-repo url="..." -->` marker comment, which you write when staging{{/if}}{{#if this.scope}} — in scope: only issues in {{this.scope}}{{/if}}
++{{#each teams}}- {{this.name}} ({{this.key}}) — fires into{{#if this.repository}} {{this.repository}}{{/if}}{{#if this.repository_absent}} the only repository this operation declares{{/if}}{{#if this.repository_recorded}} the repository recorded on each staged issue as a `<!-- {{marker_prefixes.repository}} url="..." -->` marker comment, which you write when staging{{/if}}{{#if this.scope}} — in scope: only issues in {{this.scope}}{{/if}}
+ {{/each}}Route by the repository the work touches: an issue belongs to the team bound to the repository its fix would change. Assign by kind: fires, epics, stubs, triage filings, and decision flags → {{principals.assignee.tracker_user}}. Never file outside the declared roster above — this operation's grooming, deadlines, and CEO views cover exactly those teams: an issue filed outside them is invisible to every future pass, whatever its topic. This holds ESPECIALLY for process/meta findings about kodezart's own reviews or fires — the subject may be the agent, but the thing at risk is the delivery, so the issue lives with the team whose repository the delivery runs through. Existing issues are precedent for content, never for placement: do not infer team or project from where a similar issue sits.
+ </placement>
+ 
+diff --git a/src/kodezart/prompts/sets/claude-opus/grooming_pass.md b/src/kodezart/prompts/sets/claude-opus/grooming_pass.md
+index ef0daf7..875dfcc 100644
+--- a/src/kodezart/prompts/sets/claude-opus/grooming_pass.md
++++ b/src/kodezart/prompts/sets/claude-opus/grooming_pass.md
+@@ -32,7 +32,7 @@ What you never do:
+ 
+ <placement>
+ Any issue you create or convert, whatever the trigger — a verified defect, a principal's "flag this" instruction, a split during grooming: one of the teams this operation declares, parented into the project it belongs to, or related into the owning initiative's tree when no project fits — never teamless and projectless. The declared teams, each with the repository its issues are fired into:
+-{{#each teams}}- **{{this.name}} ({{this.key}})** — fires into{{#if this.repository}} `{{this.repository}}`{{/if}}{{#if this.repository_absent}} the only repository this operation declares{{/if}}{{#if this.repository_recorded}} the repository recorded on each staged issue as a `<!-- kodezart-repo url="..." -->` marker comment{{/if}}{{#if this.scope}} — in scope: only issues in {{this.scope}}{{/if}}
++{{#each teams}}- **{{this.name}} ({{this.key}})** — fires into{{#if this.repository}} `{{this.repository}}`{{/if}}{{#if this.repository_absent}} the only repository this operation declares{{/if}}{{#if this.repository_recorded}} the repository recorded on each staged issue as a `<!-- {{marker_prefixes.repository}} url="..." -->` marker comment{{/if}}{{#if this.scope}} — in scope: only issues in {{this.scope}}{{/if}}
+ {{/each}}Route by the repository the work touches: an issue belongs to the team bound to the repository its fix would change. Assign by kind: triage filings and decision flags → {{principals.assignee.tracker_user}} (decision flags additionally carry the `{{queue_states.decision}}` label, per the Constitution's §6.8 rule). Never file outside the declared roster above — this operation's grooming, deadlines, and CEO views cover exactly those teams: an issue filed outside them is invisible to every future pass, whatever its topic. This holds ESPECIALLY for process/meta findings about kodezart's own reviews or fires — the subject may be the agent, but the thing at risk is the delivery, so the issue lives with the team whose repository the delivery runs through. Existing issues are precedent for content, never for placement: do not infer team or project from where a similar issue sits.
+ </placement>
+ 
+diff --git a/tests/docs/configuration.py b/tests/docs/configuration.py
+index 7167555..992990c 100644
+--- a/tests/docs/configuration.py
++++ b/tests/docs/configuration.py
+@@ -1,4 +1,4 @@
+-"""Extracted shared tracker rules."""
++"""Configuration names exposed by nested settings models."""
+ 
+ from types import UnionType
+ from typing import Annotated, Union, get_args, get_origin
+diff --git a/tests/docs/test_setup_guide.py b/tests/docs/test_setup_guide.py
+index 300cc21..2ad8427 100644
+--- a/tests/docs/test_setup_guide.py
++++ b/tests/docs/test_setup_guide.py
+@@ -23,6 +23,7 @@ from kodezart.types.domain.operation import (
+     QueueState,
+     RecordDestination,
+ )
++from tests.docs.configuration import shipped_config_variables
+ 
+ REPO_ROOT = Path(__file__).resolve().parents[2]
+ README = REPO_ROOT / "README.md"
+@@ -172,9 +173,7 @@ def test_the_guide_states_the_credential_shape_boot_enforces() -> None:
+ 
+ def _shipped_variables() -> set[str]:
+     """Every environment name ``AppConfig`` actually reads."""
+-    from kodezart.core.config import AppConfig
+-
+-    return {f"KODEZART_{name.upper()}" for name in AppConfig.model_fields}
++    return shipped_config_variables()
+ 
+ 
+ def test_every_variable_the_guide_sets_is_a_shipped_config_field() -> None:
+diff --git a/tests/prompts/test_operation_config.py b/tests/prompts/test_operation_config.py
+index 040fa11..66536ff 100644
+--- a/tests/prompts/test_operation_config.py
++++ b/tests/prompts/test_operation_config.py
+@@ -120,7 +120,7 @@ def markdown_rows(heading: str) -> list[list[str]]:
+ # ---------------------------------------------------------------------------
+ 
+ 
+-def test_all_fourteen_fields_are_present_with_the_stated_types() -> None:
++def test_all_fields_are_present_with_the_stated_types() -> None:
+     """Field-by-field census: exact equality, never a subset check.
+ 
+     Grew by ``records`` under KOD-112 R3 fix 6 (the write-side destination
+@@ -138,6 +138,7 @@ def test_all_fourteen_fields_are_present_with_the_stated_types() -> None:
+         "teams",
+         "queue_states",
+         "workflow_states",
++        "marker_prefixes",
+         "repos",
+         "documents",
+         "records",
+diff --git a/tests/services/test_lifecycle_watcher.py b/tests/services/test_lifecycle_watcher.py
+index ae74e60..09ca91f 100644
+--- a/tests/services/test_lifecycle_watcher.py
++++ b/tests/services/test_lifecycle_watcher.py
+@@ -235,6 +235,7 @@ class TestTheTransitionsAJobStreamProduces:
+         )
+ 
+         assert [comment.body for comment in tracker.comments] == [
++            f"[fixture-outcome:{ISSUE}:job-0001]\n"
+             f"job job-0001 reached outcome {WorkflowOutcome.ci_passed.value}",
+         ]
+ 
+@@ -259,6 +260,7 @@ class TestTheTransitionsAJobStreamProduces:
+         assert tracker.queue_writes == []
+         exhausted = WorkflowOutcome.ci_failed_fix_budget_exhausted
+         assert [comment.body for comment in tracker.comments] == [
++            f"[fixture-outcome:{ISSUE}:job-0001]\n"
+             f"job job-0001 reached outcome {exhausted.value}",
+         ]
+ 
+@@ -757,6 +759,7 @@ class TestTheFailureArm:
+             (ISSUE, LifecycleStage.DONE),
+         ]
+         assert [comment.body for comment in tracker.comments] == [
++            f"[fixture-outcome:{ISSUE}:job-0001]\n"
+             f"job job-0001 reached outcome {WorkflowOutcome.ci_passed.value}",
+         ]
+ 
+@@ -782,6 +785,7 @@ class TestTheFailureArm:
+ 
+         assert tracker.restored_states == []
+         assert [comment.body for comment in tracker.comments] == [
++            f"[fixture-outcome:{ISSUE}:job-0001]\n"
+             f"job job-0001 reached outcome {WorkflowOutcome.loop_not_accepted.value}",
+         ]

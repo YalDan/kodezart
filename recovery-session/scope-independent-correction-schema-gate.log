@@ -1,0 +1,65 @@
+............................................................F........    [100%]
+=================================== FAILURES ===================================
+_ test_actual_schema_census_rejects_damaged_source[missing_schema-test_every_dispatch_site_is_accounted_for] _
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10c04f770>
+damage = 'missing_schema'
+guard = <function test_every_dispatch_site_is_accounted_for at 0x10c021a80>
+
+    @pytest.mark.parametrize(
+        "damage, guard",
+        [
+            (
+                "caller_schema",
+                test_shared_judgment_callers_keep_their_exact_schema_and_forwarding_chain,
+            ),
+            (
+                "bridge_schema",
+                test_shared_judgment_callers_keep_their_exact_schema_and_forwarding_chain,
+            ),
+            ("unrelated_forwarder", test_every_dispatch_site_sends_the_models_own_schema),
+            ("filter", test_every_dispatch_site_sends_the_models_own_schema),
+            ("missing_schema", test_every_dispatch_site_is_accounted_for),
+            ("empty_tree", test_every_dispatch_site_is_accounted_for),
+        ],
+    )
+    def test_actual_schema_census_rejects_damaged_source(monkeypatch, damage, guard):
+        sources = source_files()
+        guard()  # The complete current source passes the same guard first.
+        if damage == "caller_schema":
+            path = "chains/audit_pass.py"
+            old, new = (
+                "output_schema=AUDIT_CLAIM_SCHEMA",
+                "output_schema=AUDIT_MANDATE_SCHEMA",
+            )
+        elif damage == "bridge_schema":
+            path = "services/audit_sessions.py"
+            old, new = "output_schema=output_schema", "output_schema=AUDIT_CLAIM_SCHEMA"
+        elif damage == "filter":
+            path = "services/audit_sessions.py"
+            old, new = '"schema": output_schema', '"schema": sanitize_schema(output_schema)'
+        elif damage == "missing_schema":
+            path = "chains/authored_publication.py"
+            old, new = '"schema": PR_DESCRIPTION_SCHEMA', '"schema": COMMIT_MESSAGE_SCHEMA'
+        elif damage == "unrelated_forwarder":
+            sources["chains/unrelated.py"] = (
+                "async def judge_in_workspace():\n"
+                "    return runner.stream_in_workspace(\n"
+                '        output_format={"schema": output_schema})\n'
+            )
+            old = None
+        else:
+            sources.clear()
+            old = None
+        if old is not None:
+            assert sources[path].count(old) == 1
+            sources[path] = sources[path].replace(old, new)
+        monkeypatch.setattr(sys.modules[__name__], "source_files", lambda: sources)
+>       with pytest.raises(AssertionError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'AssertionError'>
+
+tests/types/test_wire_schemas.py:498: Failed
+=========================== short test summary info ============================
+FAILED tests/types/test_wire_schemas.py::test_actual_schema_census_rejects_damaged_source[missing_schema-test_every_dispatch_site_is_accounted_for]
+1 failed, 68 passed in 12.31s

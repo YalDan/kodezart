@@ -1,0 +1,2842 @@
+[
+  {
+    "file": "src/kodezart/adapters/linear_markers.py",
+    "symbol": "LinearMarkers",
+    "matches": [],
+    "status": "partial hunk normalization required"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_markers.py",
+    "symbol": "LinearMarkers.__init__",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_markers.py",
+    "symbol": "LinearMarkers._prefix",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_markers.py",
+    "symbol": "LinearMarkers._pattern",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_markers.py",
+    "symbol": "LinearMarkers.grant_pattern",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_markers.py",
+    "symbol": "LinearMarkers.grant_body",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_markers.py",
+    "symbol": "LinearMarkers.work_ref_marker_pattern",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_markers.py",
+    "symbol": "LinearMarkers.work_ref_pattern",
+    "matches": [],
+    "status": "partial hunk normalization required"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_markers.py",
+    "symbol": "LinearMarkers.work_ref_body",
+    "matches": [],
+    "status": "partial hunk normalization required"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_markers.py",
+    "symbol": "LinearMarkers.base_spec_pattern",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_markers.py",
+    "symbol": "LinearMarkers.base_spec_body",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_markers.py",
+    "symbol": "LinearMarkers.repository_pattern",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_TOOL_GET_USER",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_READ_TOOLS",
+    "matches": [],
+    "status": "partial hunk normalization required"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_may_resend",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_GrantKind",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_GrantKind.CLAIM",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_GrantKind.LEASE",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_GRANT_KIND_BY_VALUE",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_GrantState",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_GrantState.BID",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_GrantState.HELD",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_GrantState.VOID",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_GRANT_STATE_BY_VALUE",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_COMMENT_PARENT_BY_SCOPE_KIND",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_Target",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_Target.field",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_Target.key",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_WrittenMarker",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_WrittenMarker.target",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_WrittenMarker.comment_key",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_WrittenMarker.void_body",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_GrantMarker",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_GrantMarker.target",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_GrantMarker.comment_key",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_GrantMarker.created_at",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_GrantMarker.updated_at",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_GrantMarker.kind",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_GrantMarker.state",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_GrantMarker.holder",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_GrantMarker.nonce",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_GrantMarker.lease",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_GrantMarker.since",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_GrantMarker.deadline",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_GrantMarker.advertised",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_GrantMarker.lines",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_GrantMarker.expires_at",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_GrantMarker.in_force",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_GrantMarker.addresses",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_GrantMarker.order",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_GrantMarker.retracted",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_Granted",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_Granted.expires_at",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_OwnGrant",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_OwnGrant.order",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_OwnGrant.expires_at",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_own_grants",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_Conflict",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_Conflict.address",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_Conflict.holder",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_Conflict.settled",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_Refused",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_Refused.address",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_Refused.holder",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_Refused.settled",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_Refused.expires_at",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_Addressing",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_Addressing.kind",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_Addressing.encode",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_Addressing.target",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_Addressing.order",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_Addressing.lines",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_Addressing.targets",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_surface_line",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_surface_target",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_CLAIM_ADDRESSING",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_LEASE_ADDRESSING",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_retraction",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_CURRENT_USER_QUERY",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_BODY_SAVE_ARGUMENTS",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_STATE_SAVE_ARGUMENT",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "refuse_combined_issue_write",
+    "matches": [
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker",
+    "matches": [],
+    "status": "partial hunk normalization required"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker.__init__",
+    "matches": [],
+    "status": "partial hunk normalization required"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._saved_issue",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker.create_issue",
+    "matches": [],
+    "status": "partial hunk normalization required"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker.update_issue",
+    "matches": [],
+    "status": "partial hunk normalization required"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._save_state",
+    "matches": [],
+    "status": "partial hunk normalization required"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker.set_queue_state",
+    "matches": [],
+    "status": "partial hunk normalization required"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker.post_comment",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker.claim_issue",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker.renew_claim",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker.release_claim",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker.active_claim",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker.record_work_ref",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker.work_refs",
+    "matches": [],
+    "status": "partial hunk normalization required"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker.record_base_spec",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker.read_base_spec",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker.recorded_repository",
+    "matches": [],
+    "status": "partial hunk normalization required"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._comment_wires",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._call",
+    "matches": [
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._to_comment",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker.acquire_surfaces",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker.renew_surfaces",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker.release_surfaces",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._grant",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._withdraw_into",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._refuse_bid",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._own",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._extend",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._withdraw",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._conflict",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._grant_body",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._void_body",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._markers_on",
+    "matches": [
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._markers_from_wires",
+    "matches": [
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._parsed_marker",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._parse_seconds",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._malformed_marker",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._write_marker",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._edit_marker",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._delete_markers",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._stand_down",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._send",
+    "matches": [
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._retry_call",
+    "matches": [
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker.upsert_comment",
+    "matches": [
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._upsert_comment",
+    "matches": [
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._upsert_comment_once",
+    "matches": [
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._require_surface_holder",
+    "matches": [
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._assert_surface_holder",
+    "matches": [
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._comment_written",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._delete_own_comment",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker.writer_identity",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker.read_issue_movement",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._movement_comments",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_base_spec_marker",
+    "status": "removed base node",
+    "matches": []
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._wrote_by_reading",
+    "status": "removed base node",
+    "matches": []
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_ClaimMarker",
+    "status": "removed base node",
+    "matches": []
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._append_claim_marker",
+    "status": "removed base node",
+    "matches": []
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._unexpired_claim_markers",
+    "status": "removed base node",
+    "matches": []
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_ClaimMarker.comment_key",
+    "status": "removed base node",
+    "matches": []
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_REPO_MARKER",
+    "status": "removed base node",
+    "matches": []
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_WORK_REF_MARKER",
+    "status": "removed base node",
+    "matches": []
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_ClaimMarker.expires_at",
+    "status": "removed base node",
+    "matches": []
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_work_ref_marker",
+    "status": "removed base node",
+    "matches": []
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_ClaimMarker.holder",
+    "status": "removed base node",
+    "matches": []
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_claim_marker_body",
+    "status": "removed base node",
+    "matches": []
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_CLAIM_MARKER",
+    "status": "removed base node",
+    "matches": []
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_RETRY_BACKOFF_BASE",
+    "status": "removed base node",
+    "matches": []
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_BASE_SPEC_MARKER",
+    "status": "removed base node",
+    "matches": []
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "_ClaimMarker.created_at",
+    "status": "removed base node",
+    "matches": []
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_types.py",
+    "symbol": "LinearCommentWire",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_types.py",
+    "symbol": "LinearCommentWire.parent_id",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_types.py",
+    "symbol": "LinearCommentEntryWire",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_types.py",
+    "symbol": "LinearCommentEntryWire.updated_at",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_types.py",
+    "symbol": "LinearCommentListWire",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_types.py",
+    "symbol": "LinearCommentListWire.comments",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_types.py",
+    "symbol": "LinearCommentListWire.has_next_page",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_types.py",
+    "symbol": "LinearCommentListWire.cursor",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_types.py",
+    "symbol": "LinearPlanningIssueWire",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_types.py",
+    "symbol": "LinearPlanningIssueWire.labels",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_types.py",
+    "symbol": "LinearPlanningIssueWire.relations",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/composition/passes.py",
+    "symbol": "build_dispatch_passes",
+    "matches": [],
+    "status": "partial hunk normalization required"
+  },
+  {
+    "file": "src/kodezart/composition/records.py",
+    "symbol": "build_run_recorder",
+    "matches": [],
+    "status": "partial hunk normalization required"
+  },
+  {
+    "file": "src/kodezart/composition/tracker.py",
+    "symbol": "CREDENTIAL_FIELD",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/composition/tracker.py",
+    "symbol": "make_mcp_tool_caller",
+    "matches": [],
+    "status": "partial hunk normalization required"
+  },
+  {
+    "file": "src/kodezart/composition/tracker.py",
+    "symbol": "build_tracker",
+    "matches": [],
+    "status": "partial hunk normalization required"
+  },
+  {
+    "file": "src/kodezart/composition/tracker.py",
+    "symbol": "boot_tracker",
+    "matches": [],
+    "status": "partial hunk normalization required"
+  },
+  {
+    "file": "src/kodezart/composition/tracker.py",
+    "symbol": "AGENT_IDENTITY_FIELD",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/composition/tracker.py",
+    "symbol": "ATTRIBUTABLE_WRITER",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/composition/tracker.py",
+    "symbol": "refuse_unattributable_writer",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/core/backoff.py",
+    "symbol": "_RANDOM",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/core/backoff.py",
+    "symbol": "RetryPolicy",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/core/backoff.py",
+    "symbol": "RetryPolicy.model_config",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/core/backoff.py",
+    "symbol": "RetryPolicy.attempts",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/core/backoff.py",
+    "symbol": "RetryPolicy.initial_delay",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/core/backoff.py",
+    "symbol": "RetryPolicy.factor",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/core/backoff.py",
+    "symbol": "RetryPolicy.jitter",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/core/backoff.py",
+    "symbol": "RetryPolicy.delay",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/core/config.py",
+    "symbol": "AppConfig",
+    "matches": [],
+    "status": "partial hunk normalization required"
+  },
+  {
+    "file": "src/kodezart/core/config.py",
+    "symbol": "AppConfig.model_config",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/core/config.py",
+    "symbol": "AppConfig.tracker",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/core/config.py",
+    "symbol": "AppConfig.settings_customise_sources",
+    "matches": [],
+    "status": "partial hunk normalization required"
+  },
+  {
+    "file": "src/kodezart/core/config.py",
+    "symbol": "AppConfig.tracker_mcp_call_timeout_seconds",
+    "status": "removed base node",
+    "matches": []
+  },
+  {
+    "file": "src/kodezart/core/config.py",
+    "symbol": "AppConfig.tracker_mcp_auth_scheme",
+    "status": "removed base node",
+    "matches": []
+  },
+  {
+    "file": "src/kodezart/core/config.py",
+    "symbol": "AppConfig.tracker_timeout_seconds",
+    "status": "removed base node",
+    "matches": []
+  },
+  {
+    "file": "src/kodezart/core/config.py",
+    "symbol": "AppConfig.tracker_token",
+    "status": "removed base node",
+    "matches": []
+  },
+  {
+    "file": "src/kodezart/core/config.py",
+    "symbol": "AppConfig.tracker_max_retries",
+    "status": "removed base node",
+    "matches": []
+  },
+  {
+    "file": "src/kodezart/core/config.py",
+    "symbol": "AppConfig.tracker_mcp_server_url",
+    "status": "removed base node",
+    "matches": []
+  },
+  {
+    "file": "src/kodezart/core/config.py",
+    "symbol": "AppConfig.tracker_mcp_server_name",
+    "status": "removed base node",
+    "matches": []
+  },
+  {
+    "file": "src/kodezart/core/config.py",
+    "symbol": "AppConfig.tracker_mcp_auth_header",
+    "status": "removed base node",
+    "matches": []
+  },
+  {
+    "file": "src/kodezart/core/config.py",
+    "symbol": "AppConfig.tracker_mcp_error_detail_limit",
+    "status": "removed base node",
+    "matches": []
+  },
+  {
+    "file": "src/kodezart/core/config.py",
+    "symbol": "AppConfig.tracker_mcp_sse_read_timeout_seconds",
+    "status": "removed base node",
+    "matches": []
+  },
+  {
+    "file": "src/kodezart/core/config.py",
+    "symbol": "AppConfig.tracker_retry_backoff_factor",
+    "status": "removed base node",
+    "matches": []
+  },
+  {
+    "file": "src/kodezart/core/errors.py",
+    "symbol": "TrackerWriterAttributionError",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/core/errors.py",
+    "symbol": "TrackerWriterAttributionError.__init__",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/core/owned_tasks.py",
+    "symbol": "finish_owned",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/core/owned_tasks.py",
+    "symbol": "settle",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/core/protocols.py",
+    "symbol": "TrackerPort",
+    "matches": [],
+    "status": "partial hunk normalization required"
+  },
+  {
+    "file": "src/kodezart/core/protocols.py",
+    "symbol": "TrackerPort.claim_issue",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/core/protocols.py",
+    "symbol": "TrackerPort.renew_claim",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/core/protocols.py",
+    "symbol": "TrackerPort.acquire_surfaces",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/core/protocols.py",
+    "symbol": "TrackerPort.renew_surfaces",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/core/protocols.py",
+    "symbol": "TrackerPort.release_surfaces",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/core/protocols.py",
+    "symbol": "TrackerPort.writer_identity",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/core/protocols.py",
+    "symbol": "TrackerPort.read_issue_movement",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/core/protocols.py",
+    "symbol": "TrackerPort.upsert_comment",
+    "matches": [
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/core/tracker_settings.py",
+    "symbol": "TrackerSettings",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/core/tracker_settings.py",
+    "symbol": "TrackerSettings.model_config",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/core/tracker_settings.py",
+    "symbol": "TrackerSettings.backend",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/core/tracker_settings.py",
+    "symbol": "TrackerSettings.server_name",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/core/tracker_settings.py",
+    "symbol": "TrackerSettings.server_url",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/core/tracker_settings.py",
+    "symbol": "TrackerSettings.auth_header",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/core/tracker_settings.py",
+    "symbol": "TrackerSettings.auth_scheme",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/core/tracker_settings.py",
+    "symbol": "TrackerSettings.token",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/core/tracker_settings.py",
+    "symbol": "TrackerSettings.timeout_seconds",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/core/tracker_settings.py",
+    "symbol": "TrackerSettings.call_timeout_seconds",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/core/tracker_settings.py",
+    "symbol": "TrackerSettings.sse_read_timeout_seconds",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/core/tracker_settings.py",
+    "symbol": "TrackerSettings.error_detail_limit",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/core/tracker_settings.py",
+    "symbol": "TrackerSettings.max_retries",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/core/tracker_settings.py",
+    "symbol": "TrackerSettings.retry_backoff_factor",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/core/tracker_settings.py",
+    "symbol": "TrackerSettings.surface_lease_seconds",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/domain/comment_markers.py",
+    "symbol": "configured_marker_prefix",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/domain/comment_markers.py",
+    "symbol": "compose_comment_marker",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/domain/errors.py",
+    "symbol": "SurfaceLeaseError",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/domain/errors.py",
+    "symbol": "SurfaceLeaseError.__init__",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/domain/errors.py",
+    "symbol": "SurfaceLeaseLostError",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/domain/errors.py",
+    "symbol": "SurfaceLeaseLostError.__init__",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/domain/errors.py",
+    "symbol": "SurfaceWriteAttributionError",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/domain/errors.py",
+    "symbol": "SurfaceWriteAttributionError.__init__",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/domain/errors.py",
+    "symbol": "DuplicateCommentMarkerError",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/domain/errors.py",
+    "symbol": "DuplicateCommentMarkerError.__init__",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/domain/errors.py",
+    "symbol": "StaleCommentWriteError",
+    "matches": [
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/domain/errors.py",
+    "symbol": "StaleCommentWriteError.__init__",
+    "matches": [
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/domain/self_writes.py",
+    "symbol": "matches_own_mutations",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/domain/tracker_writes.py",
+    "symbol": "marked_comment_body",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/domain/tracker_writes.py",
+    "symbol": "comment_under_marker",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/domain/tracker_writes.py",
+    "symbol": "require_expected_comment",
+    "matches": [
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/main.py",
+    "symbol": "lifespan",
+    "matches": [],
+    "status": "partial hunk normalization required"
+  },
+  {
+    "file": "src/kodezart/services/pass_gate.py",
+    "symbol": "PassGate",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/services/pass_gate.py",
+    "symbol": "PassGate.__init__",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/services/pass_gate.py",
+    "symbol": "PassGate.delta",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/services/pass_gate.py",
+    "symbol": "PassGate.rearm",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/services/pass_gate.py",
+    "symbol": "PassGate._issue_delta",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/services/run_surface_lease.py",
+    "symbol": "RunSurfaceLease",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/services/run_surface_lease.py",
+    "symbol": "RunSurfaceLease.__init__",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/services/run_surface_lease.py",
+    "symbol": "RunSurfaceLease.__aenter__",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/services/run_surface_lease.py",
+    "symbol": "RunSurfaceLease.renew",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/services/run_surface_lease.py",
+    "symbol": "RunSurfaceLease._release",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/services/run_surface_lease.py",
+    "symbol": "RunSurfaceLease.__aexit__",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/services/tracker_lifecycle.py",
+    "symbol": "TrackerLifecycleWriter",
+    "matches": [],
+    "status": "partial hunk normalization required"
+  },
+  {
+    "file": "src/kodezart/services/tracker_lifecycle.py",
+    "symbol": "TrackerLifecycleWriter.__init__",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/services/tracker_lifecycle.py",
+    "symbol": "TrackerLifecycleWriter.on_terminal_outcome",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/types/domain/dispatch.py",
+    "symbol": "SelfWriteLedger",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/types/domain/dispatch.py",
+    "symbol": "SelfWriteLedger.__init__",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/types/domain/dispatch.py",
+    "symbol": "SelfWriteLedger.record_mutation",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/types/domain/dispatch.py",
+    "symbol": "SelfWriteLedger.receipts",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/types/domain/dispatch.py",
+    "symbol": "_SELF_WRITE_RECEIPT_LIMIT",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/types/domain/operation.py",
+    "symbol": "OperationConfig",
+    "matches": [],
+    "status": "partial hunk normalization required"
+  },
+  {
+    "file": "src/kodezart/types/domain/operation.py",
+    "symbol": "OperationConfig._check_structure",
+    "matches": [],
+    "status": "partial hunk normalization required"
+  },
+  {
+    "file": "src/kodezart/types/domain/operation.py",
+    "symbol": "OperationConfig.marker_prefixes",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/types/domain/operation.py",
+    "symbol": "FIELD_OWNERSHIP",
+    "matches": [],
+    "status": "partial hunk normalization required"
+  },
+  {
+    "file": "src/kodezart/types/domain/self_writes.py",
+    "symbol": "FieldValues",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/types/domain/self_writes.py",
+    "symbol": "CommentValues",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/types/domain/self_writes.py",
+    "symbol": "field_value",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/types/domain/self_writes.py",
+    "symbol": "field_values",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/types/domain/self_writes.py",
+    "symbol": "IssueMovementSnapshot",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/types/domain/self_writes.py",
+    "symbol": "IssueMovementSnapshot.issue_key",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/types/domain/self_writes.py",
+    "symbol": "IssueMovementSnapshot.updated_at",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/types/domain/self_writes.py",
+    "symbol": "IssueMovementSnapshot.fields",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/types/domain/self_writes.py",
+    "symbol": "IssueMovementSnapshot.comments",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/types/domain/self_writes.py",
+    "symbol": "OwnMutation",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/types/domain/self_writes.py",
+    "symbol": "OwnMutation.fields",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/types/domain/self_writes.py",
+    "symbol": "OwnMutation.expected_fields",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/types/domain/self_writes.py",
+    "symbol": "OwnMutation.additions",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/types/domain/self_writes.py",
+    "symbol": "OwnMutation.created",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/types/domain/self_writes.py",
+    "symbol": "OwnMutation.edited",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/types/domain/self_writes.py",
+    "symbol": "OwnMutation.deleted",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/types/domain/tracker.py",
+    "symbol": "ClaimStatus",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/types/domain/tracker.py",
+    "symbol": "ClaimStatus.CONTENDED",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/types/domain/tracker.py",
+    "symbol": "TrackerComment",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/types/domain/tracker.py",
+    "symbol": "TrackerComment.reply_to",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/types/domain/tracker.py",
+    "symbol": "ClaimResult",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  },
+  {
+    "file": "src/kodezart/types/domain/tracker.py",
+    "symbol": "ClaimResult.current_holder",
+    "matches": [
+      "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+      "89b3751f0f1a7a20d0eb9c9d7c23001b9fce3735",
+      "76478e23bd1ebe7af9f35162a74971fdd0788aab",
+      "8fc655d2ddca93357f9fc9475b41839d62652037"
+    ],
+    "status": "exact AST"
+  }
+]

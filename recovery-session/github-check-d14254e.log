@@ -1,0 +1,1333 @@
+check	Set up job	﻿2026-09-12T17:02:00.1097025Z Current runner version: '2.337.0'
+check	Set up job	2026-09-12T17:02:00.1129148Z ##[group]Runner Image Provisioner
+check	Set up job	2026-09-12T17:02:00.1130359Z Hosted Compute Agent
+check	Set up job	2026-09-12T17:02:00.1131212Z Version: 20260828.587
+check	Set up job	2026-09-12T17:02:00.1132125Z Commit: abac92662cab4cc7352de4f9f9d2e2419aad9c29
+check	Set up job	2026-09-12T17:02:00.1133497Z Build Date: 2026-08-28T16:44:25Z
+check	Set up job	2026-09-12T17:02:00.1134624Z Worker ID: {6420d08a-4477-4648-8450-b133e7660fb5}
+check	Set up job	2026-09-12T17:02:00.1135724Z Azure Region: eastus
+check	Set up job	2026-09-12T17:02:00.1136561Z ##[endgroup]
+check	Set up job	2026-09-12T17:02:00.1138482Z ##[group]Operating System
+check	Set up job	2026-09-12T17:02:00.1139549Z Ubuntu
+check	Set up job	2026-09-12T17:02:00.1140284Z 24.04.5
+check	Set up job	2026-09-12T17:02:00.1141055Z LTS
+check	Set up job	2026-09-12T17:02:00.1141802Z ##[endgroup]
+check	Set up job	2026-09-12T17:02:00.1142590Z ##[group]Runner Image
+check	Set up job	2026-09-12T17:02:00.1143834Z Image: ubuntu-24.04
+check	Set up job	2026-09-12T17:02:00.1144677Z Version: 20260907.300.1
+check	Set up job	2026-09-12T17:02:00.1146300Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260907.300/images/ubuntu/Ubuntu2404-Readme.md
+check	Set up job	2026-09-12T17:02:00.1148953Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260907.300
+check	Set up job	2026-09-12T17:02:00.1150554Z ##[endgroup]
+check	Set up job	2026-09-12T17:02:00.1152135Z ##[group]GITHUB_TOKEN Permissions
+check	Set up job	2026-09-12T17:02:00.1154752Z Contents: read
+check	Set up job	2026-09-12T17:02:00.1155608Z Metadata: read
+check	Set up job	2026-09-12T17:02:00.1156541Z ##[endgroup]
+check	Set up job	2026-09-12T17:02:00.1159125Z Secret source: Actions
+check	Set up job	2026-09-12T17:02:00.1160511Z Cache mode: write
+check	Set up job	2026-09-12T17:02:00.1161478Z Prepare workflow directory
+check	Set up job	2026-09-12T17:02:00.1569071Z Prepare all required actions
+check	Set up job	2026-09-12T17:02:00.1632297Z Getting action download info
+check	Set up job	2026-09-12T17:02:00.3836454Z Download action repository 'actions/checkout@v4' (SHA:11d5960a326750d5838078e36cf38b85af677262)
+check	Set up job	2026-09-12T17:02:00.5056000Z Download action repository 'astral-sh/setup-uv@v6' (SHA:d0cc045d04ccac9d8b7881df0226f9e82c39688e)
+check	Set up job	2026-09-12T17:02:00.7185740Z Download action repository 'actions/setup-node@v4' (SHA:49933ea5288caeca8642d1e84afbd3f7d6820020)
+check	Set up job	2026-09-12T17:02:00.9025831Z Complete job name: check
+check	Run actions/checkout@v4	﻿2026-09-12T17:02:00.9858686Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+check	Run actions/checkout@v4	2026-09-12T17:02:00.9867789Z ##[group]Run actions/checkout@v4
+check	Run actions/checkout@v4	2026-09-12T17:02:00.9868543Z with:
+check	Run actions/checkout@v4	2026-09-12T17:02:00.9868958Z   fetch-depth: 0
+check	Run actions/checkout@v4	2026-09-12T17:02:00.9869412Z   repository: YalDan/kodezart
+check	Run actions/checkout@v4	2026-09-12T17:02:00.9873502Z   token: ***
+check	Run actions/checkout@v4	2026-09-12T17:02:00.9873957Z   ssh-strict: true
+check	Run actions/checkout@v4	2026-09-12T17:02:00.9874395Z   ssh-user: git
+check	Run actions/checkout@v4	2026-09-12T17:02:00.9874831Z   persist-credentials: true
+check	Run actions/checkout@v4	2026-09-12T17:02:00.9875310Z   clean: true
+check	Run actions/checkout@v4	2026-09-12T17:02:00.9875742Z   sparse-checkout-cone-mode: true
+check	Run actions/checkout@v4	2026-09-12T17:02:00.9876255Z   fetch-tags: false
+check	Run actions/checkout@v4	2026-09-12T17:02:00.9876685Z   show-progress: true
+check	Run actions/checkout@v4	2026-09-12T17:02:00.9877109Z   lfs: false
+check	Run actions/checkout@v4	2026-09-12T17:02:00.9877523Z   submodules: false
+check	Run actions/checkout@v4	2026-09-12T17:02:00.9877993Z   set-safe-directory: true
+check	Run actions/checkout@v4	2026-09-12T17:02:00.9878480Z   allow-unsafe-pr-checkout: false
+check	Run actions/checkout@v4	2026-09-12T17:02:00.9879383Z ##[endgroup]
+check	Run actions/checkout@v4	2026-09-12T17:02:01.0920050Z Syncing repository: YalDan/kodezart
+check	Run actions/checkout@v4	2026-09-12T17:02:01.0922502Z ##[group]Getting Git version info
+check	Run actions/checkout@v4	2026-09-12T17:02:01.0923869Z Working directory is '/home/runner/work/kodezart/kodezart'
+check	Run actions/checkout@v4	2026-09-12T17:02:01.0925446Z [command]/usr/bin/git version
+check	Run actions/checkout@v4	2026-09-12T17:02:01.1059023Z git version 2.55.0
+check	Run actions/checkout@v4	2026-09-12T17:02:01.1124466Z ##[endgroup]
+check	Run actions/checkout@v4	2026-09-12T17:02:01.1140969Z Temporarily overriding HOME='/home/runner/work/_temp/3595bec6-3e34-40be-9ed1-0bdf3b3770ca' before making global git config changes
+check	Run actions/checkout@v4	2026-09-12T17:02:01.1151655Z Adding repository directory to the temporary git global config as a safe directory
+check	Run actions/checkout@v4	2026-09-12T17:02:01.1154211Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/kodezart/kodezart
+check	Run actions/checkout@v4	2026-09-12T17:02:01.1212551Z Deleting the contents of '/home/runner/work/kodezart/kodezart'
+check	Run actions/checkout@v4	2026-09-12T17:02:01.1215635Z ##[group]Initializing the repository
+check	Run actions/checkout@v4	2026-09-12T17:02:01.1217158Z [command]/usr/bin/git init /home/runner/work/kodezart/kodezart
+check	Run actions/checkout@v4	2026-09-12T17:02:01.1336769Z hint: Using 'master' as the name for the initial branch. This default branch name
+check	Run actions/checkout@v4	2026-09-12T17:02:01.1340012Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+check	Run actions/checkout@v4	2026-09-12T17:02:01.1342182Z hint: to use in all of your new repositories, which will suppress this warning,
+check	Run actions/checkout@v4	2026-09-12T17:02:01.1344045Z hint: call:
+check	Run actions/checkout@v4	2026-09-12T17:02:01.1345112Z hint:
+check	Run actions/checkout@v4	2026-09-12T17:02:01.1347361Z hint: 	git config --global init.defaultBranch <name>
+check	Run actions/checkout@v4	2026-09-12T17:02:01.1348772Z hint:
+check	Run actions/checkout@v4	2026-09-12T17:02:01.1351638Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+check	Run actions/checkout@v4	2026-09-12T17:02:01.1353811Z hint: 'development'. The just-created branch can be renamed via this command:
+check	Run actions/checkout@v4	2026-09-12T17:02:01.1355467Z hint:
+check	Run actions/checkout@v4	2026-09-12T17:02:01.1356805Z hint: 	git branch -m <name>
+check	Run actions/checkout@v4	2026-09-12T17:02:01.1358346Z hint:
+check	Run actions/checkout@v4	2026-09-12T17:02:01.1359714Z hint: Disable this message with "git config set advice.defaultBranchName false"
+check	Run actions/checkout@v4	2026-09-12T17:02:01.1361824Z Initialized empty Git repository in /home/runner/work/kodezart/kodezart/.git/
+check	Run actions/checkout@v4	2026-09-12T17:02:01.1365669Z [command]/usr/bin/git remote add origin https://github.com/YalDan/kodezart
+check	Run actions/checkout@v4	2026-09-12T17:02:01.1415535Z ##[endgroup]
+check	Run actions/checkout@v4	2026-09-12T17:02:01.1417078Z ##[group]Disabling automatic garbage collection
+check	Run actions/checkout@v4	2026-09-12T17:02:01.1419168Z [command]/usr/bin/git config --local gc.auto 0
+check	Run actions/checkout@v4	2026-09-12T17:02:01.1454601Z ##[endgroup]
+check	Run actions/checkout@v4	2026-09-12T17:02:01.1456293Z ##[group]Setting up auth
+check	Run actions/checkout@v4	2026-09-12T17:02:01.1463579Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+check	Run actions/checkout@v4	2026-09-12T17:02:01.1506058Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+check	Run actions/checkout@v4	2026-09-12T17:02:01.1947741Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+check	Run actions/checkout@v4	2026-09-12T17:02:01.2011085Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+check	Run actions/checkout@v4	2026-09-12T17:02:01.2244423Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+check	Run actions/checkout@v4	2026-09-12T17:02:01.2280330Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+check	Run actions/checkout@v4	2026-09-12T17:02:01.2505260Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+check	Run actions/checkout@v4	2026-09-12T17:02:01.2543720Z ##[endgroup]
+check	Run actions/checkout@v4	2026-09-12T17:02:01.2545215Z ##[group]Fetching the repository
+check	Run actions/checkout@v4	2026-09-12T17:02:01.2556121Z [command]/usr/bin/git -c protocol.version=2 fetch --prune --no-recurse-submodules origin +refs/heads/*:refs/remotes/origin/* +refs/tags/*:refs/tags/* +4b57d0970dd1c8f52f19f593a8f0517d00c0a1e3:refs/remotes/pull/118/merge
+check	Run actions/checkout@v4	2026-09-12T17:02:02.3967536Z From https://github.com/YalDan/kodezart
+check	Run actions/checkout@v4	2026-09-12T17:02:02.3969695Z  * [new branch]      codex/kod-73-scope-input                 -> origin/codex/kod-73-scope-input
+check	Run actions/checkout@v4	2026-09-12T17:02:02.3972015Z  * [new branch]      codex/v03-audit-evidence-consumers       -> origin/codex/v03-audit-evidence-consumers
+check	Run actions/checkout@v4	2026-09-12T17:02:02.3974669Z  * [new branch]      codex/v03-audit-record-pr-replay         -> origin/codex/v03-audit-record-pr-replay
+check	Run actions/checkout@v4	2026-09-12T17:02:02.3977019Z  * [new branch]      codex/v03-ci-locked-uv                   -> origin/codex/v03-ci-locked-uv
+check	Run actions/checkout@v4	2026-09-12T17:02:02.3979313Z  * [new branch]      codex/v03-criteria-mandates-terminal     -> origin/codex/v03-criteria-mandates-terminal
+check	Run actions/checkout@v4	2026-09-12T17:02:02.3981634Z  * [new branch]      codex/v03-fire-audit-consumers           -> origin/codex/v03-fire-audit-consumers
+check	Run actions/checkout@v4	2026-09-12T17:02:02.3984143Z  * [new branch]      codex/v03-fire-criterion-consumers       -> origin/codex/v03-fire-criterion-consumers
+check	Run actions/checkout@v4	2026-09-12T17:02:02.3987000Z  * [new branch]      codex/v03-focused-readers-and-admission  -> origin/codex/v03-focused-readers-and-admission
+check	Run actions/checkout@v4	2026-09-12T17:02:02.3989379Z  * [new branch]      codex/v03-gap-revisions-alarms           -> origin/codex/v03-gap-revisions-alarms
+check	Run actions/checkout@v4	2026-09-12T17:02:02.3991295Z  * [new branch]      codex/v03-m1-scope-ports                 -> origin/codex/v03-m1-scope-ports
+check	Run actions/checkout@v4	2026-09-12T17:02:02.3993562Z  * [new branch]      codex/v03-mandate-evidence-terminal      -> origin/codex/v03-mandate-evidence-terminal
+check	Run actions/checkout@v4	2026-09-12T17:02:02.3995957Z  * [new branch]      codex/v03-native-audit-fire-preparation  -> origin/codex/v03-native-audit-fire-preparation
+check	Run actions/checkout@v4	2026-09-12T17:02:02.3998369Z  * [new branch]      codex/v03-native-ruling-consumers        -> origin/codex/v03-native-ruling-consumers
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4000797Z  * [new branch]      codex/v03-native-session-writeback       -> origin/codex/v03-native-session-writeback
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4003938Z  * [new branch]      codex/v03-native-supervisor-collectors   -> origin/codex/v03-native-supervisor-collectors
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4006815Z  * [new branch]      codex/v03-orchestration-foundations      -> origin/codex/v03-orchestration-foundations
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4009406Z  * [new branch]      codex/v03-organize-gap-lane-reports      -> origin/codex/v03-organize-gap-lane-reports
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4011951Z  * [new branch]      codex/v03-permissions-and-fixed-admission -> origin/codex/v03-permissions-and-fixed-admission
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4014821Z  * [new branch]      codex/v03-readers-prompts-fire-log       -> origin/codex/v03-readers-prompts-fire-log
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4017199Z  * [new branch]      codex/v03-ready-spec-escalations         -> origin/codex/v03-ready-spec-escalations
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4019427Z  * [new branch]      codex/v03-recovery-integration           -> origin/codex/v03-recovery-integration
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4021740Z  * [new branch]      codex/v03-recovery-rulings-writeback     -> origin/codex/v03-recovery-rulings-writeback
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4024343Z  * [new branch]      codex/v03-runtime-claims-fire-spec       -> origin/codex/v03-runtime-claims-fire-spec
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4026970Z  * [new branch]      codex/v03-runtime-simplification         -> origin/codex/v03-runtime-simplification
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4029231Z  * [new branch]      codex/v03-scope-native-consumers         -> origin/codex/v03-scope-native-consumers
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4031623Z  * [new branch]      codex/v03-session-admission-ci-delivery  -> origin/codex/v03-session-admission-ci-delivery
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4034550Z  * [new branch]      codex/v03-session-failures-and-agent-settings -> origin/codex/v03-session-failures-and-agent-settings
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4037264Z  * [new branch]      codex/v03-shared-policies-and-sessions   -> origin/codex/v03-shared-policies-and-sessions
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4039749Z  * [new branch]      codex/v03-tracker-identity-admission     -> origin/codex/v03-tracker-identity-admission
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4042198Z  * [new branch]      codex/v03-typed-runtime-boundaries       -> origin/codex/v03-typed-runtime-boundaries
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4044864Z  * [new branch]      codex/v03-union-record-delivery          -> origin/codex/v03-union-record-delivery
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4048975Z  * [new branch]      codex/v03-union-workspace-protection     -> origin/codex/v03-union-workspace-protection
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4051610Z  * [new branch]      codex/v03-workflow-phases-and-settings   -> origin/codex/v03-workflow-phases-and-settings
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4054246Z  * [new branch]      kodezart/kod86-probes                    -> origin/kodezart/kod86-probes
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4056496Z  * [new branch]      kodezart/pr1-adapter-reliability         -> origin/kodezart/pr1-adapter-reliability
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4059223Z  * [new branch]      kodezart/pr2-job-lifecycle               -> origin/kodezart/pr2-job-lifecycle
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4062518Z  * [new branch]      kodezart/pr5-orchestration-foundation    -> origin/kodezart/pr5-orchestration-foundation
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4066133Z  * [new branch]      kodezart/v03-integration                 -> origin/kodezart/v03-integration
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4068844Z  * [new branch]      kodezart/v03-kill-class                  -> origin/kodezart/v03-kill-class
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4071481Z  * [new branch]      kodezart/v03-lane-delivery               -> origin/kodezart/v03-lane-delivery
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4074351Z  * [new branch]      kodezart/v03-lane-lifecycle              -> origin/kodezart/v03-lane-lifecycle
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4076941Z  * [new branch]      kodezart/v03-lane-organize               -> origin/kodezart/v03-lane-organize
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4079540Z  * [new branch]      kodezart/v03-lane-planner                -> origin/kodezart/v03-lane-planner
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4082130Z  * [new branch]      kodezart/v03-lane-runshape               -> origin/kodezart/v03-lane-runshape
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4152166Z  * [new branch]      kodezart/v03-live-ownership              -> origin/kodezart/v03-live-ownership
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4154940Z  * [new branch]      kodezart/v03-r1-02                       -> origin/kodezart/v03-r1-02
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4157277Z  * [new branch]      kodezart/v03-r1-04                       -> origin/kodezart/v03-r1-04
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4159524Z  * [new branch]      kodezart/v03-r1-06                       -> origin/kodezart/v03-r1-06
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4161756Z  * [new branch]      kodezart/v03-r2-01                       -> origin/kodezart/v03-r2-01
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4164312Z  * [new branch]      kodezart/v03-trunk                       -> origin/kodezart/v03-trunk
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4166699Z  * [new branch]      kodezart/v03-w2-01                       -> origin/kodezart/v03-w2-01
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4168934Z  * [new branch]      kodezart/v03-w2-02                       -> origin/kodezart/v03-w2-02
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4171099Z  * [new branch]      kodezart/v03-w2-04                       -> origin/kodezart/v03-w2-04
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4173108Z  * [new branch]      main                                     -> origin/main
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4175479Z  * [new tag]         v0.1.0                                   -> v0.1.0
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4177111Z  * [new tag]         v0.1.1                                   -> v0.1.1
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4178687Z  * [new tag]         v0.1.2                                   -> v0.1.2
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4180222Z  * [new tag]         v0.1.3                                   -> v0.1.3
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4181775Z  * [new tag]         v0.1.4                                   -> v0.1.4
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4183520Z  * [new tag]         v0.2.0                                   -> v0.2.0
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4185211Z  * [new ref]         4b57d0970dd1c8f52f19f593a8f0517d00c0a1e3 -> pull/118/merge
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4188672Z ##[endgroup]
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4190086Z ##[group]Determining the checkout info
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4191707Z ##[endgroup]
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4192682Z [command]/usr/bin/git sparse-checkout disable
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4195964Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4199299Z ##[group]Checking out the ref
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4200827Z [command]/usr/bin/git checkout --progress --force refs/remotes/pull/118/merge
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4794080Z Note: switching to 'refs/remotes/pull/118/merge'.
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4794983Z 
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4795563Z You are in 'detached HEAD' state. You can look around, make experimental
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4796762Z changes and commit them, and you can discard any commits you make in this
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4797926Z state without impacting any branches by switching back to a branch.
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4798642Z 
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4799099Z If you want to create a new branch to retain commits you create, you may
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4800199Z do so (now or later) by using -c with the switch command. Example:
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4800843Z 
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4801108Z   git switch -c <new-branch-name>
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4801536Z 
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4802097Z Or undo this operation with:
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4802501Z 
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4802744Z   git switch -
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4803049Z 
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4803885Z Turn off this advice by setting config variable advice.detachedHead to false
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4804688Z 
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4805592Z HEAD is now at 4b57d09 Merge d14254e1b64b581693fd1032adbdaac57ccc9ce5 into 4661a24b599d75503a997f3ce122f3ad2da77048
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4808840Z ##[endgroup]
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4854224Z [command]/usr/bin/git log -1 --format=%H
+check	Run actions/checkout@v4	2026-09-12T17:02:02.4880196Z 4b57d0970dd1c8f52f19f593a8f0517d00c0a1e3
+check	Run astral-sh/setup-uv@v6	﻿2026-09-12T17:02:02.5202541Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+check	Run astral-sh/setup-uv@v6	2026-09-12T17:02:02.5206496Z ##[group]Run astral-sh/setup-uv@v6
+check	Run astral-sh/setup-uv@v6	2026-09-12T17:02:02.5207175Z with:
+check	Run astral-sh/setup-uv@v6	2026-09-12T17:02:02.5207683Z   version: 0.11.6
+check	Run astral-sh/setup-uv@v6	2026-09-12T17:02:02.5208233Z   enable-cache: true
+check	Run astral-sh/setup-uv@v6	2026-09-12T17:02:02.5208778Z   activate-environment: false
+check	Run astral-sh/setup-uv@v6	2026-09-12T17:02:02.5209525Z   working-directory: /home/runner/work/kodezart/kodezart
+check	Run astral-sh/setup-uv@v6	2026-09-12T17:02:02.5210359Z   server-url: https://github.com
+check	Run astral-sh/setup-uv@v6	2026-09-12T17:02:02.5215598Z   github-token: ***
+check	Run astral-sh/setup-uv@v6	2026-09-12T17:02:02.5216997Z   cache-dependency-glob: **/*requirements*.txt
+check	Run astral-sh/setup-uv@v6	**/*requirements*.in
+check	Run astral-sh/setup-uv@v6	**/*constraints*.txt
+check	Run astral-sh/setup-uv@v6	**/*constraints*.in
+check	Run astral-sh/setup-uv@v6	**/pyproject.toml
+check	Run astral-sh/setup-uv@v6	**/uv.lock
+check	Run astral-sh/setup-uv@v6	**/*.py.lock
+check	Run astral-sh/setup-uv@v6	
+check	Run astral-sh/setup-uv@v6	2026-09-12T17:02:02.5218564Z   restore-cache: true
+check	Run astral-sh/setup-uv@v6	2026-09-12T17:02:02.5219134Z   save-cache: true
+check	Run astral-sh/setup-uv@v6	2026-09-12T17:02:02.5219637Z   prune-cache: true
+check	Run astral-sh/setup-uv@v6	2026-09-12T17:02:02.5220172Z   ignore-nothing-to-cache: false
+check	Run astral-sh/setup-uv@v6	2026-09-12T17:02:02.5220804Z   ignore-empty-workdir: false
+check	Run astral-sh/setup-uv@v6	2026-09-12T17:02:02.5221427Z   add-problem-matchers: true
+check	Run astral-sh/setup-uv@v6	2026-09-12T17:02:02.5221994Z ##[endgroup]
+check	Run astral-sh/setup-uv@v6	2026-09-12T17:02:02.7058484Z (node:2248) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+check	Run astral-sh/setup-uv@v6	2026-09-12T17:02:02.7060410Z (Use `node --trace-deprecation ...` to show where the warning was created)
+check	Run astral-sh/setup-uv@v6	2026-09-12T17:02:02.7185675Z manifest-file not provided, reading from local file.
+check	Run astral-sh/setup-uv@v6	2026-09-12T17:02:02.7230479Z manifest-file does not contain version 0.11.6, arch x86_64, platform unknown-linux-gnu. Falling back to GitHub releases.
+check	Run astral-sh/setup-uv@v6	2026-09-12T17:02:02.7232978Z Downloading uv from "https://github.com/astral-sh/uv/releases/download/0.11.6/uv-x86_64-unknown-linux-gnu.tar.gz" ...
+check	Run astral-sh/setup-uv@v6	2026-09-12T17:02:03.0639169Z [command]/usr/bin/tar xz --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/2ff1d2d7-07aa-4aaa-b77c-9a8baae1e83b -f /home/runner/work/_temp/b8c1c95d-ff59-484f-a035-780ae5dfe0f3
+check	Run astral-sh/setup-uv@v6	2026-09-12T17:02:03.5374927Z Added /home/runner/.local/bin to the path
+check	Run astral-sh/setup-uv@v6	2026-09-12T17:02:03.5377973Z Added /opt/hostedtoolcache/uv/0.11.6/x86_64 to the path
+check	Run astral-sh/setup-uv@v6	2026-09-12T17:02:03.5399248Z Set UV_CACHE_DIR to /home/runner/work/_temp/setup-uv-cache
+check	Run astral-sh/setup-uv@v6	2026-09-12T17:02:03.5399767Z Successfully installed uv version 0.11.6
+check	Run astral-sh/setup-uv@v6	2026-09-12T17:02:03.5401542Z Searching files using cache dependency glob: /home/runner/work/kodezart/kodezart/**/*requirements*.txt,/home/runner/work/kodezart/kodezart/**/*requirements*.in,/home/runner/work/kodezart/kodezart/**/*constraints*.txt,/home/runner/work/kodezart/kodezart/**/*constraints*.in,/home/runner/work/kodezart/kodezart/**/pyproject.toml,/home/runner/work/kodezart/kodezart/**/uv.lock,/home/runner/work/kodezart/kodezart/**/*.py.lock
+check	Run astral-sh/setup-uv@v6	2026-09-12T17:02:03.5766117Z /home/runner/work/kodezart/kodezart/pyproject.toml
+check	Run astral-sh/setup-uv@v6	2026-09-12T17:02:03.6800247Z /home/runner/work/kodezart/kodezart/uv.lock
+check	Run astral-sh/setup-uv@v6	2026-09-12T17:02:03.6825610Z Found 2 files to hash.
+check	Run astral-sh/setup-uv@v6	2026-09-12T17:02:03.7837167Z Trying to restore uv cache from GitHub Actions cache with key: setup-uv-1-x86_64-unknown-linux-gnu-3.12.3-pruned-e9d58f1ad498c5d143e80877bcbc8444de6c0b93fe9adc4f5e30d362c4018048
+check	Run astral-sh/setup-uv@v6	2026-09-12T17:02:03.8255955Z No GitHub Actions cache found for key: setup-uv-1-x86_64-unknown-linux-gnu-3.12.3-pruned-e9d58f1ad498c5d143e80877bcbc8444de6c0b93fe9adc4f5e30d362c4018048
+check	Run actions/setup-node@v4	﻿2026-09-12T17:02:03.8484125Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+check	Run actions/setup-node@v4	2026-09-12T17:02:03.8485477Z ##[group]Run actions/setup-node@v4
+check	Run actions/setup-node@v4	2026-09-12T17:02:03.8485741Z with:
+check	Run actions/setup-node@v4	2026-09-12T17:02:03.8485932Z   node-version: 22
+check	Run actions/setup-node@v4	2026-09-12T17:02:03.8486160Z   always-auth: false
+check	Run actions/setup-node@v4	2026-09-12T17:02:03.8486376Z   check-latest: false
+check	Run actions/setup-node@v4	2026-09-12T17:02:03.8489105Z   token: ***
+check	Run actions/setup-node@v4	2026-09-12T17:02:03.8489308Z env:
+check	Run actions/setup-node@v4	2026-09-12T17:02:03.8489551Z   UV_CACHE_DIR: /home/runner/work/_temp/setup-uv-cache
+check	Run actions/setup-node@v4	2026-09-12T17:02:03.8489856Z ##[endgroup]
+check	Run actions/setup-node@v4	2026-09-12T17:02:03.9917524Z Found in cache @ /opt/hostedtoolcache/node/22.23.2/x64
+check	Run actions/setup-node@v4	2026-09-12T17:02:03.9921609Z (node:2273) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+check	Run actions/setup-node@v4	2026-09-12T17:02:03.9922602Z (Use `node --trace-deprecation ...` to show where the warning was created)
+check	Run actions/setup-node@v4	2026-09-12T17:02:03.9924619Z ##[group]Environment details
+check	Run actions/setup-node@v4	2026-09-12T17:02:04.4195585Z node: v22.23.2
+check	Run actions/setup-node@v4	2026-09-12T17:02:04.4196374Z npm: 10.9.8
+check	Run actions/setup-node@v4	2026-09-12T17:02:04.4196872Z yarn: 1.22.22
+check	Run actions/setup-node@v4	2026-09-12T17:02:04.4197820Z ##[endgroup]
+check	Run uv sync --locked --all-groups	﻿2026-09-12T17:02:04.4322195Z ##[group]Run uv sync --locked --all-groups
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:04.4322655Z [36;1muv sync --locked --all-groups[0m
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:04.4372460Z shell: /usr/bin/bash -e {0}
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:04.4372737Z env:
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:04.4373007Z   UV_CACHE_DIR: /home/runner/work/_temp/setup-uv-cache
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:04.4373655Z ##[endgroup]
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:04.4861128Z Using CPython 3.12.3 interpreter at: /usr/bin/python3.12
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:04.4861820Z Creating virtual environment at: .venv
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:04.4962104Z Resolved 180 packages in 0.72ms
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:04.5106639Z    Building kodezart @ file:///home/runner/work/kodezart/kodezart
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:04.5145443Z warning: `build_system.requires = ["uv-build>=0.10.9,<0.11.0"]` does not contain the current uv version 0.11.6
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:04.5533408Z       Built kodezart @ file:///home/runner/work/kodezart/kodezart
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:04.5839060Z Downloading ruff (10.7MiB)
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:04.5839999Z Downloading pydantic-core (2.0MiB)
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:04.5841597Z Downloading aiohttp (1.7MiB)
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:04.5927677Z Downloading cryptography (4.3MiB)
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:04.5928441Z Downloading pygments (1.2MiB)
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:04.5929779Z Downloading tokenizers (3.1MiB)
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:04.5933005Z Downloading uvloop (4.2MiB)
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:04.5935182Z Downloading openai (1.1MiB)
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:04.5937829Z Downloading psycopg-binary (4.9MiB)
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:04.5940177Z Downloading grpcio (6.4MiB)
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:04.5941480Z Downloading tiktoken (1.1MiB)
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:04.5944420Z Downloading botocore (14.0MiB)
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:04.5945767Z Downloading mypy (13.0MiB)
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:04.5948521Z Downloading beartype (1.3MiB)
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:04.5952330Z Downloading hf-xet (4.0MiB)
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:04.5957710Z Downloading zstandard (5.3MiB)
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:04.5959343Z Downloading temporalio (11.6MiB)
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:04.5960966Z Downloading fastavro (3.3MiB)
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:04.5969223Z Downloading claude-agent-sdk (91.0MiB)
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:05.2638543Z  Downloaded tiktoken
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:05.5126492Z  Downloaded pydantic-core
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:05.5540672Z  Downloaded aiohttp
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:05.7302613Z  Downloaded tokenizers
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:05.8562649Z  Downloaded hf-xet
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:06.0428982Z  Downloaded zstandard
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:06.0869354Z  Downloaded fastavro
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:06.1008960Z  Downloaded psycopg-binary
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:06.1057329Z  Downloaded pygments
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:06.1061701Z  Downloaded ruff
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:06.1300976Z  Downloaded uvloop
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:06.1340642Z  Downloaded grpcio
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:06.1522579Z  Downloaded cryptography
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:06.1600002Z  Downloaded beartype
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:06.9975512Z  Downloaded temporalio
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.0125101Z  Downloaded claude-agent-sdk
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.0380569Z  Downloaded openai
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.1611133Z  Downloaded mypy
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.2067045Z  Downloaded botocore
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.2069936Z Prepared 176 packages in 2.70s
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4806208Z Installed 176 packages in 273ms
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4807365Z  + ag-ui-protocol==0.1.13
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4808148Z  + aiofile==3.9.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4808791Z  + aiohappyeyeballs==2.6.1
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4809472Z  + aiohttp==3.13.3
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4810021Z  + aiosignal==1.4.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4810597Z  + annotated-doc==0.0.4
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4811248Z  + annotated-types==0.7.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4811916Z  + anthropic==0.84.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4812591Z  + anyio==4.12.1
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4813391Z  + argcomplete==3.6.3
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4813994Z  + attrs==25.4.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4814511Z  + authlib==1.6.9
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4814943Z  + beartype==0.22.9
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4815376Z  + boto3==1.42.63
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4815831Z  + botocore==1.42.63
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4816244Z  + cachetools==7.0.4
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4816614Z  + caio==0.9.25
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4816979Z  + certifi==2026.2.25
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4817343Z  + cffi==2.0.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4817716Z  + charset-normalizer==3.4.5
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4818519Z  + claude-agent-sdk==0.2.151
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4818946Z  + click==8.3.1
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4819294Z  + cohere==5.20.7
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4819670Z  + cryptography==46.0.5
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4820069Z  + cyclopts==4.8.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4820422Z  + distro==1.9.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4820777Z  + dnspython==2.8.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4821161Z  + docstring-parser==0.17.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4821579Z  + docutils==0.22.4
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4821958Z  + email-validator==2.3.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4822401Z  + eval-type-backport==0.3.1
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4822842Z  + exceptiongroup==1.3.1
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4823405Z  + executing==2.2.1
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4823783Z  + fastapi==0.135.1
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4824143Z  + fastavro==1.12.1
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4824527Z  + fastmcp==3.1.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4824887Z  + filelock==3.25.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4825249Z  + frozenlist==1.8.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4825616Z  + fsspec==2026.2.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4825988Z  + genai-prices==0.0.55
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4826382Z  + google-auth==2.49.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4826773Z  + google-genai==1.66.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4827235Z  + googleapis-common-protos==1.73.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4827707Z  + griffelib==2.0.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4828060Z  + groq==1.1.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4828397Z  + grpcio==1.78.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4828737Z  + h11==0.16.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4829077Z  + hf-xet==1.3.2
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4829427Z  + httpcore==1.0.9
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4829787Z  + httptools==0.7.1
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4830141Z  + httpx==0.28.1
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4830483Z  + httpx-sse==0.4.3
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4830871Z  + huggingface-hub==1.6.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4831281Z  + idna==3.11
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4831770Z  + importlib-metadata==8.7.1
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4832351Z  + iniconfig==2.3.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4832727Z  + invoke==2.2.1
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4833098Z  + jaraco-classes==3.4.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4833687Z  + jaraco-context==6.1.1
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4834110Z  + jaraco-functools==4.4.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4834841Z  + jeepney==0.9.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4854755Z  + jiter==0.13.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4855192Z  + jmespath==1.1.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4855728Z  + jsonpatch==1.33
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4856204Z  + jsonpointer==3.0.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4856675Z  + jsonref==1.1.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4857196Z  + jsonschema==4.26.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4857747Z  + jsonschema-path==0.4.5
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4858324Z  + jsonschema-specifications==2025.9.1
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4858820Z  + keyring==25.7.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4859452Z  + kodezart==0.2.0 (from file:///home/runner/work/kodezart/kodezart)
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4860405Z  + langchain==1.2.10
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4860850Z  + langchain-core==1.2.17
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4861285Z  + langgraph==1.0.10
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4861748Z  + langgraph-checkpoint==4.0.1
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4862335Z  + langgraph-checkpoint-postgres==3.0.5
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4862892Z  + langgraph-prebuilt==1.0.8
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4863622Z  + langgraph-sdk==0.3.9
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4864050Z  + langsmith==0.7.14
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4864461Z  + librt==0.8.1
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4864828Z  + logfire==4.27.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4865203Z  + logfire-api==4.27.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4865605Z  + markdown-it-py==4.0.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4866043Z  + mcp==1.26.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4866404Z  + mdurl==0.1.2
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4866743Z  + mistralai==1.12.4
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4867115Z  + more-itertools==10.8.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4867509Z  + multidict==6.7.1
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4867854Z  + mypy==1.19.1
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4868203Z  + mypy-extensions==1.1.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4868600Z  + nexus-rpc==1.2.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4868960Z  + openai==2.26.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4869329Z  + openapi-pydantic==0.5.1
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4869752Z  + opentelemetry-api==1.39.1
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4870332Z  + opentelemetry-exporter-otlp-proto-common==1.39.1
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4871092Z  + opentelemetry-exporter-otlp-proto-http==1.39.1
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4871748Z  + opentelemetry-instrumentation==0.60b1
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4872372Z  + opentelemetry-instrumentation-httpx==0.60b1
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4873027Z  + opentelemetry-proto==1.39.1
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4873586Z  + opentelemetry-sdk==1.39.1
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4873997Z  + opentelemetry-semantic-conventions==0.60b1
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4874635Z  + opentelemetry-util-http==0.60b1
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4875092Z  + orjson==3.11.7
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4875489Z  + ormsgpack==1.12.2
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4875913Z  + packaging==25.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4877781Z  + pathable==0.5.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4878186Z  + pathspec==1.0.4
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4878544Z  + platformdirs==4.9.4
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4878910Z  + pluggy==1.6.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4879283Z  + prompt-toolkit==3.0.52
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4879741Z  + propcache==0.4.1
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4880115Z  + protobuf==6.33.5
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4880340Z  + psycopg==3.3.3
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4880562Z  + psycopg-binary==3.3.3
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4880796Z  + psycopg-pool==3.3.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4881028Z  + py-key-value-aio==0.4.4
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4881255Z  + pyasn1==0.6.2
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4881474Z  + pyasn1-modules==0.4.2
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4881699Z  + pycparser==3.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4881903Z  + pydantic==2.12.5
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4882110Z  + pydantic-ai==1.67.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4882335Z  + pydantic-ai-slim==1.67.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4882575Z  + pydantic-core==2.41.5
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4882803Z  + pydantic-evals==1.67.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4883042Z  + pydantic-graph==1.67.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4883896Z  + pydantic-settings==2.13.1
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4884193Z  + pygments==2.19.2
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4884404Z  + pyjwt==2.11.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4884647Z  + pyperclip==1.11.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4884918Z  + pytest==9.0.2
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4885129Z  + pytest-asyncio==1.3.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4885398Z  + python-dateutil==2.9.0.post0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4885661Z  + python-dotenv==1.2.2
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4885907Z  + python-multipart==0.0.22
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4886142Z  + pyyaml==6.0.3
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4886349Z  + referencing==0.37.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4886571Z  + regex==2026.2.28
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4886788Z  + requests==2.32.5
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4887004Z  + requests-toolbelt==1.0.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4887248Z  + rich==14.3.3
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4887449Z  + rich-rst==1.3.2
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4887659Z  + rpds-py==0.30.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4887858Z  + rsa==4.9.1
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4888055Z  + ruff==0.15.5
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4888252Z  + s3transfer==0.16.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4888476Z  + secretstorage==3.5.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4888696Z  + shellingham==1.5.4
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4888908Z  + six==1.17.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4889302Z  + sniffio==1.3.1
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4889510Z  + sse-starlette==3.3.2
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4889725Z  + starlette==0.52.1
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4889938Z  + structlog==25.5.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4890152Z  + temporalio==1.20.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4890361Z  + tenacity==9.1.4
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4890570Z  + tiktoken==0.12.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4890779Z  + tokenizers==0.22.2
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4890990Z  + tqdm==4.67.3
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4891196Z  + typer==0.24.1
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4891443Z  + types-protobuf==6.32.1.20260221
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4891730Z  + types-requests==2.32.4.20260107
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4891993Z  + typing-extensions==4.15.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4892242Z  + typing-inspection==0.4.2
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4892476Z  + uncalled-for==0.2.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4892689Z  + urllib3==2.6.3
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4892897Z  + uuid-utils==0.14.1
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4893103Z  + uvicorn==0.41.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4893671Z  + uvloop==0.22.1
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4893912Z  + watchfiles==1.1.1
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4894133Z  + wcwidth==0.6.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4894344Z  + websockets==16.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4894567Z  + wrapt==1.17.3
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4894769Z  + xai-sdk==1.8.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4894967Z  + xxhash==3.6.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4895167Z  + yarl==1.23.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4895359Z  + zipp==3.23.0
+check	Run uv sync --locked --all-groups	2026-09-12T17:02:07.4895558Z  + zstandard==0.25.0
+check	Run make check	﻿2026-09-12T17:02:07.4959613Z ##[group]Run make check
+check	Run make check	2026-09-12T17:02:07.4959911Z [36;1mmake check[0m
+check	Run make check	2026-09-12T17:02:07.4997361Z shell: /usr/bin/bash -e {0}
+check	Run make check	2026-09-12T17:02:07.4997618Z env:
+check	Run make check	2026-09-12T17:02:07.4997867Z   UV_CACHE_DIR: /home/runner/work/_temp/setup-uv-cache
+check	Run make check	2026-09-12T17:02:07.4998182Z ##[endgroup]
+check	Run make check	2026-09-12T17:02:07.5149106Z uv run --locked ruff format --check src/ tests/
+check	Run make check	2026-09-12T17:02:07.7442534Z 729 files already formatted
+check	Run make check	2026-09-12T17:02:07.7482488Z uv run --locked ruff check src/ tests/
+check	Run make check	2026-09-12T17:02:07.9492112Z All checks passed!
+check	Run make check	2026-09-12T17:02:07.9522916Z uv run --locked mypy src/
+check	Run make check	2026-09-12T17:02:23.7276743Z Success: no issues found in 313 source files
+check	Run make check	2026-09-12T17:02:23.7623116Z uv run --locked pytest
+check	Run make check	2026-09-12T17:02:39.3467775Z ============================= test session starts ==============================
+check	Run make check	2026-09-12T17:02:39.3468870Z platform linux -- Python 3.12.3, pytest-9.0.2, pluggy-1.6.0
+check	Run make check	2026-09-12T17:02:39.3469680Z rootdir: /home/runner/work/kodezart/kodezart
+check	Run make check	2026-09-12T17:02:39.3471766Z configfile: pyproject.toml
+check	Run make check	2026-09-12T17:02:39.3472085Z testpaths: tests
+check	Run make check	2026-09-12T17:02:39.3472583Z plugins: anyio-4.12.1, langsmith-0.7.14, logfire-4.27.0, asyncio-1.3.0
+check	Run make check	2026-09-12T17:02:39.3474486Z asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=session, asyncio_default_test_loop_scope=function
+check	Run make check	2026-09-12T17:02:39.3475456Z collected 10186 items
+check	Run make check	2026-09-12T17:02:39.3475689Z 
+check	Run make check	2026-09-12T17:02:39.4805242Z tests/adapters/test_cache_configured_remote.py ..                        [  0%]
+check	Run make check	2026-09-12T17:02:39.9895040Z tests/adapters/test_check_chain_cleanup.py ....                          [  0%]
+check	Run make check	2026-09-12T17:02:41.0969426Z tests/adapters/test_check_chain_runner.py ...................            [  0%]
+check	Run make check	2026-09-12T17:02:41.1321651Z tests/adapters/test_ci_observation.py ................                   [  0%]
+check	Run make check	2026-09-12T17:02:41.2631115Z tests/adapters/test_ci_rerun.py ........................................ [  0%]
+check	Run make check	2026-09-12T17:02:41.3094342Z ............                                                             [  0%]
+check	Run make check	2026-09-12T17:02:41.3618653Z tests/adapters/test_ci_watch_evidence.py ...................             [  1%]
+check	Run make check	2026-09-12T17:02:41.3770114Z tests/adapters/test_ci_watch_result.py ............                      [  1%]
+check	Run make check	2026-09-12T17:02:41.3961557Z tests/adapters/test_claude_client_executor.py .........                  [  1%]
+check	Run make check	2026-09-12T17:02:41.4535562Z tests/adapters/test_claude_executors.py ................................ [  1%]
+check	Run make check	2026-09-12T17:02:41.5156049Z ..................................                                       [  1%]
+check	Run make check	2026-09-12T17:02:41.5416072Z tests/adapters/test_forge_query.py ..................                    [  2%]
+check	Run make check	2026-09-12T17:02:42.0571624Z tests/adapters/test_git_artifact_persister.py ......                     [  2%]
+check	Run make check	2026-09-12T17:02:42.6537523Z tests/adapters/test_git_branch_merger.py ..............                  [  2%]
+check	Run make check	2026-09-12T17:02:43.0031851Z tests/adapters/test_git_change_persister.py ...............              [  2%]
+check	Run make check	2026-09-12T17:02:43.0102473Z tests/adapters/test_git_ref_publisher.py .....                           [  2%]
+check	Run make check	2026-09-12T17:02:43.1349390Z tests/adapters/test_git_worktree_provider.py ...........                 [  2%]
+check	Run make check	2026-09-12T17:02:43.2485868Z tests/adapters/test_github_api.py ...................................... [  3%]
+check	Run make check	2026-09-12T17:02:43.5622863Z ...................................................................      [  3%]
+check	Run make check	2026-09-12T17:02:43.5947613Z tests/adapters/test_host_skill_inventory.py ................             [  3%]
+check	Run make check	2026-09-12T17:02:44.6906445Z tests/adapters/test_hosted_mcp_session.py .......                        [  3%]
+check	Run make check	2026-09-12T17:02:44.8360930Z tests/adapters/test_http_mcp_tool_caller.py ............................ [  4%]
+check	Run make check	2026-09-12T17:02:55.8606030Z ..............................                                           [  4%]
+check	Run make check	2026-09-12T17:02:55.9694070Z tests/adapters/test_judgment_scanner.py ................................ [  4%]
+check	Run make check	2026-09-12T17:02:56.0713889Z ........................                                                 [  5%]
+check	Run make check	2026-09-12T17:02:56.1588125Z tests/adapters/test_knowledge_settings_delivery.py .........             [  5%]
+check	Run make check	2026-09-12T17:02:56.1999391Z tests/adapters/test_knowledge_transport.py ..................            [  5%]
+check	Run make check	2026-09-12T17:02:58.8098332Z tests/adapters/test_mcp_strictness.py ...................                [  5%]
+check	Run make check	2026-09-12T17:02:58.8325798Z tests/adapters/test_nested_run_progress.py ..                            [  5%]
+check	Run make check	2026-09-12T17:02:58.8378058Z tests/adapters/test_no_forge_delivery.py ...                             [  5%]
+check	Run make check	2026-09-12T17:02:58.8686883Z tests/adapters/test_outbound_corpus.py ....................              [  5%]
+check	Run make check	2026-09-12T17:02:58.9073757Z tests/adapters/test_outbound_gate.py .............................       [  5%]
+check	Run make check	2026-09-12T17:02:59.2044604Z tests/adapters/test_permission_boundary.py ............................. [  6%]
+check	Run make check	2026-09-12T17:02:59.6851379Z ................................................................         [  6%]
+check	Run make check	2026-09-12T17:02:59.7530738Z tests/adapters/test_pr_state_reader.py ................................. [  7%]
+check	Run make check	2026-09-12T17:02:59.8071310Z ..................................                                       [  7%]
+check	Run make check	2026-09-12T17:02:59.8457457Z tests/adapters/test_record_failure_boundary.py ......................... [  7%]
+check	Run make check	2026-09-12T17:02:59.8465202Z                                                                          [  7%]
+check	Run make check	2026-09-12T17:02:59.8648112Z tests/adapters/test_record_publication_failures.py ..........            [  7%]
+check	Run make check	2026-09-12T17:03:00.4204017Z tests/adapters/test_scanner_sdk_failures.py ............................ [  8%]
+check	Run make check	2026-09-12T17:03:01.2648833Z ........................................................................ [  8%]
+check	Run make check	2026-09-12T17:03:01.2796387Z ...                                                                      [  8%]
+check	Run make check	2026-09-12T17:03:01.2999120Z tests/adapters/test_sdk_mapping.py .......................               [  9%]
+check	Run make check	2026-09-12T17:03:01.3752412Z tests/adapters/test_self_write_history_receipts.py ..................... [  9%]
+check	Run make check	2026-09-12T17:03:01.3796297Z .                                                                        [  9%]
+check	Run make check	2026-09-12T17:03:01.4880079Z tests/adapters/test_self_write_replay.py ............................... [  9%]
+check	Run make check	2026-09-12T17:03:01.8464077Z ......                                                                   [  9%]
+check	Run make check	2026-09-12T17:03:02.0027470Z tests/adapters/test_shared_retry.py ...........................          [  9%]
+check	Run make check	2026-09-12T17:03:06.3534436Z tests/adapters/test_stdio_mcp_tool_caller.py ..................          [ 10%]
+check	Run make check	2026-09-12T17:03:06.9486331Z tests/adapters/test_subprocess_git.py .................................. [ 10%]
+check	Run make check	2026-09-12T17:03:07.0009182Z .....                                                                    [ 10%]
+check	Run make check	2026-09-12T17:03:07.0567475Z tests/adapters/test_tool_selection.py .................................. [ 10%]
+check	Run make check	2026-09-12T17:03:07.4104653Z ......................................                                   [ 11%]
+check	Run make check	2026-09-12T17:03:07.4442182Z tests/adapters/test_tracker_self_writes.py .............                 [ 11%]
+check	Run make check	2026-09-12T17:03:07.7150390Z tests/api/v1/test_agent.py .........2026-09-12 17:03:07 [info     ] job_finished                   job_id=63ada132662a4c1aa91c8cb29d298441 lane=workflow outcome=review_passed_no_pr_adapter
+check	Run make check	2026-09-12T17:03:07.9880221Z .2026-09-12 17:03:07 [info     ] job_finished                   job_id=e9813e874d9941c29eea91901e2b6904 lane=workflow outcome=review_passed_no_pr_adapter
+check	Run make check	2026-09-12T17:03:08.5652966Z .....2026-09-12 17:03:08 [info     ] job_finished                   job_id=68af8e3714444c23ae540b832aaa1c61 lane=workflow outcome=ci_no_run_at_ref
+check	Run make check	2026-09-12T17:03:08.6235278Z .2026-09-12 17:03:08 [info     ] job_finished                   job_id=caec2049753149bf9b3a5fc08dd8e869 lane=workflow outcome=ci_no_run_at_ref
+check	Run make check	2026-09-12T17:03:08.7875517Z ..2026-09-12 17:03:08 [info     ] job_finished                   job_id=cec17ce7440046d6a0cc3fb41f1834d7 lane=workflow outcome=merge_divergent
+check	Run make check	2026-09-12T17:03:08.8527818Z .2026-09-12 17:03:08 [info     ] job_finished                   job_id=feea856e40cd4ff295b188aa15d03775 lane=workflow outcome=review_passed_no_pr_adapter
+check	Run make check	2026-09-12T17:03:08.8548156Z .                          [ 11%]
+check	Run make check	2026-09-12T17:03:09.0897382Z tests/api/v1/test_dependencies.py ..............                         [ 11%]
+check	Run make check	2026-09-12T17:03:09.1145665Z tests/api/v1/test_health.py .....                                        [ 11%]
+check	Run make check	2026-09-12T17:03:09.1775496Z tests/api/v1/test_job_acceptance.py .................................... [ 12%]
+check	Run make check	2026-09-12T17:03:09.6564145Z ......................................                                   [ 12%]
+check	Run make check	2026-09-12T17:03:09.7618539Z tests/api/v1/test_jobs.py ..2026-09-12 17:03:09 [info     ] repo_visibility_resolved       repo_url=None visibility=unknown
+check	Run make check	2026-09-12T17:03:10.8996105Z ..............................2026-09-12 17:03:10 [info     ] job_finished                   job_id=546c99c9a672449b83d3e92b91265c75 lane=workflow outcome=review_passed_no_pr_adapter
+check	Run make check	2026-09-12T17:03:11.2146671Z .......2026-09-12 17:03:11 [info     ] repo_visibility_resolved       repo_url=None visibility=unknown
+check	Run make check	2026-09-12T17:03:11.3976197Z ....... [ 12%]
+check	Run make check	2026-09-12T17:03:11.6304282Z ..........                                                               [ 13%]
+check	Run make check	2026-09-12T17:03:11.9749818Z tests/api/v1/test_scope_request_boundary.py ............................ [ 13%]
+check	Run make check	2026-09-12T17:03:12.1242545Z ............                                                             [ 13%]
+check	Run make check	2026-09-12T17:03:12.3767980Z tests/chains/test_accept_gate.py ........................                [ 13%]
+check	Run make check	2026-09-12T17:03:12.6598479Z tests/chains/test_audit_pass.py ........................................ [ 14%]
+check	Run make check	2026-09-12T17:03:12.9322207Z ........................................                                 [ 14%]
+check	Run make check	2026-09-12T17:03:14.5952056Z tests/chains/test_audit_terminal_cancellation.py ....................... [ 14%]
+check	Run make check	2026-09-12T17:03:14.6604008Z .                                                                        [ 14%]
+check	Run make check	2026-09-12T17:03:16.1576443Z tests/chains/test_authored_check_routing.py ............................ [ 14%]
+check	Run make check	2026-09-12T17:03:16.2148564Z .                                                                        [ 14%]
+check	Run make check	2026-09-12T17:03:17.3789088Z tests/chains/test_criteria_validation.py ..............................  [ 15%]
+check	Run make check	2026-09-12T17:03:18.0006598Z tests/chains/test_delivery_coordinator.py ......                         [ 15%]
+check	Run make check	2026-09-12T17:03:18.0747218Z tests/chains/test_dispatch_definitions.py .............                  [ 15%]
+check	Run make check	2026-09-12T17:03:18.4924671Z tests/chains/test_fire_extraction.py ...............                     [ 15%]
+check	Run make check	2026-09-12T17:03:18.5156468Z tests/chains/test_fire_graph.py .                                        [ 15%]
+check	Run make check	2026-09-12T17:03:19.2986030Z tests/chains/test_fire_spec_prompt_consumers.py ........................ [ 15%]
+check	Run make check	2026-09-12T17:03:20.0745133Z ........................                                                 [ 16%]
+check	Run make check	2026-09-12T17:03:20.1461135Z tests/chains/test_fresh_write_back_judge.py .........                    [ 16%]
+check	Run make check	2026-09-12T17:03:21.9930961Z tests/chains/test_lane_delivery.py ..................................... [ 16%]
+check	Run make check	2026-09-12T17:03:21.9948148Z                                                                          [ 16%]
+check	Run make check	2026-09-12T17:03:23.3171817Z tests/chains/test_native_amendment_runtime.py .....                      [ 16%]
+check	Run make check	2026-09-12T17:03:23.5442896Z tests/chains/test_native_amendment_trajectory_independent.py .           [ 16%]
+check	Run make check	2026-09-12T17:03:25.1797625Z tests/chains/test_native_delivery.py ......................              [ 16%]
+check	Run make check	2026-09-12T17:03:27.4562797Z tests/chains/test_native_fire.py ....................................... [ 17%]
+check	Run make check	2026-09-12T17:03:27.9990626Z ........                                                                 [ 17%]
+check	Run make check	2026-09-12T17:03:30.1257539Z tests/chains/test_native_fresh_boundaries.py ........................... [ 17%]
+check	Run make check	2026-09-12T17:03:30.9521129Z ......                                                                   [ 17%]
+check	Run make check	2026-09-12T17:03:30.9598544Z tests/chains/test_native_port_failures.py ....                           [ 17%]
+check	Run make check	2026-09-12T17:03:31.9839665Z tests/chains/test_node_session_events.py ............................    [ 17%]
+check	Run make check	2026-09-12T17:03:32.3044877Z tests/chains/test_organize.py .......................................... [ 18%]
+check	Run make check	2026-09-12T17:03:32.3969574Z ..............................                                           [ 18%]
+check	Run make check	2026-09-12T17:03:32.4338966Z tests/chains/test_organize_correction.py ..                              [ 18%]
+check	Run make check	2026-09-12T17:03:32.8283827Z tests/chains/test_organize_delivery_independent.py ..........            [ 18%]
+check	Run make check	2026-09-12T17:03:32.9507254Z tests/chains/test_organize_native_independent.py .....                   [ 18%]
+check	Run make check	2026-09-12T17:03:33.2581731Z tests/chains/test_organize_owner.py ................                     [ 18%]
+check	Run make check	2026-09-12T17:03:33.4843892Z tests/chains/test_organize_ownership.py ......                           [ 18%]
+check	Run make check	2026-09-12T17:03:34.0956221Z tests/chains/test_outbound_gating.py ..............                      [ 19%]
+check	Run make check	2026-09-12T17:03:34.7882313Z tests/chains/test_ralph_loop.py ........................................ [ 19%]
+check	Run make check	2026-09-12T17:03:35.0425332Z ........                                                                 [ 19%]
+check	Run make check	2026-09-12T17:03:36.5028896Z tests/chains/test_ralph_workflow.py .................................... [ 19%]
+check	Run make check	2026-09-12T17:03:41.8702079Z ........................................................................ [ 20%]
+check	Run make check	2026-09-12T17:03:42.1107621Z ......                                                                   [ 20%]
+check	Run make check	2026-09-12T17:03:42.1512616Z tests/chains/test_remediation.py .......                                 [ 20%]
+check	Run make check	2026-09-12T17:03:42.4469104Z tests/chains/test_retry_floor_wiring.py ................................ [ 21%]
+check	Run make check	2026-09-12T17:03:42.8246741Z ..............                                                           [ 21%]
+check	Run make check	2026-09-12T17:03:43.0344157Z tests/chains/test_scope_gap_membership.py .....................          [ 21%]
+check	Run make check	2026-09-12T17:03:43.2988650Z tests/chains/test_scope_gap_selection.py ................                [ 21%]
+check	Run make check	2026-09-12T17:03:43.3055996Z tests/chains/test_scope_observations.py ..                               [ 21%]
+check	Run make check	2026-09-12T17:03:43.7503671Z tests/chains/test_scope_ready.py ....................................... [ 22%]
+check	Run make check	2026-09-12T17:03:43.8759921Z ..................                                                       [ 22%]
+check	Run make check	2026-09-12T17:03:44.0050579Z tests/chains/test_shorthand_url_resolution.py ...                        [ 22%]
+check	Run make check	2026-09-12T17:03:44.1331772Z tests/chains/test_stalled_handoff.py ...                                 [ 22%]
+check	Run make check	2026-09-12T17:03:44.6191828Z tests/chains/test_ticket_generation.py ................................. [ 22%]
+check	Run make check	2026-09-12T17:03:44.8288445Z ....                                                                     [ 22%]
+check	Run make check	2026-09-12T17:03:45.4610205Z tests/chains/test_tool_preset_composition.py ..                          [ 22%]
+check	Run make check	2026-09-12T17:03:46.2044350Z tests/chains/test_union_forge_isolation.py .......                       [ 22%]
+check	Run make check	2026-09-12T17:03:49.2063739Z tests/chains/test_workflow_phase_composition.py ................         [ 22%]
+check	Run make check	2026-09-12T17:03:49.2281978Z tests/chains/test_write_back_verifier.py ..............                  [ 22%]
+check	Run make check	2026-09-12T17:03:49.5078384Z tests/core/test_agent_settings.py ...................................... [ 23%]
+check	Run make check	2026-09-12T17:03:49.5843924Z ..........                                                               [ 23%]
+check	Run make check	2026-09-12T17:03:49.6179940Z tests/core/test_audit_config.py ........                                 [ 23%]
+check	Run make check	2026-09-12T17:03:49.7229984Z tests/core/test_bare_mode.py .                                           [ 23%]
+check	Run make check	2026-09-12T17:03:49.8154474Z tests/core/test_config.py ......................                         [ 23%]
+check	Run make check	2026-09-12T17:03:49.8257532Z tests/core/test_config_error_redaction.py ....                           [ 23%]
+check	Run make check	2026-09-12T17:03:49.8537669Z tests/core/test_credential_shapes.py .........                           [ 23%]
+check	Run make check	2026-09-12T17:03:49.8744735Z tests/core/test_delivery_config.py .....                                 [ 23%]
+check	Run make check	2026-09-12T17:03:49.9723553Z tests/core/test_docs_prompt_knobs.py ...........                         [ 24%]
+check	Run make check	2026-09-12T17:03:50.1746279Z tests/core/test_durable_admission.py ................................... [ 24%]
+check	Run make check	2026-09-12T17:03:50.2888716Z ..........                                                               [ 24%]
+check	Run make check	2026-09-12T17:03:50.3174636Z tests/core/test_error_egress.py ................................         [ 24%]
+check	Run make check	2026-09-12T17:03:51.0985871Z tests/core/test_git_settings.py ..................................       [ 25%]
+check	Run make check	2026-09-12T17:03:51.4949028Z tests/core/test_http_settings.py ......................                  [ 25%]
+check	Run make check	2026-09-12T17:03:51.6931863Z tests/core/test_job_queue_settings.py .................................. [ 25%]
+check	Run make check	2026-09-12T17:03:51.7264292Z .....                                                                    [ 25%]
+check	Run make check	2026-09-12T17:03:51.8626785Z tests/core/test_knowledge_connection.py ................................ [ 26%]
+check	Run make check	2026-09-12T17:03:52.0069381Z .............................                                            [ 26%]
+check	Run make check	2026-09-12T17:03:52.1355936Z tests/core/test_knowledge_grant.py ...........                           [ 26%]
+check	Run make check	2026-09-12T17:03:54.8943019Z tests/core/test_log_emitter.py .......                                   [ 26%]
+check	Run make check	2026-09-12T17:03:54.8961465Z tests/core/test_logging.py .                                             [ 26%]
+check	Run make check	2026-09-12T17:03:54.9466896Z tests/core/test_logging_chain.py .....                                   [ 26%]
+check	Run make check	2026-09-12T17:03:55.1350817Z tests/core/test_logging_settings.py .................................... [ 26%]
+check	Run make check	2026-09-12T17:03:55.1358053Z                                                                          [ 26%]
+check	Run make check	2026-09-12T17:03:55.2369648Z tests/core/test_notion_credential.py ......                              [ 26%]
+check	Run make check	2026-09-12T17:03:55.3265833Z tests/core/test_organize_settings.py ............                        [ 27%]
+check	Run make check	2026-09-12T17:03:55.3340082Z tests/core/test_owned_tasks.py .....                                     [ 27%]
+check	Run make check	2026-09-12T17:03:55.5986917Z tests/core/test_prompt_boot.py ......                                    [ 27%]
+check	Run make check	2026-09-12T17:03:55.7998417Z tests/core/test_retired_config.py ...................................... [ 27%]
+check	Run make check	2026-09-12T17:03:55.9069169Z ..................                                                       [ 27%]
+check	Run make check	2026-09-12T17:03:56.0383683Z tests/core/test_retry.py .............................                   [ 28%]
+check	Run make check	2026-09-12T17:03:56.0543829Z tests/core/test_stream_drain.py ........                                 [ 28%]
+check	Run make check	2026-09-12T17:03:56.0888158Z tests/core/test_surface_lease_config.py ........                         [ 28%]
+check	Run make check	2026-09-12T17:03:56.4494733Z tests/core/test_tracker_credential.py .......                            [ 28%]
+check	Run make check	2026-09-12T17:03:56.7429900Z tests/core/test_tracker_settings.py .................................... [ 28%]
+check	Run make check	2026-09-12T17:03:58.0767830Z ....................................................                     [ 29%]
+check	Run make check	2026-09-12T17:03:58.0820644Z tests/docs/test_api_event_reference.py ....                              [ 29%]
+check	Run make check	2026-09-12T17:03:58.3123890Z tests/docs/test_documented_surface.py .................................. [ 29%]
+check	Run make check	2026-09-12T17:03:58.3806036Z ..........                                                               [ 29%]
+check	Run make check	2026-09-12T17:03:58.4486844Z tests/docs/test_parity_checklist.py .........                            [ 29%]
+check	Run make check	2026-09-12T17:03:58.4920407Z tests/docs/test_setup_guide.py ...............                           [ 29%]
+check	Run make check	2026-09-12T17:03:58.4942078Z tests/domain/test_agent.py ..                                            [ 29%]
+check	Run make check	2026-09-12T17:03:58.5184644Z tests/domain/test_alarm_typed_evidence.py ....                           [ 29%]
+check	Run make check	2026-09-12T17:03:58.5411468Z tests/domain/test_amendment.py .............                             [ 30%]
+check	Run make check	2026-09-12T17:03:58.5597435Z tests/domain/test_assertion_drift.py ..................                  [ 30%]
+check	Run make check	2026-09-12T17:03:58.5819695Z tests/domain/test_audit_overclaim.py ....................                [ 30%]
+check	Run make check	2026-09-12T17:03:58.5974481Z tests/domain/test_audit_overclaim_report.py ............                 [ 30%]
+check	Run make check	2026-09-12T17:03:58.6126476Z tests/domain/test_audit_terminal_report.py ..............                [ 30%]
+check	Run make check	2026-09-12T17:03:58.6208038Z tests/domain/test_authored_feasibility_compatibility.py ..               [ 30%]
+check	Run make check	2026-09-12T17:03:58.6622744Z tests/domain/test_barren_tick.py ....................................... [ 31%]
+check	Run make check	2026-09-12T17:03:58.7009157Z .............................                                            [ 31%]
+check	Run make check	2026-09-12T17:04:00.1531752Z tests/domain/test_base_resolution.py ............................        [ 31%]
+check	Run make check	2026-09-12T17:04:00.1638924Z tests/domain/test_base_scope.py ...........                              [ 31%]
+check	Run make check	2026-09-12T17:04:00.1747745Z tests/domain/test_base_staleness.py ......                               [ 31%]
+check	Run make check	2026-09-12T17:04:00.1793901Z tests/domain/test_branch.py .....                                        [ 31%]
+check	Run make check	2026-09-12T17:04:00.6734140Z tests/domain/test_comment_markers.py ...............                     [ 31%]
+check	Run make check	2026-09-12T17:04:00.7022212Z tests/domain/test_criteria_feasibility.py .............................. [ 32%]
+check	Run make check	2026-09-12T17:04:00.7466394Z .............................................                            [ 32%]
+check	Run make check	2026-09-12T17:04:00.7533705Z tests/domain/test_criteria_grading.py .......                            [ 32%]
+check	Run make check	2026-09-12T17:04:00.7730425Z tests/domain/test_criterion_evidence.py .....................            [ 32%]
+check	Run make check	2026-09-12T17:04:01.3944773Z tests/domain/test_criterion_identity.py ...............                  [ 33%]
+check	Run make check	2026-09-12T17:04:03.1074609Z tests/domain/test_criterion_lifecycle.py ............................... [ 33%]
+check	Run make check	2026-09-12T17:04:13.0799745Z ........................................................................ [ 34%]
+check	Run make check	2026-09-12T17:04:14.9394370Z ........................................................................ [ 34%]
+check	Run make check	2026-09-12T17:04:15.0217372Z ....................................                                     [ 35%]
+check	Run make check	2026-09-12T17:04:15.0431781Z tests/domain/test_detector_removal_report.py ................            [ 35%]
+check	Run make check	2026-09-12T17:04:15.0706822Z tests/domain/test_dispatch_predicate.py ................................ [ 35%]
+check	Run make check	2026-09-12T17:04:15.0739353Z ...                                                                      [ 35%]
+check	Run make check	2026-09-12T17:04:15.1087491Z tests/domain/test_escalation_ageing.py ................................. [ 36%]
+check	Run make check	2026-09-12T17:04:15.1720831Z ..........................................                               [ 36%]
+check	Run make check	2026-09-12T17:04:15.1797039Z tests/domain/test_fire_spec.py .......                                   [ 36%]
+check	Run make check	2026-09-12T17:04:15.2066031Z tests/domain/test_fire_spec_formatter.py .............................   [ 36%]
+check	Run make check	2026-09-12T17:04:15.2091968Z tests/domain/test_fire_spec_purity.py .                                  [ 36%]
+check	Run make check	2026-09-12T17:04:15.2308047Z tests/domain/test_gap.py ..................                              [ 36%]
+check	Run make check	2026-09-12T17:04:15.2517111Z tests/domain/test_git_url.py .........................                   [ 37%]
+check	Run make check	2026-09-12T17:04:15.2595524Z tests/domain/test_issue_label_config.py ........                         [ 37%]
+check	Run make check	2026-09-12T17:04:15.2606908Z tests/domain/test_lane_delivery.py .                                     [ 37%]
+check	Run make check	2026-09-12T17:04:15.2785373Z tests/domain/test_lane_record.py ...................                     [ 37%]
+check	Run make check	2026-09-12T17:04:15.3145222Z tests/domain/test_mandate_graph.py ..................................... [ 37%]
+check	Run make check	2026-09-12T17:04:15.3773932Z ........................................................                 [ 38%]
+check	Run make check	2026-09-12T17:04:15.4189183Z tests/domain/test_no_ref_parsing.py ....                                 [ 38%]
+check	Run make check	2026-09-12T17:04:15.4425415Z tests/domain/test_operation_optionality.py ..........................    [ 38%]
+check	Run make check	2026-09-12T17:04:16.2884859Z tests/domain/test_organize.py .......................................... [ 39%]
+check	Run make check	2026-09-12T17:04:16.3857740Z .....................................................................    [ 39%]
+check	Run make check	2026-09-12T17:04:16.4150811Z tests/domain/test_organize_routing.py ............................       [ 40%]
+check	Run make check	2026-09-12T17:04:16.4356196Z tests/domain/test_outcome.py ........................                    [ 40%]
+check	Run make check	2026-09-12T17:04:16.4671877Z tests/domain/test_record_consistency.py ................................ [ 40%]
+check	Run make check	2026-09-12T17:04:16.5033441Z .................................                                        [ 40%]
+check	Run make check	2026-09-12T17:04:16.6417665Z tests/domain/test_record_superseded.py ................................. [ 41%]
+check	Run make check	2026-09-12T17:04:16.8423098Z .............................................................            [ 41%]
+check	Run make check	2026-09-12T17:04:18.5504023Z tests/domain/test_recorded_landing.py ...........................        [ 42%]
+check	Run make check	2026-09-12T17:04:19.6339306Z tests/domain/test_ruling_identity.py .........................           [ 42%]
+check	Run make check	2026-09-12T17:04:21.1515900Z tests/domain/test_ruling_protected_tests.py ...............              [ 42%]
+check	Run make check	2026-09-12T17:04:21.1939632Z tests/domain/test_rulings.py ......................................      [ 42%]
+check	Run make check	2026-09-12T17:04:21.3090389Z tests/domain/test_run_alarm.py ......................................... [ 43%]
+check	Run make check	2026-09-12T17:04:21.4487102Z .....................................................                    [ 43%]
+check	Run make check	2026-09-12T17:04:21.4749322Z tests/domain/test_run_alarm_payload.py ..........................        [ 44%]
+check	Run make check	2026-09-12T17:04:21.5109455Z tests/domain/test_run_event_table.py ................................... [ 44%]
+check	Run make check	2026-09-12T17:04:21.5467839Z ........................                                                 [ 44%]
+check	Run make check	2026-09-12T17:04:21.5613864Z tests/domain/test_scope_container.py ...............                     [ 44%]
+check	Run make check	2026-09-12T17:04:21.5794536Z tests/domain/test_scope_label_config.py ..........                       [ 44%]
+check	Run make check	2026-09-12T17:04:21.5860844Z tests/domain/test_scope_labels.py .......                                [ 44%]
+check	Run make check	2026-09-12T17:04:21.6030721Z tests/domain/test_scope_ref.py .................                         [ 45%]
+check	Run make check	2026-09-12T17:04:21.6351712Z tests/domain/test_scope_tally.py ...............................         [ 45%]
+check	Run make check	2026-09-12T17:04:21.6382282Z tests/domain/test_scope_terminal.py ...                                  [ 45%]
+check	Run make check	2026-09-12T17:04:21.8838823Z tests/domain/test_self_write_retention.py ..                             [ 45%]
+check	Run make check	2026-09-12T17:04:21.8940415Z tests/domain/test_stall_report.py .........                              [ 45%]
+check	Run make check	2026-09-12T17:04:21.9058274Z tests/domain/test_subtree_closure.py ........                            [ 45%]
+check	Run make check	2026-09-12T17:04:21.9371851Z tests/domain/test_surface_contention.py ................................ [ 45%]
+check	Run make check	2026-09-12T17:04:21.9661324Z .......................                                                  [ 46%]
+check	Run make check	2026-09-12T17:04:21.9803878Z tests/domain/test_surface_lease.py .................                     [ 46%]
+check	Run make check	2026-09-12T17:04:21.9834175Z tests/domain/test_surface_lease_error.py ...                             [ 46%]
+check	Run make check	2026-09-12T17:04:22.0150766Z tests/domain/test_topology.py ......................                     [ 46%]
+check	Run make check	2026-09-12T17:04:22.0305531Z tests/domain/test_topology_cycles.py ......                              [ 46%]
+check	Run make check	2026-09-12T17:04:22.0385726Z tests/domain/test_union.py ........                                      [ 46%]
+check	Run make check	2026-09-12T17:04:22.0438324Z tests/domain/test_union_check_classification.py ......                   [ 46%]
+check	Run make check	2026-09-12T17:04:22.0640505Z tests/domain/test_union_remediation.py .....................             [ 47%]
+check	Run make check	2026-09-12T17:04:23.0021686Z tests/integration/test_authored_aggregate_admission.py ................. [ 47%]
+check	Run make check	2026-09-12T17:04:24.8628735Z ...........................................                              [ 47%]
+check	Run make check	2026-09-12T17:04:24.8643914Z tests/integration/test_checkpointer_postgres.py ss                       [ 47%]
+check	Run make check	2026-09-12T17:04:24.9921592Z tests/integration/test_criteria_oracle.py ...                            [ 47%]
+check	Run make check	2026-09-12T17:04:25.0942018Z tests/integration/test_derived_lifecycle_admission.py ........           [ 47%]
+check	Run make check	2026-09-12T17:04:33.6589209Z tests/integration/test_fixed_outbound_admission.py ..........            [ 47%]
+check	Run make check	2026-09-12T17:04:36.3178407Z tests/integration/test_issue_key_carriage.py ......                      [ 47%]
+check	Run make check	2026-09-12T17:04:36.3193611Z tests/integration/test_live_criteria_probes.py ss                        [ 47%]
+check	Run make check	2026-09-12T17:04:36.5761131Z tests/integration/test_organize_scheduler.py ......                      [ 47%]
+check	Run make check	2026-09-12T17:04:36.7134746Z tests/integration/test_organize_tick_halt.py ..                          [ 47%]
+check	Run make check	2026-09-12T17:04:39.1882178Z tests/integration/test_pr_footer_gating.py ...........                   [ 48%]
+check	Run make check	2026-09-12T17:04:39.9301046Z tests/integration/test_private_reference_writes.py ..................... [ 48%]
+check	Run make check	2026-09-12T17:04:40.8177994Z ........................................                                 [ 48%]
+check	Run make check	2026-09-12T17:04:41.9993424Z tests/integration/test_scope_launch_freshness.py ....                    [ 48%]
+check	Run make check	2026-09-12T17:04:46.8429240Z tests/integration/test_scope_runtime.py ..........................       [ 48%]
+check	Run make check	2026-09-12T17:04:46.9256930Z tests/integration/test_self_running_chain.py ..2026-09-12 17:04:46 [info     ] lifecycle_watch_finished       issue_key=K-1 job_id=af458b1af3184137b12550c3c85ba5b3 run_started=True terminal_outcome=False
+check	Run make check	2026-09-12T17:04:46.9276295Z .                         [ 49%]
+check	Run make check	2026-09-12T17:04:46.9297438Z tests/integration/test_session_resume.py sss                             [ 49%]
+check	Run make check	2026-09-12T17:04:48.6926968Z tests/integration/test_stacked_scope.py .....                            [ 49%]
+check	Run make check	2026-09-12T17:04:53.5620662Z tests/integration/test_workflow_e2e.py .................                 [ 49%]
+check	Run make check	2026-09-12T17:04:53.5663720Z tests/probes/test_ab_failure_capture.py ...                              [ 49%]
+check	Run make check	2026-09-12T17:04:53.5672920Z tests/probes/test_ab_smoke.py s                                          [ 49%]
+check	Run make check	2026-09-12T17:04:53.5796025Z tests/probes/test_harness_capabilities.py .ssssss                        [ 49%]
+check	Run make check	2026-09-12T17:04:53.5845629Z tests/probes/test_live_ownership.py ssssssss                             [ 49%]
+check	Run make check	2026-09-12T17:04:53.5905783Z tests/probes/test_strict_output_enforcement.py .s                        [ 49%]
+check	Run make check	2026-09-12T17:04:53.5914958Z tests/probes/test_v5_orchestration_live.py s                             [ 49%]
+check	Run make check	2026-09-12T17:04:53.6548738Z tests/prompts/test_absence_bindings.py ................................. [ 49%]
+check	Run make check	2026-09-12T17:04:53.6579096Z .                                                                        [ 49%]
+check	Run make check	2026-09-12T17:04:53.7443982Z tests/prompts/test_criteria_generation_prompts.py ..............         [ 49%]
+check	Run make check	2026-09-12T17:04:53.9612164Z tests/prompts/test_fire_record.py .................                      [ 50%]
+check	Run make check	2026-09-12T17:04:53.9633982Z tests/prompts/test_issue_label_bindings.py ..                            [ 50%]
+check	Run make check	2026-09-12T17:04:54.1296526Z tests/prompts/test_knowledge_map.py ..........................           [ 50%]
+check	Run make check	2026-09-12T17:04:54.1339918Z tests/prompts/test_minimal_floor.py ....                                 [ 50%]
+check	Run make check	2026-09-12T17:04:54.1825967Z tests/prompts/test_native_initiative_configuration.py .....              [ 50%]
+check	Run make check	2026-09-12T17:04:54.3517624Z tests/prompts/test_operation_config.py ................................. [ 50%]
+check	Run make check	2026-09-12T17:04:54.5697123Z .F.........F.....                                                        [ 50%]
+check	Run make check	2026-09-12T17:04:54.7599974Z tests/prompts/test_organize_call_bindings.py ........................... [ 51%]
+check	Run make check	2026-09-12T17:04:55.0366464Z ..........................................                               [ 51%]
+check	Run make check	2026-09-12T17:04:55.0732170Z tests/prompts/test_organize_mandate_bindings.py .....                    [ 51%]
+check	Run make check	2026-09-12T17:04:55.2448480Z tests/prompts/test_organize_roles.py ..................                  [ 51%]
+check	Run make check	2026-09-12T17:04:55.3470185Z tests/prompts/test_pass_roster.py ...................................... [ 52%]
+check	Run make check	2026-09-12T17:04:56.1208331Z ..................................................................       [ 52%]
+check	Run make check	2026-09-12T17:04:56.1529262Z tests/prompts/test_principal_roles.py ..........                         [ 53%]
+check	Run make check	2026-09-12T17:04:56.2914123Z tests/prompts/test_prompt_wiring.py .................................... [ 53%]
+check	Run make check	2026-09-12T17:04:56.4560826Z .................                                                        [ 53%]
+check	Run make check	2026-09-12T17:04:56.5535682Z tests/prompts/test_resolvable_identifiers.py ...........                 [ 53%]
+check	Run make check	2026-09-12T17:04:56.6900042Z tests/prompts/test_rollback.py ........                                  [ 53%]
+check	Run make check	2026-09-12T17:04:56.6930063Z tests/prompts/test_scope_label_bindings.py ...                           [ 53%]
+check	Run make check	2026-09-12T17:04:56.9111221Z tests/prompts/test_session_policy.py ................................... [ 54%]
+check	Run make check	2026-09-12T17:05:15.2451666Z ........................................................................ [ 54%]
+check	Run make check	2026-09-12T17:05:15.2651877Z ...                                                                      [ 54%]
+check	Run make check	2026-09-12T17:05:15.3335065Z tests/prompts/test_set_completeness.py .............                     [ 54%]
+check	Run make check	2026-09-12T17:05:15.4689735Z tests/prompts/test_skills_loadouts.py ..............F......              [ 55%]
+check	Run make check	2026-09-12T17:05:15.4720871Z tests/prompts/test_supervision_adoption.py ...                           [ 55%]
+check	Run make check	2026-09-12T17:05:15.7679357Z tests/prompts/test_v5_fragments.py .......F...................F......... [ 55%]
+check	Run make check	2026-09-12T17:05:15.7884722Z ...                                                                      [ 55%]
+check	Run make check	2026-09-12T17:05:15.8493806Z tests/prompts/test_v5_lenses.py ........                                 [ 55%]
+check	Run make check	2026-09-12T17:05:16.0001808Z tests/prompts/test_v5_orchestration.py ....................              [ 55%]
+check	Run make check	2026-09-12T17:05:16.2803640Z tests/prompts/test_v5_style_rules.py ................................... [ 56%]
+check	Run make check	2026-09-12T17:05:17.1578463Z ........................................................................ [ 56%]
+check	Run make check	2026-09-12T17:05:18.0353556Z ........................................................................ [ 57%]
+check	Run make check	2026-09-12T17:05:18.9243688Z ........................................................................ [ 58%]
+check	Run make check	2026-09-12T17:05:19.8168654Z .............F................F......................................... [ 59%]
+check	Run make check	2026-09-12T17:05:20.2009351Z ................................                                         [ 59%]
+check	Run make check	2026-09-12T17:05:20.4996099Z tests/prompts/test_v5_wiring.py ........................................ [ 59%]
+check	Run make check	2026-09-12T17:05:20.8380292Z .......................................                                  [ 60%]
+check	Run make check	2026-09-12T17:05:20.8451010Z tests/services/test_agent_service.py ....                                [ 60%]
+check	Run make check	2026-09-12T17:05:21.9307044Z tests/services/test_assertion_drift.py ...........................       [ 60%]
+check	Run make check	2026-09-12T17:05:21.9538843Z tests/services/test_audit_coverage.py ............                       [ 60%]
+check	Run make check	2026-09-12T17:05:22.2458019Z tests/services/test_audit_session_ownership.py .......                   [ 60%]
+check	Run make check	2026-09-12T17:05:22.7415540Z tests/services/test_audit_sessions.py ....................               [ 60%]
+check	Run make check	2026-09-12T17:05:23.1079855Z tests/services/test_audit_sources.py ............................        [ 61%]
+check	Run make check	2026-09-12T17:05:23.1517944Z tests/services/test_check_classification.py ..........................   [ 61%]
+check	Run make check	2026-09-12T17:05:23.3479899Z tests/services/test_claim_heartbeat.py .....................             [ 61%]
+check	Run make check	2026-09-12T17:05:23.3999760Z tests/services/test_dispatch_pass.py ...........2026-09-12 17:05:23 [info     ] lifecycle_watch_finished       issue_key=K-1 job_id=job-0001 run_started=False terminal_outcome=False
+check	Run make check	2026-09-12T17:05:23.5334643Z ...................      [ 61%]
+check	Run make check	2026-09-12T17:05:23.5876936Z tests/services/test_fire_context.py .....................                [ 62%]
+check	Run make check	2026-09-12T17:05:23.6833019Z tests/services/test_fire_dispatcher.py ................................. [ 62%]
+check	Run make check	2026-09-12T17:05:23.8255706Z ..................................................                       [ 62%]
+check	Run make check	2026-09-12T17:05:23.8525019Z tests/services/test_fire_log_facts.py ........                           [ 62%]
+check	Run make check	2026-09-12T17:05:23.9900824Z tests/services/test_fire_record_identity.py ....                         [ 62%]
+check	Run make check	2026-09-12T17:05:24.1079614Z tests/services/test_git_source_lookup.py .....                           [ 63%]
+check	Run make check	2026-09-12T17:05:24.1249932Z tests/services/test_landing_dispatch.py ......                           [ 63%]
+check	Run make check	2026-09-12T17:05:24.1483120Z tests/services/test_lane_reports.py ........................             [ 63%]
+check	Run make check	2026-09-12T17:05:24.2416747Z tests/services/test_lifecycle_watcher.py ............................... [ 63%]
+check	Run make check	2026-09-12T17:05:24.2683744Z .........                                                                [ 63%]
+check	Run make check	2026-09-12T17:05:26.2361007Z tests/services/test_native_amendment_independent.py ..................   [ 63%]
+check	Run make check	2026-09-12T17:05:29.3276399Z tests/services/test_native_amendments.py ..........................      [ 64%]
+check	Run make check	2026-09-12T17:05:29.7042460Z tests/services/test_native_commit_receipt_independent.py ...             [ 64%]
+check	Run make check	2026-09-12T17:05:29.7120876Z tests/services/test_parent_rollup_authority.py ..                        [ 64%]
+check	Run make check	2026-09-12T17:05:29.7896002Z tests/services/test_pass_gate.py .....................................   [ 64%]
+check	Run make check	2026-09-12T17:05:30.0457687Z tests/services/test_pass_scheduler.py ........................           [ 64%]
+check	Run make check	2026-09-12T17:05:30.4665265Z tests/services/test_prompt_pass.py .......................               [ 65%]
+check	Run make check	2026-09-12T17:05:31.1781455Z tests/services/test_prompt_passes.py .........................           [ 65%]
+check	Run make check	2026-09-12T17:05:31.2227594Z tests/services/test_run_recorder.py .............................        [ 65%]
+check	Run make check	2026-09-12T17:05:31.2890326Z tests/services/test_run_surface_lease.py ...................             [ 65%]
+check	Run make check	2026-09-12T17:05:31.6403889Z tests/services/test_scope_dispatcher.py .............................    [ 66%]
+check	Run make check	2026-09-12T17:05:31.6565310Z tests/services/test_scope_planning.py .........                          [ 66%]
+check	Run make check	2026-09-12T17:05:31.6640532Z tests/services/test_scope_resolution.py .....                            [ 66%]
+check	Run make check	2026-09-12T17:05:32.4140573Z tests/services/test_session_grant_threading.py ......................    [ 66%]
+check	Run make check	2026-09-12T17:05:32.4612261Z tests/services/test_structured_run_records.py .......................... [ 66%]
+check	Run make check	2026-09-12T17:05:32.4931670Z ...........                                                              [ 66%]
+check	Run make check	2026-09-12T17:05:32.5475844Z tests/services/test_tracker_lifecycle.py .........................       [ 66%]
+check	Run make check	2026-09-12T17:05:34.0788925Z tests/services/test_union_composition.py .....................           [ 67%]
+check	Run make check	2026-09-12T17:05:34.5788204Z tests/services/test_union_conflict_remediation.py ..                     [ 67%]
+check	Run make check	2026-09-12T17:05:36.2234218Z tests/services/test_union_replacement_identity.py ...............        [ 67%]
+check	Run make check	2026-09-12T17:05:40.0123666Z tests/services/test_union_tick.py ........................               [ 67%]
+check	Run make check	2026-09-12T17:05:40.1394909Z tests/spec/test_model_agreement.py ..................................... [ 67%]
+check	Run make check	2026-09-12T17:05:40.3531449Z ........................................................................ [ 68%]
+check	Run make check	2026-09-12T17:05:40.4343026Z ...............................s                                         [ 68%]
+check	Run make check	2026-09-12T17:05:40.5279108Z tests/test_composition_root.py ...............                           [ 69%]
+check	Run make check	2026-09-12T17:05:41.9422614Z tests/test_forge_origin_selection.py ...........................         [ 69%]
+check	Run make check	2026-09-12T17:05:41.9944011Z tests/test_lane_verification.py ......                                   [ 69%]
+check	Run make check	2026-09-12T17:05:42.4152435Z tests/test_lifespan_cleanup.py ........................................  [ 69%]
+check	Run make check	2026-09-12T17:05:43.1706687Z tests/test_organize_portability.py ..................................    [ 70%]
+check	Run make check	2026-09-12T17:05:43.2647328Z tests/test_release.py ....                                               [ 70%]
+check	Run make check	2026-09-12T17:05:43.2739173Z tests/tracker/test_alarm_independent.py ..                               [ 70%]
+check	Run make check	2026-09-12T17:05:43.6121086Z tests/tracker/test_audit_claim.py ...................................... [ 70%]
+check	Run make check	2026-09-12T17:05:45.1426076Z ............................................................             [ 71%]
+check	Run make check	2026-09-12T17:05:46.4740921Z tests/tracker/test_audit_claim_replacements.py ....................      [ 71%]
+check	Run make check	2026-09-12T17:05:48.8671826Z tests/tracker/test_audit_combined_review.py ........                     [ 71%]
+check	Run make check	2026-09-12T17:06:02.7379438Z tests/tracker/test_audit_detection_removal.py .......................... [ 71%]
+check	Run make check	2026-09-12T17:06:08.9421033Z ............                                                             [ 71%]
+check	Run make check	2026-09-12T17:06:09.4388701Z tests/tracker/test_audit_evidence.py ................................... [ 72%]
+check	Run make check	2026-09-12T17:06:09.7777079Z .........................                                                [ 72%]
+check	Run make check	2026-09-12T17:06:11.4409179Z tests/tracker/test_audit_evidence_git.py ................                [ 72%]
+check	Run make check	2026-09-12T17:06:14.1508192Z tests/tracker/test_audit_evidence_replacements.py ...................... [ 72%]
+check	Run make check	2026-09-12T17:06:14.2919706Z ..                                                                       [ 72%]
+check	Run make check	2026-09-12T17:06:14.6188673Z tests/tracker/test_audit_forge.py ...................................... [ 73%]
+check	Run make check	2026-09-12T17:06:15.0999154Z ..............................................................           [ 73%]
+check	Run make check	2026-09-12T17:06:15.8142976Z tests/tracker/test_audit_forge_sweep.py ................................ [ 74%]
+check	Run make check	2026-09-12T17:06:16.6249782Z ........................................                                 [ 74%]
+check	Run make check	2026-09-12T17:06:17.2161065Z tests/tracker/test_audit_forge_sweep_git.py ....                         [ 74%]
+check	Run make check	2026-09-12T17:06:17.5014832Z tests/tracker/test_audit_mandate.py .................................... [ 74%]
+check	Run make check	2026-09-12T17:06:18.1480568Z ........................                                                 [ 75%]
+check	Run make check	2026-09-12T17:06:19.4179901Z tests/tracker/test_audit_mandate_replacements.py ....................    [ 75%]
+check	Run make check	2026-09-12T17:06:19.9971697Z tests/tracker/test_audit_overclaim.py ..............................     [ 75%]
+check	Run make check	2026-09-12T17:06:20.4652472Z tests/tracker/test_audit_overclaim_bytes.py ........................     [ 75%]
+check	Run make check	2026-09-12T17:06:22.4643149Z tests/tracker/test_audit_overclaim_git.py ................               [ 76%]
+check	Run make check	2026-09-12T17:06:22.9753685Z tests/tracker/test_audit_overclaim_sweep.py ............................ [ 76%]
+check	Run make check	2026-09-12T17:06:23.2621414Z ................                                                         [ 76%]
+check	Run make check	2026-09-12T17:06:27.0025843Z tests/tracker/test_audit_overclaim_sweep_git.py ................         [ 76%]
+check	Run make check	2026-09-12T17:06:27.5288219Z tests/tracker/test_audit_repository_cancellation.py ........             [ 76%]
+check	Run make check	2026-09-12T17:06:27.6728109Z tests/tracker/test_audit_requests.py ................................... [ 77%]
+check	Run make check	2026-09-12T17:06:27.8786325Z .................................................                        [ 77%]
+check	Run make check	2026-09-12T17:06:28.5634561Z tests/tracker/test_audit_sweep.py ...................................... [ 77%]
+check	Run make check	2026-09-12T17:06:28.5645106Z                                                                          [ 77%]
+check	Run make check	2026-09-12T17:06:30.1011263Z tests/tracker/test_audit_sweep_git.py ..............                     [ 78%]
+check	Run make check	2026-09-12T17:06:30.6951570Z tests/tracker/test_audit_terminal_mandate.py ..........................  [ 78%]
+check	Run make check	2026-09-12T17:06:33.0335843Z tests/tracker/test_audit_terminal_mandate_git.py ..........              [ 78%]
+check	Run make check	2026-09-12T17:06:33.2393132Z tests/tracker/test_barren_record_collector.py .......................... [ 78%]
+check	Run make check	2026-09-12T17:06:33.5537959Z ..............................................                           [ 79%]
+check	Run make check	2026-09-12T17:06:33.6651933Z tests/tracker/test_barren_tick.py ...................                    [ 79%]
+check	Run make check	2026-09-12T17:06:33.7554937Z tests/tracker/test_body_revisions.py ................................... [ 79%]
+check	Run make check	2026-09-12T17:06:33.7835681Z ............                                                             [ 79%]
+check	Run make check	2026-09-12T17:06:33.7969598Z tests/tracker/test_combined_issue_writes.py ...........                  [ 79%]
+check	Run make check	2026-09-12T17:06:33.8066957Z tests/tracker/test_comment_pages.py .....                                [ 79%]
+check	Run make check	2026-09-12T17:06:35.2469573Z tests/tracker/test_consumer_read_ports.py .......................        [ 80%]
+check	Run make check	2026-09-12T17:06:35.2736442Z tests/tracker/test_criterion_creation.py ................                [ 80%]
+check	Run make check	2026-09-12T17:06:35.2800675Z tests/tracker/test_criterion_identity_conformance.py ..                  [ 80%]
+check	Run make check	2026-09-12T17:06:35.3275471Z tests/tracker/test_criterion_reader.py ................                  [ 80%]
+check	Run make check	2026-09-12T17:06:35.3499192Z tests/tracker/test_criterion_reader_boundary.py ............             [ 80%]
+check	Run make check	2026-09-12T17:06:35.4040588Z tests/tracker/test_criterion_record_fidelity.py ............             [ 80%]
+check	Run make check	2026-09-12T17:06:35.5085828Z tests/tracker/test_criterion_resolution.py ............................. [ 80%]
+check	Run make check	2026-09-12T17:06:35.5108113Z .                                                                        [ 80%]
+check	Run make check	2026-09-12T17:06:35.7458199Z tests/tracker/test_criterion_resolution_consumers.py ................... [ 81%]
+check	Run make check	2026-09-12T17:06:35.8037008Z .....                                                                    [ 81%]
+check	Run make check	2026-09-12T17:06:36.2950447Z tests/tracker/test_detector_removal_sweep.py ........................... [ 81%]
+check	Run make check	2026-09-12T17:06:36.5395987Z .............                                                            [ 81%]
+check	Run make check	2026-09-12T17:06:42.8507884Z tests/tracker/test_detector_removal_sweep_git.py ..........              [ 81%]
+check	Run make check	2026-09-12T17:06:42.8775466Z tests/tracker/test_document_relation_assets.py ...............           [ 81%]
+check	Run make check	2026-09-12T17:06:42.9440358Z tests/tracker/test_empty_fire_entry.py ..................                [ 82%]
+check	Run make check	2026-09-12T17:06:43.0064542Z tests/tracker/test_escalation_ageing.py ..........                       [ 82%]
+check	Run make check	2026-09-12T17:06:43.1757027Z tests/tracker/test_escalation_record_collector.py ...................... [ 82%]
+check	Run make check	2026-09-12T17:06:43.4579854Z .........................................                                [ 82%]
+check	Run make check	2026-09-12T17:06:43.5242607Z tests/tracker/test_escalation_record_reader.py ......................... [ 82%]
+check	Run make check	2026-09-12T17:06:43.5369946Z ....                                                                     [ 83%]
+check	Run make check	2026-09-12T17:06:43.6144674Z tests/tracker/test_escalation_resolution.py ............................ [ 83%]
+check	Run make check	2026-09-12T17:06:43.6376449Z ...........                                                              [ 83%]
+check	Run make check	2026-09-12T17:06:43.6658973Z tests/tracker/test_escalation_resolution_boundary.py ..................  [ 83%]
+check	Run make check	2026-09-12T17:06:43.7939780Z tests/tracker/test_escalation_resolution_drift.py ..............         [ 83%]
+check	Run make check	2026-09-12T17:06:43.8571730Z tests/tracker/test_fire_spec_approval.py ......................          [ 83%]
+check	Run make check	2026-09-12T17:06:43.8657188Z tests/tracker/test_fire_spec_approval_ancestry.py ....                   [ 83%]
+check	Run make check	2026-09-12T17:06:43.9577484Z tests/tracker/test_fire_spec_reader.py ................................. [ 84%]
+check	Run make check	2026-09-12T17:06:44.0069097Z ..................                                                       [ 84%]
+check	Run make check	2026-09-12T17:06:44.0896356Z tests/tracker/test_idempotent_writes.py ................................ [ 84%]
+check	Run make check	2026-09-12T17:06:44.2183836Z ..................................................                       [ 85%]
+check	Run make check	2026-09-12T17:06:44.2326301Z tests/tracker/test_issue_classification_reads.py .............           [ 85%]
+check	Run make check	2026-09-12T17:06:44.2532994Z tests/tracker/test_issue_identity_boundary.py .............              [ 85%]
+check	Run make check	2026-09-12T17:06:44.2953826Z tests/tracker/test_issue_ruling_records.py ..................            [ 85%]
+check	Run make check	2026-09-12T17:06:44.3716706Z tests/tracker/test_issue_upsert.py ............................          [ 85%]
+check	Run make check	2026-09-12T17:06:44.4042329Z tests/tracker/test_labeled_issues.py ..................                  [ 86%]
+check	Run make check	2026-09-12T17:06:44.4252378Z tests/tracker/test_landing_ambiguity.py ........                         [ 86%]
+check	Run make check	2026-09-12T17:06:44.4728886Z tests/tracker/test_landing_base_resolution.py ..................         [ 86%]
+check	Run make check	2026-09-12T17:06:44.5398603Z tests/tracker/test_lane_escalation.py ..............................     [ 86%]
+check	Run make check	2026-09-12T17:06:44.6344882Z tests/tracker/test_lane_record_signals.py .............................. [ 87%]
+check	Run make check	2026-09-12T17:06:44.6869304Z ..................                                                       [ 87%]
+check	Run make check	2026-09-12T17:06:44.7959798Z tests/tracker/test_lane_records.py ..................................... [ 87%]
+check	Run make check	2026-09-12T17:06:44.9069401Z ........................................                                 [ 87%]
+check	Run make check	2026-09-12T17:06:44.9551633Z tests/tracker/test_linear_mcp_tracker.py ............................... [ 88%]
+check	Run make check	2026-09-12T17:06:45.8986439Z ...............................                                          [ 88%]
+check	Run make check	2026-09-12T17:06:45.9162168Z tests/tracker/test_linear_tool_arguments.py .......                      [ 88%]
+check	Run make check	2026-09-12T17:06:45.9845533Z tests/tracker/test_linear_tool_roster.py .....                           [ 88%]
+check	Run make check	2026-09-12T17:06:46.0126292Z tests/tracker/test_linear_wire_shapes.py ............................... [ 88%]
+check	Run make check	2026-09-12T17:06:46.0158783Z ..                                                                       [ 88%]
+check	Run make check	2026-09-12T17:06:46.1451305Z tests/tracker/test_mandate_graph.py ......................               [ 89%]
+check	Run make check	2026-09-12T17:06:46.1673092Z tests/tracker/test_marker_configuration.py .....                         [ 89%]
+check	Run make check	2026-09-12T17:06:46.1789947Z tests/tracker/test_milestone_approval.py ......                          [ 89%]
+check	Run make check	2026-09-12T17:06:46.1897823Z tests/tracker/test_native_recorded_landing.py .......                    [ 89%]
+check	Run make check	2026-09-12T17:06:46.2656729Z tests/tracker/test_ownership_arbitration.py ............................ [ 89%]
+check	Run make check	2026-09-12T17:06:46.2667790Z                                                                          [ 89%]
+check	Run make check	2026-09-12T17:06:46.2770517Z tests/tracker/test_port_failure_boundary.py ......                       [ 89%]
+check	Run make check	2026-09-12T17:06:50.0368889Z tests/tracker/test_recorded_assertion_drift.py ......................... [ 89%]
+check	Run make check	2026-09-12T17:06:52.2473674Z .............................                                            [ 90%]
+check	Run make check	2026-09-12T17:06:52.3084114Z tests/tracker/test_recorded_landing.py ..............................    [ 90%]
+check	Run make check	2026-09-12T17:06:52.4504394Z tests/tracker/test_recorded_landing_git.py ..                            [ 90%]
+check	Run make check	2026-09-12T17:06:52.6109671Z tests/tracker/test_recorded_ruling_growth.py ..........................  [ 90%]
+check	Run make check	2026-09-12T17:06:52.6412396Z tests/tracker/test_ruling_reader_independent.py ..................       [ 90%]
+check	Run make check	2026-09-12T17:06:52.7580099Z tests/tracker/test_ruling_records.py ................................... [ 91%]
+check	Run make check	2026-09-12T17:06:52.7625102Z ..                                                                       [ 91%]
+check	Run make check	2026-09-12T17:06:52.8496170Z tests/tracker/test_run_alarm_records.py ................................ [ 91%]
+check	Run make check	2026-09-12T17:06:52.8663657Z .......                                                                  [ 91%]
+check	Run make check	2026-09-12T17:06:52.9264474Z tests/tracker/test_scope_approval.py ................................... [ 92%]
+check	Run make check	2026-09-12T17:06:52.9861961Z .................................                                        [ 92%]
+check	Run make check	2026-09-12T17:06:53.0478079Z tests/tracker/test_scope_label_mappings.py ............................. [ 92%]
+check	Run make check	2026-09-12T17:06:53.0510051Z ..                                                                       [ 92%]
+check	Run make check	2026-09-12T17:06:53.1461141Z tests/tracker/test_scope_planning.py ................................... [ 93%]
+check	Run make check	2026-09-12T17:06:53.1484651Z .                                                                        [ 93%]
+check	Run make check	2026-09-12T17:06:53.2110166Z tests/tracker/test_scope_reads.py ...................................... [ 93%]
+check	Run make check	2026-09-12T17:06:53.2631066Z .............................                                            [ 93%]
+check	Run make check	2026-09-12T17:06:53.3592573Z tests/tracker/test_scope_subtree_reach.py ............                   [ 93%]
+check	Run make check	2026-09-12T17:06:53.5997620Z tests/tracker/test_scope_tally.py ...................................... [ 94%]
+check	Run make check	2026-09-12T17:07:00.7297435Z ....................                                                     [ 94%]
+check	Run make check	2026-09-12T17:07:00.7328875Z tests/tracker/test_scope_tool_arguments.py .                             [ 94%]
+check	Run make check	2026-09-12T17:07:00.8118634Z tests/tracker/test_state_history.py .................................... [ 94%]
+check	Run make check	2026-09-12T17:07:00.8459331Z ............                                                             [ 94%]
+check	Run make check	2026-09-12T17:07:00.9082216Z tests/tracker/test_tracker_boot.py ....................................  [ 95%]
+check	Run make check	2026-09-12T17:07:01.0558122Z tests/tracker/test_tracker_boot_cleanup.py ..........                    [ 95%]
+check	Run make check	2026-09-12T17:07:02.5557355Z tests/tracker/test_tracker_boot_wiring.py .....................          [ 95%]
+check	Run make check	2026-09-12T17:07:02.6237666Z tests/tracker/test_tracker_conformance.py .............................. [ 95%]
+check	Run make check	2026-09-12T17:07:02.8084240Z ........................................................................ [ 96%]
+check	Run make check	2026-09-12T17:07:02.9884480Z ........................................................................ [ 97%]
+check	Run make check	2026-09-12T17:07:03.1355353Z ...............................................................          [ 97%]
+check	Run make check	2026-09-12T17:07:03.1630755Z tests/types/test_audit_mandate_independent.py .......................... [ 98%]
+check	Run make check	2026-09-12T17:07:03.1647060Z .                                                                        [ 98%]
+check	Run make check	2026-09-12T17:07:03.1839358Z tests/types/test_audit_report_contract.py ........                       [ 98%]
+check	Run make check	2026-09-12T17:07:03.1939014Z tests/types/test_audit_union_contracts.py .....                          [ 98%]
+check	Run make check	2026-09-12T17:07:03.2166068Z tests/types/test_organize_halt.py .......................                [ 98%]
+check	Run make check	2026-09-12T17:07:03.2380571Z tests/types/test_output_descriptions.py ......................           [ 98%]
+check	Run make check	2026-09-12T17:07:03.2489473Z tests/types/test_scope_events.py ...........                             [ 98%]
+check	Run make check	2026-09-12T17:07:06.3843560Z tests/types/test_wire_renames.py ......                                  [ 98%]
+check	Run make check	2026-09-12T17:07:06.4424260Z tests/types/test_wire_schemas.py ....................................... [ 99%]
+check	Run make check	2026-09-12T17:07:09.7482883Z ......................................                                   [ 99%]
+check	Run make check	2026-09-12T17:07:09.7726702Z tests/types/test_writable_surface.py ..........................          [ 99%]
+check	Run make check	2026-09-12T17:07:10.1909449Z tests/workflows/test_investigate_fan_in.py ...........                   [100%]
+check	Run make check	2026-09-12T17:07:10.1910157Z 
+check	Run make check	2026-09-12T17:07:10.1910567Z =================================== FAILURES ===================================
+check	Run make check	2026-09-12T17:07:10.1911508Z _______ test_per_call_namespace_covers_every_non_operation_template_name _______
+check	Run make check	2026-09-12T17:07:10.1912055Z 
+check	Run make check	2026-09-12T17:07:10.1912550Z     def test_per_call_namespace_covers_every_non_operation_template_name() -> None:
+check	Run make check	2026-09-12T17:07:10.1913793Z         """The declared per-call set is not allowed to drift from the templates."""
+check	Run make check	2026-09-12T17:07:10.1914554Z         registry = load_registry()
+check	Run make check	2026-09-12T17:07:10.1915148Z         operation_names = set(bindings_for(example_config()))
+check	Run make check	2026-09-12T17:07:10.1915712Z         for key in PromptKey:
+check	Run make check	2026-09-12T17:07:10.1916298Z             names = binding_names(registry.template_for(key).body)
+check	Run make check	2026-09-12T17:07:10.1916873Z             unaccounted = (
+check	Run make check	2026-09-12T17:07:10.1917588Z                 names
+check	Run make check	2026-09-12T17:07:10.1918019Z                 - operation_names
+check	Run make check	2026-09-12T17:07:10.1918509Z                 - PER_CALL_VARIABLE_NAMES
+check	Run make check	2026-09-12T17:07:10.1919015Z                 - SET_FRAGMENT_NAMES
+check	Run make check	2026-09-12T17:07:10.1919488Z                 - ITEM_SCOPED_NAMES
+check	Run make check	2026-09-12T17:07:10.1919890Z             )
+check	Run make check	2026-09-12T17:07:10.1920391Z             unaccounted = {n for n in unaccounted if "." not in n}
+check	Run make check	2026-09-12T17:07:10.1921285Z >           assert unaccounted == set(), f"{key.value} references {unaccounted}"
+check	Run make check	2026-09-12T17:07:10.1922315Z E           AssertionError: native_writer_contract references {'pinned_rulings'}
+check	Run make check	2026-09-12T17:07:10.1923121Z E           assert {'pinned_rulings'} == set()
+check	Run make check	2026-09-12T17:07:10.1923765Z E             
+check	Run make check	2026-09-12T17:07:10.1924463Z E             Extra items in the left set:
+check	Run make check	2026-09-12T17:07:10.1924985Z E             'pinned_rulings'
+check	Run make check	2026-09-12T17:07:10.1925360Z E             
+check	Run make check	2026-09-12T17:07:10.1925699Z E             Full diff:
+check	Run make check	2026-09-12T17:07:10.1926082Z E             - set()
+check	Run make check	2026-09-12T17:07:10.1926629Z E             + {
+check	Run make check	2026-09-12T17:07:10.1927032Z E             +     'pinned_rulings',
+check	Run make check	2026-09-12T17:07:10.1927458Z E             + }
+check	Run make check	2026-09-12T17:07:10.1927640Z 
+check	Run make check	2026-09-12T17:07:10.1928021Z tests/prompts/test_operation_config.py:516: AssertionError
+check	Run make check	2026-09-12T17:07:10.1928917Z _____________ test_placeholder_mapping_is_total_in_both_directions _____________
+check	Run make check	2026-09-12T17:07:10.1929425Z 
+check	Run make check	2026-09-12T17:07:10.1929808Z     def test_placeholder_mapping_is_total_in_both_directions() -> None:
+check	Run make check	2026-09-12T17:07:10.1930711Z         """Every placeholder maps to one path; every field is template-reachable."""
+check	Run make check	2026-09-12T17:07:10.1932429Z         rows = markdown_rows("## Placeholder → OperationConfig field")
+check	Run make check	2026-09-12T17:07:10.1933108Z         mapped = {row[0]: row[1] for row in rows}
+check	Run make check	2026-09-12T17:07:10.1933840Z         assert len(mapped) == len(rows)
+check	Run make check	2026-09-12T17:07:10.1934242Z     
+check	Run make check	2026-09-12T17:07:10.1935092Z         # Direction 1 — no placeholder the templates reference is unmapped.
+check	Run make check	2026-09-12T17:07:10.1935815Z         referenced = template_placeholders()
+check	Run make check	2026-09-12T17:07:10.1936516Z >       assert referenced == set(mapped), referenced ^ set(mapped)
+check	Run make check	2026-09-12T17:07:10.1937301Z E       AssertionError: {'base_sha', 'claim', 'pinned_rulings'}
+check	Run make check	2026-09-12T17:07:10.1938165Z E       assert {'agent_ident...ocs_mcp', ...} == {'agent_ident...nnector', ...}
+check	Run make check	2026-09-12T17:07:10.1938765Z E         
+check	Run make check	2026-09-12T17:07:10.1939154Z E         Extra items in the left set:
+check	Run make check	2026-09-12T17:07:10.1939577Z E         'claim'
+check	Run make check	2026-09-12T17:07:10.1939928Z E         'pinned_rulings'
+check	Run make check	2026-09-12T17:07:10.1940551Z E         'base_sha'
+check	Run make check	2026-09-12T17:07:10.1940864Z E         
+check	Run make check	2026-09-12T17:07:10.1941171Z E         Full diff:
+check	Run make check	2026-09-12T17:07:10.1941485Z E           {
+check	Run make check	2026-09-12T17:07:10.1941890Z E               'agent_identities.0',
+check	Run make check	2026-09-12T17:07:10.1942398Z E               'agent_identities.1',
+check	Run make check	2026-09-12T17:07:10.1942838Z E         +     'base_sha',
+check	Run make check	2026-09-12T17:07:10.1943418Z E         +     'claim',
+check	Run make check	2026-09-12T17:07:10.1943898Z E               'documents.constitution.id',
+check	Run make check	2026-09-12T17:07:10.1944485Z E               'endpoints.cloudflare_docs_mcp',
+check	Run make check	2026-09-12T17:07:10.1945044Z E               'endpoints.host_runner',
+check	Run make check	2026-09-12T17:07:10.1945591Z E               'endpoints.notion_connector',
+check	Run make check	2026-09-12T17:07:10.1946194Z E               'issue_labels.criterion',
+check	Run make check	2026-09-12T17:07:10.1946729Z E               'knowledge.constitution',
+check	Run make check	2026-09-12T17:07:10.1947244Z E               'knowledge.memories',
+check	Run make check	2026-09-12T17:07:10.1947736Z E               'knowledge.notes',
+check	Run make check	2026-09-12T17:07:10.1948232Z E               'knowledge.personas',
+check	Run make check	2026-09-12T17:07:10.1948735Z E               'knowledge.run_logs',
+check	Run make check	2026-09-12T17:07:10.1949265Z E               'marker_prefixes.repository',
+check	Run make check	2026-09-12T17:07:10.1949792Z E               'operation_name',
+check	Run make check	2026-09-12T17:07:10.1950264Z E               'organize_mandates',
+check	Run make check	2026-09-12T17:07:10.1950736Z E         +     'pinned_rulings',
+check	Run make check	2026-09-12T17:07:10.1951421Z E               'principals.1.tracker_user',
+check	Run make check	2026-09-12T17:07:10.1951954Z E               'principals.2.handle',
+check	Run make check	2026-09-12T17:07:10.1952486Z E               'principals.2.tracker_user',
+check	Run make check	2026-09-12T17:07:10.1953164Z E               'principals.approver.forge_handle',
+check	Run make check	2026-09-12T17:07:10.1954100Z E               'principals.approver.tracker_user',
+check	Run make check	2026-09-12T17:07:10.1954839Z E               'principals.assignee.tracker_user',
+check	Run make check	2026-09-12T17:07:10.1955435Z E               'private_surface',
+check	Run make check	2026-09-12T17:07:10.1955962Z E               'queue_states.approved',
+check	Run make check	2026-09-12T17:07:10.1956517Z E               'queue_states.decision',
+check	Run make check	2026-09-12T17:07:10.1957054Z E               'queue_states.done',
+check	Run make check	2026-09-12T17:07:10.1957571Z E               'queue_states.proposed',
+check	Run make check	2026-09-12T17:07:10.1958095Z E               'queue_states.triage',
+check	Run make check	2026-09-12T17:07:10.1958589Z E               'records.fire',
+check	Run make check	2026-09-12T17:07:10.1959150Z E               'records.fire.columns.what_happened',
+check	Run make check	2026-09-12T17:07:10.1959741Z E               'records.fire.id',
+check	Run make check	2026-09-12T17:07:10.1960245Z E               'records.fire.name',
+check	Run make check	2026-09-12T17:07:10.1960764Z E               'records.fire.system',
+check	Run make check	2026-09-12T17:07:10.1961289Z E               'records.fire_prep.id',
+check	Run make check	2026-09-12T17:07:10.1961831Z E               'records.fire_prep.name',
+check	Run make check	2026-09-12T17:07:10.1962366Z E               'records.grooming.id',
+check	Run make check	2026-09-12T17:07:10.1962903Z E               'records.grooming.name',
+check	Run make check	2026-09-12T17:07:10.1963574Z E               'repos',
+check	Run make check	2026-09-12T17:07:10.1964020Z E               'run_event_states',
+check	Run make check	2026-09-12T17:07:10.1964494Z E               'scope_labels',
+check	Run make check	2026-09-12T17:07:10.1965005Z E               'scope_labels.approved',
+check	Run make check	2026-09-12T17:07:10.1965552Z E               'scope_labels.proposed',
+check	Run make check	2026-09-12T17:07:10.1966090Z E               'scope_labels.triage',
+check	Run make check	2026-09-12T17:07:10.1966535Z E               'teams',
+check	Run make check	2026-09-12T17:07:10.1967020Z E               'workflow_states.in_progress',
+check	Run make check	2026-09-12T17:07:10.1967595Z E               'workflow_states.in_review',
+check	Run make check	2026-09-12T17:07:10.1968080Z E               'workspace',
+check	Run make check	2026-09-12T17:07:10.1968441Z E           }
+check	Run make check	2026-09-12T17:07:10.1968618Z 
+check	Run make check	2026-09-12T17:07:10.1969038Z tests/prompts/test_operation_config.py:630: AssertionError
+check	Run make check	2026-09-12T17:07:10.1969955Z _______________ test_non_utility_keys_declare_at_least_one_skill _______________
+check	Run make check	2026-09-12T17:07:10.1970467Z 
+check	Run make check	2026-09-12T17:07:10.1970820Z     def test_non_utility_keys_declare_at_least_one_skill() -> None:
+check	Run make check	2026-09-12T17:07:10.1971629Z         """AC-3: every non-utility role names the skills serving it."""
+check	Run make check	2026-09-12T17:07:10.1972276Z         registry = load_registry()
+check	Run make check	2026-09-12T17:07:10.1972915Z         for key in PromptKey:
+check	Run make check	2026-09-12T17:07:10.1973550Z             if key in UTILITY_KEYS:
+check	Run make check	2026-09-12T17:07:10.1973946Z                 continue
+check	Run make check	2026-09-12T17:07:10.1974433Z >           assert registry.declared_skills(key)
+check	Run make check	2026-09-12T17:07:10.1974998Z E           AssertionError: assert ()
+check	Run make check	2026-09-12T17:07:10.1975923Z E            +  where () = declared_skills(<PromptKey.NATIVE_WRITER_CONTRACT: 'native_writer_contract'>)
+check	Run make check	2026-09-12T17:07:10.1977540Z E            +    where declared_skills = <kodezart.adapters.in_repo_prompt_registry.InRepoPromptRegistry object at 0x7f2d41235670>.declared_skills
+check	Run make check	2026-09-12T17:07:10.1978421Z 
+check	Run make check	2026-09-12T17:07:10.1978782Z tests/prompts/test_skills_loadouts.py:185: AssertionError
+check	Run make check	2026-09-12T17:07:10.1979655Z __________ test_the_declared_utility_roster_is_the_one_the_rules_read __________
+check	Run make check	2026-09-12T17:07:10.1980153Z 
+check	Run make check	2026-09-12T17:07:10.1980560Z     def test_the_declared_utility_roster_is_the_one_the_rules_read() -> None:
+check	Run make check	2026-09-12T17:07:10.1981366Z         """The roster is set data; this pins which roles it names."""
+check	Run make check	2026-09-12T17:07:10.1982304Z >       assert set(metadata()["utility_keys"]) == UTILITY_KEYS  # type: ignore[arg-type]
+check	Run make check	2026-09-12T17:07:10.1983075Z         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+check	Run make check	2026-09-12T17:07:10.1984195Z E       AssertionError: assert {'branch_name..._description'} == frozenset({'b...description'})
+check	Run make check	2026-09-12T17:07:10.1985127Z E         
+check	Run make check	2026-09-12T17:07:10.1985521Z E         Extra items in the left set:
+check	Run make check	2026-09-12T17:07:10.1986018Z E         'native_writer_contract'
+check	Run make check	2026-09-12T17:07:10.1986396Z E         
+check	Run make check	2026-09-12T17:07:10.1986704Z E         Full diff:
+check	Run make check	2026-09-12T17:07:10.1987068Z E         - frozenset({
+check	Run make check	2026-09-12T17:07:10.1987404Z E         + {
+check	Run make check	2026-09-12T17:07:10.1987768Z E               'branch_name',
+check	Run make check	2026-09-12T17:07:10.1988220Z E               'commit_message',
+check	Run make check	2026-09-12T17:07:10.1988681Z E               'fire_record',
+check	Run make check	2026-09-12T17:07:10.1989133Z E               'knowledge_map',
+check	Run make check	2026-09-12T17:07:10.1989629Z E         +     'native_writer_contract',
+check	Run make check	2026-09-12T17:07:10.1990129Z E               'pr_description',
+check	Run make check	2026-09-12T17:07:10.1990509Z E         - })
+check	Run make check	2026-09-12T17:07:10.1990802Z E         + }
+check	Run make check	2026-09-12T17:07:10.1990984Z 
+check	Run make check	2026-09-12T17:07:10.1991321Z tests/prompts/test_v5_fragments.py:136: AssertionError
+check	Run make check	2026-09-12T17:07:10.1992223Z _ test_every_judgment_template_ends_with_the_depth_block[native_writer_contract] _
+check	Run make check	2026-09-12T17:07:10.1992781Z 
+check	Run make check	2026-09-12T17:07:10.1993006Z key = 'native_writer_contract'
+check	Run make check	2026-09-12T17:07:10.1993471Z 
+check	Run make check	2026-09-12T17:07:10.1993651Z     @pytest.mark.parametrize(
+check	Run make check	2026-09-12T17:07:10.1994038Z         "key",
+check	Run make check	2026-09-12T17:07:10.1994511Z         sorted({k.value for k in PromptKey} - UTILITY_KEYS),
+check	Run make check	2026-09-12T17:07:10.1995024Z     )
+check	Run make check	2026-09-12T17:07:10.1995616Z     def test_every_judgment_template_ends_with_the_depth_block(key: str) -> None:
+check	Run make check	2026-09-12T17:07:10.1996546Z         """Exactly one occurrence, and it is the last thing the session reads."""
+check	Run make check	2026-09-12T17:07:10.1997210Z         body = v5_bodies()[key]
+check	Run make check	2026-09-12T17:07:10.1997743Z         instruction = fragment("ultrathink_instruction")
+check	Run make check	2026-09-12T17:07:10.1998404Z >       assert body.lower().count("ultrathink") == 1
+check	Run make check	2026-09-12T17:07:10.1998982Z E       AssertionError: assert 0 == 1
+check	Run make check	2026-09-12T17:07:10.1999826Z E        +  where 0 = <built-in method count of str object at 0x436e5d40>('ultrathink')
+check	Run make check	2026-09-12T17:07:10.2002722Z E        +    where <built-in method count of str object at 0x436e5d40> = '{{skills_reference}}native precommit contract\n\nleave changes uncommitted. the harness owns commits and publication....mmits. an upheld subject means the\nproposed departure is not actioned. never claim an amendment was applied yourself.'.count
+check	Run make check	2026-09-12T17:07:10.2007400Z E        +      where '{{skills_reference}}native precommit contract\n\nleave changes uncommitted. the harness owns commits and publication....mmits. an upheld subject means the\nproposed departure is not actioned. never claim an amendment was applied yourself.' = <built-in method lower of str object at 0x43a95b30>()
+check	Run make check	2026-09-12T17:07:10.2011830Z E        +        where <built-in method lower of str object at 0x43a95b30> = '{{skills_reference}}Native precommit contract\n\nLeave changes uncommitted. The harness owns commits and publication....mmits. An upheld subject means the\nproposed departure is not actioned. Never claim an amendment was applied yourself.'.lower
+check	Run make check	2026-09-12T17:07:10.2013993Z 
+check	Run make check	2026-09-12T17:07:10.2014354Z tests/prompts/test_v5_fragments.py:153: AssertionError
+check	Run make check	2026-09-12T17:07:10.2015331Z _ test_rule_holds_over_every_v5_template[one_data_boundary_sentence-amendment_judge] _
+check	Run make check	2026-09-12T17:07:10.2015925Z 
+check	Run make check	2026-09-12T17:07:10.2016336Z rule_name = 'one_data_boundary_sentence', key = 'amendment_judge'
+check	Run make check	2026-09-12T17:07:10.2016766Z 
+check	Run make check	2026-09-12T17:07:10.2017087Z     @pytest.mark.parametrize(("rule_name", "key"), V5_CASES)
+check	Run make check	2026-09-12T17:07:10.2017920Z     def test_rule_holds_over_every_v5_template(rule_name: str, key: str) -> None:
+check	Run make check	2026-09-12T17:07:10.2018715Z         """Each rule, over each template of the new set."""
+check	Run make check	2026-09-12T17:07:10.2019270Z         body = v5_bodies()[key]
+check	Run make check	2026-09-12T17:07:10.2019831Z         found = check_rule(rule_name, key, body, v5_context())
+check	Run make check	2026-09-12T17:07:10.2020693Z >       assert found == (), f"{key} violates {RULES[rule_name].describe}: {found}"
+check	Run make check	2026-09-12T17:07:11.6606723Z E       AssertionError: amendment_judge violates exactly one data-not-instructions sentence per artifact template: ('0 boundary sentences, expected exactly 1',)
+check	Run make check	2026-09-12T17:07:11.6608846Z E       assert ('0 boundary ...d exactly 1',) == ()
+check	Run make check	2026-09-12T17:07:11.6609287Z E         
+check	Run make check	2026-09-12T17:07:11.6609888Z E         Left contains one more item: '0 boundary sentences, expected exactly 1'
+check	Run make check	2026-09-12T17:07:11.6610447Z E         
+check	Run make check	2026-09-12T17:07:11.6610680Z E         Full diff:
+check	Run make check	2026-09-12T17:07:11.6610923Z E         - ()
+check	Run make check	2026-09-12T17:07:11.6611155Z E         + (
+check	Run make check	2026-09-12T17:07:11.6611519Z E         +     '0 boundary sentences, expected exactly 1',
+check	Run make check	2026-09-12T17:07:11.6611891Z E         + )
+check	Run make check	2026-09-12T17:07:11.6612026Z 
+check	Run make check	2026-09-12T17:07:11.6612289Z tests/prompts/test_v5_style_rules.py:407: AssertionError
+check	Run make check	2026-09-12T17:07:11.6613029Z _ test_rule_holds_over_every_v5_template[one_data_boundary_sentence-native_writer_contract] _
+check	Run make check	2026-09-12T17:07:11.6613952Z 
+check	Run make check	2026-09-12T17:07:11.6614299Z rule_name = 'one_data_boundary_sentence', key = 'native_writer_contract'
+check	Run make check	2026-09-12T17:07:11.6614663Z 
+check	Run make check	2026-09-12T17:07:11.6614903Z     @pytest.mark.parametrize(("rule_name", "key"), V5_CASES)
+check	Run make check	2026-09-12T17:07:11.6615519Z     def test_rule_holds_over_every_v5_template(rule_name: str, key: str) -> None:
+check	Run make check	2026-09-12T17:07:11.6616102Z         """Each rule, over each template of the new set."""
+check	Run make check	2026-09-12T17:07:11.6616506Z         body = v5_bodies()[key]
+check	Run make check	2026-09-12T17:07:11.6616909Z         found = check_rule(rule_name, key, body, v5_context())
+check	Run make check	2026-09-12T17:07:11.6617531Z >       assert found == (), f"{key} violates {RULES[rule_name].describe}: {found}"
+check	Run make check	2026-09-12T17:07:11.6618756Z E       AssertionError: native_writer_contract violates exactly one data-not-instructions sentence per artifact template: ('0 boundary sentences, expected exactly 1',)
+check	Run make check	2026-09-12T17:07:11.6619740Z E       assert ('0 boundary ...d exactly 1',) == ()
+check	Run make check	2026-09-12T17:07:11.6620079Z E         
+check	Run make check	2026-09-12T17:07:11.6620566Z E         Left contains one more item: '0 boundary sentences, expected exactly 1'
+check	Run make check	2026-09-12T17:07:11.6621021Z E         
+check	Run make check	2026-09-12T17:07:11.6621239Z E         Full diff:
+check	Run make check	2026-09-12T17:07:11.6621445Z E         - ()
+check	Run make check	2026-09-12T17:07:11.6621634Z E         + (
+check	Run make check	2026-09-12T17:07:11.6621936Z E         +     '0 boundary sentences, expected exactly 1',
+check	Run make check	2026-09-12T17:07:11.6622231Z E         + )
+check	Run make check	2026-09-12T17:07:11.6622335Z 
+check	Run make check	2026-09-12T17:07:11.6622553Z tests/prompts/test_v5_style_rules.py:407: AssertionError
+check	Run make check	2026-09-12T17:07:11.6623017Z =========================== short test summary info ============================
+check	Run make check	2026-09-12T17:07:11.6624381Z FAILED tests/prompts/test_operation_config.py::test_per_call_namespace_covers_every_non_operation_template_name - AssertionError: native_writer_contract references {'pinned_rulings'}
+check	Run make check	2026-09-12T17:07:11.6625386Z assert {'pinned_rulings'} == set()
+check	Run make check	2026-09-12T17:07:11.6625640Z   
+check	Run make check	2026-09-12T17:07:11.6625846Z   Extra items in the left set:
+check	Run make check	2026-09-12T17:07:11.6626086Z   'pinned_rulings'
+check	Run make check	2026-09-12T17:07:11.6626282Z   
+check	Run make check	2026-09-12T17:07:11.6626450Z   Full diff:
+check	Run make check	2026-09-12T17:07:11.6626641Z   - set()
+check	Run make check	2026-09-12T17:07:11.6626814Z   + {
+check	Run make check	2026-09-12T17:07:11.6627010Z   +     'pinned_rulings',
+check	Run make check	2026-09-12T17:07:11.6627229Z   + }
+check	Run make check	2026-09-12T17:07:11.6627979Z FAILED tests/prompts/test_operation_config.py::test_placeholder_mapping_is_total_in_both_directions - AssertionError: {'base_sha', 'claim', 'pinned_rulings'}
+check	Run make check	2026-09-12T17:07:11.6628812Z assert {'agent_ident...ocs_mcp', ...} == {'agent_ident...nnector', ...}
+check	Run make check	2026-09-12T17:07:11.6629164Z   
+check	Run make check	2026-09-12T17:07:11.6629367Z   Extra items in the left set:
+check	Run make check	2026-09-12T17:07:11.6629599Z   'claim'
+check	Run make check	2026-09-12T17:07:11.6629782Z   'pinned_rulings'
+check	Run make check	2026-09-12T17:07:11.6629986Z   'base_sha'
+check	Run make check	2026-09-12T17:07:11.6630158Z   
+check	Run make check	2026-09-12T17:07:11.6630330Z   Full diff:
+check	Run make check	2026-09-12T17:07:11.6630506Z     {
+check	Run make check	2026-09-12T17:07:11.6630700Z         'agent_identities.0',
+check	Run make check	2026-09-12T17:07:11.6630950Z         'agent_identities.1',
+check	Run make check	2026-09-12T17:07:11.6631180Z   +     'base_sha',
+check	Run make check	2026-09-12T17:07:11.6631375Z   +     'claim',
+check	Run make check	2026-09-12T17:07:11.6631740Z         'documents.constitution.id',
+check	Run make check	2026-09-12T17:07:11.6632045Z         'endpoints.cloudflare_docs_mcp',
+check	Run make check	2026-09-12T17:07:11.6632339Z         'endpoints.host_runner',
+check	Run make check	2026-09-12T17:07:11.6632622Z         'endpoints.notion_connector',
+check	Run make check	2026-09-12T17:07:11.6632905Z         'issue_labels.criterion',
+check	Run make check	2026-09-12T17:07:11.6633410Z         'knowledge.constitution',
+check	Run make check	2026-09-12T17:07:11.6633685Z         'knowledge.memories',
+check	Run make check	2026-09-12T17:07:11.6633924Z         'knowledge.notes',
+check	Run make check	2026-09-12T17:07:11.6634160Z         'knowledge.personas',
+check	Run make check	2026-09-12T17:07:11.6634399Z         'knowledge.run_logs',
+check	Run make check	2026-09-12T17:07:11.6634664Z         'marker_prefixes.repository',
+check	Run make check	2026-09-12T17:07:11.6634934Z         'operation_name',
+check	Run make check	2026-09-12T17:07:11.6635159Z         'organize_mandates',
+check	Run make check	2026-09-12T17:07:11.6635389Z   +     'pinned_rulings',
+check	Run make check	2026-09-12T17:07:11.6635651Z         'principals.1.tracker_user',
+check	Run make check	2026-09-12T17:07:11.6635933Z         'principals.2.handle',
+check	Run make check	2026-09-12T17:07:11.6636198Z         'principals.2.tracker_user',
+check	Run make check	2026-09-12T17:07:11.6636510Z         'principals.approver.forge_handle',
+check	Run make check	2026-09-12T17:07:11.6636835Z         'principals.approver.tracker_user',
+check	Run make check	2026-09-12T17:07:11.6637153Z         'principals.assignee.tracker_user',
+check	Run make check	2026-09-12T17:07:11.6637432Z         'private_surface',
+check	Run make check	2026-09-12T17:07:11.6637685Z         'queue_states.approved',
+check	Run make check	2026-09-12T17:07:11.6637953Z         'queue_states.decision',
+check	Run make check	2026-09-12T17:07:11.6638193Z         'queue_states.done',
+check	Run make check	2026-09-12T17:07:11.6638448Z         'queue_states.proposed',
+check	Run make check	2026-09-12T17:07:11.6638705Z         'queue_states.triage',
+check	Run make check	2026-09-12T17:07:11.6638949Z         'records.fire',
+check	Run make check	2026-09-12T17:07:11.6639223Z         'records.fire.columns.what_happened',
+check	Run make check	2026-09-12T17:07:11.6639508Z         'records.fire.id',
+check	Run make check	2026-09-12T17:07:11.6639741Z         'records.fire.name',
+check	Run make check	2026-09-12T17:07:11.6639995Z         'records.fire.system',
+check	Run make check	2026-09-12T17:07:11.6640256Z         'records.fire_prep.id',
+check	Run make check	2026-09-12T17:07:11.6640528Z         'records.fire_prep.name',
+check	Run make check	2026-09-12T17:07:11.6640799Z         'records.grooming.id',
+check	Run make check	2026-09-12T17:07:11.6641060Z         'records.grooming.name',
+check	Run make check	2026-09-12T17:07:11.6641295Z         'repos',
+check	Run make check	2026-09-12T17:07:11.6641498Z         'run_event_states',
+check	Run make check	2026-09-12T17:07:11.6641729Z         'scope_labels',
+check	Run make check	2026-09-12T17:07:11.6641970Z         'scope_labels.approved',
+check	Run make check	2026-09-12T17:07:11.6642236Z         'scope_labels.proposed',
+check	Run make check	2026-09-12T17:07:11.6642491Z         'scope_labels.triage',
+check	Run make check	2026-09-12T17:07:11.6642709Z         'teams',
+check	Run make check	2026-09-12T17:07:11.6642940Z         'workflow_states.in_progress',
+check	Run make check	2026-09-12T17:07:11.6643430Z         'workflow_states.in_review',
+check	Run make check	2026-09-12T17:07:11.6643836Z         'workspace',
+check	Run make check	2026-09-12T17:07:11.6644036Z     }
+check	Run make check	2026-09-12T17:07:11.6644648Z FAILED tests/prompts/test_skills_loadouts.py::test_non_utility_keys_declare_at_least_one_skill - AssertionError: assert ()
+check	Run make check	2026-09-12T17:07:11.6645416Z  +  where () = declared_skills(<PromptKey.NATIVE_WRITER_CONTRACT: 'native_writer_contract'>)
+check	Run make check	2026-09-12T17:07:11.6646254Z  +    where declared_skills = <kodezart.adapters.in_repo_prompt_registry.InRepoPromptRegistry object at 0x7f2d41235670>.declared_skills
+check	Run make check	2026-09-12T17:07:11.6647568Z FAILED tests/prompts/test_v5_fragments.py::test_the_declared_utility_roster_is_the_one_the_rules_read - AssertionError: assert {'branch_name..._description'} == frozenset({'b...description'})
+check	Run make check	2026-09-12T17:07:11.6648324Z   
+check	Run make check	2026-09-12T17:07:11.6648534Z   Extra items in the left set:
+check	Run make check	2026-09-12T17:07:11.6648780Z   'native_writer_contract'
+check	Run make check	2026-09-12T17:07:11.6648991Z   
+check	Run make check	2026-09-12T17:07:11.6649165Z   Full diff:
+check	Run make check	2026-09-12T17:07:11.6649352Z   - frozenset({
+check	Run make check	2026-09-12T17:07:11.6649545Z   + {
+check	Run make check	2026-09-12T17:07:11.6649726Z         'branch_name',
+check	Run make check	2026-09-12T17:07:11.6649939Z         'commit_message',
+check	Run make check	2026-09-12T17:07:11.6650159Z         'fire_record',
+check	Run make check	2026-09-12T17:07:11.6650368Z         'knowledge_map',
+check	Run make check	2026-09-12T17:07:11.6650619Z   +     'native_writer_contract',
+check	Run make check	2026-09-12T17:07:11.6650866Z         'pr_description',
+check	Run make check	2026-09-12T17:07:11.6651073Z   - })
+check	Run make check	2026-09-12T17:07:11.6651371Z   + }
+check	Run make check	2026-09-12T17:07:11.6652128Z FAILED tests/prompts/test_v5_fragments.py::test_every_judgment_template_ends_with_the_depth_block[native_writer_contract] - AssertionError: assert 0 == 1
+check	Run make check	2026-09-12T17:07:11.6652951Z  +  where 0 = <built-in method count of str object at 0x436e5d40>('ultrathink')
+check	Run make check	2026-09-12T17:07:11.6654688Z  +    where <built-in method count of str object at 0x436e5d40> = '{{skills_reference}}native precommit contract\n\nleave changes uncommitted. the harness owns commits and publication....mmits. an upheld subject means the\nproposed departure is not actioned. never claim an amendment was applied yourself.'.count
+check	Run make check	2026-09-12T17:07:11.6656912Z  +      where '{{skills_reference}}native precommit contract\n\nleave changes uncommitted. the harness owns commits and publication....mmits. an upheld subject means the\nproposed departure is not actioned. never claim an amendment was applied yourself.' = <built-in method lower of str object at 0x43a95b30>()
+check	Run make check	2026-09-12T17:07:11.6659110Z  +        where <built-in method lower of str object at 0x43a95b30> = '{{skills_reference}}Native precommit contract\n\nLeave changes uncommitted. The harness owns commits and publication....mmits. An upheld subject means the\nproposed departure is not actioned. Never claim an amendment was applied yourself.'.lower
+check	Run make check	2026-09-12T17:07:11.6661399Z FAILED tests/prompts/test_v5_style_rules.py::test_rule_holds_over_every_v5_template[one_data_boundary_sentence-amendment_judge] - AssertionError: amendment_judge violates exactly one data-not-instructions sentence per artifact template: ('0 boundary sentences, expected exactly 1',)
+check	Run make check	2026-09-12T17:07:11.6662572Z assert ('0 boundary ...d exactly 1',) == ()
+check	Run make check	2026-09-12T17:07:11.6662833Z   
+check	Run make check	2026-09-12T17:07:11.6663353Z   Left contains one more item: '0 boundary sentences, expected exactly 1'
+check	Run make check	2026-09-12T17:07:11.6663784Z   
+check	Run make check	2026-09-12T17:07:11.6663958Z   Full diff:
+check	Run make check	2026-09-12T17:07:11.6664138Z   - ()
+check	Run make check	2026-09-12T17:07:11.6664311Z   + (
+check	Run make check	2026-09-12T17:07:11.6664563Z   +     '0 boundary sentences, expected exactly 1',
+check	Run make check	2026-09-12T17:07:11.6664847Z   + )
+check	Run make check	2026-09-12T17:07:11.6666216Z FAILED tests/prompts/test_v5_style_rules.py::test_rule_holds_over_every_v5_template[one_data_boundary_sentence-native_writer_contract] - AssertionError: native_writer_contract violates exactly one data-not-instructions sentence per artifact template: ('0 boundary sentences, expected exactly 1',)
+check	Run make check	2026-09-12T17:07:11.6667434Z assert ('0 boundary ...d exactly 1',) == ()
+check	Run make check	2026-09-12T17:07:11.6667692Z   
+check	Run make check	2026-09-12T17:07:11.6668009Z   Left contains one more item: '0 boundary sentences, expected exactly 1'
+check	Run make check	2026-09-12T17:07:11.6668517Z   
+check	Run make check	2026-09-12T17:07:11.6668682Z   Full diff:
+check	Run make check	2026-09-12T17:07:11.6668883Z   - ()
+check	Run make check	2026-09-12T17:07:11.6669063Z   + (
+check	Run make check	2026-09-12T17:07:11.6669306Z   +     '0 boundary sentences, expected exactly 1',
+check	Run make check	2026-09-12T17:07:11.6669583Z   + )
+check	Run make check	2026-09-12T17:07:11.6669957Z =========== 7 failed, 10154 passed, 25 skipped in 282.13s (0:04:42) ============
+check	Run make check	2026-09-12T17:07:12.9878633Z make: *** [Makefile:34: test] Error 1
+check	Run make check	2026-09-12T17:07:12.9894012Z ##[error]Process completed with exit code 2.
+check	Post Run actions/checkout@v4	﻿2026-09-12T17:07:13.0023432Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+check	Post Run actions/checkout@v4	2026-09-12T17:07:13.0024763Z Post job cleanup.
+check	Post Run actions/checkout@v4	2026-09-12T17:07:13.0894323Z [command]/usr/bin/git version
+check	Post Run actions/checkout@v4	2026-09-12T17:07:13.0942160Z git version 2.55.0
+check	Post Run actions/checkout@v4	2026-09-12T17:07:13.0982800Z Temporarily overriding HOME='/home/runner/work/_temp/ed7d9759-8d0b-4f01-a235-0d10346214c2' before making global git config changes
+check	Post Run actions/checkout@v4	2026-09-12T17:07:13.0984653Z Adding repository directory to the temporary git global config as a safe directory
+check	Post Run actions/checkout@v4	2026-09-12T17:07:13.0988719Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/kodezart/kodezart
+check	Post Run actions/checkout@v4	2026-09-12T17:07:13.1037739Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+check	Post Run actions/checkout@v4	2026-09-12T17:07:13.1081181Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+check	Post Run actions/checkout@v4	2026-09-12T17:07:13.1348212Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+check	Post Run actions/checkout@v4	2026-09-12T17:07:13.1375861Z http.https://github.com/.extraheader
+check	Post Run actions/checkout@v4	2026-09-12T17:07:13.1393043Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
+check	Post Run actions/checkout@v4	2026-09-12T17:07:13.1432295Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+check	Post Run actions/checkout@v4	2026-09-12T17:07:13.1716059Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+check	Post Run actions/checkout@v4	2026-09-12T17:07:13.1755080Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+check	Complete job	﻿2026-09-12T17:07:13.2264675Z Cleaning up orphan processes
+check	Complete job	2026-09-12T17:07:13.2554506Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-node@v4, astral-sh/setup-uv@v6. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/

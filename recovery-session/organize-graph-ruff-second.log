@@ -1,0 +1,566 @@
+E501 Line too long (90 > 88)
+    --> src/kodezart/adapters/linear_mcp_tracker.py:1196:89
+     |
+1194 |         return subject[0], approved
+1195 |
+1196 |     async def project_milestones(self, *, project_key: str) -> tuple[ScopeContainer, ...]:
+     |                                                                                         ^^
+1197 |         return await LinearScopeReader(call=self._call, read_issue=self.read_issue).project_milestones(project_key=project_key)
+     |
+
+E501 Line too long (127 > 88)
+    --> src/kodezart/adapters/linear_mcp_tracker.py:1197:89
+     |
+1196 |     async def project_milestones(self, *, project_key: str) -> tuple[ScopeContainer, ...]:
+1197 |         return await LinearScopeReader(call=self._call, read_issue=self.read_issue).project_milestones(project_key=project_key)
+     |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1198 |
+1199 |     async def container_metadata(self, *, ref: ScopeRef) -> ScopeContainer:
+     |
+
+E501 Line too long (137 > 88)
+    --> src/kodezart/adapters/linear_mcp_tracker.py:1421:89
+     |
+1419 | …         )
+1420 | …     if candidate.project_id is None:
+1421 | …         raise OrganizeWriteRefusalError(issue_key=issue_key, reason="milestone assignment requires a current native project")
+     |                                                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1422 | …     milestone = await self.container_metadata(
+1423 | …         ref=ScopeRef(kind=ScopeKind.MILESTONE, key=change.milestone_id)
+     |
+
+E501 Line too long (89 > 88)
+    --> src/kodezart/adapters/linear_mcp_tracker.py:1432:89
+     |
+1430 |                     raise OrganizeWriteRefusalError(
+1431 |                         issue_key=issue_key,
+1432 |                         reason="milestone does not belong to the current native project",
+     |                                                                                         ^
+1433 |                     )
+1434 |                 arguments["milestone"] = change.milestone_id
+     |
+
+E501 Line too long (90 > 88)
+   --> src/kodezart/adapters/linear_scope_reader.py:123:89
+    |
+121 |         return frozenset(labels), parent
+122 |
+123 |     async def project_milestones(self, *, project_key: str) -> tuple[ScopeContainer, ...]:
+    |                                                                                         ^^
+124 |         ref = ScopeRef(kind=ScopeKind.PROJECT, key=project_key)
+125 |         project = await self._project(project_key)
+    |
+
+E501 Line too long (95 > 88)
+   --> src/kodezart/adapters/linear_scope_reader.py:127:89
+    |
+125 |         project = await self._project(project_key)
+126 |         if project.id != project_key:
+127 |             raise ScopeReadError("project milestone lookup returned another identity", ref=ref)
+    |                                                                                         ^^^^^^^
+128 |         # This tool explicitly returns all milestones and has no cursor input.
+129 |         listed = await self._read(LinearScopeMilestonesWire, _TOOL_LIST_MILESTONES, {"project": project.id})
+    |
+
+E501 Line too long (108 > 88)
+   --> src/kodezart/adapters/linear_scope_reader.py:129:89
+    |
+127 |             raise ScopeReadError("project milestone lookup returned another identity", ref=ref)
+128 |         # This tool explicitly returns all milestones and has no cursor input.
+129 |         listed = await self._read(LinearScopeMilestonesWire, _TOOL_LIST_MILESTONES, {"project": project.id})
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^
+130 |         keys = [item.id for item in listed.milestones]
+131 |         if len(set(keys)) != len(keys):
+    |
+
+E501 Line too long (123 > 88)
+   --> src/kodezart/adapters/linear_scope_reader.py:135:89
+    |
+133 |         milestones: list[ScopeContainer] = []
+134 |         for key in sorted(keys):
+135 |             current = await self._read(LinearScopeMetadataWire, _TOOL_GET_MILESTONE, {"project": project.id, "query": key})
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+136 |             if current.id != key:
+137 |                 raise ScopeReadError("milestone detail returned another identity", ref=ref)
+    |
+
+E501 Line too long (91 > 88)
+   --> src/kodezart/adapters/linear_scope_reader.py:137:89
+    |
+135 | …         current = await self._read(LinearScopeMetadataWire, _TOOL_GET_MILESTONE, {"project": project.id, "query": key})
+136 | …         if current.id != key:
+137 | …             raise ScopeReadError("milestone detail returned another identity", ref=ref)
+    |                                                                                       ^^^
+138 | …         milestones.append(ScopeContainer(ref=ScopeRef(kind=ScopeKind.MILESTONE, key=key), name=current.name, description=current.de…
+139 | …     repeated = await self._read(LinearScopeMilestonesWire, _TOOL_LIST_MILESTONES, {"project": project.id})
+    |
+
+E501 Line too long (174 > 88)
+   --> src/kodezart/adapters/linear_scope_reader.py:138:89
+    |
+136 | …
+137 | …nother identity", ref=ref)
+138 | …opeKind.MILESTONE, key=key), name=current.name, description=current.description or "", url=None, parent=ref))
+    |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+139 | …OOL_LIST_MILESTONES, {"project": project.id})
+140 | …ted(keys):
+    |
+
+E501 Line too long (110 > 88)
+   --> src/kodezart/adapters/linear_scope_reader.py:139:89
+    |
+137 | …             raise ScopeReadError("milestone detail returned another identity", ref=ref)
+138 | …         milestones.append(ScopeContainer(ref=ScopeRef(kind=ScopeKind.MILESTONE, key=key), name=current.name, description=current.de…
+139 | …     repeated = await self._read(LinearScopeMilestonesWire, _TOOL_LIST_MILESTONES, {"project": project.id})
+    |                                                                                       ^^^^^^^^^^^^^^^^^^^^^^
+140 | …     if sorted(item.id for item in repeated.milestones) != sorted(keys):
+141 | …         raise ScopeReadError("project milestone membership changed while reading", ref=ref)
+    |
+
+E501 Line too long (95 > 88)
+   --> src/kodezart/adapters/linear_scope_reader.py:141:89
+    |
+139 |         repeated = await self._read(LinearScopeMilestonesWire, _TOOL_LIST_MILESTONES, {"project": project.id})
+140 |         if sorted(item.id for item in repeated.milestones) != sorted(keys):
+141 |             raise ScopeReadError("project milestone membership changed while reading", ref=ref)
+    |                                                                                         ^^^^^^^
+142 |         return tuple(milestones)
+    |
+
+E501 Line too long (98 > 88)
+  --> src/kodezart/chains/organize.py:94:89
+   |
+92 |             )
+93 |         self._context.require_revision(context, revision)
+94 |         linked_keys = {relation.issue_key for relation in subject.relations} - {subject.issue_key}
+   |                                                                                         ^^^^^^^^^^
+95 |         linked = [issue for issue in context.issues if issue.issue_key in linked_keys]
+96 |         criteria = await self._tracker.read_criteria(issue_key=subject.issue_key)
+   |
+
+E501 Line too long (98 > 88)
+  --> src/kodezart/chains/organize_author.py:59:89
+   |
+57 |             )
+58 |         self._context.require_revision(context, revision)
+59 |         linked_keys = {relation.issue_key for relation in subject.relations} - {subject.issue_key}
+   |                                                                                         ^^^^^^^^^^
+60 |         linked = [issue for issue in context.issues if issue.issue_key in linked_keys]
+61 |         criteria = await self._tracker.read_criteria(issue_key=subject.issue_key)
+   |
+
+E501 Line too long (90 > 88)
+   --> src/kodezart/core/protocols.py:889:89
+    |
+887 |         ...
+888 |
+889 |     async def project_milestones(self, *, project_key: str) -> tuple[ScopeContainer, ...]:
+    |                                                                                         ^^
+890 |         """Read every actual milestone in this native project, without selection policy."""
+891 |         ...
+    |
+
+E501 Line too long (91 > 88)
+   --> src/kodezart/core/protocols.py:890:89
+    |
+889 |     async def project_milestones(self, *, project_key: str) -> tuple[ScopeContainer, ...]:
+890 |         """Read every actual milestone in this native project, without selection policy."""
+    |                                                                                         ^^^
+891 |         ...
+    |
+
+E501 Line too long (90 > 88)
+   --> src/kodezart/core/protocols.py:918:89
+    |
+917 |     async def read_split_children(self, *, source_key: str) -> tuple[TrackerIssue, ...]:
+918 |         """Read unique ordinary children carrying the source's stable split identities."""
+    |                                                                                         ^^
+919 |         ...
+    |
+
+E501 Line too long (114 > 88)
+  --> src/kodezart/services/organize_context.py:68:89
+   |
+66 | …     milestones: list[ScopeContainer] = []
+67 | …     milestone_keys: set[str] = set()
+68 | …     for project_key in sorted({issue.project_id for issue in facts.values() if issue.project_id is not None}):
+   |                                                                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^
+69 | …         for milestone in await self._tracker.project_milestones(project_key=project_key):
+70 | …             if milestone.ref.kind is not ScopeKind.MILESTONE or milestone.ref.key in milestone_keys or milestone.parent != ScopeRef(…
+   |
+
+E501 Line too long (93 > 88)
+  --> src/kodezart/services/organize_context.py:69:89
+   |
+67 | …     milestone_keys: set[str] = set()
+68 | …     for project_key in sorted({issue.project_id for issue in facts.values() if issue.project_id is not None}):
+69 | …         for milestone in await self._tracker.project_milestones(project_key=project_key):
+   |                                                                                       ^^^^^
+70 | …             if milestone.ref.kind is not ScopeKind.MILESTONE or milestone.ref.key in milestone_keys or milestone.parent != ScopeRef(…
+71 | …                 raise OrganizeWriteRefusalError(issue_key=scope.key, reason="milestone context has a duplicate or wrong project iden…
+   |
+
+E501 Line too long (177 > 88)
+  --> src/kodezart/services/organize_context.py:70:89
+   |
+68 | …acts.values() if issue.project_id is not None}):
+69 | …s(project_key=project_key):
+70 | …r milestone.ref.key in milestone_keys or milestone.parent != ScopeRef(kind=ScopeKind.PROJECT, key=project_key):
+   |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+71 | …e.key, reason="milestone context has a duplicate or wrong project identity")
+72 | …
+   |
+
+E501 Line too long (142 > 88)
+  --> src/kodezart/services/organize_context.py:71:89
+   |
+69 | …project_milestones(project_key=project_key):
+70 | …eKind.MILESTONE or milestone.ref.key in milestone_keys or milestone.parent != ScopeRef(kind=ScopeKind.PROJECT, key=project_key):
+71 | …or(issue_key=scope.key, reason="milestone context has a duplicate or wrong project identity")
+   |                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+72 | …key)
+73 | …
+   |
+
+E501 Line too long (181 > 88)
+   --> src/kodezart/services/organize_owner.py:425:89
+    |
+423 | …
+424 | …
+425 | ….milestone_id is not None and change.milestone_id not in {item.ref.key for item in proposal.context.milestones}:
+    |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+426 | …uest.issue_key, reason="the milestone identity was not in the author's current context")
+427 | …
+    |
+
+E501 Line too long (157 > 88)
+   --> src/kodezart/services/organize_owner.py:426:89
+    |
+424 | …
+425 | …) and change.milestone_id is not None and change.milestone_id not in {item.ref.key for item in proposal.context.milestones}:
+426 | …ssue_key=request.issue_key, reason="the milestone identity was not in the author's current context")
+    |                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+427 | …
+428 | …
+    |
+
+E501 Line too long (106 > 88)
+    --> src/kodezart/services/organize_owner.py:1181:89
+     |
+1179 | …         revision.issue for revision in current
+1180 | …         if is_organize_subject(revision.issue)
+1181 | …         and not await self._tracker.execution_approved(issue_key=revision.issue.issue_key)
+     |                                                                           ^^^^^^^^^^^^^^^^^^
+1182 | …         and (ScopeLabel(gate) in current_labels if namespace.value == "scope_labels" else gate in revision.issue.issue_labels)
+1183 | …     ]
+     |
+
+E501 Line too long (142 > 88)
+    --> src/kodezart/services/organize_owner.py:1182:89
+     |
+1180 | …ision.issue)
+1181 | …r.execution_approved(issue_key=revision.issue.issue_key)
+1182 | …urrent_labels if namespace.value == "scope_labels" else gate in revision.issue.issue_labels)
+     |                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1183 | …
+1184 | …
+     |
+
+E501 Line too long (164 > 88)
+   --> tests/chains/test_organize.py:586:89
+    |
+584 | …BJECT)
+585 | …
+586 | …est, "admitted_scope": actual.admitted_scope, "admitted_context_digest": actual.admitted_context_digest}
+    |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+587 | …
+588 | …
+    |
+
+E501 Line too long (168 > 88)
+   --> tests/chains/test_organize.py:971:89
+    |
+969 | …
+970 | …
+971 | … "scope": ScopeRef(kind=ScopeKind.ISSUE, key=(await source.read_issue(issue_key=key)).parent_key or key)})
+    |                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+972 | …
+973 | …
+    |
+
+E501 Line too long (91 > 88)
+  --> tests/chains/test_organize_graph_owner.py:54:89
+   |
+52 |         call for call in board.calls if call[0] in {"save_issue", "save_comment"}
+53 |     ]
+54 |     assert any(name == "save_issue" and args.get("priority") == 1 for name, args in before)
+   |                                                                                         ^^^
+55 |     await run_owner(owner)
+56 |     assert [
+   |
+
+E501 Line too long (101 > 88)
+  --> tests/chains/test_organize_graph_owner.py:61:89
+   |
+61 | async def test_configured_split_prepares_children_without_execution_and_replays_cleanly(monkeypatch):
+   |                                                                                         ^^^^^^^^^^^^^
+62 |     owner, board, executor = factory(convergence_bound=4, bound=3)
+63 |     original = executor.stream
+   |
+
+E501 Line too long (131 > 88)
+  --> tests/chains/test_organize_graph_owner.py:67:89
+   |
+65 |     async def stream(**kwargs):
+66 |         key = re.findall(r"<issue_key>(.*?)</issue_key>", kwargs["prompt"])
+67 |         if key and key[-1] == CLAIMED_ISSUE and not any(issue.title == "Prepared split" for issue in board.server.issues.values()):
+   |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+68 |             schema = kwargs["output_format"]["schema"]
+69 |             if schema.get("title") == "OrganizeProposal":
+   |
+
+E501 Line too long (211 > 88)
+  --> tests/chains/test_organize_graph_owner.py:70:89
+   |
+68 | …
+69 | …
+70 | …[{"deliverable_key": "stable-deliverable", "title": "Prepared split", "body": "Prepared source-grounded child specification."}]}
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+71 | …
+72 | …refusal_kind": "spec_gap", "evidence": "The settled mandate calls for an independent child deliverable.", "invented_decision": "Prepa…
+   |
+
+E501 Line too long (241 > 88)
+  --> tests/chains/test_organize_graph_owner.py:72:89
+   |
+70 | …[{"deliverable_key": "stable-deliverable", "title": "Prepared split", "body": "Prepared source-grounded child specification."}]}
+71 | …
+72 | …refusal_kind": "spec_gap", "evidence": "The settled mandate calls for an independent child deliverable.", "invented_decision": "Prepare the specified split."}
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+73 | …
+74 | …
+   |
+
+E501 Line too long (99 > 88)
+  --> tests/chains/test_organize_graph_owner.py:82:89
+   |
+80 |     report = await run_owner(owner)
+81 |     assert report.halt is None
+82 |     children = [issue for issue in board.server.issues.values() if issue.title == "Prepared split"]
+   |                                                                                         ^^^^^^^^^^^
+83 |     assert len(children) == 1
+84 |     assert children[0].parent_id == CLAIMED_ISSUE
+   |
+
+E501 Line too long (96 > 88)
+  --> tests/chains/test_organize_graph_owner.py:89:89
+   |
+87 |     writes = [call for call in board.calls if call[0] in {"save_issue", "save_comment"}]
+88 |     await run_owner(owner)
+89 |     assert [call for call in board.calls if call[0] in {"save_issue", "save_comment"}] == writes
+   |                                                                                         ^^^^^^^^
+90 |     assert not any("id" in args and "state" in args for name, args in writes if name == "save_issue")
+91 |     assert not any(call["session_type"].value not in {"organize_pass"} for call in executor.calls)
+   |
+
+E501 Line too long (101 > 88)
+  --> tests/chains/test_organize_graph_owner.py:90:89
+   |
+88 |     await run_owner(owner)
+89 |     assert [call for call in board.calls if call[0] in {"save_issue", "save_comment"}] == writes
+90 |     assert not any("id" in args and "state" in args for name, args in writes if name == "save_issue")
+   |                                                                                         ^^^^^^^^^^^^^
+91 |     assert not any(call["session_type"].value not in {"organize_pass"} for call in executor.calls)
+   |
+
+E501 Line too long (98 > 88)
+  --> tests/chains/test_organize_graph_owner.py:91:89
+   |
+89 |     assert [call for call in board.calls if call[0] in {"save_issue", "save_comment"}] == writes
+90 |     assert not any("id" in args and "state" in args for name, args in writes if name == "save_issue")
+91 |     assert not any(call["session_type"].value not in {"organize_pass"} for call in executor.calls)
+   |                                                                                         ^^^^^^^^^^
+   |
+
+E501 Line too long (145 > 88)
+   --> tests/chains/test_organize_graph_owner.py:104:89
+    |
+102 | …itle") == "OrganizeProposal":
+103 | …rity_raw = 4
+104 | … "graph", "issue_id": CLAIMED_ISSUE, "changes": [{"kind": "priority", "priority": "urgent"}]})
+    |                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+105 | …
+106 | …
+    |
+
+E501 Line too long (94 > 88)
+   --> tests/chains/test_organize_owner.py:536:89
+    |
+536 | async def test_missing_criterion_edit_capability_is_not_invented_as_a_human_fork(monkeypatch):
+    |                                                                                         ^^^^^^
+537 |     from kodezart.domain.errors import OrganizeWriteRefusalError
+    |
+
+E501 Line too long (90 > 88)
+    --> tests/fakes.py:3555:89
+     |
+3553 |         return tuple(selected.values())
+3554 |
+3555 |     async def project_milestones(self, *, project_key: str) -> tuple[ScopeContainer, ...]:
+     |                                                                                         ^^
+3556 |         ref = ScopeRef(kind=ScopeKind.PROJECT, key=project_key)
+3557 |         project = await self.container_metadata(ref=ref)
+     |
+
+E501 Line too long (210 > 88)
+    --> tests/fakes.py:3560:89
+     |
+3558 | …
+3559 | …
+3560 | …in self.scope_containers.items() if key.kind is ScopeKind.MILESTONE and value.parent == ref], key=lambda value: value.ref.key))
+     |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+3561 | …
+3562 | …
+     |
+
+E501 Line too long (101 > 88)
+   --> tests/tracker/test_organize_graph_writes.py:153:89
+    |
+152 | @pytest.mark.parametrize("kind", [SurfaceKind.ISSUE_GRAPH, SurfaceKind.ISSUE_SPLIT_SET])
+153 | @pytest.mark.parametrize("container", [ScopeKind.PROJECT, ScopeKind.INITIATIVE, ScopeKind.MILESTONE])
+    |                                                                                         ^^^^^^^^^^^^^
+154 | def test_graph_surfaces_never_alias_container_or_parent_body(kind, container):
+155 |     with pytest.raises(ValueError):
+    |
+
+E501 Line too long (96 > 88)
+   --> tests/tracker/test_organize_graph_writes.py:157:89
+    |
+155 |     with pytest.raises(ValueError):
+156 |         WritableSurface(kind=kind, ref=ScopeRef(kind=container, key=CLAIMED_ISSUE))
+157 |     assert address(CLAIMED_ISSUE, kind) != address(CLAIMED_ISSUE, SurfaceKind.ISSUE_DESCRIPTION)
+    |                                                                                         ^^^^^^^^
+158 |     assert address(CLAIMED_ISSUE, SurfaceKind.ISSUE_GRAPH) != address(CLAIMED_ISSUE, SurfaceKind.ISSUE_SPLIT_SET)
+    |
+
+E501 Line too long (113 > 88)
+   --> tests/tracker/test_organize_graph_writes.py:158:89
+    |
+156 |         WritableSurface(kind=kind, ref=ScopeRef(kind=container, key=CLAIMED_ISSUE))
+157 |     assert address(CLAIMED_ISSUE, kind) != address(CLAIMED_ISSUE, SurfaceKind.ISSUE_DESCRIPTION)
+158 |     assert address(CLAIMED_ISSUE, SurfaceKind.ISSUE_GRAPH) != address(CLAIMED_ISSUE, SurfaceKind.ISSUE_SPLIT_SET)
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+
+E501 Line too long (91 > 88)
+   --> tests/tracker/test_organize_graph_writes.py:161:89
+    |
+161 | @pytest.mark.parametrize("change", ["parent", "dependency", "related", "priority", "body"])
+    |                                                                                         ^^^
+162 | async def test_split_source_drift_during_state_lookup_refuses_before_create(monkeypatch, change):
+163 |     board, tracker = fixture()
+    |
+
+E501 Line too long (97 > 88)
+   --> tests/tracker/test_organize_graph_writes.py:162:89
+    |
+161 | @pytest.mark.parametrize("change", ["parent", "dependency", "related", "priority", "body"])
+162 | async def test_split_source_drift_during_state_lookup_refuses_before_create(monkeypatch, change):
+    |                                                                                         ^^^^^^^^^
+163 |     board, tracker = fixture()
+164 |     original = board.call_tool
+    |
+
+E501 Line too long (105 > 88)
+   --> tests/tracker/test_organize_graph_writes.py:174:89
+    |
+172 |                 source.parent_id = "peer"
+173 |             elif change in {"dependency", "related"}:
+174 |                 source.relations.append(("blockedBy" if change == "dependency" else "relatedTo", "peer"))
+    |                                                                                         ^^^^^^^^^^^^^^^^^
+175 |             elif change == "priority":
+176 |                 source.priority_raw = 1
+    |
+
+E501 Line too long (161 > 88)
+   --> tests/tracker/test_organize_graph_writes.py:182:89
+    |
+181 | …
+182 | …ter", surfaces=frozenset({address(CLAIMED_ISSUE, SurfaceKind.ISSUE_SPLIT_SET)}), lease_seconds=321.5):
+    |                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+183 | …="native graph changed"):
+184 | …=CLAIMED_ISSUE, deliverable_key="stable", title="Child", body="Authored body", holder="writer", expected=snapshot)
+    |
+
+E501 Line too long (173 > 88)
+   --> tests/tracker/test_organize_graph_writes.py:184:89
+    |
+182 | …surfaces=frozenset({address(CLAIMED_ISSUE, SurfaceKind.ISSUE_SPLIT_SET)}), lease_seconds=321.5):
+183 | …ve graph changed"):
+184 | …ED_ISSUE, deliverable_key="stable", title="Child", body="Authored body", holder="writer", expected=snapshot)
+    |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+185 | …ve_issue"]
+    |
+
+E501 Line too long (160 > 88)
+   --> tests/tracker/test_organize_graph_writes.py:200:89
+    |
+200 | …d": None}, {"issueId": "existing"}, {"patch": []}, {"project": None}, {"unknownLocator": "existing"}])
+    |                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+201 | …e_transition_guard(extra):
+202 | …e_combined_issue_write
+    |
+
+E501 Line too long (129 > 88)
+   --> tests/tracker/test_organize_graph_writes.py:204:89
+    |
+202 |     from kodezart.adapters.linear_mcp_tracker import refuse_combined_issue_write
+203 |     from kodezart.core.errors import TrackerProtocolError
+204 |     payload = {"title": "Child", "description": "Body", "team": "native-team", "parentId": "source", "state": "native-unstarted"}
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+205 |     refuse_combined_issue_write(payload)
+206 |     refuse_combined_issue_write({**payload, "project": "native-project"})
+    |
+
+E501 Line too long (105 > 88)
+   --> tests/tracker/test_organize_graph_writes.py:217:89
+    |
+215 |     tracker = linear_over_fake_mcp(server)
+216 |     milestones = await tracker.project_milestones(project_key=PROJECT.key)
+217 |     assert {item.ref.key for item in milestones} == {row["id"] for row in server.milestones[PROJECT.key]}
+    |                                                                                         ^^^^^^^^^^^^^^^^^
+218 |     assert all(item.parent == PROJECT and item.url is None for item in milestones)
+219 |     assert next(item for item in milestones if item.ref == MILESTONE).description == f"Complete description of {MILESTONE.key}"
+    |
+
+E501 Line too long (127 > 88)
+   --> tests/tracker/test_organize_graph_writes.py:219:89
+    |
+217 |     assert {item.ref.key for item in milestones} == {row["id"] for row in server.milestones[PROJECT.key]}
+218 |     assert all(item.parent == PROJECT and item.url is None for item in milestones)
+219 |     assert next(item for item in milestones if item.ref == MILESTONE).description == f"Complete description of {MILESTONE.key}"
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+
+E501 Line too long (90 > 88)
+   --> tests/tracker/test_organize_graph_writes.py:223:89
+    |
+222 | @pytest.mark.parametrize("fault", ["duplicate", "wrong_detail", "changed_membership"])
+223 | async def test_project_milestone_incomplete_identity_evidence_refuses(monkeypatch, fault):
+    |                                                                                         ^^
+224 |     from kodezart.domain.errors import ScopeReadError
+225 |     from tests.tracker.conftest import linear_over_fake_mcp
+    |
+
+E501 Line too long (99 > 88)
+   --> tests/tracker/test_organize_graph_writes.py:236:89
+    |
+234 |             calls += 1
+235 |             if fault == "duplicate":
+236 |                 result = {**result, "milestones": [*result["milestones"], result["milestones"][0]]}
+    |                                                                                         ^^^^^^^^^^^
+237 |             if fault == "changed_membership" and calls == 2:
+238 |                 result = {**result, "milestones": []}
+    |
+
+Found 66 errors (12 fixed, 54 remaining).

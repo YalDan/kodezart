@@ -1,0 +1,104 @@
+.............................................................F.......... [ 39%]
+.................................FF.F................................... [ 78%]
+........................................                                 [100%]
+=================================== FAILURES ===================================
+______________ test_all_fields_are_present_with_the_stated_types _______________
+
+    def test_all_fields_are_present_with_the_stated_types() -> None:
+        """Field-by-field census: exact equality, never a subset check.
+    
+        Grew by ``records`` under KOD-112 R3 fix 6 (the write-side destination
+        registry) and by ``private_surface`` under KOD-106 R2 (the operator's
+        prose description of what this operation treats as private).  The
+        census stays total and stays ``==``; a census loosened to a containment
+        check stops being one.
+        """
+        fields = OperationConfig.model_fields
+>       assert set(fields) == {
+            "operation_name",
+            "workspace",
+            "principals",
+            "agent_identities",
+            "teams",
+            "queue_states",
+            "scope_labels",
+            "issue_labels",
+            "organize_mandates",
+            "workflow_states",
+            "run_event_states",
+            "marker_prefixes",
+            "repos",
+            "documents",
+            "records",
+            "knowledge",
+            "endpoints",
+            "private_surface",
+        }
+E       AssertionError: assert {'agent_ident...refixes', ...} == {'agent_ident...refixes', ...}
+E         
+E         Extra items in the left set:
+E         'organize_scopes'
+E         Use -v to get more diff
+
+tests/prompts/test_operation_config.py:132: AssertionError
+_____________ test_placeholder_mapping_is_total_in_both_directions _____________
+
+    def test_placeholder_mapping_is_total_in_both_directions() -> None:
+        """Every placeholder maps to one path; every field is template-reachable."""
+        rows = markdown_rows("## Placeholder → OperationConfig field")
+        mapped = {row[0]: row[1] for row in rows}
+        assert len(mapped) == len(rows)
+    
+        # Direction 1 — no placeholder the templates reference is unmapped.
+        referenced = template_placeholders()
+        assert referenced == set(mapped), referenced ^ set(mapped)
+        for placeholder, path in mapped.items():
+            assert placeholder.split(".")[0] == path
+    
+        # Direction 2 — read off the MODEL, never off the table's own rows, so
+        # the mapping can no longer be checked against what it was derived from.
+>       assert set(mapped.values()) == set(OperationConfig.model_fields)
+E       AssertionError: assert {'agent_ident...refixes', ...} == {'agent_ident...refixes', ...}
+E         
+E         Extra items in the right set:
+E         'organize_scopes'
+E         Use -v to get more diff
+
+tests/prompts/test_operation_config.py:635: AssertionError
+_____ test_every_operation_config_field_is_reachable_from_a_pass_template ______
+
+    def test_every_operation_config_field_is_reachable_from_a_pass_template() -> None:
+        """Direction 2 again, straight from the templates to the model.
+    
+        The principals, agent_identities and repos fields were introduced
+        on the reasoning that the passes consume them.  A field no template can
+        reach is a field the port did not actually port.
+        """
+        reachable = {name.split(".")[0] for name in template_placeholders()}
+        unreachable = set(OperationConfig.model_fields) - reachable
+>       assert unreachable == set(), f"no pass template reaches {sorted(unreachable)}"
+E       AssertionError: no pass template reaches ['organize_scopes']
+E       assert {'organize_scopes'} == set()
+E         
+E         Extra items in the left set:
+E         'organize_scopes'
+E         Use -v to get more diff
+
+tests/prompts/test_operation_config.py:647: AssertionError
+____________ test_example_toml_is_annotated_and_covers_every_field _____________
+
+    def test_example_toml_is_annotated_and_covers_every_field() -> None:
+        """D-6: comment-annotated, every field including the four added ones."""
+        text = EXAMPLE.read_text(encoding="utf-8")
+        assert text.count("#") >= 15
+        for field in OperationConfig.model_fields:
+>           assert field in text
+E           assert 'organize_scopes' in '# Annotated example operation config.\n#\n# Pointed at by KODEZART_OPERATION_CONFIG. Parsed with stdlib tomllib; no n...ED"\nrun_alarm_raised = "NO_TRANSITION"\nrun_alarm_cleared = "NO_TRANSITION"\nnode_session_started = "NO_TRANSITION"\n'
+
+tests/prompts/test_operation_config.py:664: AssertionError
+=========================== short test summary info ============================
+FAILED tests/prompts/test_operation_config.py::test_all_fields_are_present_with_the_stated_types
+FAILED tests/prompts/test_operation_config.py::test_placeholder_mapping_is_total_in_both_directions
+FAILED tests/prompts/test_operation_config.py::test_every_operation_config_field_is_reachable_from_a_pass_template
+FAILED tests/prompts/test_operation_config.py::test_example_toml_is_annotated_and_covers_every_field
+4 failed, 180 passed in 13.42s

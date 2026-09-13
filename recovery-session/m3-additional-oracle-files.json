@@ -1,0 +1,11 @@
+[
+  "tests/adapters/test_ci_observation.py",
+  "tests/adapters/test_ci_watch_evidence.py",
+  "tests/adapters/test_ci_watch_result.py",
+  "tests/chains/test_node_session_events.py",
+  "tests/domain/test_fire_spec_purity.py",
+  "tests/tracker/test_fire_spec_reader.py",
+  "tests/tracker/test_fire_spec_approval.py",
+  "tests/tracker/test_fire_spec_approval_ancestry.py",
+  "tests/tracker/test_native_approval_aliases.py"
+]

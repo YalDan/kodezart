@@ -1,0 +1,211 @@
+Using CPython 3.12.13
+Creating virtual environment at: .venv
+   Building kodezart @ file:///private/tmp/kodezart-v03-criterion-label-independent-review
+warning: `build_system.requires = ["uv-build>=0.10.9,<0.11.0"]` does not contain the current uv version 0.11.6
+      Built kodezart @ file:///private/tmp/kodezart-v03-criterion-label-independent-review
+Installed 174 packages in 1.21s
+FF..FF...........                                                        [100%]
+=================================== FAILURES ===================================
+_ test_unknown_native_classification_cannot_authorize_other_surface[missing-mapping] _
+
+metadata = 'missing-mapping'
+
+    @pytest.mark.parametrize("metadata", ["missing-mapping", "missing-labels"])
+    async def test_unknown_native_classification_cannot_authorize_other_surface(metadata):
+        board, tracker = criterion_board()
+        actual = board.call_tool
+    
+        class Boundary:
+            async def call_tool(self, *, name, arguments):
+                payload = await actual(name=name, arguments=arguments)
+                if metadata == "missing-labels" and name == "get_issue":
+                    payload = dict(payload)
+                    payload.pop("labels")
+                return payload
+    
+        tracker = tracker_over(
+            board.server,
+            caller=Boundary(),
+            clock=lambda: board.now,
+            issue_labels={"decision": "decision-needed"}
+            if metadata == "missing-mapping"
+            else {"criterion": "native-criterion", "decision": "decision-needed"},
+        )
+        async with RunSurfaceLease(
+            tracker=tracker,
+            job_id="criterion-owner",
+            lease_seconds=900,
+            surfaces=frozenset({surface(SurfaceKind.CRITERION_SUB_ISSUE)}),
+        ):
+            async with RunSurfaceLease(
+                tracker=tracker,
+                job_id="label-owner",
+                lease_seconds=900,
+                surfaces=frozenset({surface(SurfaceKind.ISSUE_LABEL_SET)}),
+            ):
+>               with pytest.raises(
+                    (
+                        OperationMemberAbsentError,
+                        TrackerProtocolError,
+                        IssueLabelReadError,
+                        SurfaceLeaseError,
+                    )
+                ):
+E               Failed: DID NOT RAISE any of (<class 'kodezart.types.domain.operation.OperationMemberAbsentError'>, <class 'kodezart.core.errors.TrackerProtocolError'>, <class 'kodezart.domain.errors.IssueLabelReadError'>, <class 'kodezart.domain.errors.SurfaceLeaseError'>)
+
+tests/tracker/test_criterion_label_independent.py:50: Failed
+_ test_unknown_native_classification_cannot_authorize_other_surface[missing-labels] _
+
+metadata = 'missing-labels'
+
+    @pytest.mark.parametrize("metadata", ["missing-mapping", "missing-labels"])
+    async def test_unknown_native_classification_cannot_authorize_other_surface(metadata):
+        board, tracker = criterion_board()
+        actual = board.call_tool
+    
+        class Boundary:
+            async def call_tool(self, *, name, arguments):
+                payload = await actual(name=name, arguments=arguments)
+                if metadata == "missing-labels" and name == "get_issue":
+                    payload = dict(payload)
+                    payload.pop("labels")
+                return payload
+    
+        tracker = tracker_over(
+            board.server,
+            caller=Boundary(),
+            clock=lambda: board.now,
+            issue_labels={"decision": "decision-needed"}
+            if metadata == "missing-mapping"
+            else {"criterion": "native-criterion", "decision": "decision-needed"},
+        )
+        async with RunSurfaceLease(
+            tracker=tracker,
+            job_id="criterion-owner",
+            lease_seconds=900,
+            surfaces=frozenset({surface(SurfaceKind.CRITERION_SUB_ISSUE)}),
+        ):
+            async with RunSurfaceLease(
+                tracker=tracker,
+                job_id="label-owner",
+                lease_seconds=900,
+                surfaces=frozenset({surface(SurfaceKind.ISSUE_LABEL_SET)}),
+            ):
+                with pytest.raises(
+                    (
+                        OperationMemberAbsentError,
+                        TrackerProtocolError,
+                        IssueLabelReadError,
+                        SurfaceLeaseError,
+                    )
+                ):
+                    await tracker.set_issue_classification(
+                        issue_key=CLAIMED_ISSUE,
+                        classification="decision",
+                        holder="label-owner",
+                    )
+>       assert "decision-needed" not in board.server.issues[CLAIMED_ISSUE].labels
+E       AssertionError: assert 'decision-needed' not in ['queue:approved', 'area:runtime', 'native-criterion', 'decision-needed']
+E        +  where ['queue:approved', 'area:runtime', 'native-criterion', 'decision-needed'] = FakeMcpIssue(id='FIX-1', title='claimable', description='an issue two passes race for', priority_raw=2, status='Todo',...tetime.datetime(2026, 3, 1, 12, 0, 7, tzinfo=datetime.timezone.utc), state_changed_at=None, previous_states=[], url='').labels
+
+tests/tracker/test_criterion_label_independent.py:63: AssertionError
+___ test_final_native_read_preserves_clock_and_surface_authority[True-False] ___
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10aa07ce0>
+criterion = False, expired = True
+
+    @pytest.mark.parametrize("criterion", [False, True])
+    @pytest.mark.parametrize("expired", [False, True])
+    async def test_final_native_read_preserves_clock_and_surface_authority(
+        monkeypatch, criterion, expired
+    ):
+        board, tracker = criterion_board()
+        if not criterion:
+            board.server.issues[CLAIMED_ISSUE].labels.remove("native-criterion")
+        kind = (
+            SurfaceKind.CRITERION_SUB_ISSUE if criterion else SurfaceKind.ISSUE_LABEL_SET
+        )
+        actual = board.call_tool
+        async with RunSurfaceLease(
+            tracker=tracker,
+            job_id="actual-job",
+            lease_seconds=900,
+            surfaces=frozenset({surface(kind)}),
+        ):
+            reads = 0
+    
+            async def call(*, name, arguments):
+                nonlocal reads
+                payload = await actual(name=name, arguments=arguments)
+                if name == "get_issue":
+                    reads += 1
+                    if reads == 2 and expired:
+                        board.now += timedelta(seconds=901)
+                return payload
+    
+            monkeypatch.setattr(board, "call_tool", call)
+            if expired:
+                with pytest.raises(SurfaceLeaseError) as caught:
+                    await tracker.set_issue_classification(
+                        issue_key=CLAIMED_ISSUE,
+                        classification="decision",
+                        holder="actual-job",
+                    )
+>               assert caught.value.surface == surface(kind)
+                       ^^^^^^^^^^^^^^^^^^^^
+E               AttributeError: 'SurfaceLeaseError' object has no attribute 'surface'
+
+tests/tracker/test_criterion_label_independent.py:104: AttributeError
+___ test_final_native_read_preserves_clock_and_surface_authority[True-True] ____
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10aa047a0>
+criterion = True, expired = True
+
+    @pytest.mark.parametrize("criterion", [False, True])
+    @pytest.mark.parametrize("expired", [False, True])
+    async def test_final_native_read_preserves_clock_and_surface_authority(
+        monkeypatch, criterion, expired
+    ):
+        board, tracker = criterion_board()
+        if not criterion:
+            board.server.issues[CLAIMED_ISSUE].labels.remove("native-criterion")
+        kind = (
+            SurfaceKind.CRITERION_SUB_ISSUE if criterion else SurfaceKind.ISSUE_LABEL_SET
+        )
+        actual = board.call_tool
+        async with RunSurfaceLease(
+            tracker=tracker,
+            job_id="actual-job",
+            lease_seconds=900,
+            surfaces=frozenset({surface(kind)}),
+        ):
+            reads = 0
+    
+            async def call(*, name, arguments):
+                nonlocal reads
+                payload = await actual(name=name, arguments=arguments)
+                if name == "get_issue":
+                    reads += 1
+                    if reads == 2 and expired:
+                        board.now += timedelta(seconds=901)
+                return payload
+    
+            monkeypatch.setattr(board, "call_tool", call)
+            if expired:
+                with pytest.raises(SurfaceLeaseError) as caught:
+                    await tracker.set_issue_classification(
+                        issue_key=CLAIMED_ISSUE,
+                        classification="decision",
+                        holder="actual-job",
+                    )
+>               assert caught.value.surface == surface(kind)
+                       ^^^^^^^^^^^^^^^^^^^^
+E               AttributeError: 'SurfaceLeaseError' object has no attribute 'surface'
+
+tests/tracker/test_criterion_label_independent.py:104: AttributeError
+=========================== short test summary info ============================
+FAILED tests/tracker/test_criterion_label_independent.py::test_unknown_native_classification_cannot_authorize_other_surface[missing-mapping]
+FAILED tests/tracker/test_criterion_label_independent.py::test_unknown_native_classification_cannot_authorize_other_surface[missing-labels]
+FAILED tests/tracker/test_criterion_label_independent.py::test_final_native_read_preserves_clock_and_surface_authority[True-False]
+FAILED tests/tracker/test_criterion_label_independent.py::test_final_native_read_preserves_clock_and_surface_authority[True-True]
+4 failed, 13 passed in 1.88s

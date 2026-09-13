@@ -1,0 +1,100 @@
+E501 Line too long (93 > 88)
+   --> src/kodezart/chains/ralph_loop.py:352:89
+    |
+350 | …                         reasoning=(
+351 | …                             "The independent precommit gate upheld a subject; "
+352 | …                             "this proposed departure was not committed or evaluated."
+    |                                                                                   ^^^^^
+353 | …                         ),
+354 | …                     )
+    |
+
+RUF001 String contains ambiguous `α` (GREEK SMALL LETTER ALPHA). Did you mean `a` (LATIN SMALL LETTER A)?
+  --> tests/domain/test_amendment.py:59:30
+   |
+57 | def test_same_ruling_newtype_object_reexported_and_native_ids_remain_opaque():
+58 |     assert ExistingRulingId is RulingId
+59 |     for identity in ["vendor/α", "KOD-97-AC-3", "some key"]:
+   |                              ^
+60 |         assert CriterionSubject(id=identity).id == identity
+61 |     for identity in ["", "  ", "\n"]:
+   |
+
+C408 Unnecessary `dict()` call (rewrite as a literal)
+  --> tests/domain/test_amendment.py:89:13
+   |
+88 |   def test_claim_cannot_carry_writer_reasoning_unknown_stage_or_unknown_ground():
+89 |       valid = dict(
+   |  _____________^
+90 | |         subject={"kind": "criterion", "id": "native/1"},
+91 | |         stage="implementation",
+92 | |         ground="premise_false_at_base",
+93 | |         departure="Different behavior",
+94 | |         claimed_capability=None,
+95 | |     )
+   | |_____^
+96 |       assert NativeWriterOutput(claims=[AmendmentClaim(**valid)])
+97 |       for changes in [
+   |
+help: Rewrite as a literal
+
+C408 Unnecessary `dict()` call (rewrite as a literal)
+   --> tests/domain/test_amendment.py:98:9
+    |
+ 96 |     assert NativeWriterOutput(claims=[AmendmentClaim(**valid)])
+ 97 |     for changes in [
+ 98 |         dict(reasoning="trust me"),
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^
+ 99 |         dict(stage="guessed_fix"),
+100 |         dict(ground="a_quote_exists"),
+    |
+help: Rewrite as a literal
+
+C408 Unnecessary `dict()` call (rewrite as a literal)
+   --> tests/domain/test_amendment.py:99:9
+    |
+ 97 |     for changes in [
+ 98 |         dict(reasoning="trust me"),
+ 99 |         dict(stage="guessed_fix"),
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^
+100 |         dict(ground="a_quote_exists"),
+101 |         dict(claimed_capability="unknown"),
+    |
+help: Rewrite as a literal
+
+C408 Unnecessary `dict()` call (rewrite as a literal)
+   --> tests/domain/test_amendment.py:100:9
+    |
+ 98 |         dict(reasoning="trust me"),
+ 99 |         dict(stage="guessed_fix"),
+100 |         dict(ground="a_quote_exists"),
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+101 |         dict(claimed_capability="unknown"),
+102 |     ]:
+    |
+help: Rewrite as a literal
+
+C408 Unnecessary `dict()` call (rewrite as a literal)
+   --> tests/domain/test_amendment.py:101:9
+    |
+ 99 |         dict(stage="guessed_fix"),
+100 |         dict(ground="a_quote_exists"),
+101 |         dict(claimed_capability="unknown"),
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+102 |     ]:
+103 |         with pytest.raises(ValidationError):
+    |
+help: Rewrite as a literal
+
+E501 Line too long (93 > 88)
+   --> tests/services/test_native_amendments.py:291:89
+    |
+290 | @pytest.mark.parametrize("guarded", [True, False])
+291 | async def test_direct_commit_refuses_native_publication_and_preserves_authored_compatibility(
+    |                                                                                         ^^^^^
+292 |     repository,
+293 |     guarded,
+    |
+
+Found 8 errors.
+No fixes available (5 hidden fixes can be enabled with the `--unsafe-fixes` option).

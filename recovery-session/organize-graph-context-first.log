@@ -1,0 +1,29 @@
+
+==================================== ERRORS ====================================
+__________ ERROR collecting tests/chains/test_organize_graph_owner.py __________
+ImportError while importing test module '/private/tmp/kodezart-v03-recovery-organize-graph/tests/chains/test_organize_graph_owner.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/chains/test_organize_graph_owner.py:5: in <module>
+    from tests.chains.test_organize import result
+tests/chains/test_organize.py:15: in <module>
+    from tests.tracker.test_recorded_ruling_growth import operation as ruling_operation
+E   ImportError: cannot import name 'operation' from 'tests.tracker.test_recorded_ruling_growth' (/private/tmp/kodezart-v03-recovery-organize-graph/tests/tracker/test_recorded_ruling_growth.py)
+________________ ERROR collecting tests/chains/test_organize.py ________________
+ImportError while importing test module '/private/tmp/kodezart-v03-recovery-organize-graph/tests/chains/test_organize.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/chains/test_organize.py:15: in <module>
+    from tests.tracker.test_recorded_ruling_growth import operation as ruling_operation
+E   ImportError: cannot import name 'operation' from 'tests.tracker.test_recorded_ruling_growth' (/private/tmp/kodezart-v03-recovery-organize-graph/tests/tracker/test_recorded_ruling_growth.py)
+=========================== short test summary info ============================
+ERROR tests/chains/test_organize_graph_owner.py
+ERROR tests/chains/test_organize.py
+!!!!!!!!!!!!!!!!!!! Interrupted: 2 errors during collection !!!!!!!!!!!!!!!!!!!!
+2 errors in 3.21s

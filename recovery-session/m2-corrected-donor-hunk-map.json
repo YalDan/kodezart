@@ -1,0 +1,7528 @@
+{
+  "base": "dddbcbb0df1e0171e8a770063958f85d16c0d917",
+  "candidate": "fadf6efe29c7addcc608b22e8345cd9008ce4bab",
+  "donor": "36083f83f42c03240ebb5861fe284da2c9f04180",
+  "files": [
+    {
+      "path": ".env.example",
+      "byte_identical_to_donor": false
+    },
+    {
+      "path": "docs/architecture.md",
+      "byte_identical_to_donor": false
+    },
+    {
+      "path": "docs/configuration.md",
+      "byte_identical_to_donor": false
+    },
+    {
+      "path": "docs/cutover_mapping.md",
+      "byte_identical_to_donor": false
+    },
+    {
+      "path": "docs/operation.example.toml",
+      "byte_identical_to_donor": false
+    },
+    {
+      "path": "src/kodezart/adapters/_mcp_mapping.py",
+      "byte_identical_to_donor": false,
+      "changed_symbols": [
+        {
+          "symbol": "map_knowledge_mcp",
+          "candidate_lines": [
+            174,
+            196
+          ],
+          "donor_lines": [
+            85,
+            107
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/adapters/linear_issue_identity.py",
+      "byte_identical_to_donor": true,
+      "changed_symbols": [
+        {
+          "symbol": "LinearIssueIdentityCarrier",
+          "candidate_lines": [
+            13,
+            67
+          ],
+          "donor_lines": [
+            13,
+            67
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "LinearIssueIdentityCarrier.__init__",
+          "candidate_lines": [
+            20,
+            21
+          ],
+          "donor_lines": [
+            20,
+            21
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "LinearIssueIdentityCarrier.require_prefix",
+          "candidate_lines": [
+            23,
+            24
+          ],
+          "donor_lines": [
+            23,
+            24
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "LinearIssueIdentityCarrier.decode",
+          "candidate_lines": [
+            26,
+            50
+          ],
+          "donor_lines": [
+            26,
+            50
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "LinearIssueIdentityCarrier.encode",
+          "candidate_lines": [
+            52,
+            67
+          ],
+          "donor_lines": [
+            52,
+            67
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+      "byte_identical_to_donor": false,
+      "changed_symbols": [
+        {
+          "symbol": "_CriterionCreation",
+          "candidate_lines": [
+            771,
+            774
+          ],
+          "donor_lines": null,
+          "ast_identical_to_donor": false
+        },
+        {
+          "symbol": "_SplitCreation",
+          "candidate_lines": [
+            778,
+            783
+          ],
+          "donor_lines": [
+            387,
+            392
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "LinearMcpTracker",
+          "candidate_lines": [
+            786,
+            3971
+          ],
+          "donor_lines": [
+            803,
+            4508
+          ],
+          "ast_identical_to_donor": false
+        },
+        {
+          "symbol": "LinearMcpTracker.__init__",
+          "candidate_lines": [
+            795,
+            845
+          ],
+          "donor_lines": [
+            812,
+            865
+          ],
+          "ast_identical_to_donor": false
+        },
+        {
+          "symbol": "LinearMcpTracker.read_issue_revision",
+          "candidate_lines": [
+            3338,
+            3344
+          ],
+          "donor_lines": [
+            1137,
+            1143
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "LinearMcpTracker.read_scope_labels",
+          "candidate_lines": [
+            3346,
+            3355
+          ],
+          "donor_lines": [
+            1179,
+            1188
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "LinearMcpTracker.execution_approved",
+          "candidate_lines": [
+            3357,
+            3360
+          ],
+          "donor_lines": [
+            1152,
+            1155
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "LinearMcpTracker._read_execution_approval",
+          "candidate_lines": [
+            3362,
+            3391
+          ],
+          "donor_lines": [
+            1190,
+            1219
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "LinearMcpTracker.project_milestones",
+          "candidate_lines": [
+            3393,
+            3398
+          ],
+          "donor_lines": [
+            1221,
+            1226
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "LinearMcpTracker._read_unchanged_graph",
+          "candidate_lines": [
+            3400,
+            3415
+          ],
+          "donor_lines": [
+            1402,
+            1417
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "LinearMcpTracker.update_issue_graph",
+          "candidate_lines": [
+            3417,
+            3442
+          ],
+          "donor_lines": [
+            1419,
+            1444
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "LinearMcpTracker._update_issue_graph_once",
+          "candidate_lines": [
+            3444,
+            3538
+          ],
+          "donor_lines": [
+            1446,
+            1540
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "LinearMcpTracker.read_split_children",
+          "candidate_lines": [
+            3540,
+            3568
+          ],
+          "donor_lines": [
+            1542,
+            1570
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "LinearMcpTracker.create_split_if_absent",
+          "candidate_lines": [
+            3570,
+            3622
+          ],
+          "donor_lines": [
+            1572,
+            1624
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "LinearMcpTracker._create_split_once",
+          "candidate_lines": [
+            3624,
+            3696
+          ],
+          "donor_lines": [
+            1626,
+            1698
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "LinearMcpTracker._unstarted_state_id",
+          "candidate_lines": [
+            3698,
+            3718
+          ],
+          "donor_lines": [
+            1700,
+            1720
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "LinearMcpTracker.create_criterion_if_absent",
+          "candidate_lines": [
+            3720,
+            3791
+          ],
+          "donor_lines": [
+            1722,
+            1784
+          ],
+          "ast_identical_to_donor": false
+        },
+        {
+          "symbol": "LinearMcpTracker.read_issue_identity",
+          "candidate_lines": [
+            3793,
+            3807
+          ],
+          "donor_lines": [
+            1984,
+            1998
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "LinearMcpTracker._identity_issues",
+          "candidate_lines": [
+            3809,
+            3852
+          ],
+          "donor_lines": [
+            2028,
+            2071
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "LinearMcpTracker._find_issue_identity",
+          "candidate_lines": [
+            3854,
+            3866
+          ],
+          "donor_lines": [
+            2073,
+            2085
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "LinearMcpTracker.edit_description",
+          "candidate_lines": [
+            3868,
+            3949
+          ],
+          "donor_lines": [
+            2087,
+            2168
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "LinearMcpTracker._scope_label_members",
+          "candidate_lines": [
+            3951,
+            3956
+          ],
+          "donor_lines": [
+            1157,
+            1162
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "LinearMcpTracker._read_scope_issue",
+          "candidate_lines": [
+            3958,
+            3971
+          ],
+          "donor_lines": [
+            1164,
+            1177
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/adapters/linear_mcp_types.py",
+      "byte_identical_to_donor": false,
+      "changed_symbols": [
+        {
+          "symbol": "LinearWorkflowStateWire",
+          "candidate_lines": [
+            457,
+            461
+          ],
+          "donor_lines": [
+            369,
+            373
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/adapters/linear_scope_reader.py",
+      "byte_identical_to_donor": false,
+      "changed_symbols": [
+        {
+          "symbol": "LinearScopeReader",
+          "candidate_lines": [
+            58,
+            464
+          ],
+          "donor_lines": [
+            58,
+            464
+          ],
+          "ast_identical_to_donor": false
+        },
+        {
+          "symbol": "LinearScopeReader.project_milestones",
+          "candidate_lines": [
+            421,
+            464
+          ],
+          "donor_lines": [
+            123,
+            166
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/adapters/linear_scope_types.py",
+      "byte_identical_to_donor": true,
+      "changed_symbols": [
+        {
+          "symbol": "LinearApprovalIssueWire",
+          "candidate_lines": [
+            69,
+            73
+          ],
+          "donor_lines": [
+            69,
+            73
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/chains/organize.py",
+      "byte_identical_to_donor": true,
+      "changed_symbols": [
+        {
+          "symbol": "OrganizeAdmission",
+          "candidate_lines": [
+            27,
+            152
+          ],
+          "donor_lines": [
+            27,
+            152
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "OrganizeAdmission.__init__",
+          "candidate_lines": [
+            35,
+            51
+          ],
+          "donor_lines": [
+            35,
+            51
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "OrganizeAdmission.assess",
+          "candidate_lines": [
+            53,
+            57
+          ],
+          "donor_lines": [
+            53,
+            57
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "OrganizeAdmission.verify",
+          "candidate_lines": [
+            59,
+            63
+          ],
+          "donor_lines": [
+            59,
+            63
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "OrganizeAdmission.is_live",
+          "candidate_lines": [
+            65,
+            77
+          ],
+          "donor_lines": [
+            65,
+            77
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "OrganizeAdmission._judge",
+          "candidate_lines": [
+            79,
+            152
+          ],
+          "donor_lines": [
+            79,
+            152
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/chains/organize_author.py",
+      "byte_identical_to_donor": true,
+      "changed_symbols": [
+        {
+          "symbol": "ProposedWrite",
+          "candidate_lines": [
+            27,
+            30
+          ],
+          "donor_lines": [
+            27,
+            30
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "OrganizeAuthor",
+          "candidate_lines": [
+            33,
+            107
+          ],
+          "donor_lines": [
+            33,
+            107
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "OrganizeAuthor.__init__",
+          "candidate_lines": [
+            34,
+            46
+          ],
+          "donor_lines": [
+            34,
+            46
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "OrganizeAuthor.propose",
+          "candidate_lines": [
+            48,
+            107
+          ],
+          "donor_lines": [
+            48,
+            107
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/composition/organize.py",
+      "byte_identical_to_donor": true,
+      "changed_symbols": [
+        {
+          "symbol": "build_organize_owner",
+          "candidate_lines": [
+            23,
+            82
+          ],
+          "donor_lines": [
+            23,
+            82
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "verify_organize_configuration",
+          "candidate_lines": [
+            85,
+            109
+          ],
+          "donor_lines": [
+            85,
+            109
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "build_organize_tick",
+          "candidate_lines": [
+            112,
+            155
+          ],
+          "donor_lines": [
+            112,
+            155
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/composition/passes.py",
+      "byte_identical_to_donor": false,
+      "changed_symbols": [
+        {
+          "symbol": "build_prompt_passes",
+          "candidate_lines": [
+            261,
+            348
+          ],
+          "donor_lines": [
+            265,
+            352
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "_verify_wired_gates",
+          "candidate_lines": [
+            511,
+            566
+          ],
+          "donor_lines": [
+            515,
+            570
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "verify_pass_preflight",
+          "candidate_lines": [
+            668,
+            710
+          ],
+          "donor_lines": [
+            672,
+            718
+          ],
+          "ast_identical_to_donor": false
+        },
+        {
+          "symbol": "build_dispatch_runtime",
+          "candidate_lines": [
+            713,
+            831
+          ],
+          "donor_lines": [
+            721,
+            884
+          ],
+          "ast_identical_to_donor": false
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/composition/tracker.py",
+      "byte_identical_to_donor": false,
+      "changed_symbols": [
+        {
+          "symbol": "build_tracker",
+          "candidate_lines": [
+            91,
+            125
+          ],
+          "donor_lines": [
+            129,
+            167
+          ],
+          "ast_identical_to_donor": false
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/core/config.py",
+      "byte_identical_to_donor": false,
+      "changed_symbols": [
+        {
+          "symbol": "AppConfig",
+          "candidate_lines": [
+            39,
+            1261
+          ],
+          "donor_lines": [
+            32,
+            766
+          ],
+          "ast_identical_to_donor": false
+        },
+        {
+          "symbol": "AppConfig.settings_customise_sources",
+          "candidate_lines": [
+            1196,
+            1259
+          ],
+          "donor_lines": [
+            56,
+            145
+          ],
+          "ast_identical_to_donor": false
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/core/organize_settings.py",
+      "byte_identical_to_donor": true,
+      "changed_symbols": [
+        {
+          "symbol": "OrganizeSettings",
+          "candidate_lines": [
+            8,
+            9
+          ],
+          "donor_lines": [
+            8,
+            9
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/core/prompt_namespaces.py",
+      "byte_identical_to_donor": false,
+      "changed_symbols": [
+        {
+          "symbol": "operation_bindings",
+          "candidate_lines": [
+            93,
+            377
+          ],
+          "donor_lines": [
+            113,
+            391
+          ],
+          "ast_identical_to_donor": false
+        },
+        {
+          "symbol": "bindings_for",
+          "candidate_lines": [
+            402,
+            415
+          ],
+          "donor_lines": [
+            416,
+            429
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/core/protocols.py",
+      "byte_identical_to_donor": false,
+      "changed_symbols": [
+        {
+          "symbol": "TrackerPort",
+          "candidate_lines": [
+            596,
+            1141
+          ],
+          "donor_lines": [
+            765,
+            1439
+          ],
+          "ast_identical_to_donor": false
+        },
+        {
+          "symbol": "TrackerPort.read_issue_revision",
+          "candidate_lines": [
+            1023,
+            1031
+          ],
+          "donor_lines": [
+            898,
+            906
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "TrackerPort.read_scope_labels",
+          "candidate_lines": [
+            1033,
+            1035
+          ],
+          "donor_lines": [
+            917,
+            919
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "TrackerPort.execution_approved",
+          "candidate_lines": [
+            1037,
+            1045
+          ],
+          "donor_lines": [
+            921,
+            929
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "TrackerPort.project_milestones",
+          "candidate_lines": [
+            1047,
+            1051
+          ],
+          "donor_lines": [
+            931,
+            935
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "TrackerPort.update_issue_graph",
+          "candidate_lines": [
+            1053,
+            1066
+          ],
+          "donor_lines": [
+            946,
+            959
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "TrackerPort.read_split_children",
+          "candidate_lines": [
+            1068,
+            1070
+          ],
+          "donor_lines": [
+            961,
+            963
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "TrackerPort.create_split_if_absent",
+          "candidate_lines": [
+            1072,
+            1087
+          ],
+          "donor_lines": [
+            965,
+            980
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "TrackerPort.create_criterion_if_absent",
+          "candidate_lines": [
+            1089,
+            1106
+          ],
+          "donor_lines": [
+            982,
+            999
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "TrackerPort.read_issue_identity",
+          "candidate_lines": [
+            1108,
+            1110
+          ],
+          "donor_lines": [
+            1064,
+            1066
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "TrackerPort.edit_description",
+          "candidate_lines": [
+            1112,
+            1141
+          ],
+          "donor_lines": [
+            1082,
+            1111
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/domain/criterion_amendment.py",
+      "byte_identical_to_donor": true,
+      "changed_symbols": [
+        {
+          "symbol": "require_criterion_source",
+          "candidate_lines": [
+            7,
+            23
+          ],
+          "donor_lines": [
+            7,
+            23
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/domain/criterion_creation.py",
+      "byte_identical_to_donor": true,
+      "changed_symbols": [
+        {
+          "symbol": "criterion_body",
+          "candidate_lines": [
+            11,
+            29
+          ],
+          "donor_lines": [
+            11,
+            29
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "existing_criterion",
+          "candidate_lines": [
+            32,
+            54
+          ],
+          "donor_lines": [
+            32,
+            54
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/domain/errors.py",
+      "byte_identical_to_donor": false,
+      "changed_symbols": [
+        {
+          "symbol": "OrganizeAdmissionIdentityError",
+          "candidate_lines": [
+            436,
+            444
+          ],
+          "donor_lines": [
+            708,
+            716
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "OrganizeAdmissionIdentityError.__init__",
+          "candidate_lines": [
+            439,
+            444
+          ],
+          "donor_lines": [
+            711,
+            716
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "OrganizeDecisionRequiredError",
+          "candidate_lines": [
+            447,
+            454
+          ],
+          "donor_lines": [
+            796,
+            803
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "OrganizeDecisionRequiredError.__init__",
+          "candidate_lines": [
+            450,
+            454
+          ],
+          "donor_lines": [
+            799,
+            803
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "OrganizeHaltError",
+          "candidate_lines": [
+            457,
+            468
+          ],
+          "donor_lines": [
+            782,
+            793
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "OrganizeHaltError.__init__",
+          "candidate_lines": [
+            460,
+            468
+          ],
+          "donor_lines": [
+            785,
+            793
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "OrganizeWriteRefusalError",
+          "candidate_lines": [
+            471,
+            477
+          ],
+          "donor_lines": [
+            773,
+            779
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "OrganizeWriteRefusalError.__init__",
+          "candidate_lines": [
+            474,
+            477
+          ],
+          "donor_lines": [
+            776,
+            779
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "ScopeCycleError",
+          "candidate_lines": [
+            480,
+            490
+          ],
+          "donor_lines": [
+            302,
+            312
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "ScopeCycleError.__init__",
+          "candidate_lines": [
+            488,
+            490
+          ],
+          "donor_lines": [
+            310,
+            312
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "DuplicateIssueIdentityError",
+          "candidate_lines": [
+            493,
+            505
+          ],
+          "donor_lines": [
+            287,
+            299
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "DuplicateIssueIdentityError.__init__",
+          "candidate_lines": [
+            496,
+            505
+          ],
+          "donor_lines": [
+            290,
+            299
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "StaleWriteError",
+          "candidate_lines": [
+            508,
+            514
+          ],
+          "donor_lines": [
+            161,
+            167
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "StaleWriteError.__init__",
+          "candidate_lines": [
+            511,
+            514
+          ],
+          "donor_lines": [
+            164,
+            167
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "InvalidFireCriterionError",
+          "candidate_lines": [
+            542,
+            552
+          ],
+          "donor_lines": [
+            274,
+            284
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "InvalidFireCriterionError.__init__",
+          "candidate_lines": [
+            545,
+            552
+          ],
+          "donor_lines": [
+            277,
+            284
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/domain/fire_spec.py",
+      "byte_identical_to_donor": false,
+      "changed_symbols": [
+        {
+          "symbol": "_without_comments",
+          "candidate_lines": [
+            18,
+            37
+          ],
+          "donor_lines": [
+            21,
+            40
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "criterion_field_bodies",
+          "candidate_lines": [
+            40,
+            77
+          ],
+          "donor_lines": [
+            43,
+            80
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "criterion_check",
+          "candidate_lines": [
+            80,
+            89
+          ],
+          "donor_lines": [
+            153,
+            162
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/domain/organize.py",
+      "byte_identical_to_donor": true,
+      "changed_symbols": [
+        {
+          "symbol": "is_admission_live",
+          "candidate_lines": [
+            22,
+            30
+          ],
+          "donor_lines": [
+            22,
+            30
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "admission_route",
+          "candidate_lines": [
+            33,
+            67
+          ],
+          "donor_lines": [
+            33,
+            67
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "is_organize_subject",
+          "candidate_lines": [
+            70,
+            72
+          ],
+          "donor_lines": [
+            70,
+            72
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "organize_gap",
+          "candidate_lines": [
+            75,
+            147
+          ],
+          "donor_lines": [
+            75,
+            147
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/domain/organize_graph.py",
+      "byte_identical_to_donor": true,
+      "changed_symbols": [
+        {
+          "symbol": "graph_snapshot",
+          "candidate_lines": [
+            20,
+            34
+          ],
+          "donor_lines": [
+            20,
+            34
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "graph_peers",
+          "candidate_lines": [
+            37,
+            46
+          ],
+          "donor_lines": [
+            37,
+            46
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "changed_issue",
+          "candidate_lines": [
+            49,
+            78
+          ],
+          "donor_lines": [
+            49,
+            78
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "validate_graph_change",
+          "candidate_lines": [
+            81,
+            124
+          ],
+          "donor_lines": [
+            81,
+            124
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "changed_peers",
+          "candidate_lines": [
+            127,
+            154
+          ],
+          "donor_lines": [
+            127,
+            154
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/domain/prompt_variables.py",
+      "byte_identical_to_donor": false,
+      "changed_symbols": [
+        {
+          "symbol": "organize_variables",
+          "candidate_lines": [
+            30,
+            59
+          ],
+          "donor_lines": [
+            35,
+            64
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/domain/scope_approval.py",
+      "byte_identical_to_donor": true,
+      "changed_symbols": [
+        {
+          "symbol": "resolve_execution_approval",
+          "candidate_lines": [
+            15,
+            67
+          ],
+          "donor_lines": [
+            15,
+            67
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/domain/topology.py",
+      "byte_identical_to_donor": true,
+      "changed_symbols": [
+        {
+          "symbol": "_acyclic_order",
+          "candidate_lines": [
+            11,
+            39
+          ],
+          "donor_lines": [
+            11,
+            39
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "plan_topology",
+          "candidate_lines": [
+            42,
+            126
+          ],
+          "donor_lines": [
+            42,
+            126
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/domain/tracker_writes.py",
+      "byte_identical_to_donor": false,
+      "changed_symbols": [
+        {
+          "symbol": "description_replacement",
+          "candidate_lines": [
+            97,
+            109
+          ],
+          "donor_lines": [
+            62,
+            74
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/main.py",
+      "byte_identical_to_donor": false,
+      "changed_symbols": [
+        {
+          "symbol": "lifespan",
+          "candidate_lines": [
+            36,
+            230
+          ],
+          "donor_lines": [
+            39,
+            266
+          ],
+          "ast_identical_to_donor": false
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/prompts/sets/anthropic_v5/grooming_pass.md",
+      "byte_identical_to_donor": true
+    },
+    {
+      "path": "src/kodezart/prompts/sets/anthropic_v5/organize_assess.md",
+      "byte_identical_to_donor": true
+    },
+    {
+      "path": "src/kodezart/prompts/sets/anthropic_v5/organize_author.md",
+      "byte_identical_to_donor": true
+    },
+    {
+      "path": "src/kodezart/prompts/sets/anthropic_v5/organize_criteria_author.md",
+      "byte_identical_to_donor": false
+    },
+    {
+      "path": "src/kodezart/prompts/sets/anthropic_v5/organize_verify.md",
+      "byte_identical_to_donor": true
+    },
+    {
+      "path": "src/kodezart/prompts/sets/anthropic_v5/set.toml",
+      "byte_identical_to_donor": false
+    },
+    {
+      "path": "src/kodezart/prompts/sets/claude-opus/grooming_pass.md",
+      "byte_identical_to_donor": false
+    },
+    {
+      "path": "src/kodezart/prompts/sets/claude-opus/organize_assess.md",
+      "byte_identical_to_donor": true
+    },
+    {
+      "path": "src/kodezart/prompts/sets/claude-opus/organize_author.md",
+      "byte_identical_to_donor": true
+    },
+    {
+      "path": "src/kodezart/prompts/sets/claude-opus/organize_criteria_author.md",
+      "byte_identical_to_donor": false
+    },
+    {
+      "path": "src/kodezart/prompts/sets/claude-opus/organize_verify.md",
+      "byte_identical_to_donor": true
+    },
+    {
+      "path": "src/kodezart/prompts/sets/claude-opus/set.toml",
+      "byte_identical_to_donor": false
+    },
+    {
+      "path": "src/kodezart/services/git_observations.py",
+      "byte_identical_to_donor": false,
+      "changed_symbols": [
+        {
+          "symbol": "read_remote_head",
+          "candidate_lines": [
+            17,
+            22
+          ],
+          "donor_lines": [
+            13,
+            18
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/services/organize_context.py",
+      "byte_identical_to_donor": true,
+      "changed_symbols": [
+        {
+          "symbol": "OrganizeContextReader",
+          "candidate_lines": [
+            22,
+            158
+          ],
+          "donor_lines": [
+            22,
+            158
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "OrganizeContextReader.__init__",
+          "candidate_lines": [
+            30,
+            37
+          ],
+          "donor_lines": [
+            30,
+            37
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "OrganizeContextReader.read",
+          "candidate_lines": [
+            39,
+            104
+          ],
+          "donor_lines": [
+            39,
+            104
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "OrganizeContextReader.require_revision",
+          "candidate_lines": [
+            107,
+            122
+          ],
+          "donor_lines": [
+            107,
+            122
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "OrganizeContextReader.digest",
+          "candidate_lines": [
+            124,
+            155
+          ],
+          "donor_lines": [
+            124,
+            155
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "OrganizeContextReader.matches",
+          "candidate_lines": [
+            157,
+            158
+          ],
+          "donor_lines": [
+            157,
+            158
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/services/organize_owner.py",
+      "byte_identical_to_donor": true,
+      "changed_symbols": [
+        {
+          "symbol": "_WriteStep",
+          "candidate_lines": [
+            94,
+            99
+          ],
+          "donor_lines": [
+            94,
+            99
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "_WriteStep.write",
+          "candidate_lines": [
+            98,
+            99
+          ],
+          "donor_lines": [
+            98,
+            99
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "_created_context",
+          "candidate_lines": [
+            102,
+            113
+          ],
+          "donor_lines": [
+            102,
+            113
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "_author_key",
+          "candidate_lines": [
+            116,
+            122
+          ],
+          "donor_lines": [
+            116,
+            122
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "OrganizeOwner",
+          "candidate_lines": [
+            125,
+            1249
+          ],
+          "donor_lines": [
+            125,
+            1249
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "OrganizeOwner.__init__",
+          "candidate_lines": [
+            126,
+            180
+          ],
+          "donor_lines": [
+            126,
+            180
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "OrganizeOwner._snapshot",
+          "candidate_lines": [
+            182,
+            226
+          ],
+          "donor_lines": [
+            182,
+            226
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "OrganizeOwner._request",
+          "candidate_lines": [
+            228,
+            272
+          ],
+          "donor_lines": [
+            228,
+            272
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "OrganizeOwner._route",
+          "candidate_lines": [
+            274,
+            289
+          ],
+          "donor_lines": [
+            274,
+            289
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "OrganizeOwner._proof_live",
+          "candidate_lines": [
+            291,
+            312
+          ],
+          "donor_lines": [
+            291,
+            312
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "OrganizeOwner._may_write",
+          "candidate_lines": [
+            314,
+            336
+          ],
+          "donor_lines": [
+            314,
+            336
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "OrganizeOwner._require_revision",
+          "candidate_lines": [
+            338,
+            349
+          ],
+          "donor_lines": [
+            338,
+            349
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "OrganizeOwner._author_write",
+          "candidate_lines": [
+            351,
+            690
+          ],
+          "donor_lines": [
+            351,
+            690
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "OrganizeOwner._mark",
+          "candidate_lines": [
+            692,
+            744
+          ],
+          "donor_lines": [
+            692,
+            744
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "OrganizeOwner._halt",
+          "candidate_lines": [
+            746,
+            920
+          ],
+          "donor_lines": [
+            746,
+            920
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "OrganizeOwner.run",
+          "candidate_lines": [
+            922,
+            1249
+          ],
+          "donor_lines": [
+            922,
+            1249
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/services/organize_tick.py",
+      "byte_identical_to_donor": true,
+      "changed_symbols": [
+        {
+          "symbol": "OrganizeTarget",
+          "candidate_lines": [
+            22,
+            25
+          ],
+          "donor_lines": [
+            22,
+            25
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "OrganizeTick",
+          "candidate_lines": [
+            28,
+            89
+          ],
+          "donor_lines": [
+            28,
+            89
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "OrganizeTick.__init__",
+          "candidate_lines": [
+            29,
+            39
+          ],
+          "donor_lines": [
+            29,
+            39
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "OrganizeTick.run",
+          "candidate_lines": [
+            41,
+            89
+          ],
+          "donor_lines": [
+            41,
+            89
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/services/tracker_artifacts.py",
+      "byte_identical_to_donor": true,
+      "changed_symbols": [
+        {
+          "symbol": "read_tracker_artifact",
+          "candidate_lines": [
+            34,
+            168
+          ],
+          "donor_lines": [
+            34,
+            168
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/types/domain/agent.py",
+      "byte_identical_to_donor": false,
+      "changed_symbols": []
+    },
+    {
+      "path": "src/kodezart/types/domain/gating.py",
+      "byte_identical_to_donor": false,
+      "changed_symbols": [
+        {
+          "symbol": "OutboundDestination",
+          "candidate_lines": [
+            108,
+            127
+          ],
+          "donor_lines": [
+            132,
+            149
+          ],
+          "ast_identical_to_donor": false
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/types/domain/issue_identity.py",
+      "byte_identical_to_donor": true,
+      "changed_symbols": [
+        {
+          "symbol": "IssueIdentity",
+          "candidate_lines": [
+            9,
+            15
+          ],
+          "donor_lines": [
+            9,
+            15
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/types/domain/operation.py",
+      "byte_identical_to_donor": false,
+      "changed_symbols": [
+        {
+          "symbol": "ScopeLabel",
+          "candidate_lines": [
+            424,
+            433
+          ],
+          "donor_lines": [
+            155,
+            164
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "OrganizeScopeBinding",
+          "candidate_lines": [
+            436,
+            441
+          ],
+          "donor_lines": [
+            535,
+            540
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "OperationConfig",
+          "candidate_lines": [
+            444,
+            867
+          ],
+          "donor_lines": [
+            552,
+            1031
+          ],
+          "ast_identical_to_donor": false
+        },
+        {
+          "symbol": "OperationConfig._check_structure",
+          "candidate_lines": [
+            487,
+            664
+          ],
+          "donor_lines": [
+            602,
+            796
+          ],
+          "ast_identical_to_donor": false
+        },
+        {
+          "symbol": "OperationConfig.resolve_organize_mandates",
+          "candidate_lines": [
+            812,
+            867
+          ],
+          "donor_lines": [
+            960,
+            1015
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/types/domain/organize.py",
+      "byte_identical_to_donor": true,
+      "changed_symbols": [
+        {
+          "symbol": "AdmissionVerdict",
+          "candidate_lines": [
+            13,
+            21
+          ],
+          "donor_lines": [
+            13,
+            21
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "AdmissionVerdict.__bool__",
+          "candidate_lines": [
+            20,
+            21
+          ],
+          "donor_lines": [
+            20,
+            21
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "RefusalKind",
+          "candidate_lines": [
+            24,
+            28
+          ],
+          "donor_lines": [
+            24,
+            28
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "AdmissionRoute",
+          "candidate_lines": [
+            31,
+            36
+          ],
+          "donor_lines": [
+            31,
+            36
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "DefectRole",
+          "candidate_lines": [
+            39,
+            43
+          ],
+          "donor_lines": [
+            39,
+            43
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "SpecFinding",
+          "candidate_lines": [
+            46,
+            73
+          ],
+          "donor_lines": [
+            46,
+            73
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "SpecFinding._require_mandate_evidence",
+          "candidate_lines": [
+            67,
+            73
+          ],
+          "donor_lines": [
+            67,
+            73
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "_AdmissionFields",
+          "candidate_lines": [
+            76,
+            100
+          ],
+          "donor_lines": [
+            76,
+            100
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "BuildableAdmission",
+          "candidate_lines": [
+            103,
+            111
+          ],
+          "donor_lines": [
+            103,
+            111
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "RefusedAdmission",
+          "candidate_lines": [
+            114,
+            133
+          ],
+          "donor_lines": [
+            114,
+            133
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "UnverifiableAdmission",
+          "candidate_lines": [
+            136,
+            156
+          ],
+          "donor_lines": [
+            136,
+            156
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "_AdmissionView",
+          "candidate_lines": [
+            165,
+            212
+          ],
+          "donor_lines": [
+            165,
+            212
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "_AdmissionView.issue_id",
+          "candidate_lines": [
+            169,
+            170
+          ],
+          "donor_lines": [
+            169,
+            170
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "_AdmissionView.evidence",
+          "candidate_lines": [
+            173,
+            174
+          ],
+          "donor_lines": [
+            173,
+            174
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "_AdmissionView.findings",
+          "candidate_lines": [
+            177,
+            178
+          ],
+          "donor_lines": [
+            177,
+            178
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "_AdmissionView.verdict",
+          "candidate_lines": [
+            181,
+            182
+          ],
+          "donor_lines": [
+            181,
+            182
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "_AdmissionView.refusal_kind",
+          "candidate_lines": [
+            185,
+            188
+          ],
+          "donor_lines": [
+            185,
+            188
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "_AdmissionView.invented_decision",
+          "candidate_lines": [
+            191,
+            196
+          ],
+          "donor_lines": [
+            191,
+            196
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "_AdmissionView.pending_blocker_id",
+          "candidate_lines": [
+            199,
+            204
+          ],
+          "donor_lines": [
+            199,
+            204
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "_AdmissionView.missing_artifact",
+          "candidate_lines": [
+            207,
+            212
+          ],
+          "donor_lines": [
+            207,
+            212
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "AdmissionJudgment",
+          "candidate_lines": [
+            215,
+            216
+          ],
+          "donor_lines": [
+            215,
+            216
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "_AdmittedRevision",
+          "candidate_lines": [
+            219,
+            222
+          ],
+          "donor_lines": [
+            219,
+            222
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "_BuildableResult",
+          "candidate_lines": [
+            225,
+            226
+          ],
+          "donor_lines": [
+            225,
+            226
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "_RefusedResult",
+          "candidate_lines": [
+            229,
+            230
+          ],
+          "donor_lines": [
+            229,
+            230
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "_UnverifiableResult",
+          "candidate_lines": [
+            233,
+            234
+          ],
+          "donor_lines": [
+            233,
+            234
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "AdmissionResult",
+          "candidate_lines": [
+            243,
+            256
+          ],
+          "donor_lines": [
+            243,
+            256
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "AdmissionResult.admitted_body_digest",
+          "candidate_lines": [
+            247,
+            248
+          ],
+          "donor_lines": [
+            247,
+            248
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "AdmissionResult.admitted_scope",
+          "candidate_lines": [
+            251,
+            252
+          ],
+          "donor_lines": [
+            251,
+            252
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "AdmissionResult.admitted_context_digest",
+          "candidate_lines": [
+            255,
+            256
+          ],
+          "donor_lines": [
+            255,
+            256
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "MandateKind",
+          "candidate_lines": [
+            259,
+            264
+          ],
+          "donor_lines": [
+            259,
+            264
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "OrganizeLabelNamespace",
+          "candidate_lines": [
+            267,
+            271
+          ],
+          "donor_lines": [
+            267,
+            271
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "split_label_key",
+          "candidate_lines": [
+            274,
+            281
+          ],
+          "donor_lines": [
+            274,
+            281
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "MandateSpec",
+          "candidate_lines": [
+            284,
+            307
+          ],
+          "donor_lines": [
+            284,
+            307
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "MandateSpec._require_qualified_label_key",
+          "candidate_lines": [
+            297,
+            299
+          ],
+          "donor_lines": [
+            297,
+            299
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "MandateSpec._require_issue_phase_marker",
+          "candidate_lines": [
+            303,
+            307
+          ],
+          "donor_lines": [
+            303,
+            307
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "ResolvedMandateSpec",
+          "candidate_lines": [
+            310,
+            317
+          ],
+          "donor_lines": [
+            310,
+            317
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "OrganizeAdmissionRequest",
+          "candidate_lines": [
+            320,
+            332
+          ],
+          "donor_lines": [
+            320,
+            332
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/types/domain/organize_graph.py",
+      "byte_identical_to_donor": true,
+      "changed_symbols": [
+        {
+          "symbol": "ParentChange",
+          "candidate_lines": [
+            21,
+            28
+          ],
+          "donor_lines": [
+            21,
+            28
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "_RelationChange",
+          "candidate_lines": [
+            31,
+            60
+          ],
+          "donor_lines": [
+            31,
+            60
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "_RelationChange._one_unambiguous_delta",
+          "candidate_lines": [
+            49,
+            60
+          ],
+          "donor_lines": [
+            49,
+            60
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "BlockedByChange",
+          "candidate_lines": [
+            63,
+            68
+          ],
+          "donor_lines": [
+            63,
+            68
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "RelatedToChange",
+          "candidate_lines": [
+            71,
+            76
+          ],
+          "donor_lines": [
+            71,
+            76
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "PriorityChange",
+          "candidate_lines": [
+            79,
+            90
+          ],
+          "donor_lines": [
+            79,
+            90
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "MilestoneChange",
+          "candidate_lines": [
+            93,
+            104
+          ],
+          "donor_lines": [
+            93,
+            104
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "GraphProposal",
+          "candidate_lines": [
+            113,
+            133
+          ],
+          "donor_lines": [
+            113,
+            133
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "GraphProposal._one_change_per_field",
+          "candidate_lines": [
+            130,
+            133
+          ],
+          "donor_lines": [
+            130,
+            133
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "SplitChildProposal",
+          "candidate_lines": [
+            136,
+            151
+          ],
+          "donor_lines": [
+            136,
+            151
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "SplitProposal",
+          "candidate_lines": [
+            154,
+            182
+          ],
+          "donor_lines": [
+            154,
+            182
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "SplitProposal._distinct_deliverables",
+          "candidate_lines": [
+            177,
+            182
+          ],
+          "donor_lines": [
+            177,
+            182
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "IssueGraphSnapshot",
+          "candidate_lines": [
+            185,
+            198
+          ],
+          "donor_lines": [
+            185,
+            198
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "OrganizeContext",
+          "candidate_lines": [
+            201,
+            209
+          ],
+          "donor_lines": [
+            201,
+            209
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/types/domain/organize_owner.py",
+      "byte_identical_to_donor": true,
+      "changed_symbols": [
+        {
+          "symbol": "CriterionProposal",
+          "candidate_lines": [
+            20,
+            42
+          ],
+          "donor_lines": [
+            20,
+            42
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "BodyProposal",
+          "candidate_lines": [
+            45,
+            61
+          ],
+          "donor_lines": [
+            45,
+            61
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "CriteriaProposal",
+          "candidate_lines": [
+            64,
+            83
+          ],
+          "donor_lines": [
+            64,
+            83
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "UnresolvedProposal",
+          "candidate_lines": [
+            86,
+            110
+          ],
+          "donor_lines": [
+            86,
+            110
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "UnavailableProposal",
+          "candidate_lines": [
+            113,
+            137
+          ],
+          "donor_lines": [
+            113,
+            137
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "OrganizeProposal",
+          "candidate_lines": [
+            140,
+            153
+          ],
+          "donor_lines": [
+            140,
+            153
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "OrganizePolicy",
+          "candidate_lines": [
+            156,
+            159
+          ],
+          "donor_lines": [
+            156,
+            159
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "StageHaltCause",
+          "candidate_lines": [
+            162,
+            166
+          ],
+          "donor_lines": [
+            162,
+            166
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "OrganizeBoundEvidence",
+          "candidate_lines": [
+            169,
+            193
+          ],
+          "donor_lines": [
+            169,
+            193
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "OrganizeBoundEvidence._exhausted_exactly",
+          "candidate_lines": [
+            181,
+            193
+          ],
+          "donor_lines": [
+            181,
+            193
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "_HaltEvidence",
+          "candidate_lines": [
+            196,
+            214
+          ],
+          "donor_lines": [
+            196,
+            214
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "_HaltEvidence._retained_write_back_is_unsettled",
+          "candidate_lines": [
+            209,
+            214
+          ],
+          "donor_lines": [
+            209,
+            214
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "AdmissionExhaustedHalt",
+          "candidate_lines": [
+            217,
+            235
+          ],
+          "donor_lines": [
+            217,
+            235
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "AdmissionExhaustedHalt._admission_bound_matches_its_evidence",
+          "candidate_lines": [
+            224,
+            235
+          ],
+          "donor_lines": [
+            224,
+            235
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "ConvergenceExhaustedHalt",
+          "candidate_lines": [
+            238,
+            249
+          ],
+          "donor_lines": [
+            238,
+            249
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "ConvergenceExhaustedHalt._convergence_bound_is_its_own",
+          "candidate_lines": [
+            246,
+            249
+          ],
+          "donor_lines": [
+            246,
+            249
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "HumanDecisionHalt",
+          "candidate_lines": [
+            252,
+            272
+          ],
+          "donor_lines": [
+            252,
+            272
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "HumanDecisionHalt._human_choice_is_recorded",
+          "candidate_lines": [
+            262,
+            272
+          ],
+          "donor_lines": [
+            262,
+            272
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "EscalationUnrecordedHalt",
+          "candidate_lines": [
+            275,
+            280
+          ],
+          "donor_lines": [
+            275,
+            280
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "StageHaltReport",
+          "candidate_lines": [
+            292,
+            323
+          ],
+          "donor_lines": [
+            292,
+            323
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "StageHaltReport.cause",
+          "candidate_lines": [
+            298,
+            299
+          ],
+          "donor_lines": [
+            298,
+            299
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "StageHaltReport.bound",
+          "candidate_lines": [
+            302,
+            303
+          ],
+          "donor_lines": [
+            302,
+            303
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "StageHaltReport.admission_results",
+          "candidate_lines": [
+            306,
+            307
+          ],
+          "donor_lines": [
+            306,
+            307
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "StageHaltReport.surviving_findings",
+          "candidate_lines": [
+            310,
+            311
+          ],
+          "donor_lines": [
+            310,
+            311
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "StageHaltReport.write_back_results",
+          "candidate_lines": [
+            314,
+            315
+          ],
+          "donor_lines": [
+            314,
+            315
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "StageHaltReport.questions",
+          "candidate_lines": [
+            318,
+            319
+          ],
+          "donor_lines": [
+            318,
+            319
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "StageHaltReport.unrecorded_escalation_issue_ids",
+          "candidate_lines": [
+            322,
+            323
+          ],
+          "donor_lines": [
+            322,
+            323
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "OrganizeReport",
+          "candidate_lines": [
+            326,
+            329
+          ],
+          "donor_lines": [
+            326,
+            329
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/types/domain/prompts.py",
+      "byte_identical_to_donor": false,
+      "changed_symbols": [
+        {
+          "symbol": "PromptKey",
+          "candidate_lines": [
+            16,
+            54
+          ],
+          "donor_lines": [
+            16,
+            58
+          ],
+          "ast_identical_to_donor": false
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/types/domain/session.py",
+      "byte_identical_to_donor": false,
+      "changed_symbols": [
+        {
+          "symbol": "SessionType",
+          "candidate_lines": [
+            49,
+            67
+          ],
+          "donor_lines": [
+            68,
+            85
+          ],
+          "ast_identical_to_donor": false
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/types/domain/surface.py",
+      "byte_identical_to_donor": false,
+      "changed_symbols": [
+        {
+          "symbol": "SurfaceKind",
+          "candidate_lines": [
+            10,
+            32
+          ],
+          "donor_lines": [
+            10,
+            35
+          ],
+          "ast_identical_to_donor": false
+        },
+        {
+          "symbol": "DescriptionWriteAuthority",
+          "candidate_lines": [
+            90,
+            105
+          ],
+          "donor_lines": [
+            73,
+            88
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "DescriptionWriteAuthority.__post_init__",
+          "candidate_lines": [
+            96,
+            105
+          ],
+          "donor_lines": [
+            79,
+            88
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/types/domain/topology.py",
+      "byte_identical_to_donor": true,
+      "changed_symbols": [
+        {
+          "symbol": "ReadyIssue",
+          "candidate_lines": [
+            9,
+            13
+          ],
+          "donor_lines": [
+            9,
+            13
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "BlockedIssue",
+          "candidate_lines": [
+            17,
+            21
+          ],
+          "donor_lines": [
+            17,
+            21
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "TopologyPlan",
+          "candidate_lines": [
+            25,
+            33
+          ],
+          "donor_lines": [
+            25,
+            33
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/types/domain/tracker.py",
+      "byte_identical_to_donor": false,
+      "changed_symbols": [
+        {
+          "symbol": "TrackerIssueRevision",
+          "candidate_lines": [
+            375,
+            391
+          ],
+          "donor_lines": [
+            235,
+            251
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "TrackerIssueRevision._require_digest",
+          "candidate_lines": [
+            388,
+            391
+          ],
+          "donor_lines": [
+            248,
+            251
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/types/domain/tracker_writes.py",
+      "byte_identical_to_donor": true,
+      "changed_symbols": [
+        {
+          "symbol": "DescriptionEditResult",
+          "candidate_lines": [
+            6,
+            10
+          ],
+          "donor_lines": [
+            6,
+            10
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "tests/adapters/test_tracker_self_writes.py",
+      "byte_identical_to_donor": false,
+      "changed_symbols": [
+        {
+          "symbol": "_tracker",
+          "candidate_lines": [
+            63,
+            78
+          ],
+          "donor_lines": [
+            63,
+            79
+          ],
+          "ast_identical_to_donor": false
+        },
+        {
+          "symbol": "test_a_read_back_that_fails_does_not_fail_the_write_it_recorded",
+          "candidate_lines": [
+            164,
+            194
+          ],
+          "donor_lines": [
+            165,
+            196
+          ],
+          "ast_identical_to_donor": false
+        }
+      ]
+    },
+    {
+      "path": "tests/chains/test_organize.py",
+      "byte_identical_to_donor": true,
+      "changed_symbols": [
+        {
+          "symbol": "issue",
+          "candidate_lines": [
+            66,
+            82
+          ],
+          "donor_lines": [
+            66,
+            82
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "tracker",
+          "candidate_lines": [
+            85,
+            121
+          ],
+          "donor_lines": [
+            85,
+            121
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "request",
+          "candidate_lines": [
+            124,
+            133
+          ],
+          "donor_lines": [
+            124,
+            133
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "result",
+          "candidate_lines": [
+            136,
+            153
+          ],
+          "donor_lines": [
+            136,
+            153
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "RecordingExecutor",
+          "candidate_lines": [
+            156,
+            194
+          ],
+          "donor_lines": [
+            156,
+            194
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "RecordingExecutor.__init__",
+          "candidate_lines": [
+            159,
+            161
+          ],
+          "donor_lines": [
+            159,
+            161
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "RecordingExecutor.stream",
+          "candidate_lines": [
+            163,
+            194
+          ],
+          "donor_lines": [
+            163,
+            194
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "RecordingWorkspace",
+          "candidate_lines": [
+            197,
+            204
+          ],
+          "donor_lines": [
+            197,
+            204
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "RecordingWorkspace.__init__",
+          "candidate_lines": [
+            198,
+            200
+          ],
+          "donor_lines": [
+            198,
+            200
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "RecordingWorkspace.acquire",
+          "candidate_lines": [
+            202,
+            204
+          ],
+          "donor_lines": [
+            202,
+            204
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "consumer",
+          "candidate_lines": [
+            207,
+            218
+          ],
+          "donor_lines": [
+            207,
+            218
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_every_call_reads_full_tracker_sources_and_dispatches_fresh_at_base",
+          "candidate_lines": [
+            229,
+            302
+          ],
+          "donor_lines": [
+            229,
+            302
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_verify_rereads_mutated_tracker_bodies_instead_of_reusing_assess_input",
+          "candidate_lines": [
+            305,
+            319
+          ],
+          "donor_lines": [
+            305,
+            319
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_surface_liveness_reads_never_retest_or_restamp",
+          "candidate_lines": [
+            322,
+            382
+          ],
+          "donor_lines": [
+            322,
+            382
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_body_edit_during_session_does_not_stamp_the_later_revision",
+          "candidate_lines": [
+            386,
+            405
+          ],
+          "donor_lines": [
+            386,
+            405
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_agent_cannot_supply_its_own_revision_metadata",
+          "candidate_lines": [
+            408,
+            415
+          ],
+          "donor_lines": [
+            408,
+            415
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_liveness_read_refuses_missing_or_mismatched_source_identity",
+          "candidate_lines": [
+            418,
+            440
+          ],
+          "donor_lines": [
+            418,
+            440
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_real_revision_reader_lapses_the_exact_admission_surface",
+          "candidate_lines": [
+            444,
+            481
+          ],
+          "donor_lines": [
+            444,
+            481
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_incomplete_source_reads_fail_before_any_workspace_or_session",
+          "candidate_lines": [
+            486,
+            503
+          ],
+          "donor_lines": [
+            486,
+            503
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_missing_or_failed_output_releases_workspace_without_admission",
+          "candidate_lines": [
+            510,
+            517
+          ],
+          "donor_lines": [
+            510,
+            517
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_rejected_rate_limit_is_not_an_admission_even_with_structured_output",
+          "candidate_lines": [
+            520,
+            530
+          ],
+          "donor_lines": [
+            520,
+            530
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_judgment_for_another_issue_is_refused_and_workspace_is_released",
+          "candidate_lines": [
+            534,
+            549
+          ],
+          "donor_lines": [
+            534,
+            549
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_all_three_verdicts_return_without_coercion_or_phase_writes",
+          "candidate_lines": [
+            569,
+            593
+          ],
+          "donor_lines": [
+            569,
+            593
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_session_type_is_required_by_the_actual_runner_call",
+          "candidate_lines": [
+            596,
+            609
+          ],
+          "donor_lines": [
+            596,
+            609
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_request_cannot_carry_author_context_or_a_previous_session",
+          "candidate_lines": [
+            615,
+            619
+          ],
+          "donor_lines": [
+            615,
+            619
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_real_tracker_hydrates_evidence_before_real_runner_dispatch",
+          "candidate_lines": [
+            623,
+            652
+          ],
+          "donor_lines": [
+            623,
+            652
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_the_organize_dispatch_census_names_its_type_and_read_only_policy",
+          "candidate_lines": [
+            655,
+            686
+          ],
+          "donor_lines": [
+            655,
+            686
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "gap_revision",
+          "candidate_lines": [
+            693,
+            697
+          ],
+          "donor_lines": [
+            693,
+            697
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "gap_admission",
+          "candidate_lines": [
+            700,
+            708
+          ],
+          "donor_lines": [
+            700,
+            708
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "organized_family",
+          "candidate_lines": [
+            711,
+            721
+          ],
+          "donor_lines": [
+            711,
+            721
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "gap_of",
+          "candidate_lines": [
+            724,
+            734
+          ],
+          "donor_lines": [
+            724,
+            734
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_organized_scope_has_empty_gap_and_preserves_source_records",
+          "candidate_lines": [
+            737,
+            742
+          ],
+          "donor_lines": [
+            737,
+            742
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_each_missing_organize_fact_puts_only_its_issue_in_gap",
+          "candidate_lines": [
+            746,
+            768
+          ],
+          "donor_lines": [
+            746,
+            768
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_open_finding_of_either_role_puts_only_its_issue_in_gap",
+          "candidate_lines": [
+            772,
+            785
+          ],
+          "donor_lines": [
+            772,
+            785
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_child_state_only_controls_non_canceled_existence_not_code_satisfaction",
+          "candidate_lines": [
+            789,
+            795
+          ],
+          "donor_lines": [
+            789,
+            795
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_canceled_child_does_not_hide_another_live_criterion",
+          "candidate_lines": [
+            798,
+            806
+          ],
+          "donor_lines": [
+            798,
+            806
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_deliverable_child_does_not_count_as_a_criterion",
+          "candidate_lines": [
+            809,
+            814
+          ],
+          "donor_lines": [
+            809,
+            814
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_record_shaped_members_are_outside_gap_even_without_markers_or_verdicts",
+          "candidate_lines": [
+            818,
+            828
+          ],
+          "donor_lines": [
+            818,
+            828
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_gap_uses_the_configured_semantic_body_marker",
+          "candidate_lines": [
+            831,
+            834
+          ],
+          "donor_lines": [
+            831,
+            834
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_gap_preserves_input_order_and_exact_records",
+          "candidate_lines": [
+            837,
+            843
+          ],
+          "donor_lines": [
+            837,
+            843
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_gap_refuses_incoherent_snapshots_instead_of_dropping_evidence",
+          "candidate_lines": [
+            850,
+            864
+          ],
+          "donor_lines": [
+            850,
+            864
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_child_surface_liveness_reenters_parent_without_lapsing_its_body",
+          "candidate_lines": [
+            868,
+            898
+          ],
+          "donor_lines": [
+            868,
+            898
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_open_child_surface_finding_routes_to_parent_only",
+          "candidate_lines": [
+            902,
+            915
+          ],
+          "donor_lines": [
+            902,
+            915
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "organized_port",
+          "candidate_lines": [
+            919,
+            948
+          ],
+          "donor_lines": [
+            919,
+            948
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "read_gap_revisions",
+          "candidate_lines": [
+            951,
+            952
+          ],
+          "donor_lines": [
+            951,
+            952
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_port_criterion_changes_use_only_surface_digests_for_parent_gap",
+          "candidate_lines": [
+            956,
+            1040
+          ],
+          "donor_lines": [
+            956,
+            1040
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "ripple_vendor_stamp",
+          "candidate_lines": [
+            1043,
+            1053
+          ],
+          "donor_lines": [
+            1043,
+            1053
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_mention_ripple_bumps_the_stamp_without_entering_the_gap",
+          "candidate_lines": [
+            1056,
+            1084
+          ],
+          "donor_lines": [
+            1056,
+            1084
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_gap_has_no_amendment_input_or_body_judgment_branch",
+          "candidate_lines": [
+            1087,
+            1100
+          ],
+          "donor_lines": [
+            1087,
+            1100
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "tests/chains/test_organize_correction.py",
+      "byte_identical_to_donor": true,
+      "changed_symbols": [
+        {
+          "symbol": "test_escalation_rechecks_approval_before_its_second_write",
+          "candidate_lines": [
+            12,
+            54
+          ],
+          "donor_lines": [
+            12,
+            54
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "tests/chains/test_organize_delivery_independent.py",
+      "byte_identical_to_donor": true,
+      "changed_symbols": [
+        {
+          "symbol": "test_halted_first_binding_does_not_starve_second_binding",
+          "candidate_lines": [
+            26,
+            51
+          ],
+          "donor_lines": [
+            26,
+            51
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_approval_is_current_after_last_awaited_gate_read",
+          "candidate_lines": [
+            55,
+            90
+          ],
+          "donor_lines": [
+            55,
+            90
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_criterion_author_is_bound_to_current_parent_revision",
+          "candidate_lines": [
+            94,
+            123
+          ],
+          "donor_lines": [
+            94,
+            123
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_current_scope_membership_binds_author_write",
+          "candidate_lines": [
+            127,
+            160
+          ],
+          "donor_lines": [
+            127,
+            160
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_foreign_holder_cannot_create_while_first_owner_holds_set",
+          "candidate_lines": [
+            163,
+            176
+          ],
+          "donor_lines": [
+            163,
+            176
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_cancel_during_owner_create_settles_before_release",
+          "candidate_lines": [
+            179,
+            196
+          ],
+          "donor_lines": [
+            179,
+            196
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "tests/chains/test_organize_graph_independent.py",
+      "byte_identical_to_donor": true,
+      "changed_symbols": [
+        {
+          "symbol": "test_configured_owner_refuses_observed_final_split_source_drift",
+          "candidate_lines": [
+            9,
+            64
+          ],
+          "donor_lines": [
+            9,
+            64
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "tests/chains/test_organize_graph_owner.py",
+      "byte_identical_to_donor": true,
+      "changed_symbols": [
+        {
+          "symbol": "test_configured_owner_applies_graph_priority_then_reentry_writes_nothing",
+          "candidate_lines": [
+            10,
+            58
+          ],
+          "donor_lines": [
+            10,
+            58
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_configured_split_prepares_children_without_execution_and_replays_cleanly",
+          "candidate_lines": [
+            61,
+            131
+          ],
+          "donor_lines": [
+            61,
+            131
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_graph_author_metadata_drift_refuses_before_native_write",
+          "candidate_lines": [
+            134,
+            159
+          ],
+          "donor_lines": [
+            134,
+            159
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_cancel_during_issued_split_settles_before_lease_release",
+          "candidate_lines": [
+            162,
+            213
+          ],
+          "donor_lines": [
+            162,
+            213
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_peer_refutation_retains_citations_and_bound_without_peer_repair",
+          "candidate_lines": [
+            216,
+            290
+          ],
+          "donor_lines": [
+            216,
+            290
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_recorded_ruling_context_reaches_author_and_lapses_on_actual_edit",
+          "candidate_lines": [
+            293,
+            350
+          ],
+          "donor_lines": [
+            293,
+            350
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "tests/chains/test_organize_native_independent.py",
+      "byte_identical_to_donor": true,
+      "changed_symbols": [
+        {
+          "symbol": "test_criterion_mint_requires_the_parent_revision_its_author_read",
+          "candidate_lines": [
+            15,
+            47
+          ],
+          "donor_lines": [
+            15,
+            47
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_writeback_exhaustion_retains_its_actual_cited_refutation",
+          "candidate_lines": [
+            50,
+            84
+          ],
+          "donor_lines": [
+            50,
+            84
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_scope_approval_ends_organize_before_escalation_writes",
+          "candidate_lines": [
+            88,
+            119
+          ],
+          "donor_lines": [
+            88,
+            119
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "tests/chains/test_organize_owner.py",
+      "byte_identical_to_donor": false,
+      "changed_symbols": [
+        {
+          "symbol": "test_source_identity_is_checked_before_any_session",
+          "candidate_lines": [
+            38,
+            51
+          ],
+          "donor_lines": [
+            38,
+            51
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "BoardExecutor",
+          "candidate_lines": [
+            54,
+            118
+          ],
+          "donor_lines": [
+            54,
+            118
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "BoardExecutor.__init__",
+          "candidate_lines": [
+            55,
+            59
+          ],
+          "donor_lines": [
+            55,
+            59
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "BoardExecutor.stream",
+          "candidate_lines": [
+            61,
+            118
+          ],
+          "donor_lines": [
+            61,
+            118
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "factory",
+          "candidate_lines": [
+            121,
+            187
+          ],
+          "donor_lines": [
+            121,
+            188
+          ],
+          "ast_identical_to_donor": false
+        },
+        {
+          "symbol": "run_owner",
+          "candidate_lines": [
+            190,
+            197
+          ],
+          "donor_lines": [
+            191,
+            198
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_actual_factory_runs_all_configured_phases_and_reentry_writes_nothing",
+          "candidate_lines": [
+            200,
+            233
+          ],
+          "donor_lines": [
+            201,
+            234
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_single_admission_round_stops_with_durable_refusal_and_no_completion",
+          "candidate_lines": [
+            236,
+            260
+          ],
+          "donor_lines": [
+            237,
+            261
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_wrong_author_identity_refuses_before_native_issue_write",
+          "candidate_lines": [
+            263,
+            267
+          ],
+          "donor_lines": [
+            264,
+            268
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_author_source_changed_during_session_cannot_be_overwritten",
+          "candidate_lines": [
+            270,
+            291
+          ],
+          "donor_lines": [
+            271,
+            292
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_human_approval_arriving_during_authorship_ends_organize_before_write",
+          "candidate_lines": [
+            294,
+            311
+          ],
+          "donor_lines": [
+            295,
+            312
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_cancelled_author_never_reaches_a_tracker_mutation",
+          "candidate_lines": [
+            314,
+            334
+          ],
+          "donor_lines": [
+            315,
+            335
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_landed_claim_refutation_drives_a_fresh_author_repair",
+          "candidate_lines": [
+            337,
+            391
+          ],
+          "donor_lines": [
+            338,
+            392
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_author_decision_is_recorded_without_inventing_an_admission",
+          "candidate_lines": [
+            394,
+            430
+          ],
+          "donor_lines": [
+            395,
+            431
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_unanswered_escalation_is_unrecorded_with_exact_issue_and_no_resend",
+          "candidate_lines": [
+            433,
+            463
+          ],
+          "donor_lines": [
+            434,
+            464
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_assessment_dispatch_uses_the_configured_admission_role",
+          "candidate_lines": [
+            466,
+            475
+          ],
+          "donor_lines": [
+            467,
+            476
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_already_approved_scope_starts_no_author_or_judgment",
+          "candidate_lines": [
+            478,
+            485
+          ],
+          "donor_lines": [
+            479,
+            486
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_full_scope_finding_exhausts_the_actual_convergence_bound",
+          "candidate_lines": [
+            488,
+            534
+          ],
+          "donor_lines": [
+            489,
+            535
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_missing_criterion_edit_capability_is_not_invented_as_a_human_fork",
+          "candidate_lines": [
+            537,
+            566
+          ],
+          "donor_lines": [
+            538,
+            567
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_removed_phase_gate_refuses_author_write",
+          "candidate_lines": [
+            569,
+            584
+          ],
+          "donor_lines": [
+            570,
+            585
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "tests/chains/test_organize_ownership.py",
+      "byte_identical_to_donor": false,
+      "changed_symbols": [
+        {
+          "symbol": "git_command",
+          "candidate_lines": [
+            21,
+            24
+          ],
+          "donor_lines": [
+            21,
+            24
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "repository",
+          "candidate_lines": [
+            28,
+            37
+          ],
+          "donor_lines": [
+            28,
+            37
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_repeated_cancellation_settles_native_admission_worktree",
+          "candidate_lines": [
+            42,
+            130
+          ],
+          "donor_lines": [
+            42,
+            128
+          ],
+          "ast_identical_to_donor": false
+        }
+      ]
+    },
+    {
+      "path": "tests/chains/test_write_back_tracker_boundary.py",
+      "byte_identical_to_donor": false,
+      "changed_symbols": [
+        {
+          "symbol": "adapter",
+          "candidate_lines": [
+            38,
+            56
+          ],
+          "donor_lines": null,
+          "ast_identical_to_donor": false
+        },
+        {
+          "symbol": "test_unavailable_surface_refuses_before_any_write",
+          "candidate_lines": [
+            97,
+            121
+          ],
+          "donor_lines": null,
+          "ast_identical_to_donor": false
+        }
+      ]
+    },
+    {
+      "path": "tests/core/test_git_settings.py",
+      "byte_identical_to_donor": false,
+      "changed_symbols": [
+        {
+          "symbol": "test_composed_dispatch_uses_remote_and_integration_directory",
+          "candidate_lines": [
+            186,
+            294
+          ],
+          "donor_lines": [
+            186,
+            294
+          ],
+          "ast_identical_to_donor": false
+        }
+      ]
+    },
+    {
+      "path": "tests/core/test_organize_settings.py",
+      "byte_identical_to_donor": true,
+      "changed_symbols": [
+        {
+          "symbol": "test_scope_address_reexport_preserves_type_and_wire_shape",
+          "candidate_lines": [
+            23,
+            26
+          ],
+          "donor_lines": [
+            23,
+            26
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_bounds_are_both_required_and_positive",
+          "candidate_lines": [
+            39,
+            41
+          ],
+          "donor_lines": [
+            39,
+            41
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_scope_binding_has_one_declared_repository_and_no_ambiguous_authority",
+          "candidate_lines": [
+            47,
+            62
+          ],
+          "donor_lines": [
+            47,
+            62
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_environment_bounds_reach_the_tick_and_stop_after_one_author",
+          "candidate_lines": [
+            65,
+            103
+          ],
+          "donor_lines": [
+            65,
+            103
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_actual_tick_uses_fresh_remote_trunk_and_existing_run_identity",
+          "candidate_lines": [
+            106,
+            120
+          ],
+          "donor_lines": [
+            106,
+            120
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_declared_owner_bindings_without_bounds_refuse_construction",
+          "candidate_lines": [
+            123,
+            125
+          ],
+          "donor_lines": [
+            123,
+            125
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "tests/domain/test_organize.py",
+      "byte_identical_to_donor": true,
+      "changed_symbols": [
+        {
+          "symbol": "test_admission_verdict_is_exactly_three_distinct_states",
+          "candidate_lines": [
+            9,
+            14
+          ],
+          "donor_lines": [
+            9,
+            14
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_admission_verdict_cannot_be_coerced_to_boolean",
+          "candidate_lines": [
+            18,
+            20
+          ],
+          "donor_lines": [
+            18,
+            20
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "boolean_coercion_lines",
+          "candidate_lines": [
+            23,
+            97
+          ],
+          "donor_lines": [
+            23,
+            97
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_no_source_call_booleanizes_admission_verdict",
+          "candidate_lines": [
+            100,
+            105
+          ],
+          "donor_lines": [
+            100,
+            105
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_static_detector_catches_typed_consumer_mutations",
+          "candidate_lines": [
+            125,
+            126
+          ],
+          "donor_lines": [
+            125,
+            126
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_static_detector_accepts_explicit_comparison_and_unrelated_boolean",
+          "candidate_lines": [
+            129,
+            133
+          ],
+          "donor_lines": [
+            129,
+            133
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_admission_result_round_trips_without_changing_verdict",
+          "candidate_lines": [
+            153,
+            171
+          ],
+          "donor_lines": [
+            153,
+            171
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_every_verdict_requires_a_nonempty_admitted_body_digest",
+          "candidate_lines": [
+            176,
+            195
+          ],
+          "donor_lines": [
+            176,
+            195
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_admission_liveness_is_exact_digest_arithmetic",
+          "candidate_lines": [
+            208,
+            214
+          ],
+          "donor_lines": [
+            208,
+            214
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_liveness_cannot_treat_unavailable_digests_as_live",
+          "candidate_lines": [
+            219,
+            225
+          ],
+          "donor_lines": [
+            219,
+            225
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_admission_refusal_requires_actionable_fields",
+          "candidate_lines": [
+            241,
+            257
+          ],
+          "donor_lines": [
+            241,
+            257
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_defect_role_has_exact_instance_and_mandate_members",
+          "candidate_lines": [
+            260,
+            266
+          ],
+          "donor_lines": [
+            260,
+            266
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_mandate_finding_requires_a_quoted_sentence",
+          "candidate_lines": [
+            270,
+            282
+          ],
+          "donor_lines": [
+            270,
+            282
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_instance_finding_refuses_any_mandate_text",
+          "candidate_lines": [
+            286,
+            298
+          ],
+          "donor_lines": [
+            286,
+            298
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_finding_round_trip_keeps_role_and_verbatim_instruction",
+          "candidate_lines": [
+            305,
+            317
+          ],
+          "donor_lines": [
+            305,
+            317
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_instance_finding_needs_no_mandate_text",
+          "candidate_lines": [
+            320,
+            329
+          ],
+          "donor_lines": [
+            320,
+            329
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_finding_is_frozen_and_rejects_unknown_fields",
+          "candidate_lines": [
+            332,
+            347
+          ],
+          "donor_lines": [
+            332,
+            347
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_refusal_kind_has_exact_spec_gap_and_human_decision_members",
+          "candidate_lines": [
+            350,
+            356
+          ],
+          "donor_lines": [
+            350,
+            356
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_not_buildable_requires_an_explicit_refusal_kind",
+          "candidate_lines": [
+            360,
+            377
+          ],
+          "donor_lines": [
+            360,
+            377
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_only_not_buildable_can_carry_a_refusal_kind",
+          "candidate_lines": [
+            382,
+            400
+          ],
+          "donor_lines": [
+            382,
+            400
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_non_refusals_round_trip_with_no_refusal_kind",
+          "candidate_lines": [
+            404,
+            426
+          ],
+          "donor_lines": [
+            404,
+            426
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_admission_refusal_route_uses_kind_without_reading_tone",
+          "candidate_lines": [
+            437,
+            466
+          ],
+          "donor_lines": [
+            437,
+            466
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "mandate_fields",
+          "candidate_lines": [
+            469,
+            477
+          ],
+          "donor_lines": [
+            469,
+            477
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_mandate_kind_names_and_values_are_the_three_organize_phases",
+          "candidate_lines": [
+            480,
+            487
+          ],
+          "donor_lines": [
+            480,
+            487
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_mandate_has_only_its_five_configured_differences",
+          "candidate_lines": [
+            490,
+            499
+          ],
+          "donor_lines": [
+            490,
+            499
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_every_mandate_field_is_required",
+          "candidate_lines": [
+            503,
+            511
+          ],
+          "donor_lines": [
+            503,
+            511
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_mandate_is_frozen_closed_and_round_trips_qualified_keys",
+          "candidate_lines": [
+            514,
+            524
+          ],
+          "donor_lines": [
+            514,
+            524
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_mandate_refs_name_an_explicit_supported_mapping",
+          "candidate_lines": [
+            538,
+            544
+          ],
+          "donor_lines": [
+            538,
+            544
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_gate_reference_can_name_either_label_family_without_guessing",
+          "candidate_lines": [
+            548,
+            555
+          ],
+          "donor_lines": [
+            548,
+            555
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_phase_completion_is_an_issue_marker_not_scope_approval",
+          "candidate_lines": [
+            561,
+            567
+          ],
+          "donor_lines": [
+            561,
+            567
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_mandate_prompt_references_must_be_registered_prompt_roles",
+          "candidate_lines": [
+            571,
+            577
+          ],
+          "donor_lines": [
+            571,
+            577
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "mandate_operation_fields",
+          "candidate_lines": [
+            580,
+            609
+          ],
+          "donor_lines": [
+            580,
+            609
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_all_phase_references_resolve_to_operation_values_at_construction",
+          "candidate_lines": [
+            612,
+            626
+          ],
+          "donor_lines": [
+            612,
+            626
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_absent_mandate_table_is_legal_without_any_label_mapping",
+          "candidate_lines": [
+            629,
+            634
+          ],
+          "donor_lines": [
+            629,
+            634
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_a_declared_table_cannot_omit_a_phase",
+          "candidate_lines": [
+            638,
+            648
+          ],
+          "donor_lines": [
+            638,
+            648
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_duplicate_phases_are_rejected_even_with_every_phase_present",
+          "candidate_lines": [
+            651,
+            659
+          ],
+          "donor_lines": [
+            651,
+            659
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_unmapped_keys_fail_while_constructing_the_operation",
+          "candidate_lines": [
+            664,
+            674
+          ],
+          "donor_lines": [
+            664,
+            674
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_all_bad_references_are_reported_in_the_same_load_error",
+          "candidate_lines": [
+            677,
+            688
+          ],
+          "donor_lines": [
+            677,
+            688
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_qualified_reference_selects_the_mapping_even_when_keys_overlap",
+          "candidate_lines": [
+            691,
+            697
+          ],
+          "donor_lines": [
+            691,
+            697
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_scope_approval_cannot_be_used_through_an_issue_label_alias",
+          "candidate_lines": [
+            701,
+            710
+          ],
+          "donor_lines": [
+            701,
+            710
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_scope_approval_is_not_an_organize_gate",
+          "candidate_lines": [
+            713,
+            721
+          ],
+          "donor_lines": [
+            713,
+            721
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_blank_scope_label_is_not_a_resolved_gate",
+          "candidate_lines": [
+            724,
+            732
+          ],
+          "donor_lines": [
+            724,
+            732
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "write_mandate_operation",
+          "candidate_lines": [
+            735,
+            751
+          ],
+          "donor_lines": [
+            735,
+            751
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_normal_toml_loader_resolves_the_declared_phase_table",
+          "candidate_lines": [
+            754,
+            762
+          ],
+          "donor_lines": [
+            754,
+            762
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_invalid_table_stops_normal_boot_before_tracker_or_dispatch",
+          "candidate_lines": [
+            766,
+            788
+          ],
+          "donor_lines": [
+            766,
+            788
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "tests/domain/test_organize_routing.py",
+      "byte_identical_to_donor": true,
+      "changed_symbols": [
+        {
+          "symbol": "unverifiable_result",
+          "candidate_lines": [
+            20,
+            33
+          ],
+          "donor_lines": [
+            20,
+            33
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_unverifiable_requires_both_the_real_blocked_by_edge_and_scope_membership",
+          "candidate_lines": [
+            39,
+            59
+          ],
+          "donor_lines": [
+            39,
+            59
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_another_in_scope_blocker_cannot_substitute_for_the_named_blocker",
+          "candidate_lines": [
+            62,
+            78
+          ],
+          "donor_lines": [
+            62,
+            78
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_unverifiable_prose_cannot_approve_or_escalate_without_an_edge",
+          "candidate_lines": [
+            84,
+            92
+          ],
+          "donor_lines": [
+            84,
+            92
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_result_cannot_be_routed_using_another_issues_edges",
+          "candidate_lines": [
+            96,
+            121
+          ],
+          "donor_lines": [
+            96,
+            121
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_buildable_requires_no_pending_blocker_proof",
+          "candidate_lines": [
+            125,
+            143
+          ],
+          "donor_lines": [
+            125,
+            143
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "tests/domain/test_topology.py",
+      "byte_identical_to_donor": true,
+      "changed_symbols": [
+        {
+          "symbol": "test_deep_dependency_priority_outranks_parallel_older_roots",
+          "candidate_lines": [
+            18,
+            57
+          ],
+          "donor_lines": [
+            18,
+            57
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_priority_flows_to_blockers_never_to_dependents",
+          "candidate_lines": [
+            60,
+            83
+          ],
+          "donor_lines": [
+            60,
+            83
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_fan_in_propagates_priority_to_each_root_without_linearizing_them",
+          "candidate_lines": [
+            86,
+            104
+          ],
+          "donor_lines": [
+            86,
+            104
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_ready_set_reuses_the_domain_open_blocker_partition",
+          "candidate_lines": [
+            108,
+            126
+          ],
+          "donor_lines": [
+            108,
+            126
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_replanning_observes_changed_blocker_state",
+          "candidate_lines": [
+            129,
+            145
+          ],
+          "donor_lines": [
+            129,
+            145
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_only_explicit_candidates_can_appear_in_the_ready_set",
+          "candidate_lines": [
+            148,
+            157
+          ],
+          "donor_lines": [
+            148,
+            157
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_parent_and_non_blocking_relations_do_not_create_dependencies",
+          "candidate_lines": [
+            164,
+            173
+          ],
+          "donor_lines": [
+            164,
+            173
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_exact_priority_and_age_ties_keep_the_snapshot_order",
+          "candidate_lines": [
+            176,
+            184
+          ],
+          "donor_lines": [
+            176,
+            184
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_an_empty_candidate_set_does_not_dispatch_every_issue",
+          "candidate_lines": [
+            187,
+            191
+          ],
+          "donor_lines": [
+            187,
+            191
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_missing_blocker_facts_are_refused_instead_of_treated_as_closed",
+          "candidate_lines": [
+            194,
+            199
+          ],
+          "donor_lines": [
+            194,
+            199
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_unknown_candidates_are_refused_instead_of_silently_dropped",
+          "candidate_lines": [
+            202,
+            204
+          ],
+          "donor_lines": [
+            202,
+            204
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_duplicate_issue_keys_cannot_replace_a_snapshot_fact",
+          "candidate_lines": [
+            207,
+            212
+          ],
+          "donor_lines": [
+            207,
+            212
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_duplicate_blocker_edges_do_not_duplicate_the_report",
+          "candidate_lines": [
+            215,
+            223
+          ],
+          "donor_lines": [
+            215,
+            223
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_deep_stacks_do_not_depend_on_the_python_recursion_limit",
+          "candidate_lines": [
+            226,
+            241
+          ],
+          "donor_lines": [
+            226,
+            241
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "tests/domain/test_topology_cycles.py",
+      "byte_identical_to_donor": true,
+      "changed_symbols": [
+        {
+          "symbol": "test_a_cycle_raises_the_domain_error_naming_only_its_offending_keys",
+          "candidate_lines": [
+            13,
+            31
+          ],
+          "donor_lines": [
+            13,
+            31
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_a_self_dependency_is_a_cycle",
+          "candidate_lines": [
+            34,
+            41
+          ],
+          "donor_lines": [
+            34,
+            41
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_a_cycle_is_not_hidden_by_candidate_filtering_or_closed_states",
+          "candidate_lines": [
+            44,
+            63
+          ],
+          "donor_lines": [
+            44,
+            63
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_an_acyclic_diamond_returns_its_ready_set",
+          "candidate_lines": [
+            66,
+            78
+          ],
+          "donor_lines": [
+            66,
+            78
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_cycle_detection_does_not_stop_at_the_python_recursion_limit",
+          "candidate_lines": [
+            81,
+            91
+          ],
+          "donor_lines": [
+            81,
+            91
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_cycle_error_copies_primitive_keys",
+          "candidate_lines": [
+            94,
+            99
+          ],
+          "donor_lines": [
+            94,
+            99
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "tests/fakes.py",
+      "byte_identical_to_donor": false,
+      "changed_symbols": [
+        {
+          "symbol": "FakeMcpIssue",
+          "candidate_lines": [
+            2167,
+            2255
+          ],
+          "donor_lines": [
+            2386,
+            2495
+          ],
+          "ast_identical_to_donor": false
+        },
+        {
+          "symbol": "FakeMcpIssue.entry",
+          "candidate_lines": [
+            2187,
+            2213
+          ],
+          "donor_lines": [
+            2412,
+            2438
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "FakeLinearMcpServer",
+          "candidate_lines": [
+            2302,
+            2935
+          ],
+          "donor_lines": [
+            2543,
+            3267
+          ],
+          "ast_identical_to_donor": false
+        },
+        {
+          "symbol": "FakeLinearMcpServer._tool_save_issue",
+          "candidate_lines": [
+            2515,
+            2594
+          ],
+          "donor_lines": [
+            2795,
+            2882
+          ],
+          "ast_identical_to_donor": false
+        },
+        {
+          "symbol": "FakeTrackerPort",
+          "candidate_lines": [
+            2982,
+            4214
+          ],
+          "donor_lines": [
+            3314,
+            4800
+          ],
+          "ast_identical_to_donor": false
+        },
+        {
+          "symbol": "FakeTrackerPort.__init__",
+          "candidate_lines": [
+            2991,
+            3110
+          ],
+          "donor_lines": [
+            3323,
+            3459
+          ],
+          "ast_identical_to_donor": false
+        },
+        {
+          "symbol": "FakeTrackerPort.create_issue",
+          "candidate_lines": [
+            3216,
+            3242
+          ],
+          "donor_lines": [
+            3956,
+            3983
+          ],
+          "ast_identical_to_donor": false
+        },
+        {
+          "symbol": "FakeTrackerPort.update_issue",
+          "candidate_lines": [
+            3244,
+            3261
+          ],
+          "donor_lines": [
+            4066,
+            4083
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "FakeTrackerPort.read_issue_revision",
+          "candidate_lines": [
+            3883,
+            3888
+          ],
+          "donor_lines": [
+            3601,
+            3606
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "FakeTrackerPort.project_milestones",
+          "candidate_lines": [
+            3890,
+            3906
+          ],
+          "donor_lines": [
+            3642,
+            3658
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "FakeTrackerPort.execution_approved",
+          "candidate_lines": [
+            3908,
+            3910
+          ],
+          "donor_lines": [
+            3683,
+            3685
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "FakeTrackerPort._read_execution_approval",
+          "candidate_lines": [
+            3912,
+            3946
+          ],
+          "donor_lines": [
+            3687,
+            3721
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "FakeTrackerPort.read_scope_labels",
+          "candidate_lines": [
+            3948,
+            3955
+          ],
+          "donor_lines": [
+            3723,
+            3730
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "FakeTrackerPort.update_issue_graph",
+          "candidate_lines": [
+            3957,
+            3985
+          ],
+          "donor_lines": [
+            3732,
+            3760
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "FakeTrackerPort._require_graph_holder",
+          "candidate_lines": [
+            3987,
+            4004
+          ],
+          "donor_lines": [
+            3762,
+            3779
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "FakeTrackerPort.read_split_children",
+          "candidate_lines": [
+            4006,
+            4030
+          ],
+          "donor_lines": [
+            3781,
+            3805
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "FakeTrackerPort.create_split_if_absent",
+          "candidate_lines": [
+            4032,
+            4088
+          ],
+          "donor_lines": [
+            3807,
+            3863
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "FakeTrackerPort.create_criterion_if_absent",
+          "candidate_lines": [
+            4090,
+            4137
+          ],
+          "donor_lines": [
+            3865,
+            3912
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "FakeTrackerPort.read_issue_identity",
+          "candidate_lines": [
+            4139,
+            4141
+          ],
+          "donor_lines": [
+            4029,
+            4031
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "FakeTrackerPort.upsert_issue",
+          "candidate_lines": [
+            4143,
+            4174
+          ],
+          "donor_lines": [
+            4033,
+            4064
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "FakeTrackerPort.edit_description",
+          "candidate_lines": [
+            4176,
+            4214
+          ],
+          "donor_lines": [
+            4085,
+            4123
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "tests/integration/test_organize_scheduler.py",
+      "byte_identical_to_donor": false,
+      "changed_symbols": [
+        {
+          "symbol": "dependencies",
+          "candidate_lines": [
+            32,
+            69
+          ],
+          "donor_lines": [
+            32,
+            70
+          ],
+          "ast_identical_to_donor": false
+        },
+        {
+          "symbol": "test_scheduled_owner_prepares_native_children_and_reentry_is_idempotent",
+          "candidate_lines": [
+            72,
+            137
+          ],
+          "donor_lines": [
+            73,
+            138
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_partial_owner_configuration_refuses_during_preflight",
+          "candidate_lines": [
+            144,
+            163
+          ],
+          "donor_lines": [
+            145,
+            164
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_actual_lifespan_registers_and_runs_the_owner",
+          "candidate_lines": [
+            166,
+            238
+          ],
+          "donor_lines": [
+            167,
+            239
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "tests/integration/test_organize_tick_halt.py",
+      "byte_identical_to_donor": true,
+      "changed_symbols": [
+        {
+          "symbol": "test_halted_first_binding_does_not_starve_second_binding",
+          "candidate_lines": [
+            18,
+            50
+          ],
+          "donor_lines": [
+            18,
+            50
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "tests/prompt_census.py",
+      "byte_identical_to_donor": false,
+      "changed_symbols": []
+    },
+    {
+      "path": "tests/prompts/sets.py",
+      "byte_identical_to_donor": false,
+      "changed_symbols": []
+    },
+    {
+      "path": "tests/prompts/test_operation_config.py",
+      "byte_identical_to_donor": false,
+      "changed_symbols": [
+        {
+          "symbol": "test_all_fields_are_present_with_the_stated_types",
+          "candidate_lines": [
+            123,
+            161
+          ],
+          "donor_lines": [
+            122,
+            163
+          ],
+          "ast_identical_to_donor": false
+        },
+        {
+          "symbol": "test_placeholder_mapping_is_total_in_both_directions",
+          "candidate_lines": [
+            625,
+            642
+          ],
+          "donor_lines": [
+            623,
+            646
+          ],
+          "ast_identical_to_donor": false
+        }
+      ]
+    },
+    {
+      "path": "tests/prompts/test_organize_call_bindings.py",
+      "byte_identical_to_donor": true,
+      "changed_symbols": [
+        {
+          "symbol": "refusal",
+          "candidate_lines": [
+            44,
+            54
+          ],
+          "donor_lines": [
+            44,
+            54
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "variables",
+          "candidate_lines": [
+            57,
+            66
+          ],
+          "donor_lines": [
+            57,
+            66
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_named_per_call_roster_is_disjoint_from_both_other_namespaces",
+          "candidate_lines": [
+            69,
+            75
+          ],
+          "donor_lines": [
+            69,
+            75
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_a_configuration_field_collision_is_named_at_prompt_boot",
+          "candidate_lines": [
+            79,
+            102
+          ],
+          "donor_lines": [
+            79,
+            102
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_a_projected_configuration_binding_collision_is_named_at_boot",
+          "candidate_lines": [
+            106,
+            118
+          ],
+          "donor_lines": [
+            106,
+            118
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_two_calls_render_distinct_rubrics_and_all_current_source_bodies",
+          "candidate_lines": [
+            123,
+            156
+          ],
+          "donor_lines": [
+            123,
+            156
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_read_only_roles_do_not_render_prior_refusal_or_author_rationale",
+          "candidate_lines": [
+            161,
+            178
+          ],
+          "donor_lines": [
+            161,
+            178
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_authoring_receives_the_typed_refusal_decision_and_evidence",
+          "candidate_lines": [
+            183,
+            197
+          ],
+          "donor_lines": [
+            183,
+            197
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_an_empty_child_family_and_first_authoring_round_remain_explicit",
+          "candidate_lines": [
+            202,
+            225
+          ],
+          "donor_lines": [
+            202,
+            225
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_required_source_bindings_cannot_silently_disappear",
+          "candidate_lines": [
+            234,
+            242
+          ],
+          "donor_lines": [
+            234,
+            242
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "tests/prompts/test_organize_mandate_bindings.py",
+      "byte_identical_to_donor": true,
+      "changed_symbols": [
+        {
+          "symbol": "declared_operation",
+          "candidate_lines": [
+            14,
+            19
+          ],
+          "donor_lines": [
+            14,
+            19
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_operation_binding_contains_resolved_phase_metadata",
+          "candidate_lines": [
+            22,
+            41
+          ],
+          "donor_lines": [
+            22,
+            41
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_grooming_consumes_the_declared_or_absent_phase_table",
+          "candidate_lines": [
+            46,
+            76
+          ],
+          "donor_lines": [
+            46,
+            76
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "tests/prompts/test_organize_roles.py",
+      "byte_identical_to_donor": true,
+      "changed_symbols": [
+        {
+          "symbol": "test_organize_roles_have_the_named_enum_members_and_values",
+          "candidate_lines": [
+            25,
+            27
+          ],
+          "donor_lines": [
+            25,
+            27
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_removing_each_organize_data_file_fails_application_prompt_boot",
+          "candidate_lines": [
+            32,
+            50
+          ],
+          "donor_lines": [
+            32,
+            50
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_each_role_renders_its_own_data_file",
+          "candidate_lines": [
+            55,
+            65
+          ],
+          "donor_lines": [
+            55,
+            65
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_organize_roles_inherit_the_existing_authorship_and_judgment_policies",
+          "candidate_lines": [
+            68,
+            83
+          ],
+          "donor_lines": [
+            68,
+            83
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "tests/prompts/test_v5_wiring.py",
+      "byte_identical_to_donor": false,
+      "changed_symbols": []
+    },
+    {
+      "path": "tests/services/test_prompt_passes.py",
+      "byte_identical_to_donor": false,
+      "changed_symbols": [
+        {
+          "symbol": "_registrations",
+          "candidate_lines": [
+            164,
+            187
+          ],
+          "donor_lines": [
+            170,
+            193
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "_runtime",
+          "candidate_lines": [
+            194,
+            240
+          ],
+          "donor_lines": [
+            200,
+            246
+          ],
+          "ast_identical_to_donor": false
+        }
+      ]
+    },
+    {
+      "path": "tests/test_organize_portability.py",
+      "byte_identical_to_donor": true,
+      "changed_symbols": [
+        {
+          "symbol": "_labels",
+          "candidate_lines": [
+            20,
+            21
+          ],
+          "donor_lines": [
+            20,
+            21
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "_data_labels",
+          "candidate_lines": [
+            24,
+            31
+          ],
+          "donor_lines": [
+            24,
+            31
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "_combinations",
+          "candidate_lines": [
+            34,
+            35
+          ],
+          "donor_lines": [
+            34,
+            35
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "_strings",
+          "candidate_lines": [
+            38,
+            106
+          ],
+          "donor_lines": [
+            38,
+            106
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "_scope_nodes",
+          "candidate_lines": [
+            109,
+            120
+          ],
+          "donor_lines": [
+            109,
+            120
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "_python_labels",
+          "candidate_lines": [
+            123,
+            151
+          ],
+          "donor_lines": [
+            123,
+            151
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "_violations",
+          "candidate_lines": [
+            154,
+            172
+          ],
+          "donor_lines": [
+            154,
+            172
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_source_and_prompt_data_have_no_literal_phase_labels",
+          "candidate_lines": [
+            175,
+            176
+          ],
+          "donor_lines": [
+            175,
+            176
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_literal_constructions_cannot_hide_labels",
+          "candidate_lines": [
+            196,
+            197
+          ],
+          "donor_lines": [
+            196,
+            197
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_constant_aliases_are_followed_within_nested_scopes",
+          "candidate_lines": [
+            200,
+            208
+          ],
+          "donor_lines": [
+            200,
+            208
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_unknown_bindings_and_semantic_keys_are_not_backend_labels",
+          "candidate_lines": [
+            211,
+            218
+          ],
+          "donor_lines": [
+            211,
+            218
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_alias_cycles_end_without_executing_the_source",
+          "candidate_lines": [
+            221,
+            227
+          ],
+          "donor_lines": [
+            221,
+            227
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_tree_guard_reports_literal_sources_and_exempts_only_config_model",
+          "candidate_lines": [
+            231,
+            241
+          ],
+          "donor_lines": [
+            231,
+            241
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_template_bindings_remain_configurable",
+          "candidate_lines": [
+            244,
+            247
+          ],
+          "donor_lines": [
+            244,
+            247
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_literal_namespace_plus_unknown_runtime_suffix_is_still_hardcoded",
+          "candidate_lines": [
+            251,
+            253
+          ],
+          "donor_lines": [
+            251,
+            253
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_toml_escaped_string_values_are_decoded_before_checking",
+          "candidate_lines": [
+            256,
+            259
+          ],
+          "donor_lines": [
+            256,
+            259
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_literal_namespace_before_a_template_binding_is_hardcoded",
+          "candidate_lines": [
+            262,
+            265
+          ],
+          "donor_lines": [
+            262,
+            265
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_function_and_class_headers_cannot_hide_literal_labels",
+          "candidate_lines": [
+            281,
+            282
+          ],
+          "donor_lines": [
+            281,
+            282
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_real_source_gate_rejects_an_injected_offending_tree",
+          "candidate_lines": [
+            285,
+            289
+          ],
+          "donor_lines": [
+            285,
+            289
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_fstring_folding_handles_formatted_prefix_and_suffix",
+          "candidate_lines": [
+            292,
+            294
+          ],
+          "donor_lines": [
+            292,
+            294
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "tests/tracker/conftest.py",
+      "byte_identical_to_donor": false,
+      "changed_symbols": [
+        {
+          "symbol": "linear_over_fake_mcp",
+          "candidate_lines": [
+            240,
+            258
+          ],
+          "donor_lines": [
+            248,
+            272
+          ],
+          "ast_identical_to_donor": false
+        }
+      ]
+    },
+    {
+      "path": "tests/tracker/native_read_fixtures.py",
+      "byte_identical_to_donor": false,
+      "changed_symbols": [
+        {
+          "symbol": "tracker_over",
+          "candidate_lines": [
+            20,
+            31
+          ],
+          "donor_lines": null,
+          "ast_identical_to_donor": false
+        }
+      ]
+    },
+    {
+      "path": "tests/tracker/test_artifact_native_fields.py",
+      "byte_identical_to_donor": true,
+      "changed_symbols": [
+        {
+          "symbol": "server_for",
+          "candidate_lines": [
+            24,
+            60
+          ],
+          "donor_lines": [
+            24,
+            60
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "surface_for",
+          "candidate_lines": [
+            63,
+            65
+          ],
+          "donor_lines": [
+            63,
+            65
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_missing_consumed_native_facts_cannot_be_a_complete_artifact",
+          "candidate_lines": [
+            82,
+            90
+          ],
+          "donor_lines": [
+            82,
+            90
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_reported_native_facts_form_the_requested_complete_artifact",
+          "candidate_lines": [
+            103,
+            118
+          ],
+          "donor_lines": [
+            103,
+            118
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_description_only_read_does_not_claim_unconsumed_classification",
+          "candidate_lines": [
+            121,
+            127
+          ],
+          "donor_lines": [
+            121,
+            127
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "tests/tracker/test_artifact_split_identity_independent.py",
+      "byte_identical_to_donor": true,
+      "changed_symbols": [
+        {
+          "symbol": "body",
+          "candidate_lines": [
+            27,
+            28
+          ],
+          "donor_lines": [
+            27,
+            28
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "NativeSplitServer",
+          "candidate_lines": [
+            31,
+            55
+          ],
+          "donor_lines": [
+            31,
+            55
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "NativeSplitServer.__init__",
+          "candidate_lines": [
+            32,
+            42
+          ],
+          "donor_lines": [
+            32,
+            42
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "NativeSplitServer._tool_get_issue",
+          "candidate_lines": [
+            44,
+            55
+          ],
+          "donor_lines": [
+            44,
+            55
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_a_split_artifact_never_pairs_identity_with_another_body",
+          "candidate_lines": [
+            59,
+            74
+          ],
+          "donor_lines": [
+            59,
+            74
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_a_foreign_identity_read_cannot_supply_the_split_receipt",
+          "candidate_lines": [
+            78,
+            91
+          ],
+          "donor_lines": [
+            78,
+            91
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "tests/tracker/test_body_revisions.py",
+      "byte_identical_to_donor": true,
+      "changed_symbols": [
+        {
+          "symbol": "server",
+          "candidate_lines": [
+            20,
+            29
+          ],
+          "donor_lines": [
+            20,
+            29
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_repeated_reads_preserve_body_and_digest_without_writes",
+          "candidate_lines": [
+            33,
+            45
+          ],
+          "donor_lines": [
+            33,
+            45
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_metadata_changes_preserve_the_body_revision",
+          "candidate_lines": [
+            50,
+            66
+          ],
+          "donor_lines": [
+            50,
+            66
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_body_change_moves_only_its_surface_and_unchanged_replay_moves_none",
+          "candidate_lines": [
+            72,
+            92
+          ],
+          "donor_lines": [
+            72,
+            92
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_every_exact_body_has_a_nonempty_stable_revision",
+          "candidate_lines": [
+            96,
+            104
+          ],
+          "donor_lines": [
+            96,
+            104
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_revision_rejects_an_unavailable_digest",
+          "candidate_lines": [
+            108,
+            111
+          ],
+          "donor_lines": [
+            108,
+            111
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_revision_is_frozen_closed_and_does_not_normalize_opaque_digests",
+          "candidate_lines": [
+            114,
+            123
+          ],
+          "donor_lines": [
+            114,
+            123
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_linear_revision_uses_one_full_hydration_and_hashes_its_exact_body",
+          "candidate_lines": [
+            126,
+            144
+          ],
+          "donor_lines": [
+            126,
+            144
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "tests/tracker/test_comment_expected_independent.py",
+      "byte_identical_to_donor": false,
+      "changed_symbols": [
+        {
+          "symbol": "test_known_unissued_retry_revalidates_changed_expected_comment",
+          "candidate_lines": [
+            49,
+            114
+          ],
+          "donor_lines": [
+            49,
+            118
+          ],
+          "ast_identical_to_donor": false
+        }
+      ]
+    },
+    {
+      "path": "tests/tracker/test_criterion_creation.py",
+      "byte_identical_to_donor": true,
+      "changed_symbols": [
+        {
+          "symbol": "surface",
+          "candidate_lines": [
+            21,
+            24
+          ],
+          "donor_lines": [
+            21,
+            24
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "create",
+          "candidate_lines": [
+            27,
+            36
+          ],
+          "donor_lines": [
+            27,
+            36
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "saves",
+          "candidate_lines": [
+            39,
+            40
+          ],
+          "donor_lines": [
+            39,
+            40
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_native_create_initializes_a_new_todo_criterion_then_replays_no_write",
+          "candidate_lines": [
+            43,
+            76
+          ],
+          "donor_lines": [
+            43,
+            76
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_missing_or_other_surface_grant_cannot_authorize_creation",
+          "candidate_lines": [
+            80,
+            95
+          ],
+          "donor_lines": [
+            80,
+            95
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_ambiguous_or_absent_native_initial_state_refuses_before_write",
+          "candidate_lines": [
+            99,
+            105
+          ],
+          "donor_lines": [
+            99,
+            105
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_duplicate_check_identity_refuses_before_any_write",
+          "candidate_lines": [
+            108,
+            119
+          ],
+          "donor_lines": [
+            108,
+            119
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_invalid_authored_fields_refuse_before_any_native_call",
+          "candidate_lines": [
+            123,
+            127
+          ],
+          "donor_lines": [
+            123,
+            127
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_create_initialization_exception_cannot_admit_an_update_or_malformed_shape",
+          "candidate_lines": [
+            141,
+            154
+          ],
+          "donor_lines": [
+            141,
+            154
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_backend_can_land_an_already_issued_create_after_expiry",
+          "candidate_lines": [
+            157,
+            182
+          ],
+          "donor_lines": [
+            157,
+            182
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_unknown_create_response_preserves_committed_child_without_resend",
+          "candidate_lines": [
+            185,
+            220
+          ],
+          "donor_lines": [
+            185,
+            220
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_initial_state_requires_actual_nonblank_native_id",
+          "candidate_lines": [
+            224,
+            247
+          ],
+          "donor_lines": [
+            224,
+            247
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_initial_state_uses_the_selected_team_id_not_shared_name",
+          "candidate_lines": [
+            250,
+            269
+          ],
+          "donor_lines": [
+            250,
+            269
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "tests/tracker/test_criterion_receipt_boundary.py",
+      "byte_identical_to_donor": false,
+      "changed_symbols": [
+        {
+          "symbol": "test_criterion_completed_save_readback_failure_does_not_resend",
+          "candidate_lines": [
+            12,
+            42
+          ],
+          "donor_lines": null,
+          "ast_identical_to_donor": false
+        }
+      ]
+    },
+    {
+      "path": "tests/tracker/test_criterion_retry_independent.py",
+      "byte_identical_to_donor": false,
+      "changed_symbols": [
+        {
+          "symbol": "test_criterion_unsent_retry_rechecks_surface_ownership",
+          "candidate_lines": [
+            14,
+            59
+          ],
+          "donor_lines": null,
+          "ast_identical_to_donor": false
+        }
+      ]
+    },
+    {
+      "path": "tests/tracker/test_linear_mcp_tracker.py",
+      "byte_identical_to_donor": false,
+      "changed_symbols": [
+        {
+          "symbol": "tracker_over",
+          "candidate_lines": [
+            73,
+            96
+          ],
+          "donor_lines": [
+            67,
+            94
+          ],
+          "ast_identical_to_donor": false
+        }
+      ]
+    },
+    {
+      "path": "tests/tracker/test_linear_wire_shapes.py",
+      "byte_identical_to_donor": false,
+      "changed_symbols": [
+        {
+          "symbol": "tracker_over",
+          "candidate_lines": [
+            359,
+            373
+          ],
+          "donor_lines": [
+            359,
+            374
+          ],
+          "ast_identical_to_donor": false
+        }
+      ]
+    },
+    {
+      "path": "tests/tracker/test_milestone_approval.py",
+      "byte_identical_to_donor": false,
+      "changed_symbols": [
+        {
+          "symbol": "test_a_milestone_label_cannot_approve_its_project_or_members",
+          "candidate_lines": [
+            17,
+            25
+          ],
+          "donor_lines": [
+            40,
+            48
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_milestone_membership_without_reported_project_refuses",
+          "candidate_lines": [
+            28,
+            36
+          ],
+          "donor_lines": [
+            51,
+            59
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "tests/tracker/test_native_approval_aliases.py",
+      "byte_identical_to_donor": false,
+      "changed_symbols": [
+        {
+          "symbol": "ApprovalAliasServer",
+          "candidate_lines": [
+            14,
+            39
+          ],
+          "donor_lines": [
+            14,
+            39
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "ApprovalAliasServer.__init__",
+          "candidate_lines": [
+            15,
+            27
+          ],
+          "donor_lines": [
+            15,
+            27
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "ApprovalAliasServer._tool_get_issue",
+          "candidate_lines": [
+            29,
+            39
+          ],
+          "donor_lines": [
+            29,
+            39
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_actual_entry_preserves_reported_alias_with_one_subject_read",
+          "candidate_lines": [
+            44,
+            61
+          ],
+          "donor_lines": [
+            44,
+            61
+          ],
+          "ast_identical_to_donor": false
+        },
+        {
+          "symbol": "test_actual_entry_refuses_foreign_subject_before_membership",
+          "candidate_lines": [
+            66,
+            77
+          ],
+          "donor_lines": [
+            66,
+            77
+          ],
+          "ast_identical_to_donor": false
+        }
+      ]
+    },
+    {
+      "path": "tests/tracker/test_organize_graph_final_boundary.py",
+      "byte_identical_to_donor": true,
+      "changed_symbols": [
+        {
+          "symbol": "test_final_split_observation_after_refreshed_identity_is_authoritative",
+          "candidate_lines": [
+            15,
+            74
+          ],
+          "donor_lines": [
+            15,
+            74
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_final_writers_refuse_missing_and_foreign_holder",
+          "candidate_lines": [
+            79,
+            107
+          ],
+          "donor_lines": [
+            79,
+            107
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "tests/tracker/test_organize_graph_independent.py",
+      "byte_identical_to_donor": true,
+      "changed_symbols": [
+        {
+          "symbol": "saves",
+          "candidate_lines": [
+            14,
+            15
+          ],
+          "donor_lines": [
+            14,
+            15
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_graph_lease_must_still_hold_after_final_graph_read",
+          "candidate_lines": [
+            19,
+            60
+          ],
+          "donor_lines": [
+            19,
+            60
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_split_final_observed_source_is_checked_before_creation",
+          "candidate_lines": [
+            64,
+            125
+          ],
+          "donor_lines": [
+            64,
+            125
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_split_identity_appearing_during_state_read_is_not_duplicated",
+          "candidate_lines": [
+            128,
+            182
+          ],
+          "donor_lines": [
+            128,
+            182
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_milestone_parent_is_current_after_holder_wait",
+          "candidate_lines": [
+            186,
+            259
+          ],
+          "donor_lines": [
+            186,
+            259
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "tests/tracker/test_organize_graph_receipt_boundary.py",
+      "byte_identical_to_donor": true,
+      "changed_symbols": [
+        {
+          "symbol": "test_post_save_read_failure_never_reissues_a_completed_write",
+          "candidate_lines": [
+            17,
+            107
+          ],
+          "donor_lines": [
+            17,
+            107
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "tests/tracker/test_organize_graph_retry_boundary.py",
+      "byte_identical_to_donor": true,
+      "changed_symbols": [
+        {
+          "symbol": "test_known_unsent_retry_revalidates_current_write_preconditions",
+          "candidate_lines": [
+            16,
+            87
+          ],
+          "donor_lines": [
+            16,
+            87
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "tests/tracker/test_organize_graph_writes.py",
+      "byte_identical_to_donor": true,
+      "changed_symbols": [
+        {
+          "symbol": "address",
+          "candidate_lines": [
+            16,
+            17
+          ],
+          "donor_lines": [
+            16,
+            17
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "fixture",
+          "candidate_lines": [
+            20,
+            24
+          ],
+          "donor_lines": [
+            20,
+            24
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "expected",
+          "candidate_lines": [
+            27,
+            33
+          ],
+          "donor_lines": [
+            27,
+            33
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "changes",
+          "candidate_lines": [
+            36,
+            39
+          ],
+          "donor_lines": [
+            36,
+            39
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_actual_adapter_preserves_unrequested_edges_and_updates_inverse",
+          "candidate_lines": [
+            45,
+            78
+          ],
+          "donor_lines": [
+            45,
+            78
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_graph_refuses_before_save",
+          "candidate_lines": [
+            84,
+            105
+          ],
+          "donor_lines": [
+            84,
+            105
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_split_creation_uses_native_initial_state_and_replay_never_overwrites",
+          "candidate_lines": [
+            108,
+            149
+          ],
+          "donor_lines": [
+            108,
+            149
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_graph_surfaces_never_alias_container_or_parent_body",
+          "candidate_lines": [
+            156,
+            164
+          ],
+          "donor_lines": [
+            156,
+            164
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_split_source_drift_during_state_lookup_refuses_before_create",
+          "candidate_lines": [
+            170,
+            209
+          ],
+          "donor_lines": [
+            170,
+            209
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_initial_state_requires_actual_nonblank_native_identity",
+          "candidate_lines": [
+            213,
+            222
+          ],
+          "donor_lines": [
+            213,
+            222
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_split_creation_shape_never_bypasses_existing_issue_transition_guard",
+          "candidate_lines": [
+            236,
+            250
+          ],
+          "donor_lines": [
+            236,
+            250
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_project_milestones_expose_complete_native_identities_and_descriptions",
+          "candidate_lines": [
+            253,
+            267
+          ],
+          "donor_lines": [
+            253,
+            267
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_project_milestone_incomplete_identity_evidence_refuses",
+          "candidate_lines": [
+            271,
+            300
+          ],
+          "donor_lines": [
+            271,
+            300
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_parent_change_and_clear_use_exact_native_keys",
+          "candidate_lines": [
+            303,
+            326
+          ],
+          "donor_lines": [
+            303,
+            326
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_milestone_assignment_requires_actual_current_project",
+          "candidate_lines": [
+            330,
+            381
+          ],
+          "donor_lines": [
+            330,
+            381
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_existing_split_identity_damage_never_creates_or_overwrites",
+          "candidate_lines": [
+            385,
+            424
+          ],
+          "donor_lines": [
+            385,
+            424
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "tests/tracker/test_scope_approval.py",
+      "byte_identical_to_donor": true,
+      "changed_symbols": [
+        {
+          "symbol": "ApprovalFixture",
+          "candidate_lines": [
+            45,
+            75
+          ],
+          "donor_lines": [
+            45,
+            75
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "ApprovalFixture.labels",
+          "candidate_lines": [
+            50,
+            59
+          ],
+          "donor_lines": [
+            50,
+            59
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "ApprovalFixture.parent",
+          "candidate_lines": [
+            61,
+            65
+          ],
+          "donor_lines": [
+            61,
+            65
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "ApprovalFixture.project",
+          "candidate_lines": [
+            67,
+            75
+          ],
+          "donor_lines": [
+            67,
+            75
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "approval",
+          "candidate_lines": [
+            79,
+            105
+          ],
+          "donor_lines": [
+            79,
+            105
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_approval_at_each_real_ancestor_admits_deepest_issue",
+          "candidate_lines": [
+            109,
+            123
+          ],
+          "donor_lines": [
+            109,
+            123
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_absent_approval_or_another_meta_member_is_not_approval",
+          "candidate_lines": [
+            127,
+            133
+          ],
+          "donor_lines": [
+            127,
+            133
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_current_reparenting_and_revocation_need_no_copied_label",
+          "candidate_lines": [
+            136,
+            147
+          ],
+          "donor_lines": [
+            136,
+            147
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_container_label_removal_is_visible_on_the_same_adapter",
+          "candidate_lines": [
+            150,
+            156
+          ],
+          "donor_lines": [
+            150,
+            156
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_issue_parent_project_does_not_replace_child_membership",
+          "candidate_lines": [
+            159,
+            166
+          ],
+          "donor_lines": [
+            159,
+            166
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_issue_without_container_can_be_unapproved_or_inherit_issue_label",
+          "candidate_lines": [
+            169,
+            175
+          ],
+          "donor_lines": [
+            169,
+            175
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_reported_project_without_canonical_key_refuses",
+          "candidate_lines": [
+            178,
+            187
+          ],
+          "donor_lines": [
+            178,
+            187
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_native_no_project_retains_omitted_and_null_compatibility",
+          "candidate_lines": [
+            191,
+            207
+          ],
+          "donor_lines": [
+            191,
+            207
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_nested_initiative_is_read_and_reparenting_changes_next_resolution",
+          "candidate_lines": [
+            210,
+            221
+          ],
+          "donor_lines": [
+            210,
+            221
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_cyclic_ancestry_is_not_a_negative_answer",
+          "candidate_lines": [
+            225,
+            236
+          ],
+          "donor_lines": [
+            225,
+            236
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_missing_ancestry_refuses_instead_of_returning_false",
+          "candidate_lines": [
+            240,
+            253
+          ],
+          "donor_lines": [
+            240,
+            253
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_returned_identity_must_match_the_address",
+          "candidate_lines": [
+            257,
+            276
+          ],
+          "donor_lines": [
+            257,
+            276
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_unmapped_approval_refuses_before_any_native_read",
+          "candidate_lines": [
+            279,
+            285
+          ],
+          "donor_lines": [
+            279,
+            285
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_actual_composition_passes_the_remapped_scope_vocabulary",
+          "candidate_lines": [
+            288,
+            303
+          ],
+          "donor_lines": [
+            288,
+            303
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_unconfigured_names_never_substitute_for_configured_approval",
+          "candidate_lines": [
+            307,
+            314
+          ],
+          "donor_lines": [
+            307,
+            314
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_issue_membership_omission_is_not_an_empty_answer",
+          "candidate_lines": [
+            318,
+            329
+          ],
+          "donor_lines": [
+            318,
+            329
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_unreadable_native_labels_do_not_become_absence",
+          "candidate_lines": [
+            334,
+            347
+          ],
+          "donor_lines": [
+            334,
+            347
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_omitted_native_labels_refuse",
+          "candidate_lines": [
+            351,
+            362
+          ],
+          "donor_lines": [
+            351,
+            362
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_multiple_container_parents_refuse_even_with_an_approval_label",
+          "candidate_lines": [
+            365,
+            372
+          ],
+          "donor_lines": [
+            365,
+            372
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_native_cancellation_propagates_without_answer_or_write",
+          "candidate_lines": [
+            376,
+            392
+          ],
+          "donor_lines": [
+            376,
+            392
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "tests/tracker/test_scope_tool_arguments.py",
+      "byte_identical_to_donor": true,
+      "changed_symbols": [
+        {
+          "symbol": "test_scope_reads_send_declared_arguments_on_every_call",
+          "candidate_lines": [
+            57,
+            76
+          ],
+          "donor_lines": [
+            57,
+            76
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "tests/tracker/test_tracker_boot.py",
+      "byte_identical_to_donor": false,
+      "changed_symbols": [
+        {
+          "symbol": "TestQueueVocabularyPerDeclaredTeam",
+          "candidate_lines": [
+            527,
+            669
+          ],
+          "donor_lines": [
+            530,
+            673
+          ],
+          "ast_identical_to_donor": false
+        },
+        {
+          "symbol": "TestQueueVocabularyPerDeclaredTeam._tracker",
+          "candidate_lines": [
+            579,
+            590
+          ],
+          "donor_lines": [
+            582,
+            594
+          ],
+          "ast_identical_to_donor": false
+        },
+        {
+          "symbol": "TestWorkflowStatesResolvePerTeam",
+          "candidate_lines": [
+            672,
+            803
+          ],
+          "donor_lines": [
+            676,
+            808
+          ],
+          "ast_identical_to_donor": false
+        },
+        {
+          "symbol": "TestWorkflowStatesResolvePerTeam._tracker",
+          "candidate_lines": [
+            706,
+            717
+          ],
+          "donor_lines": [
+            710,
+            722
+          ],
+          "ast_identical_to_donor": false
+        }
+      ]
+    },
+    {
+      "path": "tests/types/test_organize_halt.py",
+      "byte_identical_to_donor": true,
+      "changed_symbols": [
+        {
+          "symbol": "bound",
+          "candidate_lines": [
+            9,
+            21
+          ],
+          "donor_lines": [
+            9,
+            21
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "admission",
+          "candidate_lines": [
+            24,
+            34
+          ],
+          "donor_lines": [
+            24,
+            34
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "question",
+          "candidate_lines": [
+            37,
+            43
+          ],
+          "donor_lines": [
+            37,
+            43
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "write_back",
+          "candidate_lines": [
+            46,
+            65
+          ],
+          "donor_lines": [
+            46,
+            65
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_wrong_cause_or_missing_evidence_refuses",
+          "candidate_lines": [
+            143,
+            145
+          ],
+          "donor_lines": [
+            143,
+            145
+          ],
+          "ast_identical_to_donor": true
+        },
+        {
+          "symbol": "test_valid_halt_roundtrips_the_existing_flat_json",
+          "candidate_lines": [
+            168,
+            185
+          ],
+          "donor_lines": [
+            168,
+            185
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    },
+    {
+      "path": "tests/types/test_wire_schemas.py",
+      "byte_identical_to_donor": false,
+      "changed_symbols": []
+    },
+    {
+      "path": "tests/types/test_writable_surface.py",
+      "byte_identical_to_donor": true,
+      "changed_symbols": [
+        {
+          "symbol": "test_surface_vocabulary_is_closed",
+          "candidate_lines": [
+            53,
+            66
+          ],
+          "donor_lines": [
+            53,
+            66
+          ],
+          "ast_identical_to_donor": true
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+--- aa4d04f authored capture
++++ 49843dc native migration
+@@ -30,7 +30,8 @@
+         "criterionIds": {
+           "description": "The minimal subset of criterion ids that cannot all hold at once.",
+           "items": {
+-            "pattern": "^AC-[1-9][0-9]*$",
++            "minLength": 1,
++            "pattern": "\\S",
+             "type": "string"
+           },
+           "minItems": 2,
+base: 1e49292eb7a9c7b364fb7f30db016c2c2ab9505cf51bfaa6b9b1e0f532f327bc
+current: 3abb4888a62dbf9dc87f5c9a60e1841c14d249b5168744ea837e998bacd6384c

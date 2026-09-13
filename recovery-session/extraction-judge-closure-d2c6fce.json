@@ -1,0 +1,1171 @@
+{
+  "source": "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+  "rows": [
+    {
+      "path": "src/kodezart/services/audit_sessions.py",
+      "symbol": "judge_in_workspace",
+      "start": 25,
+      "end": 70,
+      "source_sha256": "6a8d595fbe144fe36c17d39b576b335661acb2c7a8974bb16081c5d51a0824f0",
+      "used_imports": [
+        {
+          "name": "EVAL_PERMISSION_MODE",
+          "symbol": "EVAL_PERMISSION_MODE",
+          "module": "kodezart.core.constants",
+          "start": 5,
+          "end": 5
+        },
+        {
+          "name": "soft_failure",
+          "symbol": "soft_failure",
+          "module": "kodezart.core.errors",
+          "start": 6,
+          "end": 6
+        },
+        {
+          "name": "AgentRunner",
+          "symbol": "AgentRunner",
+          "module": "kodezart.core.protocols",
+          "start": 8,
+          "end": 13
+        },
+        {
+          "name": "PromptSetProvider",
+          "symbol": "PromptSetProvider",
+          "module": "kodezart.core.protocols",
+          "start": 8,
+          "end": 13
+        },
+        {
+          "name": "drain",
+          "symbol": "drain",
+          "module": "kodezart.core.stream_drain",
+          "start": 14,
+          "end": 14
+        },
+        {
+          "name": "RaiseSite",
+          "symbol": "RaiseSite",
+          "module": "kodezart.types.domain.agent",
+          "start": 18,
+          "end": 18
+        },
+        {
+          "name": "PromptKey",
+          "symbol": "PromptKey",
+          "module": "kodezart.types.domain.prompts",
+          "start": 19,
+          "end": 19
+        },
+        {
+          "name": "SessionType",
+          "symbol": "SessionType",
+          "module": "kodezart.types.domain.session",
+          "start": 20,
+          "end": 20
+        },
+        {
+          "name": "ToolPreset",
+          "symbol": "ToolPreset",
+          "module": "kodezart.types.domain.session",
+          "start": 20,
+          "end": 20
+        },
+        {
+          "name": "SkillsSelection",
+          "symbol": "SkillsSelection",
+          "module": "kodezart.types.domain.skills",
+          "start": 21,
+          "end": 21
+        },
+        {
+          "name": "NO_SUBAGENTS",
+          "symbol": "NO_SUBAGENTS",
+          "module": "kodezart.types.domain.subagents",
+          "start": 22,
+          "end": 22
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/services/audit_sessions.py",
+      "symbol": "FreshAuditSession",
+      "start": 73,
+      "end": 135,
+      "source_sha256": "f605de64235ed3cf66480714d5bfd266dac74e1080b6dc7b72fae622be80ca35",
+      "used_imports": [
+        {
+          "name": "settle",
+          "symbol": "settle",
+          "module": "kodezart.core.owned_tasks",
+          "start": 7,
+          "end": 7
+        },
+        {
+          "name": "AgentRunner",
+          "symbol": "AgentRunner",
+          "module": "kodezart.core.protocols",
+          "start": 8,
+          "end": 13
+        },
+        {
+          "name": "GitService",
+          "symbol": "GitService",
+          "module": "kodezart.core.protocols",
+          "start": 8,
+          "end": 13
+        },
+        {
+          "name": "PromptSetProvider",
+          "symbol": "PromptSetProvider",
+          "module": "kodezart.core.protocols",
+          "start": 8,
+          "end": 13
+        },
+        {
+          "name": "WorkspaceProvider",
+          "symbol": "WorkspaceProvider",
+          "module": "kodezart.core.protocols",
+          "start": 8,
+          "end": 13
+        },
+        {
+          "name": "AuditClaimReadError",
+          "symbol": "AuditClaimReadError",
+          "module": "kodezart.domain.errors",
+          "start": 15,
+          "end": 15
+        },
+        {
+          "name": "read_workspace_head",
+          "symbol": "read_workspace_head",
+          "module": "kodezart.services.git_observations",
+          "start": 16,
+          "end": 16
+        },
+        {
+          "name": "owned_workspace",
+          "symbol": "owned_workspace",
+          "module": "kodezart.services.owned_workspace",
+          "start": 17,
+          "end": 17
+        },
+        {
+          "name": "RaiseSite",
+          "symbol": "RaiseSite",
+          "module": "kodezart.types.domain.agent",
+          "start": 18,
+          "end": 18
+        },
+        {
+          "name": "PromptKey",
+          "symbol": "PromptKey",
+          "module": "kodezart.types.domain.prompts",
+          "start": 19,
+          "end": 19
+        },
+        {
+          "name": "SessionType",
+          "symbol": "SessionType",
+          "module": "kodezart.types.domain.session",
+          "start": 20,
+          "end": 20
+        },
+        {
+          "name": "SkillsSelection",
+          "symbol": "SkillsSelection",
+          "module": "kodezart.types.domain.skills",
+          "start": 21,
+          "end": 21
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/chains/write_back_verifier.py",
+      "symbol": "WriteBackStep",
+      "start": 50,
+      "end": 70,
+      "source_sha256": "fd415b7c92d88648201cdab40909bfce0932764241a27759d6209f4321ae10cb",
+      "used_imports": [
+        {
+          "name": "Protocol",
+          "symbol": "Protocol",
+          "module": "typing",
+          "start": 17,
+          "end": 17
+        },
+        {
+          "name": "runtime_checkable",
+          "symbol": "runtime_checkable",
+          "module": "typing",
+          "start": 17,
+          "end": 17
+        },
+        {
+          "name": "WritableSurface",
+          "symbol": "WritableSurface",
+          "module": "kodezart.types.domain.surface",
+          "start": 40,
+          "end": 40
+        },
+        {
+          "name": "WriteBackFinding",
+          "symbol": "WriteBackFinding",
+          "module": "kodezart.types.domain.write_back",
+          "start": 41,
+          "end": 43
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/chains/write_back_verifier.py",
+      "symbol": "WriteBackJudge",
+      "start": 74,
+      "end": 84,
+      "source_sha256": "8975e6f3cee58e86884f9c5f14bd377474a5acee8bfc6c238ef63e5aad131464",
+      "used_imports": [
+        {
+          "name": "Protocol",
+          "symbol": "Protocol",
+          "module": "typing",
+          "start": 17,
+          "end": 17
+        },
+        {
+          "name": "runtime_checkable",
+          "symbol": "runtime_checkable",
+          "module": "typing",
+          "start": 17,
+          "end": 17
+        },
+        {
+          "name": "TrackerArtifact",
+          "symbol": "TrackerArtifact",
+          "module": "kodezart.types.domain.audit",
+          "start": 36,
+          "end": 36
+        },
+        {
+          "name": "WriteBackFinding",
+          "symbol": "WriteBackFinding",
+          "module": "kodezart.types.domain.write_back",
+          "start": 41,
+          "end": 43
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/chains/write_back_verifier.py",
+      "symbol": "WriteBackVerifier",
+      "start": 87,
+      "end": 145,
+      "source_sha256": "27e215d7929c8534a44e0249b6f16c0f486a02df00d64a7687cb220b808f0333",
+      "used_imports": [
+        {
+          "name": "Sequence",
+          "symbol": "Sequence",
+          "module": "collections.abc",
+          "start": 16,
+          "end": 16
+        },
+        {
+          "name": "TrackerPort",
+          "symbol": "TrackerPort",
+          "module": "kodezart.core.protocols",
+          "start": 20,
+          "end": 26
+        },
+        {
+          "name": "read_tracker_artifact",
+          "symbol": "read_tracker_artifact",
+          "module": "kodezart.services.tracker_artifacts",
+          "start": 31,
+          "end": 34
+        },
+        {
+          "name": "require_artifact_read",
+          "symbol": "require_artifact_read",
+          "module": "kodezart.services.tracker_artifacts",
+          "start": 31,
+          "end": 34
+        },
+        {
+          "name": "AuditVerdict",
+          "symbol": "AuditVerdict",
+          "module": "kodezart.types.domain.audit",
+          "start": 36,
+          "end": 36
+        },
+        {
+          "name": "TrackerArtifact",
+          "symbol": "TrackerArtifact",
+          "module": "kodezart.types.domain.audit",
+          "start": 36,
+          "end": 36
+        },
+        {
+          "name": "WriteBackFinding",
+          "symbol": "WriteBackFinding",
+          "module": "kodezart.types.domain.write_back",
+          "start": 41,
+          "end": 43
+        },
+        {
+          "name": "WriteBackResult",
+          "symbol": "WriteBackResult",
+          "module": "kodezart.types.domain.write_back",
+          "start": 44,
+          "end": 46
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/chains/write_back_verifier.py",
+      "symbol": "FreshWriteBackJudge",
+      "start": 148,
+      "end": 207,
+      "source_sha256": "92a4cd412589a8d23e622d2ad5e4db0edc3b4d33b73cac9455877cbdc7fd4bca",
+      "used_imports": [
+        {
+          "name": "settle",
+          "symbol": "settle",
+          "module": "kodezart.core.owned_tasks",
+          "start": 19,
+          "end": 19
+        },
+        {
+          "name": "AgentRunner",
+          "symbol": "AgentRunner",
+          "module": "kodezart.core.protocols",
+          "start": 20,
+          "end": 26
+        },
+        {
+          "name": "GitService",
+          "symbol": "GitService",
+          "module": "kodezart.core.protocols",
+          "start": 20,
+          "end": 26
+        },
+        {
+          "name": "PromptSetProvider",
+          "symbol": "PromptSetProvider",
+          "module": "kodezart.core.protocols",
+          "start": 20,
+          "end": 26
+        },
+        {
+          "name": "WorkspaceProvider",
+          "symbol": "WorkspaceProvider",
+          "module": "kodezart.core.protocols",
+          "start": 20,
+          "end": 26
+        },
+        {
+          "name": "WriteBackReadError",
+          "symbol": "WriteBackReadError",
+          "module": "kodezart.domain.errors",
+          "start": 27,
+          "end": 27
+        },
+        {
+          "name": "judge_in_workspace",
+          "symbol": "judge_in_workspace",
+          "module": "kodezart.services.audit_sessions",
+          "start": 28,
+          "end": 28
+        },
+        {
+          "name": "read_workspace_head",
+          "symbol": "read_workspace_head",
+          "module": "kodezart.services.git_observations",
+          "start": 29,
+          "end": 29
+        },
+        {
+          "name": "owned_workspace",
+          "symbol": "owned_workspace",
+          "module": "kodezart.services.owned_workspace",
+          "start": 30,
+          "end": 30
+        },
+        {
+          "name": "WRITE_BACK_SCHEMA",
+          "symbol": "WRITE_BACK_SCHEMA",
+          "module": "kodezart.types.domain.agent",
+          "start": 35,
+          "end": 35
+        },
+        {
+          "name": "TrackerArtifact",
+          "symbol": "TrackerArtifact",
+          "module": "kodezart.types.domain.audit",
+          "start": 36,
+          "end": 36
+        },
+        {
+          "name": "PromptKey",
+          "symbol": "PromptKey",
+          "module": "kodezart.types.domain.prompts",
+          "start": 37,
+          "end": 37
+        },
+        {
+          "name": "SessionType",
+          "symbol": "SessionType",
+          "module": "kodezart.types.domain.session",
+          "start": 38,
+          "end": 38
+        },
+        {
+          "name": "SkillsSelection",
+          "symbol": "SkillsSelection",
+          "module": "kodezart.types.domain.skills",
+          "start": 39,
+          "end": 39
+        },
+        {
+          "name": "WriteBackFinding",
+          "symbol": "WriteBackFinding",
+          "module": "kodezart.types.domain.write_back",
+          "start": 41,
+          "end": 43
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/services/tracker_artifacts.py",
+      "symbol": "_SUPPORTED",
+      "start": 11,
+      "end": 20,
+      "source_sha256": "80523e85a70f03035148c836f4b63fa4e4c3bdf184975ef09ff6aebd5ac9b7ff",
+      "used_imports": [
+        {
+          "name": "SurfaceKind",
+          "symbol": "SurfaceKind",
+          "module": "kodezart.types.domain.surface",
+          "start": 9,
+          "end": 9
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/services/tracker_artifacts.py",
+      "symbol": "require_artifact_read",
+      "start": 23,
+      "end": 28,
+      "source_sha256": "426d611e7e67a0265cfdae601f9b7cc2031d61d6596f6cab01f42f346bc2fb83",
+      "used_imports": [
+        {
+          "name": "WriteBackReadError",
+          "symbol": "WriteBackReadError",
+          "module": "kodezart.domain.errors",
+          "start": 6,
+          "end": 6
+        },
+        {
+          "name": "WritableSurface",
+          "symbol": "WritableSurface",
+          "module": "kodezart.types.domain.surface",
+          "start": 9,
+          "end": 9
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/services/tracker_artifacts.py",
+      "symbol": "read_tracker_artifact",
+      "start": 31,
+      "end": 112,
+      "source_sha256": "cc1f0d3e699bd3ad0775ca4ccb679733c9ed46a95101d6df68c6ff7544e79d56",
+      "used_imports": [
+        {
+          "name": "TrackerPort",
+          "symbol": "TrackerPort",
+          "module": "kodezart.core.protocols",
+          "start": 5,
+          "end": 5
+        },
+        {
+          "name": "WriteBackReadError",
+          "symbol": "WriteBackReadError",
+          "module": "kodezart.domain.errors",
+          "start": 6,
+          "end": 6
+        },
+        {
+          "name": "comment_under_marker",
+          "symbol": "comment_under_marker",
+          "module": "kodezart.domain.tracker_writes",
+          "start": 7,
+          "end": 7
+        },
+        {
+          "name": "TrackerArtifact",
+          "symbol": "TrackerArtifact",
+          "module": "kodezart.types.domain.audit",
+          "start": 8,
+          "end": 8
+        },
+        {
+          "name": "SurfaceKind",
+          "symbol": "SurfaceKind",
+          "module": "kodezart.types.domain.surface",
+          "start": 9,
+          "end": 9
+        },
+        {
+          "name": "WritableSurface",
+          "symbol": "WritableSurface",
+          "module": "kodezart.types.domain.surface",
+          "start": 9,
+          "end": 9
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/types/domain/audit.py",
+      "symbol": "AuditVerdict",
+      "start": 34,
+      "end": 42,
+      "source_sha256": "ba6cef50bd5e79dd0705bfbf213c35178c97163531eed8020d55ad59463f563d",
+      "used_imports": [
+        {
+          "name": "StrEnum",
+          "symbol": "StrEnum",
+          "module": "enum",
+          "start": 3,
+          "end": 3
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/types/domain/audit.py",
+      "symbol": "TrackerArtifact",
+      "start": 89,
+      "end": 95,
+      "source_sha256": "61fc6b7a14ccaa11e597b82d8028aa999fb26c88970df1361e1c2e42342a86c1",
+      "used_imports": [
+        {
+          "name": "ConfigDict",
+          "symbol": "ConfigDict",
+          "module": "pydantic",
+          "start": 6,
+          "end": 6
+        },
+        {
+          "name": "Field",
+          "symbol": "Field",
+          "module": "pydantic",
+          "start": 6,
+          "end": 6
+        },
+        {
+          "name": "CamelCaseModel",
+          "symbol": "CamelCaseModel",
+          "module": "kodezart.types.base",
+          "start": 8,
+          "end": 8
+        },
+        {
+          "name": "WritableSurface",
+          "symbol": "WritableSurface",
+          "module": "kodezart.types.domain.surface",
+          "start": 11,
+          "end": 11
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/types/domain/write_back.py",
+      "symbol": "WriteBackFinding",
+      "start": 11,
+      "end": 50,
+      "source_sha256": "066a39dbed5362922b209dbd6888229a413683ea73b536a8ac093af96b3f9be3",
+      "used_imports": [
+        {
+          "name": "Annotated",
+          "symbol": "Annotated",
+          "module": "typing",
+          "start": 3,
+          "end": 3
+        },
+        {
+          "name": "Self",
+          "symbol": "Self",
+          "module": "typing",
+          "start": 3,
+          "end": 3
+        },
+        {
+          "name": "ConfigDict",
+          "symbol": "ConfigDict",
+          "module": "pydantic",
+          "start": 5,
+          "end": 5
+        },
+        {
+          "name": "Field",
+          "symbol": "Field",
+          "module": "pydantic",
+          "start": 5,
+          "end": 5
+        },
+        {
+          "name": "model_validator",
+          "symbol": "model_validator",
+          "module": "pydantic",
+          "start": 5,
+          "end": 5
+        },
+        {
+          "name": "CamelCaseModel",
+          "symbol": "CamelCaseModel",
+          "module": "kodezart.types.base",
+          "start": 7,
+          "end": 7
+        },
+        {
+          "name": "AuditVerdict",
+          "symbol": "AuditVerdict",
+          "module": "kodezart.types.domain.audit",
+          "start": 8,
+          "end": 8
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/types/domain/write_back.py",
+      "symbol": "WriteBackResult",
+      "start": 53,
+      "end": 80,
+      "source_sha256": "0f1a647325e786932c825b0e0026f2cde21e89e7407a80f9e441d802d934f894",
+      "used_imports": [
+        {
+          "name": "Self",
+          "symbol": "Self",
+          "module": "typing",
+          "start": 3,
+          "end": 3
+        },
+        {
+          "name": "ConfigDict",
+          "symbol": "ConfigDict",
+          "module": "pydantic",
+          "start": 5,
+          "end": 5
+        },
+        {
+          "name": "Field",
+          "symbol": "Field",
+          "module": "pydantic",
+          "start": 5,
+          "end": 5
+        },
+        {
+          "name": "model_validator",
+          "symbol": "model_validator",
+          "module": "pydantic",
+          "start": 5,
+          "end": 5
+        },
+        {
+          "name": "CamelCaseModel",
+          "symbol": "CamelCaseModel",
+          "module": "kodezart.types.base",
+          "start": 7,
+          "end": 7
+        },
+        {
+          "name": "AuditVerdict",
+          "symbol": "AuditVerdict",
+          "module": "kodezart.types.domain.audit",
+          "start": 8,
+          "end": 8
+        },
+        {
+          "name": "TrackerArtifact",
+          "symbol": "TrackerArtifact",
+          "module": "kodezart.types.domain.audit",
+          "start": 8,
+          "end": 8
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/types/domain/agent.py",
+      "symbol": "RaiseSite",
+      "start": 77,
+      "end": 98,
+      "source_sha256": "a0f767bbf30427bb680d37ad770ebc97aa23ceb6666404f40c82ecc1f7e45458",
+      "used_imports": [
+        {
+          "name": "Literal",
+          "symbol": "Literal",
+          "module": "typing",
+          "start": 4,
+          "end": 4
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/types/domain/agent.py",
+      "symbol": "WRITE_BACK_SCHEMA",
+      "start": 1152,
+      "end": 1152,
+      "source_sha256": "f5361075db8e7e6a490c9a636f245e7f0bf7485b2209bc64827604d776e5f33f",
+      "used_imports": [
+        {
+          "name": "WriteBackFinding",
+          "symbol": "WriteBackFinding",
+          "module": "kodezart.types.domain.write_back",
+          "start": 49,
+          "end": 49
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/domain/errors.py",
+      "symbol": "WriteBackReadError",
+      "start": 744,
+      "end": 745,
+      "source_sha256": "7a962a6486dbd4020c03dce7a1e9ca1096c26ce6ebf59f0ba83e8bb6d76712dc",
+      "used_imports": []
+    },
+    {
+      "path": "src/kodezart/types/domain/prompts.py",
+      "symbol": "PromptKey",
+      "start": 16,
+      "end": 55,
+      "source_sha256": "fa52b4eccd372828252a431febfc0dac5be6b238005c7a417a85caf015e23861",
+      "used_imports": [
+        {
+          "name": "StrEnum",
+          "symbol": "StrEnum",
+          "module": "enum",
+          "start": 8,
+          "end": 8
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/domain/fire_spec.py",
+      "symbol": "_CRITERION_ROW",
+      "start": 16,
+      "end": 16,
+      "source_sha256": "0a4f505084fd23bc712f6fd0380d38484298f4243832c0c6ef9e0e02111d0e33",
+      "used_imports": []
+    },
+    {
+      "path": "src/kodezart/domain/fire_spec.py",
+      "symbol": "_FENCE",
+      "start": 17,
+      "end": 17,
+      "source_sha256": "968b5b283d9f0ce68ebd094d8b867a722a9e720a79728f1670f092dc1dc465a1",
+      "used_imports": []
+    },
+    {
+      "path": "src/kodezart/domain/fire_spec.py",
+      "symbol": "_without_comments",
+      "start": 20,
+      "end": 39,
+      "source_sha256": "c1f0529acfd8b43f74660c105ec37047a5896a6096d3bd2c37cd91c05fc6bd3b",
+      "used_imports": []
+    },
+    {
+      "path": "src/kodezart/domain/fire_spec.py",
+      "symbol": "criterion_field_bodies",
+      "start": 42,
+      "end": 81,
+      "source_sha256": "d042c5695126463375036a82eaabd92ee63ace17aa3705cc694a46795cf85a48",
+      "used_imports": [
+        {
+          "name": "Literal",
+          "symbol": "Literal",
+          "module": "typing",
+          "start": 5,
+          "end": 5
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/domain/fire_spec.py",
+      "symbol": "tracker_spec_from_issues",
+      "start": 84,
+      "end": 97,
+      "source_sha256": "b432b08cf0b48204a821e5272ca7f2e8231cf941d30e284c50de89358d218b0f",
+      "used_imports": [
+        {
+          "name": "Sequence",
+          "symbol": "Sequence",
+          "module": "collections.abc",
+          "start": 4,
+          "end": 4
+        },
+        {
+          "name": "EmptyFireCriteriaError",
+          "symbol": "EmptyFireCriteriaError",
+          "module": "kodezart.domain.errors",
+          "start": 7,
+          "end": 11
+        },
+        {
+          "name": "CriterionRef",
+          "symbol": "CriterionRef",
+          "module": "kodezart.types.domain.fire_spec",
+          "start": 12,
+          "end": 12
+        },
+        {
+          "name": "IssueRef",
+          "symbol": "IssueRef",
+          "module": "kodezart.types.domain.fire_spec",
+          "start": 12,
+          "end": 12
+        },
+        {
+          "name": "TrackerSpec",
+          "symbol": "TrackerSpec",
+          "module": "kodezart.types.domain.fire_spec",
+          "start": 12,
+          "end": 12
+        },
+        {
+          "name": "TrackerIssue",
+          "symbol": "TrackerIssue",
+          "module": "kodezart.types.domain.tracker",
+          "start": 14,
+          "end": 14
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/domain/fire_spec.py",
+      "symbol": "criterion_check",
+      "start": 100,
+      "end": 109,
+      "source_sha256": "8f6566c5eaad9300acbf0b470e9874b44b058a31bd80827aa534891c057d973f",
+      "used_imports": [
+        {
+          "name": "InvalidFireCriterionError",
+          "symbol": "InvalidFireCriterionError",
+          "module": "kodezart.domain.errors",
+          "start": 7,
+          "end": 11
+        },
+        {
+          "name": "TrackerIssue",
+          "symbol": "TrackerIssue",
+          "module": "kodezart.types.domain.tracker",
+          "start": 14,
+          "end": 14
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/domain/fire_spec.py",
+      "symbol": "require_fire_entry",
+      "start": 112,
+      "end": 128,
+      "source_sha256": "7530c28c8242e898b7461e8ed444e57c0ebf10b599002ece0dea2f2c402a2a39",
+      "used_imports": [
+        {
+          "name": "FireSpecEntryError",
+          "symbol": "FireSpecEntryError",
+          "module": "kodezart.domain.errors",
+          "start": 7,
+          "end": 11
+        },
+        {
+          "name": "OperationMemberAbsentError",
+          "symbol": "OperationMemberAbsentError",
+          "module": "kodezart.types.domain.operation",
+          "start": 13,
+          "end": 13
+        },
+        {
+          "name": "TrackerIssue",
+          "symbol": "TrackerIssue",
+          "module": "kodezart.types.domain.tracker",
+          "start": 14,
+          "end": 14
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/types/domain/assertion_drift.py",
+      "symbol": "ProtectedTestRef",
+      "start": 11,
+      "end": 32,
+      "source_sha256": "da99dd595cadba11a5dd83653acd505a40ac0b861c4879c22a0c93a6124309fb",
+      "used_imports": [
+        {
+          "name": "PurePosixPath",
+          "symbol": "PurePosixPath",
+          "module": "pathlib",
+          "start": 3,
+          "end": 3
+        },
+        {
+          "name": "Self",
+          "symbol": "Self",
+          "module": "typing",
+          "start": 4,
+          "end": 4
+        },
+        {
+          "name": "ConfigDict",
+          "symbol": "ConfigDict",
+          "module": "pydantic",
+          "start": 6,
+          "end": 6
+        },
+        {
+          "name": "Field",
+          "symbol": "Field",
+          "module": "pydantic",
+          "start": 6,
+          "end": 6
+        },
+        {
+          "name": "model_validator",
+          "symbol": "model_validator",
+          "module": "pydantic",
+          "start": 6,
+          "end": 6
+        },
+        {
+          "name": "CamelCaseModel",
+          "symbol": "CamelCaseModel",
+          "module": "kodezart.types.base",
+          "start": 8,
+          "end": 8
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/types/domain/assertion_drift.py",
+      "symbol": "GitSourceBlob",
+      "start": 59,
+      "end": 67,
+      "source_sha256": "7d2258663d77418ec077c2d2dcf42d919c1aecac9f6e16fdb034ff366aa9363e",
+      "used_imports": [
+        {
+          "name": "ConfigDict",
+          "symbol": "ConfigDict",
+          "module": "pydantic",
+          "start": 6,
+          "end": 6
+        },
+        {
+          "name": "Field",
+          "symbol": "Field",
+          "module": "pydantic",
+          "start": 6,
+          "end": 6
+        },
+        {
+          "name": "CamelCaseModel",
+          "symbol": "CamelCaseModel",
+          "module": "kodezart.types.base",
+          "start": 8,
+          "end": 8
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/types/domain/branch.py",
+      "symbol": "BranchRole",
+      "start": 58,
+      "end": 63,
+      "source_sha256": "49e758c25b657e41aab1e0729eae2ac89812db5bb5d2e152e0f48d076937b483",
+      "used_imports": [
+        {
+          "name": "StrEnum",
+          "symbol": "StrEnum",
+          "module": "enum",
+          "start": 14,
+          "end": 14
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/types/domain/branch.py",
+      "symbol": "BranchAssociation",
+      "start": 66,
+      "end": 74,
+      "source_sha256": "82b531d3df6229adaac657e42ea579ace58e65f11339bbfb2448bbf8ed85150b",
+      "used_imports": [
+        {
+          "name": "Annotated",
+          "symbol": "Annotated",
+          "module": "typing",
+          "start": 15,
+          "end": 15
+        },
+        {
+          "name": "ConfigDict",
+          "symbol": "ConfigDict",
+          "module": "pydantic",
+          "start": 17,
+          "end": 17
+        },
+        {
+          "name": "Field",
+          "symbol": "Field",
+          "module": "pydantic",
+          "start": 17,
+          "end": 17
+        },
+        {
+          "name": "CamelCaseModel",
+          "symbol": "CamelCaseModel",
+          "module": "kodezart.types.base",
+          "start": 19,
+          "end": 19
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/types/domain/branch.py",
+      "symbol": "WorkRefLanding",
+      "start": 77,
+      "end": 82,
+      "source_sha256": "53d0ea8ad527ddc07a06fcf31a4deec0121935474f7846f33238a1aff996488a",
+      "used_imports": [
+        {
+          "name": "StrEnum",
+          "symbol": "StrEnum",
+          "module": "enum",
+          "start": 14,
+          "end": 14
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/core/protocols.py",
+      "symbol": "GitSourceReader",
+      "start": 99,
+      "end": 116,
+      "source_sha256": "5f05260512098aac0617bb0a553548bae0118cdb4e7fbc2748e3aaa8771d9dc4",
+      "used_imports": [
+        {
+          "name": "Protocol",
+          "symbol": "Protocol",
+          "module": "typing",
+          "start": 4,
+          "end": 4
+        },
+        {
+          "name": "runtime_checkable",
+          "symbol": "runtime_checkable",
+          "module": "typing",
+          "start": 4,
+          "end": 4
+        },
+        {
+          "name": "GitSourceBlob",
+          "symbol": "GitSourceBlob",
+          "module": "kodezart.types.domain.assertion_drift",
+          "start": 9,
+          "end": 9
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/services/fire_record_facts.py",
+      "symbol": "observe_fire_facts",
+      "start": 14,
+      "end": 33,
+      "source_sha256": "642983c63558b1b9809404d42495de9e9eb83a429f75f58e5cc88ddd26b2e7cc",
+      "used_imports": [
+        {
+          "name": "AgentEvent",
+          "symbol": "AgentEvent",
+          "module": "kodezart.types.domain.agent",
+          "start": 3,
+          "end": 10
+        },
+        {
+          "name": "AuthoredWorkflowCompleteEvent",
+          "symbol": "AuthoredWorkflowCompleteEvent",
+          "module": "kodezart.types.domain.agent",
+          "start": 3,
+          "end": 10
+        },
+        {
+          "name": "WorkflowCompleteEvent",
+          "symbol": "WorkflowCompleteEvent",
+          "module": "kodezart.types.domain.agent",
+          "start": 3,
+          "end": 10
+        },
+        {
+          "name": "WorkflowPREvent",
+          "symbol": "WorkflowPREvent",
+          "module": "kodezart.types.domain.agent",
+          "start": 3,
+          "end": 10
+        },
+        {
+          "name": "WorkflowScopeBaseEvent",
+          "symbol": "WorkflowScopeBaseEvent",
+          "module": "kodezart.types.domain.agent",
+          "start": 3,
+          "end": 10
+        },
+        {
+          "name": "WorkflowVisibilityEvent",
+          "symbol": "WorkflowVisibilityEvent",
+          "module": "kodezart.types.domain.agent",
+          "start": 3,
+          "end": 10
+        },
+        {
+          "name": "FireRecordFacts",
+          "symbol": "FireRecordFacts",
+          "module": "kodezart.types.domain.run_records",
+          "start": 11,
+          "end": 11
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/adapters/subprocess_git_source_reader.py",
+      "symbol": "SubprocessGitSourceReader",
+      "start": 16,
+      "end": 156,
+      "source_sha256": "0a657be90e0a15ad402aedc667970ddf552b69a4524c1c2370e3245bc7418225",
+      "used_imports": [
+        {
+          "name": "PurePosixPath",
+          "symbol": "PurePosixPath",
+          "module": "pathlib",
+          "start": 7,
+          "end": 7
+        },
+        {
+          "name": "finish_owned",
+          "symbol": "finish_owned",
+          "module": "kodezart.core.owned_tasks",
+          "start": 9,
+          "end": 9
+        },
+        {
+          "name": "GitSourceReadError",
+          "symbol": "GitSourceReadError",
+          "module": "kodezart.domain.errors",
+          "start": 10,
+          "end": 10
+        },
+        {
+          "name": "GitSourceBlob",
+          "symbol": "GitSourceBlob",
+          "module": "kodezart.types.domain.assertion_drift",
+          "start": 11,
+          "end": 11
+        }
+      ]
+    }
+  ]
+}

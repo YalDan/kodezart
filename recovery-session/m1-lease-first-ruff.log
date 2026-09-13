@@ -1,0 +1,1024 @@
+E501 Line too long (91 > 88)
+  --> src/kodezart/composition/tracker.py:40:89
+   |
+40 | def make_mcp_tool_caller(*, settings: TrackerSettings, token: str) -> ManagedMcpToolCaller:
+   |                                                                                         ^^^
+41 |     """The vendor MCP transport this deployment dials.
+   |
+
+E501 Line too long (376 > 88)
+    --> src/kodezart/core/config.py:1232:89
+     |
+1230 | …
+1231 | …
+1232 | …tracker_mcp_server_url', 'tracker_mcp_call_timeout_seconds', 'tracker_max_retries', 'tracker_mcp_server_name', 'tracker_mcp_auth_scheme', 'tracker_mcp_sse_read_timeout_seconds', 'tracker_token', 'tracker_retry_backoff_factor', 'tracker_mcp_error_detail_limit', 'tracker_surface_lease_seconds'}
+     |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1233 | …
+1234 | …
+     |
+
+E501 Line too long (115 > 88)
+   --> tests/domain/test_base_resolution.py:298:89
+    |
+296 | def lifecycle(tracker: FakeTrackerPort) -> TrackerLifecycleWriter:
+297 |     """The shipped lifecycle writer — the only producer of DELIVERABLE refs."""
+298 |     return TrackerLifecycleWriter(marker_prefixes={"run_outcome": "fixture-outcome"}, surface_lease_seconds=321.5, 
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+299 |         tracker=tracker,
+300 |         gate=PassThroughGate(),
+    |
+
+W291 [*] Trailing whitespace
+   --> tests/domain/test_base_resolution.py:298:115
+    |
+296 | def lifecycle(tracker: FakeTrackerPort) -> TrackerLifecycleWriter:
+297 |     """The shipped lifecycle writer — the only producer of DELIVERABLE refs."""
+298 |     return TrackerLifecycleWriter(marker_prefixes={"run_outcome": "fixture-outcome"}, surface_lease_seconds=321.5, 
+    |                                                                                                                   ^
+299 |         tracker=tracker,
+300 |         gate=PassThroughGate(),
+    |
+help: Remove trailing whitespace
+
+E501 Line too long (160 > 88)
+   --> tests/services/test_claim_heartbeat.py:205:89
+    |
+203 | …
+204 | …
+205 | …n_outcome": "fixture-outcome"}, surface_lease_seconds=321.5, tracker=tracker, gate=PassThroughGate()),
+    |                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+206 | …
+207 | …
+    |
+
+E501 Line too long (164 > 88)
+   --> tests/services/test_claim_heartbeat.py:511:89
+    |
+509 | …
+510 | …
+511 | …run_outcome": "fixture-outcome"}, surface_lease_seconds=321.5, tracker=tracker, gate=PassThroughGate()),
+    |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+512 | …
+513 | …
+    |
+
+E501 Line too long (164 > 88)
+   --> tests/services/test_claim_heartbeat.py:585:89
+    |
+583 | …
+584 | …
+585 | …run_outcome": "fixture-outcome"}, surface_lease_seconds=321.5, tracker=tracker, gate=PassThroughGate()),
+    |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+586 | …
+587 | …
+    |
+
+E501 Line too long (164 > 88)
+   --> tests/services/test_claim_heartbeat.py:619:89
+    |
+617 | …
+618 | …
+619 | …run_outcome": "fixture-outcome"}, surface_lease_seconds=321.5, tracker=tracker, gate=PassThroughGate()),
+    |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+620 | …
+621 | …
+    |
+
+E501 Line too long (164 > 88)
+   --> tests/services/test_dispatch_pass.py:263:89
+    |
+261 | …
+262 | …
+263 | …run_outcome": "fixture-outcome"}, surface_lease_seconds=321.5, tracker=tracker, gate=PassThroughGate()),
+    |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+264 | …
+265 | …
+    |
+
+E501 Line too long (160 > 88)
+   --> tests/services/test_dispatch_pass.py:361:89
+    |
+359 | …
+360 | …
+361 | …n_outcome": "fixture-outcome"}, surface_lease_seconds=321.5, tracker=tracker, gate=PassThroughGate()),
+    |                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+362 | …
+363 | …
+    |
+
+E501 Line too long (127 > 88)
+   --> tests/services/test_dispatch_pass.py:444:89
+    |
+442 |                 queue=queue,
+443 |                 registry=queue,
+444 |                 writer=TrackerLifecycleWriter(marker_prefixes={"run_outcome": "fixture-outcome"}, surface_lease_seconds=321.5, 
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+445 |                     tracker=tracker,
+446 |                     gate=PassThroughGate(),
+    |
+
+W291 [*] Trailing whitespace
+   --> tests/services/test_dispatch_pass.py:444:127
+    |
+442 |                 queue=queue,
+443 |                 registry=queue,
+444 |                 writer=TrackerLifecycleWriter(marker_prefixes={"run_outcome": "fixture-outcome"}, surface_lease_seconds=321.5, 
+    |                                                                                                                               ^
+445 |                     tracker=tracker,
+446 |                     gate=PassThroughGate(),
+    |
+help: Remove trailing whitespace
+
+E501 Line too long (160 > 88)
+   --> tests/services/test_lifecycle_watcher.py:165:89
+    |
+163 | …
+164 | …
+165 | …n_outcome": "fixture-outcome"}, surface_lease_seconds=321.5, tracker=tracker, gate=PassThroughGate()),
+    |                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+166 | …
+167 | …
+    |
+
+E501 Line too long (164 > 88)
+   --> tests/services/test_lifecycle_watcher.py:182:89
+    |
+180 | …
+181 | …
+182 | …run_outcome": "fixture-outcome"}, surface_lease_seconds=321.5, tracker=tracker, gate=PassThroughGate()),
+    |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+183 | …
+184 | …
+    |
+
+E501 Line too long (127 > 88)
+   --> tests/services/test_lifecycle_watcher.py:486:89
+    |
+484 |                 queue=queue,
+485 |                 registry=queue,
+486 |                 writer=TrackerLifecycleWriter(marker_prefixes={"run_outcome": "fixture-outcome"}, surface_lease_seconds=321.5, 
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+487 |                     tracker=tracker,
+488 |                     gate=PassThroughGate(),
+    |
+
+W291 [*] Trailing whitespace
+   --> tests/services/test_lifecycle_watcher.py:486:127
+    |
+484 |                 queue=queue,
+485 |                 registry=queue,
+486 |                 writer=TrackerLifecycleWriter(marker_prefixes={"run_outcome": "fixture-outcome"}, surface_lease_seconds=321.5, 
+    |                                                                                                                               ^
+487 |                     tracker=tracker,
+488 |                     gate=PassThroughGate(),
+    |
+help: Remove trailing whitespace
+
+E501 Line too long (164 > 88)
+   --> tests/services/test_lifecycle_watcher.py:552:89
+    |
+550 | …
+551 | …
+552 | …run_outcome": "fixture-outcome"}, surface_lease_seconds=321.5, tracker=tracker, gate=PassThroughGate()),
+    |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+553 | …
+554 | …
+    |
+
+E501 Line too long (164 > 88)
+   --> tests/services/test_lifecycle_watcher.py:619:89
+    |
+617 | …
+618 | …
+619 | …run_outcome": "fixture-outcome"}, surface_lease_seconds=321.5, tracker=tracker, gate=PassThroughGate()),
+    |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+620 | …
+621 | …
+    |
+
+E501 Line too long (164 > 88)
+   --> tests/services/test_lifecycle_watcher.py:802:89
+    |
+800 | …
+801 | …
+802 | …run_outcome": "fixture-outcome"}, surface_lease_seconds=321.5, tracker=tracker, gate=PassThroughGate()),
+    |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+803 | …
+804 | …
+    |
+
+E501 Line too long (160 > 88)
+   --> tests/services/test_lifecycle_watcher.py:880:89
+    |
+878 | …
+879 | …
+880 | …n_outcome": "fixture-outcome"}, surface_lease_seconds=321.5, tracker=tracker, gate=PassThroughGate()),
+    |                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+881 | …
+882 | …
+    |
+
+E501 Line too long (164 > 88)
+    --> tests/services/test_lifecycle_watcher.py:1005:89
+     |
+1003 | …
+1004 | …
+1005 | …un_outcome": "fixture-outcome"}, surface_lease_seconds=321.5, tracker=tracker, gate=PassThroughGate()),
+     |                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1006 | …
+1007 | …
+     |
+
+E501 Line too long (164 > 88)
+    --> tests/services/test_lifecycle_watcher.py:1145:89
+     |
+1143 | …
+1144 | …
+1145 | …un_outcome": "fixture-outcome"}, surface_lease_seconds=321.5, tracker=tracker, gate=PassThroughGate()),
+     |                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1146 | …
+1147 | …
+     |
+
+E501 Line too long (164 > 88)
+    --> tests/services/test_lifecycle_watcher.py:1299:89
+     |
+1297 | …
+1298 | …
+1299 | …un_outcome": "fixture-outcome"}, surface_lease_seconds=321.5, tracker=tracker, gate=PassThroughGate()),
+     |                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1300 | …
+1301 | …
+     |
+
+E501 Line too long (164 > 88)
+    --> tests/services/test_lifecycle_watcher.py:1340:89
+     |
+1338 | …
+1339 | …
+1340 | …un_outcome": "fixture-outcome"}, surface_lease_seconds=321.5, tracker=tracker, gate=PassThroughGate()),
+     |                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1341 | …
+1342 | …
+     |
+
+E501 Line too long (112 > 88)
+  --> tests/services/test_tracker_lifecycle.py:40:89
+   |
+38 |     tracker = FakeTrackerPort(issues=[make_tracker_issue("K-1")])
+39 |     return (
+40 |         TrackerLifecycleWriter(marker_prefixes={"run_outcome": "fixture-outcome"}, surface_lease_seconds=321.5, 
+   |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^
+41 |             tracker=tracker,
+42 |             gate=PassThroughGate(),
+   |
+
+W291 [*] Trailing whitespace
+  --> tests/services/test_tracker_lifecycle.py:40:112
+   |
+38 |     tracker = FakeTrackerPort(issues=[make_tracker_issue("K-1")])
+39 |     return (
+40 |         TrackerLifecycleWriter(marker_prefixes={"run_outcome": "fixture-outcome"}, surface_lease_seconds=321.5, 
+   |                                                                                                                ^
+41 |             tracker=tracker,
+42 |             gate=PassThroughGate(),
+   |
+help: Remove trailing whitespace
+
+E501 Line too long (112 > 88)
+  --> tests/services/test_tracker_lifecycle.py:62:89
+   |
+60 |     )
+61 |     return (
+62 |         TrackerLifecycleWriter(marker_prefixes={"run_outcome": "fixture-outcome"}, surface_lease_seconds=321.5, 
+   |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^
+63 |             tracker=tracker,
+64 |             gate=PassThroughGate(),
+   |
+
+W291 [*] Trailing whitespace
+  --> tests/services/test_tracker_lifecycle.py:62:112
+   |
+60 |     )
+61 |     return (
+62 |         TrackerLifecycleWriter(marker_prefixes={"run_outcome": "fixture-outcome"}, surface_lease_seconds=321.5, 
+   |                                                                                                                ^
+63 |             tracker=tracker,
+64 |             gate=PassThroughGate(),
+   |
+help: Remove trailing whitespace
+
+E501 Line too long (147 > 88)
+   --> tests/services/test_tracker_lifecycle.py:280:89
+    |
+278 | …er_issue("K-1")])
+279 | …
+280 | …es={"run_outcome": "fixture-outcome"}, surface_lease_seconds=321.5, tracker=tracker, gate=gate)
+    |                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+281 | …
+282 | …
+    |
+
+E501 Line too long (147 > 88)
+   --> tests/services/test_tracker_lifecycle.py:296:89
+    |
+294 | …er_issue("K-1")])
+295 | …
+296 | …es={"run_outcome": "fixture-outcome"}, surface_lease_seconds=321.5, tracker=tracker, gate=gate)
+    |                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+297 | …
+298 | …
+    |
+
+E501 Line too long (147 > 88)
+   --> tests/services/test_tracker_lifecycle.py:318:89
+    |
+316 | …er_issue("K-1")])
+317 | …
+318 | …es={"run_outcome": "fixture-outcome"}, surface_lease_seconds=321.5, tracker=tracker, gate=gate)
+    |                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+319 | …
+320 | …
+    |
+
+E501 Line too long (147 > 88)
+   --> tests/services/test_tracker_lifecycle.py:345:89
+    |
+343 | …er_issue("K-1")])
+344 | …
+345 | …es={"run_outcome": "fixture-outcome"}, surface_lease_seconds=321.5, tracker=tracker, gate=gate)
+    |                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+346 | …
+347 | …
+    |
+
+E501 Line too long (157 > 88)
+   --> tests/services/test_tracker_lifecycle.py:358:89
+    |
+356 | …) -> None:
+357 | …sue("K-1")])
+358 | …run_outcome": "fixture-outcome"}, surface_lease_seconds=321.5, tracker=tracker, gate=BlockingGate())
+    |                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+359 | …
+360 | …s excinfo:
+    |
+
+E501 Line too long (147 > 88)
+   --> tests/services/test_tracker_lifecycle.py:446:89
+    |
+444 | …er_issue("K-1")])
+445 | …
+446 | …es={"run_outcome": "fixture-outcome"}, surface_lease_seconds=321.5, tracker=tracker, gate=gate)
+    |                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+447 | …
+448 | …
+    |
+
+E501 Line too long (147 > 88)
+   --> tests/services/test_tracker_lifecycle.py:463:89
+    |
+461 | …er_issue("K-1")])
+462 | …
+463 | …es={"run_outcome": "fixture-outcome"}, surface_lease_seconds=321.5, tracker=tracker, gate=gate)
+    |                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+464 | …
+465 | …
+    |
+
+E501 Line too long (157 > 88)
+   --> tests/services/test_tracker_lifecycle.py:480:89
+    |
+478 | …e gate's to stop."""
+479 | …sue("K-1")])
+480 | …run_outcome": "fixture-outcome"}, surface_lease_seconds=321.5, tracker=tracker, gate=BlockingGate())
+    |                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+481 | …
+482 | …
+    |
+
+E501 Line too long (160 > 88)
+   --> tests/test_composition_root.py:419:89
+    |
+417 | …
+418 | …
+419 | …n_outcome": "fixture-outcome"}, surface_lease_seconds=321.5, tracker=tracker, gate=PassThroughGate()),
+    |                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+420 | …
+421 | …
+    |
+
+F401 [*] `datetime.timedelta` imported but unused
+  --> tests/tracker/test_linear_mcp_tracker.py:12:22
+   |
+10 | import json
+11 | from collections.abc import Mapping
+12 | from datetime import timedelta
+   |                      ^^^^^^^^^
+13 | from http import HTTPStatus
+   |
+help: Remove unused import: `datetime.timedelta`
+
+F401 [*] `kodezart.types.domain.tracker.ClaimStatus` imported but unused
+  --> tests/tracker/test_linear_mcp_tracker.py:33:5
+   |
+31 | from kodezart.types.domain.operation import LifecycleStage, QueueState
+32 | from kodezart.types.domain.tracker import (
+33 |     ClaimStatus,
+   |     ^^^^^^^^^^^
+34 |     EnsureAction,
+35 |     IssuePriority,
+   |
+help: Remove unused import: `kodezart.types.domain.tracker.ClaimStatus`
+
+I001 [*] Import block is un-sorted or un-formatted
+ --> tests/tracker/test_linear_wire_shapes.py:1:1
+  |
+1 | / from kodezart.core.backoff import RetryPolicy
+2 | | from tests.tracker.marker_config import MARKER_PREFIXES
+  | |_______________________________________________________^
+3 |   """The wire models, against payloads shaped like the LIVE server's (KOD-143).
+  |
+help: Organize imports
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_linear_wire_shapes.py:33:1
+   |
+31 | """
+32 |
+33 | from collections.abc import Mapping, Sequence
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+34 | from datetime import UTC, datetime
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_linear_wire_shapes.py:34:1
+   |
+33 | from collections.abc import Mapping, Sequence
+34 | from datetime import UTC, datetime
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+35 |
+36 | import pytest
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_linear_wire_shapes.py:36:1
+   |
+34 | from datetime import UTC, datetime
+35 |
+36 | import pytest
+   | ^^^^^^^^^^^^^
+37 | from pydantic import ValidationError
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_linear_wire_shapes.py:37:1
+   |
+36 | import pytest
+37 | from pydantic import ValidationError
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+38 |
+39 | from kodezart.adapters.linear_mcp_tracker import LinearMcpTracker
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_linear_wire_shapes.py:39:1
+   |
+37 | from pydantic import ValidationError
+38 |
+39 | from kodezart.adapters.linear_mcp_tracker import LinearMcpTracker
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+40 | from kodezart.adapters.linear_mcp_types import (
+41 |     LINEAR_NAMED_ARRAY,
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_linear_wire_shapes.py:40:1
+   |
+39 |   from kodezart.adapters.linear_mcp_tracker import LinearMcpTracker
+40 | / from kodezart.adapters.linear_mcp_types import (
+41 | |     LINEAR_NAMED_ARRAY,
+42 | |     LinearCommentListWire,
+43 | |     LinearCommentWire,
+44 | |     LinearDocumentListWire,
+45 | |     LinearDocumentWire,
+46 | |     LinearIssueDetailWire,
+47 | |     LinearIssueListWire,
+48 | |     LinearIssueWire,
+49 | |     LinearLabelListWire,
+50 | |     LinearTeamListWire,
+51 | |     LinearUserListWire,
+52 | | )
+   | |_^
+53 |   from kodezart.core.errors import TrackerProtocolError
+54 |   from kodezart.core.protocols import McpToolResult
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_linear_wire_shapes.py:53:1
+   |
+51 |     LinearUserListWire,
+52 | )
+53 | from kodezart.core.errors import TrackerProtocolError
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+54 | from kodezart.core.protocols import McpToolResult
+55 | from kodezart.types.domain.dispatch import SelfWriteLedger
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_linear_wire_shapes.py:54:1
+   |
+52 | )
+53 | from kodezart.core.errors import TrackerProtocolError
+54 | from kodezart.core.protocols import McpToolResult
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+55 | from kodezart.types.domain.dispatch import SelfWriteLedger
+56 | from kodezart.types.domain.operation import LifecycleStage, QueueState
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_linear_wire_shapes.py:55:1
+   |
+53 | from kodezart.core.errors import TrackerProtocolError
+54 | from kodezart.core.protocols import McpToolResult
+55 | from kodezart.types.domain.dispatch import SelfWriteLedger
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+56 | from kodezart.types.domain.operation import LifecycleStage, QueueState
+57 | from kodezart.types.domain.tracker import (
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_linear_wire_shapes.py:56:1
+   |
+54 | from kodezart.core.protocols import McpToolResult
+55 | from kodezart.types.domain.dispatch import SelfWriteLedger
+56 | from kodezart.types.domain.operation import LifecycleStage, QueueState
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+57 | from kodezart.types.domain.tracker import (
+58 |     IssueQuery,
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_linear_wire_shapes.py:57:1
+   |
+55 |   from kodezart.types.domain.dispatch import SelfWriteLedger
+56 |   from kodezart.types.domain.operation import LifecycleStage, QueueState
+57 | / from kodezart.types.domain.tracker import (
+58 | |     IssueQuery,
+59 | |     IssueRelationKind,
+60 | |     MappingKind,
+61 | |     MappingRef,
+62 | | )
+   | |_^
+63 |
+64 |   # --------------------------------------------------------------------------
+   |
+
+W291 [*] Trailing whitespace
+   --> tests/tracker/test_linear_wire_shapes.py:360:61
+    |
+359 | def tracker_over(caller: CaptureCaller) -> LinearMcpTracker:
+360 |     return LinearMcpTracker(marker_prefixes=MARKER_PREFIXES, 
+    |                                                             ^
+361 |         caller=caller,
+362 |         queue_state_labels={
+    |
+help: Remove trailing whitespace
+
+W293 [*] Blank line contains whitespace
+   --> tests/tracker/test_linear_wire_shapes.py:369:1
+    |
+367 |         team_identifiers={"board": TEAM_NAME},
+368 |         retry=RetryPolicy(attempts=(0) + 1, initial_delay=0.0),
+369 |         
+    | ^^^^^^^^
+370 |         ledger=SelfWriteLedger(),
+371 |     )
+    |
+help: Remove whitespace from blank line
+
+I001 [*] Import block is un-sorted or un-formatted
+ --> tests/tracker/test_tracker_boot.py:1:1
+  |
+1 | / from kodezart.core.backoff import RetryPolicy
+2 | | from tests.tracker.marker_config import MARKER_PREFIXES
+  | |_______________________________________________________^
+3 |   """Boot validation: one bad mapping aborts startup naming exactly that entry."""
+  |
+help: Organize imports
+
+E402 Module level import not at top of file
+ --> tests/tracker/test_tracker_boot.py:5:1
+  |
+3 | """Boot validation: one bad mapping aborts startup naming exactly that entry."""
+4 |
+5 | from collections.abc import Mapping, Sequence
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+6 | from http import HTTPStatus
+7 | from pathlib import Path
+  |
+
+E402 Module level import not at top of file
+ --> tests/tracker/test_tracker_boot.py:6:1
+  |
+5 | from collections.abc import Mapping, Sequence
+6 | from http import HTTPStatus
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+7 | from pathlib import Path
+8 | from typing import ClassVar
+  |
+
+E402 Module level import not at top of file
+ --> tests/tracker/test_tracker_boot.py:7:1
+  |
+5 | from collections.abc import Mapping, Sequence
+6 | from http import HTTPStatus
+7 | from pathlib import Path
+  | ^^^^^^^^^^^^^^^^^^^^^^^^
+8 | from typing import ClassVar
+  |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_tracker_boot.py:8:1
+   |
+ 6 | from http import HTTPStatus
+ 7 | from pathlib import Path
+ 8 | from typing import ClassVar
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ 9 |
+10 | import httpx
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_tracker_boot.py:10:1
+   |
+ 8 | from typing import ClassVar
+ 9 |
+10 | import httpx
+   | ^^^^^^^^^^^^
+11 | import pytest
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_tracker_boot.py:11:1
+   |
+10 | import httpx
+11 | import pytest
+   | ^^^^^^^^^^^^^
+12 |
+13 | from kodezart.adapters.http_mcp_tool_caller import HttpMcpToolCaller
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_tracker_boot.py:13:1
+   |
+11 | import pytest
+12 |
+13 | from kodezart.adapters.http_mcp_tool_caller import HttpMcpToolCaller
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+14 | from kodezart.adapters.linear_mcp_tracker import (
+15 |     ACCEPTED_CREDENTIAL_SHAPE,
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_tracker_boot.py:14:1
+   |
+13 |   from kodezart.adapters.http_mcp_tool_caller import HttpMcpToolCaller
+14 | / from kodezart.adapters.linear_mcp_tracker import (
+15 | |     ACCEPTED_CREDENTIAL_SHAPE,
+16 | |     LinearMcpTracker,
+17 | | )
+   | |_^
+18 |   from kodezart.adapters.toml_operation_config import load_operation_config
+19 |   from kodezart.composition.tracker import boot_tracker, refuse_foreign_credential
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_tracker_boot.py:18:1
+   |
+16 |     LinearMcpTracker,
+17 | )
+18 | from kodezart.adapters.toml_operation_config import load_operation_config
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+19 | from kodezart.composition.tracker import boot_tracker, refuse_foreign_credential
+20 | from kodezart.core.config import AppConfig
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_tracker_boot.py:19:1
+   |
+17 | )
+18 | from kodezart.adapters.toml_operation_config import load_operation_config
+19 | from kodezart.composition.tracker import boot_tracker, refuse_foreign_credential
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+20 | from kodezart.core.config import AppConfig
+21 | from kodezart.core.errors import (
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_tracker_boot.py:20:1
+   |
+18 | from kodezart.adapters.toml_operation_config import load_operation_config
+19 | from kodezart.composition.tracker import boot_tracker, refuse_foreign_credential
+20 | from kodezart.core.config import AppConfig
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+21 | from kodezart.core.errors import (
+22 |     McpCredentialRefusedError,
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_tracker_boot.py:21:1
+   |
+19 |   from kodezart.composition.tracker import boot_tracker, refuse_foreign_credential
+20 |   from kodezart.core.config import AppConfig
+21 | / from kodezart.core.errors import (
+22 | |     McpCredentialRefusedError,
+23 | |     TrackerBootValidationError,
+24 | |     TrackerCredentialShapeError,
+25 | |     TrackerEnsureConflictError,
+26 | | )
+   | |_^
+27 |   from kodezart.core.logging import get_logger
+28 |   from kodezart.core.protocols import (
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_tracker_boot.py:27:1
+   |
+25 |     TrackerEnsureConflictError,
+26 | )
+27 | from kodezart.core.logging import get_logger
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+28 | from kodezart.core.protocols import (
+29 |     ManagedMcpToolCaller,
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_tracker_boot.py:28:1
+   |
+26 |   )
+27 |   from kodezart.core.logging import get_logger
+28 | / from kodezart.core.protocols import (
+29 | |     ManagedMcpToolCaller,
+30 | |     McpToolResult,
+31 | |     TrackerPort,
+32 | | )
+   | |_^
+33 |   from kodezart.services.tracker_boot import (
+34 |       OWNED_REF_BUILDERS,
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_tracker_boot.py:33:1
+   |
+31 |       TrackerPort,
+32 |   )
+33 | / from kodezart.services.tracker_boot import (
+34 | |     OWNED_REF_BUILDERS,
+35 | |     configured_mappings,
+36 | |     owned_mappings,
+37 | |     reconcile_tracker_mappings,
+38 | |     validate_tracker_mappings,
+39 | | )
+   | |_^
+40 |   from kodezart.types.domain.dispatch import SelfWriteLedger
+41 |   from kodezart.types.domain.operation import (
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_tracker_boot.py:40:1
+   |
+38 |     validate_tracker_mappings,
+39 | )
+40 | from kodezart.types.domain.dispatch import SelfWriteLedger
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+41 | from kodezart.types.domain.operation import (
+42 |     CHECKPOINT_DOCUMENT_KEY,
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_tracker_boot.py:41:1
+   |
+39 |   )
+40 |   from kodezart.types.domain.dispatch import SelfWriteLedger
+41 | / from kodezart.types.domain.operation import (
+42 | |     CHECKPOINT_DOCUMENT_KEY,
+43 | |     FIELD_OWNERSHIP,
+44 | |     CheckStep,
+45 | |     ConfigOwnership,
+46 | |     DocumentEntry,
+47 | |     DocumentSystem,
+48 | |     Initiative,
+49 | |     LifecycleStage,
+50 | |     OperationConfig,
+51 | |     Principal,
+52 | |     PrincipalRole,
+53 | |     RecordDestination,
+54 | |     RepoEntry,
+55 | |     TeamEntry,
+56 | | )
+   | |_^
+57 |   from kodezart.types.domain.tracker import (
+58 |       INSTATABLE_MAPPING_KINDS,
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_tracker_boot.py:57:1
+   |
+55 |       TeamEntry,
+56 |   )
+57 | / from kodezart.types.domain.tracker import (
+58 | |     INSTATABLE_MAPPING_KINDS,
+59 | |     MappingKind,
+60 | |     MappingRef,
+61 | |     TrackerBackend,
+62 | | )
+   | |_^
+63 |   from tests.adapters.test_http_mcp_tool_caller import client_over
+64 |   from tests.fakes import (
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_tracker_boot.py:63:1
+   |
+61 |     TrackerBackend,
+62 | )
+63 | from tests.adapters.test_http_mcp_tool_caller import client_over
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+64 | from tests.fakes import (
+65 |     FakeLinearMcpServer,
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_tracker_boot.py:64:1
+   |
+62 |   )
+63 |   from tests.adapters.test_http_mcp_tool_caller import client_over
+64 | / from tests.fakes import (
+65 | |     FakeLinearMcpServer,
+66 | |     FakeMcpDocument,
+67 | |     FakeTrackerPort,
+68 | |     ManagedFakeLinearMcpServer,
+69 | | )
+   | |_^
+70 |   from tests.tracker.conftest import (
+71 |       APPROVER,
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_tracker_boot.py:70:1
+   |
+68 |       ManagedFakeLinearMcpServer,
+69 |   )
+70 | / from tests.tracker.conftest import (
+71 | |     APPROVER,
+72 | |     BYSTANDER,
+73 | |     QUEUE_STATE_LABELS,
+74 | |     STATE_TYPES,
+75 | |     TEAM_IDENTIFIERS,
+76 | |     WORKFLOW_STATE_NAMES,
+77 | |     fixture_server,
+78 | |     linear_over_fake_mcp,
+79 | | )
+   | |_^
+80 |
+81 |   EXAMPLE_CONFIG = Path(__file__).resolve().parents[2] / "docs" / "operation.example.toml"
+   |
+
+W291 [*] Trailing whitespace
+   --> tests/tracker/test_tracker_boot.py:571:65
+    |
+570 |     def _tracker(self, server: FakeLinearMcpServer) -> TrackerPort:
+571 |         return LinearMcpTracker(marker_prefixes=MARKER_PREFIXES, 
+    |                                                                 ^
+572 |             caller=server,
+573 |             queue_state_labels=QUEUE_STATE_LABELS,
+    |
+help: Remove trailing whitespace
+
+W293 [*] Blank line contains whitespace
+   --> tests/tracker/test_tracker_boot.py:577:1
+    |
+575 |             team_identifiers=dict(self.TWO_TEAMS),
+576 |             retry=RetryPolicy(attempts=(0) + 1, initial_delay=1.0),
+577 |             
+    | ^^^^^^^^^^^^
+578 |             ledger=SelfWriteLedger(),
+579 |         )
+    |
+help: Remove whitespace from blank line
+
+W291 [*] Trailing whitespace
+   --> tests/tracker/test_tracker_boot.py:696:65
+    |
+695 |     def _tracker(self, server: FakeLinearMcpServer) -> TrackerPort:
+696 |         return LinearMcpTracker(marker_prefixes=MARKER_PREFIXES, 
+    |                                                                 ^
+697 |             caller=server,
+698 |             queue_state_labels=QUEUE_STATE_LABELS,
+    |
+help: Remove trailing whitespace
+
+W293 [*] Blank line contains whitespace
+   --> tests/tracker/test_tracker_boot.py:702:1
+    |
+700 |             team_identifiers=dict(self.DECLARED_TEAMS),
+701 |             retry=RetryPolicy(attempts=(0) + 1, initial_delay=1.0),
+702 |             
+    | ^^^^^^^^^^^^
+703 |             ledger=SelfWriteLedger(),
+704 |         )
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> tests/tracker/test_tracker_boot.py:897:1
+    |
+895 |         config = AppConfig(
+896 |             tracker={'token': OAUTH_TOKEN, 'server_url': "https://tracker.invalid/mcp"},
+897 |             
+    | ^^^^^^^^^^^^
+898 |         )
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+    --> tests/tracker/test_tracker_boot.py:1036:1
+     |
+1034 |         config = AppConfig(
+1035 |             tracker={'token': LONG_LIVED_KEY, 'server_url': "https://tracker.invalid/mcp"},
+1036 |             
+     | ^^^^^^^^^^^^
+1037 |         )
+     |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+    --> tests/tracker/test_tracker_boot.py:1071:1
+     |
+1069 |         config = AppConfig(
+1070 |             tracker={'token': LONG_LIVED_KEY, 'server_url': "https://tracker.invalid/mcp"},
+1071 |             
+     | ^^^^^^^^^^^^
+1072 |         )
+     |
+help: Remove whitespace from blank line
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> tests/tracker/test_tracker_conformance.py:12:1
+   |
+10 |   """
+11 |
+12 | / from kodezart.types.domain.scope import ScopeKind, ScopeRef
+13 | |
+14 | | import asyncio
+15 | | from collections.abc import Callable
+16 | | from datetime import timedelta
+17 | |
+18 | | import pytest
+19 | |
+20 | | from kodezart.core.errors import TrackerEnsureConflictError
+21 | | from kodezart.core.protocols import TrackerPort
+22 | | from kodezart.domain.errors import DuplicateWorkRefError, SurfaceLeaseError
+23 | | from kodezart.types.domain.branch import BaseInput, BaseSpec, WorkRef, WorkRefRole
+24 | | from kodezart.types.domain.dispatch import PassSignal
+25 | | from kodezart.types.domain.operation import LifecycleStage, QueueState
+26 | | from kodezart.types.domain.surface import SurfaceKind, SurfaceLease, WritableSurface
+27 | | from kodezart.types.domain.tracker import (
+28 | |     INSTATABLE_MAPPING_KINDS,
+29 | |     ClaimStatus,
+30 | |     EnsureAction,
+31 | |     IssuePriority,
+32 | |     IssueQuery,
+33 | |     IssueRelationKind,
+34 | |     MappingKind,
+35 | |     MappingRef,
+36 | |     ReviewQuery,
+37 | |     WorkflowStateKind,
+38 | |     is_open,
+39 | | )
+40 | | from tests.fakes import FakeLinearMcpServer, FakeMcpComment
+41 | | from tests.tracker.conftest import (
+42 | |     APPROVED_ISSUE,
+43 | |     APPROVER,
+44 | |     ASSET_ISSUE,
+45 | |     BYSTANDER,
+46 | |     CLAIMED_ISSUE,
+47 | |     DOCUMENT_CONTENT,
+48 | |     DOCUMENT_KEY,
+49 | |     FIXTURE_NOW,
+50 | |     FIXTURE_REPO_URL,
+51 | |     FIXTURE_REVIEW,
+52 | |     FOREIGN_ISSUE,
+53 | |     FOREIGN_REVIEW,
+54 | |     SCOPE_DIAGNOSIS,
+55 | |     TEAM_IDENTIFIERS,
+56 | |     FixtureClock,
+57 | | )
+   | |_^
+58 |
+59 |   LEASE_SECONDS = 600.0
+   |
+help: Organize imports
+
+Found 83 errors.
+[*] 19 fixable with the `--fix` option.

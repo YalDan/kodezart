@@ -1,0 +1,21 @@
+[
+  {
+    "path": "tests/tracker/test_comment_expected_independent.py",
+    "explicit_none_lines": [
+      53
+    ]
+  },
+  {
+    "path": "tests/adapters/test_tracker_self_writes.py",
+    "explicit_none_lines": [
+      64,
+      173
+    ]
+  },
+  {
+    "path": "tests/chains/test_write_back_tracker_boundary.py",
+    "explicit_none_lines": [
+      44
+    ]
+  }
+]

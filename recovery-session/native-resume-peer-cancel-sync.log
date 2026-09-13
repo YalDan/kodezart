@@ -1,0 +1,4 @@
+Using CPython 3.12.13
+Creating virtual environment at: .venv
+Resolved 180 packages in 17ms
+error: Extra `dev` is not defined in the project's `optional-dependencies` table

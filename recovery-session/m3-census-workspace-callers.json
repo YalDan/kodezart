@@ -1,0 +1,10 @@
+[
+  {
+    "path": "tests/chains/test_organize_ownership.py",
+    "obsolete_provider_args_removed": 2
+  },
+  {
+    "path": "tests/chains/test_m4_local_sdk_independent.py",
+    "obsolete_provider_args_removed": 2
+  }
+]

@@ -1,0 +1,3 @@
+src/kodezart/services/tracker_artifacts.py:98: error: Name "keys" already defined on line 43  [no-redef]
+src/kodezart/services/tracker_artifacts.py:99: error: Name "rows" already defined on line 45  [no-redef]
+Found 2 errors in 1 file (checked 311 source files)

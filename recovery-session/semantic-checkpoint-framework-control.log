@@ -1,0 +1,134 @@
+FF
+=================================== FAILURES ===================================
+________ test_nested_actual_amendment_graph_inherits_resume_flag[True] _________
+
+resume = True
+
+    @pytest.mark.parametrize("resume", [True, False])
+    async def test_nested_actual_amendment_graph_inherits_resume_flag(resume):
+        verdict = record()
+        calls = []
+        failure = RuntimeError("interrupted whole writeback node")
+        class Actions:
+            async def require_current(self):
+                calls.append("read")
+            async def judge_claim(self, claim):
+                assert claim == verdict.claim
+                calls.append("judge")
+                return verdict.judgment
+            async def apply_judgment(self, claim, judgment):
+                assert claim == verdict.claim and judgment == verdict.judgment
+                calls.append("apply")
+                if calls.count("apply") == 1:
+                    raise failure
+                return verdict
+        async def run(state):
+            calls.append("parent")
+            child = NativeAmendmentGraph(actions=Actions())
+            result = await child.run(output=NativeWriterOutput(claims=(verdict.claim,)))
+            return {"report": result}
+        graph = StateGraph(dict)
+        graph.add_node("run", run)
+        graph.add_edge(START, "run")
+        graph.add_edge("run", END)
+        saver = InMemorySaver()
+        first = graph.compile(checkpointer=saver)
+        config = {"configurable": {"thread_id": "framework-control"}}
+        with pytest.raises(RuntimeError) as caught:
+            await first.ainvoke({}, config)
+        assert caught.value is failure
+        child_rows = [row for row in saver.list(config) if row.config["configurable"]["checkpoint_ns"]]
+        assert child_rows
+        child = child_rows[0]
+        assert len(child.checkpoint["channel_values"]["judgments"]) == 1
+>       assert child.checkpoint["channel_values"]["verdicts"] == ()
+E       assert [] == ()
+E         
+E         Use -v to get more diff
+
+tests/chains/test_amendment_framework_resume_evidence.py:48: AssertionError
+------------------------------ Captured log call -------------------------------
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.amendment.AmendmentGround from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.amendment', 'AmendmentGround')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.amendment.NativeWriterOutput from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.amendment', 'NativeWriterOutput')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.amendment.AmendmentGround from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.amendment', 'AmendmentGround')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.criteria.CriterionVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.criteria', 'CriterionVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.criteria.RepairKind from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.criteria', 'RepairKind')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.amendment.AmendmentJudgment from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.amendment', 'AmendmentJudgment')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.amendment.AmendmentGround from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.amendment', 'AmendmentGround')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.amendment.NativeWriterOutput from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.amendment', 'NativeWriterOutput')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.amendment.AmendmentGround from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.amendment', 'AmendmentGround')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.criteria.CriterionVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.criteria', 'CriterionVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.criteria.RepairKind from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.criteria', 'RepairKind')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.amendment.AmendmentJudgment from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.amendment', 'AmendmentJudgment')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.amendment.AmendmentGround from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.amendment', 'AmendmentGround')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.amendment.NativeWriterOutput from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.amendment', 'NativeWriterOutput')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.amendment.AmendmentGround from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.amendment', 'AmendmentGround')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.amendment.NativeWriterOutput from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.amendment', 'NativeWriterOutput')]
+________ test_nested_actual_amendment_graph_inherits_resume_flag[False] ________
+
+resume = False
+
+    @pytest.mark.parametrize("resume", [True, False])
+    async def test_nested_actual_amendment_graph_inherits_resume_flag(resume):
+        verdict = record()
+        calls = []
+        failure = RuntimeError("interrupted whole writeback node")
+        class Actions:
+            async def require_current(self):
+                calls.append("read")
+            async def judge_claim(self, claim):
+                assert claim == verdict.claim
+                calls.append("judge")
+                return verdict.judgment
+            async def apply_judgment(self, claim, judgment):
+                assert claim == verdict.claim and judgment == verdict.judgment
+                calls.append("apply")
+                if calls.count("apply") == 1:
+                    raise failure
+                return verdict
+        async def run(state):
+            calls.append("parent")
+            child = NativeAmendmentGraph(actions=Actions())
+            result = await child.run(output=NativeWriterOutput(claims=(verdict.claim,)))
+            return {"report": result}
+        graph = StateGraph(dict)
+        graph.add_node("run", run)
+        graph.add_edge(START, "run")
+        graph.add_edge("run", END)
+        saver = InMemorySaver()
+        first = graph.compile(checkpointer=saver)
+        config = {"configurable": {"thread_id": "framework-control"}}
+        with pytest.raises(RuntimeError) as caught:
+            await first.ainvoke({}, config)
+        assert caught.value is failure
+        child_rows = [row for row in saver.list(config) if row.config["configurable"]["checkpoint_ns"]]
+        assert child_rows
+        child = child_rows[0]
+        assert len(child.checkpoint["channel_values"]["judgments"]) == 1
+>       assert child.checkpoint["channel_values"]["verdicts"] == ()
+E       assert [] == ()
+E         
+E         Use -v to get more diff
+
+tests/chains/test_amendment_framework_resume_evidence.py:48: AssertionError
+------------------------------ Captured log call -------------------------------
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.amendment.AmendmentGround from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.amendment', 'AmendmentGround')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.amendment.NativeWriterOutput from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.amendment', 'NativeWriterOutput')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.amendment.AmendmentGround from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.amendment', 'AmendmentGround')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.criteria.CriterionVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.criteria', 'CriterionVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.criteria.RepairKind from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.criteria', 'RepairKind')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.amendment.AmendmentJudgment from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.amendment', 'AmendmentJudgment')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.amendment.AmendmentGround from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.amendment', 'AmendmentGround')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.amendment.NativeWriterOutput from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.amendment', 'NativeWriterOutput')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.amendment.AmendmentGround from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.amendment', 'AmendmentGround')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.criteria.CriterionVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.criteria', 'CriterionVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.criteria.RepairKind from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.criteria', 'RepairKind')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.amendment.AmendmentJudgment from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.amendment', 'AmendmentJudgment')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.amendment.AmendmentGround from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.amendment', 'AmendmentGround')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.amendment.NativeWriterOutput from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.amendment', 'NativeWriterOutput')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.amendment.AmendmentGround from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.amendment', 'AmendmentGround')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.amendment.NativeWriterOutput from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.amendment', 'NativeWriterOutput')]
+=========================== short test summary info ============================
+FAILED tests/chains/test_amendment_framework_resume_evidence.py::test_nested_actual_amendment_graph_inherits_resume_flag[True]
+FAILED tests/chains/test_amendment_framework_resume_evidence.py::test_nested_actual_amendment_graph_inherits_resume_flag[False]
+2 failed in 0.70s

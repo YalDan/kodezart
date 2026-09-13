@@ -1,0 +1,16 @@
+
+==================================== ERRORS ====================================
+________ ERROR collecting tests/integration/test_audit_configuration.py ________
+ImportError while importing test module '/private/tmp/kodezart-v03-recovery-audit-runtime/tests/integration/test_audit_configuration.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/integration/test_audit_configuration.py:7: in <module>
+    from kodezart.domain.errors import OperationMemberAbsentError
+E   ImportError: cannot import name 'OperationMemberAbsentError' from 'kodezart.domain.errors' (/private/tmp/kodezart-v03-recovery-audit-runtime/src/kodezart/domain/errors.py)
+=========================== short test summary info ============================
+ERROR tests/integration/test_audit_configuration.py
+!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+1 error in 2.20s

@@ -1,0 +1,56 @@
+{
+  "cwd": "/private/tmp/kodezart-v03-recovery",
+  "tested_sha": "55a87a5009e1816d1d87c130a7f46a2a83a9f37e",
+  "evidence_dir": "/private/tmp/kodezart-recovery-session",
+  "commands": [
+    {
+      "command": "PYTHONDONTWRITEBYTECODE=1 /Users/kodezart/.local/bin/uv run --no-sync python -m pytest -p no:cacheprovider -q tests/domain/test_dispatch_predicate.py tests/domain/test_topology.py tests/domain/test_topology_cycles.py tests/domain/test_subtree_closure.py tests/domain/test_run_event_table.py tests/tracker/test_scope_subtree_reach.py tests/tracker/test_empty_fire_entry.py tests/chains/test_scope_ready.py tests/chains/test_scope_gap_membership.py tests/services/test_fire_dispatcher.py tests/services/test_tracker_lifecycle.py tests/domain/test_lane_record.py tests/domain/test_base_resolution.py tests/adapters/test_judgment_scanner.py tests/adapters/test_shared_retry.py",
+      "log": "framework-authority-focused.log",
+      "exit": 0,
+      "result": "474 passed in 106.22s"
+    },
+    {
+      "command": "PYTHONDONTWRITEBYTECODE=1 /Users/kodezart/.local/bin/uv run --no-sync python -m pytest -p no:cacheprovider -q tests/test_lifespan_cleanup.py tests/tracker/test_tracker_conformance.py::TestSurfaceLeases tests/tracker/test_tracker_conformance.py::TestRunEventStream",
+      "log": "framework-authority-framework-tests.log",
+      "exit": 4,
+      "result": "No tests ran; misspelled class selector."
+    },
+    {
+      "command": "PYTHONDONTWRITEBYTECODE=1 /Users/kodezart/.local/bin/uv run --no-sync python -m pytest -p no:cacheprovider -q tests/test_lifespan_cleanup.py tests/tracker/test_tracker_conformance.py::TestSurfaceLease tests/tracker/test_tracker_conformance.py::TestRunEventStream",
+      "log": "framework-authority-framework-tests-corrected.log",
+      "exit": 0,
+      "result": "88 passed in 5.38s"
+    },
+    {
+      "command": "PYTHONDONTWRITEBYTECODE=1 /Users/kodezart/.local/bin/uv run --no-sync python -m pytest -p no:cacheprovider -q tests/domain/test_organize.py tests/tracker/test_audit_claim.py tests/domain/test_criteria_feasibility.py tests/chains/test_accept_gate.py -k 'verdict or repair or boolean'",
+      "log": "framework-authority-verdict-consumers.log",
+      "exit": 0,
+      "result": "61 passed, 238 deselected in 6.89s"
+    },
+    {
+      "command": "PYTHONDONTWRITEBYTECODE=1 /Users/kodezart/.local/bin/uv run --no-sync python -c 'import json; exec(compile(json.load(open(\"/private/tmp/kodezart-recovery-session/framework-authority-probe.json\"))[\"script\"], \"framework-authority-probe\", \"exec\"))'",
+      "log": "framework-authority-probe-corrected.log",
+      "exit": 0,
+      "result": "All assertions passed. Earlier framework-authority-probe.log stopped with AssertionError when integration HEAD advanced; corrected script uses git show pinned SHA."
+    },
+    {
+      "command": "PYTHONDONTWRITEBYTECODE=1 /Users/kodezart/.local/bin/uv run --no-sync ruff check src/kodezart/domain/dispatch.py src/kodezart/domain/issue_tree.py src/kodezart/domain/topology.py src/kodezart/types/domain/run_event.py src/kodezart/types/domain/operation.py src/kodezart/types/domain/dispatch.py src/kodezart/services/tracker_lifecycle.py src/kodezart/services/fire_dispatcher.py src/kodezart/services/scope_planning.py src/kodezart/chains/scope_walker.py src/kodezart/main.py src/kodezart/core/checkpointer.py",
+      "log": "framework-authority-ruff.log",
+      "exit": 0,
+      "result": "All checks passed"
+    },
+    {
+      "command": "PYTHONDONTWRITEBYTECODE=1 /Users/kodezart/.local/bin/uv run --no-sync ruff format --check src/kodezart/domain/dispatch.py src/kodezart/domain/issue_tree.py src/kodezart/domain/topology.py src/kodezart/types/domain/run_event.py src/kodezart/types/domain/operation.py src/kodezart/types/domain/dispatch.py src/kodezart/services/tracker_lifecycle.py src/kodezart/services/fire_dispatcher.py src/kodezart/services/scope_planning.py src/kodezart/chains/scope_walker.py src/kodezart/main.py src/kodezart/core/checkpointer.py",
+      "log": "framework-authority-format.log",
+      "exit": 0,
+      "result": "12 files already formatted"
+    },
+    {
+      "command": "PYTHONDONTWRITEBYTECODE=1 /Users/kodezart/.local/bin/uv run --no-sync mypy --no-incremental src/kodezart/domain/dispatch.py src/kodezart/domain/issue_tree.py src/kodezart/domain/topology.py src/kodezart/types/domain/run_event.py",
+      "log": "framework-authority-mypy.log",
+      "exit": 0,
+      "result": "Success: no issues in 4 source files; unused core.config override warning"
+    }
+  ],
+  "official_source": "Four official module URLs + local-source hashes + exact equality results are recorded in framework-authority-official-source.json."
+}

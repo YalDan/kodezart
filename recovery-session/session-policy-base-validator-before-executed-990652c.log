@@ -1,0 +1,74 @@
+..FF..                                                                   [100%]
+=================================== FAILURES ===================================
+___ test_base_input_is_validated_before_domain_queue_submission[empty-fire] ____
+
+route = 'fire', base = 'empty'
+
+    @pytest.mark.parametrize("route", ["fire", "workflow"])
+    @pytest.mark.parametrize("base", ["missing", "empty", "recorded"])
+    async def test_base_input_is_validated_before_domain_queue_submission(route, base):
+        queue = FakeJobQueue(events=[])
+        runner = FakeAgentRunner(events=[])
+        app = create_app()
+        app.state.config = AppConfig()
+        app.state.job_queue = queue
+        app.state.agent_service = runner
+        app.state.skills = SUPPRESS_ALL_SKILLS
+        body = {"prompt": "run", "repoPath": "/tmp/fixture"}
+        if base != "missing":
+            body["baseBranch"] = ""
+        if base == "recorded":
+            body["baseSpec"] = {"inputs": [], "baseBranch": "recorded-base"}
+            body["impliedBase"] = {"inputs": [], "baseBranch": "implied-base"}
+        async with AsyncClient(
+            transport=ASGITransport(app=app, raise_app_exceptions=False),
+            base_url="http://test",
+        ) as client:
+            response = await client.post(f"/api/v1/agent/{route}", json=body)
+        assert runner.calls == []
+        if base == "empty":
+>           assert response.status_code == 422
+E           assert 500 == 422
+E            +  where 500 = <Response [500 Internal Server Error]>.status_code
+
+../kodezart-recovery-session/test_session_policy_base_boundary.py:35: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 22:34:58 [debug    ] fire_workflow_endpoint
+_ test_base_input_is_validated_before_domain_queue_submission[empty-workflow] __
+
+route = 'workflow', base = 'empty'
+
+    @pytest.mark.parametrize("route", ["fire", "workflow"])
+    @pytest.mark.parametrize("base", ["missing", "empty", "recorded"])
+    async def test_base_input_is_validated_before_domain_queue_submission(route, base):
+        queue = FakeJobQueue(events=[])
+        runner = FakeAgentRunner(events=[])
+        app = create_app()
+        app.state.config = AppConfig()
+        app.state.job_queue = queue
+        app.state.agent_service = runner
+        app.state.skills = SUPPRESS_ALL_SKILLS
+        body = {"prompt": "run", "repoPath": "/tmp/fixture"}
+        if base != "missing":
+            body["baseBranch"] = ""
+        if base == "recorded":
+            body["baseSpec"] = {"inputs": [], "baseBranch": "recorded-base"}
+            body["impliedBase"] = {"inputs": [], "baseBranch": "implied-base"}
+        async with AsyncClient(
+            transport=ASGITransport(app=app, raise_app_exceptions=False),
+            base_url="http://test",
+        ) as client:
+            response = await client.post(f"/api/v1/agent/{route}", json=body)
+        assert runner.calls == []
+        if base == "empty":
+>           assert response.status_code == 422
+E           assert 500 == 422
+E            +  where 500 = <Response [500 Internal Server Error]>.status_code
+
+../kodezart-recovery-session/test_session_policy_base_boundary.py:35: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 22:34:58 [debug    ] stream_workflow_endpoint
+=========================== short test summary info ============================
+FAILED ::test_base_input_is_validated_before_domain_queue_submission[empty-fire]
+FAILED ::test_base_input_is_validated_before_domain_queue_submission[empty-workflow]
+2 failed, 4 passed in 5.90s

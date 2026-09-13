@@ -1,0 +1,35 @@
+
+==================================== ERRORS ====================================
+_________ ERROR collecting tests/tracker/test_ownership_arbitration.py _________
+ImportError while importing test module '/private/tmp/kodezart-v03-m1-lease-extraction/tests/tracker/test_ownership_arbitration.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/tracker/test_ownership_arbitration.py:27: in <module>
+    from tests.tracker.test_linear_mcp_tracker import tracker_over
+tests/tracker/test_linear_mcp_tracker.py:20: in <module>
+    from kodezart.adapters.linear_mcp_tracker import _CLAIM_MARKER, LinearMcpTracker
+E   ImportError: cannot import name '_CLAIM_MARKER' from 'kodezart.adapters.linear_mcp_tracker' (/private/tmp/kodezart-v03-m1-lease-extraction/src/kodezart/adapters/linear_mcp_tracker.py)
+__________ ERROR collecting tests/tracker/test_tracker_conformance.py __________
+tests/tracker/test_tracker_conformance.py:2042: in <module>
+    ref=CLAIMED_REF,
+        ^^^^^^^^^^^
+E   NameError: name 'CLAIMED_REF' is not defined
+__________ ERROR collecting tests/services/test_run_surface_lease.py ___________
+ImportError while importing test module '/private/tmp/kodezart-v03-m1-lease-extraction/tests/services/test_run_surface_lease.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/services/test_run_surface_lease.py:27: in <module>
+    from kodezart.types.domain.session import PermissionMode
+E   ImportError: cannot import name 'PermissionMode' from 'kodezart.types.domain.session' (/private/tmp/kodezart-v03-m1-lease-extraction/src/kodezart/types/domain/session.py)
+=========================== short test summary info ============================
+ERROR tests/tracker/test_ownership_arbitration.py
+ERROR tests/tracker/test_tracker_conformance.py - NameError: name 'CLAIMED_RE...
+ERROR tests/services/test_run_surface_lease.py
+!!!!!!!!!!!!!!!!!!! Interrupted: 3 errors during collection !!!!!!!!!!!!!!!!!!!!
+3 errors in 3.16s

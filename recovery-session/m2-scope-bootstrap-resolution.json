@@ -1,0 +1,112 @@
+{
+  "parents": [
+    "fadf6efe29c7addcc608b22e8345cd9008ce4bab",
+    "268be4057dbcd4d4edb79b35d7e2b60a30f2f3c8"
+  ],
+  "retained_m2_conflict_blocks": [
+    "docs/cutover_mapping.md",
+    "src/kodezart/adapters/linear_mcp_tracker.py",
+    "src/kodezart/core/prompt_namespaces.py",
+    "src/kodezart/types/domain/operation.py",
+    "tests/fakes.py",
+    "tests/prompts/test_operation_config.py",
+    "tests/tracker/conftest.py",
+    "tests/tracker/test_linear_mcp_tracker.py"
+  ],
+  "m1_test_owner_exact": [
+    "tests/tracker/test_milestone_approval.py",
+    "tests/tracker/test_native_approval_aliases.py"
+  ],
+  "mechanical_duplicate_parameters_removed": [
+    "FakeTrackerPort.scope_label_members",
+    "linear_over_fake_mcp.scope_labels"
+  ],
+  "reason": "Preserve M2 specific mandates/proposals/writes and template consumer census; retain M1 sole approval-only oracle and pure milestone resolver; automerged namespace/bootstrap source preserved.",
+  "ast_identical_duplicate_removal": [
+    [
+      "src/kodezart/adapters/linear_mcp_tracker.py",
+      "LinearMcpTracker",
+      "read_scope_labels",
+      "AST-identical earlier duplicate removed; shared M1 position retained"
+    ],
+    [
+      "src/kodezart/adapters/linear_mcp_tracker.py",
+      "LinearMcpTracker",
+      "execution_approved",
+      "AST-identical earlier duplicate removed; shared M1 position retained"
+    ],
+    [
+      "src/kodezart/adapters/linear_mcp_tracker.py",
+      "LinearMcpTracker",
+      "_read_execution_approval",
+      "AST-identical earlier duplicate removed; shared M1 position retained"
+    ],
+    [
+      "src/kodezart/adapters/linear_mcp_tracker.py",
+      "LinearMcpTracker",
+      "project_milestones",
+      "AST-identical earlier duplicate removed; shared M1 position retained"
+    ],
+    [
+      "src/kodezart/adapters/linear_mcp_tracker.py",
+      "LinearMcpTracker",
+      "_scope_label_members",
+      "AST-identical earlier duplicate removed; shared M1 position retained"
+    ],
+    [
+      "src/kodezart/adapters/linear_mcp_tracker.py",
+      "LinearMcpTracker",
+      "_read_scope_issue",
+      "AST-identical earlier duplicate removed; shared M1 position retained"
+    ],
+    [
+      "src/kodezart/adapters/linear_scope_reader.py",
+      "LinearScopeReader",
+      "project_milestones",
+      "AST-identical earlier duplicate removed; shared M1 position retained"
+    ],
+    [
+      "src/kodezart/core/protocols.py",
+      "TrackerPort",
+      "read_scope_labels",
+      "AST-identical earlier duplicate removed; shared M1 position retained"
+    ],
+    [
+      "src/kodezart/core/protocols.py",
+      "TrackerPort",
+      "execution_approved",
+      "AST-identical earlier duplicate removed; shared M1 position retained"
+    ],
+    [
+      "src/kodezart/core/protocols.py",
+      "TrackerPort",
+      "project_milestones",
+      "AST-identical earlier duplicate removed; shared M1 position retained"
+    ],
+    [
+      "tests/fakes.py",
+      "FakeTrackerPort",
+      "project_milestones",
+      "AST-identical earlier duplicate removed; shared M1 position retained"
+    ],
+    [
+      "tests/fakes.py",
+      "FakeTrackerPort",
+      "execution_approved",
+      "AST-identical earlier duplicate removed; shared M1 position retained"
+    ],
+    [
+      "tests/fakes.py",
+      "FakeTrackerPort",
+      "_read_execution_approval",
+      "AST-identical earlier duplicate removed; shared M1 position retained"
+    ],
+    [
+      "tests/fakes.py",
+      "FakeTrackerPort",
+      "read_scope_labels",
+      "AST-identical earlier duplicate removed; shared M1 position retained"
+    ]
+  ],
+  "duplicate_keyword_removed": "native_read_fixtures.scope_labels"
+}

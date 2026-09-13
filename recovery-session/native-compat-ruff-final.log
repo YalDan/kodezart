@@ -1,0 +1,13 @@
+E501 Line too long (92 > 88)
+   --> src/kodezart/types/domain/criteria.py:377:89
+    |
+375 |         Field(
+376 |             min_length=2,
+377 |             description="The minimal subset of criterion ids that cannot all hold at once.",
+    |                                                                                         ^^^^
+378 |         )
+379 |     )
+    |
+
+Found 1 error.
+4 files already formatted

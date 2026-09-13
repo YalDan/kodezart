@@ -1,0 +1,19 @@
+{
+  "baseline": "4dd7b3eb4646bc1490c5bf0b13e079991a63c575",
+  "correction": "a198da394279ebca529928cddfa6ff95de572e85",
+  "production_diff_empty": true,
+  "corrective_production_diff_empty": true,
+  "probes": {
+    "tests/chains/test_native_completed_writer_gap_peer.py": "ef1b1219282ac02c98c42d822951b207d5bcfa6d7008700fc48a1ddd6a84e45a",
+    "tests/chains/test_native_prepare_cancel_peer.py": "7659204809b9503ced51ec91b96f36d957fae8dc54764ced7d1e3025ab3b4f32",
+    "tests/chains/test_native_prepare_cleanup_peer.py": "5cb3958aa9eb20fb24c9f4a059b7663387bf0ae54c832b20b3c4b859b8cc34c3",
+    "tests/chains/test_native_resume_peer.py": "8cb608f198bf9007612f5a4b38fb6657d47cb71e40ca5fd9eb593fcc9f9ad5c7",
+    "tests/chains/test_native_unchanged_replay_peer.py": "8259f7df04d3c0a68bbfb5055bb2ba85e3e7eac5eaa07662ed5f60186c703faa"
+  },
+  "synchronized_receipt": {
+    "file": "tests/services/test_native_receipt_synchronized_peer.py",
+    "sha256": "bcf1e688c20f1a2342623171bdb07a92207c6a3b77db61d672e077b3a6ba8f80",
+    "original_assertion_asts_equal": true,
+    "original_sha256": "506698438a72e8c5a1f0a67f415a7100481a728a5755939fd68e51674b0a134e"
+  }
+}

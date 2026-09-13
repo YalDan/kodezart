@@ -1,0 +1,101 @@
+
+==================================== ERRORS ====================================
+____________ ERROR collecting tests/domain/test_ruling_identity.py _____________
+ImportError while importing test module '/private/tmp/kodezart-v03-m4-shared-semantic-extraction/tests/domain/test_ruling_identity.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/domain/test_ruling_identity.py:8: in <module>
+    from tests.identity_guards import construction_sites as _construction_sites
+E   ModuleNotFoundError: No module named 'tests.identity_guards'
+_________ ERROR collecting tests/domain/test_ruling_protected_tests.py _________
+ImportError while importing test module '/private/tmp/kodezart-v03-m4-shared-semantic-extraction/tests/domain/test_ruling_protected_tests.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/domain/test_ruling_protected_tests.py:13: in <module>
+    from tests.domain.test_rulings import LANE, PREFIXES, ruling_data
+tests/domain/test_rulings.py:10: in <module>
+    from kodezart.types.domain.agent import Ruling, RulingAuthor, RulingClass, RulingOutput
+E   ImportError: cannot import name 'RulingOutput' from 'kodezart.types.domain.agent' (/private/tmp/kodezart-v03-m4-shared-semantic-extraction/src/kodezart/types/domain/agent.py)
+________________ ERROR collecting tests/domain/test_rulings.py _________________
+ImportError while importing test module '/private/tmp/kodezart-v03-m4-shared-semantic-extraction/tests/domain/test_rulings.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/domain/test_rulings.py:10: in <module>
+    from kodezart.types.domain.agent import Ruling, RulingAuthor, RulingClass, RulingOutput
+E   ImportError: cannot import name 'RulingOutput' from 'kodezart.types.domain.agent' (/private/tmp/kodezart-v03-m4-shared-semantic-extraction/src/kodezart/types/domain/agent.py)
+__________ ERROR collecting tests/services/test_git_source_lookup.py ___________
+ImportError while importing test module '/private/tmp/kodezart-v03-m4-shared-semantic-extraction/tests/services/test_git_source_lookup.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/services/test_git_source_lookup.py:7: in <module>
+    from tests.services.test_assertion_drift import PATH, commit, git, source
+E   ModuleNotFoundError: No module named 'tests.services.test_assertion_drift'
+_________ ERROR collecting tests/tracker/test_issue_ruling_records.py __________
+ImportError while importing test module '/private/tmp/kodezart-v03-m4-shared-semantic-extraction/tests/tracker/test_issue_ruling_records.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/tracker/test_issue_ruling_records.py:10: in <module>
+    from tests.domain.test_rulings import PREFIXES, ruling_data
+tests/domain/test_rulings.py:10: in <module>
+    from kodezart.types.domain.agent import Ruling, RulingAuthor, RulingClass, RulingOutput
+E   ImportError: cannot import name 'RulingOutput' from 'kodezart.types.domain.agent' (/private/tmp/kodezart-v03-m4-shared-semantic-extraction/src/kodezart/types/domain/agent.py)
+________ ERROR collecting tests/tracker/test_recorded_ruling_growth.py _________
+ImportError while importing test module '/private/tmp/kodezart-v03-m4-shared-semantic-extraction/tests/tracker/test_recorded_ruling_growth.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/tracker/test_recorded_ruling_growth.py:8: in <module>
+    from kodezart.domain.errors import RulingRecordReadError, RunShapeReadError
+E   ImportError: cannot import name 'RunShapeReadError' from 'kodezart.domain.errors' (/private/tmp/kodezart-v03-m4-shared-semantic-extraction/src/kodezart/domain/errors.py)
+_______ ERROR collecting tests/tracker/test_ruling_reader_independent.py _______
+ImportError while importing test module '/private/tmp/kodezart-v03-m4-shared-semantic-extraction/tests/tracker/test_ruling_reader_independent.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/tracker/test_ruling_reader_independent.py:11: in <module>
+    from tests.domain.test_rulings import PREFIXES, ruling_data
+tests/domain/test_rulings.py:10: in <module>
+    from kodezart.types.domain.agent import Ruling, RulingAuthor, RulingClass, RulingOutput
+E   ImportError: cannot import name 'RulingOutput' from 'kodezart.types.domain.agent' (/private/tmp/kodezart-v03-m4-shared-semantic-extraction/src/kodezart/types/domain/agent.py)
+____________ ERROR collecting tests/tracker/test_ruling_records.py _____________
+ImportError while importing test module '/private/tmp/kodezart-v03-m4-shared-semantic-extraction/tests/tracker/test_ruling_records.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/tracker/test_ruling_records.py:15: in <module>
+    from tests.domain.test_rulings import LANE, PREFIXES, ruling_data
+tests/domain/test_rulings.py:10: in <module>
+    from kodezart.types.domain.agent import Ruling, RulingAuthor, RulingClass, RulingOutput
+E   ImportError: cannot import name 'RulingOutput' from 'kodezart.types.domain.agent' (/private/tmp/kodezart-v03-m4-shared-semantic-extraction/src/kodezart/types/domain/agent.py)
+=========================== short test summary info ============================
+ERROR tests/domain/test_ruling_identity.py
+ERROR tests/domain/test_ruling_protected_tests.py
+ERROR tests/domain/test_rulings.py
+ERROR tests/services/test_git_source_lookup.py
+ERROR tests/tracker/test_issue_ruling_records.py
+ERROR tests/tracker/test_recorded_ruling_growth.py
+ERROR tests/tracker/test_ruling_reader_independent.py
+ERROR tests/tracker/test_ruling_records.py
+!!!!!!!!!!!!!!!!!!! Interrupted: 8 errors during collection !!!!!!!!!!!!!!!!!!!!
+8 errors in 0.91s

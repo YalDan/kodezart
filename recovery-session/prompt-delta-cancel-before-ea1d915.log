@@ -1,0 +1,34 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+______ test_prompt_cancellation_after_observation_does_not_consume_window ______
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10e8979b0>
+
+    async def test_prompt_cancellation_after_observation_does_not_consume_window(monkeypatch):
+        tracker = FakeTrackerPort(issues=[make_tracker_issue("K-1")])
+        _, gate, _ = failing_tick(tracker)
+        runner = FakeAgentRunner(events=[])
+        entered = asyncio.Event()
+    
+        async def blocked_log(*args, **kwargs):
+            entered.set()
+            await asyncio.Event().wait()
+    
+        monkeypatch.setattr(gate._log, "ainfo", blocked_log)
+        task = asyncio.create_task(run(prompts=bound_registry(), runner=runner, gate=gate))
+        await asyncio.wait_for(entered.wait(), timeout=5)
+        assert gate.mark(PassSignal.approved_changed, container=TEAM_KEYS[0]) is not None
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert runner.calls == []
+>       assert gate.mark(PassSignal.approved_changed, container=TEAM_KEYS[0]) is None
+E       AssertionError: assert datetime.datetime(2026, 1, 1, 0, 0, tzinfo=datetime.timezone.utc) is None
+E        +  where datetime.datetime(2026, 1, 1, 0, 0, tzinfo=datetime.timezone.utc) = mark(<PassSignal.approved_changed: 'approved_changed'>, container='engineering')
+E        +    where mark = <kodezart.services.pass_gate.PassGate object at 0x10e8975c0>.mark
+E        +    and   <PassSignal.approved_changed: 'approved_changed'> = PassSignal.approved_changed
+
+../kodezart-recovery-session/test_prompt_delta_cancel_independent.py:31: AssertionError
+=========================== short test summary info ============================
+FAILED ::test_prompt_cancellation_after_observation_does_not_consume_window
+1 failed in 15.32s

@@ -1,0 +1,32 @@
+{
+  "base": "241e85cca03c963ec1ddd17e29f10700d499ce14",
+  "donor": "36083f83f42c03240ebb5861fe284da2c9f04180",
+  "head": "2bc237577da7a3db3101e67c324eea0eaa6e6abd",
+  "branch": "codex/v03-m1-git-settings-extraction",
+  "fields": {
+    "git_remote": "remote",
+    "git_base_url": "base_url",
+    "clone_cache_dir": "clone_cache_dir",
+    "integration_workspace_dir": "integration_workspace_dir",
+    "git_committer_name": "committer_name",
+    "git_committer_email": "committer_email"
+  },
+  "proofs": {
+    "GitSettings_byte_identical_to_donor": true,
+    "only_six_AppConfig_fields_replaced": true,
+    "all_other_AppConfig_fields_unchanged_AST": true,
+    "settings_sources_unchanged_except_six_retired_names_AST": true,
+    "every_other_AppConfig_method_unchanged_AST": true,
+    "Git_service_only_exact_donor_clone_remote_hunk": true,
+    "Makefile_only_origin_owner_move": true,
+    "stale_current_config_attribute_reads": []
+  },
+  "patch_sha256": "b9d84a86478924cf021b5173dbcb37ac13bd2047be227868e20c8704ecb78a33",
+  "review_notes": [
+    "GitWorktreeProvider retains current M1 configured committer parameters; donor removal is later/out of scope.",
+    "Donor test_git_settings.py adapted only for M1 build_dispatch_runtime without workspace keyword plus ten added secret/prefix controls.",
+    "Donor S108 git_settings.py per-file exemption preserved by root authorization as existing default-path packaging policy.",
+    "M2 consumes config.git.remote after root serialization; future M3/M5 callers are not copied."
+  ]
+}
+changed_paths 15

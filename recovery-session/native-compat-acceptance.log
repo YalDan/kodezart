@@ -1,0 +1,126 @@
+............FFF......................................................... [ 33%]
+........................................................................ [ 66%]
+....................F................................................... [ 99%]
+.                                                                        [100%]
+=================================== FAILURES ===================================
+_ test_shared_identity_lists_preserve_nonblank_native_or_authored_keys[fire/native-key] _
+
+key = 'fire/native-key'
+
+    @pytest.mark.parametrize("key", ["fire/native-key", "KOD-815", "AC-1"])
+    def test_shared_identity_lists_preserve_nonblank_native_or_authored_keys(key):
+>       record = IterationGrade.model_validate(
+            {
+                "results": [
+                    {
+                        "criterionId": "AC-1",
+                        "criterion": "c",
+                        "passed": True,
+                        "reasoning": "r",
+                    }
+                ],
+                "missingIds": [key, "another/key"],
+                "dispatchedCount": 3,
+                "passedCount": 1,
+                "verdict": "needs_work",
+            }
+        )
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for IterationGrade
+E       verdict
+E         Input should be 'accepted', 'ship_with_flags' or 'rejected' [type=enum, input_value='needs_work', input_type=str]
+E           For further information visit https://errors.pydantic.dev/2.12/v/enum
+
+tests/domain/test_criterion_identity.py:219: ValidationError
+_ test_shared_identity_lists_preserve_nonblank_native_or_authored_keys[KOD-815] _
+
+key = 'KOD-815'
+
+    @pytest.mark.parametrize("key", ["fire/native-key", "KOD-815", "AC-1"])
+    def test_shared_identity_lists_preserve_nonblank_native_or_authored_keys(key):
+>       record = IterationGrade.model_validate(
+            {
+                "results": [
+                    {
+                        "criterionId": "AC-1",
+                        "criterion": "c",
+                        "passed": True,
+                        "reasoning": "r",
+                    }
+                ],
+                "missingIds": [key, "another/key"],
+                "dispatchedCount": 3,
+                "passedCount": 1,
+                "verdict": "needs_work",
+            }
+        )
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for IterationGrade
+E       verdict
+E         Input should be 'accepted', 'ship_with_flags' or 'rejected' [type=enum, input_value='needs_work', input_type=str]
+E           For further information visit https://errors.pydantic.dev/2.12/v/enum
+
+tests/domain/test_criterion_identity.py:219: ValidationError
+__ test_shared_identity_lists_preserve_nonblank_native_or_authored_keys[AC-1] __
+
+key = 'AC-1'
+
+    @pytest.mark.parametrize("key", ["fire/native-key", "KOD-815", "AC-1"])
+    def test_shared_identity_lists_preserve_nonblank_native_or_authored_keys(key):
+>       record = IterationGrade.model_validate(
+            {
+                "results": [
+                    {
+                        "criterionId": "AC-1",
+                        "criterion": "c",
+                        "passed": True,
+                        "reasoning": "r",
+                    }
+                ],
+                "missingIds": [key, "another/key"],
+                "dispatchedCount": 3,
+                "passedCount": 1,
+                "verdict": "needs_work",
+            }
+        )
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for IterationGrade
+E       verdict
+E         Input should be 'accepted', 'ship_with_flags' or 'rejected' [type=enum, input_value='needs_work', input_type=str]
+E           For further information visit https://errors.pydantic.dev/2.12/v/enum
+
+tests/domain/test_criterion_identity.py:219: ValidationError
+_______________ test_a_dispatched_schema_carries_its_constraints _______________
+
+    def test_a_dispatched_schema_carries_its_constraints() -> None:
+        """The dispatched schema says what the response is judged by.
+    
+        ``CriteriaValidationOutput`` carries both kinds the stripper deleted: a
+        pattern on a criterion id and a length bound on its sibling. Either one
+        vanishing from the wire again fails this.
+        """
+        definitions = WIRE_SCHEMAS["CRITERIA_VALIDATION_SCHEMA"]["$defs"]
+        assert isinstance(definitions, dict)
+        contradiction = definitions["Contradiction"]
+        assert isinstance(contradiction, dict)
+        properties = contradiction["properties"]
+        assert isinstance(properties, dict)
+    
+        criterion_ids = properties["criterionIds"]
+        assert isinstance(criterion_ids, dict)
+        item = criterion_ids["items"]
+        assert isinstance(item, dict)
+>       assert item == TypeAdapter(CriterionIdItem).json_schema()
+E       AssertionError: assert {'pattern': '...pe': 'string'} == {'minLength':...pe': 'string'}
+E         
+E         Omitting 1 identical items, use -vv to show
+E         Differing items:
+E         {'pattern': '^AC-[1-9][0-9]*$'} != {'pattern': '\\S'}
+E         Right contains 1 more item:
+E         {'minLength': 1}
+E         Use -v to get more diff
+
+tests/types/test_wire_schemas.py:265: AssertionError
+=========================== short test summary info ============================
+FAILED tests/domain/test_criterion_identity.py::test_shared_identity_lists_preserve_nonblank_native_or_authored_keys[fire/native-key]
+FAILED tests/domain/test_criterion_identity.py::test_shared_identity_lists_preserve_nonblank_native_or_authored_keys[KOD-815]
+FAILED tests/domain/test_criterion_identity.py::test_shared_identity_lists_preserve_nonblank_native_or_authored_keys[AC-1]
+FAILED tests/types/test_wire_schemas.py::test_a_dispatched_schema_carries_its_constraints
+4 failed, 213 passed in 18.05s

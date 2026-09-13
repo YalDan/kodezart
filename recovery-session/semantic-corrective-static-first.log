@@ -1,0 +1,105 @@
+$ /Users/kodezart/.local/bin/uv run ruff format src/kodezart/adapters/git_change_persister.py src/kodezart/chains/fire_implementation.py src/kodezart/chains/ralph_loop.py src/kodezart/core/protocols.py src/kodezart/domain/amendment.py src/kodezart/services/agent_service.py src/kodezart/services/native_amendments.py tests/chains/test_native_amendment_runtime.py tests/chains/test_native_amendment_trajectory_independent.py tests/fakes.py tests/services/test_native_amendment_independent.py tests/services/test_native_amendments.py
+3 files reformatted, 9 files left unchanged
+$ /Users/kodezart/.local/bin/uv run ruff check src/kodezart/adapters/git_change_persister.py src/kodezart/chains/fire_implementation.py src/kodezart/chains/ralph_loop.py src/kodezart/core/protocols.py src/kodezart/domain/amendment.py src/kodezart/services/agent_service.py src/kodezart/services/native_amendments.py tests/chains/test_native_amendment_runtime.py tests/chains/test_native_amendment_trajectory_independent.py tests/fakes.py tests/services/test_native_amendment_independent.py tests/services/test_native_amendments.py
+I001 [*] Import block is un-sorted or un-formatted
+  --> src/kodezart/chains/fire_implementation.py:3:1
+   |
+ 1 |   """Persist the round artifacts and execute its implementation loop."""
+ 2 |
+ 3 | / from langchain_core.runnables import RunnableConfig
+ 4 | | from langgraph.config import get_stream_writer
+ 5 | |
+ 6 | | from kodezart.chains.criteria import current_native_criteria
+ 7 | | from kodezart.core.logging import BoundLogger, get_logger
+ 8 | | from kodezart.core.outbound_write import gated_write
+ 9 | | from kodezart.core.protocols import (
+10 | |     ArtifactPersister,
+11 | |     FireCriteriaReader,
+12 | |     OutboundContentGate,
+13 | |     PromptSetProvider,
+14 | |     QualityGate,
+15 | | )
+16 | | from kodezart.domain.amendment import NativeAmendmentRefusalError
+17 | | from kodezart.domain.accept_gate import (
+18 | |     flagged_items,
+19 | | )
+20 | | from kodezart.domain.ticket import format_fire_spec
+21 | | from kodezart.domain.workflow_state import (
+22 | |     current_fire_spec,
+23 | |     current_ticket,
+24 | |     validated_artifact,
+25 | |     validated_criteria,
+26 | | )
+27 | | from kodezart.types.domain.agent import (
+28 | |     NativeAmendmentEvent,
+29 | |     TicketDraftOutput,
+30 | |     WorkflowArtifactsEvent,
+31 | |     WorkflowIterationEvent,
+32 | | )
+33 | | from kodezart.types.domain.branch import BaseSpec
+34 | | from kodezart.types.domain.criteria import (
+35 | |     ExecutionCriterion,
+36 | |     TrackerCriterion,
+37 | |     TrackerCriterionSet,
+38 | | )
+39 | | from kodezart.types.domain.fire_spec import TrackerSpec
+40 | | from kodezart.types.domain.gating import (
+41 | |     ContentClass,
+42 | |     OutboundDestination,
+43 | |     RepoVisibility,
+44 | |     WriterShape,
+45 | | )
+46 | | from kodezart.types.domain.prompts import PromptKey
+47 | | from kodezart.types.domain.remediation import RemediationPlan
+48 | | from kodezart.types.domain.run_records import RunIdentity
+49 | | from kodezart.types.domain.session import AllowedTools, PermissionMode
+50 | | from kodezart.types.domain.workflow import (
+51 | |     ExecutionContext,
+52 | |     WorkflowState,
+53 | | )
+   | |_^
+   |
+help: Organize imports
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> src/kodezart/domain/amendment.py:3:1
+   |
+ 1 |   """Pure accounting for actual native precommit amendment reports."""
+ 2 |
+ 3 | / from collections import Counter
+ 4 | | from collections.abc import Mapping, Sequence
+ 5 | | from typing import TYPE_CHECKING
+ 6 | |
+ 7 | | from kodezart.types.domain.amendment import (
+ 8 | |     AmendmentClaim,
+ 9 | |     AmendmentJudgment,
+10 | |     AmendmentReport,
+11 | |     AmendmentSubject,
+12 | |     RepeatedUpheld,
+13 | |     UpheldReason,
+14 | | )
+15 | | from kodezart.types.domain.criteria import CriterionVerdict
+16 | | from kodezart.types.domain.operation import CheckPrerequisite
+   | |_____________________________________________________________^
+   |
+help: Organize imports
+
+RUF059 Unpacked variable `saver` is never used
+  --> tests/chains/test_native_amendment_runtime.py:86:26
+   |
+84 | ):
+85 |     executor = Executor()
+86 |     fire, spec, current, saver, _ = await make_runtime(
+   |                          ^^^^^
+87 |         repository, executor, configured=configured
+88 |     )
+   |
+help: Prefix it with an underscore or any other dummy variable pattern
+
+Found 3 errors.
+[*] 2 fixable with the `--fix` option (1 hidden fix can be enabled with the `--unsafe-fixes` option).
+Traceback (most recent call last):
+  File "<stdin>", line 11, in <module>
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/subprocess.py", line 528, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['/Users/kodezart/.local/bin/uv', 'run', 'ruff', 'check', 'src/kodezart/adapters/git_change_persister.py', 'src/kodezart/chains/fire_implementation.py', 'src/kodezart/chains/ralph_loop.py', 'src/kodezart/core/protocols.py', 'src/kodezart/domain/amendment.py', 'src/kodezart/services/agent_service.py', 'src/kodezart/services/native_amendments.py', 'tests/chains/test_native_amendment_runtime.py', 'tests/chains/test_native_amendment_trajectory_independent.py', 'tests/fakes.py', 'tests/services/test_native_amendment_independent.py', 'tests/services/test_native_amendments.py']' returned non-zero exit status 1.

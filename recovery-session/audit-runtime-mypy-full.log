@@ -1,0 +1,2 @@
+src/kodezart/types/domain/operation.py:635: error: Incompatible types in assignment (expression has type "AuditScopeBinding", variable has type "OrganizeScopeBinding")  [assignment]
+Found 1 error in 1 file (checked 321 source files)

@@ -1,0 +1,17 @@
+ERROR: found no collectors for /private/tmp/kodezart-recovery-session/test_native_receipt_timeout_diagnostic.py::test_real_commit_without_returned_receipt_retains_workspace
+
+
+==================================== ERRORS ====================================
+_ ERROR collecting kodezart-recovery-session/test_native_receipt_timeout_diagnostic.py _
+ImportError while importing test module '/private/tmp/kodezart-recovery-session/test_native_receipt_timeout_diagnostic.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../kodezart-recovery-session/test_native_receipt_timeout_diagnostic.py:9: in <module>
+    from tests.services.test_native_amendments import (
+E   ModuleNotFoundError: No module named 'tests'
+=========================== short test summary info ============================
+ERROR ../kodezart-recovery-session/test_native_receipt_timeout_diagnostic.py
+1 error in 2.37s

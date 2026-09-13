@@ -1,0 +1,112 @@
+....F.....F..........                                                    [100%]
+=================================== FAILURES ===================================
+_______ test_scope_approval_ends_organize_before_escalation_writes[True] _______
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10e523b90>
+approve_during_assessment = True
+
+    @pytest.mark.parametrize("approve_during_assessment", [False, True])
+    async def test_scope_approval_ends_organize_before_escalation_writes(
+        monkeypatch, approve_during_assessment
+    ):
+        owner, board, executor = factory()
+        original = executor.stream
+        assessed = []
+    
+        async def human_decision(**kwargs):
+            async for event in original(**kwargs):
+                if kwargs["output_format"]["schema"].get("title") == "AdmissionJudgment":
+                    assessed.append(kwargs["prompt"])
+                    event = result(
+                        structured_output={
+                            "issue_id": CLAIMED_ISSUE,
+                            "verdict": "not_buildable",
+                            "invented_decision": "Choose the authoritative source version.",
+                            "evidence": "Two current sources conflict.",
+                            "refusal_kind": "human_decision",
+                        }
+                    )
+                    if approve_during_assessment:
+                        board.server.issues[CLAIMED_ISSUE].labels.append("approved scope")
+                yield event
+    
+        monkeypatch.setattr(executor, "stream", human_decision)
+        try:
+            await run_owner(owner)
+        except OrganizeWriteRefusalError:
+            assert approve_during_assessment
+        assert len(assessed) == 1
+        writes = [name for name, _ in board.calls if name.startswith("save_")]
+>       assert bool(writes) is (not approve_during_assessment)
+E       AssertionError: assert True is not True
+E        +  where True = bool(['save_comment', 'save_comment'])
+
+tests/chains/test_organize_native_independent.py:117: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 16:55:54 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-12 16:55:54 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:55:54 [info     ] outbound_content_gated         categories=[] content_digest=0acf57fbc655923fbe10c8a979af2790c711c15cfee215c21fb5e5ab63730d82 failure=None hits=[] surface=tracker verdict=clean visibility=private writer=tracker_comment
+_______ test_author_source_changed_during_session_cannot_be_overwritten ________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10e592c30>
+
+    async def test_author_source_changed_during_session_cannot_be_overwritten(monkeypatch):
+        from kodezart.domain.errors import StaleWriteError
+    
+        owner, board, executor = factory()
+        original = executor.stream
+    
+        async def changed(**kwargs):
+            async for event in original(**kwargs):
+                if kwargs["output_format"]["schema"].get("title") == "OrganizeProposal":
+                    board.server.issues[
+                        CLAIMED_ISSUE
+                    ].description = "Concurrent author's current body"
+                yield event
+    
+        monkeypatch.setattr(executor, "stream", changed)
+        with pytest.raises(StaleWriteError):
+>           await run_owner(owner)
+
+tests/chains/test_organize_owner.py:285: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/chains/test_organize_owner.py:190: in run_owner
+    return await owner.run(
+src/kodezart/services/organize_owner.py:791: in run
+    verified_write = await self._author_write(
+src/kodezart/services/organize_owner.py:462: in _author_write
+    return await self._verifier.write_back(
+src/kodezart/chains/write_back_verifier.py:121: in write_back
+    await step.write(finding=finding)
+src/kodezart/services/organize_owner.py:86: in write
+    await self.apply(finding)
+src/kodezart/services/organize_owner.py:342: in apply
+    await self._require_revision(proposal.revision)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.services.organize_owner.OrganizeOwner object at 0x10e579280>
+revision = TrackerIssueRevision(issue=TrackerIssue(issue_key='FIX-1', title='claimable', body='Missing specification', priority=<...'https://tracker.invalid/issue/FIX-1'), body_digest='ba2754f1de495031dc40d9e2e958a367872f391ea7e7e1f590802b6e8b7d59f0')
+
+    async def _require_revision(self, revision: TrackerIssueRevision) -> None:
+        current = await self._tracker.read_issue_revision(
+            issue_key=revision.issue.issue_key
+        )
+        if (
+            current.issue.issue_key != revision.issue.issue_key
+            or current.body_digest != revision.body_digest
+        ):
+>           raise OrganizeWriteRefusalError(
+                issue_key=revision.issue.issue_key,
+                reason="the author's source revision changed before writing",
+            )
+E           kodezart.domain.errors.OrganizeWriteRefusalError: organize write for 'FIX-1' refused: the author's source revision changed before writing
+
+src/kodezart/services/organize_owner.py:310: OrganizeWriteRefusalError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 16:55:55 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-12 16:55:55 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:55:55 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+=========================== short test summary info ============================
+FAILED tests/chains/test_organize_native_independent.py::test_scope_approval_ends_organize_before_escalation_writes[True]
+FAILED tests/chains/test_organize_owner.py::test_author_source_changed_during_session_cannot_be_overwritten
+2 failed, 19 passed in 1.96s

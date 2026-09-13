@@ -1,0 +1,3 @@
+src/kodezart/core/git_settings.py:12:        default="origin", description="Remote for fetch, push and head probes."
+ERROR: literal "origin" found in src/kodezart outside core/config.py
+make: *** [verify-no-origin-literal] Error 1

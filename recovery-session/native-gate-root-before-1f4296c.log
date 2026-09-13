@@ -1,0 +1,58 @@
+Using CPython 3.12.13
+Creating virtual environment at: .venv
+   Building kodezart @ file:///private/tmp/kodezart-v03-native-gate-corrective
+warning: `build_system.requires = ["uv-build>=0.10.9,<0.11.0"]` does not contain the current uv version 0.11.6
+      Built kodezart @ file:///private/tmp/kodezart-v03-native-gate-corrective
+Installed 174 packages in 1.36s
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+_________ test_every_production_graph_with_registered_nodes_is_checked _________
+
+    def test_every_production_graph_with_registered_nodes_is_checked():
+        assert ralph_loop.__file__ is not None
+        source_root = Path(ralph_loop.__file__).resolve().parents[1]
+        actual = {
+            path.resolve()
+            for path in source_root.rglob("*.py")
+            if _add_node_calls(ast.parse(path.read_text(encoding="utf-8")))
+        }
+        declared = {
+            Path(module.__file__).resolve()
+            for module, _, _ in _GRAPH_BINDINGS
+            if module.__file__ is not None
+        }
+>       assert actual == declared
+E       AssertionError: assert {PosixPath('/...neration.py')} == {PosixPath('/...neration.py')}
+E         
+E         Extra items in the left set:
+E         PosixPath('/private/tmp/kodezart-v03-native-gate-corrective/src/kodezart/chains/native_amendment.py')
+E         Use -v to get more diff
+
+tests/chains/test_retry_floor_wiring.py:162: AssertionError
+_______ test_identity_construction_is_authored_mint_or_exact_tracker_key _______
+
+    def test_identity_construction_is_authored_mint_or_exact_tracker_key() -> None:
+        """Authored IDs are minted; the native reader carries the exact source key."""
+        offenders: list[str] = []
+        for path in Path("src").rglob("*.py"):
+            tree = ast.parse(path.read_text())
+            for node in ast.walk(tree):
+                if (
+                    isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Name)
+                    and node.func.id == "CriterionId"
+                    and path
+                    not in {_MINTING_MODULE, Path("src/kodezart/chains/criteria.py")}
+                ):
+                    offenders.append(f"{path}:{node.lineno}")
+>       assert offenders == []
+E       AssertionError: assert ['src/kodezar...ments.py:583'] == []
+E         
+E         Left contains one more item: 'src/kodezart/services/native_amendments.py:583'
+E         Use -v to get more diff
+
+tests/domain/test_criterion_identity.py:136: AssertionError
+=========================== short test summary info ============================
+FAILED tests/chains/test_retry_floor_wiring.py::test_every_production_graph_with_registered_nodes_is_checked
+FAILED tests/domain/test_criterion_identity.py::test_identity_construction_is_authored_mint_or_exact_tracker_key
+2 failed in 6.93s

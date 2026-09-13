@@ -1,0 +1,257 @@
+...................................F.....FFFF........................... [ 20%]
+........................................................................ [ 41%]
+.........F.............................................................. [ 62%]
+........................................................................ [ 82%]
+...........................................................              [100%]
+=================================== FAILURES ===================================
+_____ test_rerun_wait_and_names_ignore_stale_completed_checks_at_same_sha ______
+
+    async def test_rerun_wait_and_names_ignore_stale_completed_checks_at_same_sha():
+        server = ActionsAPI()
+        server.stale_runs = 1
+        server.stale_jobs = 1
+        client = _make_client(server)
+        assert isinstance(client, CIMonitor)
+        await client.rerun_checks(repo_url=REPO, ref=SHA)
+        observed = await client.wait_for_checks(repo_url=REPO, ref=SHA)
+        assert isinstance(observed, ObservedChecks) and observed.checks_passed is True
+        assert observed.summary == "All CI checks passed."
+        assert observed.failed_check_names == frozenset()
+        assert len(server.writes) == 1
+        assert (
+            len(
+                [
+                    request
+                    for request in server.requests
+                    if request.url.path.endswith("/check-runs")
+                ]
+            )
+            == 1
+        )
+>       assert (
+            len(
+                [
+                    request
+                    for request in server.requests
+                    if request.url.path.endswith("/attempts/2")
+                ]
+            )
+            == 4
+        )
+E       AssertionError: assert 3 == 4
+E        +  where 3 = len([<Request('GET', 'https://api.github.com/repos/example/project/actions/runs/101/attempts/2')>, <Request('GET', 'https:...s/runs/101/attempts/2')>, <Request('GET', 'https://api.github.com/repos/example/project/actions/runs/101/attempts/2')>])
+
+tests/adapters/test_ci_rerun.py:140: AssertionError
+_____ test_missing_fresh_attempt_exhausts_poll_bound_as_error[old_attempt] _____
+
+kind = 'old_attempt'
+
+    @pytest.mark.parametrize("kind", ["old_attempt", "old_jobs", "not_visible", "pending"])
+    async def test_missing_fresh_attempt_exhausts_poll_bound_as_error(kind):
+        server = ActionsAPI()
+        server.stale_runs = 100 if kind == "old_attempt" else 0
+        server.stale_jobs = 100 if kind == "old_jobs" else 0
+    
+        def handler(request):
+            response = server(request)
+            if request.url.path.endswith("/attempts/2"):
+                if kind == "not_visible":
+                    return httpx.Response(404)
+                if kind == "pending":
+                    return httpx.Response(
+                        200,
+                        json={
+                            **response.json(),
+                            "status": "in_progress",
+                            "conclusion": None,
+                        },
+                    )
+            return response
+    
+        client = _make_client(handler, ci_poll_max_attempts=2)
+        await client.rerun_checks(repo_url=REPO, ref=SHA)
+        with pytest.raises(TransientAPIError, match="poll bound"):
+            await client.wait_for_checks(repo_url=REPO, ref=SHA)
+        assert len(server.writes) == 1
+>       assert (
+            len(
+                [
+                    request
+                    for request in server.requests
+                    if request.url.path.endswith("/attempts/2")
+                ]
+            )
+            == 3
+        )
+E       AssertionError: assert 2 == 3
+E        +  where 2 = len([<Request('GET', 'https://api.github.com/repos/example/project/actions/runs/101/attempts/2')>, <Request('GET', 'https://api.github.com/repos/example/project/actions/runs/101/attempts/2')>])
+
+tests/adapters/test_ci_rerun.py:274: AssertionError
+______ test_missing_fresh_attempt_exhausts_poll_bound_as_error[old_jobs] _______
+
+kind = 'old_jobs'
+
+    @pytest.mark.parametrize("kind", ["old_attempt", "old_jobs", "not_visible", "pending"])
+    async def test_missing_fresh_attempt_exhausts_poll_bound_as_error(kind):
+        server = ActionsAPI()
+        server.stale_runs = 100 if kind == "old_attempt" else 0
+        server.stale_jobs = 100 if kind == "old_jobs" else 0
+    
+        def handler(request):
+            response = server(request)
+            if request.url.path.endswith("/attempts/2"):
+                if kind == "not_visible":
+                    return httpx.Response(404)
+                if kind == "pending":
+                    return httpx.Response(
+                        200,
+                        json={
+                            **response.json(),
+                            "status": "in_progress",
+                            "conclusion": None,
+                        },
+                    )
+            return response
+    
+        client = _make_client(handler, ci_poll_max_attempts=2)
+        await client.rerun_checks(repo_url=REPO, ref=SHA)
+        with pytest.raises(TransientAPIError, match="poll bound"):
+            await client.wait_for_checks(repo_url=REPO, ref=SHA)
+        assert len(server.writes) == 1
+>       assert (
+            len(
+                [
+                    request
+                    for request in server.requests
+                    if request.url.path.endswith("/attempts/2")
+                ]
+            )
+            == 3
+        )
+E       AssertionError: assert 2 == 3
+E        +  where 2 = len([<Request('GET', 'https://api.github.com/repos/example/project/actions/runs/101/attempts/2')>, <Request('GET', 'https://api.github.com/repos/example/project/actions/runs/101/attempts/2')>])
+
+tests/adapters/test_ci_rerun.py:274: AssertionError
+_____ test_missing_fresh_attempt_exhausts_poll_bound_as_error[not_visible] _____
+
+kind = 'not_visible'
+
+    @pytest.mark.parametrize("kind", ["old_attempt", "old_jobs", "not_visible", "pending"])
+    async def test_missing_fresh_attempt_exhausts_poll_bound_as_error(kind):
+        server = ActionsAPI()
+        server.stale_runs = 100 if kind == "old_attempt" else 0
+        server.stale_jobs = 100 if kind == "old_jobs" else 0
+    
+        def handler(request):
+            response = server(request)
+            if request.url.path.endswith("/attempts/2"):
+                if kind == "not_visible":
+                    return httpx.Response(404)
+                if kind == "pending":
+                    return httpx.Response(
+                        200,
+                        json={
+                            **response.json(),
+                            "status": "in_progress",
+                            "conclusion": None,
+                        },
+                    )
+            return response
+    
+        client = _make_client(handler, ci_poll_max_attempts=2)
+        await client.rerun_checks(repo_url=REPO, ref=SHA)
+        with pytest.raises(TransientAPIError, match="poll bound"):
+            await client.wait_for_checks(repo_url=REPO, ref=SHA)
+        assert len(server.writes) == 1
+>       assert (
+            len(
+                [
+                    request
+                    for request in server.requests
+                    if request.url.path.endswith("/attempts/2")
+                ]
+            )
+            == 3
+        )
+E       AssertionError: assert 2 == 3
+E        +  where 2 = len([<Request('GET', 'https://api.github.com/repos/example/project/actions/runs/101/attempts/2')>, <Request('GET', 'https://api.github.com/repos/example/project/actions/runs/101/attempts/2')>])
+
+tests/adapters/test_ci_rerun.py:274: AssertionError
+_______ test_missing_fresh_attempt_exhausts_poll_bound_as_error[pending] _______
+
+kind = 'pending'
+
+    @pytest.mark.parametrize("kind", ["old_attempt", "old_jobs", "not_visible", "pending"])
+    async def test_missing_fresh_attempt_exhausts_poll_bound_as_error(kind):
+        server = ActionsAPI()
+        server.stale_runs = 100 if kind == "old_attempt" else 0
+        server.stale_jobs = 100 if kind == "old_jobs" else 0
+    
+        def handler(request):
+            response = server(request)
+            if request.url.path.endswith("/attempts/2"):
+                if kind == "not_visible":
+                    return httpx.Response(404)
+                if kind == "pending":
+                    return httpx.Response(
+                        200,
+                        json={
+                            **response.json(),
+                            "status": "in_progress",
+                            "conclusion": None,
+                        },
+                    )
+            return response
+    
+        client = _make_client(handler, ci_poll_max_attempts=2)
+        await client.rerun_checks(repo_url=REPO, ref=SHA)
+        with pytest.raises(TransientAPIError, match="poll bound"):
+            await client.wait_for_checks(repo_url=REPO, ref=SHA)
+        assert len(server.writes) == 1
+>       assert (
+            len(
+                [
+                    request
+                    for request in server.requests
+                    if request.url.path.endswith("/attempts/2")
+                ]
+            )
+            == 3
+        )
+E       AssertionError: assert 2 == 3
+E        +  where 2 = len([<Request('GET', 'https://api.github.com/repos/example/project/actions/runs/101/attempts/2')>, <Request('GET', 'https://api.github.com/repos/example/project/actions/runs/101/attempts/2')>])
+
+tests/adapters/test_ci_rerun.py:274: AssertionError
+_________________________ test_wait_for_checks_timeout _________________________
+
+    async def test_wait_for_checks_timeout() -> None:
+        """wait_for_checks returns (False, ...) when max attempts exhausted."""
+    
+        def handler(request: httpx.Request) -> httpx.Response:
+            if "actions/workflows" in str(request.url):
+                return _workflows(active=True)
+            return _in_progress_run()
+    
+        client = _make_client(
+            handler,
+            ci_poll_max_attempts=2,
+        )
+        observed = await client.wait_for_checks(
+            repo_url="https://github.com/owner/repo", ref="abc123"
+        )
+        passed = observed.checks_passed if isinstance(observed, ObservedChecks) else None
+        summary = observed.summary
+>       assert passed is False
+E       assert None is False
+
+tests/adapters/test_github_api.py:712: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 15:10:15 [info     ] ci_runs_observed               count=1 ref=abc123
+=========================== short test summary info ============================
+FAILED tests/adapters/test_ci_rerun.py::test_rerun_wait_and_names_ignore_stale_completed_checks_at_same_sha
+FAILED tests/adapters/test_ci_rerun.py::test_missing_fresh_attempt_exhausts_poll_bound_as_error[old_attempt]
+FAILED tests/adapters/test_ci_rerun.py::test_missing_fresh_attempt_exhausts_poll_bound_as_error[old_jobs]
+FAILED tests/adapters/test_ci_rerun.py::test_missing_fresh_attempt_exhausts_poll_bound_as_error[not_visible]
+FAILED tests/adapters/test_ci_rerun.py::test_missing_fresh_attempt_exhausts_poll_bound_as_error[pending]
+FAILED tests/adapters/test_github_api.py::test_wait_for_checks_timeout - asse...
+6 failed, 341 passed in 10.58s

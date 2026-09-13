@@ -1,0 +1,150 @@
+Using CPython 3.12.13
+Creating virtual environment at: .venv
+   Building kodezart @ file:///private/tmp/kodezart-v03-recovery-native-prompt-census
+warning: `build_system.requires = ["uv-build>=0.10.9,<0.11.0"]` does not contain the current uv version 0.11.6
+      Built kodezart @ file:///private/tmp/kodezart-v03-recovery-native-prompt-census
+Installed 174 packages in 1.30s
+..................................F.........F...................F....... [ 15%]
+......F...................F............................................. [ 30%]
+........................................................................ [ 46%]
+........................................................................ [ 61%]
+........................................................................ [ 77%]
+...............F................F....................................... [ 92%]
+..................................                                       [100%]
+=================================== FAILURES ===================================
+_______ test_per_call_namespace_covers_every_non_operation_template_name _______
+
+    def test_per_call_namespace_covers_every_non_operation_template_name() -> None:
+        """The declared per-call set is not allowed to drift from the templates."""
+        registry = load_registry()
+        operation_names = set(bindings_for(example_config()))
+        for key in PromptKey:
+            names = binding_names(registry.template_for(key).body)
+            unaccounted = (
+                names
+                - operation_names
+                - PER_CALL_VARIABLE_NAMES
+                - SET_FRAGMENT_NAMES
+                - ITEM_SCOPED_NAMES
+            )
+            unaccounted = {n for n in unaccounted if "." not in n}
+>           assert unaccounted == set(), f"{key.value} references {unaccounted}"
+E           AssertionError: native_writer_contract references {'pinned_rulings'}
+E           assert {'pinned_rulings'} == set()
+E             
+E             Extra items in the left set:
+E             'pinned_rulings'
+E             Use -v to get more diff
+
+tests/prompts/test_operation_config.py:516: AssertionError
+_____________ test_placeholder_mapping_is_total_in_both_directions _____________
+
+    def test_placeholder_mapping_is_total_in_both_directions() -> None:
+        """Every placeholder maps to one path; every field is template-reachable."""
+        rows = markdown_rows("## Placeholder → OperationConfig field")
+        mapped = {row[0]: row[1] for row in rows}
+        assert len(mapped) == len(rows)
+    
+        # Direction 1 — no placeholder the templates reference is unmapped.
+        referenced = template_placeholders()
+>       assert referenced == set(mapped), referenced ^ set(mapped)
+E       AssertionError: {'base_sha', 'claim', 'pinned_rulings'}
+E       assert {'agent_ident...ocs_mcp', ...} == {'agent_ident...nnector', ...}
+E         
+E         Extra items in the left set:
+E         'claim'
+E         'base_sha'
+E         'pinned_rulings'
+E         Use -v to get more diff
+
+tests/prompts/test_operation_config.py:630: AssertionError
+_______________ test_non_utility_keys_declare_at_least_one_skill _______________
+
+    def test_non_utility_keys_declare_at_least_one_skill() -> None:
+        """AC-3: every non-utility role names the skills serving it."""
+        registry = load_registry()
+        for key in PromptKey:
+            if key in UTILITY_KEYS:
+                continue
+>           assert registry.declared_skills(key)
+E           AssertionError: assert ()
+E            +  where () = declared_skills(<PromptKey.NATIVE_WRITER_CONTRACT: 'native_writer_contract'>)
+E            +    where declared_skills = <kodezart.adapters.in_repo_prompt_registry.InRepoPromptRegistry object at 0x10f157890>.declared_skills
+
+tests/prompts/test_skills_loadouts.py:185: AssertionError
+__________ test_the_declared_utility_roster_is_the_one_the_rules_read __________
+
+    def test_the_declared_utility_roster_is_the_one_the_rules_read() -> None:
+        """The roster is set data; this pins which roles it names."""
+>       assert set(metadata()["utility_keys"]) == UTILITY_KEYS  # type: ignore[arg-type]
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: assert {'branch_name..._description'} == frozenset({'b...description'})
+E         
+E         Extra items in the left set:
+E         'native_writer_contract'
+E         Use -v to get more diff
+
+tests/prompts/test_v5_fragments.py:136: AssertionError
+_ test_every_judgment_template_ends_with_the_depth_block[native_writer_contract] _
+
+key = 'native_writer_contract'
+
+    @pytest.mark.parametrize(
+        "key",
+        sorted({k.value for k in PromptKey} - UTILITY_KEYS),
+    )
+    def test_every_judgment_template_ends_with_the_depth_block(key: str) -> None:
+        """Exactly one occurrence, and it is the last thing the session reads."""
+        body = v5_bodies()[key]
+        instruction = fragment("ultrathink_instruction")
+>       assert body.lower().count("ultrathink") == 1
+E       AssertionError: assert 0 == 1
+E        +  where 0 = <built-in method count of str object at 0xb978bc500>('ultrathink')
+E        +    where <built-in method count of str object at 0xb978bc500> = '{{skills_reference}}native precommit contract\n\nleave changes uncommitted. the harness owns commits and publication....mmits. an upheld subject means the\nproposed departure is not actioned. never claim an amendment was applied yourself.'.count
+E        +      where '{{skills_reference}}native precommit contract\n\nleave changes uncommitted. the harness owns commits and publication....mmits. an upheld subject means the\nproposed departure is not actioned. never claim an amendment was applied yourself.' = <built-in method lower of str object at 0xb978be300>()
+E        +        where <built-in method lower of str object at 0xb978be300> = '{{skills_reference}}Native precommit contract\n\nLeave changes uncommitted. The harness owns commits and publication....mmits. An upheld subject means the\nproposed departure is not actioned. Never claim an amendment was applied yourself.'.lower
+
+tests/prompts/test_v5_fragments.py:153: AssertionError
+_ test_rule_holds_over_every_v5_template[one_data_boundary_sentence-amendment_judge] _
+
+rule_name = 'one_data_boundary_sentence', key = 'amendment_judge'
+
+    @pytest.mark.parametrize(("rule_name", "key"), V5_CASES)
+    def test_rule_holds_over_every_v5_template(rule_name: str, key: str) -> None:
+        """Each rule, over each template of the new set."""
+        body = v5_bodies()[key]
+        found = check_rule(rule_name, key, body, v5_context())
+>       assert found == (), f"{key} violates {RULES[rule_name].describe}: {found}"
+E       AssertionError: amendment_judge violates exactly one data-not-instructions sentence per artifact template: ('0 boundary sentences, expected exactly 1',)
+E       assert ('0 boundary ...d exactly 1',) == ()
+E         
+E         Left contains one more item: '0 boundary sentences, expected exactly 1'
+E         Use -v to get more diff
+
+tests/prompts/test_v5_style_rules.py:407: AssertionError
+_ test_rule_holds_over_every_v5_template[one_data_boundary_sentence-native_writer_contract] _
+
+rule_name = 'one_data_boundary_sentence', key = 'native_writer_contract'
+
+    @pytest.mark.parametrize(("rule_name", "key"), V5_CASES)
+    def test_rule_holds_over_every_v5_template(rule_name: str, key: str) -> None:
+        """Each rule, over each template of the new set."""
+        body = v5_bodies()[key]
+        found = check_rule(rule_name, key, body, v5_context())
+>       assert found == (), f"{key} violates {RULES[rule_name].describe}: {found}"
+E       AssertionError: native_writer_contract violates exactly one data-not-instructions sentence per artifact template: ('0 boundary sentences, expected exactly 1',)
+E       assert ('0 boundary ...d exactly 1',) == ()
+E         
+E         Left contains one more item: '0 boundary sentences, expected exactly 1'
+E         Use -v to get more diff
+
+tests/prompts/test_v5_style_rules.py:407: AssertionError
+=========================== short test summary info ============================
+FAILED tests/prompts/test_operation_config.py::test_per_call_namespace_covers_every_non_operation_template_name
+FAILED tests/prompts/test_operation_config.py::test_placeholder_mapping_is_total_in_both_directions
+FAILED tests/prompts/test_skills_loadouts.py::test_non_utility_keys_declare_at_least_one_skill
+FAILED tests/prompts/test_v5_fragments.py::test_the_declared_utility_roster_is_the_one_the_rules_read
+FAILED tests/prompts/test_v5_fragments.py::test_every_judgment_template_ends_with_the_depth_block[native_writer_contract]
+FAILED tests/prompts/test_v5_style_rules.py::test_rule_holds_over_every_v5_template[one_data_boundary_sentence-amendment_judge]
+FAILED tests/prompts/test_v5_style_rules.py::test_rule_holds_over_every_v5_template[one_data_boundary_sentence-native_writer_contract]
+7 failed, 459 passed in 24.42s

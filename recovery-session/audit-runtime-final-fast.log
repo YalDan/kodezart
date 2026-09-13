@@ -1,0 +1,94 @@
+.............FFF........................................................ [ 32%]
+........................................................................ [ 65%]
+........................................................................ [ 98%]
+...                                                                      [100%]
+=================================== FAILURES ===================================
+__ test_summary_cannot_claim_unmatched_or_duplicate_native_records[wrong_ref] __
+
+damage = 'wrong_ref'
+
+    @pytest.mark.parametrize("damage", ["wrong_ref", "duplicate_ref", "duplicate_address"])
+    def test_summary_cannot_claim_unmatched_or_duplicate_native_records(damage):
+        record = TrackerArtifact(
+            surface=SURFACE, native_ref="native-comment", content="Exact native body"
+        )
+        data = {
+>           "identity": RunIdentity(
+                kind=RunKind.AUDIT, trigger="audit", started_at=FIXTURE_NOW
+            ),
+            "coverage": AuditCoverageResult(
+                scope=SCOPE, observed_at=FIXTURE_NOW, full=True, covered=()
+            ),
+            "record_refs": (record.native_ref,),
+            "records": (record,),
+        }
+E       pydantic_core._pydantic_core.ValidationError: 2 validation errors for RunIdentity
+E       name
+E         Field required [type=missing, input_value={'kind': <RunKind.AUDIT: ...=datetime.timezone.utc)}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.12/v/missing
+E       trigger
+E         Extra inputs are not permitted [type=extra_forbidden, input_value='audit', input_type=str]
+E           For further information visit https://errors.pydantic.dev/2.12/v/extra_forbidden
+
+tests/integration/test_audit_runtime_types.py:161: ValidationError
+_ test_summary_cannot_claim_unmatched_or_duplicate_native_records[duplicate_ref] _
+
+damage = 'duplicate_ref'
+
+    @pytest.mark.parametrize("damage", ["wrong_ref", "duplicate_ref", "duplicate_address"])
+    def test_summary_cannot_claim_unmatched_or_duplicate_native_records(damage):
+        record = TrackerArtifact(
+            surface=SURFACE, native_ref="native-comment", content="Exact native body"
+        )
+        data = {
+>           "identity": RunIdentity(
+                kind=RunKind.AUDIT, trigger="audit", started_at=FIXTURE_NOW
+            ),
+            "coverage": AuditCoverageResult(
+                scope=SCOPE, observed_at=FIXTURE_NOW, full=True, covered=()
+            ),
+            "record_refs": (record.native_ref,),
+            "records": (record,),
+        }
+E       pydantic_core._pydantic_core.ValidationError: 2 validation errors for RunIdentity
+E       name
+E         Field required [type=missing, input_value={'kind': <RunKind.AUDIT: ...=datetime.timezone.utc)}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.12/v/missing
+E       trigger
+E         Extra inputs are not permitted [type=extra_forbidden, input_value='audit', input_type=str]
+E           For further information visit https://errors.pydantic.dev/2.12/v/extra_forbidden
+
+tests/integration/test_audit_runtime_types.py:161: ValidationError
+_ test_summary_cannot_claim_unmatched_or_duplicate_native_records[duplicate_address] _
+
+damage = 'duplicate_address'
+
+    @pytest.mark.parametrize("damage", ["wrong_ref", "duplicate_ref", "duplicate_address"])
+    def test_summary_cannot_claim_unmatched_or_duplicate_native_records(damage):
+        record = TrackerArtifact(
+            surface=SURFACE, native_ref="native-comment", content="Exact native body"
+        )
+        data = {
+>           "identity": RunIdentity(
+                kind=RunKind.AUDIT, trigger="audit", started_at=FIXTURE_NOW
+            ),
+            "coverage": AuditCoverageResult(
+                scope=SCOPE, observed_at=FIXTURE_NOW, full=True, covered=()
+            ),
+            "record_refs": (record.native_ref,),
+            "records": (record,),
+        }
+E       pydantic_core._pydantic_core.ValidationError: 2 validation errors for RunIdentity
+E       name
+E         Field required [type=missing, input_value={'kind': <RunKind.AUDIT: ...=datetime.timezone.utc)}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.12/v/missing
+E       trigger
+E         Extra inputs are not permitted [type=extra_forbidden, input_value='audit', input_type=str]
+E           For further information visit https://errors.pydantic.dev/2.12/v/extra_forbidden
+
+tests/integration/test_audit_runtime_types.py:161: ValidationError
+=========================== short test summary info ============================
+FAILED tests/integration/test_audit_runtime_types.py::test_summary_cannot_claim_unmatched_or_duplicate_native_records[wrong_ref]
+FAILED tests/integration/test_audit_runtime_types.py::test_summary_cannot_claim_unmatched_or_duplicate_native_records[duplicate_ref]
+FAILED tests/integration/test_audit_runtime_types.py::test_summary_cannot_claim_unmatched_or_duplicate_native_records[duplicate_address]
+3 failed, 216 passed in 19.56s

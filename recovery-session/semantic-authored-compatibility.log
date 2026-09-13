@@ -1,0 +1,58 @@
+........................................................................ [ 29%]
+........................................................................ [ 58%]
+.......................................................F.FF............. [ 88%]
+.............................                                            [100%]
+=================================== FAILURES ===================================
+__________ test_the_only_excluded_occurrences_are_the_outcome_member ___________
+
+    def test_the_only_excluded_occurrences_are_the_outcome_member() -> None:
+        """Non-vacuity: every explicitly named outcome occurrence exists exactly once.
+    
+        Without this the exclusion set could silently stop matching anything —
+        or grow — and the test above would keep passing either way.
+        """
+        excluded = [
+            line.strip() for _, line in _source_lines() if line.strip() in _OUTCOME_MEMBER
+        ]
+>       assert sorted(excluded) == sorted(_OUTCOME_MEMBER)
+E       AssertionError: assert ['ci_passed =...me.ci_passed'] == ['ci_passed =...me.ci_passed']
+E         
+E         Left contains one more item: 'return WorkflowOutcome.ci_passed'
+E         Use -v to get more diff
+
+tests/types/test_wire_renames.py:74: AssertionError
+________________ test_every_shipped_config_field_is_documented _________________
+
+    def test_every_shipped_config_field_is_documented() -> None:
+        """A field the code reads that the reference does not name is invisible."""
+        undocumented = _shipped_config_variables() - _config_variables_named_in(
+            CONFIGURATION_DOC,
+        )
+>       assert undocumented == set()
+E       AssertionError: assert {'KODEZART_ORGANIZE'} == set()
+E         
+E         Extra items in the left set:
+E         'KODEZART_ORGANIZE'
+E         Use -v to get more diff
+
+tests/docs/test_documented_surface.py:154: AssertionError
+_________ test_no_document_names_a_config_variable_that_does_not_exist _________
+
+    def test_no_document_names_a_config_variable_that_does_not_exist() -> None:
+        """``extra='forbid'`` makes a documented-but-absent variable a boot failure."""
+        shipped = _shipped_config_variables()
+        for path in (CONFIGURATION_DOC, API_DOC, README, ENV_EXAMPLE):
+>           assert _config_variables_named_in(path) - shipped == set(), path.name
+E           AssertionError: configuration.md
+E           assert {'KODEZART_ORGANIZE_MAX_'} == set()
+E             
+E             Extra items in the left set:
+E             'KODEZART_ORGANIZE_MAX_'
+E             Use -v to get more diff
+
+tests/docs/test_documented_surface.py:161: AssertionError
+=========================== short test summary info ============================
+FAILED tests/types/test_wire_renames.py::test_the_only_excluded_occurrences_are_the_outcome_member
+FAILED tests/docs/test_documented_surface.py::test_every_shipped_config_field_is_documented
+FAILED tests/docs/test_documented_surface.py::test_no_document_names_a_config_variable_that_does_not_exist
+3 failed, 242 passed in 20.67s

@@ -1,0 +1,115 @@
+{
+  "versions": {
+    "fastapi": "0.135.1",
+    "pydantic": "2.12.5",
+    "langgraph": "1.0.10",
+    "langgraph-checkpoint": "4.0.1"
+  },
+  "python": "/private/tmp/kodezart-v03-recovery/.venv/bin/python3",
+  "tested_sha": "55a87a5009e1816d1d87c130a7f46a2a83a9f37e",
+  "canonical_worktree_head_at_probe": "e4b21eaec93677ba8983c78f8fcb71472db603bc",
+  "canonical_sha": "c96895e18d3137544ea30d18188006118ee8a6e5",
+  "same_source_sha256": {
+    "src/kodezart/domain/dispatch.py": "c09e947fd6967162e1903ee96f8e83bf1a60c201160e11ddab38f940f078c793",
+    "src/kodezart/domain/issue_tree.py": "fe5c028b2f85a0135145172df4216936019d9bd19a75b9ff6c1009f456534624",
+    "src/kodezart/domain/topology.py": "ba2ef33a62e89c79abb4b03ec7db49347bb37091e478fa6154e5a115f595fed2",
+    "src/kodezart/types/domain/operation.py": "3f7236098dd79d5a383aa39f7fa4d5122d2ce5980cb7749e6c4df1ce811aa35f",
+    "src/kodezart/types/domain/run_event.py": "4055746326dd0d3ae39b25120f94cb1cb3cfb634864ffc38038b9dfa05cd3173",
+    "src/kodezart/types/domain/dispatch.py": "1dd96512fcb16416d0e8a8974b7576658dcf7dfa519072f7095aa171af089915",
+    "src/kodezart/services/tracker_lifecycle.py": "92a8c878647accd324abe4be52028a8ae8733d17ed51f490b9bf6cdab919af87",
+    "src/kodezart/services/fire_dispatcher.py": "6a9ab89a17df19dcdaa92fde6afc9c5eebbbc49b890ca38185586d369d3c5d9d",
+    "src/kodezart/chains/scope_walker.py": "5ee428aafbaf10810bc09cc31941f24eb9a21bcf9c494dfabb4f5091becb3f4b",
+    "src/kodezart/services/scope_planning.py": "7a95ed70a9ca064ce3699f48b4ed55570d09ee21ce69e027f289102e2fbb2171",
+    "src/kodezart/main.py": "f1146550e1cb4eee2dc498df3941424102cac2ec4a70862a4025fe1e1e2d793d",
+    "src/kodezart/core/checkpointer.py": "d62b8827d6a5ed52b9f060ae52c7042f966315950c355706040ac53d2712603c"
+  },
+  "selection": {
+    "legal_draws": [
+      "A",
+      "B"
+    ],
+    "tied": [
+      "A",
+      "B"
+    ],
+    "unvalidated_draw": "OUTSIDE"
+  },
+  "dispatch_inventory": {
+    "pure_clauses": [
+      "clause_in_team",
+      "clause_in_scope",
+      "clause_recorded_repository",
+      "clause_approved",
+      "clause_open",
+      "live_blocker",
+      "clause_unclaimed",
+      "clause_undelivered"
+    ],
+    "exclusion_members": [
+      "outside_team",
+      "base_unresolved",
+      "run_failed",
+      "lane_backoff",
+      "out_of_scope",
+      "no_recorded_repository",
+      "recorded_elsewhere",
+      "not_approved",
+      "not_open",
+      "live_blocker",
+      "claimed_or_in_flight",
+      "open_delivery"
+    ],
+    "service_stages": 10
+  },
+  "topology_dual_rule": {
+    "default_open": [],
+    "default_closed": [
+      "C"
+    ],
+    "explicit_empty_open": [
+      "C"
+    ],
+    "explicit_blocking_closed": []
+  },
+  "missing_blocker": {
+    "predicate": null,
+    "topology_error": "blocker facts absent from topology snapshot: B"
+  },
+  "event_table": {
+    "count": 18,
+    "derived_count": 4,
+    "silent_count": 8,
+    "named_stage_count": 6,
+    "original_pr_opened": "in_review",
+    "valid_alternative_pr_opened": "done",
+    "frozen_nested_dict_mutable": true,
+    "explicit_revalidation_rejects_copy": "RunEventTableError",
+    "copy_update_unvalidated": true
+  },
+  "cross_enum_string_equality": {
+    "done_equal": true,
+    "done_identical": false,
+    "approved_equal": true
+  },
+  "typed_proposal": {
+    "both_validate": true,
+    "different_decisions": true,
+    "real_model_called": false
+  },
+  "fastapi_response_validation": {
+    "status": 500,
+    "effect_count": 1
+  },
+  "langgraph_raw_effect_resume": {
+    "effects": 2
+  },
+  "langgraph_cached_nondeterminism": {
+    "node_calls": 2,
+    "task_calls": 1,
+    "results": [
+      "decision-1",
+      "decision-1"
+    ],
+    "real_model_called": false
+  }
+}

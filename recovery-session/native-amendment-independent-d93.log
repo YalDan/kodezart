@@ -1,0 +1,131 @@
+Using CPython 3.12.13
+Creating virtual environment at: .venv
+   Building kodezart @ file:///private/tmp/kodezart-v03-recovery-semantic-independent-review
+warning: `build_system.requires = ["uv-build>=0.10.9,<0.11.0"]` does not contain the current uv version 0.11.6
+      Built kodezart @ file:///private/tmp/kodezart-v03-recovery-semantic-independent-review
+Installed 174 packages in 1.33s
+.F.F....                                                                 [100%]
+=================================== FAILURES ===================================
+___ test_writer_cancellation_stays_cancellation_and_retains_moved_head[True] ___
+
+title = 'NativeWriterOutput', payload = {'claims': []}
+kwargs = {'agents': (), 'allowed_tools': <ToolPreset.IMPLEMENTATION: 'implementation'>, 'cwd': '/var/folders/lv/b1m7q5dj1yd5gn9..., 'items': {'$ref': '#/$defs/AmendmentClaim'}, 'title': 'Claims', 'type': 'array'}}, ...}, 'type': 'json_schema'}, ...}
+
+    async def cancel(title, payload, kwargs):
+        if title == "NativeWriterOutput":
+>           raise asyncio.CancelledError("actual executor cancellation")
+E           asyncio.exceptions.CancelledError: actual executor cancellation
+
+tests/services/test_native_amendment_independent.py:29: CancelledError
+
+During handling of the above exception, another exception occurred:
+
+repository = (PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1780/test_writer_cancellation_stays1/repo'), 'ec0feb0e0b0590dcf78429818aa794e99f688cb0')
+direct_commit = True
+
+    @pytest.mark.parametrize("direct_commit", [False, True])
+    async def test_writer_cancellation_stays_cancellation_and_retains_moved_head(
+        repository, direct_commit
+    ):
+        async def cancel(title, payload, kwargs):
+            if title == "NativeWriterOutput":
+                raise asyncio.CancelledError("actual executor cancellation")
+    
+        service, guard, workspace, _ = await build(
+            repository, Executor(claim=False, direct_commit=direct_commit, mutate=cancel)
+        )
+        try:
+            with pytest.raises(asyncio.CancelledError):
+>               await drive(service, guard, repository)
+
+tests/services/test_native_amendment_independent.py:36: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/services/test_native_amendments.py:200: in drive
+    return [
+src/kodezart/services/agent_service.py:156: in stream_workflow
+    async for event in self._run_in_workspace(
+src/kodezart/services/agent_service.py:269: in _run_in_workspace
+    await native_guard.require_unchanged_head(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.services.native_amendments._NativeWriterGuard object at 0x10e828410>
+
+    async def require_unchanged_head(
+        self,
+        *,
+        workspace_path: str,
+        start: NativeWriterStart,
+    ) -> None:
+        if await settle(self._owner._git.current_sha(workspace_path)) != start.head_sha:
+>           raise NativeWriteRefusalError(
+                "Writer HEAD changed before authorization; retained workspace, "
+                "no harness commit, push, backup or replay"
+            )
+E           kodezart.domain.amendment.NativeWriteRefusalError: Writer HEAD changed before authorization; retained workspace, no harness commit, push, backup or replay
+
+src/kodezart/services/native_amendments.py:215: NativeWriteRefusalError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 18:09:52 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 18:09:52 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-c767dd433d9d45fa9ad4f1f6bd6e2691 workspace_id=c767dd433d9d45fa9ad4f1f6bd6e2691
+2026-09-12 18:09:52 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 18:09:52 [warning  ] native_writer_workspace_retained workspace_path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-c767dd433d9d45fa9ad4f1f6bd6e2691
+2026-09-12 18:09:53 [info     ] workspace_released             workspace_id=c767dd433d9d45fa9ad4f1f6bd6e2691
+_ test_tracker_change_while_local_commit_finishes_is_checked_before_push[True] _
+
+repository = (PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1780/test_tracker_change_while_loca1/repo'), '9d68f1fc01f4bcdd2807b2684aa0958abafca931')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10e82b500>
+change = True
+
+    @pytest.mark.parametrize("change", [False, True])
+    async def test_tracker_change_while_local_commit_finishes_is_checked_before_push(
+        repository, monkeypatch, change
+    ):
+        service, guard, workspace, port = await build(repository, Executor(claim=False))
+        original_commit = workspace._git.commit
+        completed = []
+    
+        async def commit(**kwargs):
+            sha = await original_commit(**kwargs)
+            completed.append(sha)
+            if change:
+                port.issues[DIRECT_OWED] = port.issues[DIRECT_OWED].model_copy(
+                    update={"body": "**Check:** revised before publication\n**Do:** verify"}
+                )
+            return sha
+    
+        monkeypatch.setattr(workspace._git, "commit", commit)
+        try:
+            refusal = None
+            try:
+                events = await drive(service, guard, repository)
+            except Exception as exc:
+                refusal = exc
+                events = []
+            assert len(completed) == 1
+            remote = await git(
+                repository[0], "ls-remote", "origin", "refs/heads/native-test"
+            )
+            if change:
+>               assert remote == "", "current native authority changed before push"
+E               AssertionError: current native authority changed before push
+E               assert 'a3e218797707...s/native-test' == ''
+E                 
+E                 + a3e2187977073c707bcefbc9c061d24fd6ddcd54	refs/heads/native-test
+
+tests/services/test_native_amendment_independent.py:79: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 18:09:59 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 18:10:00 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-2c9a3b88e23c424792927eab001f2f1e workspace_id=2c9a3b88e23c424792927eab001f2f1e
+2026-09-12 18:10:01 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 18:10:02 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 18:10:04 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 18:10:05 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 18:10:06 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=commit_message stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 18:10:07 [info     ] outbound_content_gated         categories=[] content_digest=1c2258ba30d6edc526796ea21c3fb5396230012aa5082ada3a09885c265fdb2a failure=None hits=[] surface=repository verdict=clean visibility=public writer=commit_message
+2026-09-12 18:10:07 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 18:10:09 [info     ] changes_persisted              branch=native-test commit_sha=a3e2187977073c707bcefbc9c061d24fd6ddcd54
+2026-09-12 18:10:09 [info     ] workspace_released             workspace_id=2c9a3b88e23c424792927eab001f2f1e
+=========================== short test summary info ============================
+FAILED tests/services/test_native_amendment_independent.py::test_writer_cancellation_stays_cancellation_and_retains_moved_head[True]
+FAILED tests/services/test_native_amendment_independent.py::test_tracker_change_while_local_commit_finishes_is_checked_before_push[True]
+2 failed, 6 passed in 35.71s

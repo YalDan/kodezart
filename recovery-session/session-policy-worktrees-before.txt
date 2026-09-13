@@ -1,0 +1,1492 @@
+worktree /private/tmp/kodezart-v03-implementation
+HEAD 0000000000000000000000000000000000000000
+detached
+
+worktree /private/tmp/kodezart-organize-before-proof
+HEAD fc87741e2a70c8bc73067f402464e3bfa3167882
+detached
+
+worktree /private/tmp/kodezart-v03-addressed-preloop
+HEAD d5ae87082b176dcd56dc9dd1ef15e99e59090969
+branch refs/heads/codex/kod-450-addressed-preloop
+
+worktree /private/tmp/kodezart-v03-addressed-preloop-mutants
+HEAD 0bc666dc93ad99d8a272d95337231939375b60da
+branch refs/heads/codex/kod-450-addressed-preloop-mutants
+
+worktree /private/tmp/kodezart-v03-addressed-ruling-entry
+HEAD 1fd9317830361c2df70dc982df166b3b18320af4
+branch refs/heads/codex/kod-637-addressed-ruling-entry
+
+worktree /private/tmp/kodezart-v03-addressed-ruling-entry-mutations
+HEAD 4040e296072699800c78725da6168bf736108092
+branch refs/heads/codex/kod-637-entry-mutations
+
+worktree /private/tmp/kodezart-v03-admission-ownership
+HEAD 0d46227cb870a9700058a3393e68877b44a08e45
+branch refs/heads/codex/kod-338-admission-ownership
+
+worktree /private/tmp/kodezart-v03-admission-ownership-mutants
+HEAD 0d46227cb870a9700058a3393e68877b44a08e45
+branch refs/heads/codex/kod-338-admission-ownership-mutants
+
+worktree /private/tmp/kodezart-v03-agent-settings
+HEAD de632003b698470498c8210f8dc0c75e08358145
+branch refs/heads/codex/v03-agent-settings
+
+worktree /private/tmp/kodezart-v03-agent-settings-mutants
+HEAD de632003b698470498c8210f8dc0c75e08358145
+detached
+
+worktree /private/tmp/kodezart-v03-aggregate-retirement
+HEAD d46b3292cc2c64931df2687f7b9f2e1197814d5b
+branch refs/heads/codex/kod-485-aggregate-retirement
+
+worktree /private/tmp/kodezart-v03-aggregate-retirement-mutations
+HEAD d46b3292cc2c64931df2687f7b9f2e1197814d5b
+branch refs/heads/codex/kod-485-retirement-mutations
+
+worktree /private/tmp/kodezart-v03-alarm-independent-review
+HEAD cd558ab02596de30d32de070e36417a431610d6a
+detached
+
+worktree /private/tmp/kodezart-v03-amendment-comment-independent-review
+HEAD e5ef84bbbd23ee488ac709b6a4e6e3e32aa1b344
+detached
+
+worktree /private/tmp/kodezart-v03-assertion-drift
+HEAD 23a375710166c4f78d9a31326bef01b55ec4079a
+branch refs/heads/codex/kod-510-assertion-drift
+
+worktree /private/tmp/kodezart-v03-assertion-drift-mutants
+HEAD 23a375710166c4f78d9a31326bef01b55ec4079a
+branch refs/heads/codex/kod-510-assertion-drift-mutants
+
+worktree /private/tmp/kodezart-v03-audit-boundary-parent-independent
+HEAD 5a3431f916ec3aadf4993153b4db7791b0fe566b
+detached
+
+worktree /private/tmp/kodezart-v03-audit-claim-mutations
+HEAD b7a77ad13563d0f6729ab25b6e829423b5429863
+detached
+
+worktree /private/tmp/kodezart-v03-audit-claim-session
+HEAD 4cf792972b0e22c6a6868df21400f396078a168c
+branch refs/heads/codex/v03-audit-claim-session
+
+worktree /private/tmp/kodezart-v03-audit-combined-review
+HEAD 2adc8c8d64f02e40644d635948e095919b764c92
+branch refs/heads/codex/v03-audit-combined-review
+
+worktree /private/tmp/kodezart-v03-audit-corrective-independent
+HEAD 104141269d6cc0a70565c677161baefff4addc17
+detached
+
+worktree /private/tmp/kodezart-v03-audit-coverage
+HEAD 42c58b10f6c30fc10bd35acbbb949b98ef003b21
+branch refs/heads/codex/v03-audit-coverage
+
+worktree /private/tmp/kodezart-v03-audit-coverage-mutations
+HEAD 42c58b10f6c30fc10bd35acbbb949b98ef003b21
+detached
+
+worktree /private/tmp/kodezart-v03-audit-detector-sweep
+HEAD 096a6ccab2e8726e3949a1b1a0c4b8ded37c4de6
+branch refs/heads/codex/v03-audit-detector-sweep
+
+worktree /private/tmp/kodezart-v03-audit-evidence
+HEAD 5595af10f0c61484547629d9a7c130042b2dd9e3
+branch refs/heads/codex/v03-audit-evidence
+
+worktree /private/tmp/kodezart-v03-audit-evidence-consumers
+HEAD 4dce270696932f3838c6e9d7e027c0958bc47d58
+branch refs/heads/codex/v03-audit-evidence-consumers
+
+worktree /private/tmp/kodezart-v03-audit-evidence-mutants
+HEAD 10756cd03418355d0a0c9c83d26e53a79ea5e54a
+detached
+
+worktree /private/tmp/kodezart-v03-audit-evidence-review
+HEAD ff6e7c528c208caad2c4b87de99d6a9fa061017d
+detached
+
+worktree /private/tmp/kodezart-v03-audit-forge-evidence
+HEAD df442a261ec9ccf2b2df6889f7d2a8c1811eb9f4
+branch refs/heads/codex/v03-audit-forge-evidence
+
+worktree /private/tmp/kodezart-v03-audit-forge-mutants
+HEAD ea70828a38e45fe745f93dd22fa545f32374ac75
+detached
+
+worktree /private/tmp/kodezart-v03-audit-forge-sweep
+HEAD 204e5a030e2daa94e57e088b2de803e0c97f9092
+branch refs/heads/codex/v03-audit-forge-sweep
+
+worktree /private/tmp/kodezart-v03-audit-forge-sweep-mutants
+HEAD 204e5a030e2daa94e57e088b2de803e0c97f9092
+branch refs/heads/codex/v03-audit-forge-sweep-mutants
+
+worktree /private/tmp/kodezart-v03-audit-foundation-review
+HEAD f95ddca94d3abb63a5cd41d0d3075d0b2aeeda7c
+detached
+
+worktree /private/tmp/kodezart-v03-audit-independent-current
+HEAD 38e848b2fd707df48bfe96cfcf2be42fd8da9ff6
+detached
+
+worktree /private/tmp/kodezart-v03-audit-mandate-hunt
+HEAD 5cee6db41ae8795c281aa5b16298dd792ba99b68
+branch refs/heads/codex/v03-audit-mandate-hunt
+
+worktree /private/tmp/kodezart-v03-audit-overclaims
+HEAD 0a7ac0365c19561ecf57e2b12860963f3939aab5
+branch refs/heads/codex/v03-audit-overclaims
+
+worktree /private/tmp/kodezart-v03-audit-record-pr-replay
+HEAD 5ad022b7d671335f554fbd5d8b4958449e7131c2
+branch refs/heads/codex/v03-audit-record-pr-replay
+
+worktree /private/tmp/kodezart-v03-audit-removal-sweep
+HEAD e2866ebba856800703daec51ce5d1f65ef1d4c3d
+branch refs/heads/codex/v03-audit-removal-sweep
+
+worktree /private/tmp/kodezart-v03-audit-replace-integrity
+HEAD 8faf6f4b6f52940911e0c988ac2629d1ee7187fe
+branch refs/heads/codex/audit-replace-integrity
+
+worktree /private/tmp/kodezart-v03-audit-replace-mutants
+HEAD 8faf6f4b6f52940911e0c988ac2629d1ee7187fe
+branch refs/heads/codex/audit-replace-mutants
+
+worktree /private/tmp/kodezart-v03-audit-report-independent-review
+HEAD fd93cf2a15fc8413fc50a1faf684b1deed254618
+detached
+
+worktree /private/tmp/kodezart-v03-audit-root-integration-review
+HEAD 536d704aa5a9b95f810d957f6c93fe2f881c981b
+branch refs/heads/codex/v03-audit-root-integration-review
+
+worktree /private/tmp/kodezart-v03-audit-settings
+HEAD f85fa8e75df9e8d4505a90280e0d91ee2de70853
+branch refs/heads/codex/v03-audit-settings
+
+worktree /private/tmp/kodezart-v03-audit-settings-mutants
+HEAD f714e01076a1a83292b237fe302576ae053d038b
+detached
+
+worktree /private/tmp/kodezart-v03-audit-state-history
+HEAD 5fec92b884e577f04fedc938ed8f38c4d7a6aec4
+branch refs/heads/codex/v03-audit-state-history
+
+worktree /private/tmp/kodezart-v03-audit-sweep-assessment
+HEAD 1cfa58f1a222b4ce2f8948bbd85c1684d883559d
+branch refs/heads/codex/v03-audit-sweep-native
+
+worktree /private/tmp/kodezart-v03-audit-sweep-mutants
+HEAD 1cfa58f1a222b4ce2f8948bbd85c1684d883559d
+detached
+
+worktree /private/tmp/kodezart-v03-audit-terminal-consistency
+HEAD 5ccb7b97cc501a96174da0eb7506ffce6d800d6b
+branch refs/heads/codex/v03-audit-terminal-consistency
+
+worktree /private/tmp/kodezart-v03-audit-terminal-mandate
+HEAD e6be6a68b2cd2831ab6314929cd8ddb0a3f751df
+branch refs/heads/codex/v03-audit-terminal-mandate
+
+worktree /private/tmp/kodezart-v03-audit-workspace-corrective
+HEAD 36b18f5e54bfa54483fa9b0b200f155cbb86b807
+branch refs/heads/codex/v03-audit-workspace-corrective
+
+worktree /private/tmp/kodezart-v03-audit-workspace-independent
+HEAD 36b18f5e54bfa54483fa9b0b200f155cbb86b807
+detached
+
+worktree /private/tmp/kodezart-v03-audit-worktree-integrity
+HEAD e2a49a86850238a272ce3b0360765971be291821
+branch refs/heads/codex/v03-audit-worktree-integrity
+
+worktree /private/tmp/kodezart-v03-authored-aggregate-admission
+HEAD fd25528a0f038f5019506f0c947cdfeeae7d46a6
+branch refs/heads/codex/kod-486-authored-aggregate-admission
+
+worktree /private/tmp/kodezart-v03-authored-aggregate-mutations
+HEAD 49aed9271123bb0f37fa81b8400fd0ec858e39f0
+branch refs/heads/codex/kod-486-aggregate-mutations
+
+worktree /private/tmp/kodezart-v03-barren-record-collector
+HEAD c046b62430ea24569be3f998b606ef47304391e7
+branch refs/heads/codex/v03-barren-record-collector
+
+worktree /private/tmp/kodezart-v03-barren-record-mutants
+HEAD c046b62430ea24569be3f998b606ef47304391e7
+detached
+
+worktree /private/tmp/kodezart-v03-cache-remote-name
+HEAD 852623fc986aecd835fabdf0f9320109329c1916
+branch refs/heads/codex/v03-cache-remote-name
+
+worktree /private/tmp/kodezart-v03-check-runner-cancellation
+HEAD da1d474dd6312bb0d910a3b373a2bc35365abc39
+branch refs/heads/codex/v03-check-runner-cancellation
+
+worktree /private/tmp/kodezart-v03-check-runner-cancellation-mutants
+HEAD ff4adf297cdca5b450d108ecece980bf42e1fc2c
+detached
+
+worktree /private/tmp/kodezart-v03-check-runner-settings
+HEAD debfbf65bfb9014665c447c1cd8bbffd55838596
+branch refs/heads/codex/v03-check-runner-settings
+
+worktree /private/tmp/kodezart-v03-check-settings-mutants
+HEAD debfbf65bfb9014665c447c1cd8bbffd55838596
+detached
+
+worktree /private/tmp/kodezart-v03-ci-locked-uv
+HEAD a29f50b97d1e4b3928ef008f98fd89bb06307ccf
+branch refs/heads/codex/v03-ci-locked-uv
+
+worktree /private/tmp/kodezart-v03-ci-review-native
+HEAD 2eddd4d0b62220f6a6840b09f442fd04531078cd
+detached
+
+worktree /private/tmp/kodezart-v03-claim-renewal-mutants
+HEAD 89c31088c2f9e5c7f62c42ee7a45b3ae29820a95
+detached
+
+worktree /private/tmp/kodezart-v03-claim-renewal-safety
+HEAD 89c31088c2f9e5c7f62c42ee7a45b3ae29820a95
+detached
+
+worktree /private/tmp/kodezart-v03-classification-independent-review
+HEAD a51d7779f13aeb775294e802c1b737bb8cb529e3
+detached
+
+worktree /private/tmp/kodezart-v03-common-retry
+HEAD dc0d86ab4fef8c299bb995764539046ed6fc9d7e
+detached
+
+worktree /private/tmp/kodezart-v03-common-retry-before
+HEAD dc0d86ab4fef8c299bb995764539046ed6fc9d7e
+detached
+
+worktree /private/tmp/kodezart-v03-config-reduction
+HEAD 7b58c746b9920763519ed5eee183cb082baa3a34
+branch refs/heads/codex/v03-config-reduction
+
+worktree /private/tmp/kodezart-v03-config-reduction-mutants
+HEAD 7b58c746b9920763519ed5eee183cb082baa3a34
+detached
+
+worktree /private/tmp/kodezart-v03-configured-fire-mutations
+HEAD 1ecc99ed0c50060a93654e9ea0892edcdbeb2f9b
+branch refs/heads/codex/v03-configured-fire-mutations
+
+worktree /private/tmp/kodezart-v03-configured-fire-preparation
+HEAD 87eaf381364ad8df62c8ea9d97207c9c7fc06e5c
+branch refs/heads/codex/v03-configured-fire-preparation
+
+worktree /private/tmp/kodezart-v03-criterion-boot-mutations
+HEAD 1c20be4f2bbb474e4960ce99e4c5d0a2d67d7e21
+detached
+
+worktree /private/tmp/kodezart-v03-criterion-fidelity-mutations
+HEAD b1393733ac10856ccbcc284d573fb44e9bcf3e6d
+branch refs/heads/codex/v03-criterion-fidelity-mutations
+
+worktree /private/tmp/kodezart-v03-criterion-label-independent-review
+HEAD 008ff18210babec71719c8fc64c8e39b35c2dbf0
+detached
+
+worktree /private/tmp/kodezart-v03-criterion-lifecycle-identity
+HEAD 8ef12cd9054eed87bd42024ac185473009809bb3
+branch refs/heads/codex/v03-criterion-lifecycle-identity
+
+worktree /private/tmp/kodezart-v03-criterion-lifecycle-mutants
+HEAD 8ef12cd9054eed87bd42024ac185473009809bb3
+detached
+
+worktree /private/tmp/kodezart-v03-criterion-read-boot
+HEAD 1c20be4f2bbb474e4960ce99e4c5d0a2d67d7e21
+branch refs/heads/codex/v03-criterion-read-boot
+
+worktree /private/tmp/kodezart-v03-criterion-record-fidelity
+HEAD 9bbf67087995bb1a6b67386b8014c2c81ab3ac28
+branch refs/heads/codex/v03-criterion-record-fidelity
+
+worktree /private/tmp/kodezart-v03-criterion-resolution
+HEAD f094b5eb6dffd275efab49bce80ee3f25fd1832e
+branch refs/heads/codex/v03-criterion-resolution
+
+worktree /private/tmp/kodezart-v03-criterion-resolution-mutants
+HEAD f094b5eb6dffd275efab49bce80ee3f25fd1832e
+detached
+
+worktree /private/tmp/kodezart-v03-current-union
+HEAD 39990202b66e8c63239d7ae6765c7f0550511c83
+branch refs/heads/codex/v03-current-union
+
+worktree /private/tmp/kodezart-v03-current-union-mutants
+HEAD 39990202b66e8c63239d7ae6765c7f0550511c83
+branch refs/heads/codex/v03-current-union-mutants
+
+worktree /private/tmp/kodezart-v03-delivery-flake
+HEAD e6988cf4b76d97f72ab083439f2b76e0b96e7589
+branch refs/heads/codex/v03-delivery-flake
+
+worktree /private/tmp/kodezart-v03-delivery-flake-mutants
+HEAD 79c333e601ced994388270602ff04b321e978a84
+branch refs/heads/codex/v03-delivery-flake-mutants
+
+worktree /private/tmp/kodezart-v03-delivery-native-review
+HEAD e7ae430ca2c82addec28b66d5a52d26a2878cc91
+detached
+
+worktree /private/tmp/kodezart-v03-delivery-no-adapter
+HEAD dc49867b5e06dc7ad5b259856d9449bfe7643528
+branch refs/heads/codex/v03-delivery-no-adapter
+
+worktree /private/tmp/kodezart-v03-delivery-no-adapter-mutants
+HEAD dc49867b5e06dc7ad5b259856d9449bfe7643528
+detached
+
+worktree /private/tmp/kodezart-v03-delivery-read-ownership
+HEAD 6fb6ad11af757d95301d7c24b6f4e5042cc9916c
+branch refs/heads/codex/v03-delivery-read-ownership
+
+worktree /private/tmp/kodezart-v03-delivery-read-ownership-mutants
+HEAD 6fb6ad11af757d95301d7c24b6f4e5042cc9916c
+detached
+
+worktree /private/tmp/kodezart-v03-delivery-replay
+HEAD bd38c4a266dd3742fcfa6f0bc17b0fc7afec2dd1
+branch refs/heads/codex/v03-delivery-replay
+
+worktree /private/tmp/kodezart-v03-delivery-replay-mutants
+HEAD bd38c4a266dd3742fcfa6f0bc17b0fc7afec2dd1
+branch refs/heads/codex/v03-delivery-replay-mutants
+
+worktree /private/tmp/kodezart-v03-delivery-retirement
+HEAD d504adda73abff6869fd4f9b4ca07029f6007272
+branch refs/heads/codex/kod-746-delivery-retirement
+
+worktree /private/tmp/kodezart-v03-delivery-retirement-mutations
+HEAD a6b0383fa0aaedfbf339ff3b543ae59c652d6dd0
+branch refs/heads/codex/kod-746-delivery-mutations
+
+worktree /private/tmp/kodezart-v03-delivery-root-review
+HEAD f0142dc907eb99cd0ec1e6bf26fb36b1cafdedf9
+detached
+
+worktree /private/tmp/kodezart-v03-delivery-stalled
+HEAD 38a8638fb7a811b225eeee3effe01249f8651234
+branch refs/heads/codex/v03-delivery-stalled
+
+worktree /private/tmp/kodezart-v03-delivery-stalled-mutants
+HEAD 38a8638fb7a811b225eeee3effe01249f8651234
+branch refs/heads/codex/v03-delivery-stalled-mutants
+
+worktree /private/tmp/kodezart-v03-description-replay-mutants
+HEAD 058dca9a1913afcc25349064e52416ce6984b64a
+branch refs/heads/codex/v03-description-replay-mutants
+
+worktree /private/tmp/kodezart-v03-detector-mutants
+HEAD 8b40e39f67ade2d100d748e9e7ecfdfd614ae3e5
+detached
+
+worktree /private/tmp/kodezart-v03-detector-removal
+HEAD 1dce04381615a12b5bf112cc669222e83a6140f6
+branch refs/heads/codex/kod-514-detector-removal
+
+worktree /private/tmp/kodezart-v03-dispatch-budget-fixture
+HEAD 1f722c1530b14f4ebed2c556f1178e189545679c
+branch refs/heads/codex/dispatch-budget-fixture
+
+worktree /private/tmp/kodezart-v03-dispatch-log-isolation
+HEAD cf6fc4ed13839454ec3628ec108e6a4b25818dfc
+branch refs/heads/codex/v03-dispatch-log-isolation
+
+worktree /private/tmp/kodezart-v03-domain-permissions
+HEAD 372fb93a820da893ca6eab7823159b440edc70f4
+branch refs/heads/codex/v03-domain-permissions
+
+worktree /private/tmp/kodezart-v03-empty-criteria-entry
+HEAD 387078509a87d815097d95d7f161abc3234b29d5
+branch refs/heads/codex/v03-empty-criteria-entry
+
+worktree /private/tmp/kodezart-v03-empty-criteria-mutations
+HEAD 387078509a87d815097d95d7f161abc3234b29d5
+branch refs/heads/codex/v03-empty-criteria-mutations
+
+worktree /private/tmp/kodezart-v03-escalation-collector-mutants
+HEAD 7f5bf1d8abff69282bb828c12f2b1190737a8ee4
+detached
+
+worktree /private/tmp/kodezart-v03-escalation-record-collector
+HEAD d8796325b64d3a3725775fd8757f2c522277f7e0
+branch refs/heads/codex/v03-escalation-record-collector
+
+worktree /private/tmp/kodezart-v03-escalation-review
+HEAD aafb0d225e30ad71b3696e77f67ae261108d001d
+branch refs/heads/codex/v03-escalation-review
+
+worktree /private/tmp/kodezart-v03-event-credential-fixtures
+HEAD bbed103b1358cb379c143b477ab6b79ed1fa8a8b
+branch refs/heads/codex/v03-event-credential-fixtures
+
+worktree /private/tmp/kodezart-v03-event-model-conformance
+HEAD 4f96b46aa2c83c0a59aee7cc8ba712348bd93538
+branch refs/heads/codex/v03-event-model-conformance
+
+worktree /private/tmp/kodezart-v03-evidence-ancestry-review
+HEAD a6db1309588e4edd544858cedcc062a5efb31471
+branch refs/heads/codex/v03-evidence-ancestry-integrity
+
+worktree /private/tmp/kodezart-v03-evidence-replacement-mutants
+HEAD a6db1309588e4edd544858cedcc062a5efb31471
+detached
+
+worktree /private/tmp/kodezart-v03-exact-description-replay
+HEAD 058dca9a1913afcc25349064e52416ce6984b64a
+branch refs/heads/codex/v03-exact-description-replay
+
+worktree /private/tmp/kodezart-v03-fire-audit-consumers
+HEAD dd13f62869833394f54bff8402caec4fac148906
+branch refs/heads/codex/v03-fire-audit-consumers
+
+worktree /private/tmp/kodezart-v03-fire-criterion-consumers
+HEAD 2d4ff638321eb3a150d1c39d0ab4b44175f90723
+branch refs/heads/codex/v03-fire-criterion-consumers
+
+worktree /private/tmp/kodezart-v03-fire-entry-mutants
+HEAD 2d389e5e194e1c566f55df632db949c229c85575
+branch refs/heads/codex/kod-424-fire-entry-mutants
+
+worktree /private/tmp/kodezart-v03-fire-extraction
+HEAD eeb91ef7aaf0e04063eaa2d1a9a43ee8e8624b89
+branch refs/heads/codex/v03-fire-extraction
+
+worktree /private/tmp/kodezart-v03-fire-extraction-mutants
+HEAD eeb91ef7aaf0e04063eaa2d1a9a43ee8e8624b89
+detached
+
+worktree /private/tmp/kodezart-v03-fire-spec-approval
+HEAD 2d389e5e194e1c566f55df632db949c229c85575
+branch refs/heads/codex/kod-424-fire-spec-approval
+
+worktree /private/tmp/kodezart-v03-fire-spec-consumer-mutations
+HEAD f50e3503382032ac3473d8b3634c213b3d225821
+branch refs/heads/codex/v03-fire-spec-consumer-mutations
+
+worktree /private/tmp/kodezart-v03-fire-spec-consumers
+HEAD f50e3503382032ac3473d8b3634c213b3d225821
+branch refs/heads/codex/v03-fire-spec-consumers
+
+worktree /private/tmp/kodezart-v03-fire-writer-inventory
+HEAD a3a3089f53f89055a8e86540c8fa3e08c8602839
+branch refs/heads/codex/v03-fire-writer-inventory
+
+worktree /private/tmp/kodezart-v03-focused-readers-and-admission
+HEAD 50c46d6187ba1c935631a3aa054c3d93a335a865
+branch refs/heads/codex/v03-focused-readers-and-admission
+
+worktree /private/tmp/kodezart-v03-focused-readers-correction
+HEAD 6fe9dfe7be793b0f6d267177d15481dc30633a6a
+branch refs/heads/codex/v03-focused-readers-correction
+
+worktree /private/tmp/kodezart-v03-forge-settings-and-live-tests
+HEAD 67d6ab276ffe860a57e704b5dafeea8a2f6b5f06
+branch refs/heads/codex/v03-forge-settings-and-live-tests
+
+worktree /private/tmp/kodezart-v03-fresh-judgment-mechanics
+HEAD b62f57a6fc4717cbf57706c8538d3f2a55f8bccd
+branch refs/heads/codex/v03-fresh-judgment-mechanics
+
+worktree /private/tmp/kodezart-v03-fresh-judgment-mutations
+HEAD b62f57a6fc4717cbf57706c8538d3f2a55f8bccd
+branch refs/heads/codex/v03-fresh-judgment-mutations
+
+worktree /private/tmp/kodezart-v03-git-settings
+HEAD e6d467cd69d0cd214a7fa9bda3dfd17a1dabae29
+branch refs/heads/codex/v03-git-settings
+
+worktree /private/tmp/kodezart-v03-git-settings-mutants
+HEAD f68aaad80fe8106842029a9814f462e742009e80
+detached
+
+worktree /private/tmp/kodezart-v03-github-settings
+HEAD 20ac47f58e5cf59cce2cb5bf0cc1c074a0b948a5
+branch refs/heads/codex/v03-github-settings
+
+worktree /private/tmp/kodezart-v03-github-settings-mutants
+HEAD fee39c62d89d602cc935854f57860d53d1b4b167
+detached
+
+worktree /private/tmp/kodezart-v03-http-dependencies
+HEAD ecd0d144b977e0495e6e5a86a0c6eb812be37c13
+branch refs/heads/codex/v03-http-dependencies
+
+worktree /private/tmp/kodezart-v03-http-dependencies-before
+HEAD 2298e0d26ac64703f61b6ff0b9d042fafac0a05a
+branch refs/heads/codex/v03-http-dependencies-before
+
+worktree /private/tmp/kodezart-v03-http-mcp-lifecycle
+HEAD 2bedc1a3cbc949649700b35f5b29ea7ae1e92b59
+branch refs/heads/codex/v03-http-mcp-lifecycle
+
+worktree /private/tmp/kodezart-v03-http-mcp-lifecycle-mutants
+HEAD 2bedc1a3cbc949649700b35f5b29ea7ae1e92b59
+detached
+
+worktree /private/tmp/kodezart-v03-http-settings
+HEAD f3ca519c4142a2302c702d48c05fd25d5c1089d4
+branch refs/heads/codex/v03-http-settings
+
+worktree /private/tmp/kodezart-v03-http-settings-mutants
+HEAD f3ca519c4142a2302c702d48c05fd25d5c1089d4
+detached
+
+worktree /private/tmp/kodezart-v03-immediate-scope-refusal
+HEAD 01384493375167c3aa23c33b338a11cd1f7292b1
+branch refs/heads/codex/v03-immediate-scope-refusal
+
+worktree /private/tmp/kodezart-v03-job-acceptance-contract
+HEAD b89db2ac025d33844b2430bec82e3e01d4a640b4
+branch refs/heads/codex/v03-job-acceptance-contract
+
+worktree /private/tmp/kodezart-v03-job-queue-settings
+HEAD 3def3ece12920a46a9f46cc8da3ea09b21bfc50b
+branch refs/heads/codex/v03-job-queue-settings
+
+worktree /private/tmp/kodezart-v03-judgment-schema-census
+HEAD e5bb791f58f65be6b0880ed1bfcd1ad7c6bf437a
+branch refs/heads/codex/v03-judgment-schema-census
+
+worktree /private/tmp/kodezart-v03-knowledge-mutants
+HEAD 45e3e9f7e081011fc58985bb1b38854d9eeda6c7
+detached
+
+worktree /private/tmp/kodezart-v03-knowledge-settings
+HEAD 535351e12c095eb39eeb5ed388f54da88c52a99d
+branch refs/heads/codex/v03-knowledge-settings
+
+worktree /private/tmp/kodezart-v03-landing-review-base
+HEAD 162c34f24eccec2c1441108889013d4a45bcac1f
+branch refs/heads/codex/landing-review-base
+
+worktree /private/tmp/kodezart-v03-lane-record-mutations
+HEAD 975532d89c9427b4fa3b0024faadadd6e509dfa1
+branch refs/heads/codex/v03-lane-record-mutations
+
+worktree /private/tmp/kodezart-v03-lane-record-reader
+HEAD c3ef39d0b66dfdbb04cc82f32e0596f8307f2004
+branch refs/heads/codex/v03-lane-record-reader
+
+worktree /private/tmp/kodezart-v03-lifespan-cleanup
+HEAD 456662434bc61cad58c4bdc901c13452fdf15747
+detached
+
+worktree /private/tmp/kodezart-v03-lifespan-integration
+HEAD a7a09ba376cc0fa1f3a6a1e742d051c70dba4a37
+detached
+
+worktree /private/tmp/kodezart-v03-lifespan-mutants
+HEAD ff3783f62c2abb44ec5c4c77a78b4035c7d3991e
+detached
+
+worktree /private/tmp/kodezart-v03-live-harness
+HEAD ce193c878e2f00e050e381ae077c3e68efc494b7
+branch refs/heads/codex/v03-live-harness
+
+worktree /private/tmp/kodezart-v03-live-harness-mutations
+HEAD ce193c878e2f00e050e381ae077c3e68efc494b7
+detached
+
+worktree /private/tmp/kodezart-v03-logging-settings
+HEAD aedb2f20b4b5357ff9c7b8846fd1c598225baf62
+branch refs/heads/codex/v03-logging-settings
+
+worktree /private/tmp/kodezart-v03-logging-settings-mutants
+HEAD aedb2f20b4b5357ff9c7b8846fd1c598225baf62
+detached
+
+worktree /private/tmp/kodezart-v03-logging-test-isolation
+HEAD 51e45d2fd6822f721aa5c4ebb952876eb8361f6f
+branch refs/heads/codex/v03-logging-test-isolation
+
+worktree /private/tmp/kodezart-v03-m1-lease-corrective-independent-review
+HEAD 57dcc8c3ae4836207307a715812fe389c301e130
+detached
+
+worktree /private/tmp/kodezart-v03-m1-lease-extraction
+HEAD 90aea37cc25b0a8dc44df9509ca7392d92a5334d
+branch refs/heads/codex/v03-m1-lease-extraction
+
+worktree /private/tmp/kodezart-v03-m1-lease-root-review
+HEAD 57dcc8c3ae4836207307a715812fe389c301e130
+branch refs/heads/codex/v03-m1-lease-root-review
+
+worktree /private/tmp/kodezart-v03-m1-native-read-canonical-before
+HEAD 7892ca1a47adbcfd91fbcfb1e580dfc86f066a99
+detached
+
+worktree /private/tmp/kodezart-v03-m1-native-read-extraction
+HEAD fec7f28292975f0b4635a06ba84e4e35fdc3c2e8
+branch refs/heads/codex/v03-m1-native-read-extraction
+
+worktree /private/tmp/kodezart-v03-m1-scope-donor-review
+HEAD 5ef89e25649e855b4fe4df7540123774f6d782a2
+detached
+
+worktree /private/tmp/kodezart-v03-m1-scope-independent-review
+HEAD 18113978533fc1c0ed169bfc57ff3945084e48df
+detached
+
+worktree /private/tmp/kodezart-v03-m1-scope-ports
+HEAD a4575cd11133c5e631fff454de8cbac682f5a30e
+branch refs/heads/codex/v03-m1-scope-ports
+
+worktree /private/tmp/kodezart-v03-m4-tracker-lifecycle
+HEAD 340ad8df3bcbf23882f930cd200ce3d8cf627753
+branch refs/heads/codex/v03-m4-tracker-lifecycle
+
+worktree /private/tmp/kodezart-v03-m4-verifier-extraction
+HEAD 40b250c5c032c2a7ef9764c16f85bc7cf8d086ea
+branch refs/heads/codex/v03-m4-verifier-extraction
+
+worktree /private/tmp/kodezart-v03-mandate-evidence-terminal
+HEAD 00239d2fcc3c093dac6eaaa1d28902d930d99d1d
+branch refs/heads/codex/v03-mandate-evidence-terminal
+
+worktree /private/tmp/kodezart-v03-mandate-graph
+HEAD ed7c9942256af37f23ce04a991e2a6074e749eca
+branch refs/heads/codex/kod-519-mandate-graph
+
+worktree /private/tmp/kodezart-v03-mandate-graph-mutations
+HEAD ed7c9942256af37f23ce04a991e2a6074e749eca
+detached
+
+worktree /private/tmp/kodezart-v03-mandate-hunt-mutations
+HEAD 954cb5c1f3a07f76ab82dce3548b9c9cc899b2b7
+detached
+
+worktree /private/tmp/kodezart-v03-marker-lookups
+HEAD c14123dc2c1d2768597dcbc73c84eb20fc40139f
+branch refs/heads/codex/v03-marker-lookups
+
+worktree /private/tmp/kodezart-v03-marker-mutations
+HEAD c14123dc2c1d2768597dcbc73c84eb20fc40139f
+branch refs/heads/codex/v03-marker-mutations
+
+worktree /private/tmp/kodezart-v03-marker-preflight-independent-review
+HEAD be9717f47cdc88c7decddd8f849631d30735d027
+detached
+
+worktree /private/tmp/kodezart-v03-milestone-metadata
+HEAD 335f9bd2814ad43145f15b01d86dd402f532c328
+branch refs/heads/codex/v03-milestone-metadata
+
+worktree /private/tmp/kodezart-v03-milestone-metadata-mutants
+HEAD 335f9bd2814ad43145f15b01d86dd402f532c328
+branch refs/heads/codex/v03-milestone-metadata-mutants
+
+worktree /private/tmp/kodezart-v03-model-agreement
+HEAD 8d4714f4715cce1a4a35a61248032507bd177a5c
+branch refs/heads/codex/v03-model-agreement
+
+worktree /private/tmp/kodezart-v03-model-baseline
+HEAD 46b09a4eeeaadb167b8729726d116c33a115e092
+detached
+
+worktree /private/tmp/kodezart-v03-model-contextual-mutants
+HEAD 69145da28a7430423cdeffaac920ce66e26d6eaf
+detached
+
+worktree /private/tmp/kodezart-v03-model-contextual-pointer
+HEAD 69145da28a7430423cdeffaac920ce66e26d6eaf
+detached
+
+worktree /private/tmp/kodezart-v03-model-mutants
+HEAD 8d4714f4715cce1a4a35a61248032507bd177a5c
+detached
+
+worktree /private/tmp/kodezart-v03-native-amended-corrective-independent
+HEAD 62a86add7740352da314e7788b7ad1423457f7ab
+detached
+
+worktree /private/tmp/kodezart-v03-native-amended-independent-current
+HEAD 4c6322fb10615257ad729357258e55f8b788cd93
+detached
+
+worktree /private/tmp/kodezart-v03-native-audit-fire-preparation
+HEAD 5f04abf43be3c55a36df2113c9b02927ed641ce0
+branch refs/heads/codex/v03-native-audit-fire-preparation
+
+worktree /private/tmp/kodezart-v03-native-gate-corrective
+HEAD 730051660180278c3555a68b67513ec0eaaa363b
+branch refs/heads/codex/v03-native-gate-corrective
+
+worktree /private/tmp/kodezart-v03-native-gate-independent
+HEAD 730051660180278c3555a68b67513ec0eaaa363b
+detached
+
+worktree /private/tmp/kodezart-v03-native-gate-parent-independent
+HEAD 1f4296c8c36a7498625d2478f8ec7ae6ec187923
+detached
+
+worktree /private/tmp/kodezart-v03-native-initiative-mutations
+HEAD 65e2ed7a2dfbdb8c919517fe25a9790ba4fa970f
+branch refs/heads/codex/v03-native-initiative-mutations
+
+worktree /private/tmp/kodezart-v03-native-prompt-independent-review
+HEAD 49b4bffa6fb39ac05ec1deb68a0425c5a28d2102
+detached
+
+worktree /private/tmp/kodezart-v03-native-read-address-corrective
+HEAD 47af373d8006849cbf773ab3cd3f5ebf5910e297
+branch refs/heads/codex/v03-native-read-address-corrective
+
+worktree /private/tmp/kodezart-v03-native-ruling-consumers
+HEAD ce1bd9a3c6d6ba98dfb0a66b8216cf70b7e5727e
+branch refs/heads/codex/v03-native-ruling-consumers
+
+worktree /private/tmp/kodezart-v03-native-ruling-proposal
+HEAD 98e780d22eda7e73552362444f3615798a7090f0
+branch refs/heads/codex/v03-native-ruling-proposal
+
+worktree /private/tmp/kodezart-v03-native-session-writeback
+HEAD 89f7059af847fd9603ce290a082e8078c3e24a8f
+branch refs/heads/codex/v03-native-session-writeback
+
+worktree /private/tmp/kodezart-v03-native-supervisor-collectors
+HEAD d7dab61aca30ca268fa9f52a35e9f3d0ba0e3278
+branch refs/heads/codex/v03-native-supervisor-collectors
+
+worktree /private/tmp/kodezart-v03-nested-docs-mutants
+HEAD 065759a4fb7abc6578d6e128df9090b02d2cf862
+detached
+
+worktree /private/tmp/kodezart-v03-nested-settings-docs
+HEAD 67455934b34364591ce57a8880e7cb7ac24593d5
+branch refs/heads/codex/v03-nested-settings-docs
+
+worktree /private/tmp/kodezart-v03-node-event-review
+HEAD 196e8b992cf91e722e72948a96f223e26cf7400d
+branch refs/heads/codex/v03-node-event-review
+
+worktree /private/tmp/kodezart-v03-node-session-events
+HEAD b559dfb3dbc4ef88d9c0186e6d5dfbbb25a48d05
+branch refs/heads/codex/v03-node-session-events
+
+worktree /private/tmp/kodezart-v03-node-session-mutants
+HEAD b559dfb3dbc4ef88d9c0186e6d5dfbbb25a48d05
+branch refs/heads/codex/v03-node-session-mutants
+
+worktree /private/tmp/kodezart-v03-operation-concerns
+HEAD ae3a8b814cc5e92a8bcb81b878710774142966ba
+branch refs/heads/codex/v03-operation-concerns
+
+worktree /private/tmp/kodezart-v03-operation-render-baseline
+HEAD 83bea4d562e7b124ca3eec4b086d68829dbf6ff5
+detached
+
+worktree /private/tmp/kodezart-v03-operation-sections
+HEAD d7e7521e970bf4d9a4137c2a687152e98ff41a98
+branch refs/heads/codex/kod-139-operation-sections
+
+worktree /private/tmp/kodezart-v03-organize-composition-review
+HEAD a6cde3bfdec703cea8c9e566b890739867962960
+detached
+
+worktree /private/tmp/kodezart-v03-organize-delivery-review
+HEAD 5f313422482f76e16f9b213ebb52a23c83464d8d
+detached
+
+worktree /private/tmp/kodezart-v03-organize-graph-independent-review
+HEAD f47a1c64d567cd345fedba572bb2d31b7f6e3625
+detached
+
+worktree /private/tmp/kodezart-v03-organize-native-review
+HEAD ee1d44bd540304f5effce4021f547768cfe5d82d
+detached
+
+worktree /private/tmp/kodezart-v03-origin-owner-peer
+HEAD 4656d9ac3f31df88ad748dd12f9f8664c7993a80
+detached
+
+worktree /private/tmp/kodezart-v03-outbound-admission
+HEAD 4bb47e5c48b337eb28cc307a8e12f3e33d5780c6
+branch refs/heads/codex/kod-485-outbound-admission
+
+worktree /private/tmp/kodezart-v03-outbound-admission-mutations
+HEAD cf063e32fa37e873cfddd401b986d7ab42c2e917
+branch refs/heads/codex/kod-485-outbound-admission-mutations
+
+worktree /private/tmp/kodezart-v03-overclaim-mutations
+HEAD d9418b4dd293e797c0bd311bf237400096922d07
+detached
+
+worktree /private/tmp/kodezart-v03-overclaim-sweep-mutants
+HEAD 4b2327f1fce6ed276cba5c66957b57a0260f96d3
+detached
+
+worktree /private/tmp/kodezart-v03-owned-resource-mechanics
+HEAD 47d39b3d9c35843af9875d3301136ef204d253eb
+branch refs/heads/codex/v03-owned-resource-mechanics
+
+worktree /private/tmp/kodezart-v03-owned-resource-mutations
+HEAD 47d39b3d9c35843af9875d3301136ef204d253eb
+branch refs/heads/codex/v03-owned-resource-mutations
+
+worktree /private/tmp/kodezart-v03-pagination-and-markers
+HEAD 7042032c2565597a116d7f022ff8f6752474f71c
+branch refs/heads/codex/v03-pagination-and-markers
+
+worktree /private/tmp/kodezart-v03-pagination-implementation
+HEAD 294b2e0b71e054df896bb16a3aceebeec5c768c3
+branch refs/heads/codex/v03-pagination-implementation
+
+worktree /private/tmp/kodezart-v03-pagination-mutations
+HEAD 93f9e89af088cc6941bb1e3322c3679fd01a06ec
+branch refs/heads/codex/v03-pagination-mutations
+
+worktree /private/tmp/kodezart-v03-pass-budget-mutants
+HEAD 1f722c1530b14f4ebed2c556f1178e189545679c
+branch refs/heads/codex/pass-budget-mutants
+
+worktree /private/tmp/kodezart-v03-permission-before
+HEAD a109855323e3ebc6ec3847a15928241020af36e8
+detached
+
+worktree /private/tmp/kodezart-v03-permission-mutations
+HEAD 7c0ed30a29b6901a7799a084bdfa0092c55e164f
+detached
+
+worktree /private/tmp/kodezart-v03-permissions-and-fixed-admission
+HEAD 83bea4d562e7b124ca3eec4b086d68829dbf6ff5
+branch refs/heads/codex/v03-permissions-and-fixed-admission
+
+worktree /private/tmp/kodezart-v03-phase-guard-mutations
+HEAD 7d856f24e55a3c6b050db0bb37df725ae954102d
+detached
+
+worktree /private/tmp/kodezart-v03-phase-ownership-guards
+HEAD 7d856f24e55a3c6b050db0bb37df725ae954102d
+branch refs/heads/codex/v03-phase-ownership-guards
+
+worktree /private/tmp/kodezart-v03-pr-content-mutants
+HEAD 51d83d55ba2626f9a2509380135749aa2f007a62
+branch refs/heads/codex/v03-pr-content-mutants
+
+worktree /private/tmp/kodezart-v03-pr-content-replay
+HEAD 51d83d55ba2626f9a2509380135749aa2f007a62
+branch refs/heads/codex/v03-pr-content-replay
+
+worktree /private/tmp/kodezart-v03-pr-footer
+HEAD bb80d07155e4d75c8794658f9e0b0bc3dde81e7b
+branch refs/heads/codex/v03-pr-footer
+
+worktree /private/tmp/kodezart-v03-pr-footer-mutants
+HEAD bb80d07155e4d75c8794658f9e0b0bc3dde81e7b
+branch refs/heads/codex/v03-pr-footer-mutants
+
+worktree /private/tmp/kodezart-v03-private-reference-mutations
+HEAD 64d60ef1c9a2dace1ce6ad11d388e3b6795f35c6
+branch refs/heads/codex/kod-491-reference-mutations
+
+worktree /private/tmp/kodezart-v03-public-docs
+HEAD 19a03d96c73ad1d757afe6d6384d70d533464171
+branch refs/heads/codex/kod-470-public-docs
+
+worktree /private/tmp/kodezart-v03-queue-origin-fixture
+HEAD 4b3ed1c0e916b391265a9d3627f0943ec829dc34
+branch refs/heads/codex/v03-queue-origin-fixture
+
+worktree /private/tmp/kodezart-v03-queue-settings-before
+HEAD debfbf65bfb9014665c447c1cd8bbffd55838596
+detached
+
+worktree /private/tmp/kodezart-v03-queue-settings-mutants
+HEAD 3def3ece12920a46a9f46cc8da3ea09b21bfc50b
+detached
+
+worktree /private/tmp/kodezart-v03-ready-spec-escalations
+HEAD 6e961a78aebebea0a3366674101117fc71b65b19
+branch refs/heads/codex/v03-ready-spec-escalations
+
+worktree /private/tmp/kodezart-v03-record-collector
+HEAD 289ad5104f3380648451545aea72bc873d92376a
+branch refs/heads/codex/kod-513-record-collector
+
+worktree /private/tmp/kodezart-v03-record-collector-mutations
+HEAD 289ad5104f3380648451545aea72bc873d92376a
+detached
+
+worktree /private/tmp/kodezart-v03-record-superseded
+HEAD fcf8c094fb58c9ee6d533a6afe03953ecc864da0
+branch refs/heads/codex/kod-511-record-superseded
+
+worktree /private/tmp/kodezart-v03-record-superseded-mutations
+HEAD fcf8c094fb58c9ee6d533a6afe03953ecc864da0
+detached
+
+worktree /private/tmp/kodezart-v03-recorded-assertion-drift
+HEAD 9ed898951b30950e914c4f8879ca7b8e2410192d
+branch refs/heads/codex/kod-510-recorded-assertion-drift
+
+worktree /private/tmp/kodezart-v03-recorded-assertion-mutants
+HEAD 9ed898951b30950e914c4f8879ca7b8e2410192d
+branch refs/heads/codex/kod-510-recorded-assertion-mutants
+
+worktree /private/tmp/kodezart-v03-recorded-landing
+HEAD affc8ff7a3ac9b616acc1c3e96c6971390423788
+branch refs/heads/codex/v03-recorded-landing
+
+worktree /private/tmp/kodezart-v03-recorded-landing-mutants
+HEAD affc8ff7a3ac9b616acc1c3e96c6971390423788
+detached
+
+worktree /private/tmp/kodezart-v03-recovery
+HEAD 55a87a5009e1816d1d87c130a7f46a2a83a9f37e
+branch refs/heads/codex/v03-recovery
+
+worktree /private/tmp/kodezart-v03-recovery-alarm-owner
+HEAD 179ef5acfad52758fc48ffe6fd0d32b2753931f2
+branch refs/heads/codex/v03-recovery-alarm-owner
+
+worktree /private/tmp/kodezart-v03-recovery-alarm-payload-fixture
+HEAD 417ceecabc0b6fb7a9f2d7a05c5fa459ad1b2358
+branch refs/heads/codex/v03-recovery-alarm-payload-fixture
+
+worktree /private/tmp/kodezart-v03-recovery-amendment-archive-guard
+HEAD 62a86add7740352da314e7788b7ad1423457f7ab
+detached
+
+worktree /private/tmp/kodezart-v03-recovery-amendment-comment
+HEAD edbd4112aa21340f005fd947bc49b33be95a8da9
+branch refs/heads/codex/v03-recovery-amendment-comment
+
+worktree /private/tmp/kodezart-v03-recovery-amendment-comment-before
+HEAD d14254e1b64b581693fd1032adbdaac57ccc9ce5
+detached
+
+worktree /private/tmp/kodezart-v03-recovery-amendment-comment-current
+HEAD 9136d9f316408d50daaf4946642d31ff88a31d77
+branch refs/heads/codex/v03-recovery-amendment-comment-current
+
+worktree /private/tmp/kodezart-v03-recovery-amendment-comment-retry
+HEAD 2c7bd233dcabda136a4e4122348bcc160420208b
+branch refs/heads/codex/v03-recovery-amendment-comment-retry
+
+worktree /private/tmp/kodezart-v03-recovery-audit-fixture-review
+HEAD 556552cb94d1d8ce4b36e358162b43785cd4b23e
+detached
+
+worktree /private/tmp/kodezart-v03-recovery-audit-preflight
+HEAD 38e848b2fd707df48bfe96cfcf2be42fd8da9ff6
+branch refs/heads/codex/v03-recovery-audit-preflight
+
+worktree /private/tmp/kodezart-v03-recovery-audit-report-contract
+HEAD fd93cf2a15fc8413fc50a1faf684b1deed254618
+branch refs/heads/codex/v03-recovery-audit-report-contract
+
+worktree /private/tmp/kodezart-v03-recovery-audit-runtime
+HEAD dd11ffd5439472a664ff5fc082ac8c83b11d0ee5
+branch refs/heads/codex/v03-recovery-audit-runtime
+
+worktree /private/tmp/kodezart-v03-recovery-audit-types
+HEAD fc4953e1d3847ad2ffe272b2e89aa88b8fbd4c5c
+branch refs/heads/codex/v03-recovery-audit-types
+
+worktree /private/tmp/kodezart-v03-recovery-classification-authority
+HEAD a51d7779f13aeb775294e802c1b737bb8cb529e3
+branch refs/heads/codex/v03-recovery-classification-authority
+
+worktree /private/tmp/kodezart-v03-recovery-classification-before
+HEAD 5ef89e25649e855b4fe4df7540123774f6d782a2
+detached
+
+worktree /private/tmp/kodezart-v03-recovery-classification-root-review
+HEAD a51d7779f13aeb775294e802c1b737bb8cb529e3
+branch refs/heads/codex/v03-recovery-classification-root-review
+
+worktree /private/tmp/kodezart-v03-recovery-comment-independent
+HEAD 9136d9f316408d50daaf4946642d31ff88a31d77
+branch refs/heads/codex/v03-recovery-comment-independent
+
+worktree /private/tmp/kodezart-v03-recovery-comment-provenance
+HEAD 03b99acb76a08b4c7000f052d90ef8a691496f95
+branch refs/heads/codex/v03-recovery-comment-provenance
+
+worktree /private/tmp/kodezart-v03-recovery-criterion-class
+HEAD b714b984112efd8471f73985300864d66a3eb814
+branch refs/heads/codex/v03-recovery-criterion-class
+
+worktree /private/tmp/kodezart-v03-recovery-criterion-label-surface
+HEAD 3135131abd04ca5796bad908e8820cbc305c1c2a
+branch refs/heads/codex/v03-recovery-criterion-label-surface
+
+worktree /private/tmp/kodezart-v03-recovery-gate-followup
+HEAD 01a62d6aa4991fdf6c916873a49940fbfb9eba5b
+branch refs/heads/codex/v03-recovery-gate-followup
+
+worktree /private/tmp/kodezart-v03-recovery-gate-reconciliation
+HEAD 1088e18fb35c7cf16da47ad7bab03dcf5f3d9f56
+branch refs/heads/codex/v03-recovery-gate-reconciliation
+
+worktree /private/tmp/kodezart-v03-recovery-graph-root-review
+HEAD 31bb28982835ac4e9d069c31b39931d40d580279
+branch refs/heads/codex/v03-recovery-graph-root-review
+
+worktree /private/tmp/kodezart-v03-recovery-integration
+HEAD 25b73576a9d224197241323d1bd2c9769d843b9d
+branch refs/heads/codex/v03-recovery-integration
+
+worktree /private/tmp/kodezart-v03-recovery-job-acceptance
+HEAD 85fc8a3d2fc5a45535894771d1758c80c4cd8ca8
+branch refs/heads/codex/v03-recovery-job-acceptance
+
+worktree /private/tmp/kodezart-v03-recovery-lane-delivery
+HEAD e7ae430ca2c82addec28b66d5a52d26a2878cc91
+branch refs/heads/codex/v03-recovery-lane-delivery
+
+worktree /private/tmp/kodezart-v03-recovery-marker-preflight
+HEAD be9717f47cdc88c7decddd8f849631d30735d027
+branch refs/heads/codex/v03-recovery-marker-preflight
+
+worktree /private/tmp/kodezart-v03-recovery-native-amended-root-review
+HEAD 4c6322fb10615257ad729357258e55f8b788cd93
+branch refs/heads/codex/v03-recovery-native-amended-root-review
+
+worktree /private/tmp/kodezart-v03-recovery-native-compat
+HEAD c47a7f112368db35a3d6e50315da9926e4282afc
+branch refs/heads/codex/v03-recovery-native-compat
+
+worktree /private/tmp/kodezart-v03-recovery-native-fire
+HEAD 19e5d870ddcd1f602cbfe402519d1c11e444835a
+branch refs/heads/codex/v03-recovery-native-fire
+
+worktree /private/tmp/kodezart-v03-recovery-native-prompt-census
+HEAD 49b4bffa6fb39ac05ec1deb68a0425c5a28d2102
+branch refs/heads/codex/v03-recovery-native-prompt-census
+
+worktree /private/tmp/kodezart-v03-recovery-native-resume
+HEAD 62a86add7740352da314e7788b7ad1423457f7ab
+branch refs/heads/codex/v03-recovery-native-resume
+
+worktree /private/tmp/kodezart-v03-recovery-native-state-resolver
+HEAD 53b3ca89efec37b23570bf6cfd78780cc2acddef
+branch refs/heads/codex/v03-recovery-native-state-resolver
+
+worktree /private/tmp/kodezart-v03-recovery-organize-ci
+HEAD 3aaad2d0f9b785297f97425eafef07c4d7ef78e3
+detached
+
+worktree /private/tmp/kodezart-v03-recovery-organize-composition
+HEAD 68eabb5157bbebd82ed181914bd39e32c62ea21c
+branch refs/heads/codex/v03-recovery-organize-composition
+
+worktree /private/tmp/kodezart-v03-recovery-organize-graph
+HEAD f47a1c64d567cd345fedba572bb2d31b7f6e3625
+detached
+
+worktree /private/tmp/kodezart-v03-recovery-organize-graph-correction
+HEAD 31bb28982835ac4e9d069c31b39931d40d580279
+branch refs/heads/codex/v03-recovery-organize-graph-correction
+
+worktree /private/tmp/kodezart-v03-recovery-organize-halt-types
+HEAD 64d64b315596b3a60ad8f6a05d134e7aa926634c
+detached
+
+worktree /private/tmp/kodezart-v03-recovery-organize-owner
+HEAD ee1d44bd540304f5effce4021f547768cfe5d82d
+branch refs/heads/codex/v03-recovery-organize-owner
+
+worktree /private/tmp/kodezart-v03-recovery-parent-rollup
+HEAD 7d6208af8054994ac5a146200f1f7a5b0e420db3
+branch refs/heads/codex/v03-recovery-parent-rollup
+
+worktree /private/tmp/kodezart-v03-recovery-port-failures
+HEAD 9b90086768f0481d8fbfc6eb52b5109d3a904a13
+branch refs/heads/codex/v03-recovery-port-contract
+
+worktree /private/tmp/kodezart-v03-recovery-ruling-reader-before
+HEAD 44fd521b593f2dd9120d303379babc055f48728e
+detached
+
+worktree /private/tmp/kodezart-v03-recovery-ruling-reader-review
+HEAD 03b99acb76a08b4c7000f052d90ef8a691496f95
+detached
+
+worktree /private/tmp/kodezart-v03-recovery-rulings-writeback
+HEAD 375314bd5e625160a306ba79bf3eb7ab3c7553ca
+branch refs/heads/codex/v03-recovery-rulings-writeback
+
+worktree /private/tmp/kodezart-v03-recovery-scope-ancestor
+HEAD dd6147c6c9ac40b6799e408bc8fd6b5554919646
+branch refs/heads/codex/v03-recovery-scope-ancestor
+
+worktree /private/tmp/kodezart-v03-recovery-scope-ancestor-root-review
+HEAD dd6147c6c9ac40b6799e408bc8fd6b5554919646
+branch refs/heads/codex/v03-recovery-scope-ancestor-root-review
+
+worktree /private/tmp/kodezart-v03-recovery-scope-runtime
+HEAD f632aee96063777628577c38af545b03eec18ee1
+branch refs/heads/codex/v03-recovery-scope-runtime
+
+worktree /private/tmp/kodezart-v03-recovery-semantic-amended
+HEAD 2e7fdd9b5412d05ebabc8fd612503038f8737a1e
+branch refs/heads/codex/v03-recovery-semantic-amended
+
+worktree /private/tmp/kodezart-v03-recovery-semantic-amendment
+HEAD d93f3e9734d010e49a0ed1baf59969e5227cbb4e
+branch refs/heads/codex/v03-recovery-semantic-amendment
+
+worktree /private/tmp/kodezart-v03-recovery-semantic-applied
+HEAD 0f6e88c0fec44519369423d3b5677c04d283583b
+branch refs/heads/codex/v03-recovery-semantic-applied
+
+worktree /private/tmp/kodezart-v03-recovery-semantic-applied-current
+HEAD db9d3702d16109d342ba44e08a9430b97bb9b6e3
+branch refs/heads/codex/v03-recovery-semantic-applied-current
+
+worktree /private/tmp/kodezart-v03-recovery-semantic-checkpoint-evidence
+HEAD 2727ee67175d8e2b078f02add50d15d3dffb00c4
+detached
+
+worktree /private/tmp/kodezart-v03-recovery-semantic-classification-corrective
+HEAD 2727ee67175d8e2b078f02add50d15d3dffb00c4
+branch refs/heads/codex/v03-recovery-semantic-classification-corrective
+
+worktree /private/tmp/kodezart-v03-recovery-semantic-independent-review
+HEAD 1c397368ed14f901e072c0840da2afc58bdbd02a
+detached
+
+worktree /private/tmp/kodezart-v03-recovery-semantic-local-source-before
+HEAD e94f82559addb09734cd7d063cc78e3ce50aa97e
+detached
+
+worktree /private/tmp/kodezart-v03-recovery-semantic-writeback
+HEAD 1c397368ed14f901e072c0840da2afc58bdbd02a
+branch refs/heads/codex/v03-recovery-semantic-writeback
+
+worktree /private/tmp/kodezart-v03-recovery-shared-contracts
+HEAD d59047eb0e465e98dedd0b6a93b727a74d57827c
+branch refs/heads/codex/v03-recovery-shared-contracts
+
+worktree /private/tmp/kodezart-v03-recovery-state-resolver-review
+HEAD 53b3ca89efec37b23570bf6cfd78780cc2acddef
+branch refs/heads/codex/v03-recovery-state-resolver-review
+
+worktree /private/tmp/kodezart-v03-recovery-surface-owner
+HEAD 3df7469e4da1484eb10d3ca86da825f4b473bba1
+branch refs/heads/codex/v03-recovery-surface-owner
+
+worktree /private/tmp/kodezart-v03-recovery-wire-boundary
+HEAD 2e6baba4acbec541e52c42c7794a58265a7ff913
+branch refs/heads/codex/v03-recovery-wire-boundary
+
+worktree /private/tmp/kodezart-v03-recovery-write-back-settings
+HEAD 64aa3bd1b406b24d2195cc52702569a4a8ed074c
+branch refs/heads/codex/v03-recovery-write-back-settings
+
+worktree /private/tmp/kodezart-v03-removal-sweep-mutants
+HEAD e2866ebba856800703daec51ce5d1f65ef1d4c3d
+detached
+
+worktree /private/tmp/kodezart-v03-repository-read-mutants
+HEAD 2b546f712a8ecfe5fc17cdfe6b22a8d269f15da4
+detached
+
+worktree /private/tmp/kodezart-v03-repository-read-ownership
+HEAD 2b546f712a8ecfe5fc17cdfe6b22a8d269f15da4
+branch refs/heads/codex/v03-repository-read-ownership
+
+worktree /private/tmp/kodezart-v03-retire-unused-writeback
+HEAD dc294ef95c50d5312cd5e3abb60b7ca4f3ac8c99
+branch refs/heads/codex/v03-retire-unused-writeback
+
+worktree /private/tmp/kodezart-v03-retirement-census-fix
+HEAD 8f222ac2a3e9732ac2e524553f71a023a829b29e
+branch refs/heads/codex/v03-retirement-census-fix
+
+worktree /private/tmp/kodezart-v03-rollup-review-native
+HEAD 7d6208af8054994ac5a146200f1f7a5b0e420db3
+detached
+
+worktree /private/tmp/kodezart-v03-roster-fixture-correction
+HEAD dee967495c5e2b7ee7de67fa50ff62722ec3d5f2
+branch refs/heads/codex/v03-roster-fixture-correction
+
+worktree /private/tmp/kodezart-v03-ruling-prompt
+HEAD 2723b7919f05e88403c85738ab58435e1a33517e
+branch refs/heads/codex/v03-ruling-prompt
+
+worktree /private/tmp/kodezart-v03-ruling-prompt-mutations
+HEAD 2723b7919f05e88403c85738ab58435e1a33517e
+branch refs/heads/codex/v03-ruling-prompt-mutations
+
+worktree /private/tmp/kodezart-v03-ruling-proposal
+HEAD c01dcd81cb1aee5885a0946df5b7c12a37bbac95
+branch refs/heads/codex/kod-633-ruling-proposal
+
+worktree /private/tmp/kodezart-v03-ruling-proposal-mutations
+HEAD c01dcd81cb1aee5885a0946df5b7c12a37bbac95
+branch refs/heads/codex/kod-633-ruling-proposal-mutations
+
+worktree /private/tmp/kodezart-v03-ruling-record-mutants
+HEAD a2efabfde9d5067745365ce9bc911f9e7d69c0e4
+branch refs/heads/codex/kod-ruling-record-mutants
+
+worktree /private/tmp/kodezart-v03-ruling-records
+HEAD 687723f9cd0fa77a66d74ba4da53fdbf5c3fe687
+branch refs/heads/codex/kod-94-ruling-records
+
+worktree /private/tmp/kodezart-v03-ruling-schema-descriptions
+HEAD 9410e2508d4b53729df7a46866cc0819886c464a
+detached
+
+worktree /private/tmp/kodezart-v03-ruling-session-review
+HEAD fd969d6b735c9034713fa84343f1e9159c2e8579
+detached
+
+worktree /private/tmp/kodezart-v03-runtime-claims-fire-spec
+HEAD 014b2fe45936a080cdecfa39266bea7651d2215a
+branch refs/heads/codex/v03-runtime-claims-fire-spec
+
+worktree /private/tmp/kodezart-v03-runtime-simplification
+HEAD 5c62eb147b21988d91b8851051b97bae684f5fa1
+branch refs/heads/codex/v03-runtime-simplification
+
+worktree /private/tmp/kodezart-v03-scanner-failure-contract
+HEAD b3acf83ba242c840e0a5cfe01a9078bb7696bb9a
+branch refs/heads/codex/v03-scanner-failure-contract
+
+worktree /private/tmp/kodezart-v03-scanner-failure-mutations
+HEAD b3acf83ba242c840e0a5cfe01a9078bb7696bb9a
+detached
+
+worktree /private/tmp/kodezart-v03-scanner-sdk-before
+HEAD daeb1cb761d9a4fc90d470ea48315ad8161dc8c7
+detached
+
+worktree /private/tmp/kodezart-v03-schema-census-mutants
+HEAD e5bb791f58f65be6b0880ed1bfcd1ad7c6bf437a
+detached
+
+worktree /private/tmp/kodezart-v03-scope-approval
+HEAD 4f48afe6da0f495e3da827f62f9d52218f3cc95e
+branch refs/heads/codex/kod-380-scope-approval
+
+worktree /private/tmp/kodezart-v03-scope-approval-mutants
+HEAD b1d410c2849e46cb8ec81b9a03ecb264f9f9a5d2
+branch refs/heads/codex/scope-approval-mutants
+
+worktree /private/tmp/kodezart-v03-scope-native-consumers
+HEAD 30d6bab0a5feb2fbb25d3c9a799ffb2857fe04bf
+branch refs/heads/codex/v03-scope-native-consumers
+
+worktree /private/tmp/kodezart-v03-scope-plan-barriers
+HEAD c0638caf0749f033e8c2531057e94db5dd13612d
+branch refs/heads/codex/v03-scope-plan-barriers
+
+worktree /private/tmp/kodezart-v03-scope-plan-mutations
+HEAD 616801e016e257506815e32c143b3036161a17ce
+branch refs/heads/codex/v03-scope-plan-mutations
+
+worktree /private/tmp/kodezart-v03-scope-ready
+HEAD f356c5fa7781731eb681d84f98d169f97ce3176f
+branch refs/heads/codex/v03-scope-ready
+
+worktree /private/tmp/kodezart-v03-scope-ready-mutants
+HEAD f356c5fa7781731eb681d84f98d169f97ce3176f
+branch refs/heads/codex/v03-scope-ready-mutants
+
+worktree /private/tmp/kodezart-v03-scope-review-delivery
+HEAD 9d379f485c276d67be713f530d02cdbf7281d69b
+detached
+
+worktree /private/tmp/kodezart-v03-scope-tally
+HEAD dd6c7faa6d19d848a67727c035a85e51068af9ff
+branch refs/heads/codex/kod-503-scope-tally
+
+worktree /private/tmp/kodezart-v03-scope-tally-mutants
+HEAD 51bc8f9d01206eba30f472ab232d71e450f4f9ad
+branch refs/heads/codex/kod-503-scope-tally-mutants
+
+worktree /private/tmp/kodezart-v03-self-write-attribution
+HEAD 4ae496cd3cc77ca2f6c5a92ff9e4d77587d0a27d
+branch refs/heads/codex/v03-self-write-attribution
+
+worktree /private/tmp/kodezart-v03-self-write-mutants
+HEAD 4ae496cd3cc77ca2f6c5a92ff9e4d77587d0a27d
+detached
+
+worktree /private/tmp/kodezart-v03-session-failures-and-agent-settings
+HEAD f1ae6ac781b20111a35c8ac59d5622b265a768ff
+branch refs/heads/codex/v03-session-failures-and-agent-settings
+
+worktree /private/tmp/kodezart-v03-session-guard-mutations
+HEAD b89db2ac025d33844b2430bec82e3e01d4a640b4
+branch refs/heads/codex/v03-session-guard-mutations
+
+worktree /private/tmp/kodezart-v03-session-settings-correction
+HEAD b89db2ac025d33844b2430bec82e3e01d4a640b4
+branch refs/heads/codex/v03-session-settings-correction
+
+worktree /private/tmp/kodezart-v03-shared-policies-and-sessions
+HEAD 7042032c2565597a116d7f022ff8f6752474f71c
+branch refs/heads/codex/v03-shared-policies-and-sessions
+
+worktree /private/tmp/kodezart-v03-shared-policies-correction
+HEAD d350b0a441687fa2049f70751ca8239ee9b0d78f
+branch refs/heads/codex/v03-shared-policies-correction
+
+worktree /private/tmp/kodezart-v03-source-prose
+HEAD 92af9aa122a649783c4b4e7fc16af36dedac54cf
+branch refs/heads/codex/kod-470-source-prose
+
+worktree /private/tmp/kodezart-v03-stalled-cumulative
+HEAD c8382d953ca6e5fcca90f0d98e7e27c7dfc9f256
+branch refs/heads/codex/v03-stalled-cumulative
+
+worktree /private/tmp/kodezart-v03-stalled-cumulative-mutants
+HEAD c8382d953ca6e5fcca90f0d98e7e27c7dfc9f256
+detached
+
+worktree /private/tmp/kodezart-v03-state-history-mutants
+HEAD c4cdb4f4d212bdc64f54351ae5281a53138d809d
+detached
+
+worktree /private/tmp/kodezart-v03-state-history-mutations
+HEAD a573c5a74005970c9126e82d98f096bf656eb5db
+detached
+
+worktree /private/tmp/kodezart-v03-state-history-receipts
+HEAD c4cdb4f4d212bdc64f54351ae5281a53138d809d
+detached
+
+worktree /private/tmp/kodezart-v03-terminal-mandate-mutants
+HEAD e6be6a68b2cd2831ab6314929cd8ddb0a3f751df
+branch refs/heads/codex/v03-terminal-mandate-mutants
+
+worktree /private/tmp/kodezart-v03-terminal-mutations
+HEAD 85c9fa819990285ce846968b5e27493e980bd6d6
+detached
+
+worktree /private/tmp/kodezart-v03-tool-preset-mutations
+HEAD 3123e235e3a0fea86e3834f12fd916de7a7f109d
+detached
+
+worktree /private/tmp/kodezart-v03-tool-presets
+HEAD 3123e235e3a0fea86e3834f12fd916de7a7f109d
+branch refs/heads/codex/v03-tool-presets
+
+worktree /private/tmp/kodezart-v03-tracker-feasibility
+HEAD dc25386a82c0a0a6be9a02ee7241523a7d0b84ba
+branch refs/heads/codex/v03-tracker-feasibility
+
+worktree /private/tmp/kodezart-v03-tracker-feasibility-mutations
+HEAD dc25386a82c0a0a6be9a02ee7241523a7d0b84ba
+branch refs/heads/codex/v03-tracker-feasibility-mutations
+
+worktree /private/tmp/kodezart-v03-tracker-port-boundaries
+HEAD 97d442bcd401a174d70eb95895fd1e6a9576d150
+detached
+
+worktree /private/tmp/kodezart-v03-tracker-port-boundaries-before
+HEAD 97d442bcd401a174d70eb95895fd1e6a9576d150
+detached
+
+worktree /private/tmp/kodezart-v03-tracker-settings
+HEAD a4e758baed4a441d19eaf5258b17d4fea1f4bcc0
+branch refs/heads/codex/v03-tracker-settings
+
+worktree /private/tmp/kodezart-v03-tracker-settings-mutants
+HEAD 95651f014702090a7d7af4496f6a4302585a5518
+detached
+
+worktree /private/tmp/kodezart-v03-typed-private-references
+HEAD 8167a2dc388dcf6235f898d0148044b2d50f1617
+branch refs/heads/codex/kod-491-typed-private-references
+
+worktree /private/tmp/kodezart-v03-typed-runtime-boundaries
+HEAD 63e892cc6a0d189bc88774d4952da652e237d256
+branch refs/heads/codex/v03-typed-runtime-boundaries
+
+worktree /private/tmp/kodezart-v03-typed-runtime-correction
+HEAD a2f2e99d2ab8842030e6d3dfc366311e44a19932
+branch refs/heads/codex/v03-typed-runtime-correction
+
+worktree /private/tmp/kodezart-v03-union-conflict-mutants
+HEAD a87996e79de202ee9fa3597e8a11079bcd1ec2fa
+branch refs/heads/codex/v03-union-conflict-mutants
+
+worktree /private/tmp/kodezart-v03-union-conflict-remediation
+HEAD a87996e79de202ee9fa3597e8a11079bcd1ec2fa
+branch refs/heads/codex/v03-union-conflict-remediation
+
+worktree /private/tmp/kodezart-v03-union-native-inputs
+HEAD 79a7a4624ef2237d8cebb7089b0a1c962d8e1f22
+branch refs/heads/codex/v03-union-native-inputs
+
+worktree /private/tmp/kodezart-v03-union-record-delivery
+HEAD 81e485c787c87bdfb9cc4b42ed21928b25f02b49
+branch refs/heads/codex/v03-union-record-delivery
+
+worktree /private/tmp/kodezart-v03-union-replacement-mutants
+HEAD 79a7a4624ef2237d8cebb7089b0a1c962d8e1f22
+branch refs/heads/codex/v03-union-replacement-mutants
+
+worktree /private/tmp/kodezart-v03-union-workspace-protection
+HEAD b3c8d1a736010a40abe1e89071171ff71fe65d13
+branch refs/heads/codex/v03-union-workspace-protection
+
+worktree /private/tmp/kodezart-v03-workflow-ownership-before
+HEAD f1ae6ac781b20111a35c8ac59d5622b265a768ff
+detached
+
+worktree /private/tmp/kodezart-v03-workflow-phases
+HEAD 882889059504e0c922024da1068d864f62f9a593
+detached
+
+worktree /private/tmp/kodezart-v03-workflow-phases-and-settings
+HEAD a109855323e3ebc6ec3847a15928241020af36e8
+branch refs/heads/codex/v03-workflow-phases-and-settings
+
+worktree /private/tmp/kodezart-v03-workflow-phases-before
+HEAD 882889059504e0c922024da1068d864f62f9a593
+detached
+
+worktree /private/tmp/kodezart-v03-workflow-readiness-review
+HEAD f1ae6ac781b20111a35c8ac59d5622b265a768ff
+detached
+
+worktree /private/tmp/kodezart-v03-workspace-url-mutants
+HEAD 1ded7425612c7b9ef4a2997f248cb59b273db922
+branch refs/heads/codex/v03-workspace-url-mutants
+
+worktree /private/tmp/kodezart-v03-workspace-url-patterns
+HEAD 763d7be11cc5624efd5e9e680d4afaa10acc1e9e
+branch refs/heads/codex/v03-workspace-url-patterns
+
+worktree /private/tmp/kodezart-v03-write-back-mutations
+HEAD b7c43f957fe845f984b485b39a26abd20eeb6dc2
+detached
+
+worktree /private/tmp/kodezart-v03-write-back-settings-independent-review
+HEAD 64aa3bd1b406b24d2195cc52702569a4a8ed074c
+detached
+
+worktree /private/tmp/kodezart-v03-write-back-verifier
+HEAD 3a288c5141abd1ca2bd63f09b9d1d10f9305c2e1
+branch refs/heads/codex/v03-write-back-verifier
+
+worktree /private/tmp/kodezart-v03-writeback-native-proof
+HEAD d0f30f29b20884267876452902547acb0dd0b013
+branch refs/heads/codex/v03-writeback-native-proof
+
+worktree /private/tmp/kodezart-v03-writeback-native-proof-mutations
+HEAD d0f30f29b20884267876452902547acb0dd0b013
+branch refs/heads/codex/v03-writeback-native-proof-mutations
+

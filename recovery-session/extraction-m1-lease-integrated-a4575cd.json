@@ -1,0 +1,12 @@
+{
+  "source": "90aea37cc25b0a8dc44df9509ca7392d92a5334d",
+  "destination": "c795bb692e2d037a28affd4d1f5764aa1c43dca5",
+  "corrective_source": "57dcc8c3ae4836207307a715812fe389c301e130",
+  "corrective_destination": "a4575cd11133c5e631fff454de8cbac682f5a30e",
+  "review_tree": "92c99fe09310652f7e5e12f33625c28413dff924",
+  "destination_tree": "92c99fe09310652f7e5e12f33625c28413dff924",
+  "original_hunk_map": "m1-lease-extraction-manifest-90aea37.json",
+  "corrective_patch": "m1-marker-corrective-57dcc8c.patch",
+  "tests": "CI3439/16/75.62s + identical localtree3439/16/501.98s; strict178/Ruff355/literal",
+  "remaining": "M1 native-read/classification/tool-policy; all remaining milestones; full recomposition"
+}

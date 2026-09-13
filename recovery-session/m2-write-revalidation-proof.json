@@ -1,0 +1,21 @@
+{
+  "sha": "38956bb04f70b5cbd5d6ffbc5dbc9b08a29e369f",
+  "tree": "38e10468599b6c041206d1dfe1f88b2d8312d120",
+  "base": "9e387b4a830adf87a3cebcbe705c17f1569101c7",
+  "files": {
+    "src/kodezart/adapters/linear_mcp_tracker.py": "77c2ca5c6db91d8aa4504a68debebaba9adf18f5b317a471f8edb4b593bb4ecd",
+    "src/kodezart/core/protocols.py": "db777980e4dc9f68510719d2fac169259988988f166bd738cfffb114385099a3",
+    "src/kodezart/services/organize_owner.py": "2a9e1ed1151d149ec73ee30f6f19740e92907a83c6010880efd14256ac531550",
+    "src/kodezart/types/domain/surface.py": "0b320ab7326370e2ce58b5c71649d320cd4d4fc4ae832d5081b756d846807fc3",
+    "tests/chains/test_organize_description_authority.py": "3d8f1b2a9caa6f060bea64a8593ffd2a311238f704126eee9ab73e8797e994c2",
+    "tests/chains/test_organize_write_revalidation.py": "2e975b403dc6462435fe5edb9e4f1f9dd4a7bf243ba8e31467e0a787024ad8d7",
+    "tests/fakes.py": "e9ab02e9d37ebcd828bc06ceb05a7c4b9c6ac39c279262305945cd51ddc70e3e"
+  },
+  "before_body": "m2-description-authority-before-valid.log:3failed2passed2.20s",
+  "before_other_surfaces": "m2-all-writes-revalidation-before.log:3failed2.09s",
+  "intermediate": "m2-description-authority-after.log:1failed43passed17.42s",
+  "after": "m2-all-writes-revalidation-after.log:31passed0.86s; m2-write-revalidation-after.log:67passed22.27s",
+  "typing": "m2-write-revalidation-types.log:216sourcepassed; finalchangedRuffpassed",
+  "independent_review": "pending",
+  "integration": "unpublished; root-only"
+}

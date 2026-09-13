@@ -1,0 +1,156 @@
+E501 Line too long (90 > 88)
+  --> tests/services/test_run_surface_lease.py:90:89
+   |
+89 |     def outcome_comments(self):
+90 |         return [c for c in self.server.comments if c.body.startswith("[fixture-outcome:")]
+   |                                                                                         ^^
+91 |
+92 |     def lease_creations(self):
+   |
+
+E501 Line too long (89 > 88)
+   --> tests/services/test_run_surface_lease.py:188:89
+    |
+186 |         assert "separate-deployment" not in creation["body"]
+187 |         assert board.holds_at_write and all(board.holds_at_write)
+188 |         assert all("state: held\n" in h for holds in board.holds_at_write for h in holds)
+    |                                                                                         ^
+189 |         assert record.job_id in board.outcome_comments()[0].body
+190 |         assert gate.calls[0][-1] is ContentClass.DERIVED
+    |
+
+E501 Line too long (90 > 88)
+   --> tests/services/test_run_surface_lease.py:232:89
+    |
+230 |     first, second = surface("A"), surface("B")
+231 |     async with RunSurfaceLease(
+232 |         tracker=tracker, job_id="one", surfaces=frozenset({first}), lease_seconds=DURATION
+    |                                                                                         ^^
+233 |     ), RunSurfaceLease(
+234 |         tracker=tracker, job_id="two", surfaces=frozenset({second}), lease_seconds=DURATION
+    |
+
+E501 Line too long (91 > 88)
+   --> tests/services/test_run_surface_lease.py:234:89
+    |
+232 |         tracker=tracker, job_id="one", surfaces=frozenset({first}), lease_seconds=DURATION
+233 |     ), RunSurfaceLease(
+234 |         tracker=tracker, job_id="two", surfaces=frozenset({second}), lease_seconds=DURATION
+    |                                                                                         ^^^
+235 |     ):
+236 |         await asyncio.gather(
+    |
+
+E501 Line too long (93 > 88)
+   --> tests/services/test_run_surface_lease.py:237:89
+    |
+235 |     ):
+236 |         await asyncio.gather(
+237 |             tracker.upsert_comment(target=CLAIMED_ISSUE, marker="A", body="a", holder="one"),
+    |                                                                                         ^^^^^
+238 |             tracker.upsert_comment(target=CLAIMED_ISSUE, marker="B", body="b", holder="two"),
+239 |         )
+    |
+
+E501 Line too long (93 > 88)
+   --> tests/services/test_run_surface_lease.py:238:89
+    |
+236 |         await asyncio.gather(
+237 |             tracker.upsert_comment(target=CLAIMED_ISSUE, marker="A", body="a", holder="one"),
+238 |             tracker.upsert_comment(target=CLAIMED_ISSUE, marker="B", body="b", holder="two"),
+    |                                                                                         ^^^^^
+239 |         )
+240 |         with pytest.raises(SurfaceLeaseError) as caught:
+    |
+
+E501 Line too long (90 > 88)
+   --> tests/services/test_run_surface_lease.py:258:89
+    |
+256 |     first, second = surface("A"), surface("B")
+257 |     async with RunSurfaceLease(
+258 |         tracker=tracker, job_id="one", surfaces=frozenset({first}), lease_seconds=DURATION
+    |                                                                                         ^^
+259 |     ):
+260 |         with pytest.raises(SurfaceLeaseError) as caught:
+    |
+
+E501 Line too long (101 > 88)
+   --> tests/services/test_run_surface_lease.py:295:89
+    |
+293 |             )
+294 |         assert caught.value.current_holder is None
+295 |         await tracker.acquire_surfaces(surfaces=surfaces, holder="successor", lease_seconds=DURATION)
+    |                                                                                         ^^^^^^^^^^^^^
+296 |         for _ in range(2):
+297 |             with pytest.raises(SurfaceLeaseLostError) as lost:
+    |
+
+E501 Line too long (108 > 88)
+   --> tests/services/test_run_surface_lease.py:302:89
+    |
+300 |             assert lost.value.surfaces == surfaces
+301 |             assert not hasattr(lost.value, "current_holder")
+302 |         await tracker.upsert_comment(target=CLAIMED_ISSUE, marker="A", body="successor", holder="successor")
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^
+303 |     assert len(board.lease_creations()) == 2
+304 |     assert all("holder: successor\n" in c.body for c in board.grants())
+    |
+
+E501 Line too long (158 > 88)
+   --> tests/services/test_run_surface_lease.py:346:89
+    |
+344 | …
+345 | …
+346 | …mment" and "state: held\n" in str(args.get("body", "")) and "since:" not in str(args.get("body", ""))
+    |                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+347 | …
+348 | …
+    |
+
+E501 Line too long (105 > 88)
+   --> tests/services/test_run_surface_lease.py:349:89
+    |
+347 |     elif phase == "renew":
+348 |         board.after = True
+349 |         board.pause = lambda name, args: name == "save_comment" and "since:" in str(args.get("body", ""))
+    |                                                                                         ^^^^^^^^^^^^^^^^^
+350 |     elif phase == "write":
+351 |         board.pause = lambda name, args: name == "save_comment" and str(args.get("body", "")).startswith("[fixture-outcome:")
+    |
+
+E501 Line too long (125 > 88)
+   --> tests/services/test_run_surface_lease.py:351:89
+    |
+349 |         board.pause = lambda name, args: name == "save_comment" and "since:" in str(args.get("body", ""))
+350 |     elif phase == "write":
+351 |         board.pause = lambda name, args: name == "save_comment" and str(args.get("body", "")).startswith("[fixture-outcome:")
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+352 |     else:
+353 |         board.pause = lambda name, args: name == "delete_comment"
+    |
+
+ARG005 Unused lambda argument: `args`
+   --> tests/services/test_run_surface_lease.py:353:36
+    |
+351 |         board.pause = lambda name, args: name == "save_comment" and str(args.get("body", "")).startswith("[fixture-outcome:")
+352 |     else:
+353 |         board.pause = lambda name, args: name == "delete_comment"
+    |                                    ^^^^
+354 |     task = asyncio.create_task(outcome(board))
+355 |     async with asyncio.timeout(10):
+    |
+
+F841 Local variable `tracker` is assigned to but never used
+   --> tests/services/test_run_surface_lease.py:375:5
+    |
+373 | async def test_a_lease_does_not_allow_replacing_another_authors_comment(author):
+374 |     board = _Board()
+375 |     tracker = board.tracker()
+    |     ^^^^^^^
+376 |     await outcome(board)
+377 |     comment = board.outcome_comments()[0]
+    |
+help: Remove assignment to unused variable `tracker`
+
+Found 16 errors (2 fixed, 14 remaining).
+No fixes available (1 hidden fix can be enabled with the `--unsafe-fixes` option).

@@ -1,0 +1,14 @@
+{
+  "source_sha": "62a86add7740352da314e7788b7ad1423457f7ab",
+  "source_tree": "5061c8a2160e41a027751f0dc2a86481c651dd65",
+  "original_archive_sha256": "d4f50dc256103891e2f38921e614cbcf1df3e43ffbc95ec9e2b6fc2b1a9b0e67",
+  "original_payload_sha256": "b2965db4c447c982dba59a9adcccd77dc7987353464d785344e8096eb03855a7",
+  "formatted_committed_archive_same_ast": true,
+  "source_diff_names": [
+    "src/kodezart/services/amendment_writeback.py",
+    "src/kodezart/services/native_amendments.py",
+    "tests/services/test_native_amendment_archive_independent.py",
+    "tests/services/test_native_amendment_archive_publication.py"
+  ],
+  "worktree_status": ""
+}

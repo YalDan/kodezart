@@ -1,0 +1,149 @@
+{
+  "utc": "2026-09-12T22:25:52.268969+00:00",
+  "prs": [
+    {
+      "number": 72,
+      "title": "feat: add scope inputs, live membership reads, and admission vocabulary",
+      "headRefOid": "5514b8d959a694f9985f27980a40ef1dd1779400",
+      "baseRefOid": "4661a24b599d75503a997f3ce122f3ad2da77048",
+      "state": "OPEN",
+      "files": 60,
+      "unresolved": 0,
+      "pagination": {
+        "hasNextPage": false,
+        "endCursor": null
+      }
+    },
+    {
+      "number": 108,
+      "title": "docs(changelog): record the criterion class's removal from the wire",
+      "headRefOid": "e9c6a95314dd7dcb8396947645f78492a4e07771",
+      "baseRefOid": "3f942fbeb6b73068902bfa983272d213e83f75f1",
+      "state": "OPEN",
+      "files": 42,
+      "unresolved": 0,
+      "pagination": {
+        "hasNextPage": false,
+        "endCursor": null
+      }
+    },
+    {
+      "number": 110,
+      "title": "feat(fire): the criteria a native fire owes come from the tracker's ow",
+      "headRefOid": "7a7185e512c9ea0d1eb5904ef44e172a4263f46a",
+      "baseRefOid": "3f942fbeb6b73068902bfa983272d213e83f75f1",
+      "state": "OPEN",
+      "files": 3,
+      "unresolved": 0,
+      "pagination": {
+        "hasNextPage": false,
+        "endCursor": null
+      }
+    },
+    {
+      "number": 112,
+      "title": "test(reconciler): the default arm answers what it cannot substantiate ",
+      "headRefOid": "50779d832c8a92d167785ebe7071ee970192e295",
+      "baseRefOid": "3f942fbeb6b73068902bfa983272d213e83f75f1",
+      "state": "OPEN",
+      "files": 3,
+      "unresolved": 0,
+      "pagination": {
+        "hasNextPage": false,
+        "endCursor": null
+      }
+    },
+    {
+      "number": 114,
+      "title": "test(union): drive every exit of the union step, and walk holdings thr",
+      "headRefOid": "c17f5d71ce95a94d0fd63f74ee6aa467cce01dad",
+      "baseRefOid": "3f942fbeb6b73068902bfa983272d213e83f75f1",
+      "state": "OPEN",
+      "files": 2,
+      "unresolved": 0,
+      "pagination": {
+        "hasNextPage": false,
+        "endCursor": null
+      }
+    },
+    {
+      "number": 115,
+      "title": "feat(loop): retain amendment verdicts and report repeat refusals besid",
+      "headRefOid": "f0c8040110cebc4107db9cbcb30e6bef2da9abdf",
+      "baseRefOid": "3f942fbeb6b73068902bfa983272d213e83f75f1",
+      "state": "OPEN",
+      "files": 7,
+      "unresolved": 1,
+      "pagination": {
+        "hasNextPage": false,
+        "endCursor": "Y3Vyc29yOnYyOpK0MjAyNi0wOS0wOVQyMToyNDozNFrOoNbqRA=="
+      }
+    },
+    {
+      "number": 116,
+      "title": "test(scope): a lane is not at rest while its subtree holds a criterion",
+      "headRefOid": "9899fe6f23ead2194fd709fdac6a4fe5b1b69b7e",
+      "baseRefOid": "3f942fbeb6b73068902bfa983272d213e83f75f1",
+      "state": "OPEN",
+      "files": 15,
+      "unresolved": 0,
+      "pagination": {
+        "hasNextPage": false,
+        "endCursor": null
+      }
+    },
+    {
+      "number": 117,
+      "title": "test(criteria): assert one criterion resolution site and no text or ch",
+      "headRefOid": "2eed8a9c0a8c39f6ebf203d04af1b315908aea7b",
+      "baseRefOid": "3f942fbeb6b73068902bfa983272d213e83f75f1",
+      "state": "OPEN",
+      "files": 1,
+      "unresolved": 0,
+      "pagination": {
+        "hasNextPage": false,
+        "endCursor": null
+      }
+    },
+    {
+      "number": 119,
+      "title": "M1: Scope inputs, tracker ports and surface ownership",
+      "headRefOid": "241e85cca03c963ec1ddd17e29f10700d499ce14",
+      "baseRefOid": "4661a24b599d75503a997f3ce122f3ad2da77048",
+      "state": "OPEN",
+      "files": 100,
+      "unresolved": 0,
+      "pagination": {
+        "hasNextPage": false,
+        "endCursor": null
+      }
+    },
+    {
+      "number": 120,
+      "title": "M4: extract shared tracker write verification",
+      "headRefOid": "267262342719c99d4279e4ba020292b32556a34c",
+      "baseRefOid": "241e85cca03c963ec1ddd17e29f10700d499ce14",
+      "state": "OPEN",
+      "files": 30,
+      "unresolved": 0,
+      "pagination": {
+        "hasNextPage": false,
+        "endCursor": null
+      }
+    },
+    {
+      "number": 118,
+      "title": "Recover v0.3 orchestration and native execution",
+      "headRefOid": "36083f83f42c03240ebb5861fe284da2c9f04180",
+      "baseRefOid": "4661a24b599d75503a997f3ce122f3ad2da77048",
+      "state": "OPEN",
+      "files": 100,
+      "diff_error": "could not find pull request diff: HTTP 406: Sorry, the diff exceeded the maximum number of files (300). Consider using 'List pull requests files' API or locally cloning the repository instead. (https://api.github.com/repos/YalDan/kodezart/pulls/118)\nPullRequest.diff too_large\n",
+      "unresolved": 0,
+      "pagination": {
+        "hasNextPage": false,
+        "endCursor": null
+      }
+    }
+  ]
+}

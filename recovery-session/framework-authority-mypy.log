@@ -1,0 +1,2 @@
+Warning: unused section(s) in pyproject.toml: module = ['kodezart.core.config']
+Success: no issues found in 4 source files

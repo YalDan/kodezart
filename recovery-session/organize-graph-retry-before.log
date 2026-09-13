@@ -1,0 +1,352 @@
+..FFFF                                                                   [100%]
+=================================== FAILURES ===================================
+_ test_known_unsent_retry_revalidates_current_write_preconditions[source-issue_graph] _
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10c66aa20>
+kind = <SurfaceKind.ISSUE_GRAPH: 'issue_graph'>, change = 'source'
+
+    @pytest.mark.parametrize("kind", [SurfaceKind.ISSUE_GRAPH, SurfaceKind.ISSUE_SPLIT_SET])
+    @pytest.mark.parametrize("change", [None, "source", "expiry"])
+    async def test_known_unsent_retry_revalidates_current_write_preconditions(
+        monkeypatch, kind, change
+    ):
+        board, _ = fixture()
+        tracker = tracker_over(
+            board.server,
+            caller=board,
+            clock=lambda: board.now,
+            ledger=board.ledger,
+            max_retries=1,
+        )
+        snapshot = await expected(tracker)
+        key = "child" if kind is SurfaceKind.ISSUE_GRAPH else CLAIMED_ISSUE
+        attempts = 0
+        original = board.call_tool
+    
+        async def call_tool(*, name, arguments):
+            nonlocal attempts
+            if name == "save_issue":
+                attempts += 1
+                if attempts == 1:
+                    if change == "source":
+                        board.server.issues[
+                            key
+                        ].description = "Changed after an unsent write"
+                    elif change == "expiry":
+                        board.advance(400)
+                    # Nothing was sent to the native server on this first attempt.
+                    raise McpTransportError(
+                        "Connection failed before sending",
+                        server_name="fixture",
+                        tool_name=name,
+                    )
+            return await original(name=name, arguments=arguments)
+    
+        async with RunSurfaceLease(
+            tracker=tracker,
+            job_id="actual-job",
+            surfaces=frozenset({address(key, kind)}),
+            lease_seconds=321.5,
+        ):
+            monkeypatch.setattr(board, "call_tool", call_tool)
+            error = None
+            try:
+                if kind is SurfaceKind.ISSUE_GRAPH:
+                    await tracker.update_issue_graph(
+                        issue_key=key,
+                        expected=snapshot,
+                        changes=changes({"kind": "priority", "priority": "urgent"}),
+                        holder="actual-job",
+                    )
+                else:
+                    await tracker.create_split_if_absent(
+                        source_key=key,
+                        deliverable_key="retried",
+                        title="Prepared child",
+                        body="Prepared specification",
+                        holder="actual-job",
+                        expected=snapshot,
+                    )
+            except (OrganizeWriteRefusalError, SurfaceLeaseError) as exc:
+                error = exc
+            writes = [args for name, args in board.calls if name == "save_issue"]
+            if change is None:
+                assert error is None
+                assert attempts == 2
+                assert len(writes) == 1
+            else:
+                assert attempts >= 1
+>               assert writes == [], "the retry issued a stale/expired write"
+E               AssertionError: the retry issued a stale/expired write
+E               assert [{'id': 'chil...priority': 1}] == []
+E                 
+E                 Left contains one more item: {'id': 'child', 'priority': 1}
+E                 Use -v to get more diff
+
+tests/tracker/test_organize_graph_retry_boundary.py:85: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 19:23:30 [warning  ] tracker_mcp_retry              attempt=0 delay_seconds=0.0 tool=save_issue
+_ test_known_unsent_retry_revalidates_current_write_preconditions[source-issue_split_set] _
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10c698410>
+kind = <SurfaceKind.ISSUE_SPLIT_SET: 'issue_split_set'>, change = 'source'
+
+    @pytest.mark.parametrize("kind", [SurfaceKind.ISSUE_GRAPH, SurfaceKind.ISSUE_SPLIT_SET])
+    @pytest.mark.parametrize("change", [None, "source", "expiry"])
+    async def test_known_unsent_retry_revalidates_current_write_preconditions(
+        monkeypatch, kind, change
+    ):
+        board, _ = fixture()
+        tracker = tracker_over(
+            board.server,
+            caller=board,
+            clock=lambda: board.now,
+            ledger=board.ledger,
+            max_retries=1,
+        )
+        snapshot = await expected(tracker)
+        key = "child" if kind is SurfaceKind.ISSUE_GRAPH else CLAIMED_ISSUE
+        attempts = 0
+        original = board.call_tool
+    
+        async def call_tool(*, name, arguments):
+            nonlocal attempts
+            if name == "save_issue":
+                attempts += 1
+                if attempts == 1:
+                    if change == "source":
+                        board.server.issues[
+                            key
+                        ].description = "Changed after an unsent write"
+                    elif change == "expiry":
+                        board.advance(400)
+                    # Nothing was sent to the native server on this first attempt.
+                    raise McpTransportError(
+                        "Connection failed before sending",
+                        server_name="fixture",
+                        tool_name=name,
+                    )
+            return await original(name=name, arguments=arguments)
+    
+        async with RunSurfaceLease(
+            tracker=tracker,
+            job_id="actual-job",
+            surfaces=frozenset({address(key, kind)}),
+            lease_seconds=321.5,
+        ):
+            monkeypatch.setattr(board, "call_tool", call_tool)
+            error = None
+            try:
+                if kind is SurfaceKind.ISSUE_GRAPH:
+                    await tracker.update_issue_graph(
+                        issue_key=key,
+                        expected=snapshot,
+                        changes=changes({"kind": "priority", "priority": "urgent"}),
+                        holder="actual-job",
+                    )
+                else:
+                    await tracker.create_split_if_absent(
+                        source_key=key,
+                        deliverable_key="retried",
+                        title="Prepared child",
+                        body="Prepared specification",
+                        holder="actual-job",
+                        expected=snapshot,
+                    )
+            except (OrganizeWriteRefusalError, SurfaceLeaseError) as exc:
+                error = exc
+            writes = [args for name, args in board.calls if name == "save_issue"]
+            if change is None:
+                assert error is None
+                assert attempts == 2
+                assert len(writes) == 1
+            else:
+                assert attempts >= 1
+>               assert writes == [], "the retry issued a stale/expired write"
+E               AssertionError: the retry issued a stale/expired write
+E               assert [{'descriptio...e-team', ...}] == []
+E                 
+E                 Left contains one more item: {'description': '<!-- kodezart-issue {"scopeKey":{"kind":"issue","key":"FIX-1"},"deliverableKey":"retried"} -->\n\nPrepared specification', 'parentId': 'FIX-1', 'state': 'fixture-team-Todo-id', 'team': 'fixture-team', ...}
+E                 Use -v to get more diff
+
+tests/tracker/test_organize_graph_retry_boundary.py:85: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 19:23:31 [warning  ] tracker_mcp_retry              attempt=0 delay_seconds=0.0 tool=save_issue
+_ test_known_unsent_retry_revalidates_current_write_preconditions[expiry-issue_graph] _
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10c699b50>
+kind = <SurfaceKind.ISSUE_GRAPH: 'issue_graph'>, change = 'expiry'
+
+    @pytest.mark.parametrize("kind", [SurfaceKind.ISSUE_GRAPH, SurfaceKind.ISSUE_SPLIT_SET])
+    @pytest.mark.parametrize("change", [None, "source", "expiry"])
+    async def test_known_unsent_retry_revalidates_current_write_preconditions(
+        monkeypatch, kind, change
+    ):
+        board, _ = fixture()
+        tracker = tracker_over(
+            board.server,
+            caller=board,
+            clock=lambda: board.now,
+            ledger=board.ledger,
+            max_retries=1,
+        )
+        snapshot = await expected(tracker)
+        key = "child" if kind is SurfaceKind.ISSUE_GRAPH else CLAIMED_ISSUE
+        attempts = 0
+        original = board.call_tool
+    
+        async def call_tool(*, name, arguments):
+            nonlocal attempts
+            if name == "save_issue":
+                attempts += 1
+                if attempts == 1:
+                    if change == "source":
+                        board.server.issues[
+                            key
+                        ].description = "Changed after an unsent write"
+                    elif change == "expiry":
+                        board.advance(400)
+                    # Nothing was sent to the native server on this first attempt.
+                    raise McpTransportError(
+                        "Connection failed before sending",
+                        server_name="fixture",
+                        tool_name=name,
+                    )
+            return await original(name=name, arguments=arguments)
+    
+        async with RunSurfaceLease(
+            tracker=tracker,
+            job_id="actual-job",
+            surfaces=frozenset({address(key, kind)}),
+            lease_seconds=321.5,
+        ):
+            monkeypatch.setattr(board, "call_tool", call_tool)
+            error = None
+            try:
+                if kind is SurfaceKind.ISSUE_GRAPH:
+                    await tracker.update_issue_graph(
+                        issue_key=key,
+                        expected=snapshot,
+                        changes=changes({"kind": "priority", "priority": "urgent"}),
+                        holder="actual-job",
+                    )
+                else:
+                    await tracker.create_split_if_absent(
+                        source_key=key,
+                        deliverable_key="retried",
+                        title="Prepared child",
+                        body="Prepared specification",
+                        holder="actual-job",
+                        expected=snapshot,
+                    )
+            except (OrganizeWriteRefusalError, SurfaceLeaseError) as exc:
+                error = exc
+            writes = [args for name, args in board.calls if name == "save_issue"]
+            if change is None:
+                assert error is None
+                assert attempts == 2
+                assert len(writes) == 1
+            else:
+                assert attempts >= 1
+>               assert writes == [], "the retry issued a stale/expired write"
+E               AssertionError: the retry issued a stale/expired write
+E               assert [{'id': 'chil...priority': 1}] == []
+E                 
+E                 Left contains one more item: {'id': 'child', 'priority': 1}
+E                 Use -v to get more diff
+
+tests/tracker/test_organize_graph_retry_boundary.py:85: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 19:23:31 [warning  ] tracker_mcp_retry              attempt=0 delay_seconds=0.0 tool=save_issue
+_ test_known_unsent_retry_revalidates_current_write_preconditions[expiry-issue_split_set] _
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10c69b4a0>
+kind = <SurfaceKind.ISSUE_SPLIT_SET: 'issue_split_set'>, change = 'expiry'
+
+    @pytest.mark.parametrize("kind", [SurfaceKind.ISSUE_GRAPH, SurfaceKind.ISSUE_SPLIT_SET])
+    @pytest.mark.parametrize("change", [None, "source", "expiry"])
+    async def test_known_unsent_retry_revalidates_current_write_preconditions(
+        monkeypatch, kind, change
+    ):
+        board, _ = fixture()
+        tracker = tracker_over(
+            board.server,
+            caller=board,
+            clock=lambda: board.now,
+            ledger=board.ledger,
+            max_retries=1,
+        )
+        snapshot = await expected(tracker)
+        key = "child" if kind is SurfaceKind.ISSUE_GRAPH else CLAIMED_ISSUE
+        attempts = 0
+        original = board.call_tool
+    
+        async def call_tool(*, name, arguments):
+            nonlocal attempts
+            if name == "save_issue":
+                attempts += 1
+                if attempts == 1:
+                    if change == "source":
+                        board.server.issues[
+                            key
+                        ].description = "Changed after an unsent write"
+                    elif change == "expiry":
+                        board.advance(400)
+                    # Nothing was sent to the native server on this first attempt.
+                    raise McpTransportError(
+                        "Connection failed before sending",
+                        server_name="fixture",
+                        tool_name=name,
+                    )
+            return await original(name=name, arguments=arguments)
+    
+        async with RunSurfaceLease(
+            tracker=tracker,
+            job_id="actual-job",
+            surfaces=frozenset({address(key, kind)}),
+            lease_seconds=321.5,
+        ):
+            monkeypatch.setattr(board, "call_tool", call_tool)
+            error = None
+            try:
+                if kind is SurfaceKind.ISSUE_GRAPH:
+                    await tracker.update_issue_graph(
+                        issue_key=key,
+                        expected=snapshot,
+                        changes=changes({"kind": "priority", "priority": "urgent"}),
+                        holder="actual-job",
+                    )
+                else:
+                    await tracker.create_split_if_absent(
+                        source_key=key,
+                        deliverable_key="retried",
+                        title="Prepared child",
+                        body="Prepared specification",
+                        holder="actual-job",
+                        expected=snapshot,
+                    )
+            except (OrganizeWriteRefusalError, SurfaceLeaseError) as exc:
+                error = exc
+            writes = [args for name, args in board.calls if name == "save_issue"]
+            if change is None:
+                assert error is None
+                assert attempts == 2
+                assert len(writes) == 1
+            else:
+                assert attempts >= 1
+>               assert writes == [], "the retry issued a stale/expired write"
+E               AssertionError: the retry issued a stale/expired write
+E               assert [{'descriptio...e-team', ...}] == []
+E                 
+E                 Left contains one more item: {'description': '<!-- kodezart-issue {"scopeKey":{"kind":"issue","key":"FIX-1"},"deliverableKey":"retried"} -->\n\nPrepared specification', 'parentId': 'FIX-1', 'state': 'fixture-team-Todo-id', 'team': 'fixture-team', ...}
+E                 Use -v to get more diff
+
+tests/tracker/test_organize_graph_retry_boundary.py:85: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 19:23:31 [warning  ] tracker_mcp_retry              attempt=0 delay_seconds=0.0 tool=save_issue
+=========================== short test summary info ============================
+FAILED tests/tracker/test_organize_graph_retry_boundary.py::test_known_unsent_retry_revalidates_current_write_preconditions[source-issue_graph]
+FAILED tests/tracker/test_organize_graph_retry_boundary.py::test_known_unsent_retry_revalidates_current_write_preconditions[source-issue_split_set]
+FAILED tests/tracker/test_organize_graph_retry_boundary.py::test_known_unsent_retry_revalidates_current_write_preconditions[expiry-issue_graph]
+FAILED tests/tracker/test_organize_graph_retry_boundary.py::test_known_unsent_retry_revalidates_current_write_preconditions[expiry-issue_split_set]
+4 failed, 2 passed in 0.49s

@@ -1,0 +1,38 @@
+{"candidate": "ddb8cdef33f90f30aecc4343e36c2293bdf39a27", "candidate_tree": "5ed89888cb982ee2972f5a79e25da681b4323eeb", "comparison_base": "2bc237577da7a3db3101e67c324eea0eaa6e6abd", "donor": "da39c439898aec1233aa8b6157b35e961df1e453", "changed_file_count": 37}
+{
+  "original_test_changes": {
+    "tests/adapters/test_tracker_self_writes.py": [
+      "test_a_read_back_that_fails_does_not_fail_the_write_it_recorded"
+    ],
+    "tests/prompts/test_operation_config.py": [
+      "test_all_fields_are_present_with_the_stated_types",
+      "test_no_label_or_status_literal_lives_in_source",
+      "test_placeholder_mapping_is_total_in_both_directions"
+    ],
+    "tests/tracker/test_comment_expected_independent.py": [
+      "test_known_unissued_retry_revalidates_changed_expected_comment"
+    ],
+    "tests/tracker/test_linear_tool_arguments.py": [
+      "test_the_sweep_reaches_every_tool_the_adapter_names",
+      "test_every_argument_key_is_a_declared_property",
+      "test_every_required_argument_is_sent"
+    ],
+    "tests/tracker/test_linear_tool_roster.py": [
+      "test_every_tracker_tool_this_process_names_exists_on_the_server"
+    ],
+    "tests/tracker/test_tracker_boot.py": [
+      "TestConfiguredMappings.test_every_category_is_covered"
+    ]
+  },
+  "nonidentical_added_test_oracles": {
+    "tests/tracker/test_native_approval_aliases.py": [
+      "test_actual_entry_preserves_reported_alias_with_one_subject_read",
+      "test_actual_entry_refuses_foreign_subject_before_membership"
+    ],
+    "tests/tracker/test_project_milestones.py": [
+      "test_project_milestones_expose_complete_native_identities_and_descriptions",
+      "test_project_milestone_incomplete_identity_evidence_refuses"
+    ]
+  },
+  "total_added_test_functions": 57
+}

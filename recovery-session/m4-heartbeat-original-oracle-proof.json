@@ -1,0 +1,107 @@
+{
+  "test_count": 21,
+  "assert_count": 44,
+  "all_original_assert_ASTs_unchanged": true,
+  "all_original_constants_ASTs_unchanged": true,
+  "tests": {
+    "test_the_claim_stays_live_past_the_lease_it_was_granted_with": [
+      "Assert(test=Compare(left=Attribute(value=Name(id='clock', ctx=Load()), attr='now', ctx=Load()), ops=[Gt()], comparators=[Attribute(value=Name(id='granted', ctx=Load()), attr='expires_at', ctx=Load())]), msg=Constant(value='the fixture must run the job past the lease it was granted'))",
+      "Assert(test=Compare(left=Name(id='live', ctx=Load()), ops=[IsNot()], comparators=[Constant(value=None)]), msg=Constant(value='the claim lapsed under a job that was still running'))",
+      "Assert(test=Compare(left=Attribute(value=Name(id='live', ctx=Load()), attr='holder', ctx=Load()), ops=[Eq()], comparators=[Name(id='HOLDER', ctx=Load())]))",
+      "Assert(test=Compare(left=Attribute(value=Name(id='live', ctx=Load()), attr='expires_at', ctx=Load()), ops=[Gt()], comparators=[Attribute(value=Name(id='granted', ctx=Load()), attr='expires_at', ctx=Load())]))"
+    ],
+    "test_the_expiry_advances_on_every_renewal": [
+      "Assert(test=Compare(left=Name(id='seen', ctx=Load()), ops=[Eq()], comparators=[Call(func=Name(id='sorted', ctx=Load()), args=[Name(id='seen', ctx=Load())], keywords=[])]))",
+      "Assert(test=Compare(left=Subscript(value=Name(id='seen', ctx=Load()), slice=UnaryOp(op=USub(), operand=Constant(value=1)), ctx=Load()), ops=[Gt()], comparators=[Subscript(value=Name(id='seen', ctx=Load()), slice=Constant(value=0), ctx=Load())]))",
+      "Assert(test=Compare(left=Name(id='live', ctx=Load()), ops=[IsNot()], comparators=[Constant(value=None)]), msg=Constant(value='the claim lapsed mid-run'))"
+    ],
+    "test_renewal_asks_for_a_fraction_of_the_lease_and_never_the_lease": [
+      "Assert(test=Compare(left=Attribute(value=Name(id='beat', ctx=Load()), attr='interval_seconds', ctx=Load()), ops=[Eq()], comparators=[Name(id='INTERVAL_SECONDS', ctx=Load())]))",
+      "Assert(test=Compare(left=Attribute(value=Name(id='beat', ctx=Load()), attr='interval_seconds', ctx=Load()), ops=[Lt()], comparators=[Name(id='LEASE_SECONDS', ctx=Load())]))",
+      "Assert(test=Compare(left=Call(func=Name(id='set', ctx=Load()), args=[Attribute(value=Name(id='clock', ctx=Load()), attr='granted', ctx=Load())], keywords=[]), ops=[Eq()], comparators=[Set(elts=[Name(id='INTERVAL_SECONDS', ctx=Load())])]))"
+    ],
+    "test_renewal_stops_when_the_block_returns": [
+      "Assert(test=Compare(left=Call(func=Name(id='len', ctx=Load()), args=[Attribute(value=Name(id='tracker', ctx=Load()), attr='renewals', ctx=Load())], keywords=[]), ops=[Eq()], comparators=[Name(id='at_exit', ctx=Load())]))"
+    ],
+    "test_renewal_stops_when_the_block_raises": [
+      "Assert(test=Compare(left=Call(func=Name(id='len', ctx=Load()), args=[Attribute(value=Name(id='tracker', ctx=Load()), attr='renewals', ctx=Load())], keywords=[]), ops=[Eq()], comparators=[Name(id='at_exit', ctx=Load())]))"
+    ],
+    "test_the_claim_then_lapses_at_its_own_expiry": [
+      "Assert(test=Compare(left=Await(value=Call(func=Attribute(value=Name(id='tracker', ctx=Load()), attr='active_claim', ctx=Load()), args=[], keywords=[keyword(arg='issue_key', value=Name(id='ISSUE', ctx=Load()))])), ops=[IsNot()], comparators=[Constant(value=None)]))",
+      "Assert(test=Compare(left=Await(value=Call(func=Attribute(value=Name(id='tracker', ctx=Load()), attr='active_claim', ctx=Load()), args=[], keywords=[keyword(arg='issue_key', value=Name(id='ISSUE', ctx=Load()))])), ops=[Is()], comparators=[Constant(value=None)]))"
+    ],
+    "test_a_lapsed_claim_is_never_resurrected_by_a_late_renewal": [
+      "Assert(test=Compare(left=Attribute(value=Name(id='tracker', ctx=Load()), attr='renewals', ctx=Load()), ops=[Eq()], comparators=[List(elts=[Tuple(elts=[Name(id='ISSUE', ctx=Load()), Name(id='HOLDER', ctx=Load())], ctx=Load())], ctx=Load())]), msg=Constant(value='the refused loop kept going'))",
+      "Assert(test=Compare(left=Await(value=Call(func=Attribute(value=Name(id='tracker', ctx=Load()), attr='active_claim', ctx=Load()), args=[], keywords=[keyword(arg='issue_key', value=Name(id='ISSUE', ctx=Load()))])), ops=[Is()], comparators=[Constant(value=None)]))"
+    ],
+    "test_a_failed_renewal_is_retried_on_the_next_interval": [
+      "Assert(test=Compare(left=Name(id='live', ctx=Load()), ops=[IsNot()], comparators=[Constant(value=None)]), msg=Constant(value='two failed writes must not lose the claim'))",
+      "Assert(test=Compare(left=Attribute(value=Name(id='live', ctx=Load()), attr='holder', ctx=Load()), ops=[Eq()], comparators=[Name(id='HOLDER', ctx=Load())]))"
+    ],
+    "test_a_failed_renewal_is_reported_with_the_type_that_raised": [
+      "Assert(test=Compare(left=Call(func=Name(id='len', ctx=Load()), args=[Name(id='failed', ctx=Load())], keywords=[]), ops=[Eq()], comparators=[Constant(value=1)]))",
+      "Assert(test=Compare(left=Subscript(value=Subscript(value=Name(id='failed', ctx=Load()), slice=Constant(value=0), ctx=Load()), slice=Constant(value='error_type'), ctx=Load()), ops=[Eq()], comparators=[Constant(value='TransientAPIError')]))",
+      "Assert(test=Compare(left=Subscript(value=Subscript(value=Name(id='failed', ctx=Load()), slice=Constant(value=0), ctx=Load()), slice=Constant(value='issue_key'), ctx=Load()), ops=[Eq()], comparators=[Name(id='ISSUE', ctx=Load())]))",
+      "Assert(test=Call(func=Name(id='isinstance', ctx=Load()), args=[Subscript(value=Subscript(value=Name(id='failed', ctx=Load()), slice=Constant(value=0), ctx=Load()), slice=Constant(value='exc_info'), ctx=Load()), Name(id='TransientAPIError', ctx=Load())], keywords=[]))"
+    ],
+    "test_renewals_that_never_succeed_end_in_the_lease_lapsing": [
+      "Assert(test=Compare(left=Await(value=Call(func=Attribute(value=Name(id='tracker', ctx=Load()), attr='active_claim', ctx=Load()), args=[], keywords=[keyword(arg='issue_key', value=Name(id='ISSUE', ctx=Load()))])), ops=[Is()], comparators=[Constant(value=None)]))"
+    ],
+    "test_the_refusal_is_its_own_event_and_not_a_renewal_failure": [
+      "Assert(test=Compare(left=Call(func=Name(id='len', ctx=Load()), args=[Name(id='refused', ctx=Load())], keywords=[]), ops=[Eq()], comparators=[Constant(value=1)]))",
+      "Assert(test=Compare(left=Subscript(value=Subscript(value=Name(id='refused', ctx=Load()), slice=Constant(value=0), ctx=Load()), slice=Constant(value='issue_key'), ctx=Load()), ops=[Eq()], comparators=[Name(id='ISSUE', ctx=Load())]))",
+      "Assert(test=Compare(left=Subscript(value=Subscript(value=Name(id='refused', ctx=Load()), slice=Constant(value=0), ctx=Load()), slice=Constant(value='holder'), ctx=Load()), ops=[Eq()], comparators=[Name(id='HOLDER', ctx=Load())]))",
+      "Assert(test=UnaryOp(op=Not(), operand=ListComp(elt=Name(id='entry', ctx=Load()), generators=[comprehension(target=Name(id='entry', ctx=Store()), iter=Name(id='logs', ctx=Load()), ifs=[Compare(left=Subscript(value=Name(id='entry', ctx=Load()), slice=Constant(value='event'), ctx=Load()), ops=[Eq()], comparators=[Constant(value='claim_renewal_failed')])], is_async=0)])))"
+    ],
+    "test_the_loop_stops_on_it_rather_than_repeating_it_every_interval": [
+      "Assert(test=Compare(left=Attribute(value=Name(id='tracker', ctx=Load()), attr='renewals', ctx=Load()), ops=[Eq()], comparators=[List(elts=[Tuple(elts=[Name(id='ISSUE', ctx=Load()), Name(id='HOLDER', ctx=Load())], ctx=Load())], ctx=Load())]))"
+    ],
+    "test_a_transient_write_failure_still_reports_the_generic_event": [
+      "Assert(test=ListComp(elt=Subscript(value=Name(id='entry', ctx=Load()), slice=Constant(value='event'), ctx=Load()), generators=[comprehension(target=Name(id='entry', ctx=Store()), iter=Name(id='logs', ctx=Load()), ifs=[Compare(left=Subscript(value=Name(id='entry', ctx=Load()), slice=Constant(value='event'), ctx=Load()), ops=[Eq()], comparators=[Constant(value='claim_renewal_failed')])], is_async=0)]))",
+      "Assert(test=UnaryOp(op=Not(), operand=ListComp(elt=Name(id='entry', ctx=Load()), generators=[comprehension(target=Name(id='entry', ctx=Store()), iter=Name(id='logs', ctx=Load()), ifs=[Compare(left=Subscript(value=Name(id='entry', ctx=Load()), slice=Constant(value='event'), ctx=Load()), ops=[Eq()], comparators=[Constant(value='claim_renewal_credential_refused')])], is_async=0)])))"
+    ],
+    "test_a_run_reaching_a_terminal_outcome_stops_renewing": [
+      "Assert(test=Compare(left=Call(func=Name(id='len', ctx=Load()), args=[Attribute(value=Name(id='tracker', ctx=Load()), attr='renewals', ctx=Load())], keywords=[]), ops=[Eq()], comparators=[Name(id='at_exit', ctx=Load())]))"
+    ],
+    "test_a_run_reaching_no_terminal_outcome_stops_renewing": [
+      "Assert(test=Compare(left=Call(func=Name(id='len', ctx=Load()), args=[Attribute(value=Name(id='tracker', ctx=Load()), attr='renewals', ctx=Load())], keywords=[]), ops=[Eq()], comparators=[Name(id='at_exit', ctx=Load())]))",
+      "Assert(test=Compare(left=Attribute(value=Name(id='tracker', ctx=Load()), attr='restored_states', ctx=Load()), ops=[Eq()], comparators=[List(elts=[Tuple(elts=[Name(id='ISSUE', ctx=Load()), Name(id='PRE_CLAIM_STATE', ctx=Load())], ctx=Load())], ctx=Load())]))"
+    ],
+    "test_a_watch_that_raises_stops_renewing": [
+      "Assert(test=Compare(left=Call(func=Name(id='len', ctx=Load()), args=[Attribute(value=Name(id='tracker', ctx=Load()), attr='renewals', ctx=Load())], keywords=[]), ops=[Eq()], comparators=[Name(id='at_exit', ctx=Load())]))"
+    ],
+    "test_a_terminal_outcome_hands_the_claim_back": [
+      "Assert(test=Compare(left=Await(value=Call(func=Attribute(value=Name(id='tracker', ctx=Load()), attr='active_claim', ctx=Load()), args=[], keywords=[keyword(arg='issue_key', value=Name(id='ISSUE', ctx=Load()))])), ops=[Is()], comparators=[Constant(value=None)]))"
+    ],
+    "test_the_next_instance_may_claim_the_issue_immediately": [
+      "Assert(test=Compare(left=Attribute(value=Name(id='again', ctx=Load()), attr='status', ctx=Load()), ops=[Is()], comparators=[Attribute(value=Name(id='ClaimStatus', ctx=Load()), attr='GRANTED', ctx=Load())]))"
+    ],
+    "test_a_run_that_reached_no_terminal_outcome_hands_it_back_too": [
+      "Assert(test=Compare(left=Attribute(value=Name(id='tracker', ctx=Load()), attr='restored_states', ctx=Load()), ops=[Eq()], comparators=[List(elts=[Tuple(elts=[Name(id='ISSUE', ctx=Load()), Name(id='PRE_CLAIM_STATE', ctx=Load())], ctx=Load())], ctx=Load())]))",
+      "Assert(test=Compare(left=Attribute(value=Name(id='again', ctx=Load()), attr='status', ctx=Load()), ops=[Is()], comparators=[Attribute(value=Name(id='ClaimStatus', ctx=Load()), attr='GRANTED', ctx=Load())]))"
+    ],
+    "test_a_holder_that_was_killed_hands_nothing_back": [
+      "Assert(test=Compare(left=Name(id='held', ctx=Load()), ops=[IsNot()], comparators=[Constant(value=None)]), msg=Constant(value=\"a killed holder's claim must not be released\"))",
+      "Assert(test=Compare(left=Attribute(value=Name(id='held', ctx=Load()), attr='holder', ctx=Load()), ops=[Eq()], comparators=[Name(id='HOLDER', ctx=Load())]))",
+      "Assert(test=Compare(left=Attribute(value=Name(id='clock', ctx=Load()), attr='now', ctx=Load()), ops=[GtE()], comparators=[Attribute(value=Name(id='granted', ctx=Load()), attr='expires_at', ctx=Load())]))",
+      "Assert(test=Compare(left=Await(value=Call(func=Attribute(value=Name(id='tracker', ctx=Load()), attr='active_claim', ctx=Load()), args=[], keywords=[keyword(arg='issue_key', value=Name(id='ISSUE', ctx=Load()))])), ops=[Is()], comparators=[Constant(value=None)]))"
+    ],
+    "test_a_watch_never_hands_back_a_claim_another_holder_holds": [
+      "Assert(test=Compare(left=Name(id='held', ctx=Load()), ops=[IsNot()], comparators=[Constant(value=None)]))",
+      "Assert(test=Compare(left=Attribute(value=Name(id='held', ctx=Load()), attr='holder', ctx=Load()), ops=[Eq()], comparators=[Constant(value='pass-b')]))"
+    ]
+  },
+  "constants": {
+    "ISSUE": "Constant(value='K-1')",
+    "HOLDER": "Constant(value='pass-a')",
+    "PRE_CLAIM_STATE": "Constant(value='Todo')",
+    "REFUSING_SERVER": "Constant(value='fixture-tracker')",
+    "LEASE_SECONDS": "Constant(value=60.0)",
+    "RENEWAL_FRACTION": "Constant(value=0.25)",
+    "INTERVAL_SECONDS": "BinOp(left=Name(id='LEASE_SECONDS', ctx=Load()), op=Mult(), right=Name(id='RENEWAL_FRACTION', ctx=Load()))",
+    "RENEWALS_PAST_THE_LEASE": "Constant(value=5)",
+    "TURNS_AFTER_THE_STOP": "Constant(value=20)",
+    "SETTLE_TIMEOUT": "Constant(value=5.0)",
+    "TERMINAL_EVENT": "Call(func=Name(id='WorkflowCompleteEvent', ctx=Load()), args=[], keywords=[keyword(arg='feature_branch', value=Constant(value='feature')), keyword(arg='ralph_branch', value=Constant(value='ralph')), keyword(arg='total_iterations', value=Constant(value=1)), keyword(arg='accepted', value=Constant(value=True)), keyword(arg='outcome', value=Attribute(value=Name(id='WorkflowOutcome', ctx=Load()), attr='ci_passed', ctx=Load())), keyword(arg='merged', value=Constant(value=True))])"
+  }
+}

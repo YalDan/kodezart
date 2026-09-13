@@ -1,0 +1,5 @@
+{
+  "exact_donor_validator_ast": true,
+  "exact_donor_documentation_bytes": true,
+  "base_control_assertions_unchanged": true
+}

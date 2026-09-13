@@ -1,0 +1,3145 @@
+[
+  {
+    "id": "KOD-425",
+    "uuid": "d2b3ac56-8fc2-42c7-b5b4-95f6077d1d6e",
+    "title": "KOD-75-AC-3 — A lane is READY iff it is approved and every in-scope blocker's subtree is Done; a blocked lane never dispatches",
+    "description": "**Check:** A lane is READY iff it is approved and every in-scope blocker issue's subtree is Done; the ready set recomputes as lanes reach Done, and a blocked lane never dispatches.\n**Do:** Implement the READY predicate in `chains/scope_walker.py` over live tracker state: `scope:approved` self-or-ancestor, plus blocker-subtree-Done read as a rollup over children. Fixture: a blocked lane held across ticks, then admitted as its blocker's subtree completes.\n**Evidence:** 138958c — tests/services/test_scope_dispatcher.py::test_a_blocked_lane_is_held_across_ticks_until_its_blockers_subtree_closes, ::test_a_done_blocker_parent_with_an_open_criterion_still_blocks_its_lane, ::test_the_gated_pass_runs_the_scope_dispatcher_and_follows_the_fire, ::test_a_scope_with_no_ready_lane_enqueues_nothing_and_reports_empty, ::test_ready_selection_makes_no_writes_before_the_claim, tests/services/test_fire_dispatcher.py, tests/services/test_dispatch_pass.py, tests/tracker/test_tracker_boot_wiring.py pass; revert-check: reverting the blocked-lane exclusion list in services/scope_dispatcher.py::run_pass reds test_a_blocked_lane_is_held_across_ticks_until_its_blockers_subtree_closes and test_a_done_blocker_parent_with_an_open_criterion_still_blocks_its_lane; gate 9058 passed/17 skipped at 138958c; judged 2026-09-08 (workhorse tier, provisional): REFUTED — the Check clause 'a blocked lane never dispatches' is demonstrated only inside the test module's own hand-built wiring: grep -rn ScopeDispatcher src/ finds it in no production file other than src/kodezart/services/scope_dispatcher.py itself, so no shipped caller exercises the blocked-lane hold and the clause the 2026-09-08 audit named stays open. The rest does hold: reverting 138958c deletes src/kodezart/services/scope_dispatcher.py and reds the cited scope suite (ImportError at tests/services/test_scope_dispatcher.py:16) while the other cited suites are untouched (134 passed), and chains/scope_walker.py:60-90 really does recompute approval plus in-scope-blocker subtree closure from scratch each pass with across-ticks fixtures asserting real effects.",
+    "projectMilestone": {
+      "id": "f490eac0-27cb-41f8-be7b-2baacbdaaf7a",
+      "name": "M3 — Plan & walk"
+    },
+    "priority": {
+      "value": 0,
+      "name": "No priority"
+    },
+    "url": "https://linear.app/duckburg/issue/KOD-425/kod-75-ac-3-a-lane-is-ready-iff-it-is-approved-and-every-in-scope",
+    "gitBranchName": "rosig-3topase/kod-425-kod-75-ac-3-a-lane-is-ready-iff-it-is-approved-and-every-in",
+    "createdAt": "2026-09-07T11:33:20.355Z",
+    "updatedAt": "2026-09-09T22:00:28.709Z",
+    "archivedAt": null,
+    "completedAt": null,
+    "startedAt": null,
+    "canceledAt": null,
+    "dueDate": null,
+    "slaStartedAt": null,
+    "slaMediumRiskAt": null,
+    "slaHighRiskAt": null,
+    "slaBreachesAt": null,
+    "status": "Todo",
+    "statusType": "unstarted",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ],
+    "attachments": [
+      {
+        "id": "3d8d15ee-c9ce-480f-b296-8a15ff3392f4",
+        "title": "PR #87 — live readiness, fire admission and escalation records",
+        "subtitle": null,
+        "url": "https://github.com/YalDan/kodezart/pull/87"
+      }
+    ],
+    "documents": [],
+    "stateHistory": [
+      {
+        "state": {
+          "id": "9cb16a46-00ec-4435-a9cd-f8a1535ae634",
+          "name": "Todo",
+          "type": "unstarted"
+        },
+        "startedAt": "2026-09-07T11:33:20.355Z",
+        "endedAt": "2026-09-08T02:54:12.257Z"
+      },
+      {
+        "state": {
+          "id": "7f105a1a-cf77-457c-a682-ca5c705d599d",
+          "name": "In Progress",
+          "type": "started"
+        },
+        "startedAt": "2026-09-08T02:54:12.257Z",
+        "endedAt": "2026-09-08T04:03:29.603Z"
+      },
+      {
+        "state": {
+          "id": "f0057d26-e1f4-404f-a0a2-392ef32c9889",
+          "name": "In Review",
+          "type": "started"
+        },
+        "startedAt": "2026-09-08T04:03:29.603Z",
+        "endedAt": "2026-09-08T05:02:52.643Z"
+      },
+      {
+        "state": {
+          "id": "7f105a1a-cf77-457c-a682-ca5c705d599d",
+          "name": "In Progress",
+          "type": "started"
+        },
+        "startedAt": "2026-09-08T05:02:52.643Z",
+        "endedAt": "2026-09-08T13:45:54.521Z"
+      },
+      {
+        "state": {
+          "id": "9cb16a46-00ec-4435-a9cd-f8a1535ae634",
+          "name": "Todo",
+          "type": "unstarted"
+        },
+        "startedAt": "2026-09-08T13:45:54.521Z",
+        "endedAt": "2026-09-08T16:15:04.957Z"
+      },
+      {
+        "state": {
+          "id": "7f105a1a-cf77-457c-a682-ca5c705d599d",
+          "name": "In Progress",
+          "type": "started"
+        },
+        "startedAt": "2026-09-08T16:15:04.957Z",
+        "endedAt": "2026-09-08T16:45:45.269Z"
+      },
+      {
+        "state": {
+          "id": "f0057d26-e1f4-404f-a0a2-392ef32c9889",
+          "name": "In Review",
+          "type": "started"
+        },
+        "startedAt": "2026-09-08T16:45:45.269Z",
+        "endedAt": "2026-09-08T21:03:53.242Z"
+      },
+      {
+        "state": {
+          "id": "9cb16a46-00ec-4435-a9cd-f8a1535ae634",
+          "name": "Todo",
+          "type": "unstarted"
+        },
+        "startedAt": "2026-09-08T21:03:53.242Z",
+        "endedAt": null
+      }
+    ],
+    "createdBy": "Goofy",
+    "createdById": "998f68f9-58c0-4c31-bdc8-2b9d8da803a2",
+    "project": "kodezart v0.3 — scope orchestration",
+    "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e",
+    "parentId": "KOD-75",
+    "team": "kodezart",
+    "teamId": "6a8dcd10-d98b-4bf2-9d37-1f2165b6393a"
+  },
+  {
+    "id": "KOD-453",
+    "uuid": "5c43fb1d-88bc-494a-8da1-3cdadb431d3c",
+    "title": "KOD-75-AC-18 — Gap membership is total over criterion sub-issue state with no default arm, and an ungraded criterion is never refuted",
+    "description": "**Check:** Gap membership is total over criterion sub-issue state with no default arm, one case per state: a criterion moved back from Done is in the gap and ungraded; a criterion never graded is in the gap and ungraded with no graded sha, asserted **not** refuted; a lapse-derived ungraded criterion carries its prior graded sha in its Evidence row, and the two are distinguished by that sha rather than by a fourth state.\n**Do:** Compute the gap in the gap domain module from the issue's subtree criteria — not Done and not Canceled-with-supersession — with one arm per state and no `else`. Table test, one row per state.\n**Evidence:** 4173669 — tests/chains/test_scope_gap_membership.py::test_the_membership_table_carries_one_arm_per_tracker_state, ::test_one_gap_arm_per_criterion_state_over_the_subtree (one row per WorkflowStateKind member × linear and fake), ::test_a_criterion_moved_back_from_done_is_owed_again_with_its_graded_sha, ::test_a_criterion_never_graded_is_owed_with_no_graded_sha_and_not_refuted, ::test_the_two_ungraded_readings_are_told_apart_by_the_sha_alone pass; gate 9235/25; judged 2026-09-09 (workhorse tier): REFUTED — measured, not inferred. The Check is about gap MEMBERSHIP, but 3 of the cited table's 7 rows are decided by a barrier upstream of the gap module: BACKLOG raises `ScopePlanRefusalError` in `src/kodezart/services/scope_planning.py` before any gap is computed, and CANCELED and DUPLICATE raise `ScopeSupersessionReadError` in `src/kodezart/domain/issue_tree.py::open_criteria`, which refuses on state alone and passes `supersession_refs={}`, so `compute_gap` is never reached for them. Proof: I gutted the production predicate's three arms in `src/kodezart/domain/gap.py` (BACKLOG/CANCELED/DUPLICATE → False, i.e. a cancellation with no supersession is discharged — precisely the defect the rule exists to forbid) and re-ran the whole cited file: 21/21 still passed, fully green; only the uncited pre-existing `tests/domain/test_gap.py` caught it (5 failures). So the evidence pins membership for 4 states (triage/unstarted/started/completed) and, for the other 3, pins a refusal the criterion does not own; the only half of the rule that excludes anything beyond Done — Canceled-WITH-supersession — is unreachable on the path the table measures.",
+    "projectMilestone": {
+      "id": "f490eac0-27cb-41f8-be7b-2baacbdaaf7a",
+      "name": "M3 — Plan & walk"
+    },
+    "priority": {
+      "value": 0,
+      "name": "No priority"
+    },
+    "url": "https://linear.app/duckburg/issue/KOD-453/kod-75-ac-18-gap-membership-is-total-over-criterion-sub-issue-state",
+    "gitBranchName": "rosig-3topase/kod-453-kod-75-ac-18-gap-membership-is-total-over-criterion-sub",
+    "createdAt": "2026-09-07T11:35:23.933Z",
+    "updatedAt": "2026-09-09T21:14:16.739Z",
+    "archivedAt": null,
+    "completedAt": null,
+    "startedAt": null,
+    "canceledAt": null,
+    "dueDate": null,
+    "slaStartedAt": null,
+    "slaMediumRiskAt": null,
+    "slaHighRiskAt": null,
+    "slaBreachesAt": null,
+    "status": "Todo",
+    "statusType": "unstarted",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ],
+    "attachments": [
+      {
+        "id": "f0857b76-e8b3-4ce5-a642-3cdfb4f60810",
+        "title": "PR #109 — gap membership over a subtree, one arm per tracker state",
+        "subtitle": null,
+        "url": "https://github.com/YalDan/kodezart/pull/109"
+      },
+      {
+        "id": "1658b51e-b765-4671-b01f-8574639e7396",
+        "title": "PR #78 — body revisions, gap and alarm observations",
+        "subtitle": null,
+        "url": "https://github.com/YalDan/kodezart/pull/78"
+      }
+    ],
+    "documents": [],
+    "stateHistory": [
+      {
+        "state": {
+          "id": "9cb16a46-00ec-4435-a9cd-f8a1535ae634",
+          "name": "Todo",
+          "type": "unstarted"
+        },
+        "startedAt": "2026-09-07T11:35:23.933Z",
+        "endedAt": "2026-09-07T20:31:46.537Z"
+      },
+      {
+        "state": {
+          "id": "7f105a1a-cf77-457c-a682-ca5c705d599d",
+          "name": "In Progress",
+          "type": "started"
+        },
+        "startedAt": "2026-09-07T20:31:46.537Z",
+        "endedAt": "2026-09-07T21:26:09.413Z"
+      },
+      {
+        "state": {
+          "id": "f0057d26-e1f4-404f-a0a2-392ef32c9889",
+          "name": "In Review",
+          "type": "started"
+        },
+        "startedAt": "2026-09-07T21:26:09.413Z",
+        "endedAt": "2026-09-08T07:08:18.279Z"
+      },
+      {
+        "state": {
+          "id": "a46cc17c-e528-421a-afb2-079484d97bc4",
+          "name": "Done",
+          "type": "completed"
+        },
+        "startedAt": "2026-09-08T07:08:18.279Z",
+        "endedAt": "2026-09-08T22:57:17.890Z"
+      },
+      {
+        "state": {
+          "id": "9cb16a46-00ec-4435-a9cd-f8a1535ae634",
+          "name": "Todo",
+          "type": "unstarted"
+        },
+        "startedAt": "2026-09-08T22:57:17.890Z",
+        "endedAt": "2026-09-09T20:38:42.517Z"
+      },
+      {
+        "state": {
+          "id": "f0057d26-e1f4-404f-a0a2-392ef32c9889",
+          "name": "In Review",
+          "type": "started"
+        },
+        "startedAt": "2026-09-09T20:38:42.517Z",
+        "endedAt": "2026-09-09T21:07:39.730Z"
+      },
+      {
+        "state": {
+          "id": "9cb16a46-00ec-4435-a9cd-f8a1535ae634",
+          "name": "Todo",
+          "type": "unstarted"
+        },
+        "startedAt": "2026-09-09T21:07:39.730Z",
+        "endedAt": null
+      }
+    ],
+    "createdBy": "Goofy",
+    "createdById": "998f68f9-58c0-4c31-bdc8-2b9d8da803a2",
+    "project": "kodezart v0.3 — scope orchestration",
+    "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e",
+    "parentId": "KOD-75",
+    "team": "kodezart",
+    "teamId": "6a8dcd10-d98b-4bf2-9d37-1f2165b6393a"
+  },
+  {
+    "id": "KOD-450",
+    "uuid": "851175ee-fc1e-4d64-8191-8b85cd744243",
+    "title": "KOD-75-AC-15 — Plan-time refusal holds the walk, and every fire re-validates its Todo criterion sub-issues at head before the loop",
+    "description": "**Check:** Stage barriers: the plan-time refusal scans each member's subtree, so an approved scope containing an issue whose subtree holds an open `decision` or a Backlog criterion sub-issue never begins the walk, and the refusal names the offending keys wherever they sit; every fire is execution-only and re-validates its subtree's Todo criterion sub-issues at head before it reaches the ralph loop. The fire graph holds no ticket- or criteria-generation node.\n**Do:** Add the plan-time refusal to the planner and a pre-loop re-validation step to the fire graph that lists the issue's subtree criteria. Fixtures: a refused scope that dispatches nothing; a refused scope whose only offending key sits under a deliverable child; a fire whose pre-loop step runs before the loop node; a static assertion that no generation node exists.\n**Evidence:** c906cbb on `kodezart/v03-r1-02` (clauses 2-3; clause 1 stands at f1951f3, now on trunk) — tests/chains/test_native_fire.py::test_the_native_fire_graph_holds_no_ticket_or_criteria_generation_node, ::test_the_loop_is_unreachable_without_the_pre_loop_step, ::test_a_criterion_that_lost_its_check_stops_the_fire_before_the_loop, ::test_the_criteria_a_fire_owes_are_its_subtrees_todo_criteria, ::test_a_criterion_the_fire_does_not_owe_is_not_revalidated, ::test_an_unwired_deployment_composes_no_native_arm_at_all, ::test_an_unwired_engine_still_refuses_an_addressed_run, ::test_a_container_address_is_not_a_fire, ::test_the_addressed_issue_is_the_subject_the_run_carries pass; gate 9202 passed/25 skipped; judged 2026-09-09 (workhorse tier): REFUTED — ran all 13 tests in tests/chains/test_native_fire.py at 7a7185e (13 passed), then drove the case the Check DESCRIBES rather than the one it forbids: a native fire whose criteria all state a Check, through `fire.run(scope=ScopeRef(ISSUE, 'fire/subject'))`. It never reaches the loop. The barrier passes (log: fire_criteria_read named=3 owed=['fire/owed-direct','fire/owed-direct-2','fire/owed-nested']) and then run_ralph_loop dies: RuntimeError: The ticket is read after generation; state['ticket'] is None — at src/kodezart/chains/fire_implementation.py:128 -> src/kodezart/domain/workflow_state.py:46. Cause: `TrackerCriteria.revalidate_criteria` returns {} ([criteria.py:105](<http://criteria.py:105>)), so on the native arm state['ticket'] and state['criteria_artifact'] both stay None and the very next node reads both through current_ticket/validated_criteria. The clause 'every fire … re-validates its subtree's Todo criterion sub-issues at head BEFORE IT REACHES THE RALPH LOOP' is therefore vacuous on this arm: nothing can reach the loop, so the step precedes an unreachable node. The claim says the ordering is proved at runtime, but the only runtime drive test (`test_a_criterion_that_lost_its_check_stops_the_fire_before_the_loop`) is a REFUSAL case asserting gate.calls == []; grepping native_graph/revalidate_criteria found no happy-path drive of the native arm in any other test file.",
+    "projectMilestone": {
+      "id": "f490eac0-27cb-41f8-be7b-2baacbdaaf7a",
+      "name": "M3 — Plan & walk"
+    },
+    "priority": {
+      "value": 0,
+      "name": "No priority"
+    },
+    "url": "https://linear.app/duckburg/issue/KOD-450/kod-75-ac-15-plan-time-refusal-holds-the-walk-and-every-fire-re",
+    "gitBranchName": "rosig-3topase/kod-450-kod-75-ac-15-plan-time-refusal-holds-the-walk-and-every-fire",
+    "createdAt": "2026-09-07T11:35:01.966Z",
+    "updatedAt": "2026-09-09T20:49:06.438Z",
+    "archivedAt": null,
+    "completedAt": null,
+    "startedAt": null,
+    "canceledAt": null,
+    "dueDate": null,
+    "slaStartedAt": null,
+    "slaMediumRiskAt": null,
+    "slaHighRiskAt": null,
+    "slaBreachesAt": null,
+    "status": "Todo",
+    "statusType": "unstarted",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ],
+    "attachments": [
+      {
+        "id": "36b5c475-d780-43f7-8e5c-f4667c79e339",
+        "title": "PR91 — native FIRE and audit consumers",
+        "subtitle": null,
+        "url": "https://github.com/YalDan/kodezart/pull/91"
+      },
+      {
+        "id": "801871bd-3ecf-4920-b839-ed7aa52a417d",
+        "title": "PR86 — scope, union and recorded landing consumers",
+        "subtitle": null,
+        "url": "https://github.com/YalDan/kodezart/pull/86"
+      }
+    ],
+    "documents": [],
+    "stateHistory": [
+      {
+        "state": {
+          "id": "9cb16a46-00ec-4435-a9cd-f8a1535ae634",
+          "name": "Todo",
+          "type": "unstarted"
+        },
+        "startedAt": "2026-09-07T11:35:01.966Z",
+        "endedAt": "2026-09-08T02:13:10.486Z"
+      },
+      {
+        "state": {
+          "id": "7f105a1a-cf77-457c-a682-ca5c705d599d",
+          "name": "In Progress",
+          "type": "started"
+        },
+        "startedAt": "2026-09-08T02:13:10.486Z",
+        "endedAt": "2026-09-08T03:22:29.885Z"
+      },
+      {
+        "state": {
+          "id": "f0057d26-e1f4-404f-a0a2-392ef32c9889",
+          "name": "In Review",
+          "type": "started"
+        },
+        "startedAt": "2026-09-08T03:22:29.885Z",
+        "endedAt": "2026-09-08T03:58:57.401Z"
+      },
+      {
+        "state": {
+          "id": "7f105a1a-cf77-457c-a682-ca5c705d599d",
+          "name": "In Progress",
+          "type": "started"
+        },
+        "startedAt": "2026-09-08T03:58:57.401Z",
+        "endedAt": "2026-09-08T05:35:00.715Z"
+      },
+      {
+        "state": {
+          "id": "f0057d26-e1f4-404f-a0a2-392ef32c9889",
+          "name": "In Review",
+          "type": "started"
+        },
+        "startedAt": "2026-09-08T05:35:00.715Z",
+        "endedAt": "2026-09-08T13:46:37.323Z"
+      },
+      {
+        "state": {
+          "id": "9cb16a46-00ec-4435-a9cd-f8a1535ae634",
+          "name": "Todo",
+          "type": "unstarted"
+        },
+        "startedAt": "2026-09-08T13:46:37.323Z",
+        "endedAt": "2026-09-09T20:15:31.626Z"
+      },
+      {
+        "state": {
+          "id": "f0057d26-e1f4-404f-a0a2-392ef32c9889",
+          "name": "In Review",
+          "type": "started"
+        },
+        "startedAt": "2026-09-09T20:15:31.626Z",
+        "endedAt": "2026-09-09T20:49:06.438Z"
+      },
+      {
+        "state": {
+          "id": "9cb16a46-00ec-4435-a9cd-f8a1535ae634",
+          "name": "Todo",
+          "type": "unstarted"
+        },
+        "startedAt": "2026-09-09T20:49:06.438Z",
+        "endedAt": null
+      }
+    ],
+    "createdBy": "Goofy",
+    "createdById": "998f68f9-58c0-4c31-bdc8-2b9d8da803a2",
+    "project": "kodezart v0.3 — scope orchestration",
+    "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e",
+    "parentId": "KOD-75",
+    "team": "kodezart",
+    "teamId": "6a8dcd10-d98b-4bf2-9d37-1f2165b6393a"
+  },
+  {
+    "id": "KOD-422",
+    "uuid": "abb03615-f805-4afc-baa6-353c18156542",
+    "title": "KOD-75-AC-2 — A cyclic scope graph raises the typed ScopeCycleError; no tiebreak is applied and no order is returned",
+    "description": "**Check:** A cyclic scope graph raises the typed `ScopeCycleError` from the planner; no tiebreak is applied and no order is returned.\n**Do:** Detect cycles during the `blockedBy` walk and raise `ScopeCycleError` naming the offending keys; no silent tiebreak arm exists in the planner. Fixture cycle plus an acyclic negative control.\n**Evidence:** — (sha · cycle fixture test names · session id)",
+    "projectMilestone": {
+      "id": "f490eac0-27cb-41f8-be7b-2baacbdaaf7a",
+      "name": "M3 — Plan & walk"
+    },
+    "priority": {
+      "value": 0,
+      "name": "No priority"
+    },
+    "url": "https://linear.app/duckburg/issue/KOD-422/kod-75-ac-2-a-cyclic-scope-graph-raises-the-typed-scopecycleerror-no",
+    "gitBranchName": "rosig-3topase/kod-422-kod-75-ac-2-a-cyclic-scope-graph-raises-the-typed",
+    "createdAt": "2026-09-07T11:33:13.215Z",
+    "updatedAt": "2026-09-09T19:54:02.716Z",
+    "archivedAt": null,
+    "completedAt": "2026-09-08T07:08:05.856Z",
+    "startedAt": "2026-09-07T18:28:26.307Z",
+    "canceledAt": null,
+    "dueDate": null,
+    "slaStartedAt": null,
+    "slaMediumRiskAt": null,
+    "slaHighRiskAt": null,
+    "slaBreachesAt": null,
+    "status": "Done",
+    "statusType": "completed",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ],
+    "attachments": [
+      {
+        "id": "ed4f72ff-be5a-45aa-ad04-1fe0f467071c",
+        "title": "PR #73 — v0.3 foundations (stacked on #72)",
+        "subtitle": null,
+        "url": "https://github.com/YalDan/kodezart/pull/73"
+      }
+    ],
+    "documents": [],
+    "stateHistory": [
+      {
+        "state": {
+          "id": "9cb16a46-00ec-4435-a9cd-f8a1535ae634",
+          "name": "Todo",
+          "type": "unstarted"
+        },
+        "startedAt": "2026-09-07T11:33:13.215Z",
+        "endedAt": "2026-09-07T18:28:26.320Z"
+      },
+      {
+        "state": {
+          "id": "7f105a1a-cf77-457c-a682-ca5c705d599d",
+          "name": "In Progress",
+          "type": "started"
+        },
+        "startedAt": "2026-09-07T18:28:26.320Z",
+        "endedAt": "2026-09-07T19:06:06.438Z"
+      },
+      {
+        "state": {
+          "id": "f0057d26-e1f4-404f-a0a2-392ef32c9889",
+          "name": "In Review",
+          "type": "started"
+        },
+        "startedAt": "2026-09-07T19:06:06.438Z",
+        "endedAt": "2026-09-07T20:55:25.215Z"
+      },
+      {
+        "state": {
+          "id": "a46cc17c-e528-421a-afb2-079484d97bc4",
+          "name": "Done",
+          "type": "completed"
+        },
+        "startedAt": "2026-09-07T20:55:25.215Z",
+        "endedAt": "2026-09-07T21:06:32.800Z"
+      },
+      {
+        "state": {
+          "id": "f0057d26-e1f4-404f-a0a2-392ef32c9889",
+          "name": "In Review",
+          "type": "started"
+        },
+        "startedAt": "2026-09-07T21:06:32.800Z",
+        "endedAt": "2026-09-07T21:25:24.255Z"
+      },
+      {
+        "state": {
+          "id": "a46cc17c-e528-421a-afb2-079484d97bc4",
+          "name": "Done",
+          "type": "completed"
+        },
+        "startedAt": "2026-09-07T21:25:24.255Z",
+        "endedAt": "2026-09-07T22:17:48.554Z"
+      },
+      {
+        "state": {
+          "id": "f0057d26-e1f4-404f-a0a2-392ef32c9889",
+          "name": "In Review",
+          "type": "started"
+        },
+        "startedAt": "2026-09-07T22:17:48.554Z",
+        "endedAt": "2026-09-08T07:08:05.866Z"
+      },
+      {
+        "state": {
+          "id": "a46cc17c-e528-421a-afb2-079484d97bc4",
+          "name": "Done",
+          "type": "completed"
+        },
+        "startedAt": "2026-09-08T07:08:05.866Z",
+        "endedAt": null
+      }
+    ],
+    "createdBy": "Goofy",
+    "createdById": "998f68f9-58c0-4c31-bdc8-2b9d8da803a2",
+    "project": "kodezart v0.3 — scope orchestration",
+    "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e",
+    "parentId": "KOD-75",
+    "team": "kodezart",
+    "teamId": "6a8dcd10-d98b-4bf2-9d37-1f2165b6393a"
+  },
+  {
+    "id": "KOD-454",
+    "uuid": "76187477-246b-42d7-9dbd-690d10942bd2",
+    "title": "KOD-75-AC-19 — The gap domain module imports nothing from kodezart.adapters and performs no I/O (static assertion)",
+    "description": "**Check:** The gap domain module imports nothing from `kodezart.adapters` and performs no I/O (static assertion).\n**Do:** Keep the gap computation pure in the domain layer, taking tracker records as arguments. Static test over the module's imports and I/O call sites.\n**Evidence:** — (sha · purity assertion test name · session id)",
+    "projectMilestone": {
+      "id": "f490eac0-27cb-41f8-be7b-2baacbdaaf7a",
+      "name": "M3 — Plan & walk"
+    },
+    "priority": {
+      "value": 0,
+      "name": "No priority"
+    },
+    "url": "https://linear.app/duckburg/issue/KOD-454/kod-75-ac-19-the-gap-domain-module-imports-nothing-from",
+    "gitBranchName": "rosig-3topase/kod-454-kod-75-ac-19-the-gap-domain-module-imports-nothing-from",
+    "createdAt": "2026-09-07T11:35:30.378Z",
+    "updatedAt": "2026-09-09T19:53:57.811Z",
+    "archivedAt": null,
+    "completedAt": "2026-09-08T07:08:20.992Z",
+    "startedAt": "2026-09-07T20:31:47.532Z",
+    "canceledAt": null,
+    "dueDate": null,
+    "slaStartedAt": null,
+    "slaMediumRiskAt": null,
+    "slaHighRiskAt": null,
+    "slaBreachesAt": null,
+    "status": "Done",
+    "statusType": "completed",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ],
+    "attachments": [
+      {
+        "id": "5f59781a-b602-4e89-ae94-9cd28fc5c0ce",
+        "title": "PR #78 — body revisions, gap and alarm observations",
+        "subtitle": null,
+        "url": "https://github.com/YalDan/kodezart/pull/78"
+      }
+    ],
+    "documents": [],
+    "stateHistory": [
+      {
+        "state": {
+          "id": "9cb16a46-00ec-4435-a9cd-f8a1535ae634",
+          "name": "Todo",
+          "type": "unstarted"
+        },
+        "startedAt": "2026-09-07T11:35:30.378Z",
+        "endedAt": "2026-09-07T20:31:47.543Z"
+      },
+      {
+        "state": {
+          "id": "7f105a1a-cf77-457c-a682-ca5c705d599d",
+          "name": "In Progress",
+          "type": "started"
+        },
+        "startedAt": "2026-09-07T20:31:47.543Z",
+        "endedAt": "2026-09-07T21:26:11.808Z"
+      },
+      {
+        "state": {
+          "id": "f0057d26-e1f4-404f-a0a2-392ef32c9889",
+          "name": "In Review",
+          "type": "started"
+        },
+        "startedAt": "2026-09-07T21:26:11.808Z",
+        "endedAt": "2026-09-07T21:32:16.101Z"
+      },
+      {
+        "state": {
+          "id": "a46cc17c-e528-421a-afb2-079484d97bc4",
+          "name": "Done",
+          "type": "completed"
+        },
+        "startedAt": "2026-09-07T21:32:16.101Z",
+        "endedAt": "2026-09-07T22:17:02.200Z"
+      },
+      {
+        "state": {
+          "id": "f0057d26-e1f4-404f-a0a2-392ef32c9889",
+          "name": "In Review",
+          "type": "started"
+        },
+        "startedAt": "2026-09-07T22:17:02.200Z",
+        "endedAt": "2026-09-08T07:08:21.000Z"
+      },
+      {
+        "state": {
+          "id": "a46cc17c-e528-421a-afb2-079484d97bc4",
+          "name": "Done",
+          "type": "completed"
+        },
+        "startedAt": "2026-09-08T07:08:21.000Z",
+        "endedAt": null
+      }
+    ],
+    "createdBy": "Goofy",
+    "createdById": "998f68f9-58c0-4c31-bdc8-2b9d8da803a2",
+    "project": "kodezart v0.3 — scope orchestration",
+    "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e",
+    "parentId": "KOD-75",
+    "team": "kodezart",
+    "teamId": "6a8dcd10-d98b-4bf2-9d37-1f2165b6393a"
+  },
+  {
+    "id": "KOD-457",
+    "uuid": "cf7f84a6-37a2-48e5-8bce-82acf31895c0",
+    "title": "KOD-75-AC-22 — A lapsed cheap criterion is in the next tick's gap and no other is; a carried-passing criterion at the same head is not",
+    "description": "**Check:** A cheap criterion sub-issue moved back from Done (a lapse) is in the next tick's gap and no other criterion is; a criterion carried Done at the same head is not in the gap. An implementation keying the gap on graded-sha equality with head fails the second.\n**Do:** Key gap membership on the criterion sub-issue's state, not on sha-equality with head. Two fixtures at one head: a lapsed criterion and a carried-Done criterion; assert the gap holds exactly the first.\n**Evidence:** — (sha · lapse re-entry test names · session id)",
+    "projectMilestone": {
+      "id": "f490eac0-27cb-41f8-be7b-2baacbdaaf7a",
+      "name": "M3 — Plan & walk"
+    },
+    "priority": {
+      "value": 0,
+      "name": "No priority"
+    },
+    "url": "https://linear.app/duckburg/issue/KOD-457/kod-75-ac-22-a-lapsed-cheap-criterion-is-in-the-next-ticks-gap-and-no",
+    "gitBranchName": "rosig-3topase/kod-457-kod-75-ac-22-a-lapsed-cheap-criterion-is-in-the-next-ticks",
+    "createdAt": "2026-09-07T11:35:52.325Z",
+    "updatedAt": "2026-09-09T19:53:57.179Z",
+    "archivedAt": null,
+    "completedAt": "2026-09-08T13:46:45.507Z",
+    "startedAt": null,
+    "canceledAt": null,
+    "dueDate": null,
+    "slaStartedAt": null,
+    "slaMediumRiskAt": null,
+    "slaHighRiskAt": null,
+    "slaBreachesAt": null,
+    "status": "Done",
+    "statusType": "completed",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ],
+    "attachments": [],
+    "documents": [],
+    "stateHistory": [
+      {
+        "state": {
+          "id": "9cb16a46-00ec-4435-a9cd-f8a1535ae634",
+          "name": "Todo",
+          "type": "unstarted"
+        },
+        "startedAt": "2026-09-07T11:35:52.325Z",
+        "endedAt": "2026-09-08T13:46:45.515Z"
+      },
+      {
+        "state": {
+          "id": "a46cc17c-e528-421a-afb2-079484d97bc4",
+          "name": "Done",
+          "type": "completed"
+        },
+        "startedAt": "2026-09-08T13:46:45.515Z",
+        "endedAt": null
+      }
+    ],
+    "createdBy": "Goofy",
+    "createdById": "998f68f9-58c0-4c31-bdc8-2b9d8da803a2",
+    "project": "kodezart v0.3 — scope orchestration",
+    "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e",
+    "parentId": "KOD-75",
+    "team": "kodezart",
+    "teamId": "6a8dcd10-d98b-4bf2-9d37-1f2165b6393a"
+  },
+  {
+    "id": "KOD-449",
+    "uuid": "695c810d-d69c-4bac-ac62-3949860890de",
+    "title": "KOD-75-AC-14 — Kill-and-re-enter dispatches exactly the remaining lanes, re-uses the recorded branch, and reads no merge state",
+    "description": "**Check:** Kill-and-re-enter: a scope killed after some of its lanes' fires reached Done re-enters and dispatches exactly the remaining lanes; a lane killed mid-fire re-dispatches onto its recorded branch with the branch-minting function asserted uncalled and with no re-execution of criterion sub-issues already Done; re-entry records zero reads of merge state.\n**Do:** Re-entry reads the association record for a branch and the issue's `criterion` children for what is already Done. Fixtures: kill after part of the graph completes; kill mid-fire; assert the mint function uncalled and the fake forge's merge-state reader at zero.\n**Evidence:** — (sha · re-entry test names · session id)",
+    "projectMilestone": {
+      "id": "f490eac0-27cb-41f8-be7b-2baacbdaaf7a",
+      "name": "M3 — Plan & walk"
+    },
+    "priority": {
+      "value": 0,
+      "name": "No priority"
+    },
+    "url": "https://linear.app/duckburg/issue/KOD-449/kod-75-ac-14-kill-and-re-enter-dispatches-exactly-the-remaining-lanes",
+    "gitBranchName": "rosig-3topase/kod-449-kod-75-ac-14-kill-and-re-enter-dispatches-exactly-the",
+    "createdAt": "2026-09-07T11:34:54.853Z",
+    "updatedAt": "2026-09-09T19:47:56.006Z",
+    "archivedAt": null,
+    "completedAt": null,
+    "startedAt": null,
+    "canceledAt": null,
+    "dueDate": null,
+    "slaStartedAt": null,
+    "slaMediumRiskAt": null,
+    "slaHighRiskAt": null,
+    "slaBreachesAt": null,
+    "status": "Todo",
+    "statusType": "unstarted",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ],
+    "attachments": [],
+    "documents": [],
+    "stateHistory": [
+      {
+        "state": {
+          "id": "9cb16a46-00ec-4435-a9cd-f8a1535ae634",
+          "name": "Todo",
+          "type": "unstarted"
+        },
+        "startedAt": "2026-09-07T11:34:54.853Z",
+        "endedAt": null
+      }
+    ],
+    "createdBy": "Goofy",
+    "createdById": "998f68f9-58c0-4c31-bdc8-2b9d8da803a2",
+    "project": "kodezart v0.3 — scope orchestration",
+    "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e",
+    "parentId": "KOD-75",
+    "team": "kodezart",
+    "teamId": "6a8dcd10-d98b-4bf2-9d37-1f2165b6393a"
+  },
+  {
+    "id": "KOD-464",
+    "uuid": "0f911f30-e3ef-4ee8-bea8-9043d8d3a0b7",
+    "title": "KOD-75-AC-29 — The criterion read acquires no write lease and records zero writes on the fake tracker",
+    "description": "**Check:** The criterion read acquires no write lease and records zero writes on the fake tracker. A per-sub-issue state move is leased — the criterion sub-issue is a lease surface kind — but the read itself takes nothing.\n**Do:** Keep the read path lease-free and add the criterion sub-issue as a lease surface kind for state moves. Fixtures: the read asserts zero writes and zero lease acquisitions; a state move asserts exactly one lease on that surface kind.\n**Evidence:** — (sha · lease-free read and leased-move test names · session id)",
+    "projectMilestone": {
+      "id": "f490eac0-27cb-41f8-be7b-2baacbdaaf7a",
+      "name": "M3 — Plan & walk"
+    },
+    "priority": {
+      "value": 0,
+      "name": "No priority"
+    },
+    "url": "https://linear.app/duckburg/issue/KOD-464/kod-75-ac-29-the-criterion-read-acquires-no-write-lease-and-records",
+    "gitBranchName": "rosig-3topase/kod-464-kod-75-ac-29-the-criterion-read-acquires-no-write-lease-and",
+    "createdAt": "2026-09-07T11:36:41.709Z",
+    "updatedAt": "2026-09-09T19:47:54.985Z",
+    "archivedAt": null,
+    "completedAt": null,
+    "startedAt": null,
+    "canceledAt": null,
+    "dueDate": null,
+    "slaStartedAt": null,
+    "slaMediumRiskAt": null,
+    "slaHighRiskAt": null,
+    "slaBreachesAt": null,
+    "status": "Todo",
+    "statusType": "unstarted",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ],
+    "attachments": [],
+    "documents": [],
+    "stateHistory": [
+      {
+        "state": {
+          "id": "9cb16a46-00ec-4435-a9cd-f8a1535ae634",
+          "name": "Todo",
+          "type": "unstarted"
+        },
+        "startedAt": "2026-09-07T11:36:41.709Z",
+        "endedAt": null
+      }
+    ],
+    "createdBy": "Goofy",
+    "createdById": "998f68f9-58c0-4c31-bdc8-2b9d8da803a2",
+    "project": "kodezart v0.3 — scope orchestration",
+    "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e",
+    "parentId": "KOD-75",
+    "team": "kodezart",
+    "teamId": "6a8dcd10-d98b-4bf2-9d37-1f2165b6393a"
+  },
+  {
+    "id": "KOD-469",
+    "uuid": "a0feb188-e225-46f8-848f-dc38c37d5681",
+    "title": "KOD-75-AC-34 — The diff adds no type-checker or linter suppression and no weakened test surface; fixtures run on the in-process fake",
+    "description": "**Check:** Measured against this lane's dispatch base, the diff introduces no new type-checker suppression, no new linter suppression and no weakened test surface on changed lines; every fixture runs against the in-process fake tracker, with no live workspace. (stage-2 amendment: the extracted bullet read \"make check green\", which is graded by executing a command — a forbidden criterion class. The gate stays the harness's gate; this is the in-loop-gradeable proxy for it.)\n**Do:** Keep the diff free of new suppressions and of weakened assertions on changed lines, and keep every fixture on the in-process fake tracker. Graded by reading the diff against the dispatch base.\n**Evidence:** — (sha · dispatch base sha · diff read)",
+    "projectMilestone": {
+      "id": "f490eac0-27cb-41f8-be7b-2baacbdaaf7a",
+      "name": "M3 — Plan & walk"
+    },
+    "priority": {
+      "value": 0,
+      "name": "No priority"
+    },
+    "url": "https://linear.app/duckburg/issue/KOD-469/kod-75-ac-34-the-diff-adds-no-type-checker-or-linter-suppression-and",
+    "gitBranchName": "rosig-3topase/kod-469-kod-75-ac-34-the-diff-adds-no-type-checker-or-linter",
+    "createdAt": "2026-09-07T11:37:15.792Z",
+    "updatedAt": "2026-09-09T19:47:54.255Z",
+    "archivedAt": null,
+    "completedAt": null,
+    "startedAt": null,
+    "canceledAt": null,
+    "dueDate": null,
+    "slaStartedAt": null,
+    "slaMediumRiskAt": null,
+    "slaHighRiskAt": null,
+    "slaBreachesAt": null,
+    "status": "Todo",
+    "statusType": "unstarted",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ],
+    "attachments": [],
+    "documents": [],
+    "stateHistory": [
+      {
+        "state": {
+          "id": "9cb16a46-00ec-4435-a9cd-f8a1535ae634",
+          "name": "Todo",
+          "type": "unstarted"
+        },
+        "startedAt": "2026-09-07T11:37:15.792Z",
+        "endedAt": null
+      }
+    ],
+    "createdBy": "Goofy",
+    "createdById": "998f68f9-58c0-4c31-bdc8-2b9d8da803a2",
+    "project": "kodezart v0.3 — scope orchestration",
+    "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e",
+    "parentId": "KOD-75",
+    "team": "kodezart",
+    "teamId": "6a8dcd10-d98b-4bf2-9d37-1f2165b6393a"
+  },
+  {
+    "id": "KOD-465",
+    "uuid": "37e0bd67-2a96-4327-a699-534b8f2d80ca",
+    "title": "KOD-75-AC-30 — A configuration that declares no criterion mapping aborts startup with a typed error naming the missing member, and no walker path dispatches without that check",
+    "description": "**Check:** An operation config that declares no `issue_labels['criterion']` mapping aborts startup in `boot_tracker` — after `build_tracker`, before reconciliation — with `OperationMemberAbsentError` naming that member, under the configured backend the boot names; and no code path exists in which the walker dispatches without that check: `services/scope_dispatcher.py` reaches the tracker only through `read_scope_ready`, whose first statement is `tracker.require_issue_classification_reads()`.\n**Do:** Call `tracker.require_issue_classification_reads()` in `boot_tracker` immediately after `build_tracker`; add a static assertion that the dispatcher's only tracker path is `read_scope_ready` and that its first statement is that call. Fixture: a configured tracker whose operation lacks the `criterion` mapping aborts boot with the typed error naming `issue_labels['criterion']`, before any mapping write. No new capability error or probe. Whether boot's `require_issue_classification_reads()` refusal stands in place of the capability probe the plan of record deleted is the fork [KOD-766](<https://linear.app/duckburg/issue/KOD-766>) ruled, open again now that <issue id=\"61060668-ddc4-4c44-8a26-c4a393b48013\" href=\"https://linear.app/duckburg/issue/KOD-766/ruling-the-boot-capability-check-kod-465-names-was-deleted-under-kod\">KOD-766</issue> is reopened.\n**Evidence:** — (sha · boot capability test name · session id)",
+    "projectMilestone": {
+      "id": "f490eac0-27cb-41f8-be7b-2baacbdaaf7a",
+      "name": "M3 — Plan & walk"
+    },
+    "priority": {
+      "value": 0,
+      "name": "No priority"
+    },
+    "url": "https://linear.app/duckburg/issue/KOD-465/kod-75-ac-30-a-configuration-that-declares-no-criterion-mapping-aborts",
+    "gitBranchName": "rosig-3topase/kod-465-kod-75-ac-30-a-configuration-that-declares-no-criterion",
+    "createdAt": "2026-09-07T11:36:48.449Z",
+    "updatedAt": "2026-09-09T19:40:37.271Z",
+    "archivedAt": null,
+    "completedAt": null,
+    "startedAt": null,
+    "canceledAt": null,
+    "dueDate": null,
+    "slaStartedAt": null,
+    "slaMediumRiskAt": null,
+    "slaHighRiskAt": null,
+    "slaBreachesAt": null,
+    "status": "Todo",
+    "statusType": "unstarted",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ],
+    "attachments": [
+      {
+        "id": "c142bd44-5df1-461d-bc70-57365a999a0f",
+        "title": "PR #80 — union, delivery and record identities",
+        "subtitle": null,
+        "url": "https://github.com/YalDan/kodezart/pull/80"
+      }
+    ],
+    "documents": [],
+    "stateHistory": [
+      {
+        "state": {
+          "id": "9cb16a46-00ec-4435-a9cd-f8a1535ae634",
+          "name": "Todo",
+          "type": "unstarted"
+        },
+        "startedAt": "2026-09-07T11:36:48.449Z",
+        "endedAt": "2026-09-07T22:12:16.840Z"
+      },
+      {
+        "state": {
+          "id": "7f105a1a-cf77-457c-a682-ca5c705d599d",
+          "name": "In Progress",
+          "type": "started"
+        },
+        "startedAt": "2026-09-07T22:12:16.840Z",
+        "endedAt": "2026-09-07T22:29:56.439Z"
+      },
+      {
+        "state": {
+          "id": "f0057d26-e1f4-404f-a0a2-392ef32c9889",
+          "name": "In Review",
+          "type": "started"
+        },
+        "startedAt": "2026-09-07T22:29:56.439Z",
+        "endedAt": "2026-09-08T13:46:56.026Z"
+      },
+      {
+        "state": {
+          "id": "9cb16a46-00ec-4435-a9cd-f8a1535ae634",
+          "name": "Todo",
+          "type": "unstarted"
+        },
+        "startedAt": "2026-09-08T13:46:56.026Z",
+        "endedAt": null
+      }
+    ],
+    "createdBy": "Goofy",
+    "createdById": "998f68f9-58c0-4c31-bdc8-2b9d8da803a2",
+    "project": "kodezart v0.3 — scope orchestration",
+    "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e",
+    "parentId": "KOD-75",
+    "team": "kodezart",
+    "teamId": "6a8dcd10-d98b-4bf2-9d37-1f2165b6393a"
+  },
+  {
+    "id": "KOD-431",
+    "uuid": "70265857-a3d4-4b83-a445-154ff0883a96",
+    "title": "KOD-75-AC-5 — Anti-deadlock: a scope of open unmerged PRs still walks to completion, and a blocker Done with no PR unlocks identically",
+    "description": "**Check:** Anti-deadlock: a scope in which every lane's PR is opened and left open and unmerged still walks the entire graph to completion, and a blocker Done with **no PR at all** unlocks its dependent identically.\n**Do:** Keep the ready set a function of blocker Done alone, with no landing or merge precondition. Two fixtures over the fake forge: all-PRs-open-and-unmerged walks to completion; a Done blocker with no PR admits its dependent on the same tick.\n**Evidence:** 3ea6fde — tests/services/test_scope_dispatcher.py::test_a_scope_of_open_unmerged_pull_requests_walks_to_completion, ::test_a_blocker_done_with_no_pull_request_unlocks_on_the_same_tick, ::test_an_open_criterion_holds_a_dependent_whatever_its_refs_say pass; revert-check: substituting a recorded-deliverable-ref rule for the subtree-closure blocking rule in chains/scope_walker.py::read_scope_ready reds test_an_open_criterion_holds_a_dependent_whatever_its_refs_say; gate 9067 passed/17 skipped at 3ea6fde. Brief-named tests one and two exceeded the 88-column ruff limit as identifiers and ship shortened, same assertions.; judged 2026-09-08 (workhorse tier, provisional): REFUTED — the Check's first clause holds only under the fixture's ordering. walk_chain at tests/services/test_scope_dispatcher.py:229-249 opens each lane's delivery only AFTER that lane has been dispatched and its criterion closed, so an open delivery is never presented to a candidate. Re-run of the same three-lane chain with the deliveries already open at tick zero — walk(tracker, delivered=('A','B','C')) — enqueues nothing on the first pass: outcome=empty_eligible_set, exclusions [('A', OPEN_DELIVERY), ('B', LIVE_BLOCKER), ('C', LIVE_BLOCKER)], enqueued=[]. So 'a scope in which every lane's PR is opened and left open and unmerged still walks the entire graph to completion' is false; the open-delivery precondition the walker still asks (services/scope_dispatcher.py:91 -> fire_dispatcher.py:673 _delivery_exclusion) sits on the dispatch path, against the Do's 'no landing precondition'.",
+    "projectMilestone": {
+      "id": "f490eac0-27cb-41f8-be7b-2baacbdaaf7a",
+      "name": "M3 — Plan & walk"
+    },
+    "priority": {
+      "value": 0,
+      "name": "No priority"
+    },
+    "url": "https://linear.app/duckburg/issue/KOD-431/kod-75-ac-5-anti-deadlock-a-scope-of-open-unmerged-prs-still-walks-to",
+    "gitBranchName": "rosig-3topase/kod-431-kod-75-ac-5-anti-deadlock-a-scope-of-open-unmerged-prs-still",
+    "createdAt": "2026-09-07T11:33:34.214Z",
+    "updatedAt": "2026-09-09T19:40:36.625Z",
+    "archivedAt": null,
+    "completedAt": null,
+    "startedAt": null,
+    "canceledAt": null,
+    "dueDate": null,
+    "slaStartedAt": null,
+    "slaMediumRiskAt": null,
+    "slaHighRiskAt": null,
+    "slaBreachesAt": null,
+    "status": "Todo",
+    "statusType": "unstarted",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ],
+    "attachments": [],
+    "documents": [],
+    "stateHistory": [
+      {
+        "state": {
+          "id": "9cb16a46-00ec-4435-a9cd-f8a1535ae634",
+          "name": "Todo",
+          "type": "unstarted"
+        },
+        "startedAt": "2026-09-07T11:33:34.214Z",
+        "endedAt": "2026-09-08T16:15:07.951Z"
+      },
+      {
+        "state": {
+          "id": "7f105a1a-cf77-457c-a682-ca5c705d599d",
+          "name": "In Progress",
+          "type": "started"
+        },
+        "startedAt": "2026-09-08T16:15:07.951Z",
+        "endedAt": "2026-09-08T17:09:22.324Z"
+      },
+      {
+        "state": {
+          "id": "f0057d26-e1f4-404f-a0a2-392ef32c9889",
+          "name": "In Review",
+          "type": "started"
+        },
+        "startedAt": "2026-09-08T17:09:22.324Z",
+        "endedAt": "2026-09-08T21:04:02.567Z"
+      },
+      {
+        "state": {
+          "id": "9cb16a46-00ec-4435-a9cd-f8a1535ae634",
+          "name": "Todo",
+          "type": "unstarted"
+        },
+        "startedAt": "2026-09-08T21:04:02.567Z",
+        "endedAt": null
+      }
+    ],
+    "createdBy": "Goofy",
+    "createdById": "998f68f9-58c0-4c31-bdc8-2b9d8da803a2",
+    "project": "kodezart v0.3 — scope orchestration",
+    "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e",
+    "parentId": "KOD-75",
+    "team": "kodezart",
+    "teamId": "6a8dcd10-d98b-4bf2-9d37-1f2165b6393a"
+  },
+  {
+    "id": "KOD-448",
+    "uuid": "f5e91d65-5b12-4eb5-a74b-9b9871fc1791",
+    "title": "KOD-75-AC-13 — Degeneration: a single issue with no in-scope blockers runs identically to today's single fire",
+    "description": "**Check:** Degeneration: a single issue with no in-scope blockers runs identically to today's single fire.\n**Do:** Route the one-issue scope through the same walker path; assert the dispatch shape, the node sequence and the recorded association match the existing single-fire path.\n**Evidence:** e79cb26 — tests/services/test_scope_dispatcher.py::test_a_one_issue_scope_dispatches_exactly_as_the_unscoped_pass_does passes; the ISSUE-kind scope resolved its criterion child as a member and read_scope_ready admitted it, so no PROJECT substitution was needed; both submissions carry scope=None, so the engine takes the same graph. revert-check: dropping the criterion_keys argument from the launch call in services/scope_dispatcher.py::run_pass reds it; gate 9068 passed/17 skipped at e79cb26; judged 2026-09-08 (workhorse tier, provisional): REFUTED — degeneration is satisfied only for a single issue that happens to carry a criterion sub-issue, which is exactly what the fixture supplies (lane_issue('K-1') plus criterion('K-1-check', parent='K-1')). Measured side by side on the same board with an ordinary single issue and no criterion child: the unscoped producer reports fire_enqueued and enqueues ['K-2'], while the scoped walker RAISES EmptyFireCriteriaError (fire subject has no criterion sub-issues) from src/kodezart/domain/issue_tree.py:80, reached via chains/scope_walker.py:68 open_criteria(closure.criteria(key)). That is the defect the audit named — single-issue scoped input raising rather than degenerating through the authored fire path — still standing, with no decision comment scoping it out, so 'runs identically to today's single fire' fails. Secondary: the Do's 'node sequence' is never compared.",
+    "projectMilestone": {
+      "id": "f490eac0-27cb-41f8-be7b-2baacbdaaf7a",
+      "name": "M3 — Plan & walk"
+    },
+    "priority": {
+      "value": 0,
+      "name": "No priority"
+    },
+    "url": "https://linear.app/duckburg/issue/KOD-448/kod-75-ac-13-degeneration-a-single-issue-with-no-in-scope-blockers",
+    "gitBranchName": "rosig-3topase/kod-448-kod-75-ac-13-degeneration-a-single-issue-with-no-in-scope",
+    "createdAt": "2026-09-07T11:34:47.062Z",
+    "updatedAt": "2026-09-09T19:40:35.516Z",
+    "archivedAt": null,
+    "completedAt": null,
+    "startedAt": null,
+    "canceledAt": null,
+    "dueDate": null,
+    "slaStartedAt": null,
+    "slaMediumRiskAt": null,
+    "slaHighRiskAt": null,
+    "slaBreachesAt": null,
+    "status": "Todo",
+    "statusType": "unstarted",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ],
+    "attachments": [],
+    "documents": [],
+    "stateHistory": [
+      {
+        "state": {
+          "id": "9cb16a46-00ec-4435-a9cd-f8a1535ae634",
+          "name": "Todo",
+          "type": "unstarted"
+        },
+        "startedAt": "2026-09-07T11:34:47.062Z",
+        "endedAt": "2026-09-08T16:15:08.512Z"
+      },
+      {
+        "state": {
+          "id": "7f105a1a-cf77-457c-a682-ca5c705d599d",
+          "name": "In Progress",
+          "type": "started"
+        },
+        "startedAt": "2026-09-08T16:15:08.512Z",
+        "endedAt": "2026-09-08T17:15:49.344Z"
+      },
+      {
+        "state": {
+          "id": "f0057d26-e1f4-404f-a0a2-392ef32c9889",
+          "name": "In Review",
+          "type": "started"
+        },
+        "startedAt": "2026-09-08T17:15:49.344Z",
+        "endedAt": "2026-09-08T21:04:06.202Z"
+      },
+      {
+        "state": {
+          "id": "9cb16a46-00ec-4435-a9cd-f8a1535ae634",
+          "name": "Todo",
+          "type": "unstarted"
+        },
+        "startedAt": "2026-09-08T21:04:06.202Z",
+        "endedAt": null
+      }
+    ],
+    "createdBy": "Goofy",
+    "createdById": "998f68f9-58c0-4c31-bdc8-2b9d8da803a2",
+    "project": "kodezart v0.3 — scope orchestration",
+    "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e",
+    "parentId": "KOD-75",
+    "team": "kodezart",
+    "teamId": "6a8dcd10-d98b-4bf2-9d37-1f2165b6393a"
+  },
+  {
+    "id": "KOD-451",
+    "uuid": "45ffebde-e6c3-43cc-9ab5-e78fc0be641b",
+    "title": "KOD-75-AC-16 — The dispatch target is the issue itself; no marker is resolved and no description text is read to find it",
+    "description": "**Check:** Dispatch resolution is by tracker identity alone: the dispatch target IS the issue, so a container holding two members with no parent inside it resolves unambiguously; an issue outside the approved scope is refused at plan time rather than reaching the walk; the walker records no read of description text when resolving a dispatch target. Lane markers are dropped.\n**Do:** Resolve dispatch targets from issue keys and the `scope:approved` self-or-ancestor cascade; no marker lookup and no prose parsing anywhere in the walker. Fixtures: the two-member container; an out-of-scope issue refused; the fake tracker's description-read counter asserted zero.\n**Evidence:** 8257113 — tests/services/test_scope_dispatcher.py::test_a_container_of_two_root_members_resolves_the_dispatch_target_by_key, ::test_an_unapproved_member_never_reaches_the_walk, ::test_dispatch_target_resolution_reads_no_description_text, ::test_walker_modules_resolve_no_lane_marker_and_parse_no_prose pass; revert-check: replacing the execution_approved read in chains/scope_walker.py::read_scope_ready with an unconditional True reds test_an_unapproved_member_never_reaches_the_walk; gate 9072 passed/17 skipped at 8257113; judged 2026-09-08 (workhorse tier, provisional): REFUTED — the Check clause 'an issue outside the approved scope is refused at plan time rather than reaching the walk' is unmet on both halves. Not at plan time: read_scope_plan explicitly establishes no approval (src/kodezart/services/scope_planning.py:12-17), so the unapproved member is read into the plan and its subtree read, and approval is first consulted INSIDE the walk at chains/scope_walker.py:66. Not refused: running the shipped two_roots fixture with only the first root approved gives report.exclusions == [] for the second — silently dropped, with no refusal, no exclusion clause and no log; and a wholly unapproved scope (approved=()) returns outcome=empty_eligible_set, eligible=(), exclusions=(), enqueued=[], byte-identical to the report for a scope at rest, so 'not approved' is indistinguishable from 'nothing ready'.",
+    "projectMilestone": {
+      "id": "f490eac0-27cb-41f8-be7b-2baacbdaaf7a",
+      "name": "M3 — Plan & walk"
+    },
+    "priority": {
+      "value": 0,
+      "name": "No priority"
+    },
+    "url": "https://linear.app/duckburg/issue/KOD-451/kod-75-ac-16-the-dispatch-target-is-the-issue-itself-no-marker-is",
+    "gitBranchName": "rosig-3topase/kod-451-kod-75-ac-16-the-dispatch-target-is-the-issue-itself-no",
+    "createdAt": "2026-09-07T11:35:09.191Z",
+    "updatedAt": "2026-09-09T19:40:33.544Z",
+    "archivedAt": null,
+    "completedAt": null,
+    "startedAt": null,
+    "canceledAt": null,
+    "dueDate": null,
+    "slaStartedAt": null,
+    "slaMediumRiskAt": null,
+    "slaHighRiskAt": null,
+    "slaBreachesAt": null,
+    "status": "Todo",
+    "statusType": "unstarted",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ],
+    "attachments": [],
+    "documents": [],
+    "stateHistory": [
+      {
+        "state": {
+          "id": "9cb16a46-00ec-4435-a9cd-f8a1535ae634",
+          "name": "Todo",
+          "type": "unstarted"
+        },
+        "startedAt": "2026-09-07T11:35:09.191Z",
+        "endedAt": "2026-09-08T16:15:10.177Z"
+      },
+      {
+        "state": {
+          "id": "7f105a1a-cf77-457c-a682-ca5c705d599d",
+          "name": "In Progress",
+          "type": "started"
+        },
+        "startedAt": "2026-09-08T16:15:10.177Z",
+        "endedAt": "2026-09-08T17:22:28.455Z"
+      },
+      {
+        "state": {
+          "id": "f0057d26-e1f4-404f-a0a2-392ef32c9889",
+          "name": "In Review",
+          "type": "started"
+        },
+        "startedAt": "2026-09-08T17:22:28.455Z",
+        "endedAt": "2026-09-08T21:04:09.580Z"
+      },
+      {
+        "state": {
+          "id": "9cb16a46-00ec-4435-a9cd-f8a1535ae634",
+          "name": "Todo",
+          "type": "unstarted"
+        },
+        "startedAt": "2026-09-08T21:04:09.580Z",
+        "endedAt": null
+      }
+    ],
+    "createdBy": "Goofy",
+    "createdById": "998f68f9-58c0-4c31-bdc8-2b9d8da803a2",
+    "project": "kodezart v0.3 — scope orchestration",
+    "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e",
+    "parentId": "KOD-75",
+    "team": "kodezart",
+    "teamId": "6a8dcd10-d98b-4bf2-9d37-1f2165b6393a"
+  },
+  {
+    "id": "KOD-434",
+    "uuid": "a66ee057-2e59-4007-bdca-fdf520a06b87",
+    "title": "KOD-75-AC-6 — The ready-set computation makes zero reads of PR merge state; the fake forge's merge-state reader records no calls",
+    "description": "**Check:** The ready-set computation makes zero reads of PR merge state; the fake forge's merge-state reader records no calls.\n**Do:** Keep merge state out of the ready-set code path entirely. The fake forge counts calls to its merge-state reader; assert zero across a full walk, and assert the ready-set module holds no call site for it.\n**Evidence:** 7c96920 — tests/services/test_scope_dispatcher.py::test_a_full_walk_reads_no_pull_request_merge_state, ::test_ready_set_and_walker_modules_hold_no_merge_state_call_site pass; revert-check: adding a PRStateReader import to services/scope_dispatcher.py reds test_ready_set_and_walker_modules_hold_no_merge_state_call_site; gate 9060 passed/17 skipped at 7c96920; judged 2026-09-08 (workhorse tier, provisional): REFUTED — the operative clause 'the fake forge's merge-state reader records no calls' is asserted on an object connected to nothing. tests/services/test_scope_dispatcher.py:398 constructs reader = FakePRStateReader(records={}) and the identifier appears exactly twice in the file: :398 (construction) and :404 (assert reader.calls == []). walk() at :152 takes only (tracker, delivered, git, ref) and hands no PR-state reader to any object under test, so the assertion asserts a constant and would pass unchanged if the walk read merge state on every tick. The companion static test at :408-434 scans a module list only and does not cover the walk, so the clause is satisfied solely by the test's own fixture.; reproduced 2026-09-08 (a walk monkeypatched to read merge state on every delivery check left the shipped `assert reader.calls == []` green), then repaired 5da3869 — the forge double now answers DeliveryProbe and PRStateReader from one object, as the native client does, so the probe the walk is already handed IS the merge-state reader; tests/services/test_scope_dispatcher.py::test_a_full_walk_reads_no_pull_request_merge_state asserts the forge was asked about all three lanes' deliveries (`set(probe.calls) == {A,B,C}`) and asked nothing about their pull requests (`probe.merge_state.calls == []`). The static half no longer names modules from memory: ::test_no_module_the_walk_can_reach_holds_a_merge_state_call_site computes the walk's import closure (68 modules from services/scope_dispatcher outwards) and forbids a held PRStateReader or a read_pr_state call site anywhere on it. Both pass, with ::test_ready_set_and_walker_modules_hold_no_merge_state_call_site unchanged; mutation-checks: reading merge state through the forge inside FireDispatcher._delivery_exclusion reds the walk fixture, and importing PRStateReader into services/fire_dispatcher.py reds the closure test; gate 9075 passed/17 skipped at 5da3869; re-judged 2026-09-08 by graphcode-46 (workhorse tier, provisional): the original counterexample now holds; three refuters — contract, test-strength, revert — none refuted. Provisional pending top-tier re-verification.",
+    "projectMilestone": {
+      "id": "f490eac0-27cb-41f8-be7b-2baacbdaaf7a",
+      "name": "M3 — Plan & walk"
+    },
+    "priority": {
+      "value": 0,
+      "name": "No priority"
+    },
+    "url": "https://linear.app/duckburg/issue/KOD-434/kod-75-ac-6-the-ready-set-computation-makes-zero-reads-of-pr-merge",
+    "gitBranchName": "rosig-3topase/kod-434-kod-75-ac-6-the-ready-set-computation-makes-zero-reads-of-pr",
+    "createdAt": "2026-09-07T11:33:40.162Z",
+    "updatedAt": "2026-09-09T19:40:32.719Z",
+    "archivedAt": null,
+    "completedAt": "2026-09-08T22:12:45.421Z",
+    "startedAt": "2026-09-08T16:55:28.137Z",
+    "canceledAt": null,
+    "dueDate": null,
+    "slaStartedAt": null,
+    "slaMediumRiskAt": null,
+    "slaHighRiskAt": null,
+    "slaBreachesAt": null,
+    "status": "Done",
+    "statusType": "completed",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ],
+    "attachments": [],
+    "documents": [],
+    "stateHistory": [
+      {
+        "state": {
+          "id": "9cb16a46-00ec-4435-a9cd-f8a1535ae634",
+          "name": "Todo",
+          "type": "unstarted"
+        },
+        "startedAt": "2026-09-07T11:33:40.162Z",
+        "endedAt": "2026-09-08T16:15:06.605Z"
+      },
+      {
+        "state": {
+          "id": "7f105a1a-cf77-457c-a682-ca5c705d599d",
+          "name": "In Progress",
+          "type": "started"
+        },
+        "startedAt": "2026-09-08T16:15:06.605Z",
+        "endedAt": "2026-09-08T16:55:28.137Z"
+      },
+      {
+        "state": {
+          "id": "f0057d26-e1f4-404f-a0a2-392ef32c9889",
+          "name": "In Review",
+          "type": "started"
+        },
+        "startedAt": "2026-09-08T16:55:28.137Z",
+        "endedAt": "2026-09-08T21:03:55.067Z"
+      },
+      {
+        "state": {
+          "id": "9cb16a46-00ec-4435-a9cd-f8a1535ae634",
+          "name": "Todo",
+          "type": "unstarted"
+        },
+        "startedAt": "2026-09-08T21:03:55.067Z",
+        "endedAt": "2026-09-08T21:36:44.097Z"
+      },
+      {
+        "state": {
+          "id": "f0057d26-e1f4-404f-a0a2-392ef32c9889",
+          "name": "In Review",
+          "type": "started"
+        },
+        "startedAt": "2026-09-08T21:36:44.097Z",
+        "endedAt": "2026-09-08T22:12:45.430Z"
+      },
+      {
+        "state": {
+          "id": "a46cc17c-e528-421a-afb2-079484d97bc4",
+          "name": "Done",
+          "type": "completed"
+        },
+        "startedAt": "2026-09-08T22:12:45.430Z",
+        "endedAt": null
+      }
+    ],
+    "createdBy": "Goofy",
+    "createdById": "998f68f9-58c0-4c31-bdc8-2b9d8da803a2",
+    "project": "kodezart v0.3 — scope orchestration",
+    "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e",
+    "parentId": "KOD-75",
+    "team": "kodezart",
+    "teamId": "6a8dcd10-d98b-4bf2-9d37-1f2165b6393a"
+  },
+  {
+    "id": "KOD-461",
+    "uuid": "ea80b369-6a11-4c5b-b5c4-b0122052ba60",
+    "title": "KOD-75-AC-26 — GapMeasurement is absent from every durable surface the run writes and present on the point-in-time surface",
+    "description": "**Check:** The lane's gap — the open criteria of its subtree — is present on the point-in-time surface only: `DispatchReport.criterion_keys` on the walker's tick report equals the keys of the lane's subtree gap (`ScopeReadyLane.gap`), the report additionally names any open subtree criterion the scope's filter cannot reach, carrying its key and the reason it is out of reach, and no durable write the run makes (issue writes, comment writes, recorded work refs, recorded base specs, queue submissions and their prompts) serializes a criterion key list.\n**Do:** Keep the gap on the in-run report surface only; no writer serializes it to a body, a comment or a record. One test enumerating the fake port's issue writes, comment writes, recorded work refs, recorded base specs and queue submissions after a full walk and asserting no criterion key list appears in any of them, plus one asserting `report.criterion_keys` equals the lane's subtree gap, and one over the out-of-filter shape asserting the unreachable open descendant is named on the report with its key and reason. Subject ruled on <issue id=\"199b1cbf-0246-44ae-995e-e9e7aba631a1\" href=\"https://linear.app/duckburg/issue/KOD-764/ruling-kod-461s-subject-gapmeasurement-does-not-exist-restate-on-the\">KOD-764</issue>.\n**Evidence:** — (sha · durable-surface absence test name · session id)",
+    "projectMilestone": {
+      "id": "f490eac0-27cb-41f8-be7b-2baacbdaaf7a",
+      "name": "M3 — Plan & walk"
+    },
+    "priority": {
+      "value": 0,
+      "name": "No priority"
+    },
+    "url": "https://linear.app/duckburg/issue/KOD-461/kod-75-ac-26-gapmeasurement-is-absent-from-every-durable-surface-the",
+    "gitBranchName": "rosig-3topase/kod-461-kod-75-ac-26-gapmeasurement-is-absent-from-every-durable",
+    "createdAt": "2026-09-07T11:36:21.910Z",
+    "updatedAt": "2026-09-09T19:40:28.860Z",
+    "archivedAt": null,
+    "completedAt": null,
+    "startedAt": null,
+    "canceledAt": null,
+    "dueDate": null,
+    "slaStartedAt": null,
+    "slaMediumRiskAt": null,
+    "slaHighRiskAt": null,
+    "slaBreachesAt": null,
+    "status": "Todo",
+    "statusType": "unstarted",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ],
+    "attachments": [],
+    "documents": [],
+    "stateHistory": [
+      {
+        "state": {
+          "id": "9cb16a46-00ec-4435-a9cd-f8a1535ae634",
+          "name": "Todo",
+          "type": "unstarted"
+        },
+        "startedAt": "2026-09-07T11:36:21.910Z",
+        "endedAt": null
+      }
+    ],
+    "createdBy": "Goofy",
+    "createdById": "998f68f9-58c0-4c31-bdc8-2b9d8da803a2",
+    "project": "kodezart v0.3 — scope orchestration",
+    "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e",
+    "parentId": "KOD-75",
+    "team": "kodezart",
+    "teamId": "6a8dcd10-d98b-4bf2-9d37-1f2165b6393a"
+  },
+  {
+    "id": "KOD-467",
+    "uuid": "5b3936a2-90f5-40a7-9c84-c43f92de03d7",
+    "title": "KOD-75-AC-32 — machine-complete versus complete is derived from residual classes at the report surface, not a scope-level enum member",
+    "description": "**Check:** *machine-complete* versus *complete* is derived from residual classes at the report surface and is absent as a scope-level enum member.\n**Do:** Derive the distinction in the terminal's report from the residual classes it already holds; assert no scope-outcome enum carries a machine-complete member.\n**Evidence:** — (sha · derived-distinction test name · session id)",
+    "projectMilestone": {
+      "id": "f490eac0-27cb-41f8-be7b-2baacbdaaf7a",
+      "name": "M3 — Plan & walk"
+    },
+    "priority": {
+      "value": 0,
+      "name": "No priority"
+    },
+    "url": "https://linear.app/duckburg/issue/KOD-467/kod-75-ac-32-machine-complete-versus-complete-is-derived-from-residual",
+    "gitBranchName": "rosig-3topase/kod-467-kod-75-ac-32-machine-complete-versus-complete-is-derived",
+    "createdAt": "2026-09-07T11:37:01.530Z",
+    "updatedAt": "2026-09-09T19:39:58.252Z",
+    "archivedAt": null,
+    "completedAt": null,
+    "startedAt": null,
+    "canceledAt": null,
+    "dueDate": null,
+    "slaStartedAt": null,
+    "slaMediumRiskAt": null,
+    "slaHighRiskAt": null,
+    "slaBreachesAt": null,
+    "status": "Todo",
+    "statusType": "unstarted",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ],
+    "attachments": [],
+    "documents": [],
+    "stateHistory": [
+      {
+        "state": {
+          "id": "9cb16a46-00ec-4435-a9cd-f8a1535ae634",
+          "name": "Todo",
+          "type": "unstarted"
+        },
+        "startedAt": "2026-09-07T11:37:01.530Z",
+        "endedAt": null
+      }
+    ],
+    "createdBy": "Goofy",
+    "createdById": "998f68f9-58c0-4c31-bdc8-2b9d8da803a2",
+    "project": "kodezart v0.3 — scope orchestration",
+    "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e",
+    "parentId": "KOD-75",
+    "team": "kodezart",
+    "teamId": "6a8dcd10-d98b-4bf2-9d37-1f2165b6393a"
+  },
+  {
+    "id": "KOD-466",
+    "uuid": "5deb85e9-5085-41bd-bdad-335c6b551aec",
+    "title": "KOD-75-AC-31 — A lane whose in-gap criteria are all owned elsewhere is not dispatched but reported converged with a declared residual",
+    "description": "**Check:** A lane whose only in-gap criteria are owned by another lane or by an operator is **not** dispatched and is reported converged **with a declared residual** carrying each criterion's act and its owner; the same lane with one this-lane criterion added **is** dispatched, carrying exactly that criterion; a residual-only lane is not held open. The set partitioned is the lane's subtree gap, and a criterion inside the lane's own subtree is the lane's whatever the owner mechanism turns out to be — the owner partition reaches only criteria outside it.\n**Do:** Carry an owner on each criterion record and filter the dispatchable gap by it; the terminal renders the rest as a declared residual. Three fixtures: owned-elsewhere only, one own criterion added, and a residual-only lane asserted closed.\n**Evidence:** — (sha · owner/residual test names · session id)",
+    "projectMilestone": {
+      "id": "f490eac0-27cb-41f8-be7b-2baacbdaaf7a",
+      "name": "M3 — Plan & walk"
+    },
+    "priority": {
+      "value": 0,
+      "name": "No priority"
+    },
+    "url": "https://linear.app/duckburg/issue/KOD-466/kod-75-ac-31-a-lane-whose-in-gap-criteria-are-all-owned-elsewhere-is",
+    "gitBranchName": "rosig-3topase/kod-466-kod-75-ac-31-a-lane-whose-in-gap-criteria-are-all-owned",
+    "createdAt": "2026-09-07T11:36:55.308Z",
+    "updatedAt": "2026-09-09T19:39:46.137Z",
+    "archivedAt": null,
+    "completedAt": null,
+    "startedAt": null,
+    "canceledAt": null,
+    "dueDate": null,
+    "slaStartedAt": null,
+    "slaMediumRiskAt": null,
+    "slaHighRiskAt": null,
+    "slaBreachesAt": null,
+    "status": "Todo",
+    "statusType": "unstarted",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ],
+    "attachments": [],
+    "documents": [],
+    "stateHistory": [
+      {
+        "state": {
+          "id": "9cb16a46-00ec-4435-a9cd-f8a1535ae634",
+          "name": "Todo",
+          "type": "unstarted"
+        },
+        "startedAt": "2026-09-07T11:36:55.308Z",
+        "endedAt": null
+      }
+    ],
+    "createdBy": "Goofy",
+    "createdById": "998f68f9-58c0-4c31-bdc8-2b9d8da803a2",
+    "project": "kodezart v0.3 — scope orchestration",
+    "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e",
+    "parentId": "KOD-75",
+    "team": "kodezart",
+    "teamId": "6a8dcd10-d98b-4bf2-9d37-1f2165b6393a"
+  },
+  {
+    "id": "KOD-463",
+    "uuid": "8538d214-6e78-485f-9d59-759f35f3c446",
+    "title": "KOD-75-AC-28 — Criteria round-trip as sub-issue key, label, state and Evidence; no parent description is parsed by any node or adapter",
+    "description": "**Check:** An issue's criteria round-trip through the tracker as sub-issue key, `criterion` label, state and Evidence; no parent description is parsed by any node or adapter for criterion membership, state or Evidence, and a criterion sub-issue's own Check and Evidence rows are parsed at exactly one site, the adapter's criterion reader, into typed values. An issue whose body carries no checklist round-trips its criteria without error rather than silently reporting every criterion ungraded.\n**Do:** Read criteria as the issue's subtree criteria — its own `criterion` children and, recursively, its deliverable children's — at the one criterion reader; keep the template-row parse there and delete every other description-parsing site. Fixtures: an issue with a checklist-free body round-trips cleanly; the fake tracker's description-read counter on deliverable parents is asserted zero across nodes and adapters during criterion reads and dispatch-target resolution. Whether \"no description is parsed anywhere\" reaches a criterion sub-issue's own Check and Evidence rows is the fork [KOD-765](<https://linear.app/duckburg/issue/KOD-765>) ruled, open again now that <issue id=\"403a499a-b73e-40c2-b016-ddf3ba1aa3e7\" href=\"https://linear.app/duckburg/issue/KOD-765/ruling-no-description-is-parsed-anywhere-versus-a-criterion-sub-issues\">KOD-765</issue> is reopened.\n**Evidence:** — (sha · shape-independence test names · session id)",
+    "projectMilestone": {
+      "id": "f490eac0-27cb-41f8-be7b-2baacbdaaf7a",
+      "name": "M3 — Plan & walk"
+    },
+    "priority": {
+      "value": 0,
+      "name": "No priority"
+    },
+    "url": "https://linear.app/duckburg/issue/KOD-463/kod-75-ac-28-criteria-round-trip-as-sub-issue-key-label-state-and",
+    "gitBranchName": "rosig-3topase/kod-463-kod-75-ac-28-criteria-round-trip-as-sub-issue-key-label",
+    "createdAt": "2026-09-07T11:36:35.143Z",
+    "updatedAt": "2026-09-09T19:37:45.782Z",
+    "archivedAt": null,
+    "completedAt": null,
+    "startedAt": null,
+    "canceledAt": null,
+    "dueDate": null,
+    "slaStartedAt": null,
+    "slaMediumRiskAt": null,
+    "slaHighRiskAt": null,
+    "slaBreachesAt": null,
+    "status": "Todo",
+    "statusType": "unstarted",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ],
+    "attachments": [],
+    "documents": [],
+    "stateHistory": [
+      {
+        "state": {
+          "id": "9cb16a46-00ec-4435-a9cd-f8a1535ae634",
+          "name": "Todo",
+          "type": "unstarted"
+        },
+        "startedAt": "2026-09-07T11:36:35.143Z",
+        "endedAt": null
+      }
+    ],
+    "createdBy": "Goofy",
+    "createdById": "998f68f9-58c0-4c31-bdc8-2b9d8da803a2",
+    "project": "kodezart v0.3 — scope orchestration",
+    "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e",
+    "parentId": "KOD-75",
+    "team": "kodezart",
+    "teamId": "6a8dcd10-d98b-4bf2-9d37-1f2165b6393a"
+  },
+  {
+    "id": "KOD-462",
+    "uuid": "c70622f4-7bae-473d-a826-2d6e0c652839",
+    "title": "KOD-75-AC-27 — Port round-trip fidelity holds for every criterion state, sha byte-identical, and an ungraded criterion is never refuted",
+    "description": "**Check:** Port round-trip fidelity holds for every criterion sub-issue state, with the graded sha carried in the Evidence row byte-identical, and an ungraded criterion is never returned as refuted. The round trip is over the sub-issue's key, its `criterion` label, its state and its Evidence — no other carrier.\n**Do:** Define the port's criterion record and its adapter mapping; property test over every state, asserting key, label, state and sha survive the round trip unchanged.\n**Evidence:** — (sha · round-trip property test name · session id)",
+    "projectMilestone": {
+      "id": "f490eac0-27cb-41f8-be7b-2baacbdaaf7a",
+      "name": "M3 — Plan & walk"
+    },
+    "priority": {
+      "value": 0,
+      "name": "No priority"
+    },
+    "url": "https://linear.app/duckburg/issue/KOD-462/kod-75-ac-27-port-round-trip-fidelity-holds-for-every-criterion-state",
+    "gitBranchName": "rosig-3topase/kod-462-kod-75-ac-27-port-round-trip-fidelity-holds-for-every",
+    "createdAt": "2026-09-07T11:36:28.805Z",
+    "updatedAt": "2026-09-09T19:37:44.645Z",
+    "archivedAt": null,
+    "completedAt": "2026-09-08T13:46:52.678Z",
+    "startedAt": null,
+    "canceledAt": null,
+    "dueDate": null,
+    "slaStartedAt": null,
+    "slaMediumRiskAt": null,
+    "slaHighRiskAt": null,
+    "slaBreachesAt": null,
+    "status": "Done",
+    "statusType": "completed",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ],
+    "attachments": [
+      {
+        "id": "02db8a4c-95a8-4703-b241-ad8e13005067",
+        "title": "PR #103 — session boundaries, focused settings and criterion fidelity",
+        "subtitle": null,
+        "url": "https://github.com/YalDan/kodezart/pull/103"
+      }
+    ],
+    "documents": [],
+    "stateHistory": [
+      {
+        "state": {
+          "id": "9cb16a46-00ec-4435-a9cd-f8a1535ae634",
+          "name": "Todo",
+          "type": "unstarted"
+        },
+        "startedAt": "2026-09-07T11:36:28.805Z",
+        "endedAt": "2026-09-08T13:46:52.688Z"
+      },
+      {
+        "state": {
+          "id": "a46cc17c-e528-421a-afb2-079484d97bc4",
+          "name": "Done",
+          "type": "completed"
+        },
+        "startedAt": "2026-09-08T13:46:52.688Z",
+        "endedAt": null
+      }
+    ],
+    "createdBy": "Goofy",
+    "createdById": "998f68f9-58c0-4c31-bdc8-2b9d8da803a2",
+    "project": "kodezart v0.3 — scope orchestration",
+    "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e",
+    "parentId": "KOD-75",
+    "team": "kodezart",
+    "teamId": "6a8dcd10-d98b-4bf2-9d37-1f2165b6393a"
+  },
+  {
+    "id": "KOD-468",
+    "uuid": "780387d5-ed58-4987-96dd-ab256be9567d",
+    "title": "KOD-75-AC-33 — Walker settings express operator choices; stable constants stay in code",
+    "description": "**Check:** Operator-adjustable walk cadence and plateau policy are read from their subsystem settings and a non-default value changes the composed walker's behavior. A new setting requires an identified production consumer and a concrete deployment variation; stable algorithm constants and provider grammars may live in code at their owning boundary. The provided-capability set is derived from the composed implementation unless an operator choice is demonstrated. No blanket numeric-literal ban or test requiring every number to become configuration remains.\n\n**Do:** Replace the no-literal doctrine with consumer-owned settings and explicit policy. Remove unused knobs or wire a setting only when the active behavior requires it; do not keep fields solely to satisfy this criterion. Test observable override behavior at the composed consumer, not the presence of a field or the absence of literals.\n\n**Evidence:** Pending verification of the amended contract.\n\n**Plan amendment · 2026-09-08:** Supersedes this criterion's requirement that every numeric knob become a `KODEZART_` `AppConfig` field. [KOD-744](<https://linear.app/duckburg/issue/KOD-744>) owns the simplification plan; historical comments apply to the previous contract.",
+    "projectMilestone": {
+      "id": "f490eac0-27cb-41f8-be7b-2baacbdaaf7a",
+      "name": "M3 — Plan & walk"
+    },
+    "priority": {
+      "value": 0,
+      "name": "No priority"
+    },
+    "url": "https://linear.app/duckburg/issue/KOD-468/kod-75-ac-33-walker-settings-express-operator-choices-stable-constants",
+    "gitBranchName": "rosig-3topase/kod-468-kod-75-ac-33-walker-settings-express-operator-choices-stable",
+    "createdAt": "2026-09-07T11:37:07.920Z",
+    "updatedAt": "2026-09-09T19:37:43.264Z",
+    "archivedAt": null,
+    "completedAt": null,
+    "startedAt": null,
+    "canceledAt": null,
+    "dueDate": null,
+    "slaStartedAt": null,
+    "slaMediumRiskAt": null,
+    "slaHighRiskAt": null,
+    "slaBreachesAt": null,
+    "status": "Todo",
+    "statusType": "unstarted",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ],
+    "attachments": [],
+    "documents": [],
+    "stateHistory": [
+      {
+        "state": {
+          "id": "9cb16a46-00ec-4435-a9cd-f8a1535ae634",
+          "name": "Todo",
+          "type": "unstarted"
+        },
+        "startedAt": "2026-09-07T11:37:07.920Z",
+        "endedAt": null
+      }
+    ],
+    "createdBy": "Goofy",
+    "createdById": "998f68f9-58c0-4c31-bdc8-2b9d8da803a2",
+    "project": "kodezart v0.3 — scope orchestration",
+    "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e",
+    "parentId": "KOD-75",
+    "team": "kodezart",
+    "teamId": "6a8dcd10-d98b-4bf2-9d37-1f2165b6393a"
+  },
+  {
+    "id": "KOD-456",
+    "uuid": "1c0f8d9d-0f03-4430-86dc-8b032e02d564",
+    "title": "KOD-75-AC-21 — A lane whose gap is empty is not dispatched whatever its state field says; the paired ungraded lane is dispatched",
+    "description": "**Check:** A lane whose subtree is closed — its own `criterion` sub-issues and its deliverable children's subtrees, recursively — is not dispatched whatever its own workflow state field says, and the dispatch decision records no read of that field; the paired lane whose field says Done while one criterion sub-issue is still ungraded **is** dispatched, carrying exactly that criterion; a third lane whose own criteria are all Done while one criterion is open under a child deliverable is not treated as finished, and its dispatch decision is recorded rather than silent.\n**Do:** Key the dispatch decision on the gap alone, never on the parent's state field. Three fixtures over the fake tracker; assert the parent-state field reader records zero calls in the dispatch path, that the dispatched fire carries exactly the ungraded criterion, and that the open-under-a-child-deliverable lane is neither treated as finished nor left without a recorded decision.\n**Evidence:** — (sha · met-gap and paired-ungraded test names · session id)",
+    "projectMilestone": {
+      "id": "f490eac0-27cb-41f8-be7b-2baacbdaaf7a",
+      "name": "M3 — Plan & walk"
+    },
+    "priority": {
+      "value": 0,
+      "name": "No priority"
+    },
+    "url": "https://linear.app/duckburg/issue/KOD-456/kod-75-ac-21-a-lane-whose-gap-is-empty-is-not-dispatched-whatever-its",
+    "gitBranchName": "rosig-3topase/kod-456-kod-75-ac-21-a-lane-whose-gap-is-empty-is-not-dispatched",
+    "createdAt": "2026-09-07T11:35:45.500Z",
+    "updatedAt": "2026-09-09T19:35:12.293Z",
+    "archivedAt": null,
+    "completedAt": null,
+    "startedAt": null,
+    "canceledAt": null,
+    "dueDate": null,
+    "slaStartedAt": null,
+    "slaMediumRiskAt": null,
+    "slaHighRiskAt": null,
+    "slaBreachesAt": null,
+    "status": "Todo",
+    "statusType": "unstarted",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ],
+    "attachments": [
+      {
+        "id": "be1c19b3-f9d3-48e8-b583-9a4cabe0ad91",
+        "title": "PR #87 — live readiness, fire admission and escalation records",
+        "subtitle": null,
+        "url": "https://github.com/YalDan/kodezart/pull/87"
+      }
+    ],
+    "documents": [],
+    "stateHistory": [
+      {
+        "state": {
+          "id": "9cb16a46-00ec-4435-a9cd-f8a1535ae634",
+          "name": "Todo",
+          "type": "unstarted"
+        },
+        "startedAt": "2026-09-07T11:35:45.500Z",
+        "endedAt": "2026-09-08T02:54:10.839Z"
+      },
+      {
+        "state": {
+          "id": "7f105a1a-cf77-457c-a682-ca5c705d599d",
+          "name": "In Progress",
+          "type": "started"
+        },
+        "startedAt": "2026-09-08T02:54:10.839Z",
+        "endedAt": "2026-09-08T04:03:32.169Z"
+      },
+      {
+        "state": {
+          "id": "f0057d26-e1f4-404f-a0a2-392ef32c9889",
+          "name": "In Review",
+          "type": "started"
+        },
+        "startedAt": "2026-09-08T04:03:32.169Z",
+        "endedAt": "2026-09-08T05:02:53.295Z"
+      },
+      {
+        "state": {
+          "id": "7f105a1a-cf77-457c-a682-ca5c705d599d",
+          "name": "In Progress",
+          "type": "started"
+        },
+        "startedAt": "2026-09-08T05:02:53.295Z",
+        "endedAt": "2026-09-08T13:46:43.575Z"
+      },
+      {
+        "state": {
+          "id": "9cb16a46-00ec-4435-a9cd-f8a1535ae634",
+          "name": "Todo",
+          "type": "unstarted"
+        },
+        "startedAt": "2026-09-08T13:46:43.575Z",
+        "endedAt": "2026-09-08T16:15:05.600Z"
+      },
+      {
+        "state": {
+          "id": "7f105a1a-cf77-457c-a682-ca5c705d599d",
+          "name": "In Progress",
+          "type": "started"
+        },
+        "startedAt": "2026-09-08T16:15:05.600Z",
+        "endedAt": "2026-09-08T16:48:14.682Z"
+      },
+      {
+        "state": {
+          "id": "9cb16a46-00ec-4435-a9cd-f8a1535ae634",
+          "name": "Todo",
+          "type": "unstarted"
+        },
+        "startedAt": "2026-09-08T16:48:14.682Z",
+        "endedAt": null
+      }
+    ],
+    "createdBy": "Goofy",
+    "createdById": "998f68f9-58c0-4c31-bdc8-2b9d8da803a2",
+    "project": "kodezart v0.3 — scope orchestration",
+    "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e",
+    "parentId": "KOD-75",
+    "team": "kodezart",
+    "teamId": "6a8dcd10-d98b-4bf2-9d37-1f2165b6393a"
+  },
+  {
+    "id": "KOD-428",
+    "uuid": "4e28986a-6d4c-4854-88e9-6819cc321c86",
+    "title": "KOD-75-AC-4 — Crashed-lane re-eligibility: an open-PR lane is excluded as delivered-in-review, a no-PR no-run lane stays eligible",
+    "description": "**Check:** Crashed-lane re-eligibility holds: a lane whose PR is open is excluded as delivered-in-review; a lane with no PR and no live run is still eligible.\n**Do:** Re-entry eligibility asks the forge for an open PR and the run store for a live run, and reads neither merge state nor a body. Two fixtures over the fake forge: open-PR lane excluded, no-PR/no-run lane admitted.\n**Evidence:** 29c1683 — tests/services/test_scope_dispatcher.py::test_a_lane_with_an_open_pull_request_is_excluded_as_delivered_in_review, ::test_a_lane_with_a_live_run_is_excluded_as_in_flight, ::test_a_lane_with_no_pull_request_and_no_live_run_is_eligible, ::test_re_entry_eligibility_reads_no_merge_state_and_no_body pass; revert-check: dropping the delivery clause from FireDispatcher.standing_exclusion reds test_a_lane_with_an_open_pull_request_is_excluded_as_delivered_in_review and test_re_entry_eligibility_reads_no_merge_state_and_no_body; gate 9064 passed/17 skipped at 29c1683; judged 2026-09-08 (workhorse tier, provisional): REFUTED — the test cited for the negative half is half-vacuous. tests/services/test_scope_dispatcher.py:503 constructs reader = FakePRStateReader(records={}) that is never passed to walk() (signature at :152 accepts no reader) nor to any object under test, so assert reader.calls == [] at :517 asserts a constant — 'reads no merge state' is established by an unconnected double. The body half is narrower than its name: the monkeypatched `__getattribute__` at :507-511 trips only for issue_key == 'crashed', proving nothing about the eligible lane's body. The cited sha 29c1683 is test-only (1 file, +89/-1), so its revert-check deletes tests rather than production code. Both Check clauses are genuinely implemented and load-bearing in shipped code (mutating FireDispatcher.standing_exclusion reds the positive fixtures); it is the evidence for the negative half that does not hold.; reproduced 2026-09-08 (a pass monkeypatched to read merge state on a reader AND to read the eligible lane's body left both shipped assertions green), then repaired 75ea15e — the forge double answers DeliveryProbe and PRStateReader from one object as the native client does, so the probe the pass is handed IS the merge-state reader, and the description hook now stands over every issue the pass touches and is lifted at launch (what a fire reads once it owns a lane is the fire's business). tests/services/test_scope_dispatcher.py::test_re_entry_eligibility_reads_no_merge_state_and_no_body now asserts body_reads == [], probe.calls == ['crashed', 'fresh'], probe.merge_state.calls == [], the eligible lane claimed and enqueued; ::test_a_lane_with_an_open_pull_request_is_excluded_as_delivered_in_review, ::test_a_lane_with_a_live_run_is_excluded_as_in_flight, ::test_a_lane_with_no_pull_request_and_no_live_run_is_eligible unchanged and pass; mutation-checks: reading merge state through the forge, or reading the eligible lane's body, inside FireDispatcher.standing_exclusion each reds it; gate 9075 passed/17 skipped at 75ea15e; re-judged 2026-09-08 by graphcode-46 (workhorse tier, provisional): the original counterexample now holds; three refuters — contract, test-strength, revert — none refuted. Provisional pending top-tier re-verification.",
+    "projectMilestone": {
+      "id": "f490eac0-27cb-41f8-be7b-2baacbdaaf7a",
+      "name": "M3 — Plan & walk"
+    },
+    "priority": {
+      "value": 0,
+      "name": "No priority"
+    },
+    "url": "https://linear.app/duckburg/issue/KOD-428/kod-75-ac-4-crashed-lane-re-eligibility-an-open-pr-lane-is-excluded-as",
+    "gitBranchName": "rosig-3topase/kod-428-kod-75-ac-4-crashed-lane-re-eligibility-an-open-pr-lane-is",
+    "createdAt": "2026-09-07T11:33:26.657Z",
+    "updatedAt": "2026-09-09T19:35:11.667Z",
+    "archivedAt": null,
+    "completedAt": "2026-09-08T22:12:47.070Z",
+    "startedAt": "2026-09-08T17:02:34.921Z",
+    "canceledAt": null,
+    "dueDate": null,
+    "slaStartedAt": null,
+    "slaMediumRiskAt": null,
+    "slaHighRiskAt": null,
+    "slaBreachesAt": null,
+    "status": "Done",
+    "statusType": "completed",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ],
+    "attachments": [],
+    "documents": [],
+    "stateHistory": [
+      {
+        "state": {
+          "id": "9cb16a46-00ec-4435-a9cd-f8a1535ae634",
+          "name": "Todo",
+          "type": "unstarted"
+        },
+        "startedAt": "2026-09-07T11:33:26.657Z",
+        "endedAt": "2026-09-08T16:15:07.281Z"
+      },
+      {
+        "state": {
+          "id": "7f105a1a-cf77-457c-a682-ca5c705d599d",
+          "name": "In Progress",
+          "type": "started"
+        },
+        "startedAt": "2026-09-08T16:15:07.281Z",
+        "endedAt": "2026-09-08T17:02:34.921Z"
+      },
+      {
+        "state": {
+          "id": "f0057d26-e1f4-404f-a0a2-392ef32c9889",
+          "name": "In Review",
+          "type": "started"
+        },
+        "startedAt": "2026-09-08T17:02:34.921Z",
+        "endedAt": "2026-09-08T21:03:58.638Z"
+      },
+      {
+        "state": {
+          "id": "9cb16a46-00ec-4435-a9cd-f8a1535ae634",
+          "name": "Todo",
+          "type": "unstarted"
+        },
+        "startedAt": "2026-09-08T21:03:58.638Z",
+        "endedAt": "2026-09-08T21:44:06.605Z"
+      },
+      {
+        "state": {
+          "id": "f0057d26-e1f4-404f-a0a2-392ef32c9889",
+          "name": "In Review",
+          "type": "started"
+        },
+        "startedAt": "2026-09-08T21:44:06.605Z",
+        "endedAt": "2026-09-08T22:12:47.081Z"
+      },
+      {
+        "state": {
+          "id": "a46cc17c-e528-421a-afb2-079484d97bc4",
+          "name": "Done",
+          "type": "completed"
+        },
+        "startedAt": "2026-09-08T22:12:47.081Z",
+        "endedAt": null
+      }
+    ],
+    "createdBy": "Goofy",
+    "createdById": "998f68f9-58c0-4c31-bdc8-2b9d8da803a2",
+    "project": "kodezart v0.3 — scope orchestration",
+    "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e",
+    "parentId": "KOD-75",
+    "team": "kodezart",
+    "teamId": "6a8dcd10-d98b-4bf2-9d37-1f2165b6393a"
+  },
+  {
+    "id": "KOD-460",
+    "uuid": "73579601-8d9c-4f3c-a0da-501bd60ea9b1",
+    "title": "KOD-75-AC-25 — With the plateau bound at 1, a tick closing no open criterion ends the fire with a PR from its best iteration",
+    "description": "**Check:** With the plateau bound at 1, a tick that closes **no previously-open criterion sub-issue in the fire's subtree** ends the fire on plateau: a PR is opened from the best iteration, the issue goes back to Todo with that PR as its work ref, the walk continues rather than halting, and the issue is re-dispatched only on a re-entry event. A tick closing twelve criterion references while surfacing twelve new ones (in-gap cardinality flat) is asserted **not** a plateau, a tick whose gap grows through a lapse is asserted **not** a plateau, and a tick whose only closure is a criterion under a deliverable child — no own criterion sub-issue closed — is asserted **not** a plateau.\n**Do:** Track the set of previously-open subtree criterion keys per tick, not the gap's size. On plateau or budget exhaustion, open the PR from the best iteration and write the issue back to Todo with the PR as work ref. Four fixtures: plateau, flat-cardinality churn, lapse growth, descendant-only closure.\n**Evidence:** — (sha · plateau test names · session id)",
+    "projectMilestone": {
+      "id": "f490eac0-27cb-41f8-be7b-2baacbdaaf7a",
+      "name": "M3 — Plan & walk"
+    },
+    "priority": {
+      "value": 0,
+      "name": "No priority"
+    },
+    "url": "https://linear.app/duckburg/issue/KOD-460/kod-75-ac-25-with-the-plateau-bound-at-1-a-tick-closing-no-open",
+    "gitBranchName": "rosig-3topase/kod-460-kod-75-ac-25-with-the-plateau-bound-at-1-a-tick-closing-no",
+    "createdAt": "2026-09-07T11:36:15.472Z",
+    "updatedAt": "2026-09-09T19:35:10.544Z",
+    "archivedAt": null,
+    "completedAt": null,
+    "startedAt": null,
+    "canceledAt": null,
+    "dueDate": null,
+    "slaStartedAt": null,
+    "slaMediumRiskAt": null,
+    "slaHighRiskAt": null,
+    "slaBreachesAt": null,
+    "status": "Todo",
+    "statusType": "unstarted",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ],
+    "attachments": [],
+    "documents": [],
+    "stateHistory": [
+      {
+        "state": {
+          "id": "9cb16a46-00ec-4435-a9cd-f8a1535ae634",
+          "name": "Todo",
+          "type": "unstarted"
+        },
+        "startedAt": "2026-09-07T11:36:15.472Z",
+        "endedAt": "2026-09-08T16:15:10.762Z"
+      },
+      {
+        "state": {
+          "id": "7f105a1a-cf77-457c-a682-ca5c705d599d",
+          "name": "In Progress",
+          "type": "started"
+        },
+        "startedAt": "2026-09-08T16:15:10.762Z",
+        "endedAt": "2026-09-08T20:41:44.553Z"
+      },
+      {
+        "state": {
+          "id": "9cb16a46-00ec-4435-a9cd-f8a1535ae634",
+          "name": "Todo",
+          "type": "unstarted"
+        },
+        "startedAt": "2026-09-08T20:41:44.553Z",
+        "endedAt": null
+      }
+    ],
+    "createdBy": "Goofy",
+    "createdById": "998f68f9-58c0-4c31-bdc8-2b9d8da803a2",
+    "project": "kodezart v0.3 — scope orchestration",
+    "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e",
+    "parentId": "KOD-75",
+    "team": "kodezart",
+    "teamId": "6a8dcd10-d98b-4bf2-9d37-1f2165b6393a"
+  },
+  {
+    "id": "KOD-455",
+    "uuid": "9868702f-4715-49a7-866c-2dc305a76bf2",
+    "title": "KOD-75-AC-20 — Over a table of lane fixtures a lane's gap is empty iff the fire-state arithmetic returns Done",
+    "description": "**Check:** Over a table of lane fixtures a lane's gap is empty **iff** the subtree rollup returns Done. One arithmetic: an issue's subtree is its own `criterion` children plus its deliverable children's subtrees, recursively, and that single read answers both what a fire still owes and whether a blocker is discharged. A lane with every criterion passing and one non-compliant ruling mark, and a lane with every child Done and one unsatisfied lane check, both hold a non-empty gap and are not Done — rulings land on the affected criterion and lane checks are themselves criterion sub-issues, so in both fixtures the offending criterion is simply not Done. An implementation whose gap ranges over a narrower set than the issue's subtree criteria fails — in particular the met-lane-check-over-an-open-child-deliverable fixture.\n**Do:** Compute Done through `SubtreeClosure.is_closed` over the issue's subtree and assert gap-emptiness and Done agree row by row against it. Delete the test-local `fire_state_is_done` restatement at tests/domain/test_subtree_closure.py:102-114 so the iff is read against an arithmetic defined independently of the gap. Every expected value on every row — the open-key tuple and the Done verdict — is authored as a literal on that parametrize row, never recomputed from the function under test, so a row can fail. Table test carrying all five fixtures, the met lane check over an open child deliverable among them as the discriminating row.\n**Evidence:** b98d53e — tests/domain/test_subtree_closure.py::test_gap_is_empty_iff_the_subtree_rollup_is_done (all five rows, both expectations authored as literals), ::test_the_lane_gap_and_the_blocker_closure_are_one_read, ::test_a_closure_over_a_narrower_criterion_set_disagrees_with_the_gap, ::test_issue_tree_module_imports_no_adapters_and_does_no_io, tests/chains/test_scope_ready.py::test_a_graded_lane_over_an_out_of_filter_open_child_is_not_at_rest, ::test_deliverable_grandchildren_outside_membership_are_owed_and_dispatched pass; gate 9077 passed/17 skipped at b98d53e. One arithmetic shipped at f5b17f2: the subtree closure's `gap` returns every still-open criterion record under a key and is_closed is its emptiness, so the walker's candidate gap and its blocker closure are the same read; the test-local fire_state_is_done restatement is deleted. Revert-checks: restoring the narrow candidate read at chains/scope_walker.py (open_criteria(closure.criteria(key))) reds both named scope-ready tests, the loss shape returning ready == [] instead of the lane owing its child's check; defining is_closed as `not open_criteria(self.criteria(key), ref=self.ref)` reds the discriminating row [a_met_lane_check_over_an_open_child_deliverable] and ::test_the_lane_gap_and_the_blocker_closure_are_one_read.",
+    "projectMilestone": {
+      "id": "f490eac0-27cb-41f8-be7b-2baacbdaaf7a",
+      "name": "M3 — Plan & walk"
+    },
+    "priority": {
+      "value": 0,
+      "name": "No priority"
+    },
+    "url": "https://linear.app/duckburg/issue/KOD-455/kod-75-ac-20-over-a-table-of-lane-fixtures-a-lanes-gap-is-empty-iff",
+    "gitBranchName": "rosig-3topase/kod-455-kod-75-ac-20-over-a-table-of-lane-fixtures-a-lanes-gap-is",
+    "createdAt": "2026-09-07T11:35:38.537Z",
+    "updatedAt": "2026-09-09T19:34:43.985Z",
+    "archivedAt": null,
+    "completedAt": null,
+    "startedAt": "2026-09-08T23:21:26.788Z",
+    "canceledAt": null,
+    "dueDate": null,
+    "slaStartedAt": null,
+    "slaMediumRiskAt": null,
+    "slaHighRiskAt": null,
+    "slaBreachesAt": null,
+    "status": "In Review",
+    "statusType": "started",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ],
+    "attachments": [],
+    "documents": [],
+    "stateHistory": [
+      {
+        "state": {
+          "id": "9cb16a46-00ec-4435-a9cd-f8a1535ae634",
+          "name": "Todo",
+          "type": "unstarted"
+        },
+        "startedAt": "2026-09-07T11:35:38.537Z",
+        "endedAt": "2026-09-08T16:15:04.271Z"
+      },
+      {
+        "state": {
+          "id": "7f105a1a-cf77-457c-a682-ca5c705d599d",
+          "name": "In Progress",
+          "type": "started"
+        },
+        "startedAt": "2026-09-08T16:15:04.271Z",
+        "endedAt": "2026-09-08T16:27:15.817Z"
+      },
+      {
+        "state": {
+          "id": "f0057d26-e1f4-404f-a0a2-392ef32c9889",
+          "name": "In Review",
+          "type": "started"
+        },
+        "startedAt": "2026-09-08T16:27:15.817Z",
+        "endedAt": "2026-09-08T21:03:48.021Z"
+      },
+      {
+        "state": {
+          "id": "9cb16a46-00ec-4435-a9cd-f8a1535ae634",
+          "name": "Todo",
+          "type": "unstarted"
+        },
+        "startedAt": "2026-09-08T21:03:48.021Z",
+        "endedAt": "2026-09-08T21:26:26.826Z"
+      },
+      {
+        "state": {
+          "id": "f0057d26-e1f4-404f-a0a2-392ef32c9889",
+          "name": "In Review",
+          "type": "started"
+        },
+        "startedAt": "2026-09-08T21:26:26.826Z",
+        "endedAt": "2026-09-08T22:12:54.750Z"
+      },
+      {
+        "state": {
+          "id": "9cb16a46-00ec-4435-a9cd-f8a1535ae634",
+          "name": "Todo",
+          "type": "unstarted"
+        },
+        "startedAt": "2026-09-08T22:12:54.750Z",
+        "endedAt": "2026-09-08T23:21:26.805Z"
+      },
+      {
+        "state": {
+          "id": "f0057d26-e1f4-404f-a0a2-392ef32c9889",
+          "name": "In Review",
+          "type": "started"
+        },
+        "startedAt": "2026-09-08T23:21:26.805Z",
+        "endedAt": null
+      }
+    ],
+    "createdBy": "Goofy",
+    "createdById": "998f68f9-58c0-4c31-bdc8-2b9d8da803a2",
+    "project": "kodezart v0.3 — scope orchestration",
+    "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e",
+    "parentId": "KOD-75",
+    "team": "kodezart",
+    "teamId": "6a8dcd10-d98b-4bf2-9d37-1f2165b6393a"
+  },
+  {
+    "id": "KOD-418",
+    "uuid": "9bc1ad7d-ece9-4dd9-9695-61a10d99fee4",
+    "title": "KOD-75-AC-1 — The planner enumerates the ready set over a fixture blockedBy graph and ranks it by effective priority then age",
+    "description": "**Check:** The topology planner, over a fixture `blockedBy` graph, enumerates the scope's ready set — the issues with no open blocker — and ranks it for a deep stack: effective priority (the max of its own and of everything it transitively blocks) first, then age, oldest first. Lane order, per-scope concurrency and lane caps are not computed; the walk dispatches one fire per pass.\n**Do:** Build the planner over `blockedBy` edges in `src/kodezart/domain/topology.py`: the open-blocker predicate, cycle detection, and the effective-priority-then-age rank. Fixture graph with parallel roots and a deep stack; assert the ready set and the rank order.\n**Evidence:** — (sha · planner fixture test names · session id)",
+    "projectMilestone": {
+      "id": "f490eac0-27cb-41f8-be7b-2baacbdaaf7a",
+      "name": "M3 — Plan & walk"
+    },
+    "priority": {
+      "value": 0,
+      "name": "No priority"
+    },
+    "url": "https://linear.app/duckburg/issue/KOD-418/kod-75-ac-1-the-planner-enumerates-the-ready-set-over-a-fixture",
+    "gitBranchName": "rosig-3topase/kod-418-kod-75-ac-1-the-planner-enumerates-the-ready-set-over-a",
+    "createdAt": "2026-09-07T11:33:06.498Z",
+    "updatedAt": "2026-09-09T19:34:42.554Z",
+    "archivedAt": null,
+    "completedAt": "2026-09-08T07:08:00.931Z",
+    "startedAt": "2026-09-07T18:28:25.285Z",
+    "canceledAt": null,
+    "dueDate": null,
+    "slaStartedAt": null,
+    "slaMediumRiskAt": null,
+    "slaHighRiskAt": null,
+    "slaBreachesAt": null,
+    "status": "Done",
+    "statusType": "completed",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ],
+    "attachments": [
+      {
+        "id": "e6053fc4-3332-4b0b-9875-0a7214c1946f",
+        "title": "PR #73 — v0.3 foundations (stacked on #72)",
+        "subtitle": null,
+        "url": "https://github.com/YalDan/kodezart/pull/73"
+      }
+    ],
+    "documents": [],
+    "stateHistory": [
+      {
+        "state": {
+          "id": "9cb16a46-00ec-4435-a9cd-f8a1535ae634",
+          "name": "Todo",
+          "type": "unstarted"
+        },
+        "startedAt": "2026-09-07T11:33:06.498Z",
+        "endedAt": "2026-09-07T18:28:25.301Z"
+      },
+      {
+        "state": {
+          "id": "7f105a1a-cf77-457c-a682-ca5c705d599d",
+          "name": "In Progress",
+          "type": "started"
+        },
+        "startedAt": "2026-09-07T18:28:25.301Z",
+        "endedAt": "2026-09-07T19:06:03.870Z"
+      },
+      {
+        "state": {
+          "id": "f0057d26-e1f4-404f-a0a2-392ef32c9889",
+          "name": "In Review",
+          "type": "started"
+        },
+        "startedAt": "2026-09-07T19:06:03.870Z",
+        "endedAt": "2026-09-07T20:55:23.048Z"
+      },
+      {
+        "state": {
+          "id": "a46cc17c-e528-421a-afb2-079484d97bc4",
+          "name": "Done",
+          "type": "completed"
+        },
+        "startedAt": "2026-09-07T20:55:23.048Z",
+        "endedAt": "2026-09-07T21:06:34.047Z"
+      },
+      {
+        "state": {
+          "id": "f0057d26-e1f4-404f-a0a2-392ef32c9889",
+          "name": "In Review",
+          "type": "started"
+        },
+        "startedAt": "2026-09-07T21:06:34.047Z",
+        "endedAt": "2026-09-07T21:25:21.869Z"
+      },
+      {
+        "state": {
+          "id": "a46cc17c-e528-421a-afb2-079484d97bc4",
+          "name": "Done",
+          "type": "completed"
+        },
+        "startedAt": "2026-09-07T21:25:21.869Z",
+        "endedAt": "2026-09-07T22:17:49.471Z"
+      },
+      {
+        "state": {
+          "id": "f0057d26-e1f4-404f-a0a2-392ef32c9889",
+          "name": "In Review",
+          "type": "started"
+        },
+        "startedAt": "2026-09-07T22:17:49.471Z",
+        "endedAt": "2026-09-08T07:08:00.939Z"
+      },
+      {
+        "state": {
+          "id": "a46cc17c-e528-421a-afb2-079484d97bc4",
+          "name": "Done",
+          "type": "completed"
+        },
+        "startedAt": "2026-09-08T07:08:00.939Z",
+        "endedAt": null
+      }
+    ],
+    "createdBy": "Goofy",
+    "createdById": "998f68f9-58c0-4c31-bdc8-2b9d8da803a2",
+    "project": "kodezart v0.3 — scope orchestration",
+    "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e",
+    "parentId": "KOD-75",
+    "team": "kodezart",
+    "teamId": "6a8dcd10-d98b-4bf2-9d37-1f2165b6393a"
+  },
+  {
+    "id": "KOD-416",
+    "uuid": "01d65aba-98ac-453c-9d80-81e7dcf54717",
+    "title": "KOD-105-AC-4 — Authored prompts stay byte-identical at implementation, fix and PR-description consumers",
+    "description": "**Check:** For an authored fire, every rendered prompt at the implementation, fix and PR-description consumer sites is byte-identical to the base; the prompt registry's goldens are extended, never re-baselined.\n\n**Do:** Under [Fork 1 Option B](<https://linear.app/duckburg/issue/KOD-105#comment-ca437ff5-3dbb-4760-9d20-53cd76db5c51>), relocate the surviving subject bindings onto the total FireSpec formatter. Follow current implementation/remediation and PR-description consumers instead of restoring the cut branch-binding relocation or removed fix node. Extend authored per-site golden comparisons; retain tracker bodies as their own typed source.\n\n**Evidence:** — (graded sha · per-site golden comparisons · evaluator comment id)",
+    "projectMilestone": {
+      "id": "f490eac0-27cb-41f8-be7b-2baacbdaaf7a",
+      "name": "M3 — Plan & walk"
+    },
+    "priority": {
+      "value": 0,
+      "name": "No priority"
+    },
+    "url": "https://linear.app/duckburg/issue/KOD-416/kod-105-ac-4-authored-prompts-stay-byte-identical-at-implementation",
+    "gitBranchName": "rosig-3topase/kod-416-kod-105-ac-4-authored-prompts-stay-byte-identical-at",
+    "createdAt": "2026-09-07T11:33:01.132Z",
+    "updatedAt": "2026-09-12T11:34:36.210Z",
+    "archivedAt": null,
+    "completedAt": "2026-09-08T07:08:28.969Z",
+    "startedAt": "2026-09-07T23:03:53.977Z",
+    "canceledAt": null,
+    "dueDate": null,
+    "slaStartedAt": null,
+    "slaMediumRiskAt": null,
+    "slaHighRiskAt": null,
+    "slaBreachesAt": null,
+    "status": "Done",
+    "statusType": "completed",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ],
+    "attachments": [
+      {
+        "id": "df40b89a-896f-4759-bf9a-286e5b8aec9d",
+        "title": "PR #82 — FireSpec and live-head audit claims",
+        "subtitle": null,
+        "url": "https://github.com/YalDan/kodezart/pull/82"
+      }
+    ],
+    "documents": [],
+    "stateHistory": [
+      {
+        "state": {
+          "id": "da013113-2dde-4556-acf3-ec8bf3010ae7",
+          "name": "Backlog",
+          "type": "backlog"
+        },
+        "startedAt": "2026-09-07T11:33:01.132Z",
+        "endedAt": "2026-09-07T23:03:53.990Z"
+      },
+      {
+        "state": {
+          "id": "7f105a1a-cf77-457c-a682-ca5c705d599d",
+          "name": "In Progress",
+          "type": "started"
+        },
+        "startedAt": "2026-09-07T23:03:53.990Z",
+        "endedAt": "2026-09-07T23:55:03.079Z"
+      },
+      {
+        "state": {
+          "id": "f0057d26-e1f4-404f-a0a2-392ef32c9889",
+          "name": "In Review",
+          "type": "started"
+        },
+        "startedAt": "2026-09-07T23:55:03.079Z",
+        "endedAt": "2026-09-08T07:08:28.981Z"
+      },
+      {
+        "state": {
+          "id": "a46cc17c-e528-421a-afb2-079484d97bc4",
+          "name": "Done",
+          "type": "completed"
+        },
+        "startedAt": "2026-09-08T07:08:28.981Z",
+        "endedAt": null
+      }
+    ],
+    "createdBy": "Goofy",
+    "createdById": "998f68f9-58c0-4c31-bdc8-2b9d8da803a2",
+    "project": "kodezart v0.3 — scope orchestration",
+    "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e",
+    "parentId": "KOD-105",
+    "team": "kodezart",
+    "teamId": "6a8dcd10-d98b-4bf2-9d37-1f2165b6393a"
+  },
+  {
+    "id": "KOD-430",
+    "uuid": "1a009acf-3476-435d-9ba8-a0577728653c",
+    "title": "KOD-105-AC-9 — The spec read records tracker provenance and the on-branch criteria artifact carries it",
+    "description": "**Check:** The spec read records its tracker provenance on the spec, and the on-branch criteria artifact carries that provenance.\n**Do:** Record the subject reference and the version read at on the spec in `read_fire_spec`, and carry that provenance into the id-keyed criteria artifact the persist node writes.\n**Evidence:** — (graded sha · the provenance-carriage test · evaluator comment id)",
+    "projectMilestone": {
+      "id": "f490eac0-27cb-41f8-be7b-2baacbdaaf7a",
+      "name": "M3 — Plan & walk"
+    },
+    "priority": {
+      "value": 0,
+      "name": "No priority"
+    },
+    "url": "https://linear.app/duckburg/issue/KOD-430/kod-105-ac-9-the-spec-read-records-tracker-provenance-and-the-on",
+    "gitBranchName": "rosig-3topase/kod-430-kod-105-ac-9-the-spec-read-records-tracker-provenance-and",
+    "createdAt": "2026-09-07T11:33:30.745Z",
+    "updatedAt": "2026-09-12T08:39:29.149Z",
+    "archivedAt": null,
+    "completedAt": null,
+    "startedAt": null,
+    "canceledAt": null,
+    "dueDate": null,
+    "slaStartedAt": null,
+    "slaMediumRiskAt": null,
+    "slaHighRiskAt": null,
+    "slaBreachesAt": null,
+    "status": "Todo",
+    "statusType": "unstarted",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ],
+    "attachments": [],
+    "documents": [],
+    "stateHistory": [
+      {
+        "state": {
+          "id": "9cb16a46-00ec-4435-a9cd-f8a1535ae634",
+          "name": "Todo",
+          "type": "unstarted"
+        },
+        "startedAt": "2026-09-07T11:33:30.745Z",
+        "endedAt": null
+      }
+    ],
+    "createdBy": "Goofy",
+    "createdById": "998f68f9-58c0-4c31-bdc8-2b9d8da803a2",
+    "project": "kodezart v0.3 — scope orchestration",
+    "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e",
+    "parentId": "KOD-105",
+    "team": "kodezart",
+    "teamId": "6a8dcd10-d98b-4bf2-9d37-1f2165b6393a"
+  },
+  {
+    "id": "KOD-436",
+    "uuid": "0d5994d2-e5d7-4a8f-979a-dc175769bf04",
+    "title": "KOD-105-AC-11 — The tracker arm's branch carries the id-keyed criteria artifact and a subject reference, no ticket artifact",
+    "description": "**Check:** On the tracker arm the ralph branch's artifact directory carries the id-keyed criteria artifact with its tracker provenance and a subject-reference artifact naming the subject and the version the spec was read at, and **no ticket artifact**. The artifact is a resume cache, never the loop's exit authority.\n**Do:** Build the tracker-arm artifact mapping in the persist node so the node is total without a ticket draft; write no ticket artifact.\n**Evidence:** — (graded sha · the tracker-arm artifact-mapping test · evaluator comment id)\n\nRests on the artifact-carriage clause the stage-1 repair authored, re-derived and upheld by the stage-2 validation; if that clause is refuted, this criterion falls with it.",
+    "projectMilestone": {
+      "id": "f490eac0-27cb-41f8-be7b-2baacbdaaf7a",
+      "name": "M3 — Plan & walk"
+    },
+    "priority": {
+      "value": 0,
+      "name": "No priority"
+    },
+    "url": "https://linear.app/duckburg/issue/KOD-436/kod-105-ac-11-the-tracker-arms-branch-carries-the-id-keyed-criteria",
+    "gitBranchName": "rosig-3topase/kod-436-kod-105-ac-11-the-tracker-arms-branch-carries-the-id-keyed",
+    "createdAt": "2026-09-07T11:33:44.223Z",
+    "updatedAt": "2026-09-12T08:39:29.149Z",
+    "archivedAt": null,
+    "completedAt": null,
+    "startedAt": null,
+    "canceledAt": null,
+    "dueDate": null,
+    "slaStartedAt": null,
+    "slaMediumRiskAt": null,
+    "slaHighRiskAt": null,
+    "slaBreachesAt": null,
+    "status": "Todo",
+    "statusType": "unstarted",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ],
+    "attachments": [],
+    "documents": [],
+    "stateHistory": [
+      {
+        "state": {
+          "id": "9cb16a46-00ec-4435-a9cd-f8a1535ae634",
+          "name": "Todo",
+          "type": "unstarted"
+        },
+        "startedAt": "2026-09-07T11:33:44.223Z",
+        "endedAt": null
+      }
+    ],
+    "createdBy": "Goofy",
+    "createdById": "998f68f9-58c0-4c31-bdc8-2b9d8da803a2",
+    "project": "kodezart v0.3 — scope orchestration",
+    "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e",
+    "parentId": "KOD-105",
+    "team": "kodezart",
+    "teamId": "6a8dcd10-d98b-4bf2-9d37-1f2165b6393a"
+  },
+  {
+    "id": "KOD-419",
+    "uuid": "7fe06f73-c74b-449d-adec-2a2654dbcf2e",
+    "title": "KOD-105-AC-5 — No TicketDraftOutput is constructed anywhere on the tracker arm of the fire",
+    "description": "**Check:** No `TicketDraftOutput` is constructed anywhere on the tracker arm of the fire (static assertion): a tracker body is never parsed into a ticket draft.\n**Do:** Keep the seam a type and a formatter, never a parser, and assert statically that no tracker-arm path constructs a ticket draft.\n**Evidence:** — (graded sha · the static tracker-arm assertion · evaluator comment id)",
+    "projectMilestone": {
+      "id": "f490eac0-27cb-41f8-be7b-2baacbdaaf7a",
+      "name": "M3 — Plan & walk"
+    },
+    "priority": {
+      "value": 0,
+      "name": "No priority"
+    },
+    "url": "https://linear.app/duckburg/issue/KOD-419/kod-105-ac-5-no-ticketdraftoutput-is-constructed-anywhere-on-the",
+    "gitBranchName": "rosig-3topase/kod-419-kod-105-ac-5-no-ticketdraftoutput-is-constructed-anywhere-on",
+    "createdAt": "2026-09-07T11:33:07.484Z",
+    "updatedAt": "2026-09-09T20:31:57.552Z",
+    "archivedAt": null,
+    "completedAt": null,
+    "startedAt": null,
+    "canceledAt": null,
+    "dueDate": null,
+    "slaStartedAt": null,
+    "slaMediumRiskAt": null,
+    "slaHighRiskAt": null,
+    "slaBreachesAt": null,
+    "status": "Todo",
+    "statusType": "unstarted",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ],
+    "attachments": [],
+    "documents": [],
+    "stateHistory": [
+      {
+        "state": {
+          "id": "9cb16a46-00ec-4435-a9cd-f8a1535ae634",
+          "name": "Todo",
+          "type": "unstarted"
+        },
+        "startedAt": "2026-09-07T11:33:07.484Z",
+        "endedAt": null
+      }
+    ],
+    "createdBy": "Goofy",
+    "createdById": "998f68f9-58c0-4c31-bdc8-2b9d8da803a2",
+    "project": "kodezart v0.3 — scope orchestration",
+    "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e",
+    "parentId": "KOD-105",
+    "team": "kodezart",
+    "teamId": "6a8dcd10-d98b-4bf2-9d37-1f2165b6393a"
+  },
+  {
+    "id": "KOD-412",
+    "uuid": "41aea919-6e68-4d31-812b-52e727ae32c9",
+    "title": "KOD-105-AC-2 — Formatter totality: the authored arm is byte-identical to today's ticket formatter",
+    "description": "**Check:** Formatter totality: over a generated ticket corpus, formatting the authored arm is byte-identical to today's ticket formatter for every ticket.\n**Do:** Add one formatter total over the partition beside `format_ticket_as_task` in `src/kodezart/domain/ticket.py`, calling it on the authored arm; the tracker arm renders the subject's own text.\n**Evidence:** — (graded sha · the corpus totality test · evaluator comment id)",
+    "projectMilestone": {
+      "id": "f490eac0-27cb-41f8-be7b-2baacbdaaf7a",
+      "name": "M3 — Plan & walk"
+    },
+    "priority": {
+      "value": 0,
+      "name": "No priority"
+    },
+    "url": "https://linear.app/duckburg/issue/KOD-412/kod-105-ac-2-formatter-totality-the-authored-arm-is-byte-identical-to",
+    "gitBranchName": "rosig-3topase/kod-412-kod-105-ac-2-formatter-totality-the-authored-arm-is-byte",
+    "createdAt": "2026-09-07T11:32:48.211Z",
+    "updatedAt": "2026-09-09T20:31:57.552Z",
+    "archivedAt": null,
+    "completedAt": "2026-09-08T07:07:56.471Z",
+    "startedAt": "2026-09-07T18:26:16.011Z",
+    "canceledAt": null,
+    "dueDate": null,
+    "slaStartedAt": null,
+    "slaMediumRiskAt": null,
+    "slaHighRiskAt": null,
+    "slaBreachesAt": null,
+    "status": "Done",
+    "statusType": "completed",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ],
+    "attachments": [
+      {
+        "id": "3541e094-3ec8-4833-9036-05863f45526d",
+        "title": "PR #73 — v0.3 foundations (stacked on #72)",
+        "subtitle": null,
+        "url": "https://github.com/YalDan/kodezart/pull/73"
+      }
+    ],
+    "documents": [],
+    "stateHistory": [
+      {
+        "state": {
+          "id": "9cb16a46-00ec-4435-a9cd-f8a1535ae634",
+          "name": "Todo",
+          "type": "unstarted"
+        },
+        "startedAt": "2026-09-07T11:32:48.211Z",
+        "endedAt": "2026-09-07T18:26:16.024Z"
+      },
+      {
+        "state": {
+          "id": "7f105a1a-cf77-457c-a682-ca5c705d599d",
+          "name": "In Progress",
+          "type": "started"
+        },
+        "startedAt": "2026-09-07T18:26:16.024Z",
+        "endedAt": "2026-09-07T19:05:47.019Z"
+      },
+      {
+        "state": {
+          "id": "f0057d26-e1f4-404f-a0a2-392ef32c9889",
+          "name": "In Review",
+          "type": "started"
+        },
+        "startedAt": "2026-09-07T19:05:47.019Z",
+        "endedAt": "2026-09-07T20:55:27.534Z"
+      },
+      {
+        "state": {
+          "id": "a46cc17c-e528-421a-afb2-079484d97bc4",
+          "name": "Done",
+          "type": "completed"
+        },
+        "startedAt": "2026-09-07T20:55:27.534Z",
+        "endedAt": "2026-09-07T21:06:31.450Z"
+      },
+      {
+        "state": {
+          "id": "f0057d26-e1f4-404f-a0a2-392ef32c9889",
+          "name": "In Review",
+          "type": "started"
+        },
+        "startedAt": "2026-09-07T21:06:31.450Z",
+        "endedAt": "2026-09-07T21:25:27.185Z"
+      },
+      {
+        "state": {
+          "id": "a46cc17c-e528-421a-afb2-079484d97bc4",
+          "name": "Done",
+          "type": "completed"
+        },
+        "startedAt": "2026-09-07T21:25:27.185Z",
+        "endedAt": "2026-09-07T22:17:47.654Z"
+      },
+      {
+        "state": {
+          "id": "f0057d26-e1f4-404f-a0a2-392ef32c9889",
+          "name": "In Review",
+          "type": "started"
+        },
+        "startedAt": "2026-09-07T22:17:47.654Z",
+        "endedAt": "2026-09-08T07:07:56.481Z"
+      },
+      {
+        "state": {
+          "id": "a46cc17c-e528-421a-afb2-079484d97bc4",
+          "name": "Done",
+          "type": "completed"
+        },
+        "startedAt": "2026-09-08T07:07:56.481Z",
+        "endedAt": null
+      }
+    ],
+    "createdBy": "Goofy",
+    "createdById": "998f68f9-58c0-4c31-bdc8-2b9d8da803a2",
+    "project": "kodezart v0.3 — scope orchestration",
+    "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e",
+    "parentId": "KOD-105",
+    "team": "kodezart",
+    "teamId": "6a8dcd10-d98b-4bf2-9d37-1f2165b6393a"
+  },
+  {
+    "id": "KOD-414",
+    "uuid": "26fce247-39c1-4f63-af12-a4e5a2a91e89",
+    "title": "KOD-105-AC-3 — The ticket-formatting domain module imports nothing from adapters and performs no I/O",
+    "description": "**Check:** The ticket-formatting domain module imports nothing from `kodezart.adapters` and performs no I/O (static assertion).\n**Do:** Keep `src/kodezart/domain/ticket.py` pure as the formatter is added, and assert the import ban and the no-I/O property statically.\n**Evidence:** — (graded sha · the static purity assertion · evaluator comment id)",
+    "projectMilestone": {
+      "id": "f490eac0-27cb-41f8-be7b-2baacbdaaf7a",
+      "name": "M3 — Plan & walk"
+    },
+    "priority": {
+      "value": 0,
+      "name": "No priority"
+    },
+    "url": "https://linear.app/duckburg/issue/KOD-414/kod-105-ac-3-the-ticket-formatting-domain-module-imports-nothing-from",
+    "gitBranchName": "rosig-3topase/kod-414-kod-105-ac-3-the-ticket-formatting-domain-module-imports",
+    "createdAt": "2026-09-07T11:32:53.752Z",
+    "updatedAt": "2026-09-09T20:31:57.552Z",
+    "archivedAt": null,
+    "completedAt": "2026-09-08T07:07:58.693Z",
+    "startedAt": "2026-09-07T18:26:16.985Z",
+    "canceledAt": null,
+    "dueDate": null,
+    "slaStartedAt": null,
+    "slaMediumRiskAt": null,
+    "slaHighRiskAt": null,
+    "slaBreachesAt": null,
+    "status": "Done",
+    "statusType": "completed",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ],
+    "attachments": [
+      {
+        "id": "d500d4ff-ccb6-4e5b-9014-4131404f253d",
+        "title": "PR #73 — v0.3 foundations (stacked on #72)",
+        "subtitle": null,
+        "url": "https://github.com/YalDan/kodezart/pull/73"
+      }
+    ],
+    "documents": [],
+    "stateHistory": [
+      {
+        "state": {
+          "id": "9cb16a46-00ec-4435-a9cd-f8a1535ae634",
+          "name": "Todo",
+          "type": "unstarted"
+        },
+        "startedAt": "2026-09-07T11:32:53.752Z",
+        "endedAt": "2026-09-07T18:26:16.997Z"
+      },
+      {
+        "state": {
+          "id": "7f105a1a-cf77-457c-a682-ca5c705d599d",
+          "name": "In Progress",
+          "type": "started"
+        },
+        "startedAt": "2026-09-07T18:26:16.997Z",
+        "endedAt": "2026-09-07T19:05:49.640Z"
+      },
+      {
+        "state": {
+          "id": "f0057d26-e1f4-404f-a0a2-392ef32c9889",
+          "name": "In Review",
+          "type": "started"
+        },
+        "startedAt": "2026-09-07T19:05:49.640Z",
+        "endedAt": "2026-09-07T20:55:29.724Z"
+      },
+      {
+        "state": {
+          "id": "a46cc17c-e528-421a-afb2-079484d97bc4",
+          "name": "Done",
+          "type": "completed"
+        },
+        "startedAt": "2026-09-07T20:55:29.724Z",
+        "endedAt": "2026-09-07T21:06:30.120Z"
+      },
+      {
+        "state": {
+          "id": "f0057d26-e1f4-404f-a0a2-392ef32c9889",
+          "name": "In Review",
+          "type": "started"
+        },
+        "startedAt": "2026-09-07T21:06:30.120Z",
+        "endedAt": "2026-09-07T21:25:30.308Z"
+      },
+      {
+        "state": {
+          "id": "a46cc17c-e528-421a-afb2-079484d97bc4",
+          "name": "Done",
+          "type": "completed"
+        },
+        "startedAt": "2026-09-07T21:25:30.308Z",
+        "endedAt": "2026-09-07T22:17:46.857Z"
+      },
+      {
+        "state": {
+          "id": "f0057d26-e1f4-404f-a0a2-392ef32c9889",
+          "name": "In Review",
+          "type": "started"
+        },
+        "startedAt": "2026-09-07T22:17:46.857Z",
+        "endedAt": "2026-09-08T07:07:58.710Z"
+      },
+      {
+        "state": {
+          "id": "a46cc17c-e528-421a-afb2-079484d97bc4",
+          "name": "Done",
+          "type": "completed"
+        },
+        "startedAt": "2026-09-08T07:07:58.710Z",
+        "endedAt": null
+      }
+    ],
+    "createdBy": "Goofy",
+    "createdById": "998f68f9-58c0-4c31-bdc8-2b9d8da803a2",
+    "project": "kodezart v0.3 — scope orchestration",
+    "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e",
+    "parentId": "KOD-105",
+    "team": "kodezart",
+    "teamId": "6a8dcd10-d98b-4bf2-9d37-1f2165b6393a"
+  },
+  {
+    "id": "KOD-421",
+    "uuid": "7ff45b33-6274-4dca-8592-38a3ed341a9f",
+    "title": "KOD-105-AC-6 — A subject carrying no criteria raises a typed error at the spec read and never deeper",
+    "description": "**Check:** A subject whose `criterion` sub-issue query returns nothing raises a typed error **at the spec read and never deeper** — the empty set never reaches the loop context's minimum-length validation.\n**Do:** Raise the typed empty-criteria error inside `read_fire_spec`, before any loop context is constructed.\n**Evidence:** — (graded sha · the empty-criteria error-site test · evaluator comment id)",
+    "projectMilestone": {
+      "id": "f490eac0-27cb-41f8-be7b-2baacbdaaf7a",
+      "name": "M3 — Plan & walk"
+    },
+    "priority": {
+      "value": 0,
+      "name": "No priority"
+    },
+    "url": "https://linear.app/duckburg/issue/KOD-421/kod-105-ac-6-a-subject-carrying-no-criteria-raises-a-typed-error-at",
+    "gitBranchName": "rosig-3topase/kod-421-kod-105-ac-6-a-subject-carrying-no-criteria-raises-a-typed",
+    "createdAt": "2026-09-07T11:33:12.993Z",
+    "updatedAt": "2026-09-09T19:48:37.118Z",
+    "archivedAt": null,
+    "completedAt": "2026-09-08T07:08:03.348Z",
+    "startedAt": "2026-09-07T19:42:11.310Z",
+    "canceledAt": null,
+    "dueDate": null,
+    "slaStartedAt": null,
+    "slaMediumRiskAt": null,
+    "slaHighRiskAt": null,
+    "slaBreachesAt": null,
+    "status": "Done",
+    "statusType": "completed",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ],
+    "attachments": [
+      {
+        "id": "b9a32263-d236-4640-9a0f-54d1f00aeb09",
+        "title": "PR #76 — readers, prompts and structured run recording",
+        "subtitle": null,
+        "url": "https://github.com/YalDan/kodezart/pull/76"
+      }
+    ],
+    "documents": [],
+    "stateHistory": [
+      {
+        "state": {
+          "id": "9cb16a46-00ec-4435-a9cd-f8a1535ae634",
+          "name": "Todo",
+          "type": "unstarted"
+        },
+        "startedAt": "2026-09-07T11:33:12.993Z",
+        "endedAt": "2026-09-07T19:42:11.330Z"
+      },
+      {
+        "state": {
+          "id": "7f105a1a-cf77-457c-a682-ca5c705d599d",
+          "name": "In Progress",
+          "type": "started"
+        },
+        "startedAt": "2026-09-07T19:42:11.330Z",
+        "endedAt": "2026-09-07T20:16:01.211Z"
+      },
+      {
+        "state": {
+          "id": "f0057d26-e1f4-404f-a0a2-392ef32c9889",
+          "name": "In Review",
+          "type": "started"
+        },
+        "startedAt": "2026-09-07T20:16:01.211Z",
+        "endedAt": "2026-09-07T20:55:31.985Z"
+      },
+      {
+        "state": {
+          "id": "a46cc17c-e528-421a-afb2-079484d97bc4",
+          "name": "Done",
+          "type": "completed"
+        },
+        "startedAt": "2026-09-07T20:55:31.985Z",
+        "endedAt": "2026-09-07T21:06:29.280Z"
+      },
+      {
+        "state": {
+          "id": "f0057d26-e1f4-404f-a0a2-392ef32c9889",
+          "name": "In Review",
+          "type": "started"
+        },
+        "startedAt": "2026-09-07T21:06:29.280Z",
+        "endedAt": "2026-09-07T21:25:32.306Z"
+      },
+      {
+        "state": {
+          "id": "a46cc17c-e528-421a-afb2-079484d97bc4",
+          "name": "Done",
+          "type": "completed"
+        },
+        "startedAt": "2026-09-07T21:25:32.306Z",
+        "endedAt": "2026-09-07T22:17:45.340Z"
+      },
+      {
+        "state": {
+          "id": "f0057d26-e1f4-404f-a0a2-392ef32c9889",
+          "name": "In Review",
+          "type": "started"
+        },
+        "startedAt": "2026-09-07T22:17:45.340Z",
+        "endedAt": "2026-09-08T07:08:03.356Z"
+      },
+      {
+        "state": {
+          "id": "a46cc17c-e528-421a-afb2-079484d97bc4",
+          "name": "Done",
+          "type": "completed"
+        },
+        "startedAt": "2026-09-08T07:08:03.356Z",
+        "endedAt": null
+      }
+    ],
+    "createdBy": "Goofy",
+    "createdById": "998f68f9-58c0-4c31-bdc8-2b9d8da803a2",
+    "project": "kodezart v0.3 — scope orchestration",
+    "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e",
+    "parentId": "KOD-105",
+    "team": "kodezart",
+    "teamId": "6a8dcd10-d98b-4bf2-9d37-1f2165b6393a"
+  },
+  {
+    "id": "KOD-424",
+    "uuid": "c31ac5fc-5893-46f3-b8d7-9fb68ad74a6d",
+    "title": "KOD-105-AC-7 — A subject without the criteria-stage marker or approval raises a typed error at the spec read",
+    "description": "**Check:** A subject not carrying the criteria-stage completion marker or its approval raises a typed error at the spec read, and the staging admission test itself is asserted **not** re-run in-fire.\n**Do:** Read the stage marker and approval through the tracker port inside `read_fire_spec` and raise there; assert the admission test is not re-run in-fire — it stays the organize pass's.\n**Evidence:** — (graded sha · the marker error-site test and the no-re-run assertion · evaluator comment id)",
+    "projectMilestone": {
+      "id": "f490eac0-27cb-41f8-be7b-2baacbdaaf7a",
+      "name": "M3 — Plan & walk"
+    },
+    "priority": {
+      "value": 0,
+      "name": "No priority"
+    },
+    "url": "https://linear.app/duckburg/issue/KOD-424/kod-105-ac-7-a-subject-without-the-criteria-stage-marker-or-approval",
+    "gitBranchName": "rosig-3topase/kod-424-kod-105-ac-7-a-subject-without-the-criteria-stage-marker-or",
+    "createdAt": "2026-09-07T11:33:18.779Z",
+    "updatedAt": "2026-09-09T19:48:36.164Z",
+    "archivedAt": null,
+    "completedAt": "2026-09-08T07:08:08.168Z",
+    "startedAt": "2026-09-08T02:48:26.859Z",
+    "canceledAt": null,
+    "dueDate": null,
+    "slaStartedAt": null,
+    "slaMediumRiskAt": null,
+    "slaHighRiskAt": null,
+    "slaBreachesAt": null,
+    "status": "Done",
+    "statusType": "completed",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ],
+    "attachments": [
+      {
+        "id": "d1b566bb-5514-4b31-a7d6-de7b464284ab",
+        "title": "PR #87 — live readiness, fire admission and escalation records",
+        "subtitle": null,
+        "url": "https://github.com/YalDan/kodezart/pull/87"
+      }
+    ],
+    "documents": [],
+    "stateHistory": [
+      {
+        "state": {
+          "id": "9cb16a46-00ec-4435-a9cd-f8a1535ae634",
+          "name": "Todo",
+          "type": "unstarted"
+        },
+        "startedAt": "2026-09-07T11:33:18.779Z",
+        "endedAt": "2026-09-08T02:48:26.872Z"
+      },
+      {
+        "state": {
+          "id": "7f105a1a-cf77-457c-a682-ca5c705d599d",
+          "name": "In Progress",
+          "type": "started"
+        },
+        "startedAt": "2026-09-08T02:48:26.872Z",
+        "endedAt": "2026-09-08T04:03:26.559Z"
+      },
+      {
+        "state": {
+          "id": "f0057d26-e1f4-404f-a0a2-392ef32c9889",
+          "name": "In Review",
+          "type": "started"
+        },
+        "startedAt": "2026-09-08T04:03:26.559Z",
+        "endedAt": "2026-09-08T07:08:08.177Z"
+      },
+      {
+        "state": {
+          "id": "a46cc17c-e528-421a-afb2-079484d97bc4",
+          "name": "Done",
+          "type": "completed"
+        },
+        "startedAt": "2026-09-08T07:08:08.177Z",
+        "endedAt": null
+      }
+    ],
+    "createdBy": "Goofy",
+    "createdById": "998f68f9-58c0-4c31-bdc8-2b9d8da803a2",
+    "project": "kodezart v0.3 — scope orchestration",
+    "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e",
+    "parentId": "KOD-105",
+    "team": "kodezart",
+    "teamId": "6a8dcd10-d98b-4bf2-9d37-1f2165b6393a"
+  },
+  {
+    "id": "KOD-410",
+    "uuid": "d8cf89f9-188b-47f5-9e9c-8b08e87fc019",
+    "title": "KOD-105-AC-1 — FireSpec is a frozen typed partition AuthoredSpec | TrackerSpec reached through one total formatter",
+    "description": "**Check:** `FireSpec` is a typed partition — `AuthoredSpec` | `TrackerSpec` — declared as frozen models in its own module, and every consumer reaches it through one formatter that is total over the partition.\n**Do:** Add the partition module (`src/kodezart/types/domain/fire_spec.py`) carrying both frozen arms and their union; scope runs take `TrackerSpec`, the authored arm is the single-issue degeneration path.\n**Evidence:** — (graded sha · the fire-spec partition tests · evaluator comment id)",
+    "projectMilestone": {
+      "id": "f490eac0-27cb-41f8-be7b-2baacbdaaf7a",
+      "name": "M3 — Plan & walk"
+    },
+    "priority": {
+      "value": 0,
+      "name": "No priority"
+    },
+    "url": "https://linear.app/duckburg/issue/KOD-410/kod-105-ac-1-firespec-is-a-frozen-typed-partition-authoredspec",
+    "gitBranchName": "rosig-3topase/kod-410-kod-105-ac-1-firespec-is-a-frozen-typed-partition",
+    "createdAt": "2026-09-07T11:32:40.114Z",
+    "updatedAt": "2026-09-09T19:44:41.869Z",
+    "archivedAt": null,
+    "completedAt": null,
+    "startedAt": null,
+    "canceledAt": null,
+    "dueDate": null,
+    "slaStartedAt": null,
+    "slaMediumRiskAt": null,
+    "slaHighRiskAt": null,
+    "slaBreachesAt": null,
+    "status": "Todo",
+    "statusType": "unstarted",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ],
+    "attachments": [
+      {
+        "id": "d4815873-8ac2-4ccb-b769-1a2810866f94",
+        "title": "PR #82 — FireSpec and live-head audit claims",
+        "subtitle": null,
+        "url": "https://github.com/YalDan/kodezart/pull/82"
+      },
+      {
+        "id": "24914813-5c0b-42cd-b626-696cdb7c4b97",
+        "title": "PR #73 — v0.3 foundations (stacked on #72)",
+        "subtitle": null,
+        "url": "https://github.com/YalDan/kodezart/pull/73"
+      }
+    ],
+    "documents": [],
+    "stateHistory": [
+      {
+        "state": {
+          "id": "9cb16a46-00ec-4435-a9cd-f8a1535ae634",
+          "name": "Todo",
+          "type": "unstarted"
+        },
+        "startedAt": "2026-09-07T11:32:40.114Z",
+        "endedAt": "2026-09-07T18:26:15.100Z"
+      },
+      {
+        "state": {
+          "id": "7f105a1a-cf77-457c-a682-ca5c705d599d",
+          "name": "In Progress",
+          "type": "started"
+        },
+        "startedAt": "2026-09-07T18:26:15.100Z",
+        "endedAt": "2026-09-07T19:05:44.614Z"
+      },
+      {
+        "state": {
+          "id": "f0057d26-e1f4-404f-a0a2-392ef32c9889",
+          "name": "In Review",
+          "type": "started"
+        },
+        "startedAt": "2026-09-07T19:05:44.614Z",
+        "endedAt": "2026-09-08T07:07:52.286Z"
+      },
+      {
+        "state": {
+          "id": "a46cc17c-e528-421a-afb2-079484d97bc4",
+          "name": "Done",
+          "type": "completed"
+        },
+        "startedAt": "2026-09-08T07:07:52.286Z",
+        "endedAt": "2026-09-08T13:51:42.714Z"
+      },
+      {
+        "state": {
+          "id": "9cb16a46-00ec-4435-a9cd-f8a1535ae634",
+          "name": "Todo",
+          "type": "unstarted"
+        },
+        "startedAt": "2026-09-08T13:51:42.714Z",
+        "endedAt": null
+      }
+    ],
+    "createdBy": "Goofy",
+    "createdById": "998f68f9-58c0-4c31-bdc8-2b9d8da803a2",
+    "project": "kodezart v0.3 — scope orchestration",
+    "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e",
+    "parentId": "KOD-105",
+    "team": "kodezart",
+    "teamId": "6a8dcd10-d98b-4bf2-9d37-1f2165b6393a"
+  },
+  {
+    "id": "KOD-427",
+    "uuid": "6674fe12-c1d1-46cc-89cd-a80a726c7aa4",
+    "title": "KOD-105-AC-8 — A criterion with no Check body or in an illegal state raises a typed error at the spec read",
+    "description": "**Check:** A criterion sub-issue carrying no Check body, or sitting in a state the fire may not consume, raises a typed error at the spec read and never deeper. Identity is the sub-issue key, so the unresolvable-identity case the criterion was extracted for has no counterpart here.\n**Do:** Validate each queried criterion sub-issue inside `read_fire_spec` — Check body present, state legal — and raise the typed error there.\n**Evidence:** — (graded sha · the criterion-shape error-site test · evaluator comment id)",
+    "projectMilestone": {
+      "id": "f490eac0-27cb-41f8-be7b-2baacbdaaf7a",
+      "name": "M3 — Plan & walk"
+    },
+    "priority": {
+      "value": 0,
+      "name": "No priority"
+    },
+    "url": "https://linear.app/duckburg/issue/KOD-427/kod-105-ac-8-a-criterion-with-no-check-body-or-in-an-illegal-state",
+    "gitBranchName": "rosig-3topase/kod-427-kod-105-ac-8-a-criterion-with-no-check-body-or-in-an-illegal",
+    "createdAt": "2026-09-07T11:33:24.726Z",
+    "updatedAt": "2026-09-09T19:44:40.197Z",
+    "archivedAt": null,
+    "completedAt": null,
+    "startedAt": null,
+    "canceledAt": null,
+    "dueDate": null,
+    "slaStartedAt": null,
+    "slaMediumRiskAt": null,
+    "slaHighRiskAt": null,
+    "slaBreachesAt": null,
+    "status": "Todo",
+    "statusType": "unstarted",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ],
+    "attachments": [
+      {
+        "id": "f70bffac-abf6-46e5-b8e6-74f6d9cb69c0",
+        "title": "PR #76 — readers, prompts and structured run recording",
+        "subtitle": null,
+        "url": "https://github.com/YalDan/kodezart/pull/76"
+      }
+    ],
+    "documents": [],
+    "stateHistory": [
+      {
+        "state": {
+          "id": "9cb16a46-00ec-4435-a9cd-f8a1535ae634",
+          "name": "Todo",
+          "type": "unstarted"
+        },
+        "startedAt": "2026-09-07T11:33:24.726Z",
+        "endedAt": "2026-09-07T19:42:13.692Z"
+      },
+      {
+        "state": {
+          "id": "7f105a1a-cf77-457c-a682-ca5c705d599d",
+          "name": "In Progress",
+          "type": "started"
+        },
+        "startedAt": "2026-09-07T19:42:13.692Z",
+        "endedAt": "2026-09-07T20:16:04.873Z"
+      },
+      {
+        "state": {
+          "id": "f0057d26-e1f4-404f-a0a2-392ef32c9889",
+          "name": "In Review",
+          "type": "started"
+        },
+        "startedAt": "2026-09-07T20:16:04.873Z",
+        "endedAt": "2026-09-08T13:52:03.718Z"
+      },
+      {
+        "state": {
+          "id": "9cb16a46-00ec-4435-a9cd-f8a1535ae634",
+          "name": "Todo",
+          "type": "unstarted"
+        },
+        "startedAt": "2026-09-08T13:52:03.718Z",
+        "endedAt": null
+      }
+    ],
+    "createdBy": "Goofy",
+    "createdById": "998f68f9-58c0-4c31-bdc8-2b9d8da803a2",
+    "project": "kodezart v0.3 — scope orchestration",
+    "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e",
+    "parentId": "KOD-105",
+    "team": "kodezart",
+    "teamId": "6a8dcd10-d98b-4bf2-9d37-1f2165b6393a"
+  },
+  {
+    "id": "KOD-439",
+    "uuid": "e29ee532-cf20-4e0f-bf92-71186d343d41",
+    "title": "KOD-105-AC-12 — No change to the artifact-persister adapter or protocol, and clean() unchanged, vs the dispatch base",
+    "description": "**Check:** Measured against this lane's dispatch base — the v0.2 union integration branch named in the parent's anchor ruling, never trunk — the lane's diff contains no change to the artifact-persister adapter or to the `ArtifactPersister` protocol, and the PR-opening node still calls `clean()` unchanged.\n**Do:** Keep the entire tracker-arm difference inside the mapping the persist node builds, leaving the persister adapter, its protocol and the pre-PR `clean()` call untouched.\n**Evidence:** — (graded sha · the diff measured against the named base · evaluator comment id)\n\nRests on the artifact-carriage clause the stage-1 repair authored, re-derived and upheld by the stage-2 validation; if that clause is refuted, this criterion falls with it.",
+    "projectMilestone": {
+      "id": "f490eac0-27cb-41f8-be7b-2baacbdaaf7a",
+      "name": "M3 — Plan & walk"
+    },
+    "priority": {
+      "value": 0,
+      "name": "No priority"
+    },
+    "url": "https://linear.app/duckburg/issue/KOD-439/kod-105-ac-12-no-change-to-the-artifact-persister-adapter-or-protocol",
+    "gitBranchName": "rosig-3topase/kod-439-kod-105-ac-12-no-change-to-the-artifact-persister-adapter-or",
+    "createdAt": "2026-09-07T11:33:52.153Z",
+    "updatedAt": "2026-09-09T19:41:14.820Z",
+    "archivedAt": null,
+    "completedAt": null,
+    "startedAt": null,
+    "canceledAt": null,
+    "dueDate": null,
+    "slaStartedAt": null,
+    "slaMediumRiskAt": null,
+    "slaHighRiskAt": null,
+    "slaBreachesAt": null,
+    "status": "Todo",
+    "statusType": "unstarted",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ],
+    "attachments": [],
+    "documents": [],
+    "stateHistory": [
+      {
+        "state": {
+          "id": "9cb16a46-00ec-4435-a9cd-f8a1535ae634",
+          "name": "Todo",
+          "type": "unstarted"
+        },
+        "startedAt": "2026-09-07T11:33:52.153Z",
+        "endedAt": null
+      }
+    ],
+    "createdBy": "Goofy",
+    "createdById": "998f68f9-58c0-4c31-bdc8-2b9d8da803a2",
+    "project": "kodezart v0.3 — scope orchestration",
+    "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e",
+    "parentId": "KOD-105",
+    "team": "kodezart",
+    "teamId": "6a8dcd10-d98b-4bf2-9d37-1f2165b6393a"
+  },
+  {
+    "id": "KOD-441",
+    "uuid": "313c4e37-bffb-4b95-b433-5186aea037aa",
+    "title": "KOD-105-AC-13 — No new suppression and no weakened test surface on changed lines, vs the dispatch base",
+    "description": "**Check:** Measured against this lane's dispatch base, the diff introduces no new type-checker suppression, no new linter suppression and no weakened test surface on changed lines; every fixture runs over the in-process fake tracker and the existing fakes, with no live workspace and no live tracker.\n**Do:** Keep the lane's fixtures on the in-process fake tracker and the existing fakes; add no suppression and weaken no assertion on changed lines.\n**Evidence:** — (graded sha · the test the evaluator runs at head · evaluator comment id)",
+    "projectMilestone": {
+      "id": "f490eac0-27cb-41f8-be7b-2baacbdaaf7a",
+      "name": "M3 — Plan & walk"
+    },
+    "priority": {
+      "value": 0,
+      "name": "No priority"
+    },
+    "url": "https://linear.app/duckburg/issue/KOD-441/kod-105-ac-13-no-new-suppression-and-no-weakened-test-surface-on",
+    "gitBranchName": "rosig-3topase/kod-441-kod-105-ac-13-no-new-suppression-and-no-weakened-test",
+    "createdAt": "2026-09-07T11:33:58.349Z",
+    "updatedAt": "2026-09-09T19:41:13.975Z",
+    "archivedAt": null,
+    "completedAt": null,
+    "startedAt": null,
+    "canceledAt": null,
+    "dueDate": null,
+    "slaStartedAt": null,
+    "slaMediumRiskAt": null,
+    "slaHighRiskAt": null,
+    "slaBreachesAt": null,
+    "status": "Todo",
+    "statusType": "unstarted",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ],
+    "attachments": [],
+    "documents": [],
+    "stateHistory": [
+      {
+        "state": {
+          "id": "9cb16a46-00ec-4435-a9cd-f8a1535ae634",
+          "name": "Todo",
+          "type": "unstarted"
+        },
+        "startedAt": "2026-09-07T11:33:58.349Z",
+        "endedAt": null
+      }
+    ],
+    "createdBy": "Goofy",
+    "createdById": "998f68f9-58c0-4c31-bdc8-2b9d8da803a2",
+    "project": "kodezart v0.3 — scope orchestration",
+    "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e",
+    "parentId": "KOD-105",
+    "team": "kodezart",
+    "teamId": "6a8dcd10-d98b-4bf2-9d37-1f2165b6393a"
+  },
+  {
+    "id": "KOD-433",
+    "uuid": "b4647b6e-9eaa-484a-a3f3-a50ab6a9609a",
+    "title": "KOD-105-AC-10 — Ticket text is read once at fire entry; criterion states are re-queried every iteration",
+    "description": "**Check:** Read-once applies to the ticket text: it is read exactly once per fire, at entry, and a fixture mutating the subject's text mid-loop produces zero re-reads. Criterion states are re-queried every iteration — they are the loop's exit condition, so re-querying them is not a re-read of the spec.\n**Do:** Read the spec once in `read_fire_spec`; keep the per-iteration criterion-state query in the loop's exit check; a ticket-text change under a running fire is an amendment, not a re-read.\n**Evidence:** — (graded sha · the mid-loop mutation fixture · evaluator comment id)",
+    "projectMilestone": {
+      "id": "f490eac0-27cb-41f8-be7b-2baacbdaaf7a",
+      "name": "M3 — Plan & walk"
+    },
+    "priority": {
+      "value": 0,
+      "name": "No priority"
+    },
+    "url": "https://linear.app/duckburg/issue/KOD-433/kod-105-ac-10-ticket-text-is-read-once-at-fire-entry-criterion-states",
+    "gitBranchName": "rosig-3topase/kod-433-kod-105-ac-10-ticket-text-is-read-once-at-fire-entry",
+    "createdAt": "2026-09-07T11:33:37.043Z",
+    "updatedAt": "2026-09-09T19:37:37.038Z",
+    "archivedAt": null,
+    "completedAt": null,
+    "startedAt": null,
+    "canceledAt": null,
+    "dueDate": null,
+    "slaStartedAt": null,
+    "slaMediumRiskAt": null,
+    "slaHighRiskAt": null,
+    "slaBreachesAt": null,
+    "status": "Todo",
+    "statusType": "unstarted",
+    "labels": [
+      "criterion",
+      "code-verified 2026-09-08"
+    ],
+    "attachments": [],
+    "documents": [],
+    "stateHistory": [
+      {
+        "state": {
+          "id": "9cb16a46-00ec-4435-a9cd-f8a1535ae634",
+          "name": "Todo",
+          "type": "unstarted"
+        },
+        "startedAt": "2026-09-07T11:33:37.043Z",
+        "endedAt": null
+      }
+    ],
+    "createdBy": "Goofy",
+    "createdById": "998f68f9-58c0-4c31-bdc8-2b9d8da803a2",
+    "project": "kodezart v0.3 — scope orchestration",
+    "projectId": "91d6fb2e-1be1-4d19-950d-c8e80f3b684e",
+    "parentId": "KOD-105",
+    "team": "kodezart",
+    "teamId": "6a8dcd10-d98b-4bf2-9d37-1f2165b6393a"
+  }
+]

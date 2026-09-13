@@ -1,0 +1,130 @@
+.FF                                                                      [100%]
+=================================== FAILURES ===================================
+____ test_criterion_mint_requires_the_parent_revision_its_author_read[True] ____
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10c18eab0>
+amend_parent = True
+
+    @pytest.mark.parametrize("amend_parent", [False, True])
+    async def test_criterion_mint_requires_the_parent_revision_its_author_read(
+        monkeypatch, amend_parent
+    ):
+        owner, board, executor = factory()
+        original = executor.stream
+        criterion_inputs = []
+    
+        async def changed_parent(**kwargs):
+            async for event in original(**kwargs):
+                if (
+                    kwargs["output_format"]["schema"].get("title") == "OrganizeProposal"
+                    and event.structured_output.get("kind") == "criteria"
+                ):
+                    criterion_inputs.append(kwargs["prompt"])
+                    if amend_parent:
+                        board.server.issues[CLAIMED_ISSUE].description = (
+                            "The revised source requires a different criterion."
+                        )
+                yield event
+    
+        monkeypatch.setattr(executor, "stream", changed_parent)
+        try:
+            await run_owner(owner)
+        except (OrganizeWriteRefusalError, StaleWriteError):
+            assert amend_parent
+        assert len(criterion_inputs) == 1
+        assert "Prepared body grounded in the source." in criterion_inputs[0]
+        creates = [
+            arguments
+            for name, arguments in board.calls
+            if name == "save_issue" and "parentId" in arguments and "id" not in arguments
+        ]
+>       assert len(creates) == (0 if amend_parent else 1)
+E       AssertionError: assert 1 == 0
+E        +  where 1 = len([{'description': '**Check:** Prepared bytes match the declared source.\n\n**Do:** Compare the source and prepared bytes.\n\n**Evidence:**\n', 'labels': ['check'], 'parentId': 'FIX-1', 'state': 'Todo', ...}])
+
+tests/chains/test_organize_native_independent.py:47: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 16:50:01 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-12 16:50:01 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:50:01 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:50:01 [info     ] outbound_content_gated         categories=[] content_digest=f89d1825e4481064a8b5a1ea1946290f442ebe4ad9e7445547d1046d6df1fd1c failure=None hits=[] surface=tracker verdict=clean visibility=private writer=tracker_description
+2026-09-12 16:50:01 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:50:01 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_verify resumed_session_id=None session_id=None
+2026-09-12 16:50:01 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:50:01 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_verify resumed_session_id=None session_id=None
+2026-09-12 16:50:01 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:50:01 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:50:01 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-12 16:50:01 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:50:01 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_verify resumed_session_id=None session_id=None
+2026-09-12 16:50:01 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:50:01 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:50:01 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-12 16:50:01 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:50:01 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_criteria_author stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:50:01 [info     ] outbound_content_gated         categories=[] content_digest=444ea9545cc64bfb5c76d9ebd806e35d1175eabac77e2447a23aba20ee5dd4bb failure=None hits=[] surface=tracker verdict=clean visibility=private writer=tracker_description
+2026-09-12 16:50:01 [info     ] outbound_content_gated         categories=[] content_digest=6cccd0622ce623addb5e69d3e39e752fb7fb3714d72d017e33d3aa0e13331ff2 failure=None hits=[] surface=tracker verdict=clean visibility=private writer=tracker_title
+2026-09-12 16:50:01 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:50:01 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_verify resumed_session_id=None session_id=None
+2026-09-12 16:50:01 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:50:01 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_verify resumed_session_id=None session_id=None
+2026-09-12 16:50:01 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:50:01 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=NEW-5 prompt_key=organize_verify resumed_session_id=None session_id=None
+2026-09-12 16:50:01 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:50:01 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+________ test_writeback_exhaustion_retains_its_actual_cited_refutation _________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10c1f4c80>
+
+    async def test_writeback_exhaustion_retains_its_actual_cited_refutation(monkeypatch):
+        owner, _board, executor = factory(bound=1)
+        original = executor.stream
+        checked_bad_body = []
+    
+        async def refute_landed_body(**kwargs):
+            async for event in original(**kwargs):
+                if kwargs["output_format"]["schema"].get("title") == "WriteBackFinding":
+                    artifact = json.loads(
+                        re.search(
+                            r"<written_artifact>\s*(.*?)\s*</written_artifact>",
+                            kwargs["prompt"],
+                            re.S,
+                        )[1]
+                    )
+                    if artifact["content"] == "Prepared body grounded in the source.":
+                        checked_bad_body.append(artifact)
+                        event = result(
+                            structured_output={
+                                "verdict": "refuted",
+                                "evidence": "tests/absent.py is absent at this exact commit.",
+                                "cited_refs": ["tests/absent.py"],
+                            }
+                        )
+                yield event
+    
+        monkeypatch.setattr(executor, "stream", refute_landed_body)
+        report = await run_owner(owner)
+        assert len(checked_bad_body) == 1
+        assert report.halt.cause == "admission_exhausted"
+        assert report.halt.bound.loop == "write_back"
+        assert report.halt.bound.rounds_used == report.halt.bound.value == 1
+>       assert "tests/absent.py" in report.halt.model_dump_json()
+E       assert 'tests/absent.py' in '{"cause":"admission_exhausted","bound":{"setting":"organize.max_admission_rounds","value":1,"rounds_used":1,"loop":"w...requirement.","refusal_kind":"spec_gap"}],"surviving_findings":[],"questions":[],"unrecorded_escalation_issue_ids":[]}'
+E        +  where '{"cause":"admission_exhausted","bound":{"setting":"organize.max_admission_rounds","value":1,"rounds_used":1,"loop":"w...requirement.","refusal_kind":"spec_gap"}],"surviving_findings":[],"questions":[],"unrecorded_escalation_issue_ids":[]}' = model_dump_json()
+E        +    where model_dump_json = StageHaltReport(cause=<StageHaltCause.ADMISSION_EXHAUSTED: 'admission_exhausted'>, bound=OrganizeBoundEvidence(setting...l_kind=<RefusalKind.SPEC_GAP: 'spec_gap'>)),), surviving_findings=(), questions=(), unrecorded_escalation_issue_ids=()).model_dump_json
+E        +      where StageHaltReport(cause=<StageHaltCause.ADMISSION_EXHAUSTED: 'admission_exhausted'>, bound=OrganizeBoundEvidence(setting...l_kind=<RefusalKind.SPEC_GAP: 'spec_gap'>)),), surviving_findings=(), questions=(), unrecorded_escalation_issue_ids=()) = OrganizeReport(completed_phases=(), halt=StageHaltReport(cause=<StageHaltCause.ADMISSION_EXHAUSTED: 'admission_exhaust..._kind=<RefusalKind.SPEC_GAP: 'spec_gap'>)),), surviving_findings=(), questions=(), unrecorded_escalation_issue_ids=())).halt
+
+tests/chains/test_organize_native_independent.py:82: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 16:50:01 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-12 16:50:01 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:50:01 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:50:01 [info     ] outbound_content_gated         categories=[] content_digest=f89d1825e4481064a8b5a1ea1946290f442ebe4ad9e7445547d1046d6df1fd1c failure=None hits=[] surface=tracker verdict=clean visibility=private writer=tracker_description
+2026-09-12 16:50:01 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:50:01 [info     ] outbound_content_gated         categories=[] content_digest=f06f715cfee7cdd4dca55f7644f34f9030727be4261cf01b40e546ac1be6c486 failure=None hits=[] surface=tracker verdict=clean visibility=private writer=tracker_comment
+2026-09-12 16:50:01 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:50:01 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+=========================== short test summary info ============================
+FAILED tests/chains/test_organize_native_independent.py::test_criterion_mint_requires_the_parent_revision_its_author_read[True]
+FAILED tests/chains/test_organize_native_independent.py::test_writeback_exhaustion_retains_its_actual_cited_refutation
+2 failed, 1 passed in 0.85s

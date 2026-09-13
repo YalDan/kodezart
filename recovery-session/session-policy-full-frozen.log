@@ -1,0 +1,272 @@
+uv run ruff format --check src/ tests/
+366 files already formatted
+uv run ruff check src/ tests/
+All checks passed!
+uv run mypy src/
+Success: no issues found in 178 source files
+uv run pytest
+============================= test session starts ==============================
+platform darwin -- Python 3.12.13, pytest-9.0.2, pluggy-1.6.0
+rootdir: /private/tmp/kodezart-v03-m1-session-policy-extraction
+configfile: pyproject.toml
+testpaths: tests
+plugins: anyio-4.12.1, langsmith-0.7.14, asyncio-1.3.0, logfire-4.27.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=session, asyncio_default_test_loop_scope=function
+collected 3676 items
+
+tests/adapters/test_claude_client_executor.py .........                  [  0%]
+tests/adapters/test_claude_executors.py ................................ [  1%]
+..................................                                       [  2%]
+tests/adapters/test_git_artifact_persister.py ......                     [  2%]
+tests/adapters/test_git_branch_merger.py ..............                  [  2%]
+tests/adapters/test_git_change_persister.py ...............              [  2%]
+tests/adapters/test_git_ref_publisher.py .....                           [  3%]
+tests/adapters/test_git_worktree_provider.py ...........                 [  3%]
+tests/adapters/test_github_api.py ...................................... [  4%]
+...................................................................      [  6%]
+tests/adapters/test_host_skill_inventory.py ................             [  6%]
+tests/adapters/test_hosted_mcp_session.py .......                        [  6%]
+tests/adapters/test_http_mcp_tool_caller.py ............................ [  7%]
+..............................                                           [  8%]
+tests/adapters/test_judgment_scanner.py ................................ [  9%]
+.....................                                                    [  9%]
+tests/adapters/test_knowledge_transport.py ..................            [ 10%]
+tests/adapters/test_mcp_strictness.py ...................                [ 10%]
+tests/adapters/test_no_forge_delivery.py ...                             [ 11%]
+tests/adapters/test_outbound_corpus.py ....................              [ 11%]
+tests/adapters/test_outbound_gate.py .....................               [ 12%]
+tests/adapters/test_permission_boundary.py ............................. [ 12%]
+................................................................         [ 14%]
+tests/adapters/test_sdk_mapping.py .......................               [ 15%]
+tests/adapters/test_self_write_replay.py ............................... [ 16%]
+...                                                                      [ 16%]
+tests/adapters/test_stdio_mcp_tool_caller.py ..................          [ 16%]
+tests/adapters/test_subprocess_git.py .................................. [ 17%]
+.....                                                                    [ 17%]
+tests/adapters/test_tool_selection.py .................................. [ 18%]
+......................................                                   [ 19%]
+tests/adapters/test_tracker_self_writes.py .............                 [ 20%]
+tests/api/v1/test_agent.py ....................                          [ 20%]
+tests/api/v1/test_health.py .....                                        [ 20%]
+tests/api/v1/test_jobs.py .............................................. [ 22%]
+..........                                                               [ 22%]
+tests/chains/test_accept_gate.py ......................                  [ 22%]
+tests/chains/test_criteria_validation.py ..............................  [ 23%]
+tests/chains/test_dispatch_definitions.py .............                  [ 24%]
+tests/chains/test_outbound_gating.py ..............                      [ 24%]
+tests/chains/test_ralph_loop.py ........................................ [ 25%]
+........                                                                 [ 25%]
+tests/chains/test_ralph_workflow.py .................................... [ 26%]
+........................................................................ [ 28%]
+......                                                                   [ 28%]
+tests/chains/test_remediation.py .......                                 [ 29%]
+tests/chains/test_retry_floor_wiring.py ......                           [ 29%]
+tests/chains/test_session_policy_composition.py ..                       [ 29%]
+tests/chains/test_shorthand_url_resolution.py ...                        [ 29%]
+tests/chains/test_ticket_generation.py ................................. [ 30%]
+....                                                                     [ 30%]
+tests/core/test_bare_mode.py .                                           [ 30%]
+tests/core/test_config.py ..........................                     [ 31%]
+tests/core/test_config_error_redaction.py ....                           [ 31%]
+tests/core/test_credential_shapes.py .........                           [ 31%]
+tests/core/test_docs_prompt_knobs.py ...........                         [ 31%]
+tests/core/test_error_egress.py ................................         [ 32%]
+tests/core/test_knowledge_connection.py ................................ [ 33%]
+..............................                                           [ 34%]
+tests/core/test_knowledge_grant.py .........                             [ 34%]
+tests/core/test_log_emitter.py .......                                   [ 34%]
+tests/core/test_logging.py .                                             [ 34%]
+tests/core/test_logging_chain.py ....                                    [ 34%]
+tests/core/test_notion_credential.py ......                              [ 35%]
+tests/core/test_prompt_boot.py ......                                    [ 35%]
+tests/core/test_retry.py .............................                   [ 35%]
+tests/core/test_stream_drain.py ........                                 [ 36%]
+tests/core/test_surface_lease_config.py ........                         [ 36%]
+tests/core/test_tracker_credential.py .......                            [ 36%]
+tests/core/test_tracker_settings.py .................................... [ 37%]
+....................................................                     [ 38%]
+tests/docs/test_api_event_reference.py ....                              [ 39%]
+tests/docs/test_documented_surface.py ....................               [ 39%]
+tests/docs/test_parity_checklist.py .........                            [ 39%]
+tests/docs/test_setup_guide.py ...............                           [ 40%]
+tests/domain/test_agent.py ..                                            [ 40%]
+tests/domain/test_base_resolution.py ............................        [ 41%]
+tests/domain/test_base_scope.py ...........                              [ 41%]
+tests/domain/test_base_staleness.py ......                               [ 41%]
+tests/domain/test_branch.py .....                                        [ 41%]
+tests/domain/test_comment_markers.py ...............                     [ 42%]
+tests/domain/test_criteria_feasibility.py .............................. [ 42%]
+......................................                                   [ 43%]
+tests/domain/test_criteria_grading.py .......                            [ 44%]
+tests/domain/test_criterion_identity.py ........                         [ 44%]
+tests/domain/test_dispatch_predicate.py ................................ [ 45%]
+...                                                                      [ 45%]
+tests/domain/test_git_url.py .........................                   [ 46%]
+tests/domain/test_no_ref_parsing.py ....                                 [ 46%]
+tests/domain/test_operation_optionality.py .......................       [ 46%]
+tests/domain/test_outcome.py ....................                        [ 47%]
+tests/domain/test_scope_container.py ...............                     [ 47%]
+tests/domain/test_scope_ref.py .................                         [ 48%]
+tests/domain/test_self_write_retention.py ..                             [ 48%]
+tests/domain/test_stall_report.py .........                              [ 48%]
+tests/domain/test_surface_lease.py .................                     [ 48%]
+tests/domain/test_surface_lease_error.py ...                             [ 48%]
+tests/integration/test_checkpointer_postgres.py ss                       [ 49%]
+tests/integration/test_criteria_oracle.py ...                            [ 49%]
+tests/integration/test_live_criteria_probes.py ss                        [ 49%]
+tests/integration/test_self_running_chain.py ...                         [ 49%]
+tests/integration/test_session_resume.py sss                             [ 49%]
+tests/integration/test_stacked_scope.py .....                            [ 49%]
+tests/integration/test_workflow_e2e.py .................                 [ 49%]
+tests/probes/test_ab_failure_capture.py ...                              [ 50%]
+tests/probes/test_ab_smoke.py s                                          [ 50%]
+tests/probes/test_harness_capabilities.py .ssssss                        [ 50%]
+tests/probes/test_strict_output_enforcement.py .s                        [ 50%]
+tests/probes/test_v5_orchestration_live.py s                             [ 50%]
+tests/prompts/test_absence_bindings.py ................................  [ 51%]
+tests/prompts/test_criteria_generation_prompts.py ...............        [ 51%]
+tests/prompts/test_initiative_target_date.py .....                       [ 51%]
+tests/prompts/test_knowledge_map.py ..........................           [ 52%]
+tests/prompts/test_minimal_floor.py ....                                 [ 52%]
+tests/prompts/test_operation_config.py ................................. [ 53%]
+.................                                                        [ 53%]
+tests/prompts/test_pass_roster.py ...................................... [ 54%]
+........................................                                 [ 56%]
+tests/prompts/test_principal_roles.py ..........                         [ 56%]
+tests/prompts/test_prompt_wiring.py .................................... [ 57%]
+.................                                                        [ 57%]
+tests/prompts/test_resolvable_identifiers.py ...........                 [ 58%]
+tests/prompts/test_rollback.py ........                                  [ 58%]
+tests/prompts/test_session_policy.py ................................... [ 59%]
+.......................................                                  [ 60%]
+tests/prompts/test_set_completeness.py .........                         [ 60%]
+tests/prompts/test_skills_loadouts.py .....................              [ 61%]
+tests/prompts/test_v5_fragments.py ............................          [ 61%]
+tests/prompts/test_v5_lenses.py ........                                 [ 62%]
+tests/prompts/test_v5_orchestration.py ....................              [ 62%]
+tests/prompts/test_v5_style_rules.py ................................... [ 63%]
+........................................................................ [ 65%]
+........................................................................ [ 67%]
+............................................                             [ 68%]
+tests/prompts/test_v5_wiring.py ........................................ [ 69%]
+.....................                                                    [ 70%]
+tests/services/test_agent_service.py ...                                 [ 70%]
+tests/services/test_claim_heartbeat.py .....................             [ 71%]
+tests/services/test_dispatch_pass.py .........F...................       [ 71%]
+tests/services/test_fire_context.py .....................                [ 72%]
+tests/services/test_fire_dispatcher.py ................................. [ 73%]
+..................................................                       [ 74%]
+tests/services/test_lifecycle_watcher.py ............................... [ 75%]
+.........                                                                [ 75%]
+tests/services/test_pass_gate.py .....................................   [ 76%]
+tests/services/test_pass_scheduler.py ........................           [ 77%]
+tests/services/test_prompt_pass.py ......................                [ 77%]
+tests/services/test_prompt_passes.py .........................           [ 78%]
+tests/services/test_run_recorder.py .............................        [ 79%]
+tests/services/test_run_surface_lease.py ...................             [ 79%]
+tests/services/test_session_grant_threading.py ...................       [ 80%]
+tests/services/test_tracker_lifecycle.py .........................       [ 81%]
+tests/test_composition_root.py ................                          [ 81%]
+tests/test_forge_origin_selection.py .............                       [ 81%]
+tests/test_lane_verification.py ......                                   [ 82%]
+tests/test_release.py ....                                               [ 82%]
+tests/tracker/test_comment_expected.py ...................               [ 82%]
+tests/tracker/test_comment_expected_independent.py ......                [ 82%]
+tests/tracker/test_criterion_family_aliases.py ....                      [ 82%]
+tests/tracker/test_criterion_family_identity.py ...                      [ 83%]
+tests/tracker/test_criterion_reader.py .....                             [ 83%]
+tests/tracker/test_criterion_reader_boundary.py ............             [ 83%]
+tests/tracker/test_issue_classification_reads.py .............           [ 83%]
+tests/tracker/test_linear_mcp_tracker.py ............................... [ 84%]
+...............................                                          [ 85%]
+tests/tracker/test_linear_tool_arguments.py ......                       [ 85%]
+tests/tracker/test_linear_tool_roster.py .....                           [ 85%]
+tests/tracker/test_linear_wire_shapes.py ............................... [ 86%]
+..                                                                       [ 86%]
+tests/tracker/test_marker_configuration.py .....                         [ 86%]
+tests/tracker/test_native_read_configuration.py .............            [ 87%]
+tests/tracker/test_native_read_constructor.py ..                         [ 87%]
+tests/tracker/test_ownership_arbitration.py ............................ [ 88%]
+                                                                         [ 88%]
+tests/tracker/test_protected_comment_retry.py ..........                 [ 88%]
+tests/tracker/test_scope_alias_identity.py .                             [ 88%]
+tests/tracker/test_scope_ancestor_identity.py ....                       [ 88%]
+tests/tracker/test_scope_reads.py ...................................... [ 89%]
+.............................                                            [ 90%]
+tests/tracker/test_tracker_boot.py ....................................  [ 91%]
+tests/tracker/test_tracker_boot_wiring.py ..................             [ 91%]
+tests/tracker/test_tracker_conformance.py .............................. [ 92%]
+........................................................................ [ 94%]
+........................................................................ [ 96%]
+.............................................                            [ 97%]
+tests/types/test_output_descriptions.py ............                     [ 98%]
+tests/types/test_wire_renames.py ......                                  [ 98%]
+tests/types/test_wire_schemas.py ............................            [ 98%]
+tests/types/test_writable_surface.py ..........................          [ 99%]
+tests/workflows/test_investigate_fan_in.py ...........                   [100%]
+
+=================================== FAILURES ===================================
+_ TestAFailedPassGivesTheWakeUpBack.test_a_tick_cancelled_on_its_budget_keeps_its_window_too _
+
+self = <tests.services.test_dispatch_pass.TestAFailedPassGivesTheWakeUpBack object at 0x10abf52b0>
+
+    async def test_a_tick_cancelled_on_its_budget_keeps_its_window_too(
+        self,
+    ) -> None:
+        """A timed-out pass may not eat the wake-up either.
+    
+        Driven as a real cancellation — the scheduler abandons a tick that
+        outran its timeout — rather than as a raised ``CancelledError``,
+        because what has to survive is the unwind and not an exception
+        type.
+        """
+        tracker = FakeTrackerPort(issues=[make_tracker_issue("K-1")])
+        pass_, guard, dispatcher = failing_tick(tracker, block=asyncio.Event())
+    
+        with pytest.raises(TimeoutError):
+            await asyncio.wait_for(
+                pass_.run(TICK_STARTED_AT),
+                timeout=SETTLE_DELAY_SECONDS,
+            )
+    
+>       assert dispatcher.calls == 1, "the pass was entered and then abandoned"
+E       AssertionError: the pass was entered and then abandoned
+E       assert 0 == 1
+E        +  where 0 = <tests.services.test_dispatch_pass._FailingDispatcher object at 0x10bb376e0>.calls
+
+tests/services/test_dispatch_pass.py:563: AssertionError
+----------------------------- Captured stderr call -----------------------------
+--- Logging error ---
+Traceback (most recent call last):
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/logging/__init__.py", line 1163, in emit
+    stream.write(msg + self.terminator)
+ValueError: I/O operation on closed file.
+Call stack:
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1032, in _bootstrap
+    self._bootstrap_inner()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 93, in _worker
+    work_item.run()
+  File "/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/private/tmp/kodezart-v03-m1-session-policy-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-session-policy-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+    lambda: ctx.run(lambda: meth(event, *args, **kw)),
+  File "/private/tmp/kodezart-v03-m1-session-policy-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 216, in info
+    return self._proxy_to_logger("info", event, *args, **kw)
+  File "/private/tmp/kodezart-v03-m1-session-policy-extraction/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 280, in _proxy_to_logger
+    return super()._proxy_to_logger(method_name, event=event, **event_kw)
+  File "/private/tmp/kodezart-v03-m1-session-policy-extraction/.venv/lib/python3.12/site-packages/structlog/_base.py", line 223, in _proxy_to_logger
+    return getattr(self._logger, method_name)(*args, **kw)
+Message: {'signals': ['approved_changed'], 'changed': ['K-1'], 'unanswerable': [], 'mark': '2026-01-01T00:00:00+00:00', 'event': 'pass_gate_delta', 'level': 'info', 'logger': 'kodezart.services.pass_gate', 'timestamp': '2026-09-12T20:34:34.025564Z'}
+Arguments: ()
+------------------------------ Captured log call -------------------------------
+INFO     kodezart.services.pass_gate:pass_gate.py:177 {'signals': ['approved_changed'], 'changed': ['K-1'], 'unanswerable': [], 'mark': '2026-01-01T00:00:00+00:00', 'event': 'pass_gate_delta', 'level': 'info', 'logger': 'kodezart.services.pass_gate', 'timestamp': '2026-09-12T20:34:34.025564Z'}
+=========================== short test summary info ============================
+FAILED tests/services/test_dispatch_pass.py::TestAFailedPassGivesTheWakeUpBack::test_a_tick_cancelled_on_its_budget_keeps_its_window_too
+============ 1 failed, 3659 passed, 16 skipped in 697.33s (0:11:37) ============
+make: *** [test] Error 1

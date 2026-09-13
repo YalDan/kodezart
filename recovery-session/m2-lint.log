@@ -1,0 +1,14 @@
+F401 [*] `kodezart.adapters.linear_mcp_types.LinearIssueDetailWire` imported but unused
+  --> src/kodezart/adapters/linear_scope_types.py:12:5
+   |
+10 | from kodezart.adapters.linear_mcp_types import (
+11 |     LinearAddressedIssueWire,
+12 |     LinearIssueDetailWire,
+   |     ^^^^^^^^^^^^^^^^^^^^^
+13 |     LinearWireModel,
+14 | )
+   |
+help: Remove unused import: `kodezart.adapters.linear_mcp_types.LinearIssueDetailWire`
+
+Found 1 error.
+[*] 1 fixable with the `--fix` option.

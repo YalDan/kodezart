@@ -1,0 +1,76 @@
+..........F..................F........................................   [100%]
+=================================== FAILURES ===================================
+______ test_actual_tick_uses_fresh_remote_trunk_and_existing_run_identity ______
+
+    async def test_actual_tick_uses_fresh_remote_trunk_and_existing_run_identity():
+        tick, board, executor = factory(tick=True)
+        instant = datetime(2026, 9, 12, tzinfo=UTC)
+        assert await tick.run(instant) is PassRun.RAN
+        assert all(f"<base_ref>{'a' * 40}</base_ref>" in call["prompt"] for call in executor.calls)
+        identity = RunIdentity(kind=RunKind.GROOMING, name="grooming_pass", started_at=instant)
+>       assert any(identity.title() in comment.body for comment in board.server.comments)
+E       assert False
+E        +  where False = any(<generator object test_actual_tick_uses_fresh_remote_trunk_and_existing_run_identity.<locals>.<genexpr> at 0x10aec9cb0>)
+
+tests/core/test_organize_settings.py:67: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 16:06:43 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-12 16:06:43 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:06:43 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:06:43 [info     ] outbound_content_gated         categories=[] content_digest=f89d1825e4481064a8b5a1ea1946290f442ebe4ad9e7445547d1046d6df1fd1c failure=None hits=[] surface=tracker verdict=clean visibility=unknown writer=tracker_description
+2026-09-12 16:06:43 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:06:43 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_verify resumed_session_id=None session_id=None
+2026-09-12 16:06:43 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:06:43 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_verify resumed_session_id=None session_id=None
+2026-09-12 16:06:43 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:06:43 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:06:43 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-12 16:06:43 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:06:43 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_verify resumed_session_id=None session_id=None
+2026-09-12 16:06:43 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:06:43 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:06:43 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-12 16:06:43 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:06:43 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_criteria_author stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:06:43 [info     ] outbound_content_gated         categories=[] content_digest=444ea9545cc64bfb5c76d9ebd806e35d1175eabac77e2447a23aba20ee5dd4bb failure=None hits=[] surface=tracker verdict=clean visibility=unknown writer=tracker_description
+2026-09-12 16:06:43 [info     ] outbound_content_gated         categories=[] content_digest=6cccd0622ce623addb5e69d3e39e752fb7fb3714d72d017e33d3aa0e13331ff2 failure=None hits=[] surface=tracker verdict=clean visibility=unknown writer=tracker_title
+2026-09-12 16:06:43 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:06:43 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_verify resumed_session_id=None session_id=None
+2026-09-12 16:06:43 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:06:43 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_verify resumed_session_id=None session_id=None
+2026-09-12 16:06:43 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:06:43 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=NEW-5 prompt_key=organize_verify resumed_session_id=None session_id=None
+2026-09-12 16:06:43 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:06:43 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:06:43 [info     ] organize_scope_finished        report={'completed_phases': (<MandateKind.GROOM: 'groom'>, <MandateKind.TICKET: 'ticket'>, <MandateKind.CRITERIA: 'criteria'>), 'halt': None} run_identity='grooming — grooming_pass @ 2026-09-12T00:00:00Z' scope={'kind': <ScopeKind.ISSUE: 'issue'>, 'key': 'FIX-1'}
+_______________ test_no_label_or_status_literal_lives_in_source ________________
+
+    def test_no_label_or_status_literal_lives_in_source() -> None:
+        """Code addresses members via enum members, never via a label string."""
+        src = REPO_ROOT / "src" / "kodezart"
+        labels = {
+            *example_config().queue_states.values(),
+            *example_config().scope_labels.values(),
+            *example_config().workflow_states.values(),
+        }
+        for path in src.rglob("*.py"):
+            text = path.read_text(encoding="utf-8")
+            for label in labels:
+>               assert label not in text, f"{path} hardcodes {label!r}"
+E               AssertionError: /private/tmp/kodezart-v03-recovery-organize-owner/src/kodezart/services/tracker_lifecycle.py hardcodes 'Done'
+E               assert 'Done' not in '"""Ticket l...n        )\n'
+E                 
+E                 'Done' is contained here:
+E                   criterion Done states.
+E                 ?           ++++
+E                   
+E                   **The pull-request arm also records the delivery — when there is one.**  A
+E                   ``DELIVERABLE`` work ref is what a dependent lane's base resolves through,...
+E                 
+E                 ...Full output truncated (306 lines hidden), use '-vv' to show
+
+tests/prompts/test_operation_config.py:338: AssertionError
+=========================== short test summary info ============================
+FAILED tests/core/test_organize_settings.py::test_actual_tick_uses_fresh_remote_trunk_and_existing_run_identity
+FAILED tests/prompts/test_operation_config.py::test_no_label_or_status_literal_lives_in_source
+2 failed, 68 passed in 2.41s

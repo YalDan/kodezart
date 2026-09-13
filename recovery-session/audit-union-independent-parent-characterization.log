@@ -1,0 +1,5 @@
+parent accepted source_index True as 1
+parent accepted source_index 1.0 as 1
+parent accepted source_index '1' as 1
+parent accepted holds empty-coverage holds
+parent accepted holds foreign-source holds

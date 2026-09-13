@@ -1,0 +1,51 @@
+E501 Line too long (89 > 88)
+  --> src/kodezart/domain/run_alarm_record.py:31:89
+   |
+30 | def surface_alarm_member_id(surface: WritableSurface) -> str:
+31 |     """Canonical source-reference spelling; typed evidence retains the surface itself."""
+   |                                                                                         ^
+32 |     return _SURFACE.dump_json(surface).decode("utf-8")
+   |
+
+E501 Line too long (91 > 88)
+  --> src/kodezart/domain/run_shape.py:49:89
+   |
+47 |     value = reading.value
+48 |     if not isinstance(value, expected):
+49 |         raise _unreadable(signal, reading.source_ref, "another evidence kind was recorded")
+   |                                                                                         ^^^
+50 |     return value.value
+   |
+
+E501 Line too long (98 > 88)
+   --> src/kodezart/services/mandate_graph.py:226:89
+    |
+224 |     Recording the next window and publishing alarms belong to their writers.
+225 |     """
+226 |     snapshot = _read_value(current_rulings, RulingsEvidence, AlarmSignal.RULINGS_OUTPACE_CLOSURES)
+    |                                                                                         ^^^^^^^^^^
+227 |     criteria: list[TrackerIssue] = []
+228 |     for issue_key in snapshot.issue_keys:
+    |
+
+E501 Line too long (102 > 88)
+  --> src/kodezart/types/domain/run_alarm.py:85:89
+   |
+84 | AlarmSubject = Annotated[
+85 |     ScopeSubject | LaneSubject | IssueSubject | CriterionSubject | SurfaceSubject | EscalationSubject,
+   |                                                                                         ^^^^^^^^^^^^^^
+86 |     Field(discriminator="kind"),
+87 | ]
+   |
+
+E501 Line too long (238 > 88)
+   --> src/kodezart/types/domain/run_alarm.py:166:89
+    |
+165 | …
+166 | …idence | SurfaceEvidence | EscalationEvidence | ResolutionEvidence | CommitsEvidence | LaneFieldEvidence | ScopeEvidence | RulingsEvidence | GraphEvidence,
+    |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+167 | …
+168 | …
+    |
+
+Found 25 errors (20 fixed, 5 remaining).

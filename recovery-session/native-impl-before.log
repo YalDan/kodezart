@@ -1,0 +1,790 @@
+FFFFFFFFFFFF                                                             [100%]
+=================================== FAILURES ===================================
+_______ test_native_inner_iterations_read_current_checks[changed-check] ________
+
+change = 'changed-check'
+
+    @pytest.mark.parametrize("change", ["changed-check", "state", "missing-check", "outage"])
+    async def test_native_inner_iterations_read_current_checks(change):
+        port = CountingTracker()
+        remaining = {key: check_of(key) for key in OWED_KEYS if key != NESTED_OWED}
+        executor = NativeExecutor([
+            native_evaluation(failed=True),
+            native_evaluation(checks=remaining if change == "state" else None),
+            native_evaluation(checks=remaining if change == "state" else None),
+        ])
+        executor.on_evaluation = lambda count: change_tracker(port, change) if count == 1 else None
+        fire = engine(criteria=TrackerCriteria(tracker=port), executor=executor,
+                      real_loop=True, max_iterations=2)
+        if change in {"missing-check", "outage"}:
+            error = FireSpecEntryError if change == "outage" else InvalidFireCriterionError
+            with pytest.raises(error):
+                await drive(fire, scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
+            assert len(executor.execution_prompts) == 1
+            return
+        events = await drive(fire, scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
+        iterations = [event for event in events if isinstance(event, WorkflowIterationEvent)]
+        assert len(iterations) == 2
+        assert iterations[-1].iteration == 2
+        assert iterations[-1].verdict is AcceptVerdict.accepted
+        answers = {result.criterion_id: result.criterion for result in iterations[-1].evaluation.criteria_results}
+        if change == "state":
+            assert NESTED_OWED not in answers
+            assert check_of(NESTED_OWED) not in executor.evaluation_prompts[1]
+        else:
+>           assert answers[NESTED_OWED] == "changed live Check with  spaces"
+E           AssertionError: assert 'the check fi...nested states' == 'changed live... with  spaces'
+E             
+E             - changed live Check with  spaces
+E             + the check fire/owed-nested states
+
+tests/chains/test_native_fire.py:771: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 14:13:16 [info     ] repo_visibility_resolved       repo_url=https://github.com/owner/repo.git visibility=unknown
+2026-09-12 14:13:16 [info     ] scope_base_resolved            base_branch=main base_role=None input_count=0
+2026-09-12 14:13:16 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:13:16 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 14:13:16 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=branch_name
+2026-09-12 14:13:16 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 14:13:16 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:13:16 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=ralph_evaluator stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 14:13:16 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:13:16 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=ralph_evaluator stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 14:13:16 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:13:16 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=post_merge_review stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 14:13:16 [info     ] backup_cleanup_starting        prefix=kodezart/test-branch-2438f010
+___________ test_native_inner_iterations_read_current_checks[state] ____________
+
+change = 'state'
+
+    @pytest.mark.parametrize("change", ["changed-check", "state", "missing-check", "outage"])
+    async def test_native_inner_iterations_read_current_checks(change):
+        port = CountingTracker()
+        remaining = {key: check_of(key) for key in OWED_KEYS if key != NESTED_OWED}
+        executor = NativeExecutor([
+            native_evaluation(failed=True),
+            native_evaluation(checks=remaining if change == "state" else None),
+            native_evaluation(checks=remaining if change == "state" else None),
+        ])
+        executor.on_evaluation = lambda count: change_tracker(port, change) if count == 1 else None
+        fire = engine(criteria=TrackerCriteria(tracker=port), executor=executor,
+                      real_loop=True, max_iterations=2)
+        if change in {"missing-check", "outage"}:
+            error = FireSpecEntryError if change == "outage" else InvalidFireCriterionError
+            with pytest.raises(error):
+                await drive(fire, scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
+            assert len(executor.execution_prompts) == 1
+            return
+        events = await drive(fire, scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
+        iterations = [event for event in events if isinstance(event, WorkflowIterationEvent)]
+        assert len(iterations) == 2
+        assert iterations[-1].iteration == 2
+>       assert iterations[-1].verdict is AcceptVerdict.accepted
+E       AssertionError: assert <AcceptVerdict.rejected: 'rejected'> is <AcceptVerdict.accepted: 'accepted'>
+E        +  where <AcceptVerdict.rejected: 'rejected'> = WorkflowIterationEvent(type='workflow_iteration', iteration=2, branch='kodezart/test-branch-b10d9987-ralph-995d037f', ...fan_in=FanInReport(missing_ids=['fire/owed-nested'], unknown_ids=[], duplicate_ids=[], dispatched_count=3, attempts=1)).verdict
+E        +  and   <AcceptVerdict.accepted: 'accepted'> = AcceptVerdict.accepted
+
+tests/chains/test_native_fire.py:765: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 14:13:19 [info     ] repo_visibility_resolved       repo_url=https://github.com/owner/repo.git visibility=unknown
+2026-09-12 14:13:19 [info     ] scope_base_resolved            base_branch=main base_role=None input_count=0
+2026-09-12 14:13:19 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:13:19 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 14:13:19 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=branch_name
+2026-09-12 14:13:19 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 14:13:19 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:13:19 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=ralph_evaluator stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 14:13:19 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:13:19 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=ralph_evaluator stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 14:13:19 [warning  ] redispatch_breach              attempt=1 breach='Returned ids are not a permutation of the dispatched criteria (missing: fire/owed-nested; duplicate: -; unknown: -)' breach_class=CriteriaFanInError max_attempts=1 site=ralph_evaluator
+2026-09-12 14:13:19 [warning  ] fan_in_exhausted               attempts=1 dispatched_count=3 duplicate_ids=[] iteration=2 missing_ids=['fire/owed-nested'] site=ralph_evaluator unknown_ids=[]
+2026-09-12 14:13:19 [info     ] stall_exit_no_commit_to_land   feature_branch=kodezart/test-branch-b10d9987 total_iterations=2
+2026-09-12 14:13:19 [debug    ] backup_cleanup_skipped         accept_verdict=False merged=False
+_______ test_native_inner_iterations_read_current_checks[missing-check] ________
+
+change = 'missing-check'
+
+    @pytest.mark.parametrize("change", ["changed-check", "state", "missing-check", "outage"])
+    async def test_native_inner_iterations_read_current_checks(change):
+        port = CountingTracker()
+        remaining = {key: check_of(key) for key in OWED_KEYS if key != NESTED_OWED}
+        executor = NativeExecutor([
+            native_evaluation(failed=True),
+            native_evaluation(checks=remaining if change == "state" else None),
+            native_evaluation(checks=remaining if change == "state" else None),
+        ])
+        executor.on_evaluation = lambda count: change_tracker(port, change) if count == 1 else None
+        fire = engine(criteria=TrackerCriteria(tracker=port), executor=executor,
+                      real_loop=True, max_iterations=2)
+        if change in {"missing-check", "outage"}:
+            error = FireSpecEntryError if change == "outage" else InvalidFireCriterionError
+>           with pytest.raises(error):
+                 ^^^^^^^^^^^^^^^^^^^^
+E           Failed: DID NOT RAISE <class 'kodezart.domain.errors.InvalidFireCriterionError'>
+
+tests/chains/test_native_fire.py:757: Failed
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 14:13:20 [info     ] repo_visibility_resolved       repo_url=https://github.com/owner/repo.git visibility=unknown
+2026-09-12 14:13:20 [info     ] scope_base_resolved            base_branch=main base_role=None input_count=0
+2026-09-12 14:13:20 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:13:20 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 14:13:20 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=branch_name
+2026-09-12 14:13:20 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 14:13:20 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:13:20 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=ralph_evaluator stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 14:13:20 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:13:20 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=ralph_evaluator stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 14:13:21 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:13:21 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=post_merge_review stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 14:13:21 [info     ] backup_cleanup_starting        prefix=kodezart/test-branch-8c23bc82
+___________ test_native_inner_iterations_read_current_checks[outage] ___________
+
+change = 'outage'
+
+    @pytest.mark.parametrize("change", ["changed-check", "state", "missing-check", "outage"])
+    async def test_native_inner_iterations_read_current_checks(change):
+        port = CountingTracker()
+        remaining = {key: check_of(key) for key in OWED_KEYS if key != NESTED_OWED}
+        executor = NativeExecutor([
+            native_evaluation(failed=True),
+            native_evaluation(checks=remaining if change == "state" else None),
+            native_evaluation(checks=remaining if change == "state" else None),
+        ])
+        executor.on_evaluation = lambda count: change_tracker(port, change) if count == 1 else None
+        fire = engine(criteria=TrackerCriteria(tracker=port), executor=executor,
+                      real_loop=True, max_iterations=2)
+        if change in {"missing-check", "outage"}:
+            error = FireSpecEntryError if change == "outage" else InvalidFireCriterionError
+>           with pytest.raises(error):
+                 ^^^^^^^^^^^^^^^^^^^^
+E           Failed: DID NOT RAISE <class 'kodezart.domain.errors.FireSpecEntryError'>
+
+tests/chains/test_native_fire.py:757: Failed
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 14:13:22 [info     ] repo_visibility_resolved       repo_url=https://github.com/owner/repo.git visibility=unknown
+2026-09-12 14:13:22 [info     ] scope_base_resolved            base_branch=main base_role=None input_count=0
+2026-09-12 14:13:22 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:13:22 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 14:13:22 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=branch_name
+2026-09-12 14:13:22 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 14:13:22 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:13:22 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=ralph_evaluator stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 14:13:22 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:13:22 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=ralph_evaluator stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 14:13:23 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:13:23 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=post_merge_review stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 14:13:23 [info     ] backup_cleanup_starting        prefix=kodezart/test-branch-314d83d0
+_ test_native_fresh_engine_resume_reads_current_checks[changed-check-run_ralph_loop] _
+
+barrier = 'run_ralph_loop', change = 'changed-check'
+
+    @pytest.mark.parametrize("barrier", ["run_ralph_loop", "review_against_ticket"])
+    @pytest.mark.parametrize("change", ["changed-check", "state", "missing-check", "outage"])
+    async def test_native_fresh_engine_resume_reads_current_checks(barrier, change):
+        port = CountingTracker()
+        saver = InMemorySaver()
+        executor = NativeExecutor([native_evaluation()])
+        fire = engine(criteria=TrackerCriteria(tracker=port), executor=executor,
+                      real_loop=True, checkpointer=saver)
+        initial, config = fire.prepare(
+            prompt="Implement the requested behavior", issue_key=None,
+            repo_path="/tmp/fire", repo_url="https://github.com/owner/repo",
+            base_spec=trunk_base("main"), scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT),
+            permission_mode=PermissionMode.UNATTENDED, allowed_tools=["Bash"],
+            cache_key="native-fire",
+        )
+        async for _ in fire.native_graph.astream(initial, config=config, interrupt_before=[barrier]):
+            pass
+        paused = fire.native_graph.get_state(config)
+        assert paused.next == (barrier,)
+        frozen = paused.values["fire_spec"]
+        change_tracker(port, change)
+        remaining = {key: check_of(key) for key in OWED_KEYS if key != NESTED_OWED}
+        resumed_executor = NativeExecutor([
+            native_evaluation(checks=remaining if change == "state" else None),
+            native_evaluation(checks=remaining if change == "state" else None),
+        ])
+        resumed = engine(criteria=TrackerCriteria(tracker=port), executor=resumed_executor,
+                         real_loop=True, checkpointer=saver)
+        if change in {"missing-check", "outage"}:
+            error = FireSpecEntryError if change == "outage" else InvalidFireCriterionError
+            with pytest.raises(error):
+                async for _ in resumed.native_graph.astream(None, config=config, stream_mode="custom"):
+                    pass
+            assert resumed_executor.execution_prompts == []
+            assert resumed_executor.evaluation_prompts == []
+            return
+        events = [event async for event in resumed.native_graph.astream(None, config=config, stream_mode="custom")]
+        review = next(event for event in events if isinstance(event, WorkflowReviewEvent))
+        assert review.passed
+        answers = {result.criterion_id: result.criterion for result in review.evaluation.criteria_results}
+        if change == "state":
+            assert NESTED_OWED not in answers
+        else:
+>           assert answers[NESTED_OWED] == "changed live Check with  spaces"
+E           AssertionError: assert 'the check fi...nested states' == 'changed live... with  spaces'
+E             
+E             - changed live Check with  spaces
+E             + the check fire/owed-nested states
+
+tests/chains/test_native_fire.py:822: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 14:13:24 [info     ] repo_visibility_resolved       repo_url=https://github.com/owner/repo.git visibility=unknown
+2026-09-12 14:13:24 [info     ] scope_base_resolved            base_branch=main base_role=None input_count=0
+2026-09-12 14:13:24 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:13:24 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 14:13:24 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=branch_name
+2026-09-12 14:13:24 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 14:13:25 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:13:25 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=ralph_evaluator stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 14:13:25 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:13:25 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=post_merge_review stop_reason=None subtype=result total_cost_usd=None usage=None
+------------------------------ Captured log call -------------------------------
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.fire_spec.TrackerSpec from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.fire_spec', 'TrackerSpec')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.criteria.TrackerCriterionSet from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.criteria', 'TrackerCriterionSet')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.gating.RepoVisibility from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.gating', 'RepoVisibility')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.fire_spec.TrackerSpec from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.fire_spec', 'TrackerSpec')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.criteria.TrackerCriterionSet from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.criteria', 'TrackerCriterionSet')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.gating.RepoVisibility from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.gating', 'RepoVisibility')]
+_ test_native_fresh_engine_resume_reads_current_checks[changed-check-review_against_ticket] _
+
+barrier = 'review_against_ticket', change = 'changed-check'
+
+    @pytest.mark.parametrize("barrier", ["run_ralph_loop", "review_against_ticket"])
+    @pytest.mark.parametrize("change", ["changed-check", "state", "missing-check", "outage"])
+    async def test_native_fresh_engine_resume_reads_current_checks(barrier, change):
+        port = CountingTracker()
+        saver = InMemorySaver()
+        executor = NativeExecutor([native_evaluation()])
+        fire = engine(criteria=TrackerCriteria(tracker=port), executor=executor,
+                      real_loop=True, checkpointer=saver)
+        initial, config = fire.prepare(
+            prompt="Implement the requested behavior", issue_key=None,
+            repo_path="/tmp/fire", repo_url="https://github.com/owner/repo",
+            base_spec=trunk_base("main"), scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT),
+            permission_mode=PermissionMode.UNATTENDED, allowed_tools=["Bash"],
+            cache_key="native-fire",
+        )
+        async for _ in fire.native_graph.astream(initial, config=config, interrupt_before=[barrier]):
+            pass
+        paused = fire.native_graph.get_state(config)
+        assert paused.next == (barrier,)
+        frozen = paused.values["fire_spec"]
+        change_tracker(port, change)
+        remaining = {key: check_of(key) for key in OWED_KEYS if key != NESTED_OWED}
+        resumed_executor = NativeExecutor([
+            native_evaluation(checks=remaining if change == "state" else None),
+            native_evaluation(checks=remaining if change == "state" else None),
+        ])
+        resumed = engine(criteria=TrackerCriteria(tracker=port), executor=resumed_executor,
+                         real_loop=True, checkpointer=saver)
+        if change in {"missing-check", "outage"}:
+            error = FireSpecEntryError if change == "outage" else InvalidFireCriterionError
+            with pytest.raises(error):
+                async for _ in resumed.native_graph.astream(None, config=config, stream_mode="custom"):
+                    pass
+            assert resumed_executor.execution_prompts == []
+            assert resumed_executor.evaluation_prompts == []
+            return
+        events = [event async for event in resumed.native_graph.astream(None, config=config, stream_mode="custom")]
+        review = next(event for event in events if isinstance(event, WorkflowReviewEvent))
+        assert review.passed
+        answers = {result.criterion_id: result.criterion for result in review.evaluation.criteria_results}
+        if change == "state":
+            assert NESTED_OWED not in answers
+        else:
+>           assert answers[NESTED_OWED] == "changed live Check with  spaces"
+E           AssertionError: assert 'the check fi...nested states' == 'changed live... with  spaces'
+E             
+E             - changed live Check with  spaces
+E             + the check fire/owed-nested states
+
+tests/chains/test_native_fire.py:822: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 14:13:26 [info     ] repo_visibility_resolved       repo_url=https://github.com/owner/repo.git visibility=unknown
+2026-09-12 14:13:26 [info     ] scope_base_resolved            base_branch=main base_role=None input_count=0
+2026-09-12 14:13:26 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:13:26 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 14:13:26 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=branch_name
+2026-09-12 14:13:26 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 14:13:26 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:13:26 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=ralph_evaluator stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 14:13:27 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:13:27 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=post_merge_review stop_reason=None subtype=result total_cost_usd=None usage=None
+------------------------------ Captured log call -------------------------------
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.fire_spec.TrackerSpec from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.fire_spec', 'TrackerSpec')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.criteria.TrackerCriterionSet from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.criteria', 'TrackerCriterionSet')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.gating.RepoVisibility from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.gating', 'RepoVisibility')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.trajectory.LoopTrajectory from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.trajectory', 'LoopTrajectory')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.fire_spec.TrackerSpec from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.fire_spec', 'TrackerSpec')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.criteria.TrackerCriterionSet from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.criteria', 'TrackerCriterionSet')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.gating.RepoVisibility from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.gating', 'RepoVisibility')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.trajectory.LoopTrajectory from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.trajectory', 'LoopTrajectory')]
+__ test_native_fresh_engine_resume_reads_current_checks[state-run_ralph_loop] __
+
+barrier = 'run_ralph_loop', change = 'state'
+
+    @pytest.mark.parametrize("barrier", ["run_ralph_loop", "review_against_ticket"])
+    @pytest.mark.parametrize("change", ["changed-check", "state", "missing-check", "outage"])
+    async def test_native_fresh_engine_resume_reads_current_checks(barrier, change):
+        port = CountingTracker()
+        saver = InMemorySaver()
+        executor = NativeExecutor([native_evaluation()])
+        fire = engine(criteria=TrackerCriteria(tracker=port), executor=executor,
+                      real_loop=True, checkpointer=saver)
+        initial, config = fire.prepare(
+            prompt="Implement the requested behavior", issue_key=None,
+            repo_path="/tmp/fire", repo_url="https://github.com/owner/repo",
+            base_spec=trunk_base("main"), scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT),
+            permission_mode=PermissionMode.UNATTENDED, allowed_tools=["Bash"],
+            cache_key="native-fire",
+        )
+        async for _ in fire.native_graph.astream(initial, config=config, interrupt_before=[barrier]):
+            pass
+        paused = fire.native_graph.get_state(config)
+        assert paused.next == (barrier,)
+        frozen = paused.values["fire_spec"]
+        change_tracker(port, change)
+        remaining = {key: check_of(key) for key in OWED_KEYS if key != NESTED_OWED}
+        resumed_executor = NativeExecutor([
+            native_evaluation(checks=remaining if change == "state" else None),
+            native_evaluation(checks=remaining if change == "state" else None),
+        ])
+        resumed = engine(criteria=TrackerCriteria(tracker=port), executor=resumed_executor,
+                         real_loop=True, checkpointer=saver)
+        if change in {"missing-check", "outage"}:
+            error = FireSpecEntryError if change == "outage" else InvalidFireCriterionError
+            with pytest.raises(error):
+                async for _ in resumed.native_graph.astream(None, config=config, stream_mode="custom"):
+                    pass
+            assert resumed_executor.execution_prompts == []
+            assert resumed_executor.evaluation_prompts == []
+            return
+        events = [event async for event in resumed.native_graph.astream(None, config=config, stream_mode="custom")]
+>       review = next(event for event in events if isinstance(event, WorkflowReviewEvent))
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       StopIteration
+
+tests/chains/test_native_fire.py:816: StopIteration
+
+The above exception was the direct cause of the following exception:
+
+self = <Coroutine test_native_fresh_engine_resume_reads_current_checks[state-run_ralph_loop]>
+
+    def runtest(self) -> None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        runner = self._request.getfixturevalue(runner_fixture_id)
+        context = contextvars.copy_context()
+        synchronized_obj = _synchronize_coroutine(
+            getattr(*self._synchronization_target_attr), runner, context
+        )
+        with MonkeyPatch.context() as c:
+            c.setattr(*self._synchronization_target_attr, synchronized_obj)
+>           super().runtest()
+
+.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:469: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:716: in inner
+    runner.run(coro, context=context)
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <_UnixSelectorEventLoop running=False closed=False debug=False>
+future = <Task finished name='Task-372' coro=<test_native_fresh_engine_resume_reads_current_checks() done, defined at /private/...03-recovery-native-fire/tests/chains/test_native_fire.py:779> exception=RuntimeError('coroutine raised StopIteration')>
+
+    def run_until_complete(self, future):
+        """Run until the Future is done.
+    
+        If the argument is a coroutine, it is wrapped in a Task.
+    
+        WARNING: It would be disastrous to call run_until_complete()
+        with the same coroutine twice -- it would wrap it in two
+        different Tasks and that can't be good.
+    
+        Return the Future's result, or raise its exception.
+        """
+        self._check_closed()
+        self._check_running()
+    
+        new_task = not futures.isfuture(future)
+        future = tasks.ensure_future(future, loop=self)
+        if new_task:
+            # An exception is raised if the future didn't complete, so there
+            # is no need to log the "destroy pending task" message
+            future._log_destroy_pending = False
+    
+        future.add_done_callback(_run_until_complete_cb)
+        try:
+            self.run_forever()
+        except:
+            if new_task and future.done() and not future.cancelled():
+                # The coroutine raised a BaseException. Consume the exception
+                # to not log a warning, the caller doesn't have access to the
+                # local task.
+                future.exception()
+            raise
+        finally:
+            future.remove_done_callback(_run_until_complete_cb)
+        if not future.done():
+            raise RuntimeError('Event loop stopped before Future completed.')
+    
+>       return future.result()
+               ^^^^^^^^^^^^^^^
+E       RuntimeError: coroutine raised StopIteration
+
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/base_events.py:691: RuntimeError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 14:13:27 [info     ] repo_visibility_resolved       repo_url=https://github.com/owner/repo.git visibility=unknown
+2026-09-12 14:13:27 [info     ] scope_base_resolved            base_branch=main base_role=None input_count=0
+2026-09-12 14:13:27 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:13:27 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 14:13:27 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=branch_name
+2026-09-12 14:13:27 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 14:13:28 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:13:28 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=ralph_evaluator stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 14:13:28 [warning  ] redispatch_breach              attempt=1 breach='Returned ids are not a permutation of the dispatched criteria (missing: fire/owed-nested; duplicate: -; unknown: -)' breach_class=CriteriaFanInError max_attempts=1 site=ralph_evaluator
+2026-09-12 14:13:28 [warning  ] fan_in_exhausted               attempts=1 dispatched_count=3 duplicate_ids=[] iteration=1 missing_ids=['fire/owed-nested'] site=ralph_evaluator unknown_ids=[]
+2026-09-12 14:13:28 [info     ] stall_exit_no_commit_to_land   feature_branch=kodezart/test-branch-57a2560a total_iterations=1
+------------------------------ Captured log call -------------------------------
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.fire_spec.TrackerSpec from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.fire_spec', 'TrackerSpec')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.criteria.TrackerCriterionSet from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.criteria', 'TrackerCriterionSet')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.gating.RepoVisibility from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.gating', 'RepoVisibility')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.fire_spec.TrackerSpec from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.fire_spec', 'TrackerSpec')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.criteria.TrackerCriterionSet from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.criteria', 'TrackerCriterionSet')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.gating.RepoVisibility from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.gating', 'RepoVisibility')]
+_ test_native_fresh_engine_resume_reads_current_checks[state-review_against_ticket] _
+
+barrier = 'review_against_ticket', change = 'state'
+
+    @pytest.mark.parametrize("barrier", ["run_ralph_loop", "review_against_ticket"])
+    @pytest.mark.parametrize("change", ["changed-check", "state", "missing-check", "outage"])
+    async def test_native_fresh_engine_resume_reads_current_checks(barrier, change):
+        port = CountingTracker()
+        saver = InMemorySaver()
+        executor = NativeExecutor([native_evaluation()])
+        fire = engine(criteria=TrackerCriteria(tracker=port), executor=executor,
+                      real_loop=True, checkpointer=saver)
+        initial, config = fire.prepare(
+            prompt="Implement the requested behavior", issue_key=None,
+            repo_path="/tmp/fire", repo_url="https://github.com/owner/repo",
+            base_spec=trunk_base("main"), scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT),
+            permission_mode=PermissionMode.UNATTENDED, allowed_tools=["Bash"],
+            cache_key="native-fire",
+        )
+        async for _ in fire.native_graph.astream(initial, config=config, interrupt_before=[barrier]):
+            pass
+        paused = fire.native_graph.get_state(config)
+        assert paused.next == (barrier,)
+        frozen = paused.values["fire_spec"]
+        change_tracker(port, change)
+        remaining = {key: check_of(key) for key in OWED_KEYS if key != NESTED_OWED}
+        resumed_executor = NativeExecutor([
+            native_evaluation(checks=remaining if change == "state" else None),
+            native_evaluation(checks=remaining if change == "state" else None),
+        ])
+        resumed = engine(criteria=TrackerCriteria(tracker=port), executor=resumed_executor,
+                         real_loop=True, checkpointer=saver)
+        if change in {"missing-check", "outage"}:
+            error = FireSpecEntryError if change == "outage" else InvalidFireCriterionError
+            with pytest.raises(error):
+                async for _ in resumed.native_graph.astream(None, config=config, stream_mode="custom"):
+                    pass
+            assert resumed_executor.execution_prompts == []
+            assert resumed_executor.evaluation_prompts == []
+            return
+        events = [event async for event in resumed.native_graph.astream(None, config=config, stream_mode="custom")]
+        review = next(event for event in events if isinstance(event, WorkflowReviewEvent))
+>       assert review.passed
+E       AssertionError: assert False
+E        +  where False = WorkflowReviewEvent(type='workflow_review', passed=False, evaluation=AcceptanceCriteriaOutput(criteria_results=[Criter...fan_in=FanInReport(missing_ids=['fire/owed-nested'], unknown_ids=[], duplicate_ids=[], dispatched_count=3, attempts=2)).passed
+
+tests/chains/test_native_fire.py:817: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 14:13:30 [info     ] repo_visibility_resolved       repo_url=https://github.com/owner/repo.git visibility=unknown
+2026-09-12 14:13:30 [info     ] scope_base_resolved            base_branch=main base_role=None input_count=0
+2026-09-12 14:13:30 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:13:30 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 14:13:30 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=branch_name
+2026-09-12 14:13:30 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 14:13:30 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:13:30 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=ralph_evaluator stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 14:13:31 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:13:31 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=post_merge_review stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 14:13:31 [warning  ] redispatch_breach              attempt=1 breach='Returned ids are not a permutation of the dispatched criteria (missing: fire/owed-nested; duplicate: -; unknown: -)' breach_class=CriteriaFanInError max_attempts=2 site=post_merge_review
+2026-09-12 14:13:31 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:13:31 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=post_merge_review stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 14:13:31 [warning  ] redispatch_breach              attempt=2 breach='Returned ids are not a permutation of the dispatched criteria (missing: fire/owed-nested; duplicate: -; unknown: -)' breach_class=CriteriaFanInError max_attempts=2 site=post_merge_review
+2026-09-12 14:13:31 [warning  ] fan_in_exhausted               attempts=2 dispatched_count=3 duplicate_ids=[] iteration=None missing_ids=['fire/owed-nested'] site=post_merge_review unknown_ids=[]
+------------------------------ Captured log call -------------------------------
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.fire_spec.TrackerSpec from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.fire_spec', 'TrackerSpec')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.criteria.TrackerCriterionSet from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.criteria', 'TrackerCriterionSet')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.gating.RepoVisibility from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.gating', 'RepoVisibility')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.trajectory.LoopTrajectory from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.trajectory', 'LoopTrajectory')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.fire_spec.TrackerSpec from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.fire_spec', 'TrackerSpec')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.criteria.TrackerCriterionSet from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.criteria', 'TrackerCriterionSet')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.gating.RepoVisibility from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.gating', 'RepoVisibility')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.trajectory.LoopTrajectory from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.trajectory', 'LoopTrajectory')]
+_ test_native_fresh_engine_resume_reads_current_checks[missing-check-run_ralph_loop] _
+
+barrier = 'run_ralph_loop', change = 'missing-check'
+
+    @pytest.mark.parametrize("barrier", ["run_ralph_loop", "review_against_ticket"])
+    @pytest.mark.parametrize("change", ["changed-check", "state", "missing-check", "outage"])
+    async def test_native_fresh_engine_resume_reads_current_checks(barrier, change):
+        port = CountingTracker()
+        saver = InMemorySaver()
+        executor = NativeExecutor([native_evaluation()])
+        fire = engine(criteria=TrackerCriteria(tracker=port), executor=executor,
+                      real_loop=True, checkpointer=saver)
+        initial, config = fire.prepare(
+            prompt="Implement the requested behavior", issue_key=None,
+            repo_path="/tmp/fire", repo_url="https://github.com/owner/repo",
+            base_spec=trunk_base("main"), scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT),
+            permission_mode=PermissionMode.UNATTENDED, allowed_tools=["Bash"],
+            cache_key="native-fire",
+        )
+        async for _ in fire.native_graph.astream(initial, config=config, interrupt_before=[barrier]):
+            pass
+        paused = fire.native_graph.get_state(config)
+        assert paused.next == (barrier,)
+        frozen = paused.values["fire_spec"]
+        change_tracker(port, change)
+        remaining = {key: check_of(key) for key in OWED_KEYS if key != NESTED_OWED}
+        resumed_executor = NativeExecutor([
+            native_evaluation(checks=remaining if change == "state" else None),
+            native_evaluation(checks=remaining if change == "state" else None),
+        ])
+        resumed = engine(criteria=TrackerCriteria(tracker=port), executor=resumed_executor,
+                         real_loop=True, checkpointer=saver)
+        if change in {"missing-check", "outage"}:
+            error = FireSpecEntryError if change == "outage" else InvalidFireCriterionError
+>           with pytest.raises(error):
+                 ^^^^^^^^^^^^^^^^^^^^
+E           Failed: DID NOT RAISE <class 'kodezart.domain.errors.InvalidFireCriterionError'>
+
+tests/chains/test_native_fire.py:809: Failed
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 14:13:32 [info     ] repo_visibility_resolved       repo_url=https://github.com/owner/repo.git visibility=unknown
+2026-09-12 14:13:32 [info     ] scope_base_resolved            base_branch=main base_role=None input_count=0
+2026-09-12 14:13:32 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:13:32 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 14:13:32 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=branch_name
+2026-09-12 14:13:32 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 14:13:33 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:13:33 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=ralph_evaluator stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 14:13:33 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:13:33 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=post_merge_review stop_reason=None subtype=result total_cost_usd=None usage=None
+------------------------------ Captured log call -------------------------------
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.fire_spec.TrackerSpec from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.fire_spec', 'TrackerSpec')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.criteria.TrackerCriterionSet from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.criteria', 'TrackerCriterionSet')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.gating.RepoVisibility from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.gating', 'RepoVisibility')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.fire_spec.TrackerSpec from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.fire_spec', 'TrackerSpec')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.criteria.TrackerCriterionSet from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.criteria', 'TrackerCriterionSet')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.gating.RepoVisibility from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.gating', 'RepoVisibility')]
+_ test_native_fresh_engine_resume_reads_current_checks[missing-check-review_against_ticket] _
+
+barrier = 'review_against_ticket', change = 'missing-check'
+
+    @pytest.mark.parametrize("barrier", ["run_ralph_loop", "review_against_ticket"])
+    @pytest.mark.parametrize("change", ["changed-check", "state", "missing-check", "outage"])
+    async def test_native_fresh_engine_resume_reads_current_checks(barrier, change):
+        port = CountingTracker()
+        saver = InMemorySaver()
+        executor = NativeExecutor([native_evaluation()])
+        fire = engine(criteria=TrackerCriteria(tracker=port), executor=executor,
+                      real_loop=True, checkpointer=saver)
+        initial, config = fire.prepare(
+            prompt="Implement the requested behavior", issue_key=None,
+            repo_path="/tmp/fire", repo_url="https://github.com/owner/repo",
+            base_spec=trunk_base("main"), scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT),
+            permission_mode=PermissionMode.UNATTENDED, allowed_tools=["Bash"],
+            cache_key="native-fire",
+        )
+        async for _ in fire.native_graph.astream(initial, config=config, interrupt_before=[barrier]):
+            pass
+        paused = fire.native_graph.get_state(config)
+        assert paused.next == (barrier,)
+        frozen = paused.values["fire_spec"]
+        change_tracker(port, change)
+        remaining = {key: check_of(key) for key in OWED_KEYS if key != NESTED_OWED}
+        resumed_executor = NativeExecutor([
+            native_evaluation(checks=remaining if change == "state" else None),
+            native_evaluation(checks=remaining if change == "state" else None),
+        ])
+        resumed = engine(criteria=TrackerCriteria(tracker=port), executor=resumed_executor,
+                         real_loop=True, checkpointer=saver)
+        if change in {"missing-check", "outage"}:
+            error = FireSpecEntryError if change == "outage" else InvalidFireCriterionError
+>           with pytest.raises(error):
+                 ^^^^^^^^^^^^^^^^^^^^
+E           Failed: DID NOT RAISE <class 'kodezart.domain.errors.InvalidFireCriterionError'>
+
+tests/chains/test_native_fire.py:809: Failed
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 14:13:34 [info     ] repo_visibility_resolved       repo_url=https://github.com/owner/repo.git visibility=unknown
+2026-09-12 14:13:34 [info     ] scope_base_resolved            base_branch=main base_role=None input_count=0
+2026-09-12 14:13:34 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:13:34 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 14:13:34 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=branch_name
+2026-09-12 14:13:34 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 14:13:34 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:13:34 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=ralph_evaluator stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 14:13:35 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:13:35 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=post_merge_review stop_reason=None subtype=result total_cost_usd=None usage=None
+------------------------------ Captured log call -------------------------------
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.fire_spec.TrackerSpec from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.fire_spec', 'TrackerSpec')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.criteria.TrackerCriterionSet from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.criteria', 'TrackerCriterionSet')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.gating.RepoVisibility from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.gating', 'RepoVisibility')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.trajectory.LoopTrajectory from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.trajectory', 'LoopTrajectory')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.fire_spec.TrackerSpec from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.fire_spec', 'TrackerSpec')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.criteria.TrackerCriterionSet from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.criteria', 'TrackerCriterionSet')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.gating.RepoVisibility from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.gating', 'RepoVisibility')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.trajectory.LoopTrajectory from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.trajectory', 'LoopTrajectory')]
+_ test_native_fresh_engine_resume_reads_current_checks[outage-run_ralph_loop] __
+
+barrier = 'run_ralph_loop', change = 'outage'
+
+    @pytest.mark.parametrize("barrier", ["run_ralph_loop", "review_against_ticket"])
+    @pytest.mark.parametrize("change", ["changed-check", "state", "missing-check", "outage"])
+    async def test_native_fresh_engine_resume_reads_current_checks(barrier, change):
+        port = CountingTracker()
+        saver = InMemorySaver()
+        executor = NativeExecutor([native_evaluation()])
+        fire = engine(criteria=TrackerCriteria(tracker=port), executor=executor,
+                      real_loop=True, checkpointer=saver)
+        initial, config = fire.prepare(
+            prompt="Implement the requested behavior", issue_key=None,
+            repo_path="/tmp/fire", repo_url="https://github.com/owner/repo",
+            base_spec=trunk_base("main"), scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT),
+            permission_mode=PermissionMode.UNATTENDED, allowed_tools=["Bash"],
+            cache_key="native-fire",
+        )
+        async for _ in fire.native_graph.astream(initial, config=config, interrupt_before=[barrier]):
+            pass
+        paused = fire.native_graph.get_state(config)
+        assert paused.next == (barrier,)
+        frozen = paused.values["fire_spec"]
+        change_tracker(port, change)
+        remaining = {key: check_of(key) for key in OWED_KEYS if key != NESTED_OWED}
+        resumed_executor = NativeExecutor([
+            native_evaluation(checks=remaining if change == "state" else None),
+            native_evaluation(checks=remaining if change == "state" else None),
+        ])
+        resumed = engine(criteria=TrackerCriteria(tracker=port), executor=resumed_executor,
+                         real_loop=True, checkpointer=saver)
+        if change in {"missing-check", "outage"}:
+            error = FireSpecEntryError if change == "outage" else InvalidFireCriterionError
+>           with pytest.raises(error):
+                 ^^^^^^^^^^^^^^^^^^^^
+E           Failed: DID NOT RAISE <class 'kodezart.domain.errors.FireSpecEntryError'>
+
+tests/chains/test_native_fire.py:809: Failed
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 14:13:36 [info     ] repo_visibility_resolved       repo_url=https://github.com/owner/repo.git visibility=unknown
+2026-09-12 14:13:36 [info     ] scope_base_resolved            base_branch=main base_role=None input_count=0
+2026-09-12 14:13:36 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:13:36 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 14:13:36 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=branch_name
+2026-09-12 14:13:36 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 14:13:37 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:13:37 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=ralph_evaluator stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 14:13:37 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:13:37 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=post_merge_review stop_reason=None subtype=result total_cost_usd=None usage=None
+------------------------------ Captured log call -------------------------------
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.fire_spec.TrackerSpec from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.fire_spec', 'TrackerSpec')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.criteria.TrackerCriterionSet from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.criteria', 'TrackerCriterionSet')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.gating.RepoVisibility from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.gating', 'RepoVisibility')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.fire_spec.TrackerSpec from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.fire_spec', 'TrackerSpec')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.criteria.TrackerCriterionSet from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.criteria', 'TrackerCriterionSet')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.gating.RepoVisibility from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.gating', 'RepoVisibility')]
+_ test_native_fresh_engine_resume_reads_current_checks[outage-review_against_ticket] _
+
+barrier = 'review_against_ticket', change = 'outage'
+
+    @pytest.mark.parametrize("barrier", ["run_ralph_loop", "review_against_ticket"])
+    @pytest.mark.parametrize("change", ["changed-check", "state", "missing-check", "outage"])
+    async def test_native_fresh_engine_resume_reads_current_checks(barrier, change):
+        port = CountingTracker()
+        saver = InMemorySaver()
+        executor = NativeExecutor([native_evaluation()])
+        fire = engine(criteria=TrackerCriteria(tracker=port), executor=executor,
+                      real_loop=True, checkpointer=saver)
+        initial, config = fire.prepare(
+            prompt="Implement the requested behavior", issue_key=None,
+            repo_path="/tmp/fire", repo_url="https://github.com/owner/repo",
+            base_spec=trunk_base("main"), scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT),
+            permission_mode=PermissionMode.UNATTENDED, allowed_tools=["Bash"],
+            cache_key="native-fire",
+        )
+        async for _ in fire.native_graph.astream(initial, config=config, interrupt_before=[barrier]):
+            pass
+        paused = fire.native_graph.get_state(config)
+        assert paused.next == (barrier,)
+        frozen = paused.values["fire_spec"]
+        change_tracker(port, change)
+        remaining = {key: check_of(key) for key in OWED_KEYS if key != NESTED_OWED}
+        resumed_executor = NativeExecutor([
+            native_evaluation(checks=remaining if change == "state" else None),
+            native_evaluation(checks=remaining if change == "state" else None),
+        ])
+        resumed = engine(criteria=TrackerCriteria(tracker=port), executor=resumed_executor,
+                         real_loop=True, checkpointer=saver)
+        if change in {"missing-check", "outage"}:
+            error = FireSpecEntryError if change == "outage" else InvalidFireCriterionError
+>           with pytest.raises(error):
+                 ^^^^^^^^^^^^^^^^^^^^
+E           Failed: DID NOT RAISE <class 'kodezart.domain.errors.FireSpecEntryError'>
+
+tests/chains/test_native_fire.py:809: Failed
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 14:13:38 [info     ] repo_visibility_resolved       repo_url=https://github.com/owner/repo.git visibility=unknown
+2026-09-12 14:13:38 [info     ] scope_base_resolved            base_branch=main base_role=None input_count=0
+2026-09-12 14:13:38 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:13:38 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 14:13:38 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=branch_name
+2026-09-12 14:13:38 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 14:13:38 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:13:38 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=ralph_evaluator stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 14:13:39 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:13:39 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=post_merge_review stop_reason=None subtype=result total_cost_usd=None usage=None
+------------------------------ Captured log call -------------------------------
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.fire_spec.TrackerSpec from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.fire_spec', 'TrackerSpec')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.criteria.TrackerCriterionSet from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.criteria', 'TrackerCriterionSet')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.gating.RepoVisibility from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.gating', 'RepoVisibility')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.trajectory.LoopTrajectory from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.trajectory', 'LoopTrajectory')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.fire_spec.TrackerSpec from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.fire_spec', 'TrackerSpec')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.criteria.TrackerCriterionSet from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.criteria', 'TrackerCriterionSet')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.gating.RepoVisibility from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.gating', 'RepoVisibility')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.trajectory.LoopTrajectory from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.trajectory', 'LoopTrajectory')]
+=========================== short test summary info ============================
+FAILED tests/chains/test_native_fire.py::test_native_inner_iterations_read_current_checks[changed-check]
+FAILED tests/chains/test_native_fire.py::test_native_inner_iterations_read_current_checks[state]
+FAILED tests/chains/test_native_fire.py::test_native_inner_iterations_read_current_checks[missing-check]
+FAILED tests/chains/test_native_fire.py::test_native_inner_iterations_read_current_checks[outage]
+FAILED tests/chains/test_native_fire.py::test_native_fresh_engine_resume_reads_current_checks[changed-check-run_ralph_loop]
+FAILED tests/chains/test_native_fire.py::test_native_fresh_engine_resume_reads_current_checks[changed-check-review_against_ticket]
+FAILED tests/chains/test_native_fire.py::test_native_fresh_engine_resume_reads_current_checks[state-run_ralph_loop]
+FAILED tests/chains/test_native_fire.py::test_native_fresh_engine_resume_reads_current_checks[state-review_against_ticket]
+FAILED tests/chains/test_native_fire.py::test_native_fresh_engine_resume_reads_current_checks[missing-check-run_ralph_loop]
+FAILED tests/chains/test_native_fire.py::test_native_fresh_engine_resume_reads_current_checks[missing-check-review_against_ticket]
+FAILED tests/chains/test_native_fire.py::test_native_fresh_engine_resume_reads_current_checks[outage-run_ralph_loop]
+FAILED tests/chains/test_native_fire.py::test_native_fresh_engine_resume_reads_current_checks[outage-review_against_ticket]
+12 failed, 21 deselected in 24.90s

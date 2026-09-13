@@ -1,0 +1,44 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+______ test_native_resume_rejects_changed_index_flags[--assume-unchanged] ______
+
+repository = (PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1948/test_native_resume_rejects_cha0/repo'), '9933ba9e9e1a9790a437afa082d82ae8a4c636c9')
+flag = '--assume-unchanged'
+
+    @pytest.mark.parametrize("flag", ["--assume-unchanged", "--skip-worktree"])
+    async def test_native_resume_rejects_changed_index_flags(repository, flag):
+        service, _cache, owner, workspace = await acquired(repository)
+        snapshot = await owner.capture(workspace_path=workspace, holder="job")
+        await git(workspace, "update-index", flag, "policy.py")
+        try:
+>           with pytest.raises(WorkspaceError):
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           Failed: DID NOT RAISE <class 'kodezart.domain.errors.WorkspaceError'>
+
+../kodezart-recovery-session/test_native_index_flags.py:17: Failed
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 22:28:41 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-218d25d9ac254161897536b22fa81e50 workspace_id=218d25d9ac254161897536b22fa81e50
+2026-09-12 22:28:43 [info     ] workspace_released             workspace_id=218d25d9ac254161897536b22fa81e50
+_______ test_native_resume_rejects_changed_index_flags[--skip-worktree] ________
+
+repository = (PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1948/test_native_resume_rejects_cha1/repo'), '7adf5f941ac40d7836997de2caaaa3c41f003cf1')
+flag = '--skip-worktree'
+
+    @pytest.mark.parametrize("flag", ["--assume-unchanged", "--skip-worktree"])
+    async def test_native_resume_rejects_changed_index_flags(repository, flag):
+        service, _cache, owner, workspace = await acquired(repository)
+        snapshot = await owner.capture(workspace_path=workspace, holder="job")
+        await git(workspace, "update-index", flag, "policy.py")
+        try:
+>           with pytest.raises(WorkspaceError):
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           Failed: DID NOT RAISE <class 'kodezart.domain.errors.WorkspaceError'>
+
+../kodezart-recovery-session/test_native_index_flags.py:17: Failed
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 22:28:46 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-ddb7e0295289471f86174585d86fdb61 workspace_id=ddb7e0295289471f86174585d86fdb61
+2026-09-12 22:28:48 [info     ] workspace_released             workspace_id=ddb7e0295289471f86174585d86fdb61
+=========================== short test summary info ============================
+FAILED ::test_native_resume_rejects_changed_index_flags[--assume-unchanged]
+FAILED ::test_native_resume_rejects_changed_index_flags[--skip-worktree] - Fa...
+2 failed in 19.29s

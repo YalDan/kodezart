@@ -1,0 +1,35 @@
+........................................................................ [ 14%]
+........................................................................ [ 28%]
+........................................................................ [ 43%]
+........................................................................ [ 57%]
+....................................................................F... [ 72%]
+........................................................................ [ 86%]
+..................................................................       [100%]
+=================================== FAILURES ===================================
+___________ test_generic_read_requires_explicit_native_linkage[True] ___________
+
+reported = True
+
+    @pytest.mark.parametrize("reported", [True, False])
+    async def test_generic_read_requires_explicit_native_linkage(reported):
+        escalation, _ = records()
+        assert escalation["parentId"] is None
+        if not reported:
+            escalation.pop("parentId")
+        server = CommentPageServer({None: {"comments": [escalation], "hasNextPage": False}})
+        tracker = linear_over_fake_mcp(server)
+        if reported:
+            comments = await tracker.list_comments(issue_key=APPROVED_ISSUE)
+            assert len(comments) == 1
+            assert comments[0].reply_to is None
+        else:
+            with pytest.raises(TrackerProtocolError):
+                await tracker.list_comments(issue_key=APPROVED_ISSUE)
+>       with pytest.raises(EscalationReadError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'kodezart.domain.errors.EscalationReadError'>
+
+tests/tracker/test_escalation_resolution_boundary.py:95: Failed
+=========================== short test summary info ============================
+FAILED tests/tracker/test_escalation_resolution_boundary.py::test_generic_read_requires_explicit_native_linkage[True]
+1 failed, 497 passed in 6.21s

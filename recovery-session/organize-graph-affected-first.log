@@ -1,0 +1,346 @@
+........................................................................ [ 14%]
+........................................................................ [ 29%]
+........................................................................ [ 44%]
+........................................................................ [ 58%]
+..........................................FFFFFFFF...................... [ 73%]
+........................................................................ [ 88%]
+..........................................................               [100%]
+=================================== FAILURES ===================================
+____ test_each_role_renders_its_own_data_file[ORGANIZE_ASSESS-claude-opus] _____
+
+set_name = 'claude-opus', name = 'ORGANIZE_ASSESS'
+
+    @pytest.mark.parametrize("set_name", [OPUS_SET, V5_SET])
+    @pytest.mark.parametrize("name", ORGANIZE_ROLES)
+    def test_each_role_renders_its_own_data_file(set_name: str, name: str) -> None:
+        key = PromptKey[name]
+        registry = load_registry(default_set=set_name)
+        template = registry.template_for(key)
+        assert registry.resolution_table()[key] == set_name
+        assert (default_sets_root() / set_name / f"{key.value}.md").is_file()
+>       rendered = template.render(ORGANIZE_CASE)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/prompts/test_organize_roles.py:61: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/core/prompt_rendering.py:206: in render
+    return render_template(self.body, merged)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+body = '{{skills_reference}}Assess whether the issue can be implemented from its own specification without\ninventing a decis...new classes as well as surviving ones.\n<defect_classes>\n{{#each defect_classes}}{{this}}\n{{/each}}</defect_classes>'
+bindings = {'base_ref': 'main', 'criterion_issue_bodies': ['Golden criterion issue body'], 'defect_classes': ['Golden defect class'], 'issue_body': 'Golden source issue body', ...}
+
+    def render_template(body: str, bindings: Mapping[str, object]) -> str:
+        """Render *body* against *bindings* — the one substitution implementation.
+    
+        Raises :class:`PromptRenderError` naming every unconditional reference
+        that had no binding.
+        """
+        nodes = _parse(body)
+        missing: list[str] = []
+        scopes: list[_Scope] = [_Scope(names=bindings, item=_ABSENT)]
+        rendered = _render_nodes(nodes, scopes, missing)
+        if missing:
+            msg = "Unbound template placeholders: " + ", ".join(missing)
+>           raise PromptRenderError(msg, missing=missing)
+E           kodezart.core.errors.PromptRenderError: Unbound template placeholders: organize_context
+
+src/kodezart/core/prompt_rendering.py:184: PromptRenderError
+____ test_each_role_renders_its_own_data_file[ORGANIZE_ASSESS-anthropic_v5] ____
+
+set_name = 'anthropic_v5', name = 'ORGANIZE_ASSESS'
+
+    @pytest.mark.parametrize("set_name", [OPUS_SET, V5_SET])
+    @pytest.mark.parametrize("name", ORGANIZE_ROLES)
+    def test_each_role_renders_its_own_data_file(set_name: str, name: str) -> None:
+        key = PromptKey[name]
+        registry = load_registry(default_set=set_name)
+        template = registry.template_for(key)
+        assert registry.resolution_table()[key] == set_name
+        assert (default_sets_root() / set_name / f"{key.value}.md").is_file()
+>       rendered = template.render(ORGANIZE_CASE)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/prompts/test_organize_roles.py:61: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/core/prompt_rendering.py:206: in render
+    return render_template(self.body, merged)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+body = 'Assess whether the issue can be implemented from its own specification without\ninventing a decision, and demonstrate...Ultrathink. Deeper reasoning is requested for this work — reason as thoroughly\nas the task warrants before you act.\n'
+bindings = {'base_ref': 'main', 'criterion_issue_bodies': ['Golden criterion issue body'], 'defect_classes': ['Golden defect class'], 'issue_body': 'Golden source issue body', ...}
+
+    def render_template(body: str, bindings: Mapping[str, object]) -> str:
+        """Render *body* against *bindings* — the one substitution implementation.
+    
+        Raises :class:`PromptRenderError` naming every unconditional reference
+        that had no binding.
+        """
+        nodes = _parse(body)
+        missing: list[str] = []
+        scopes: list[_Scope] = [_Scope(names=bindings, item=_ABSENT)]
+        rendered = _render_nodes(nodes, scopes, missing)
+        if missing:
+            msg = "Unbound template placeholders: " + ", ".join(missing)
+>           raise PromptRenderError(msg, missing=missing)
+E           kodezart.core.errors.PromptRenderError: Unbound template placeholders: organize_context
+
+src/kodezart/core/prompt_rendering.py:184: PromptRenderError
+____ test_each_role_renders_its_own_data_file[ORGANIZE_AUTHOR-claude-opus] _____
+
+set_name = 'claude-opus', name = 'ORGANIZE_AUTHOR'
+
+    @pytest.mark.parametrize("set_name", [OPUS_SET, V5_SET])
+    @pytest.mark.parametrize("name", ORGANIZE_ROLES)
+    def test_each_role_renders_its_own_data_file(set_name: str, name: str) -> None:
+        key = PromptKey[name]
+        registry = load_registry(default_set=set_name)
+        template = registry.template_for(key)
+        assert registry.resolution_table()[key] == set_name
+        assert (default_sets_root() / set_name / f"{key.value}.md").is_file()
+>       rendered = template.render(ORGANIZE_CASE)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/prompts/test_organize_roles.py:61: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/core/prompt_rendering.py:206: in render
+    return render_template(self.body, merged)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+body = '{{skills_reference}}Author the smallest evidence-grounded repair that makes the issue satisfy the\nsupplied mandate r...h}}</defect_classes>\n\n{{#if refusal_evidence}}<refusal_evidence>\n{{refusal_evidence}}\n</refusal_evidence>\n{{/if}}'
+bindings = {'base_ref': 'main', 'criterion_issue_bodies': ['Golden criterion issue body'], 'defect_classes': ['Golden defect class'], 'issue_body': 'Golden source issue body', ...}
+
+    def render_template(body: str, bindings: Mapping[str, object]) -> str:
+        """Render *body* against *bindings* — the one substitution implementation.
+    
+        Raises :class:`PromptRenderError` naming every unconditional reference
+        that had no binding.
+        """
+        nodes = _parse(body)
+        missing: list[str] = []
+        scopes: list[_Scope] = [_Scope(names=bindings, item=_ABSENT)]
+        rendered = _render_nodes(nodes, scopes, missing)
+        if missing:
+            msg = "Unbound template placeholders: " + ", ".join(missing)
+>           raise PromptRenderError(msg, missing=missing)
+E           kodezart.core.errors.PromptRenderError: Unbound template placeholders: organize_context
+
+src/kodezart/core/prompt_rendering.py:184: PromptRenderError
+____ test_each_role_renders_its_own_data_file[ORGANIZE_AUTHOR-anthropic_v5] ____
+
+set_name = 'anthropic_v5', name = 'ORGANIZE_AUTHOR'
+
+    @pytest.mark.parametrize("set_name", [OPUS_SET, V5_SET])
+    @pytest.mark.parametrize("name", ORGANIZE_ROLES)
+    def test_each_role_renders_its_own_data_file(set_name: str, name: str) -> None:
+        key = PromptKey[name]
+        registry = load_registry(default_set=set_name)
+        template = registry.template_for(key)
+        assert registry.resolution_table()[key] == set_name
+        assert (default_sets_root() / set_name / f"{key.value}.md").is_file()
+>       rendered = template.render(ORGANIZE_CASE)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/prompts/test_organize_roles.py:61: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/core/prompt_rendering.py:206: in render
+    return render_template(self.body, merged)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+body = 'Author the smallest evidence-grounded repair that makes the issue satisfy the\nsupplied mandate rubric. Return the re...Ultrathink. Deeper reasoning is requested for this work — reason as thoroughly\nas the task warrants before you act.\n'
+bindings = {'base_ref': 'main', 'criterion_issue_bodies': ['Golden criterion issue body'], 'defect_classes': ['Golden defect class'], 'issue_body': 'Golden source issue body', ...}
+
+    def render_template(body: str, bindings: Mapping[str, object]) -> str:
+        """Render *body* against *bindings* — the one substitution implementation.
+    
+        Raises :class:`PromptRenderError` naming every unconditional reference
+        that had no binding.
+        """
+        nodes = _parse(body)
+        missing: list[str] = []
+        scopes: list[_Scope] = [_Scope(names=bindings, item=_ABSENT)]
+        rendered = _render_nodes(nodes, scopes, missing)
+        if missing:
+            msg = "Unbound template placeholders: " + ", ".join(missing)
+>           raise PromptRenderError(msg, missing=missing)
+E           kodezart.core.errors.PromptRenderError: Unbound template placeholders: organize_context
+
+src/kodezart/core/prompt_rendering.py:184: PromptRenderError
+____ test_each_role_renders_its_own_data_file[ORGANIZE_VERIFY-claude-opus] _____
+
+set_name = 'claude-opus', name = 'ORGANIZE_VERIFY'
+
+    @pytest.mark.parametrize("set_name", [OPUS_SET, V5_SET])
+    @pytest.mark.parametrize("name", ORGANIZE_ROLES)
+    def test_each_role_renders_its_own_data_file(set_name: str, name: str) -> None:
+        key = PromptKey[name]
+        registry = load_registry(default_set=set_name)
+        template = registry.template_for(key)
+        assert registry.resolution_table()[key] == set_name
+        assert (default_sets_root() / set_name / f"{key.value}.md").is_file()
+>       rendered = template.render(ORGANIZE_CASE)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/prompts/test_organize_roles.py:61: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/core/prompt_rendering.py:206: in render
+    return render_template(self.body, merged)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+body = '{{skills_reference}}Adversarially verify the current issue against the supplied mandate rubric.\nWork alone. Return t...new classes as well as surviving ones.\n<defect_classes>\n{{#each defect_classes}}{{this}}\n{{/each}}</defect_classes>'
+bindings = {'base_ref': 'main', 'criterion_issue_bodies': ['Golden criterion issue body'], 'defect_classes': ['Golden defect class'], 'issue_body': 'Golden source issue body', ...}
+
+    def render_template(body: str, bindings: Mapping[str, object]) -> str:
+        """Render *body* against *bindings* — the one substitution implementation.
+    
+        Raises :class:`PromptRenderError` naming every unconditional reference
+        that had no binding.
+        """
+        nodes = _parse(body)
+        missing: list[str] = []
+        scopes: list[_Scope] = [_Scope(names=bindings, item=_ABSENT)]
+        rendered = _render_nodes(nodes, scopes, missing)
+        if missing:
+            msg = "Unbound template placeholders: " + ", ".join(missing)
+>           raise PromptRenderError(msg, missing=missing)
+E           kodezart.core.errors.PromptRenderError: Unbound template placeholders: organize_context
+
+src/kodezart/core/prompt_rendering.py:184: PromptRenderError
+____ test_each_role_renders_its_own_data_file[ORGANIZE_VERIFY-anthropic_v5] ____
+
+set_name = 'anthropic_v5', name = 'ORGANIZE_VERIFY'
+
+    @pytest.mark.parametrize("set_name", [OPUS_SET, V5_SET])
+    @pytest.mark.parametrize("name", ORGANIZE_ROLES)
+    def test_each_role_renders_its_own_data_file(set_name: str, name: str) -> None:
+        key = PromptKey[name]
+        registry = load_registry(default_set=set_name)
+        template = registry.template_for(key)
+        assert registry.resolution_table()[key] == set_name
+        assert (default_sets_root() / set_name / f"{key.value}.md").is_file()
+>       rendered = template.render(ORGANIZE_CASE)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/prompts/test_organize_roles.py:61: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/core/prompt_rendering.py:206: in render
+    return render_template(self.body, merged)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+body = 'Adversarially verify the current issue against the supplied mandate rubric.\nWork alone. Return the requested structu...Ultrathink. Deeper reasoning is requested for this work — reason as thoroughly\nas the task warrants before you act.\n'
+bindings = {'base_ref': 'main', 'criterion_issue_bodies': ['Golden criterion issue body'], 'defect_classes': ['Golden defect class'], 'issue_body': 'Golden source issue body', ...}
+
+    def render_template(body: str, bindings: Mapping[str, object]) -> str:
+        """Render *body* against *bindings* — the one substitution implementation.
+    
+        Raises :class:`PromptRenderError` naming every unconditional reference
+        that had no binding.
+        """
+        nodes = _parse(body)
+        missing: list[str] = []
+        scopes: list[_Scope] = [_Scope(names=bindings, item=_ABSENT)]
+        rendered = _render_nodes(nodes, scopes, missing)
+        if missing:
+            msg = "Unbound template placeholders: " + ", ".join(missing)
+>           raise PromptRenderError(msg, missing=missing)
+E           kodezart.core.errors.PromptRenderError: Unbound template placeholders: organize_context
+
+src/kodezart/core/prompt_rendering.py:184: PromptRenderError
+_ test_each_role_renders_its_own_data_file[ORGANIZE_CRITERIA_AUTHOR-claude-opus] _
+
+set_name = 'claude-opus', name = 'ORGANIZE_CRITERIA_AUTHOR'
+
+    @pytest.mark.parametrize("set_name", [OPUS_SET, V5_SET])
+    @pytest.mark.parametrize("name", ORGANIZE_ROLES)
+    def test_each_role_renders_its_own_data_file(set_name: str, name: str) -> None:
+        key = PromptKey[name]
+        registry = load_registry(default_set=set_name)
+        template = registry.template_for(key)
+        assert registry.resolution_table()[key] == set_name
+        assert (default_sets_root() / set_name / f"{key.value}.md").is_file()
+>       rendered = template.render(ORGANIZE_CASE)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/prompts/test_organize_roles.py:61: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/core/prompt_rendering.py:206: in render
+    return render_template(self.body, merged)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+body = '{{skills_reference}}Author criterion sub-issue proposals for the issue under the supplied rubric.\nThis role authors ...h}}</defect_classes>\n\n{{#if refusal_evidence}}<refusal_evidence>\n{{refusal_evidence}}\n</refusal_evidence>\n{{/if}}'
+bindings = {'base_ref': 'main', 'criterion_issue_bodies': ['Golden criterion issue body'], 'defect_classes': ['Golden defect class'], 'issue_body': 'Golden source issue body', ...}
+
+    def render_template(body: str, bindings: Mapping[str, object]) -> str:
+        """Render *body* against *bindings* — the one substitution implementation.
+    
+        Raises :class:`PromptRenderError` naming every unconditional reference
+        that had no binding.
+        """
+        nodes = _parse(body)
+        missing: list[str] = []
+        scopes: list[_Scope] = [_Scope(names=bindings, item=_ABSENT)]
+        rendered = _render_nodes(nodes, scopes, missing)
+        if missing:
+            msg = "Unbound template placeholders: " + ", ".join(missing)
+>           raise PromptRenderError(msg, missing=missing)
+E           kodezart.core.errors.PromptRenderError: Unbound template placeholders: organize_context
+
+src/kodezart/core/prompt_rendering.py:184: PromptRenderError
+_ test_each_role_renders_its_own_data_file[ORGANIZE_CRITERIA_AUTHOR-anthropic_v5] _
+
+set_name = 'anthropic_v5', name = 'ORGANIZE_CRITERIA_AUTHOR'
+
+    @pytest.mark.parametrize("set_name", [OPUS_SET, V5_SET])
+    @pytest.mark.parametrize("name", ORGANIZE_ROLES)
+    def test_each_role_renders_its_own_data_file(set_name: str, name: str) -> None:
+        key = PromptKey[name]
+        registry = load_registry(default_set=set_name)
+        template = registry.template_for(key)
+        assert registry.resolution_table()[key] == set_name
+        assert (default_sets_root() / set_name / f"{key.value}.md").is_file()
+>       rendered = template.render(ORGANIZE_CASE)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/prompts/test_organize_roles.py:61: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/core/prompt_rendering.py:206: in render
+    return render_template(self.body, merged)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+body = 'Author criterion sub-issue proposals for the issue under the supplied rubric.\nThis role authors criteria; it does no...Ultrathink. Deeper reasoning is requested for this work — reason as thoroughly\nas the task warrants before you act.\n'
+bindings = {'base_ref': 'main', 'criterion_issue_bodies': ['Golden criterion issue body'], 'defect_classes': ['Golden defect class'], 'issue_body': 'Golden source issue body', ...}
+
+    def render_template(body: str, bindings: Mapping[str, object]) -> str:
+        """Render *body* against *bindings* — the one substitution implementation.
+    
+        Raises :class:`PromptRenderError` naming every unconditional reference
+        that had no binding.
+        """
+        nodes = _parse(body)
+        missing: list[str] = []
+        scopes: list[_Scope] = [_Scope(names=bindings, item=_ABSENT)]
+        rendered = _render_nodes(nodes, scopes, missing)
+        if missing:
+            msg = "Unbound template placeholders: " + ", ".join(missing)
+>           raise PromptRenderError(msg, missing=missing)
+E           kodezart.core.errors.PromptRenderError: Unbound template placeholders: organize_context
+
+src/kodezart/core/prompt_rendering.py:184: PromptRenderError
+=========================== short test summary info ============================
+FAILED tests/prompts/test_organize_roles.py::test_each_role_renders_its_own_data_file[ORGANIZE_ASSESS-claude-opus]
+FAILED tests/prompts/test_organize_roles.py::test_each_role_renders_its_own_data_file[ORGANIZE_ASSESS-anthropic_v5]
+FAILED tests/prompts/test_organize_roles.py::test_each_role_renders_its_own_data_file[ORGANIZE_AUTHOR-claude-opus]
+FAILED tests/prompts/test_organize_roles.py::test_each_role_renders_its_own_data_file[ORGANIZE_AUTHOR-anthropic_v5]
+FAILED tests/prompts/test_organize_roles.py::test_each_role_renders_its_own_data_file[ORGANIZE_VERIFY-claude-opus]
+FAILED tests/prompts/test_organize_roles.py::test_each_role_renders_its_own_data_file[ORGANIZE_VERIFY-anthropic_v5]
+FAILED tests/prompts/test_organize_roles.py::test_each_role_renders_its_own_data_file[ORGANIZE_CRITERIA_AUTHOR-claude-opus]
+FAILED tests/prompts/test_organize_roles.py::test_each_role_renders_its_own_data_file[ORGANIZE_CRITERIA_AUTHOR-anthropic_v5]
+8 failed, 482 passed in 33.11s

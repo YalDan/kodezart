@@ -1,0 +1,1566 @@
+.........................FFFF.F.FFFFF.F.FF.............................. [ 66%]
+....................................                                     [100%]
+=================================== FAILURES ===================================
+_ test_native_fresh_engine_resume_reads_current_checks[changed-check-run_ralph_loop] _
+
+barrier = 'run_ralph_loop', change = 'changed-check'
+
+    @pytest.mark.parametrize("barrier", ["run_ralph_loop", "review_against_ticket"])
+    @pytest.mark.parametrize(
+        "change", ["changed-check", "state", "missing-check", "outage"]
+    )
+    async def test_native_fresh_engine_resume_reads_current_checks(barrier, change):
+        port = CountingTracker()
+        saver = InMemorySaver()
+        executor = NativeExecutor([native_evaluation()])
+        fire = engine(
+            criteria=TrackerCriteria(tracker=port),
+            executor=executor,
+            real_loop=True,
+            checkpointer=saver,
+        )
+        initial, config = fire.prepare(
+            prompt="Implement the requested behavior",
+            issue_key=None,
+            repo_path="/tmp/fire",
+            repo_url="https://github.com/owner/repo",
+            base_spec=trunk_base("main"),
+            scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT),
+            permission_mode=PermissionMode.UNATTENDED,
+            allowed_tools=["Bash"],
+            cache_key="native-fire",
+        )
+        async for _ in fire.native_graph.astream(
+            initial, config=config, interrupt_before=[barrier]
+        ):
+            pass
+        paused = fire.native_graph.get_state(config)
+        assert paused.next == (barrier,)
+        frozen = paused.values["fire_spec"]
+        change_tracker(port, change)
+        remaining = {key: check_of(key) for key in OWED_KEYS if key != NESTED_OWED}
+        resumed_executor = NativeExecutor(
+            [
+                native_evaluation(checks=remaining if change == "state" else None),
+                native_evaluation(checks=remaining if change == "state" else None),
+            ]
+        )
+        resumed = engine(
+            criteria=TrackerCriteria(tracker=port),
+            executor=resumed_executor,
+            real_loop=True,
+            checkpointer=saver,
+        )
+        if change in {"missing-check", "outage"}:
+            error = FireSpecEntryError if change == "outage" else InvalidFireCriterionError
+            with pytest.raises(error):
+                async for _ in resumed.native_graph.astream(
+                    None, config=config, stream_mode="custom"
+                ):
+                    pass
+            assert resumed_executor.execution_prompts == []
+            assert resumed_executor.evaluation_prompts == []
+            return
+>       events = [
+            event
+            async for event in resumed.native_graph.astream(
+                None, config=config, stream_mode="custom"
+            )
+        ]
+
+tests/chains/test_native_fire.py:927: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/fire_implementation.py:169: in run_ralph_loop
+    last_iteration_event = await self.run_quality_gate(
+src/kodezart/chains/fire_implementation.py:103: in run_quality_gate
+    async for event in self._quality_gate.run(
+src/kodezart/chains/ralph_loop.py:185: in run
+    async for event in self._compiled.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/ralph_loop.py:260: in _execute_node
+    native_guard = self._amendments.for_writer(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.services.native_amendments.NativeAmendments object at 0x10aa64f80>
+
+    def for_writer(
+        self,
+        *,
+        spec: TrackerSpec,
+        criteria: TrackerCriterionSet,
+        base_ref: str,
+        repo_url: str | None,
+        holder: str | None,
+        visibility: RepoVisibility,
+        stage: PromptKey,
+    ) -> NativeWriteGuard:
+        """Create a runtime guard; no service or tracker enters graph state."""
+        if stage not in NATIVE_WRITING_STAGES:
+            raise NativeWriteRefusalError(
+                "The native writing stage has no amendment gate registration"
+            )
+        if holder is None or not holder.strip():
+>           raise NativeWriteRefusalError(
+                "Native writing requires the actual parent job holder"
+            )
+E           kodezart.domain.amendment.NativeWriteRefusalError: Native writing requires the actual parent job holder
+E           During task with name 'execute' and id '737c145f-0a41-7935-10c2-9c8d3caed46a'
+E           During task with name 'run_ralph_loop' and id 'bf81cdf6-61b6-3c9d-bd85-9e8485c69f7a'
+
+src/kodezart/services/native_amendments.py:138: NativeWriteRefusalError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 20:02:54 [info     ] repo_visibility_resolved       repo_url=https://github.com/owner/repo.git visibility=unknown
+2026-09-12 20:02:54 [info     ] scope_base_resolved            base_branch=main base_role=None input_count=0
+2026-09-12 20:02:54 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 20:02:54 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 20:02:54 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=branch_name
+2026-09-12 20:02:54 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:02:54 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:02:54 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+------------------------------ Captured log call -------------------------------
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.fire_spec.TrackerSpec from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.fire_spec', 'TrackerSpec')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.criteria.TrackerCriterionSet from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.criteria', 'TrackerCriterionSet')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.gating.RepoVisibility from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.gating', 'RepoVisibility')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.fire_spec.TrackerSpec from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.fire_spec', 'TrackerSpec')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.criteria.TrackerCriterionSet from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.criteria', 'TrackerCriterionSet')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.gating.RepoVisibility from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.gating', 'RepoVisibility')]
+_ test_native_fresh_engine_resume_reads_current_checks[changed-check-review_against_ticket] _
+
+barrier = 'review_against_ticket', change = 'changed-check'
+
+    @pytest.mark.parametrize("barrier", ["run_ralph_loop", "review_against_ticket"])
+    @pytest.mark.parametrize(
+        "change", ["changed-check", "state", "missing-check", "outage"]
+    )
+    async def test_native_fresh_engine_resume_reads_current_checks(barrier, change):
+        port = CountingTracker()
+        saver = InMemorySaver()
+        executor = NativeExecutor([native_evaluation()])
+        fire = engine(
+            criteria=TrackerCriteria(tracker=port),
+            executor=executor,
+            real_loop=True,
+            checkpointer=saver,
+        )
+        initial, config = fire.prepare(
+            prompt="Implement the requested behavior",
+            issue_key=None,
+            repo_path="/tmp/fire",
+            repo_url="https://github.com/owner/repo",
+            base_spec=trunk_base("main"),
+            scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT),
+            permission_mode=PermissionMode.UNATTENDED,
+            allowed_tools=["Bash"],
+            cache_key="native-fire",
+        )
+>       async for _ in fire.native_graph.astream(
+            initial, config=config, interrupt_before=[barrier]
+        ):
+
+tests/chains/test_native_fire.py:896: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:304: in atick
+    await arun_with_retry(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/fire_implementation.py:169: in run_ralph_loop
+    last_iteration_event = await self.run_quality_gate(
+src/kodezart/chains/fire_implementation.py:103: in run_quality_gate
+    async for event in self._quality_gate.run(
+src/kodezart/chains/ralph_loop.py:185: in run
+    async for event in self._compiled.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/ralph_loop.py:260: in _execute_node
+    native_guard = self._amendments.for_writer(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.services.native_amendments.NativeAmendments object at 0x10a975fa0>
+
+    def for_writer(
+        self,
+        *,
+        spec: TrackerSpec,
+        criteria: TrackerCriterionSet,
+        base_ref: str,
+        repo_url: str | None,
+        holder: str | None,
+        visibility: RepoVisibility,
+        stage: PromptKey,
+    ) -> NativeWriteGuard:
+        """Create a runtime guard; no service or tracker enters graph state."""
+        if stage not in NATIVE_WRITING_STAGES:
+            raise NativeWriteRefusalError(
+                "The native writing stage has no amendment gate registration"
+            )
+        if holder is None or not holder.strip():
+>           raise NativeWriteRefusalError(
+                "Native writing requires the actual parent job holder"
+            )
+E           kodezart.domain.amendment.NativeWriteRefusalError: Native writing requires the actual parent job holder
+E           During task with name 'execute' and id 'dd097527-ac64-d8c9-91b6-7372ca69e667'
+E           During task with name 'run_ralph_loop' and id '645e1220-11c8-5c5e-24df-f51e4dae4497'
+
+src/kodezart/services/native_amendments.py:138: NativeWriteRefusalError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 20:02:56 [info     ] repo_visibility_resolved       repo_url=https://github.com/owner/repo.git visibility=unknown
+2026-09-12 20:02:56 [info     ] scope_base_resolved            base_branch=main base_role=None input_count=0
+2026-09-12 20:02:56 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 20:02:56 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 20:02:56 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=branch_name
+2026-09-12 20:02:56 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:02:56 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:02:56 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+__ test_native_fresh_engine_resume_reads_current_checks[state-run_ralph_loop] __
+
+barrier = 'run_ralph_loop', change = 'state'
+
+    @pytest.mark.parametrize("barrier", ["run_ralph_loop", "review_against_ticket"])
+    @pytest.mark.parametrize(
+        "change", ["changed-check", "state", "missing-check", "outage"]
+    )
+    async def test_native_fresh_engine_resume_reads_current_checks(barrier, change):
+        port = CountingTracker()
+        saver = InMemorySaver()
+        executor = NativeExecutor([native_evaluation()])
+        fire = engine(
+            criteria=TrackerCriteria(tracker=port),
+            executor=executor,
+            real_loop=True,
+            checkpointer=saver,
+        )
+        initial, config = fire.prepare(
+            prompt="Implement the requested behavior",
+            issue_key=None,
+            repo_path="/tmp/fire",
+            repo_url="https://github.com/owner/repo",
+            base_spec=trunk_base("main"),
+            scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT),
+            permission_mode=PermissionMode.UNATTENDED,
+            allowed_tools=["Bash"],
+            cache_key="native-fire",
+        )
+        async for _ in fire.native_graph.astream(
+            initial, config=config, interrupt_before=[barrier]
+        ):
+            pass
+        paused = fire.native_graph.get_state(config)
+        assert paused.next == (barrier,)
+        frozen = paused.values["fire_spec"]
+        change_tracker(port, change)
+        remaining = {key: check_of(key) for key in OWED_KEYS if key != NESTED_OWED}
+        resumed_executor = NativeExecutor(
+            [
+                native_evaluation(checks=remaining if change == "state" else None),
+                native_evaluation(checks=remaining if change == "state" else None),
+            ]
+        )
+        resumed = engine(
+            criteria=TrackerCriteria(tracker=port),
+            executor=resumed_executor,
+            real_loop=True,
+            checkpointer=saver,
+        )
+        if change in {"missing-check", "outage"}:
+            error = FireSpecEntryError if change == "outage" else InvalidFireCriterionError
+            with pytest.raises(error):
+                async for _ in resumed.native_graph.astream(
+                    None, config=config, stream_mode="custom"
+                ):
+                    pass
+            assert resumed_executor.execution_prompts == []
+            assert resumed_executor.evaluation_prompts == []
+            return
+>       events = [
+            event
+            async for event in resumed.native_graph.astream(
+                None, config=config, stream_mode="custom"
+            )
+        ]
+
+tests/chains/test_native_fire.py:927: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/fire_implementation.py:169: in run_ralph_loop
+    last_iteration_event = await self.run_quality_gate(
+src/kodezart/chains/fire_implementation.py:103: in run_quality_gate
+    async for event in self._quality_gate.run(
+src/kodezart/chains/ralph_loop.py:185: in run
+    async for event in self._compiled.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/ralph_loop.py:260: in _execute_node
+    native_guard = self._amendments.for_writer(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.services.native_amendments.NativeAmendments object at 0x10aa973b0>
+
+    def for_writer(
+        self,
+        *,
+        spec: TrackerSpec,
+        criteria: TrackerCriterionSet,
+        base_ref: str,
+        repo_url: str | None,
+        holder: str | None,
+        visibility: RepoVisibility,
+        stage: PromptKey,
+    ) -> NativeWriteGuard:
+        """Create a runtime guard; no service or tracker enters graph state."""
+        if stage not in NATIVE_WRITING_STAGES:
+            raise NativeWriteRefusalError(
+                "The native writing stage has no amendment gate registration"
+            )
+        if holder is None or not holder.strip():
+>           raise NativeWriteRefusalError(
+                "Native writing requires the actual parent job holder"
+            )
+E           kodezart.domain.amendment.NativeWriteRefusalError: Native writing requires the actual parent job holder
+E           During task with name 'execute' and id '4f3a7fea-bd60-b1e7-04a4-0fb495034b97'
+E           During task with name 'run_ralph_loop' and id 'b24ab008-b4bb-52ae-3bf2-9bed9e1dd565'
+
+src/kodezart/services/native_amendments.py:138: NativeWriteRefusalError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 20:02:57 [info     ] repo_visibility_resolved       repo_url=https://github.com/owner/repo.git visibility=unknown
+2026-09-12 20:02:57 [info     ] scope_base_resolved            base_branch=main base_role=None input_count=0
+2026-09-12 20:02:57 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 20:02:57 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 20:02:57 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=branch_name
+2026-09-12 20:02:57 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:02:57 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:02:57 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+------------------------------ Captured log call -------------------------------
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.fire_spec.TrackerSpec from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.fire_spec', 'TrackerSpec')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.criteria.TrackerCriterionSet from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.criteria', 'TrackerCriterionSet')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.gating.RepoVisibility from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.gating', 'RepoVisibility')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.fire_spec.TrackerSpec from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.fire_spec', 'TrackerSpec')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.criteria.TrackerCriterionSet from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.criteria', 'TrackerCriterionSet')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.gating.RepoVisibility from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.gating', 'RepoVisibility')]
+_ test_native_fresh_engine_resume_reads_current_checks[state-review_against_ticket] _
+
+barrier = 'review_against_ticket', change = 'state'
+
+    @pytest.mark.parametrize("barrier", ["run_ralph_loop", "review_against_ticket"])
+    @pytest.mark.parametrize(
+        "change", ["changed-check", "state", "missing-check", "outage"]
+    )
+    async def test_native_fresh_engine_resume_reads_current_checks(barrier, change):
+        port = CountingTracker()
+        saver = InMemorySaver()
+        executor = NativeExecutor([native_evaluation()])
+        fire = engine(
+            criteria=TrackerCriteria(tracker=port),
+            executor=executor,
+            real_loop=True,
+            checkpointer=saver,
+        )
+        initial, config = fire.prepare(
+            prompt="Implement the requested behavior",
+            issue_key=None,
+            repo_path="/tmp/fire",
+            repo_url="https://github.com/owner/repo",
+            base_spec=trunk_base("main"),
+            scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT),
+            permission_mode=PermissionMode.UNATTENDED,
+            allowed_tools=["Bash"],
+            cache_key="native-fire",
+        )
+>       async for _ in fire.native_graph.astream(
+            initial, config=config, interrupt_before=[barrier]
+        ):
+
+tests/chains/test_native_fire.py:896: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:304: in atick
+    await arun_with_retry(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/fire_implementation.py:169: in run_ralph_loop
+    last_iteration_event = await self.run_quality_gate(
+src/kodezart/chains/fire_implementation.py:103: in run_quality_gate
+    async for event in self._quality_gate.run(
+src/kodezart/chains/ralph_loop.py:185: in run
+    async for event in self._compiled.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/ralph_loop.py:260: in _execute_node
+    native_guard = self._amendments.for_writer(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.services.native_amendments.NativeAmendments object at 0x10a48da60>
+
+    def for_writer(
+        self,
+        *,
+        spec: TrackerSpec,
+        criteria: TrackerCriterionSet,
+        base_ref: str,
+        repo_url: str | None,
+        holder: str | None,
+        visibility: RepoVisibility,
+        stage: PromptKey,
+    ) -> NativeWriteGuard:
+        """Create a runtime guard; no service or tracker enters graph state."""
+        if stage not in NATIVE_WRITING_STAGES:
+            raise NativeWriteRefusalError(
+                "The native writing stage has no amendment gate registration"
+            )
+        if holder is None or not holder.strip():
+>           raise NativeWriteRefusalError(
+                "Native writing requires the actual parent job holder"
+            )
+E           kodezart.domain.amendment.NativeWriteRefusalError: Native writing requires the actual parent job holder
+E           During task with name 'execute' and id 'c9f321ba-23ef-550e-e2cb-054c8cd4235d'
+E           During task with name 'run_ralph_loop' and id '022cb83e-d191-ecb7-e07e-78a8fa5f79ba'
+
+src/kodezart/services/native_amendments.py:138: NativeWriteRefusalError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 20:02:58 [info     ] repo_visibility_resolved       repo_url=https://github.com/owner/repo.git visibility=unknown
+2026-09-12 20:02:58 [info     ] scope_base_resolved            base_branch=main base_role=None input_count=0
+2026-09-12 20:02:58 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 20:02:58 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 20:02:58 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=branch_name
+2026-09-12 20:02:58 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:02:58 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:02:58 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+_ test_native_fresh_engine_resume_reads_current_checks[missing-check-review_against_ticket] _
+
+barrier = 'review_against_ticket', change = 'missing-check'
+
+    @pytest.mark.parametrize("barrier", ["run_ralph_loop", "review_against_ticket"])
+    @pytest.mark.parametrize(
+        "change", ["changed-check", "state", "missing-check", "outage"]
+    )
+    async def test_native_fresh_engine_resume_reads_current_checks(barrier, change):
+        port = CountingTracker()
+        saver = InMemorySaver()
+        executor = NativeExecutor([native_evaluation()])
+        fire = engine(
+            criteria=TrackerCriteria(tracker=port),
+            executor=executor,
+            real_loop=True,
+            checkpointer=saver,
+        )
+        initial, config = fire.prepare(
+            prompt="Implement the requested behavior",
+            issue_key=None,
+            repo_path="/tmp/fire",
+            repo_url="https://github.com/owner/repo",
+            base_spec=trunk_base("main"),
+            scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT),
+            permission_mode=PermissionMode.UNATTENDED,
+            allowed_tools=["Bash"],
+            cache_key="native-fire",
+        )
+>       async for _ in fire.native_graph.astream(
+            initial, config=config, interrupt_before=[barrier]
+        ):
+
+tests/chains/test_native_fire.py:896: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:304: in atick
+    await arun_with_retry(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/fire_implementation.py:169: in run_ralph_loop
+    last_iteration_event = await self.run_quality_gate(
+src/kodezart/chains/fire_implementation.py:103: in run_quality_gate
+    async for event in self._quality_gate.run(
+src/kodezart/chains/ralph_loop.py:185: in run
+    async for event in self._compiled.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/ralph_loop.py:260: in _execute_node
+    native_guard = self._amendments.for_writer(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.services.native_amendments.NativeAmendments object at 0x10a5253d0>
+
+    def for_writer(
+        self,
+        *,
+        spec: TrackerSpec,
+        criteria: TrackerCriterionSet,
+        base_ref: str,
+        repo_url: str | None,
+        holder: str | None,
+        visibility: RepoVisibility,
+        stage: PromptKey,
+    ) -> NativeWriteGuard:
+        """Create a runtime guard; no service or tracker enters graph state."""
+        if stage not in NATIVE_WRITING_STAGES:
+            raise NativeWriteRefusalError(
+                "The native writing stage has no amendment gate registration"
+            )
+        if holder is None or not holder.strip():
+>           raise NativeWriteRefusalError(
+                "Native writing requires the actual parent job holder"
+            )
+E           kodezart.domain.amendment.NativeWriteRefusalError: Native writing requires the actual parent job holder
+E           During task with name 'execute' and id '8678e975-d90d-5748-a567-8be85acc1627'
+E           During task with name 'run_ralph_loop' and id 'bca4b824-4e0f-d3df-f66f-2d649857d3bf'
+
+src/kodezart/services/native_amendments.py:138: NativeWriteRefusalError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 20:02:59 [info     ] repo_visibility_resolved       repo_url=https://github.com/owner/repo.git visibility=unknown
+2026-09-12 20:02:59 [info     ] scope_base_resolved            base_branch=main base_role=None input_count=0
+2026-09-12 20:02:59 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 20:02:59 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 20:02:59 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=branch_name
+2026-09-12 20:03:00 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:03:00 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:03:00 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+_ test_native_fresh_engine_resume_reads_current_checks[outage-review_against_ticket] _
+
+barrier = 'review_against_ticket', change = 'outage'
+
+    @pytest.mark.parametrize("barrier", ["run_ralph_loop", "review_against_ticket"])
+    @pytest.mark.parametrize(
+        "change", ["changed-check", "state", "missing-check", "outage"]
+    )
+    async def test_native_fresh_engine_resume_reads_current_checks(barrier, change):
+        port = CountingTracker()
+        saver = InMemorySaver()
+        executor = NativeExecutor([native_evaluation()])
+        fire = engine(
+            criteria=TrackerCriteria(tracker=port),
+            executor=executor,
+            real_loop=True,
+            checkpointer=saver,
+        )
+        initial, config = fire.prepare(
+            prompt="Implement the requested behavior",
+            issue_key=None,
+            repo_path="/tmp/fire",
+            repo_url="https://github.com/owner/repo",
+            base_spec=trunk_base("main"),
+            scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT),
+            permission_mode=PermissionMode.UNATTENDED,
+            allowed_tools=["Bash"],
+            cache_key="native-fire",
+        )
+>       async for _ in fire.native_graph.astream(
+            initial, config=config, interrupt_before=[barrier]
+        ):
+
+tests/chains/test_native_fire.py:896: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:304: in atick
+    await arun_with_retry(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/fire_implementation.py:169: in run_ralph_loop
+    last_iteration_event = await self.run_quality_gate(
+src/kodezart/chains/fire_implementation.py:103: in run_quality_gate
+    async for event in self._quality_gate.run(
+src/kodezart/chains/ralph_loop.py:185: in run
+    async for event in self._compiled.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/ralph_loop.py:260: in _execute_node
+    native_guard = self._amendments.for_writer(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.services.native_amendments.NativeAmendments object at 0x10a5eeff0>
+
+    def for_writer(
+        self,
+        *,
+        spec: TrackerSpec,
+        criteria: TrackerCriterionSet,
+        base_ref: str,
+        repo_url: str | None,
+        holder: str | None,
+        visibility: RepoVisibility,
+        stage: PromptKey,
+    ) -> NativeWriteGuard:
+        """Create a runtime guard; no service or tracker enters graph state."""
+        if stage not in NATIVE_WRITING_STAGES:
+            raise NativeWriteRefusalError(
+                "The native writing stage has no amendment gate registration"
+            )
+        if holder is None or not holder.strip():
+>           raise NativeWriteRefusalError(
+                "Native writing requires the actual parent job holder"
+            )
+E           kodezart.domain.amendment.NativeWriteRefusalError: Native writing requires the actual parent job holder
+E           During task with name 'execute' and id '95686ded-d49a-ed3b-c5a1-dc8c7f9c83f3'
+E           During task with name 'run_ralph_loop' and id '9884d669-2609-d039-6b7e-d4520a2ceb67'
+
+src/kodezart/services/native_amendments.py:138: NativeWriteRefusalError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 20:03:02 [info     ] repo_visibility_resolved       repo_url=https://github.com/owner/repo.git visibility=unknown
+2026-09-12 20:03:02 [info     ] scope_base_resolved            base_branch=main base_role=None input_count=0
+2026-09-12 20:03:02 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 20:03:02 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 20:03:02 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=branch_name
+2026-09-12 20:03:02 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:03:02 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:03:02 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+_ test_native_inner_checkpoint_resume_requires_current_checks[changed-check-execute] _
+
+barrier = 'execute', change = 'changed-check'
+
+    @pytest.mark.parametrize("barrier", ["execute", "evaluate"])
+    @pytest.mark.parametrize(
+        "change", ["changed-check", "state", "missing-check", "outage"]
+    )
+    async def test_native_inner_checkpoint_resume_requires_current_checks(barrier, change):
+        from kodezart.types.domain.workflow import RalphLoopContext
+    
+        port = CountingTracker()
+        source = TrackerCriteria(tracker=port)
+        spec = await source.read_spec(issue_key=SUBJECT)
+        snapshot = await source.read_current(spec=spec)
+        saver = InMemorySaver()
+        original = engine(criteria=source, executor=NativeExecutor([]), real_loop=True)
+        loop = original.implementation._quality_gate
+        graph = loop._build_graph().compile(checkpointer=saver)
+        context = RalphLoopContext(
+            prompt=spec.body,
+            repo_path="/tmp/fire",
+            repo_url=None,
+            cache_key="inner-resume",
+            base_spec=trunk_base("main"),
+            permission_mode=PermissionMode.UNATTENDED,
+            allowed_tools=["Bash"],
+            feature_branch="feature",
+            ralph_branch="ralph",
+            work_base_ref="main",
+            acceptance_criteria=snapshot.criteria,
+            tracker_spec=spec,
+            repo_visibility=RepoVisibility.UNKNOWN,
+        )
+        config = {"configurable": {**context.model_dump(), "thread_id": "inner-resume"}}
+        initial = {
+            "iteration": 0,
+            "verdict": AcceptVerdict.rejected,
+            "pending_failures": [],
+            "iteration_records": [],
+        }
+        async for _ in graph.astream(initial, config=config, interrupt_before=[barrier]):
+            pass
+        assert graph.get_state(config).next == (barrier,)
+        change_tracker(port, change)
+        remaining = {key: check_of(key) for key in OWED_KEYS if key != NESTED_OWED}
+        executor = NativeExecutor(
+            [native_evaluation(checks=remaining if change == "state" else None)]
+        )
+        fresh = engine(
+            criteria=TrackerCriteria(tracker=port), executor=executor, real_loop=True
+        )
+        replay = fresh.implementation._quality_gate._build_graph().compile(
+            checkpointer=saver
+        )
+        if change in {"missing-check", "outage"}:
+            error = FireSpecEntryError if change == "outage" else InvalidFireCriterionError
+            with pytest.raises(error):
+                async for _ in replay.astream(None, config=config, stream_mode="custom"):
+                    pass
+            assert executor.execution_prompts == []
+            assert executor.evaluation_prompts == []
+            return
+>       events = [
+            event
+            async for event in replay.astream(None, config=config, stream_mode="custom")
+        ]
+
+tests/chains/test_native_fire.py:1009: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/ralph_loop.py:260: in _execute_node
+    native_guard = self._amendments.for_writer(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.services.native_amendments.NativeAmendments object at 0x10a623b90>
+
+    def for_writer(
+        self,
+        *,
+        spec: TrackerSpec,
+        criteria: TrackerCriterionSet,
+        base_ref: str,
+        repo_url: str | None,
+        holder: str | None,
+        visibility: RepoVisibility,
+        stage: PromptKey,
+    ) -> NativeWriteGuard:
+        """Create a runtime guard; no service or tracker enters graph state."""
+        if stage not in NATIVE_WRITING_STAGES:
+            raise NativeWriteRefusalError(
+                "The native writing stage has no amendment gate registration"
+            )
+        if holder is None or not holder.strip():
+>           raise NativeWriteRefusalError(
+                "Native writing requires the actual parent job holder"
+            )
+E           kodezart.domain.amendment.NativeWriteRefusalError: Native writing requires the actual parent job holder
+E           During task with name 'execute' and id '0e924710-d1ac-7ff3-78a6-49992661c5a1'
+
+src/kodezart/services/native_amendments.py:138: NativeWriteRefusalError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 20:03:03 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:03:04 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+------------------------------ Captured log call -------------------------------
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+_ test_native_inner_checkpoint_resume_requires_current_checks[changed-check-evaluate] _
+
+barrier = 'evaluate', change = 'changed-check'
+
+    @pytest.mark.parametrize("barrier", ["execute", "evaluate"])
+    @pytest.mark.parametrize(
+        "change", ["changed-check", "state", "missing-check", "outage"]
+    )
+    async def test_native_inner_checkpoint_resume_requires_current_checks(barrier, change):
+        from kodezart.types.domain.workflow import RalphLoopContext
+    
+        port = CountingTracker()
+        source = TrackerCriteria(tracker=port)
+        spec = await source.read_spec(issue_key=SUBJECT)
+        snapshot = await source.read_current(spec=spec)
+        saver = InMemorySaver()
+        original = engine(criteria=source, executor=NativeExecutor([]), real_loop=True)
+        loop = original.implementation._quality_gate
+        graph = loop._build_graph().compile(checkpointer=saver)
+        context = RalphLoopContext(
+            prompt=spec.body,
+            repo_path="/tmp/fire",
+            repo_url=None,
+            cache_key="inner-resume",
+            base_spec=trunk_base("main"),
+            permission_mode=PermissionMode.UNATTENDED,
+            allowed_tools=["Bash"],
+            feature_branch="feature",
+            ralph_branch="ralph",
+            work_base_ref="main",
+            acceptance_criteria=snapshot.criteria,
+            tracker_spec=spec,
+            repo_visibility=RepoVisibility.UNKNOWN,
+        )
+        config = {"configurable": {**context.model_dump(), "thread_id": "inner-resume"}}
+        initial = {
+            "iteration": 0,
+            "verdict": AcceptVerdict.rejected,
+            "pending_failures": [],
+            "iteration_records": [],
+        }
+>       async for _ in graph.astream(initial, config=config, interrupt_before=[barrier]):
+
+tests/chains/test_native_fire.py:987: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:304: in atick
+    await arun_with_retry(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/ralph_loop.py:260: in _execute_node
+    native_guard = self._amendments.for_writer(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.services.native_amendments.NativeAmendments object at 0x10a6125d0>
+
+    def for_writer(
+        self,
+        *,
+        spec: TrackerSpec,
+        criteria: TrackerCriterionSet,
+        base_ref: str,
+        repo_url: str | None,
+        holder: str | None,
+        visibility: RepoVisibility,
+        stage: PromptKey,
+    ) -> NativeWriteGuard:
+        """Create a runtime guard; no service or tracker enters graph state."""
+        if stage not in NATIVE_WRITING_STAGES:
+            raise NativeWriteRefusalError(
+                "The native writing stage has no amendment gate registration"
+            )
+        if holder is None or not holder.strip():
+>           raise NativeWriteRefusalError(
+                "Native writing requires the actual parent job holder"
+            )
+E           kodezart.domain.amendment.NativeWriteRefusalError: Native writing requires the actual parent job holder
+E           During task with name 'execute' and id '627e689d-d495-5b08-32a1-01fc1079ff86'
+
+src/kodezart/services/native_amendments.py:138: NativeWriteRefusalError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 20:03:04 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:03:04 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+__ test_native_inner_checkpoint_resume_requires_current_checks[state-execute] __
+
+barrier = 'execute', change = 'state'
+
+    @pytest.mark.parametrize("barrier", ["execute", "evaluate"])
+    @pytest.mark.parametrize(
+        "change", ["changed-check", "state", "missing-check", "outage"]
+    )
+    async def test_native_inner_checkpoint_resume_requires_current_checks(barrier, change):
+        from kodezart.types.domain.workflow import RalphLoopContext
+    
+        port = CountingTracker()
+        source = TrackerCriteria(tracker=port)
+        spec = await source.read_spec(issue_key=SUBJECT)
+        snapshot = await source.read_current(spec=spec)
+        saver = InMemorySaver()
+        original = engine(criteria=source, executor=NativeExecutor([]), real_loop=True)
+        loop = original.implementation._quality_gate
+        graph = loop._build_graph().compile(checkpointer=saver)
+        context = RalphLoopContext(
+            prompt=spec.body,
+            repo_path="/tmp/fire",
+            repo_url=None,
+            cache_key="inner-resume",
+            base_spec=trunk_base("main"),
+            permission_mode=PermissionMode.UNATTENDED,
+            allowed_tools=["Bash"],
+            feature_branch="feature",
+            ralph_branch="ralph",
+            work_base_ref="main",
+            acceptance_criteria=snapshot.criteria,
+            tracker_spec=spec,
+            repo_visibility=RepoVisibility.UNKNOWN,
+        )
+        config = {"configurable": {**context.model_dump(), "thread_id": "inner-resume"}}
+        initial = {
+            "iteration": 0,
+            "verdict": AcceptVerdict.rejected,
+            "pending_failures": [],
+            "iteration_records": [],
+        }
+        async for _ in graph.astream(initial, config=config, interrupt_before=[barrier]):
+            pass
+        assert graph.get_state(config).next == (barrier,)
+        change_tracker(port, change)
+        remaining = {key: check_of(key) for key in OWED_KEYS if key != NESTED_OWED}
+        executor = NativeExecutor(
+            [native_evaluation(checks=remaining if change == "state" else None)]
+        )
+        fresh = engine(
+            criteria=TrackerCriteria(tracker=port), executor=executor, real_loop=True
+        )
+        replay = fresh.implementation._quality_gate._build_graph().compile(
+            checkpointer=saver
+        )
+        if change in {"missing-check", "outage"}:
+            error = FireSpecEntryError if change == "outage" else InvalidFireCriterionError
+            with pytest.raises(error):
+                async for _ in replay.astream(None, config=config, stream_mode="custom"):
+                    pass
+            assert executor.execution_prompts == []
+            assert executor.evaluation_prompts == []
+            return
+>       events = [
+            event
+            async for event in replay.astream(None, config=config, stream_mode="custom")
+        ]
+
+tests/chains/test_native_fire.py:1009: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/ralph_loop.py:260: in _execute_node
+    native_guard = self._amendments.for_writer(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.services.native_amendments.NativeAmendments object at 0x10a48ea80>
+
+    def for_writer(
+        self,
+        *,
+        spec: TrackerSpec,
+        criteria: TrackerCriterionSet,
+        base_ref: str,
+        repo_url: str | None,
+        holder: str | None,
+        visibility: RepoVisibility,
+        stage: PromptKey,
+    ) -> NativeWriteGuard:
+        """Create a runtime guard; no service or tracker enters graph state."""
+        if stage not in NATIVE_WRITING_STAGES:
+            raise NativeWriteRefusalError(
+                "The native writing stage has no amendment gate registration"
+            )
+        if holder is None or not holder.strip():
+>           raise NativeWriteRefusalError(
+                "Native writing requires the actual parent job holder"
+            )
+E           kodezart.domain.amendment.NativeWriteRefusalError: Native writing requires the actual parent job holder
+E           During task with name 'execute' and id 'ae5fcf2d-3ca3-5f0e-b50f-489741ce1020'
+
+src/kodezart/services/native_amendments.py:138: NativeWriteRefusalError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 20:03:04 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:03:05 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+------------------------------ Captured log call -------------------------------
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+_ test_native_inner_checkpoint_resume_requires_current_checks[state-evaluate] __
+
+barrier = 'evaluate', change = 'state'
+
+    @pytest.mark.parametrize("barrier", ["execute", "evaluate"])
+    @pytest.mark.parametrize(
+        "change", ["changed-check", "state", "missing-check", "outage"]
+    )
+    async def test_native_inner_checkpoint_resume_requires_current_checks(barrier, change):
+        from kodezart.types.domain.workflow import RalphLoopContext
+    
+        port = CountingTracker()
+        source = TrackerCriteria(tracker=port)
+        spec = await source.read_spec(issue_key=SUBJECT)
+        snapshot = await source.read_current(spec=spec)
+        saver = InMemorySaver()
+        original = engine(criteria=source, executor=NativeExecutor([]), real_loop=True)
+        loop = original.implementation._quality_gate
+        graph = loop._build_graph().compile(checkpointer=saver)
+        context = RalphLoopContext(
+            prompt=spec.body,
+            repo_path="/tmp/fire",
+            repo_url=None,
+            cache_key="inner-resume",
+            base_spec=trunk_base("main"),
+            permission_mode=PermissionMode.UNATTENDED,
+            allowed_tools=["Bash"],
+            feature_branch="feature",
+            ralph_branch="ralph",
+            work_base_ref="main",
+            acceptance_criteria=snapshot.criteria,
+            tracker_spec=spec,
+            repo_visibility=RepoVisibility.UNKNOWN,
+        )
+        config = {"configurable": {**context.model_dump(), "thread_id": "inner-resume"}}
+        initial = {
+            "iteration": 0,
+            "verdict": AcceptVerdict.rejected,
+            "pending_failures": [],
+            "iteration_records": [],
+        }
+>       async for _ in graph.astream(initial, config=config, interrupt_before=[barrier]):
+
+tests/chains/test_native_fire.py:987: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:304: in atick
+    await arun_with_retry(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/ralph_loop.py:260: in _execute_node
+    native_guard = self._amendments.for_writer(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.services.native_amendments.NativeAmendments object at 0x10a524aa0>
+
+    def for_writer(
+        self,
+        *,
+        spec: TrackerSpec,
+        criteria: TrackerCriterionSet,
+        base_ref: str,
+        repo_url: str | None,
+        holder: str | None,
+        visibility: RepoVisibility,
+        stage: PromptKey,
+    ) -> NativeWriteGuard:
+        """Create a runtime guard; no service or tracker enters graph state."""
+        if stage not in NATIVE_WRITING_STAGES:
+            raise NativeWriteRefusalError(
+                "The native writing stage has no amendment gate registration"
+            )
+        if holder is None or not holder.strip():
+>           raise NativeWriteRefusalError(
+                "Native writing requires the actual parent job holder"
+            )
+E           kodezart.domain.amendment.NativeWriteRefusalError: Native writing requires the actual parent job holder
+E           During task with name 'execute' and id '0281b0bf-fc24-c204-f02b-52f49bd2707f'
+
+src/kodezart/services/native_amendments.py:138: NativeWriteRefusalError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 20:03:05 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:03:05 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+_ test_native_inner_checkpoint_resume_requires_current_checks[missing-check-evaluate] _
+
+barrier = 'evaluate', change = 'missing-check'
+
+    @pytest.mark.parametrize("barrier", ["execute", "evaluate"])
+    @pytest.mark.parametrize(
+        "change", ["changed-check", "state", "missing-check", "outage"]
+    )
+    async def test_native_inner_checkpoint_resume_requires_current_checks(barrier, change):
+        from kodezart.types.domain.workflow import RalphLoopContext
+    
+        port = CountingTracker()
+        source = TrackerCriteria(tracker=port)
+        spec = await source.read_spec(issue_key=SUBJECT)
+        snapshot = await source.read_current(spec=spec)
+        saver = InMemorySaver()
+        original = engine(criteria=source, executor=NativeExecutor([]), real_loop=True)
+        loop = original.implementation._quality_gate
+        graph = loop._build_graph().compile(checkpointer=saver)
+        context = RalphLoopContext(
+            prompt=spec.body,
+            repo_path="/tmp/fire",
+            repo_url=None,
+            cache_key="inner-resume",
+            base_spec=trunk_base("main"),
+            permission_mode=PermissionMode.UNATTENDED,
+            allowed_tools=["Bash"],
+            feature_branch="feature",
+            ralph_branch="ralph",
+            work_base_ref="main",
+            acceptance_criteria=snapshot.criteria,
+            tracker_spec=spec,
+            repo_visibility=RepoVisibility.UNKNOWN,
+        )
+        config = {"configurable": {**context.model_dump(), "thread_id": "inner-resume"}}
+        initial = {
+            "iteration": 0,
+            "verdict": AcceptVerdict.rejected,
+            "pending_failures": [],
+            "iteration_records": [],
+        }
+>       async for _ in graph.astream(initial, config=config, interrupt_before=[barrier]):
+
+tests/chains/test_native_fire.py:987: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:304: in atick
+    await arun_with_retry(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/ralph_loop.py:260: in _execute_node
+    native_guard = self._amendments.for_writer(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.services.native_amendments.NativeAmendments object at 0x10a9c33b0>
+
+    def for_writer(
+        self,
+        *,
+        spec: TrackerSpec,
+        criteria: TrackerCriterionSet,
+        base_ref: str,
+        repo_url: str | None,
+        holder: str | None,
+        visibility: RepoVisibility,
+        stage: PromptKey,
+    ) -> NativeWriteGuard:
+        """Create a runtime guard; no service or tracker enters graph state."""
+        if stage not in NATIVE_WRITING_STAGES:
+            raise NativeWriteRefusalError(
+                "The native writing stage has no amendment gate registration"
+            )
+        if holder is None or not holder.strip():
+>           raise NativeWriteRefusalError(
+                "Native writing requires the actual parent job holder"
+            )
+E           kodezart.domain.amendment.NativeWriteRefusalError: Native writing requires the actual parent job holder
+E           During task with name 'execute' and id '911f0f5b-94aa-e9eb-d0d9-ae5c67f585b4'
+
+src/kodezart/services/native_amendments.py:138: NativeWriteRefusalError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 20:03:06 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:03:06 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+_ test_native_inner_checkpoint_resume_requires_current_checks[outage-evaluate] _
+
+barrier = 'evaluate', change = 'outage'
+
+    @pytest.mark.parametrize("barrier", ["execute", "evaluate"])
+    @pytest.mark.parametrize(
+        "change", ["changed-check", "state", "missing-check", "outage"]
+    )
+    async def test_native_inner_checkpoint_resume_requires_current_checks(barrier, change):
+        from kodezart.types.domain.workflow import RalphLoopContext
+    
+        port = CountingTracker()
+        source = TrackerCriteria(tracker=port)
+        spec = await source.read_spec(issue_key=SUBJECT)
+        snapshot = await source.read_current(spec=spec)
+        saver = InMemorySaver()
+        original = engine(criteria=source, executor=NativeExecutor([]), real_loop=True)
+        loop = original.implementation._quality_gate
+        graph = loop._build_graph().compile(checkpointer=saver)
+        context = RalphLoopContext(
+            prompt=spec.body,
+            repo_path="/tmp/fire",
+            repo_url=None,
+            cache_key="inner-resume",
+            base_spec=trunk_base("main"),
+            permission_mode=PermissionMode.UNATTENDED,
+            allowed_tools=["Bash"],
+            feature_branch="feature",
+            ralph_branch="ralph",
+            work_base_ref="main",
+            acceptance_criteria=snapshot.criteria,
+            tracker_spec=spec,
+            repo_visibility=RepoVisibility.UNKNOWN,
+        )
+        config = {"configurable": {**context.model_dump(), "thread_id": "inner-resume"}}
+        initial = {
+            "iteration": 0,
+            "verdict": AcceptVerdict.rejected,
+            "pending_failures": [],
+            "iteration_records": [],
+        }
+>       async for _ in graph.astream(initial, config=config, interrupt_before=[barrier]):
+
+tests/chains/test_native_fire.py:987: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:304: in atick
+    await arun_with_retry(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/ralph_loop.py:260: in _execute_node
+    native_guard = self._amendments.for_writer(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.services.native_amendments.NativeAmendments object at 0x10a971eb0>
+
+    def for_writer(
+        self,
+        *,
+        spec: TrackerSpec,
+        criteria: TrackerCriterionSet,
+        base_ref: str,
+        repo_url: str | None,
+        holder: str | None,
+        visibility: RepoVisibility,
+        stage: PromptKey,
+    ) -> NativeWriteGuard:
+        """Create a runtime guard; no service or tracker enters graph state."""
+        if stage not in NATIVE_WRITING_STAGES:
+            raise NativeWriteRefusalError(
+                "The native writing stage has no amendment gate registration"
+            )
+        if holder is None or not holder.strip():
+>           raise NativeWriteRefusalError(
+                "Native writing requires the actual parent job holder"
+            )
+E           kodezart.domain.amendment.NativeWriteRefusalError: Native writing requires the actual parent job holder
+E           During task with name 'execute' and id '33cf1d38-8c57-a299-76e7-9b1d38cbae4d'
+
+src/kodezart/services/native_amendments.py:138: NativeWriteRefusalError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 20:03:06 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:03:06 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+_____ test_production_constructor_wires_native_source_to_shared_consumers ______
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10aa96450>
+
+    async def test_production_constructor_wires_native_source_to_shared_consumers(
+        monkeypatch,
+    ):
+        from kodezart.composition.engine import build_workflow_engine
+        from kodezart.core.config import AppConfig
+        from tests.fakes import FakeRefPublisher
+    
+        monkeypatch.setattr(
+            "kodezart.composition.engine.SubprocessGitSourceReader",
+            NativeSourceReader,
+        )
+    
+        port = CountingTracker()
+        source = TrackerCriteria(tracker=port)
+        executor = NativeExecutor([native_evaluation(), native_evaluation()])
+        workspace = FakeWorkspaceProvider()
+        service = AgentService(
+            git_base_url="https://github.com",
+            executor=executor,
+            workspace=workspace,
+            persister=FakeChangePersister(),
+        )
+        artifacts = FakeArtifactPersister()
+        router = build_workflow_engine(
+            operation=native_operation(),
+            scope_tracker=port,
+            config=AppConfig(
+                ticket_review_mode=TicketReviewMode.REVIEWED,
+                max_iterations=1,
+                retry_max_attempts=1,
+                retry_initial_interval=0.1,
+            ),
+            repositories=(),
+            agent_service=service,
+            git=FakeGitService(remote_branch_shas={"main": "b" * 40}),
+            cache=FakeRepoCache(),
+            workspace=workspace,
+            merger=FakeBranchMerger(),
+            artifact_persister=artifacts,
+            ref_publisher=FakeRefPublisher(),
+            prompts=make_prompt_provider(),
+            skills=SUPPRESS_ALL_SKILLS,
+            gate=PassThroughGate(),
+            github_api=None,
+            checkpointer=InMemorySaver(),
+            criteria=source,
+        )
+        monkeypatch.setattr(TicketDraftOutput, "__init__", no_authored_ticket)
+        # Direct fire proves constructor capability. The scope wrapper has its own
+        # production-route tests; only the immutable Git adapter is doubled here.
+        fire = router.arm_for(None).fire
+>       events = await drive(fire, scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/chains/test_native_fire.py:1079: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/chains/test_native_fire.py:291: in drive
+    async for event in fire.run(
+src/kodezart/chains/ralph_workflow.py:139: in run
+    async for event in self._composition(scope).astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/fire_implementation.py:169: in run_ralph_loop
+    last_iteration_event = await self.run_quality_gate(
+src/kodezart/chains/fire_implementation.py:103: in run_quality_gate
+    async for event in self._quality_gate.run(
+src/kodezart/chains/ralph_loop.py:185: in run
+    async for event in self._compiled.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.chains.ralph_loop.RalphLoop object at 0x10aa973e0>
+state = {'iteration': 0, 'iteration_records': [], 'pending_failures': [], 'verdict': <AcceptVerdict.rejected: 'rejected'>}
+config = {'callbacks': <langchain_core.callbacks.manager.AsyncCallbackManager object at 0x10a50be30>, 'configurable': {'__prege...08afbf-8ab1-72ad-3cd6-c17b5187b6b5', 'langgraph_node': 'execute', 'langgraph_path': ('__pregel_pull', 'execute'), ...}}
+
+    async def _execute_node(
+        self,
+        state: RalphLoopState,
+        config: RunnableConfig,
+    ) -> dict[str, object]:
+        ctx = RalphLoopContext.from_configurable(config)
+        native_criteria = (
+            None
+            if ctx.tracker_spec is None
+            else await current_native_criteria(
+                spec=ctx.tracker_spec,
+                reader=self._criteria_reader,
+            )
+        )
+        writer = get_stream_writer()
+        iteration = state["iteration"] + 1
+        is_first = iteration == 1
+    
+        prompt = ctx.prompt
+        if not is_first:
+            prompt = self._prompts.template_for(PromptKey.ITERATION_FEEDBACK).render(
+                {
+                    "prior_prompt": prompt,
+                    "pending_failures": state["pending_failures"],
+                },
+            )
+    
+        if native_criteria is not None:
+            prompt += "\n\n" + tracker_checks_section(native_criteria)
+    
+        native_guard = None
+        reports = state.get("amendment_reports", [])
+        blocked = False
+        if ctx.tracker_spec is not None and native_criteria is not None:
+            if self._amendments is None:
+>               raise NativeWriteRefusalError(
+                    "Native execution requires the precommit amendment owner"
+                )
+E               kodezart.domain.amendment.NativeWriteRefusalError: Native execution requires the precommit amendment owner
+E               During task with name 'execute' and id 'bb08afbf-8ab1-72ad-3cd6-c17b5187b6b5'
+E               During task with name 'run_ralph_loop' and id '2a4f19d2-74ef-0298-4775-07c8f7d85ad8'
+
+src/kodezart/chains/ralph_loop.py:257: NativeWriteRefusalError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 20:03:07 [info     ] repo_visibility_resolved       repo_url=https://github.com/owner/repo.git visibility=unknown
+2026-09-12 20:03:07 [info     ] scope_base_resolved            base_branch=main base_role=None input_count=0
+2026-09-12 20:03:07 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 20:03:07 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 20:03:07 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=branch_name
+2026-09-12 20:03:07 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:03:07 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:03:07 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+=========================== short test summary info ============================
+FAILED tests/chains/test_native_fire.py::test_native_fresh_engine_resume_reads_current_checks[changed-check-run_ralph_loop]
+FAILED tests/chains/test_native_fire.py::test_native_fresh_engine_resume_reads_current_checks[changed-check-review_against_ticket]
+FAILED tests/chains/test_native_fire.py::test_native_fresh_engine_resume_reads_current_checks[state-run_ralph_loop]
+FAILED tests/chains/test_native_fire.py::test_native_fresh_engine_resume_reads_current_checks[state-review_against_ticket]
+FAILED tests/chains/test_native_fire.py::test_native_fresh_engine_resume_reads_current_checks[missing-check-review_against_ticket]
+FAILED tests/chains/test_native_fire.py::test_native_fresh_engine_resume_reads_current_checks[outage-review_against_ticket]
+FAILED tests/chains/test_native_fire.py::test_native_inner_checkpoint_resume_requires_current_checks[changed-check-execute]
+FAILED tests/chains/test_native_fire.py::test_native_inner_checkpoint_resume_requires_current_checks[changed-check-evaluate]
+FAILED tests/chains/test_native_fire.py::test_native_inner_checkpoint_resume_requires_current_checks[state-execute]
+FAILED tests/chains/test_native_fire.py::test_native_inner_checkpoint_resume_requires_current_checks[state-evaluate]
+FAILED tests/chains/test_native_fire.py::test_native_inner_checkpoint_resume_requires_current_checks[missing-check-evaluate]
+FAILED tests/chains/test_native_fire.py::test_native_inner_checkpoint_resume_requires_current_checks[outage-evaluate]
+FAILED tests/chains/test_native_fire.py::test_production_constructor_wires_native_source_to_shared_consumers
+13 failed, 95 passed in 93.07s (0:01:33)

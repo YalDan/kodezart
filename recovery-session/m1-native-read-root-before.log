@@ -1,0 +1,56 @@
+Using CPython 3.12.13
+Creating virtual environment at: .venv
+   Building kodezart @ file:///private/tmp/kodezart-v03-m1-native-read-root-before
+warning: `build_system.requires = ["uv-build>=0.10.9,<0.11.0"]` does not contain the current uv version 0.11.6
+      Built kodezart @ file:///private/tmp/kodezart-v03-m1-native-read-root-before
+Installed 174 packages in 2.89s
+FFF                                                                      [100%]
+=================================== FAILURES ===================================
+_____ test_family_cannot_treat_blank_classification_as_empty_membership[] ______
+
+label = ''
+
+    @pytest.mark.parametrize("label", ["", "  "])
+    async def test_family_cannot_treat_blank_classification_as_empty_membership(label):
+        server = FakeLinearMcpServer(issues=[FakeMcpIssue(id="root")])
+        tracker = tracker_over(server, issue_labels={"criterion": label})
+>       with pytest.raises(OperationMemberAbsentError, match="criterion"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'kodezart.types.domain.operation.OperationMemberAbsentError'>
+
+tests/tracker/test_criterion_family_identity.py:15: Failed
+____ test_family_cannot_treat_blank_classification_as_empty_membership[  ] _____
+
+label = '  '
+
+    @pytest.mark.parametrize("label", ["", "  "])
+    async def test_family_cannot_treat_blank_classification_as_empty_membership(label):
+        server = FakeLinearMcpServer(issues=[FakeMcpIssue(id="root")])
+        tracker = tracker_over(server, issue_labels={"criterion": label})
+>       with pytest.raises(OperationMemberAbsentError, match="criterion"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'kodezart.types.domain.operation.OperationMemberAbsentError'>
+
+tests/tracker/test_criterion_family_identity.py:15: Failed
+___________ test_family_cannot_follow_a_substituted_parent_identity ____________
+
+    async def test_family_cannot_follow_a_substituted_parent_identity():
+        class WrongParent(FakeLinearMcpServer):
+            def _tool_get_issue(self, arguments):
+                payload = dict(super()._tool_get_issue(arguments))
+                if arguments["id"] == "root":
+                    payload["id"] = "other-parent"
+                return payload
+    
+        server = WrongParent(issues=[FakeMcpIssue(id="root")])
+        tracker = tracker_over(server, issue_labels={"criterion": "acceptance-condition"})
+>       with pytest.raises(CriterionReadError, match="parent"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'kodezart.domain.errors.CriterionReadError'>
+
+tests/tracker/test_criterion_family_identity.py:30: Failed
+=========================== short test summary info ============================
+FAILED tests/tracker/test_criterion_family_identity.py::test_family_cannot_treat_blank_classification_as_empty_membership[]
+FAILED tests/tracker/test_criterion_family_identity.py::test_family_cannot_treat_blank_classification_as_empty_membership[  ]
+FAILED tests/tracker/test_criterion_family_identity.py::test_family_cannot_follow_a_substituted_parent_identity
+3 failed in 1.15s

@@ -1,0 +1,83 @@
+E501 Line too long (99 > 88)
+  --> tests/tracker/test_native_read_configuration.py:31:89
+   |
+30 | def configured(server):
+31 |     operation = OperationConfig(operation_name="fixture", workspace="fixture", issue_labels=LABELS)
+   |                                                                                         ^^^^^^^^^^^
+32 |     tracker, _ = build_tracker(backend=TrackerBackend.LINEAR, retry=RetryPolicy(attempts=1, initial_delay=0), operation=operation, cal…
+33 |     return operation, tracker
+   |
+
+E501 Line too long (145 > 88)
+  --> tests/tracker/test_native_read_configuration.py:32:89
+   |
+30 | …
+31 | …xture", workspace="fixture", issue_labels=LABELS)
+32 | …end.LINEAR, retry=RetryPolicy(attempts=1, initial_delay=0), operation=operation, caller=server)
+   |                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+33 | …
+   |
+
+E501 Line too long (134 > 88)
+  --> tests/tracker/test_native_read_configuration.py:36:89
+   |
+36 | @pytest.mark.parametrize("labels", [{"criterion": ""}, {"": "label"}, {"criterion": "  "}, {"criterion": "same", "decision": "same"}])
+   |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+37 | def test_invalid_or_ambiguous_label_mapping_refuses_at_configuration(labels):
+38 |     with pytest.raises(ValidationError, match="issue_labels"):
+   |
+
+E501 Line too long (91 > 88)
+  --> tests/tracker/test_native_read_configuration.py:39:89
+   |
+37 | def test_invalid_or_ambiguous_label_mapping_refuses_at_configuration(labels):
+38 |     with pytest.raises(ValidationError, match="issue_labels"):
+39 |         OperationConfig(operation_name="fixture", workspace="fixture", issue_labels=labels)
+   |                                                                                         ^^^
+   |
+
+E501 Line too long (93 > 88)
+  --> tests/tracker/test_native_read_configuration.py:46:89
+   |
+44 |     operation, tracker = configured(server)
+45 |     assert {ref.kind for ref in owned_mappings(operation)} == {MappingKind.ISSUE_LABEL}
+46 |     assert {ref.identifier for ref in configured_mappings(operation)} == set(LABELS.values())
+   |                                                                                         ^^^^^
+47 |     first = await reconcile_tracker_mappings(tracker=tracker, config=operation)
+48 |     writes = list(server.tool_calls("create_issue_label"))
+   |
+
+E501 Line too long (110 > 88)
+  --> tests/tracker/test_native_read_configuration.py:82:89
+   |
+80 | def test_scope_read_capability_refuses_without_io(missing):
+81 |     server = FakeLinearMcpServer()
+82 |     tracker = tracker_over(server, issue_labels={key:value for key,value in LABELS.items() if key != missing})
+   |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^
+83 |     with pytest.raises(OperationMemberAbsentError, match=missing):
+84 |         tracker.require_scope_plan_reads()
+   |
+
+E501 Line too long (142 > 88)
+   --> tests/tracker/test_native_read_configuration.py:107:89
+    |
+105 | …ve_identity_and_empty_distinction():
+106 | …
+107 | …racker_issue("native-child", parent_key="root").model_dump(), "issue_labels": ["criterion"]})
+    |                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+108 | …)
+109 | …ey="root")) == (child,)
+    |
+
+E501 Line too long (106 > 88)
+   --> tests/tracker/test_native_read_configuration.py:111:89
+    |
+109 |     assert tuple(await fake.read_criteria(issue_key="root")) == (child,)
+110 |     assert tuple(await fake.read_criteria(issue_key="native-child")) == ()
+111 |     fake.issues[child.issue_key] = TrackerIssue.model_validate({**child.model_dump(), "issue_labels": []})
+    |                                                                                         ^^^^^^^^^^^^^^^^^^
+112 |     assert tuple(await fake.read_criteria(issue_key="root")) == ()
+113 |     with pytest.raises(CriterionReadError):
+    |
+
+Found 9 errors (1 fixed, 8 remaining).

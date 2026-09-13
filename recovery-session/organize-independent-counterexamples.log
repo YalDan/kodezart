@@ -1,0 +1,177 @@
+Using CPython 3.12.13
+Creating virtual environment at: .venv
+   Building kodezart @ file:///private/tmp/kodezart-v03-organize-delivery-review
+warning: `build_system.requires = ["uv-build>=0.10.9,<0.11.0"]` does not contain the current uv version 0.11.6
+      Built kodezart @ file:///private/tmp/kodezart-v03-organize-delivery-review
+Installed 174 packages in 1.27s
+F.F.F..                                                                  [100%]
+=================================== FAILURES ===================================
+___________ test_halted_first_binding_does_not_starve_second_binding ___________
+
+    async def test_halted_first_binding_does_not_starve_second_binding():
+        first, _, _ = factory(tick=True, refuse_forever=True, bound=1)
+        second, board, executor = factory(tick=True)
+        key = "independent-second-scope"
+        issue = board.server.issues.pop(CLAIMED_ISSUE)
+        issue.id = key
+        board.server.issues[key] = issue
+        original = second._targets[0]
+        target = replace(
+            original,
+            binding=original.binding.model_copy(
+                update={"scope": ScopeRef(kind=ScopeKind.ISSUE, key=key)}
+            ),
+        )
+        tick = OrganizeTick(
+            targets=(first._targets[0], target),
+            git=FakeGitService(remote_branch_shas={target.repository.trunk: "a" * 40}),
+            workspace=RecordingWorkspace(),
+            remote="origin",
+        )
+        try:
+            await tick.run(datetime(2026, 9, 12, tzinfo=UTC))
+        except OrganizeWriteRefusalError:
+            pass  # A recorded first halt is allowed; starvation is the oracle.
+>       assert executor.calls, "the second independent binding never reaches its owner"
+E       AssertionError: the second independent binding never reaches its owner
+E       assert []
+E        +  where [] = <tests.chains.test_organize_owner.BoardExecutor object at 0x10e998c20>.calls
+
+tests/chains/test_organize_delivery_independent.py:45: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 16:53:20 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-12 16:53:20 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:53:20 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:53:20 [info     ] outbound_content_gated         categories=[] content_digest=f89d1825e4481064a8b5a1ea1946290f442ebe4ad9e7445547d1046d6df1fd1c failure=None hits=[] surface=tracker verdict=clean visibility=unknown writer=tracker_description
+2026-09-12 16:53:20 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:53:20 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_verify resumed_session_id=None session_id=None
+2026-09-12 16:53:20 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:53:20 [info     ] outbound_content_gated         categories=[] content_digest=772f1370e241ef12564058455b421071379cd3713291914af1db18f69c56b6f9 failure=None hits=[] surface=tracker verdict=clean visibility=unknown writer=tracker_comment
+2026-09-12 16:53:20 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:53:20 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:53:20 [info     ] organize_scope_finished        report={'completed_phases': (), 'halt': {'cause': <StageHaltCause.ADMISSION_EXHAUSTED: 'admission_exhausted'>, 'bound': {'setting': 'organize.max_admission_rounds', 'value': 1, 'rounds_used': 1, 'loop': 'admission'}, 'admission_results': ({'admitted_body_digest': 'f89d1825e4481064a8b5a1ea1946290f442ebe4ad9e7445547d1046d6df1fd1c', 'verdict': <AdmissionVerdict.NOT_BUILDABLE: 'not_buildable'>, 'issue_id': 'FIX-1', 'evidence': 'The current body omits the required source.', 'findings': (), 'invented_decision': 'Restore the source requirement.', 'refusal_kind': <RefusalKind.SPEC_GAP: 'spec_gap'>},), 'surviving_findings': (), 'questions': (), 'unrecorded_escalation_issue_ids': ()}} run_identity='grooming — grooming_pass @ 2026-09-12T00:00:00Z' scope={'kind': <ScopeKind.ISSUE: 'issue'>, 'key': 'FIX-1'}
+_________ test_approval_is_current_after_last_awaited_gate_read[True] __________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10e9d0f50>
+approval_arrives = True
+
+    @pytest.mark.parametrize("approval_arrives", [False, True])
+    async def test_approval_is_current_after_last_awaited_gate_read(
+        monkeypatch, approval_arrives
+    ):
+        owner, board, _ = factory()
+        original = board.call_tool
+        reads_after_grant = 0
+        changed = False
+    
+        async def interleaved(*, name, arguments):
+            nonlocal reads_after_grant, changed
+            response = await original(name=name, arguments=arguments)
+            if board.grants() and name == "get_issue" and arguments.get("id") == CLAIMED_ISSUE:
+                reads_after_grant += 1
+                # execution_approved reads first; read_scope_labels reads second.
+                if reads_after_grant == 2:
+                    changed = True
+                    if approval_arrives:
+                        board.server.issues[CLAIMED_ISSUE].labels.append("approved scope")
+            return response
+    
+        monkeypatch.setattr(board, "call_tool", interleaved)
+        try:
+            await run_owner(owner)
+        except OrganizeWriteRefusalError:
+            pass
+        assert changed, "the intended post-grant gate read was not reached"
+        descriptions = [
+            args for name, args in board.calls
+            if name == "save_issue" and "description" in args
+        ]
+>       assert bool(descriptions) is not approval_arrives
+E       AssertionError: assert True is not True
+E        +  where True = bool([{'description': 'Prepared body grounded in the source.', 'id': 'FIX-1'}])
+
+tests/chains/test_organize_delivery_independent.py:80: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 16:53:21 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-12 16:53:21 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:53:21 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:53:21 [info     ] outbound_content_gated         categories=[] content_digest=f89d1825e4481064a8b5a1ea1946290f442ebe4ad9e7445547d1046d6df1fd1c failure=None hits=[] surface=tracker verdict=clean visibility=private writer=tracker_description
+2026-09-12 16:53:21 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:53:21 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_verify resumed_session_id=None session_id=None
+2026-09-12 16:53:21 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:53:21 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_verify resumed_session_id=None session_id=None
+2026-09-12 16:53:21 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+_______ test_criterion_author_is_bound_to_current_parent_revision[True] ________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10e99b4d0>
+source_changes = True
+
+    @pytest.mark.parametrize("source_changes", [False, True])
+    async def test_criterion_author_is_bound_to_current_parent_revision(
+        monkeypatch, source_changes
+    ):
+        owner, board, executor = factory()
+        original = executor.stream
+        changed = False
+    
+        async def interleaved(**kwargs):
+            nonlocal changed
+            async for event in original(**kwargs):
+                if (
+                    kwargs["output_format"]["schema"].get("title") == "OrganizeProposal"
+                    and event.structured_output.get("kind") == "criteria"
+                    and not changed
+                ):
+                    changed = True
+                    if source_changes:
+                        board.server.issues[CLAIMED_ISSUE].description = "Missing specification"
+                yield event
+    
+        monkeypatch.setattr(executor, "stream", interleaved)
+        try:
+            await run_owner(owner)
+        except OrganizeWriteRefusalError:
+            pass
+        assert changed
+        children = [i for i in board.server.issues.values() if i.parent_id == CLAIMED_ISSUE]
+>       assert bool(children) is not source_changes
+E       AssertionError: assert True is not True
+E        +  where True = bool([FakeMcpIssue(id='NEW-5', title='Check prepared bytes', description='**Check:** Prepared bytes match the declared sour...=datetime.datetime(2026, 1, 1, 0, 0, tzinfo=datetime.timezone.utc), state_changed_at=None, previous_states=[], url='')])
+
+tests/chains/test_organize_delivery_independent.py:111: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 16:53:21 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-12 16:53:21 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:53:21 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:53:21 [info     ] outbound_content_gated         categories=[] content_digest=f89d1825e4481064a8b5a1ea1946290f442ebe4ad9e7445547d1046d6df1fd1c failure=None hits=[] surface=tracker verdict=clean visibility=private writer=tracker_description
+2026-09-12 16:53:21 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:53:21 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_verify resumed_session_id=None session_id=None
+2026-09-12 16:53:21 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:53:21 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_verify resumed_session_id=None session_id=None
+2026-09-12 16:53:21 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:53:21 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:53:21 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-12 16:53:21 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:53:21 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_verify resumed_session_id=None session_id=None
+2026-09-12 16:53:21 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:53:21 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:53:21 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-12 16:53:21 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:53:21 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_criteria_author stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:53:21 [info     ] outbound_content_gated         categories=[] content_digest=444ea9545cc64bfb5c76d9ebd806e35d1175eabac77e2447a23aba20ee5dd4bb failure=None hits=[] surface=tracker verdict=clean visibility=private writer=tracker_description
+2026-09-12 16:53:21 [info     ] outbound_content_gated         categories=[] content_digest=6cccd0622ce623addb5e69d3e39e752fb7fb3714d72d017e33d3aa0e13331ff2 failure=None hits=[] surface=tracker verdict=clean visibility=private writer=tracker_title
+2026-09-12 16:53:21 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:53:21 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_verify resumed_session_id=None session_id=None
+2026-09-12 16:53:21 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:53:21 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_criteria_author stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:53:21 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:53:21 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_verify resumed_session_id=None session_id=None
+2026-09-12 16:53:21 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:53:21 [info     ] outbound_content_gated         categories=[] content_digest=2969a84b4208f10e0d11b50e69e32f8a79bd34c3798f11acbc8a2283434cb042 failure=None hits=[] surface=tracker verdict=clean visibility=private writer=tracker_comment
+2026-09-12 16:53:21 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 16:53:21 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+=========================== short test summary info ============================
+FAILED tests/chains/test_organize_delivery_independent.py::test_halted_first_binding_does_not_starve_second_binding
+FAILED tests/chains/test_organize_delivery_independent.py::test_approval_is_current_after_last_awaited_gate_read[True]
+FAILED tests/chains/test_organize_delivery_independent.py::test_criterion_author_is_bound_to_current_parent_revision[True]
+3 failed, 4 passed in 3.00s

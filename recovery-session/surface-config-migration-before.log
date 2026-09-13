@@ -1,0 +1,112 @@
+.FFF.FFF....                                                             [100%]
+=================================== FAILURES ===================================
+___ test_retired_surface_duration_cannot_silently_select_default[321.5-env] ____
+
+source = 'env', value = 321.5
+tmp_path = PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1707/test_retired_surface_duration_1')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10e3d0ce0>
+
+    @pytest.mark.parametrize("source", ["init", "env", "dotenv", "secret"])
+    @pytest.mark.parametrize("value", [321.5, 0])
+    def test_retired_surface_duration_cannot_silently_select_default(
+        source, value, tmp_path, monkeypatch
+    ):
+        field = "tracker_surface_lease_seconds"
+>       with pytest.raises(ValidationError, match="Extra inputs") as caught:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'pydantic_core._pydantic_core.ValidationError'>
+
+tests/core/test_tracker_settings.py:217: Failed
+__ test_retired_surface_duration_cannot_silently_select_default[321.5-dotenv] __
+
+source = 'dotenv', value = 321.5
+tmp_path = PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1707/test_retired_surface_duration_2')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10e3d1130>
+
+    @pytest.mark.parametrize("source", ["init", "env", "dotenv", "secret"])
+    @pytest.mark.parametrize("value", [321.5, 0])
+    def test_retired_surface_duration_cannot_silently_select_default(
+        source, value, tmp_path, monkeypatch
+    ):
+        field = "tracker_surface_lease_seconds"
+>       with pytest.raises(ValidationError, match="Extra inputs") as caught:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'pydantic_core._pydantic_core.ValidationError'>
+
+tests/core/test_tracker_settings.py:217: Failed
+__ test_retired_surface_duration_cannot_silently_select_default[321.5-secret] __
+
+source = 'secret', value = 321.5
+tmp_path = PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1707/test_retired_surface_duration_3')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10e3d22d0>
+
+    @pytest.mark.parametrize("source", ["init", "env", "dotenv", "secret"])
+    @pytest.mark.parametrize("value", [321.5, 0])
+    def test_retired_surface_duration_cannot_silently_select_default(
+        source, value, tmp_path, monkeypatch
+    ):
+        field = "tracker_surface_lease_seconds"
+>       with pytest.raises(ValidationError, match="Extra inputs") as caught:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'pydantic_core._pydantic_core.ValidationError'>
+
+tests/core/test_tracker_settings.py:217: Failed
+_____ test_retired_surface_duration_cannot_silently_select_default[0-env] ______
+
+source = 'env', value = 0
+tmp_path = PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1707/test_retired_surface_duration_5')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10e3d3650>
+
+    @pytest.mark.parametrize("source", ["init", "env", "dotenv", "secret"])
+    @pytest.mark.parametrize("value", [321.5, 0])
+    def test_retired_surface_duration_cannot_silently_select_default(
+        source, value, tmp_path, monkeypatch
+    ):
+        field = "tracker_surface_lease_seconds"
+>       with pytest.raises(ValidationError, match="Extra inputs") as caught:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'pydantic_core._pydantic_core.ValidationError'>
+
+tests/core/test_tracker_settings.py:217: Failed
+____ test_retired_surface_duration_cannot_silently_select_default[0-dotenv] ____
+
+source = 'dotenv', value = 0
+tmp_path = PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1707/test_retired_surface_duration_6')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10e3d2480>
+
+    @pytest.mark.parametrize("source", ["init", "env", "dotenv", "secret"])
+    @pytest.mark.parametrize("value", [321.5, 0])
+    def test_retired_surface_duration_cannot_silently_select_default(
+        source, value, tmp_path, monkeypatch
+    ):
+        field = "tracker_surface_lease_seconds"
+>       with pytest.raises(ValidationError, match="Extra inputs") as caught:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'pydantic_core._pydantic_core.ValidationError'>
+
+tests/core/test_tracker_settings.py:217: Failed
+____ test_retired_surface_duration_cannot_silently_select_default[0-secret] ____
+
+source = 'secret', value = 0
+tmp_path = PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1707/test_retired_surface_duration_7')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10e583e60>
+
+    @pytest.mark.parametrize("source", ["init", "env", "dotenv", "secret"])
+    @pytest.mark.parametrize("value", [321.5, 0])
+    def test_retired_surface_duration_cannot_silently_select_default(
+        source, value, tmp_path, monkeypatch
+    ):
+        field = "tracker_surface_lease_seconds"
+>       with pytest.raises(ValidationError, match="Extra inputs") as caught:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'pydantic_core._pydantic_core.ValidationError'>
+
+tests/core/test_tracker_settings.py:217: Failed
+=========================== short test summary info ============================
+FAILED tests/core/test_tracker_settings.py::test_retired_surface_duration_cannot_silently_select_default[321.5-env]
+FAILED tests/core/test_tracker_settings.py::test_retired_surface_duration_cannot_silently_select_default[321.5-dotenv]
+FAILED tests/core/test_tracker_settings.py::test_retired_surface_duration_cannot_silently_select_default[321.5-secret]
+FAILED tests/core/test_tracker_settings.py::test_retired_surface_duration_cannot_silently_select_default[0-env]
+FAILED tests/core/test_tracker_settings.py::test_retired_surface_duration_cannot_silently_select_default[0-dotenv]
+FAILED tests/core/test_tracker_settings.py::test_retired_surface_duration_cannot_silently_select_default[0-secret]
+6 failed, 6 passed, 76 deselected in 0.75s

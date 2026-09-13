@@ -1,0 +1,86 @@
+{
+  "error_class_ast_identical": true,
+  "union_test_bytes_identical": true,
+  "assertions": {
+    "tests/domain/test_operation_optionality.py": {
+      "minimal_config": true,
+      "_principal": true,
+      "test_the_two_scalars_alone_are_a_valid_config": true,
+      "test_every_collection_field_defaults_empty": true,
+      "test_the_scalars_are_still_required": true,
+      "test_declared_principals_without_an_approver_still_fail": true,
+      "test_two_assignees_are_refused_at_load": true,
+      "test_an_absent_assignee_loads": true,
+      "test_a_populated_queue_mapping_still_requires_the_core": true,
+      "test_a_records_key_outside_the_kind_vocabulary_is_refused": true,
+      "test_a_populated_documents_registry_still_requires_the_checkpoint_key": true,
+      "test_the_approver_refusal_names_the_role_and_what_stops": true,
+      "test_the_assignee_refusal_names_the_role_and_what_stops": true,
+      "test_the_accessors_return_the_member_when_it_is_declared": true,
+      "test_the_two_registry_keys_carry_no_point_of_need_accessor": true
+    },
+    "tests/integration/test_audit_failure_boundary_independent.py": {
+      "test_native_lane_discovery_keeps_failure_kind": true,
+      "test_actual_git_remote_loss_is_scope_unavailability": true,
+      "call": true,
+      "during": true
+    },
+    "tests/integration/test_audit_report_records.py": {
+      "test_native_summary_rereads_previously_verified_records": true,
+      "during": true
+    },
+    "tests/integration/test_audit_runtime_native.py": {
+      "native_audit": true,
+      "test_current_native_scope_publishes_verified_records_then_summary": true,
+      "test_native_source_or_identity_failure_cannot_publish_clean_coverage": true,
+      "test_instructed_refutation_records_verified_escalation_before_claim": true,
+      "test_executor_programming_failure_escapes_the_native_owner": true,
+      "test_repair_refusal_retains_the_actual_prior_writeback_finding": true,
+      "test_declared_executor_outage_retains_unavailable_and_other_observations": true,
+      "__init__": true,
+      "stream": true,
+      "during": true
+    },
+    "tests/integration/test_audit_scheduler.py": {
+      "test_absent_audit_configuration_has_a_named_runtime_event": true,
+      "dependencies": true,
+      "runtime": true,
+      "test_actual_scheduled_audit_collects_and_verifies_native_summary": true,
+      "test_summary_exhaustion_retains_actual_rounds_and_repeats_uncovered_window": true,
+      "test_partial_configuration_refuses_before_scheduling": true,
+      "test_actual_main_lifespan_registers_and_executes_audit": true,
+      "test_actual_publication_obeys_privacy_gate_before_native_comment": true,
+      "test_corrupted_landed_identity_refuses_even_if_judge_says_holds": true,
+      "test_one_refused_binding_does_not_starve_the_next_scope": true,
+      "test_interrupted_repair_input_order_and_completed_history_stay_distinct": true,
+      "tracker_boot": true,
+      "prompt_boot": true,
+      "recorder_boot": true,
+      "knowledge_boot": true,
+      "gate_boot": true,
+      "call": true,
+      "compose": true,
+      "current": true,
+      "unchanged": true,
+      "gate": true,
+      "__init__": true
+    },
+    "tests/tracker/test_detector_removal_sweep.py": {
+      "payload": true,
+      "ready": true,
+      "test_actual_sweep_preserves_source_findings_and_each_mandate": true,
+      "test_each_source_loss_gets_its_own_exact_mandate_finding": true,
+      "test_independent_failure_retains_every_other_available_arm": true,
+      "test_unavailable_revision_arm_and_lapsed_claim_remain_distinct": true,
+      "test_cancellation_is_not_downgraded_to_a_detector_refusal": true,
+      "test_only_successful_removal_report_still_pins_its_observed_head": true,
+      "test_unproven_removal_is_unavailable_without_erasing_the_regular_claim": true,
+      "test_final_source_and_head_checks_follow_the_actual_removal_arm": true,
+      "read_source": true,
+      "find_source": true,
+      "during": true,
+      "after_advance": true,
+      "current_head": true
+    }
+  }
+}

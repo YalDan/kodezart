@@ -1,0 +1,21 @@
+..................................F...................                   [100%]
+=================================== FAILURES ===================================
+________________ test_every_shipped_config_field_is_documented _________________
+
+    def test_every_shipped_config_field_is_documented() -> None:
+        """A field the code reads that the reference does not name is invisible."""
+        undocumented = _shipped_config_variables() - _config_variables_named_in(
+            CONFIGURATION_DOC,
+        )
+>       assert undocumented == set()
+E       AssertionError: assert {'KODEZART_WR...ERIFY_ROUNDS'} == set()
+E         
+E         Extra items in the left set:
+E         'KODEZART_WRITE_BACK'
+E         'KODEZART_WRITE_BACK__MAX_VERIFY_ROUNDS'
+E         Use -v to get more diff
+
+tests/docs/test_documented_surface.py:111: AssertionError
+=========================== short test summary info ============================
+FAILED tests/docs/test_documented_surface.py::test_every_shipped_config_field_is_documented
+1 failed, 53 passed in 4.86s

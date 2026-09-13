@@ -1,0 +1,671 @@
+[
+  {
+    "path": "src/kodezart/adapters/_agents_mapping.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/adapters/_mcp_mapping.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/adapters/_permission_modes.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/adapters/_sdk_mapping.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/adapters/agent_content_scanner.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/adapters/asyncio_job_queue.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/adapters/claude_agent_executor.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/adapters/claude_client_executor.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/adapters/git_worktree_provider.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/adapters/github_api.py",
+    "owners": [
+      "M1",
+      "M3",
+      "M5"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/adapters/hosted_mcp_session.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/adapters/http_mcp_tool_caller.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/adapters/in_repo_prompt_registry.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/adapters/linear_history_receipt.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/adapters/linear_issue_identity.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/adapters/linear_markers.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "owners": [
+      "M1",
+      "M2",
+      "M3",
+      "M4",
+      "M5",
+      "M7"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/adapters/linear_mcp_types.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/adapters/linear_references.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/adapters/mcp_result_decoding.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/adapters/outbound_admission.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/adapters/reference_content_scanner.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/adapters/regex_content_scanner.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/adapters/stdio_mcp_tool_caller.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/adapters/subprocess_git_service.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/api/dependencies.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/api/v1/endpoints/agent.py",
+    "owners": [
+      "M1",
+      "M3"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/api/v1/endpoints/jobs.py",
+    "owners": [
+      "M1",
+      "M3"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/composition/engine.py",
+    "owners": [
+      "M1",
+      "M3",
+      "M5"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/composition/gating.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/composition/jobs.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/composition/knowledge.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/composition/passes.py",
+    "owners": [
+      "M1",
+      "M2",
+      "M3",
+      "M5"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/composition/preflight.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/composition/prompts.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/composition/tracker.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/composition/workspace.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/core/agent_settings.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/core/config.py",
+    "owners": [
+      "M1",
+      "M2",
+      "M3",
+      "M5",
+      "M6",
+      "M7"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/core/constants.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/core/errors.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/core/git_settings.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/core/http_settings.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/core/job_queue_settings.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/core/knowledge_settings.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/core/logging.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/core/logging_settings.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/core/prompt_namespaces.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/core/prompt_rendering.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/core/protocols.py",
+    "owners": [
+      "M1",
+      "M2",
+      "M3",
+      "M4",
+      "M5",
+      "M6",
+      "M7"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/core/retry.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/core/stream_drain.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/domain/errors.py",
+    "owners": [
+      "M1",
+      "M2",
+      "M3",
+      "M4",
+      "M5",
+      "M6",
+      "M7"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/domain/git_url.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/domain/issue_tree.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/domain/prompt_variables.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/domain/scope_approval.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/domain/tracker_writes.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/handlers/agent_handler.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/main.py",
+    "owners": [
+      "M1",
+      "M3",
+      "M4"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/prompts/sets/anthropic_v5/set.toml",
+    "owners": [
+      "M1",
+      "M2",
+      "M4",
+      "M6"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/services/audit_sessions.py",
+    "owners": [
+      "M1",
+      "M2",
+      "M3",
+      "M6"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/services/fire_context.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/services/git_observations.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/services/owned_workspace.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/services/repo_observations.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/services/scope_membership.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/services/scope_resolution.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/services/tracker_artifacts.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/services/tracker_boot.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/types/domain/agent.py",
+    "owners": [
+      "M1",
+      "M2",
+      "M3",
+      "M4",
+      "M6",
+      "M7"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/types/domain/assertion_drift.py",
+    "owners": [
+      "M1",
+      "M4",
+      "M6",
+      "M7"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/types/domain/audit.py",
+    "owners": [
+      "M1",
+      "M2",
+      "M4",
+      "M6"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/types/domain/credentials.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/types/domain/gating.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/types/domain/issue_identity.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/types/domain/operation.py",
+    "owners": [
+      "M1",
+      "M2",
+      "M4",
+      "M5"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/types/domain/privacy.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/types/domain/prompts.py",
+    "owners": [
+      "M1",
+      "M2",
+      "M4",
+      "M6"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/types/domain/session.py",
+    "owners": [
+      "M1",
+      "M5"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/types/domain/tracker.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/types/domain/tracker_writes.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/types/domain/trajectory.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/types/domain/transport.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/types/domain/workflow.py",
+    "owners": [
+      "M1",
+      "M3",
+      "M4",
+      "M5"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/types/job_acceptance.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  },
+  {
+    "path": "src/kodezart/types/responses/job.py",
+    "owners": [
+      "M1"
+    ],
+    "note": "remaining path difference; shared hunk ownership and accepted overlay required, not all remaining bytes assigned M1"
+  }
+]

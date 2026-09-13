@@ -1,0 +1,238 @@
+FFFFFFFFFFFFFF                                                           [100%]
+=================================== FAILURES ===================================
+__ test_issue_wide_read_retains_actual_different_lane_occurrences[fake-port] ___
+
+tracker = <tests.fakes.FakeTrackerPort object at 0x10f148f80>
+tracker_writes = <function tracker_writes.<locals>.<lambda> at 0x10f156480>
+
+    async def test_issue_wide_read_retains_actual_different_lane_occurrences(
+        tracker, tracker_writes,
+    ):
+        first = await seed_lane(tracker, "old:lane/café")
+        second = await seed_lane(tracker, "current%lane", question="Another actual choice?")
+        before = tracker_writes()
+>       assert await reader(tracker).read_issue(issue_key=APPROVED_ISSUE) == (first, second)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'RulingRecordReader' object has no attribute 'read_issue'
+
+tests/tracker/test_issue_ruling_records.py:28: AttributeError
+__ test_issue_wide_read_retains_actual_different_lane_occurrences[linear-mcp] __
+
+tracker = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10f14a5a0>
+tracker_writes = <function tracker_writes.<locals>.<lambda> at 0x10f1ed8a0>
+
+    async def test_issue_wide_read_retains_actual_different_lane_occurrences(
+        tracker, tracker_writes,
+    ):
+        first = await seed_lane(tracker, "old:lane/café")
+        second = await seed_lane(tracker, "current%lane", question="Another actual choice?")
+        before = tracker_writes()
+>       assert await reader(tracker).read_issue(issue_key=APPROVED_ISSUE) == (first, second)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'RulingRecordReader' object has no attribute 'read_issue'
+
+tests/tracker/test_issue_ruling_records.py:28: AttributeError
+__ test_same_question_under_two_lanes_is_ambiguous_not_two_rulings[fake-port] __
+
+tracker = <tests.fakes.FakeTrackerPort object at 0x10f149430>
+
+    async def test_same_question_under_two_lanes_is_ambiguous_not_two_rulings(tracker):
+        await seed_lane(tracker, "first")
+        await seed_lane(tracker, "second")
+        with pytest.raises(RulingRecordReadError, match="share an identity") as caught:
+>           await reader(tracker).read_issue(issue_key=APPROVED_ISSUE)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AttributeError: 'RulingRecordReader' object has no attribute 'read_issue'
+
+tests/tracker/test_issue_ruling_records.py:39: AttributeError
+_ test_same_question_under_two_lanes_is_ambiguous_not_two_rulings[linear-mcp] __
+
+tracker = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10f21c140>
+
+    async def test_same_question_under_two_lanes_is_ambiguous_not_two_rulings(tracker):
+        await seed_lane(tracker, "first")
+        await seed_lane(tracker, "second")
+        with pytest.raises(RulingRecordReadError, match="share an identity") as caught:
+>           await reader(tracker).read_issue(issue_key=APPROVED_ISSUE)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AttributeError: 'RulingRecordReader' object has no attribute 'read_issue'
+
+tests/tracker/test_issue_ruling_records.py:39: AttributeError
+_ test_malformed_owned_lane_component_is_not_silent_absence[fake-port-[fixture-pinned:]] _
+
+tracker = <tests.fakes.FakeTrackerPort object at 0x10f21d700>
+marker = '[fixture-pinned:]'
+
+    @pytest.mark.parametrize(
+        "marker", ["[fixture-pinned:]", "[fixture-pinned:lane]", "[fixture-pinned:%ZZ:key]", "[fixture-pinned:lane%2fone:key]"]
+    )
+    async def test_malformed_owned_lane_component_is_not_silent_absence(tracker, marker):
+        await tracker.post_comment(issue_key=APPROVED_ISSUE, body=marker + "\nnot a ruling")
+        with pytest.raises(RulingRecordReadError) as caught:
+>           await reader(tracker).read_issue(issue_key=APPROVED_ISSUE)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AttributeError: 'RulingRecordReader' object has no attribute 'read_issue'
+
+tests/tracker/test_issue_ruling_records.py:49: AttributeError
+_ test_malformed_owned_lane_component_is_not_silent_absence[fake-port-[fixture-pinned:lane]] _
+
+tracker = <tests.fakes.FakeTrackerPort object at 0x10f21eb10>
+marker = '[fixture-pinned:lane]'
+
+    @pytest.mark.parametrize(
+        "marker", ["[fixture-pinned:]", "[fixture-pinned:lane]", "[fixture-pinned:%ZZ:key]", "[fixture-pinned:lane%2fone:key]"]
+    )
+    async def test_malformed_owned_lane_component_is_not_silent_absence(tracker, marker):
+        await tracker.post_comment(issue_key=APPROVED_ISSUE, body=marker + "\nnot a ruling")
+        with pytest.raises(RulingRecordReadError) as caught:
+>           await reader(tracker).read_issue(issue_key=APPROVED_ISSUE)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AttributeError: 'RulingRecordReader' object has no attribute 'read_issue'
+
+tests/tracker/test_issue_ruling_records.py:49: AttributeError
+_ test_malformed_owned_lane_component_is_not_silent_absence[fake-port-[fixture-pinned:%ZZ:key]] _
+
+tracker = <tests.fakes.FakeTrackerPort object at 0x10f21ffe0>
+marker = '[fixture-pinned:%ZZ:key]'
+
+    @pytest.mark.parametrize(
+        "marker", ["[fixture-pinned:]", "[fixture-pinned:lane]", "[fixture-pinned:%ZZ:key]", "[fixture-pinned:lane%2fone:key]"]
+    )
+    async def test_malformed_owned_lane_component_is_not_silent_absence(tracker, marker):
+        await tracker.post_comment(issue_key=APPROVED_ISSUE, body=marker + "\nnot a ruling")
+        with pytest.raises(RulingRecordReadError) as caught:
+>           await reader(tracker).read_issue(issue_key=APPROVED_ISSUE)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AttributeError: 'RulingRecordReader' object has no attribute 'read_issue'
+
+tests/tracker/test_issue_ruling_records.py:49: AttributeError
+_ test_malformed_owned_lane_component_is_not_silent_absence[fake-port-[fixture-pinned:lane%2fone:key]] _
+
+tracker = <tests.fakes.FakeTrackerPort object at 0x10f113dd0>
+marker = '[fixture-pinned:lane%2fone:key]'
+
+    @pytest.mark.parametrize(
+        "marker", ["[fixture-pinned:]", "[fixture-pinned:lane]", "[fixture-pinned:%ZZ:key]", "[fixture-pinned:lane%2fone:key]"]
+    )
+    async def test_malformed_owned_lane_component_is_not_silent_absence(tracker, marker):
+        await tracker.post_comment(issue_key=APPROVED_ISSUE, body=marker + "\nnot a ruling")
+        with pytest.raises(RulingRecordReadError) as caught:
+>           await reader(tracker).read_issue(issue_key=APPROVED_ISSUE)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AttributeError: 'RulingRecordReader' object has no attribute 'read_issue'
+
+tests/tracker/test_issue_ruling_records.py:49: AttributeError
+_ test_malformed_owned_lane_component_is_not_silent_absence[linear-mcp-[fixture-pinned:]] _
+
+tracker = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10f23e4b0>
+marker = '[fixture-pinned:]'
+
+    @pytest.mark.parametrize(
+        "marker", ["[fixture-pinned:]", "[fixture-pinned:lane]", "[fixture-pinned:%ZZ:key]", "[fixture-pinned:lane%2fone:key]"]
+    )
+    async def test_malformed_owned_lane_component_is_not_silent_absence(tracker, marker):
+        await tracker.post_comment(issue_key=APPROVED_ISSUE, body=marker + "\nnot a ruling")
+        with pytest.raises(RulingRecordReadError) as caught:
+>           await reader(tracker).read_issue(issue_key=APPROVED_ISSUE)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AttributeError: 'RulingRecordReader' object has no attribute 'read_issue'
+
+tests/tracker/test_issue_ruling_records.py:49: AttributeError
+_ test_malformed_owned_lane_component_is_not_silent_absence[linear-mcp-[fixture-pinned:lane]] _
+
+tracker = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10f23f890>
+marker = '[fixture-pinned:lane]'
+
+    @pytest.mark.parametrize(
+        "marker", ["[fixture-pinned:]", "[fixture-pinned:lane]", "[fixture-pinned:%ZZ:key]", "[fixture-pinned:lane%2fone:key]"]
+    )
+    async def test_malformed_owned_lane_component_is_not_silent_absence(tracker, marker):
+        await tracker.post_comment(issue_key=APPROVED_ISSUE, body=marker + "\nnot a ruling")
+        with pytest.raises(RulingRecordReadError) as caught:
+>           await reader(tracker).read_issue(issue_key=APPROVED_ISSUE)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AttributeError: 'RulingRecordReader' object has no attribute 'read_issue'
+
+tests/tracker/test_issue_ruling_records.py:49: AttributeError
+_ test_malformed_owned_lane_component_is_not_silent_absence[linear-mcp-[fixture-pinned:%ZZ:key]] _
+
+tracker = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10f260b60>
+marker = '[fixture-pinned:%ZZ:key]'
+
+    @pytest.mark.parametrize(
+        "marker", ["[fixture-pinned:]", "[fixture-pinned:lane]", "[fixture-pinned:%ZZ:key]", "[fixture-pinned:lane%2fone:key]"]
+    )
+    async def test_malformed_owned_lane_component_is_not_silent_absence(tracker, marker):
+        await tracker.post_comment(issue_key=APPROVED_ISSUE, body=marker + "\nnot a ruling")
+        with pytest.raises(RulingRecordReadError) as caught:
+>           await reader(tracker).read_issue(issue_key=APPROVED_ISSUE)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AttributeError: 'RulingRecordReader' object has no attribute 'read_issue'
+
+tests/tracker/test_issue_ruling_records.py:49: AttributeError
+_ test_malformed_owned_lane_component_is_not_silent_absence[linear-mcp-[fixture-pinned:lane%2fone:key]] _
+
+tracker = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10f261eb0>
+marker = '[fixture-pinned:lane%2fone:key]'
+
+    @pytest.mark.parametrize(
+        "marker", ["[fixture-pinned:]", "[fixture-pinned:lane]", "[fixture-pinned:%ZZ:key]", "[fixture-pinned:lane%2fone:key]"]
+    )
+    async def test_malformed_owned_lane_component_is_not_silent_absence(tracker, marker):
+        await tracker.post_comment(issue_key=APPROVED_ISSUE, body=marker + "\nnot a ruling")
+        with pytest.raises(RulingRecordReadError) as caught:
+>           await reader(tracker).read_issue(issue_key=APPROVED_ISSUE)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AttributeError: 'RulingRecordReader' object has no attribute 'read_issue'
+
+tests/tracker/test_issue_ruling_records.py:49: AttributeError
+____ test_ordinary_comment_and_other_namespace_remain_unselected[fake-port] ____
+
+tracker = <tests.fakes.FakeTrackerPort object at 0x10f263620>
+
+    async def test_ordinary_comment_and_other_namespace_remain_unselected(tracker):
+        await tracker.post_comment(
+            issue_key=APPROVED_ISSUE,
+            body="ordinary source\n[fixture-pinned:lane:key]",
+        )
+        await tracker.post_comment(
+            issue_key=APPROVED_ISSUE, body="[another-prefix:lane:key]\nother record"
+        )
+>       assert await reader(tracker).read_issue(issue_key=APPROVED_ISSUE) == ()
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'RulingRecordReader' object has no attribute 'read_issue'
+
+tests/tracker/test_issue_ruling_records.py:61: AttributeError
+___ test_ordinary_comment_and_other_namespace_remain_unselected[linear-mcp] ____
+
+tracker = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10f274890>
+
+    async def test_ordinary_comment_and_other_namespace_remain_unselected(tracker):
+        await tracker.post_comment(
+            issue_key=APPROVED_ISSUE,
+            body="ordinary source\n[fixture-pinned:lane:key]",
+        )
+        await tracker.post_comment(
+            issue_key=APPROVED_ISSUE, body="[another-prefix:lane:key]\nother record"
+        )
+>       assert await reader(tracker).read_issue(issue_key=APPROVED_ISSUE) == ()
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'RulingRecordReader' object has no attribute 'read_issue'
+
+tests/tracker/test_issue_ruling_records.py:61: AttributeError
+=========================== short test summary info ============================
+FAILED tests/tracker/test_issue_ruling_records.py::test_issue_wide_read_retains_actual_different_lane_occurrences[fake-port]
+FAILED tests/tracker/test_issue_ruling_records.py::test_issue_wide_read_retains_actual_different_lane_occurrences[linear-mcp]
+FAILED tests/tracker/test_issue_ruling_records.py::test_same_question_under_two_lanes_is_ambiguous_not_two_rulings[fake-port]
+FAILED tests/tracker/test_issue_ruling_records.py::test_same_question_under_two_lanes_is_ambiguous_not_two_rulings[linear-mcp]
+FAILED tests/tracker/test_issue_ruling_records.py::test_malformed_owned_lane_component_is_not_silent_absence[fake-port-[fixture-pinned:]]
+FAILED tests/tracker/test_issue_ruling_records.py::test_malformed_owned_lane_component_is_not_silent_absence[fake-port-[fixture-pinned:lane]]
+FAILED tests/tracker/test_issue_ruling_records.py::test_malformed_owned_lane_component_is_not_silent_absence[fake-port-[fixture-pinned:%ZZ:key]]
+FAILED tests/tracker/test_issue_ruling_records.py::test_malformed_owned_lane_component_is_not_silent_absence[fake-port-[fixture-pinned:lane%2fone:key]]
+FAILED tests/tracker/test_issue_ruling_records.py::test_malformed_owned_lane_component_is_not_silent_absence[linear-mcp-[fixture-pinned:]]
+FAILED tests/tracker/test_issue_ruling_records.py::test_malformed_owned_lane_component_is_not_silent_absence[linear-mcp-[fixture-pinned:lane]]
+FAILED tests/tracker/test_issue_ruling_records.py::test_malformed_owned_lane_component_is_not_silent_absence[linear-mcp-[fixture-pinned:%ZZ:key]]
+FAILED tests/tracker/test_issue_ruling_records.py::test_malformed_owned_lane_component_is_not_silent_absence[linear-mcp-[fixture-pinned:lane%2fone:key]]
+FAILED tests/tracker/test_issue_ruling_records.py::test_ordinary_comment_and_other_namespace_remain_unselected[fake-port]
+FAILED tests/tracker/test_issue_ruling_records.py::test_ordinary_comment_and_other_namespace_remain_unselected[linear-mcp]
+14 failed in 1.02s

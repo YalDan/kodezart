@@ -1,0 +1,36 @@
+..........................F...                                           [100%]
+=================================== FAILURES ===================================
+_ test_explicit_renewal_extends_duration_and_loss_never_reacquires[linear-mcp] _
+
+ports = (<kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10ecee7b0>, <tests.tracker.test_run_alarm_records.Boundary object at 0x10ececda0>)
+
+    async def test_explicit_renewal_extends_duration_and_loss_never_reacquires(ports):
+        port, boundary = ports
+        value = alarm()
+        async with RunSurfaceLease(
+            tracker=port,
+            job_id=JOB,
+            surfaces=frozenset({address(value)}),
+            lease_seconds=DURATION,
+        ) as lease:
+            boundary.clock.advance(seconds=DURATION - 1)
+            await lease.renew()
+            boundary.clock.advance(seconds=2)
+            await port.record_run_alarm(issue_key=APPROVED_ISSUE, alarm=value, holder=JOB)
+            boundary.clock.advance(seconds=DURATION + 1)
+            before = writes(port, boundary)
+            for _ in range(2):
+                with pytest.raises(SurfaceLeaseLostError) as error:
+                    await lease.renew()
+                assert error.value.job_id == JOB
+                assert error.value.surfaces == frozenset({address(value)})
+>           assert writes(port, boundary) == before
+E           AssertionError: assert ({'body': '``...omment-0001'}) == ({'body': '``...Id': 'FIX-2'})
+E             
+E             Left contains 2 more items, first extra item: {'body': '```kodezart-claim\nkind: lease\nholder: actual-job-77\nnonce: 965a69952b93445d839160d25c93e38f\nstate: held\...%253A%2522lane%252Fopaque%2522%252C%2522issue_id%2522%253Anull%257D%3Asurface_contended%5D\n```', 'id': 'comment-0001'}
+E             Use -v to get more diff
+
+tests/tracker/test_run_alarm_records.py:308: AssertionError
+=========================== short test summary info ============================
+FAILED tests/tracker/test_run_alarm_records.py::test_explicit_renewal_extends_duration_and_loss_never_reacquires[linear-mcp]
+1 failed, 29 passed in 0.63s

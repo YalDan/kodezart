@@ -1,0 +1,105 @@
+{
+  "main": "4661a24b599d75503a997f3ce122f3ad2da77048",
+  "donor": "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+  "ticket_patch_sha256": "2d6893e6e7c0b8d554db5e515cc391bf8afdc9fae7796f7551b28b02c6390cfe",
+  "baseline_symbols": [
+    {
+      "path": "src/kodezart/chains/ticket_generation.py",
+      "symbol": "TicketGenerationLoop",
+      "start": 92,
+      "end": 500,
+      "main_blob_sha256": "3d294f7eb3db4dd2934ef6f644e1e834fc8f9f0a97918c9aaa07e0f27863215b"
+    },
+    {
+      "path": "src/kodezart/types/domain/run_records.py",
+      "symbol": "RunIdentity",
+      "start": 79,
+      "end": 101,
+      "main_blob_sha256": "44345e8cfb26a896a2bc98e9659a8955e87b6c8694130eea23eedea21bc87f3c"
+    },
+    {
+      "path": "src/kodezart/types/domain/agent.py",
+      "symbol": "CommitMessageOutput",
+      "start": 490,
+      "end": 504,
+      "main_blob_sha256": "066d427357024855c9884b085e94427bc674eb5979e1eb960aeb669c6e9c34da"
+    },
+    {
+      "path": "src/kodezart/types/domain/agent.py",
+      "symbol": "WorkflowCompleteEvent",
+      "start": 800,
+      "end": 824,
+      "main_blob_sha256": "066d427357024855c9884b085e94427bc674eb5979e1eb960aeb669c6e9c34da"
+    },
+    {
+      "path": "src/kodezart/types/domain/agent.py",
+      "symbol": "WorkflowVisibilityEvent",
+      "start": 827,
+      "end": 832,
+      "main_blob_sha256": "066d427357024855c9884b085e94427bc674eb5979e1eb960aeb669c6e9c34da"
+    },
+    {
+      "path": "src/kodezart/types/domain/agent.py",
+      "symbol": "WorkflowScopeBaseEvent",
+      "start": 835,
+      "end": 848,
+      "main_blob_sha256": "066d427357024855c9884b085e94427bc674eb5979e1eb960aeb669c6e9c34da"
+    },
+    {
+      "path": "src/kodezart/types/domain/agent.py",
+      "symbol": "COMMIT_MESSAGE_SCHEMA",
+      "start": 925,
+      "end": 925,
+      "main_blob_sha256": "066d427357024855c9884b085e94427bc674eb5979e1eb960aeb669c6e9c34da"
+    },
+    {
+      "path": "src/kodezart/types/domain/branch.py",
+      "symbol": "BackupBranchName",
+      "start": 24,
+      "end": 38,
+      "main_blob_sha256": "560597b38a4ce5cf66ba240df0ce32bc48011af096dd10c67271d75def568e7a"
+    },
+    {
+      "path": "src/kodezart/types/domain/branch.py",
+      "symbol": "WorkRefRole",
+      "start": 41,
+      "end": 54,
+      "main_blob_sha256": "560597b38a4ce5cf66ba240df0ce32bc48011af096dd10c67271d75def568e7a"
+    },
+    {
+      "path": "src/kodezart/types/domain/branch.py",
+      "symbol": "WorkRef",
+      "start": 57,
+      "end": 81,
+      "main_blob_sha256": "560597b38a4ce5cf66ba240df0ce32bc48011af096dd10c67271d75def568e7a"
+    },
+    {
+      "path": "src/kodezart/types/domain/criteria.py",
+      "symbol": "CriterionId",
+      "start": 37,
+      "end": 37,
+      "main_blob_sha256": "951f90618b7a311bb1f2af15c35ab39617a54b308fac4e1e914421bb043de466"
+    },
+    {
+      "path": "src/kodezart/types/domain/criteria.py",
+      "symbol": "CriterionVerdict",
+      "start": 54,
+      "end": 59,
+      "main_blob_sha256": "951f90618b7a311bb1f2af15c35ab39617a54b308fac4e1e914421bb043de466"
+    },
+    {
+      "path": "src/kodezart/types/domain/outcome.py",
+      "symbol": "WorkflowOutcome",
+      "start": 17,
+      "end": 66,
+      "main_blob_sha256": "e7af4f7faf8830e638acfc6b57399d7acaf0e71e7fc1ca0a22274039adf66fa5"
+    },
+    {
+      "path": "src/kodezart/domain/thread_id.py",
+      "symbol": "workflow_thread_id",
+      "start": 18,
+      "end": 20,
+      "main_blob_sha256": "c692547905989b52f991e5b007123520e4cbdb4c3b8d18c1779f6dc5e12fd780"
+    }
+  ]
+}

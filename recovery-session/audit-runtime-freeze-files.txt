@@ -1,0 +1,46 @@
+commit dd11ffd5439472a664ff5fc082ac8c83b11d0ee5
+Author:     Kodezart <275551396+wringtretsina@users.noreply.github.com>
+AuthorDate: Sat Sep 12 20:59:03 2026 +0200
+Commit:     Kodezart <275551396+wringtretsina@users.noreply.github.com>
+CommitDate: Sat Sep 12 20:59:03 2026 +0200
+
+    Compose configured native audit with verified publication and coverage receipts
+
+.env.example
+docs/configuration.md
+docs/cutover_mapping.md
+docs/operation.example.toml
+src/kodezart/chains/audit_detection_removal.py
+src/kodezart/chains/audit_evidence.py
+src/kodezart/chains/audit_forge.py
+src/kodezart/chains/audit_pass.py
+src/kodezart/chains/audit_sweep.py
+src/kodezart/composition/audit.py
+src/kodezart/composition/passes.py
+src/kodezart/core/audit_settings.py
+src/kodezart/core/config.py
+src/kodezart/core/prompt_namespaces.py
+src/kodezart/domain/errors.py
+src/kodezart/main.py
+src/kodezart/services/audit_coverage.py
+src/kodezart/services/audit_escalation.py
+src/kodezart/services/audit_failures.py
+src/kodezart/services/audit_publication.py
+src/kodezart/services/audit_runtime.py
+src/kodezart/services/audit_sources.py
+src/kodezart/types/domain/audit_runtime.py
+src/kodezart/types/domain/operation.py
+tests/integration/test_audit_configuration.py
+tests/integration/test_audit_report_records.py
+tests/integration/test_audit_runtime_native.py
+tests/integration/test_audit_runtime_types.py
+tests/integration/test_audit_scheduler.py
+tests/prompts/test_operation_config.py
+tests/services/test_audit_coverage.py
+tests/tracker/test_audit_combined_review.py
+tests/tracker/test_audit_evidence_replacements.py
+tests/tracker/test_audit_forge.py
+tests/tracker/test_audit_forge_sweep.py
+tests/tracker/test_audit_mandate.py
+tests/tracker/test_audit_overclaim_sweep.py
+tests/tracker/test_audit_terminal_mandate.py

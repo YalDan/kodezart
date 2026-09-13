@@ -1,0 +1,174 @@
+........................................................................ [ 12%]
+........................................................................ [ 25%]
+........................................................................ [ 38%]
+........................................................................ [ 50%]
+.......................FF................FF............................. [ 63%]
+........................................................................ [ 76%]
+........................................................................ [ 89%]
+..............................................................           [100%]
+=================================== FAILURES ===================================
+_ TestTheTransitionsAJobStreamProduces.test_the_terminal_outcome_reaches_the_issue_as_a_comment _
+
+self = <tests.services.test_lifecycle_watcher.TestTheTransitionsAJobStreamProduces object at 0x10a535f40>
+
+    async def test_the_terminal_outcome_reaches_the_issue_as_a_comment(self) -> None:
+        watch, tracker, _ = watcher(
+            complete(merged=True, outcome=WorkflowOutcome.ci_passed),
+        )
+    
+        await watch.watch(
+            issue_key=ISSUE,
+            job_id="job-0001",
+            pre_claim_state=PRE_CLAIM_STATE,
+        )
+    
+>       assert [comment.body for comment in tracker.comments] == [
+            f"job job-0001 reached outcome {WorkflowOutcome.ci_passed.value}",
+        ]
+E       AssertionError: assert ['[fixture-ou...me ci_passed'] == ['job job-000...me ci_passed']
+E         
+E         At index 0 diff: '[fixture-outcome:K-1:job-0001]\njob job-0001 reached outcome ci_passed' != 'job job-0001 reached outcome ci_passed'
+E         Use -v to get more diff
+
+tests/services/test_lifecycle_watcher.py:237: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 20:59:41 [info     ] lifecycle_in_progress          issue_key=K-1
+2026-09-12 20:59:41 [info     ] lifecycle_done                 issue_key=K-1
+2026-09-12 20:59:41 [info     ] outbound_content_gated         categories=[] content_digest=fdfd09ada3e6d93a2f2e6c1cc13db95ffcdb0cdb1495ec29b06ab7d0a66a2f97 failure=None hits=[] surface=tracker verdict=clean visibility=public writer=tracker_comment
+2026-09-12 20:59:41 [info     ] lifecycle_outcome_comment      issue_key=K-1 job_id=job-0001 outcome=ci_passed
+2026-09-12 20:59:41 [info     ] claim_released                 holder=pass-a issue_key=K-1
+2026-09-12 20:59:41 [info     ] lifecycle_watch_finished       issue_key=K-1 job_id=job-0001 run_started=True terminal_outcome=True
+2026-09-12 20:59:41 [error    ] finished_fire_unknown_to_registry issue_key=K-1 job_id=job-0001 outcome=completed
+_ TestTheTransitionsAJobStreamProduces.test_an_unmerged_run_reports_its_outcome_and_is_not_moved_to_done _
+
+self = <tests.services.test_lifecycle_watcher.TestTheTransitionsAJobStreamProduces object at 0x10a535400>
+
+    async def test_an_unmerged_run_reports_its_outcome_and_is_not_moved_to_done(
+        self,
+    ) -> None:
+        """A failed run is still reported — but never as delivered work."""
+        watch, tracker, _ = watcher(
+            PR_EVENT,
+            complete(
+                merged=False, outcome=WorkflowOutcome.ci_failed_fix_budget_exhausted
+            ),
+        )
+    
+        await watch.watch(
+            issue_key=ISSUE,
+            job_id="job-0001",
+            pre_claim_state=PRE_CLAIM_STATE,
+        )
+    
+        assert (ISSUE, LifecycleStage.DONE) not in tracker.workflow_writes
+        assert tracker.queue_writes == []
+        exhausted = WorkflowOutcome.ci_failed_fix_budget_exhausted
+>       assert [comment.body for comment in tracker.comments] == [
+            f"job job-0001 reached outcome {exhausted.value}",
+        ]
+E       AssertionError: assert ['[fixture-ou...et_exhausted'] == ['job job-000...et_exhausted']
+E         
+E         At index 0 diff: '[fixture-outcome:K-1:job-0001]\njob job-0001 reached outcome ci_failed_fix_budget_exhausted' != 'job job-0001 reached outcome ci_failed_fix_budget_exhausted'
+E         Use -v to get more diff
+
+tests/services/test_lifecycle_watcher.py:261: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 20:59:42 [info     ] lifecycle_in_progress          issue_key=K-1
+2026-09-12 20:59:42 [info     ] lifecycle_deliverable_ref      branch=feature issue_key=K-1 pushed_head_sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+2026-09-12 20:59:42 [info     ] lifecycle_in_review            issue_key=K-1
+2026-09-12 20:59:42 [info     ] outbound_content_gated         categories=[] content_digest=d568b6d196d7da063ff3fc3e8083b16812d32a5a63e07dcd238068b89cd3eb9c failure=None hits=[] surface=tracker verdict=clean visibility=public writer=tracker_comment
+2026-09-12 20:59:42 [info     ] lifecycle_outcome_comment      issue_key=K-1 job_id=job-0001 outcome=ci_failed_fix_budget_exhausted
+2026-09-12 20:59:42 [info     ] claim_released                 holder=pass-a issue_key=K-1
+2026-09-12 20:59:42 [info     ] lifecycle_watch_finished       issue_key=K-1 job_id=job-0001 run_started=True terminal_outcome=True
+2026-09-12 20:59:42 [error    ] finished_fire_unknown_to_registry issue_key=K-1 job_id=job-0001 outcome=completed
+_ TestTheFailureArm.test_a_run_reaching_a_terminal_outcome_is_untouched_by_the_arm _
+
+self = <tests.services.test_lifecycle_watcher.TestTheFailureArm object at 0x10aaa5370>
+
+    async def test_a_run_reaching_a_terminal_outcome_is_untouched_by_the_arm(
+        self,
+    ) -> None:
+        """The paired positive: the success path writes exactly what it did."""
+        watch, tracker, _ = watcher(
+            PR_EVENT,
+            complete(merged=True, outcome=WorkflowOutcome.ci_passed),
+        )
+    
+        await watch.watch(
+            issue_key=ISSUE,
+            job_id="job-0001",
+            pre_claim_state=PRE_CLAIM_STATE,
+        )
+    
+        assert tracker.restored_states == []
+        assert tracker.workflow_writes == [
+            (ISSUE, LifecycleStage.IN_PROGRESS),
+            (ISSUE, LifecycleStage.IN_REVIEW),
+            (ISSUE, LifecycleStage.DONE),
+        ]
+>       assert [comment.body for comment in tracker.comments] == [
+            f"job job-0001 reached outcome {WorkflowOutcome.ci_passed.value}",
+        ]
+E       AssertionError: assert ['[fixture-ou...me ci_passed'] == ['job job-000...me ci_passed']
+E         
+E         At index 0 diff: '[fixture-outcome:K-1:job-0001]\njob job-0001 reached outcome ci_passed' != 'job job-0001 reached outcome ci_passed'
+E         Use -v to get more diff
+
+tests/services/test_lifecycle_watcher.py:759: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 20:59:43 [info     ] lifecycle_in_progress          issue_key=K-1
+2026-09-12 20:59:43 [info     ] lifecycle_deliverable_ref      branch=feature issue_key=K-1 pushed_head_sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+2026-09-12 20:59:43 [info     ] lifecycle_in_review            issue_key=K-1
+2026-09-12 20:59:43 [info     ] lifecycle_done                 issue_key=K-1
+2026-09-12 20:59:43 [info     ] outbound_content_gated         categories=[] content_digest=fdfd09ada3e6d93a2f2e6c1cc13db95ffcdb0cdb1495ec29b06ab7d0a66a2f97 failure=None hits=[] surface=tracker verdict=clean visibility=public writer=tracker_comment
+2026-09-12 20:59:43 [info     ] lifecycle_outcome_comment      issue_key=K-1 job_id=job-0001 outcome=ci_passed
+2026-09-12 20:59:43 [info     ] claim_released                 holder=pass-a issue_key=K-1
+2026-09-12 20:59:43 [info     ] lifecycle_watch_finished       issue_key=K-1 job_id=job-0001 run_started=True terminal_outcome=True
+2026-09-12 20:59:43 [error    ] finished_fire_unknown_to_registry issue_key=K-1 job_id=job-0001 outcome=completed
+_ TestTheFailureArm.test_a_terminal_outcome_after_an_error_frame_is_still_terminal _
+
+self = <tests.services.test_lifecycle_watcher.TestTheFailureArm object at 0x10a4ee4b0>
+
+    async def test_a_terminal_outcome_after_an_error_frame_is_still_terminal(
+        self,
+    ) -> None:
+        """An ErrorEvent alone is not the signal — reaching no terminal is.
+    
+        The ticket loop yields an ``ErrorEvent`` on a soft failure and can
+        still complete, so the arm turns on the absence of a terminal
+        outcome rather than on an error frame having appeared.
+        """
+        watch, tracker, _ = watcher(
+            ErrorEvent(error="soft", error_kind="WorkspaceError"),
+            complete(merged=False, outcome=WorkflowOutcome.loop_not_accepted),
+        )
+    
+        await watch.watch(
+            issue_key=ISSUE,
+            job_id="job-0001",
+            pre_claim_state=PRE_CLAIM_STATE,
+        )
+    
+        assert tracker.restored_states == []
+>       assert [comment.body for comment in tracker.comments] == [
+            f"job job-0001 reached outcome {WorkflowOutcome.loop_not_accepted.value}",
+        ]
+E       AssertionError: assert ['[fixture-ou...not_accepted'] == ['job job-000...not_accepted']
+E         
+E         At index 0 diff: '[fixture-outcome:K-1:job-0001]\njob job-0001 reached outcome loop_not_accepted' != 'job job-0001 reached outcome loop_not_accepted'
+E         Use -v to get more diff
+
+tests/services/test_lifecycle_watcher.py:784: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 20:59:43 [info     ] lifecycle_in_progress          issue_key=K-1
+2026-09-12 20:59:43 [info     ] outbound_content_gated         categories=[] content_digest=687014a0c750007447e7b8148b11ae653ba39e348cef563678564d70585cfad3 failure=None hits=[] surface=tracker verdict=clean visibility=public writer=tracker_comment
+2026-09-12 20:59:43 [info     ] lifecycle_outcome_comment      issue_key=K-1 job_id=job-0001 outcome=loop_not_accepted
+2026-09-12 20:59:43 [info     ] claim_released                 holder=pass-a issue_key=K-1
+2026-09-12 20:59:43 [info     ] lifecycle_watch_finished       issue_key=K-1 job_id=job-0001 run_started=True terminal_outcome=True
+2026-09-12 20:59:43 [error    ] finished_fire_unknown_to_registry issue_key=K-1 job_id=job-0001 outcome=completed
+=========================== short test summary info ============================
+FAILED tests/services/test_lifecycle_watcher.py::TestTheTransitionsAJobStreamProduces::test_the_terminal_outcome_reaches_the_issue_as_a_comment
+FAILED tests/services/test_lifecycle_watcher.py::TestTheTransitionsAJobStreamProduces::test_an_unmerged_run_reports_its_outcome_and_is_not_moved_to_done
+FAILED tests/services/test_lifecycle_watcher.py::TestTheFailureArm::test_a_run_reaching_a_terminal_outcome_is_untouched_by_the_arm
+FAILED tests/services/test_lifecycle_watcher.py::TestTheFailureArm::test_a_terminal_outcome_after_an_error_frame_is_still_terminal
+4 failed, 562 passed in 49.45s

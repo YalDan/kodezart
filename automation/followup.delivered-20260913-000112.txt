@@ -1,0 +1,105 @@
+STEERING CORRECTION — CONTINUE THE EXISTING RUN; DO NOT RESTART
+
+This is a direct user instruction. Acknowledge receipt in your next response,
+state the next concrete completion target, and continue immediately without
+asking for confirmation.
+
+We are making progress, but I need convergence toward completed milestones,
+not an indefinite sequence of small repairs and larger passing test counts.
+
+Preserve the current implementation, worktrees, assignments, independent
+reviews, and all eight engineering review lenses. This correction changes
+execution priorities, not the quality bar.
+
+1. DELIVER ONE MAINTAINED PR PER MILESTONE
+
+The target is:
+M1: Scope inputs / ports — L1
+M2: Organize — L2
+M3: Plan / walk / native fire — L3 + L9
+M4: Criterion lifecycle / tracker state — L4
+M5: Delivery / termination — L5 + L6
+M6: Audit — L7
+M7: Run supervisor — L8
+
+Last observed destinations were M1 #119 and M4 #120. Revalidate current
+branches and PRs before acting; update existing destinations rather than
+creating duplicates.
+
+PR118 is only a temporary integration/testing and migration source. It must
+not become the final monolithic implementation PR or bypass milestone review.
+
+2. TRANSFER ALL EXISTING PROGRESS, NOT JUST FUTURE CHANGES
+
+Move the complete accepted unreleased v0.3 work into its owning milestone
+PRs: inherited implementation, recovery repairs, tests, types, prompts,
+configuration, documentation, and migration notes.
+
+Preserve and account for committed-but-unintegrated and dirty worker changes
+at safe handoffs. Rejected experiments remain historical evidence, not code
+to reintroduce.
+
+Each PR must have a genuine milestone-specific diff, actual prerequisites,
+and links to its Linear findings, review evidence, open blockers, and next
+steps. Preserve all nine lanes’ separate eight-lens obligations.
+
+Assign shared code once. Do not create artificial dependency chains, duplicate
+implementations, or a “foundation” PR containing most of the initiative.
+
+3. FINISH WORK WHILE CONTINUING INDEPENDENT IMPLEMENTATION
+
+Keep an explicitly assigned workstream on milestone extraction and completion.
+Do not repeatedly divert every available worker into another local repair.
+
+For each active milestone, maintain the finite list of remaining acceptance,
+implementation, review, and migration obligations. After a meaningful
+checkpoint, state which obligations were satisfied, which remain, and which
+new evidence-backed defects were discovered.
+
+For recurring freshness, replay, ownership, and error-classification defects,
+review the relevant execution boundaries together and repair their common
+cause through the existing architecture. Do not add another framework or
+ledger, or stop after proving only the latest narrow counterexample.
+
+Do not suppress genuine defects to manufacture progress. Equally, do not
+invent new requirements or unrelated architecture work. Unresolved authorized
+behavioral decisions remain explicit; continue independent work around them.
+
+4. CLEAN UP THE INCREMENTAL PR STACK PROGRESSIVELY
+
+For every superseded v0.3 PR, record where its accepted changes and unresolved
+reviews now live. Once preservation is verified, close it with replacement
+links—without merging obsolete implementations.
+
+Do not defer every closure until the entire initiative is finished.
+Do not close a PR whose useful work or review obligations remain unmapped.
+Preserve history and active branches; no destructive resets.
+
+5. PROVE AND REPORT CONVERGENCE
+
+Verify that the extracted branches recompose without losing or duplicating
+accepted work. Record deliberate code differences separately from regrouping.
+Run appropriate checks on the actual extracted and integrated revisions;
+historical green results do not transfer automatically.
+
+Keep Linear canonical for findings and acceptance evidence, Notion as the
+resume/matrix index, and each milestone PR as its implementation/review entry
+point. Update them during the work, not only at the end.
+
+Read the current records now:
+https://app.notion.com/p/3d4f89e34d1081018a12c8991e5e9ae3
+https://linear.app/duckburg/initiative/kodezart-v03-loop-orchestration-scopes-as-input-the-tracker-as-live-97c2509ef1b8#comment-3ae7f771-d30e-43fc-8357-b2892b666abc
+
+In your next substantive checkpoint, report:
+- Milestone → actual PR → remaining obligations.
+- Existing work transferred since the previous checkpoint.
+- Old PRs closed, or the exact remaining reason each cannot close.
+- The next concrete completion target and its owner.
+
+WIP test failures alone do not mean the run is stalled. Passing test counts
+alone do not mean it is converging. The evidence I want is working behavior,
+shrinking outstanding obligations, completed milestone transfers, and safe
+retirement of the fragmented PR stack.
+
+Continue the existing run. No new master plan, no restart, no weaker tests,
+no invented rulings, and no bypass of merge authorization or branch protection.

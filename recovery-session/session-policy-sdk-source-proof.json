@@ -1,0 +1,7 @@
+{
+  "version": "0.2.151",
+  "official_url": "https://raw.githubusercontent.com/anthropics/claude-agent-sdk-python/v0.2.151/src/claude_agent_sdk/_internal/transport/subprocess_cli.py",
+  "installed_sha256": "748227e42cb9802d7316fabc836428d69bd219b63ef1b2f9f8f7a86a72a03e45",
+  "official_sha256": "748227e42cb9802d7316fabc836428d69bd219b63ef1b2f9f8f7a86a72a03e45",
+  "ast_equal": true
+}

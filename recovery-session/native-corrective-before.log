@@ -1,0 +1,347 @@
+FFFFFFF...                                                               [100%]
+=================================== FAILURES ===================================
+_____ test_resume_after_review_must_not_hand_off_stale_acceptance[outage] ______
+
+change = 'outage'
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("change", ["outage", "removed-criterion", "new-criterion"])
+    async def test_resume_after_review_must_not_hand_off_stale_acceptance(change):
+        port, saver = CountingTracker(), InMemorySaver()
+        original = engine(criteria=TrackerCriteria(tracker=port),
+            executor=NativeExecutor([native_evaluation(), native_evaluation()]),
+            real_loop=True, checkpointer=saver)
+        initial, config = prepare(original, "adversarial-after-review-" + change)
+        async for _ in original.native_graph.astream(initial, config=config,
+                                                     interrupt_before=["complete"]):
+            pass
+        assert original.native_graph.get_state(config).next == ("complete",)
+        mutate(port, change)
+        resumed_executor = NativeExecutor([])
+        fresh = engine(criteria=TrackerCriteria(tracker=port), executor=resumed_executor,
+            real_loop=True, checkpointer=saver)
+        events, error = [], None
+        try:
+            async for event in fresh.native_graph.astream(None, config=config, stream_mode="custom"):
+                events.append(event)
+        except (FireSpecEntryError, InvalidFireCriterionError) as exc:
+            error = type(exc).__name__
+        terminals = [e for e in events if isinstance(e, WorkflowCompleteEvent)]
+        print({"boundary":"after-review", "change":change, "error":error,
+               "terminals":[e.model_dump(mode="json") for e in terminals],
+               "resumed_agent_dispatches":len(resumed_executor.schema_calls)})
+>       assert not any(e.accepted for e in terminals), "Fresh-engine resume handed off cached acceptance after tracker changed"
+E       AssertionError: Fresh-engine resume handed off cached acceptance after tracker changed
+E       assert not True
+E        +  where True = any(<generator object test_resume_after_review_must_not_hand_off_stale_acceptance.<locals>.<genexpr> at 0x10c9b8400>)
+
+../kodezart-recovery-session/test_native_adversarial_review.py:69: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 14:43:55 [info     ] repo_visibility_resolved       repo_url=https://github.com/owner/repo.git visibility=unknown
+2026-09-12 14:43:55 [info     ] scope_base_resolved            base_branch=main base_role=None input_count=0
+2026-09-12 14:43:55 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:43:55 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 14:43:55 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=branch_name
+2026-09-12 14:43:55 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 14:43:55 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 14:43:55 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 14:43:55 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 14:43:55 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:43:55 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=ralph_evaluator stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 14:43:55 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 14:43:55 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:43:55 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=post_merge_review stop_reason=None subtype=result total_cost_usd=None usage=None
+{'boundary': 'after-review', 'change': 'outage', 'error': None, 'terminals': [{'type': 'workflow_complete', 'feature_branch': 'kodezart/test-branch-2940e333', 'ralph_branch': 'kodezart/test-branch-2940e333-ralph-c16a489c', 'total_iterations': 1, 'accepted': True, 'outcome': 'handed_off_for_delivery', 'merged': True, 'final_commit_sha': 'mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm', 'merge_error': None, 'trajectory': {'records': [{'iteration': 1, 'passed_count': 3, 'failing_criterion_ids': [], 'commit_sha': None}], 'never_passed_ids': [], 'best_passed_count': 3, 'best_iteration': 1, 'best_commit_sha': None, 'plateaued': False}, 'criteria_validation': None}], 'resumed_agent_dispatches': 0}
+_ test_resume_after_review_must_not_hand_off_stale_acceptance[removed-criterion] _
+
+change = 'removed-criterion'
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("change", ["outage", "removed-criterion", "new-criterion"])
+    async def test_resume_after_review_must_not_hand_off_stale_acceptance(change):
+        port, saver = CountingTracker(), InMemorySaver()
+        original = engine(criteria=TrackerCriteria(tracker=port),
+            executor=NativeExecutor([native_evaluation(), native_evaluation()]),
+            real_loop=True, checkpointer=saver)
+        initial, config = prepare(original, "adversarial-after-review-" + change)
+        async for _ in original.native_graph.astream(initial, config=config,
+                                                     interrupt_before=["complete"]):
+            pass
+        assert original.native_graph.get_state(config).next == ("complete",)
+        mutate(port, change)
+        resumed_executor = NativeExecutor([])
+        fresh = engine(criteria=TrackerCriteria(tracker=port), executor=resumed_executor,
+            real_loop=True, checkpointer=saver)
+        events, error = [], None
+        try:
+            async for event in fresh.native_graph.astream(None, config=config, stream_mode="custom"):
+                events.append(event)
+        except (FireSpecEntryError, InvalidFireCriterionError) as exc:
+            error = type(exc).__name__
+        terminals = [e for e in events if isinstance(e, WorkflowCompleteEvent)]
+        print({"boundary":"after-review", "change":change, "error":error,
+               "terminals":[e.model_dump(mode="json") for e in terminals],
+               "resumed_agent_dispatches":len(resumed_executor.schema_calls)})
+>       assert not any(e.accepted for e in terminals), "Fresh-engine resume handed off cached acceptance after tracker changed"
+E       AssertionError: Fresh-engine resume handed off cached acceptance after tracker changed
+E       assert not True
+E        +  where True = any(<generator object test_resume_after_review_must_not_hand_off_stale_acceptance.<locals>.<genexpr> at 0x10c9bb400>)
+
+../kodezart-recovery-session/test_native_adversarial_review.py:69: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 14:43:56 [info     ] repo_visibility_resolved       repo_url=https://github.com/owner/repo.git visibility=unknown
+2026-09-12 14:43:56 [info     ] scope_base_resolved            base_branch=main base_role=None input_count=0
+2026-09-12 14:43:56 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:43:56 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 14:43:56 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=branch_name
+2026-09-12 14:43:56 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 14:43:56 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 14:43:56 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 14:43:56 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 14:43:56 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:43:56 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=ralph_evaluator stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 14:43:56 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 14:43:56 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:43:56 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=post_merge_review stop_reason=None subtype=result total_cost_usd=None usage=None
+{'boundary': 'after-review', 'change': 'removed-criterion', 'error': None, 'terminals': [{'type': 'workflow_complete', 'feature_branch': 'kodezart/test-branch-bf4e22f6', 'ralph_branch': 'kodezart/test-branch-bf4e22f6-ralph-712ebe86', 'total_iterations': 1, 'accepted': True, 'outcome': 'handed_off_for_delivery', 'merged': True, 'final_commit_sha': 'mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm', 'merge_error': None, 'trajectory': {'records': [{'iteration': 1, 'passed_count': 3, 'failing_criterion_ids': [], 'commit_sha': None}], 'never_passed_ids': [], 'best_passed_count': 3, 'best_iteration': 1, 'best_commit_sha': None, 'plateaued': False}, 'criteria_validation': None}], 'resumed_agent_dispatches': 0}
+__ test_resume_after_review_must_not_hand_off_stale_acceptance[new-criterion] __
+
+change = 'new-criterion'
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("change", ["outage", "removed-criterion", "new-criterion"])
+    async def test_resume_after_review_must_not_hand_off_stale_acceptance(change):
+        port, saver = CountingTracker(), InMemorySaver()
+        original = engine(criteria=TrackerCriteria(tracker=port),
+            executor=NativeExecutor([native_evaluation(), native_evaluation()]),
+            real_loop=True, checkpointer=saver)
+        initial, config = prepare(original, "adversarial-after-review-" + change)
+        async for _ in original.native_graph.astream(initial, config=config,
+                                                     interrupt_before=["complete"]):
+            pass
+        assert original.native_graph.get_state(config).next == ("complete",)
+        mutate(port, change)
+        resumed_executor = NativeExecutor([])
+        fresh = engine(criteria=TrackerCriteria(tracker=port), executor=resumed_executor,
+            real_loop=True, checkpointer=saver)
+        events, error = [], None
+        try:
+            async for event in fresh.native_graph.astream(None, config=config, stream_mode="custom"):
+                events.append(event)
+        except (FireSpecEntryError, InvalidFireCriterionError) as exc:
+            error = type(exc).__name__
+        terminals = [e for e in events if isinstance(e, WorkflowCompleteEvent)]
+        print({"boundary":"after-review", "change":change, "error":error,
+               "terminals":[e.model_dump(mode="json") for e in terminals],
+               "resumed_agent_dispatches":len(resumed_executor.schema_calls)})
+>       assert not any(e.accepted for e in terminals), "Fresh-engine resume handed off cached acceptance after tracker changed"
+E       AssertionError: Fresh-engine resume handed off cached acceptance after tracker changed
+E       assert not True
+E        +  where True = any(<generator object test_resume_after_review_must_not_hand_off_stale_acceptance.<locals>.<genexpr> at 0x10c9bbac0>)
+
+../kodezart-recovery-session/test_native_adversarial_review.py:69: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 14:43:56 [info     ] repo_visibility_resolved       repo_url=https://github.com/owner/repo.git visibility=unknown
+2026-09-12 14:43:56 [info     ] scope_base_resolved            base_branch=main base_role=None input_count=0
+2026-09-12 14:43:56 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:43:56 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 14:43:56 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=branch_name
+2026-09-12 14:43:56 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 14:43:56 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 14:43:56 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 14:43:56 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 14:43:56 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:43:56 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=ralph_evaluator stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 14:43:56 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 14:43:56 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:43:56 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=post_merge_review stop_reason=None subtype=result total_cost_usd=None usage=None
+{'boundary': 'after-review', 'change': 'new-criterion', 'error': None, 'terminals': [{'type': 'workflow_complete', 'feature_branch': 'kodezart/test-branch-87613d82', 'ralph_branch': 'kodezart/test-branch-87613d82-ralph-3a2a2382', 'total_iterations': 1, 'accepted': True, 'outcome': 'handed_off_for_delivery', 'merged': True, 'final_commit_sha': 'mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm', 'merge_error': None, 'trajectory': {'records': [{'iteration': 1, 'passed_count': 3, 'failing_criterion_ids': [], 'commit_sha': None}], 'never_passed_ids': [], 'best_passed_count': 3, 'best_iteration': 1, 'best_commit_sha': None, 'plateaued': False}, 'criteria_validation': None}], 'resumed_agent_dispatches': 0}
+__________ test_resume_after_grade_must_read_before_merge_side_effect __________
+
+    @pytest.mark.asyncio
+    async def test_resume_after_grade_must_read_before_merge_side_effect():
+        port, saver = CountingTracker(), InMemorySaver()
+        original = engine(criteria=TrackerCriteria(tracker=port),
+            executor=NativeExecutor([native_evaluation()]), real_loop=True, checkpointer=saver)
+        initial, config = prepare(original, "adversarial-before-merge")
+        async for _ in original.native_graph.astream(initial, config=config,
+                                                    interrupt_before=["merge_to_feature"]):
+            pass
+        assert original.native_graph.get_state(config).next == ("merge_to_feature",)
+        port.unavailable = True
+        fresh = engine(criteria=TrackerCriteria(tracker=port), executor=NativeExecutor([]),
+            real_loop=True, checkpointer=saver)
+        with pytest.raises(FireSpecEntryError):
+            async for _ in fresh.native_graph.astream(None, config=config, stream_mode="custom"):
+                pass
+        calls = [call for call in fresh.consolidation._merger.calls if call["method"] == "consolidate"]
+        print({"boundary":"after-grade-before-merge", "merge_calls": calls})
+>       assert not calls, "Merge side effect ran on cached acceptance before resumed tracker outage was checked"
+E       AssertionError: Merge side effect ran on cached acceptance before resumed tracker outage was checked
+E       assert not [{'base_branch': 'main', 'cache_key': 'adversarial-before-merge', 'feature_branch': 'kodezart/test-branch-06ca8c8e', 'feature_tip_sha': 'mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm', ...}]
+
+../kodezart-recovery-session/test_native_adversarial_review.py:90: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 14:43:57 [info     ] repo_visibility_resolved       repo_url=https://github.com/owner/repo.git visibility=unknown
+2026-09-12 14:43:57 [info     ] scope_base_resolved            base_branch=main base_role=None input_count=0
+2026-09-12 14:43:57 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:43:57 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 14:43:57 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=branch_name
+2026-09-12 14:43:57 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 14:43:57 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 14:43:57 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 14:43:57 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 14:43:57 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:43:57 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=ralph_evaluator stop_reason=None subtype=result total_cost_usd=None usage=None
+{'boundary': 'after-grade-before-merge', 'merge_calls': [{'method': 'consolidate', 'repo_path': '/tmp/fire', 'repo_url': 'https://github.com/owner/repo.git', 'base_branch': 'main', 'feature_branch': 'kodezart/test-branch-06ca8c8e', 'source_branch': 'kodezart/test-branch-06ca8c8e-ralph-d124dbec', 'cache_key': 'adversarial-before-merge', 'status': <ConsolidationStatus.FAST_FORWARDED: 'fast_forwarded'>, 'feature_tip_sha': 'mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm'}]}
+_____________ test_review_fresh_agent_redispatch_must_read_tracker _____________
+
+    @pytest.mark.asyncio
+    async def test_review_fresh_agent_redispatch_must_read_tracker():
+        port = CountingTracker()
+        partial = native_evaluation()
+        partial["criteriaResults"].pop()
+        executor = NativeExecutor([native_evaluation(), partial, native_evaluation()])
+        executor.on_evaluation = lambda count: setattr(port, "unavailable", True) if count == 2 else None
+        fire = engine(criteria=TrackerCriteria(tracker=port), executor=executor, real_loop=True)
+        events, error = [], None
+        try:
+            events = await drive(fire, scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
+        except FireSpecEntryError as exc:
+            error = type(exc).__name__
+        terminals = [e for e in events if isinstance(e, WorkflowCompleteEvent)]
+        print({"boundary":"review-redispatch", "error":error,
+               "evaluation_dispatches":len(executor.evaluation_prompts),
+               "accepted":[e.accepted for e in terminals]})
+>       assert len(executor.evaluation_prompts) == 2, "Fresh review retry dispatched under tracker outage"
+E       AssertionError: Fresh review retry dispatched under tracker outage
+E       assert 3 == 2
+E        +  where 3 = len(['── SKILLS AVAILABLE FOR THIS ROLE ──\nLoad each skill below when its subject matter is in play; ignore the ones that... test file names and line numbers, lint rule IDs). Return exactly one result per id listed above — no more, no fewer.'])
+E        +    where ['── SKILLS AVAILABLE FOR THIS ROLE ──\nLoad each skill below when its subject matter is in play; ignore the ones that... test file names and line numbers, lint rule IDs). Return exactly one result per id listed above — no more, no fewer.'] = <tests.chains.test_native_fire.NativeExecutor object at 0x10cb8c230>.evaluation_prompts
+
+../kodezart-recovery-session/test_native_adversarial_review.py:110: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 14:43:57 [info     ] repo_visibility_resolved       repo_url=https://github.com/owner/repo.git visibility=unknown
+2026-09-12 14:43:57 [info     ] scope_base_resolved            base_branch=main base_role=None input_count=0
+2026-09-12 14:43:57 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:43:57 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 14:43:57 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=branch_name
+2026-09-12 14:43:57 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 14:43:57 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 14:43:57 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 14:43:57 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 14:43:57 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:43:57 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=ralph_evaluator stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 14:43:57 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 14:43:57 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:43:57 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=post_merge_review stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 14:43:57 [warning  ] redispatch_breach              attempt=1 breach='Returned ids are not a permutation of the dispatched criteria (missing: fire/owed-nested; duplicate: -; unknown: -)' breach_class=CriteriaFanInError max_attempts=2 site=post_merge_review
+2026-09-12 14:43:57 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:43:57 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=post_merge_review stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 14:43:57 [info     ] backup_cleanup_starting        prefix=kodezart/test-branch-78a785d7
+{'boundary': 'review-redispatch', 'error': None, 'evaluation_dispatches': 3, 'accepted': [True]}
+____ test_remediation_resume_must_refresh_current_checks_before_fresh_agent ____
+
+    @pytest.mark.asyncio
+    async def test_remediation_resume_must_refresh_current_checks_before_fresh_agent():
+        port, saver = CountingTracker(), InMemorySaver()
+        original = engine(criteria=TrackerCriteria(tracker=port),
+            executor=NativeExecutor([native_evaluation(failed=True)]), real_loop=True,
+            remediation_rounds=1, checkpointer=saver)
+        initial, config = prepare(original, "adversarial-before-remediate")
+        async for _ in original.native_graph.astream(initial, config=config,
+                                                    interrupt_before=["remediate"]):
+            pass
+        assert original.native_graph.get_state(config).next == ("remediate",)
+        change_tracker(port, "changed-check")
+        resumed_executor = NativeExecutor([native_evaluation(), native_evaluation()])
+        fresh = engine(criteria=TrackerCriteria(tracker=port), executor=resumed_executor,
+            real_loop=True, remediation_rounds=1, checkpointer=saver)
+        async for _ in fresh.native_graph.astream(None, config=config, stream_mode="custom"):
+            pass
+        prompt = resumed_executor.remediation_prompts[0]
+        print({"boundary":"remediation-resume", "has_current_check":"changed live Check with  spaces" in prompt,
+               "has_stale_check":check_of(NESTED_OWED) in prompt})
+>       assert "changed live Check with  spaces" in prompt, "Fresh remediation agent received only stale criteria after checkpoint resume"
+E       AssertionError: Fresh remediation agent received only stale criteria after checkpoint resume
+E       assert 'changed live Check with  spaces' in '── SKILLS AVAILABLE FOR THIS ROLE ──\nLoad each skill below when its subject matter is in play; ignore the ones that ...ed-direct, fire/owed-direct-2, fire/owed-nested.\n\nOutput ONLY the structured JSON conforming to the provided schema.'
+
+../kodezart-recovery-session/test_native_adversarial_review.py:134: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 14:43:58 [info     ] repo_visibility_resolved       repo_url=https://github.com/owner/repo.git visibility=unknown
+2026-09-12 14:43:58 [info     ] scope_base_resolved            base_branch=main base_role=None input_count=0
+2026-09-12 14:43:58 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:43:58 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 14:43:58 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=branch_name
+2026-09-12 14:43:58 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 14:43:58 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 14:43:58 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 14:43:58 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 14:43:58 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:43:58 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=ralph_evaluator stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 14:43:58 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:43:58 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=remediation_ticket stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 14:43:58 [info     ] remediation_ticket_drafted     base_ref=main entry=loop_not_accepted native=True round_index=0
+2026-09-12 14:43:58 [info     ] remediation_round_opened       base_ref=main entry=loop_not_accepted round_index=0 rounds_remaining=0
+2026-09-12 14:43:58 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 14:43:58 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 14:43:58 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 14:43:58 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 14:43:58 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:43:58 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=ralph_evaluator stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 14:43:58 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 14:43:58 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:43:58 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=post_merge_review stop_reason=None subtype=result total_cost_usd=None usage=None
+{'boundary': 'remediation-resume', 'has_current_check': False, 'has_stale_check': True}
+_______ test_native_malformed_verdict_permutation_cannot_accept[unknown] _______
+
+shape = 'unknown'
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("shape", ["unknown", "duplicate"])
+    async def test_native_malformed_verdict_permutation_cannot_accept(shape):
+        malformed = native_evaluation()
+        row = dict(malformed["criteriaResults"][0])
+        if shape == "unknown":
+            row["criterionId"] = "other-subject/foreign-criterion"
+        malformed["criteriaResults"].append(row)
+        executor = NativeExecutor([malformed, native_evaluation()])
+        fire = engine(criteria=TrackerCriteria(tracker=CountingTracker()), executor=executor, real_loop=True)
+        events = await drive(fire, scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
+        iteration = next(e for e in events if isinstance(e, WorkflowIterationEvent))
+        print({"shape":shape, "verdict":iteration.verdict.value,
+               "fan_in":iteration.fan_in.model_dump(mode="json")})
+>       assert iteration.verdict is AcceptVerdict.rejected
+E       AssertionError: assert <AcceptVerdict.accepted: 'accepted'> is <AcceptVerdict.rejected: 'rejected'>
+E        +  where <AcceptVerdict.accepted: 'accepted'> = WorkflowIterationEvent(type='workflow_iteration', iteration=1, branch='kodezart/test-branch-e51d8aea-ralph-42f11e00', ...ort(missing_ids=[], unknown_ids=['other-subject/foreign-criterion'], duplicate_ids=[], dispatched_count=3, attempts=1)).verdict
+E        +  and   <AcceptVerdict.rejected: 'rejected'> = AcceptVerdict.rejected
+
+../kodezart-recovery-session/test_native_adversarial_review.py:151: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 14:43:58 [info     ] repo_visibility_resolved       repo_url=https://github.com/owner/repo.git visibility=unknown
+2026-09-12 14:43:58 [info     ] scope_base_resolved            base_branch=main base_role=None input_count=0
+2026-09-12 14:43:58 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:43:58 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 14:43:58 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=branch_name
+2026-09-12 14:43:58 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 14:43:58 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 14:43:58 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 14:43:58 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 14:43:58 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:43:58 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=ralph_evaluator stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 14:43:58 [warning  ] redispatch_breach              attempt=1 breach='Returned ids are not a permutation of the dispatched criteria (missing: -; duplicate: -; unknown: other-subject/foreign-criterion)' breach_class=CriteriaFanInError max_attempts=1 site=ralph_evaluator
+2026-09-12 14:43:58 [warning  ] fan_in_exhausted               attempts=1 dispatched_count=3 duplicate_ids=[] iteration=1 missing_ids=[] site=ralph_evaluator unknown_ids=['other-subject/foreign-criterion']
+2026-09-12 14:43:58 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 14:43:58 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 14:43:58 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=native-session site=post_merge_review stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 14:43:58 [info     ] backup_cleanup_starting        prefix=kodezart/test-branch-e51d8aea
+{'shape': 'unknown', 'verdict': 'accepted', 'fan_in': {'missing_ids': [], 'unknown_ids': ['other-subject/foreign-criterion'], 'duplicate_ids': [], 'dispatched_count': 3, 'attempts': 1}}
+=========================== short test summary info ============================
+FAILED ../kodezart-recovery-session/test_native_adversarial_review.py::test_resume_after_review_must_not_hand_off_stale_acceptance[outage]
+FAILED ../kodezart-recovery-session/test_native_adversarial_review.py::test_resume_after_review_must_not_hand_off_stale_acceptance[removed-criterion]
+FAILED ../kodezart-recovery-session/test_native_adversarial_review.py::test_resume_after_review_must_not_hand_off_stale_acceptance[new-criterion]
+FAILED ../kodezart-recovery-session/test_native_adversarial_review.py::test_resume_after_grade_must_read_before_merge_side_effect
+FAILED ../kodezart-recovery-session/test_native_adversarial_review.py::test_review_fresh_agent_redispatch_must_read_tracker
+FAILED ../kodezart-recovery-session/test_native_adversarial_review.py::test_remediation_resume_must_refresh_current_checks_before_fresh_agent
+FAILED ../kodezart-recovery-session/test_native_adversarial_review.py::test_native_malformed_verdict_permutation_cannot_accept[unknown]
+7 failed, 3 passed in 8.46s

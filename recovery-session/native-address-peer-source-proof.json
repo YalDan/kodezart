@@ -1,0 +1,27 @@
+{
+  "src/kodezart/domain/scope_approval.py": {
+    "parent_sha256": "c30ab514ff2ca41a2652465d096530f5cc0808d2ce706e57d7787f87ec2ae36e",
+    "current_sha256": "c30ab514ff2ca41a2652465d096530f5cc0808d2ce706e57d7787f87ec2ae36e",
+    "unchanged": true
+  },
+  "src/kodezart/adapters/linear_mcp_types.py": {
+    "parent_sha256": "a9da925460e5ab6a16251ff3c30de77cca5df2b917b0216ca3352cc3c6c541c5",
+    "current_sha256": "a1001764e213f2607dbd6c669e687e2b2f1d5e269ddb132449954a6b6fd0afa8",
+    "unchanged": false
+  },
+  "src/kodezart/adapters/linear_scope_types.py": {
+    "parent_sha256": "ef4525bea044552fb43fd1ffdffafc3aa010bf2cbdbc33acf402cc5ed48daf74",
+    "current_sha256": "6a518926008a23023517234085b1635496065555956b4d4cfb9c4093f9241101",
+    "unchanged": false
+  },
+  "approval_required_fields": {
+    "id": true,
+    "labels": true,
+    "parent_id": true,
+    "attachments": true,
+    "documents": true,
+    "uuid": false
+  },
+  "head": "b84d43ba44131c8d43d2f3689844cf928ca2276e",
+  "tree": "c00364c07cf4bbf642c397edd3e51185903e80ed"
+}

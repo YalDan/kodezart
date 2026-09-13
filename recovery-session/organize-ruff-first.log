@@ -1,0 +1,1300 @@
+E501 Line too long (89 > 88)
+   --> src/kodezart/chains/write_back_verifier.py:174:89
+    |
+172 |         ):
+173 |             raise WriteBackReadError(
+174 |                 "write-back verification requires a clean repository at the exact commit"
+    |                                                                                         ^
+175 |             )
+    |
+
+E501 Line too long (94 > 88)
+   --> src/kodezart/chains/write_back_verifier.py:179:89
+    |
+177 |     async def judge(self, *, artifact: TrackerArtifact, ref: str) -> WriteBackFinding:
+178 |         if re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", ref) is None:
+179 |             raise WriteBackReadError("write-back verification requires a complete commit SHA")
+    |                                                                                         ^^^^^^
+180 |         key = PromptKey.WRITE_BACK_VERIFY
+181 |         prompt = self._prompts.template_for(key).render(
+    |
+
+E501 Line too long (95 > 88)
+  --> src/kodezart/composition/organize.py:36:89
+   |
+34 | ) -> OrganizeOwner:
+35 |     if config.organize is None:
+36 |         raise OperationMemberAbsentError(missing="organize", stops="configured Organize owner")
+   |                                                                                         ^^^^^^^
+37 |     admission = OrganizeAdmission(
+38 |         tracker=tracker,
+   |
+
+E501 Line too long (101 > 88)
+  --> src/kodezart/composition/organize.py:95:89
+   |
+93 |     ):
+94 |         if not present:
+95 |             raise OperationMemberAbsentError(missing=missing, stops="configured Organize scheduling")
+   |                                                                                         ^^^^^^^^^^^^^
+96 |     if tracker is None:
+97 |         raise OperationMemberAbsentError(missing="tracker", stops="configured Organize scheduling")
+   |
+
+E501 Line too long (99 > 88)
+  --> src/kodezart/composition/organize.py:97:89
+   |
+95 |             raise OperationMemberAbsentError(missing=missing, stops="configured Organize scheduling")
+96 |     if tracker is None:
+97 |         raise OperationMemberAbsentError(missing="tracker", stops="configured Organize scheduling")
+   |                                                                                         ^^^^^^^^^^^
+98 |     repositories = {repo.url: repo for repo in operation.repos}
+99 |     targets = [
+   |
+
+E501 Line too long (96 > 88)
+   --> src/kodezart/composition/organize.py:110:89
+    |
+108 |         for binding in operation.organize_scopes
+109 |     ]
+110 |     return OrganizeTick(targets=targets, git=git, workspace=workspace, remote=config.git.remote)
+    |                                                                                         ^^^^^^^^
+    |
+
+E501 Line too long (128 > 88)
+   --> src/kodezart/services/organize_owner.py:219:89
+    |
+217 |         )
+218 |
+219 |     async def _route(self, result: AdmissionResult, *, issue: TrackerIssue, scope_issue_keys: frozenset[str]) -> AdmissionRoute:
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+220 |         if any(finding.issue_id not in scope_issue_keys for finding in result.findings):
+221 |             raise OrganizeWriteRefusal(issue_key=issue.issue_key, reason="finding names an issue outside the admitted scope")
+    |
+
+E501 Line too long (125 > 88)
+   --> src/kodezart/services/organize_owner.py:221:89
+    |
+219 |     async def _route(self, result: AdmissionResult, *, issue: TrackerIssue, scope_issue_keys: frozenset[str]) -> AdmissionRoute:
+220 |         if any(finding.issue_id not in scope_issue_keys for finding in result.findings):
+221 |             raise OrganizeWriteRefusal(issue_key=issue.issue_key, reason="finding names an issue outside the admitted scope")
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+222 |         current = await self._tracker.read_issue(issue_key=issue.issue_key)
+223 |         if not await self._admission.is_live(result):
+    |
+
+E501 Line too long (95 > 88)
+   --> src/kodezart/services/organize_owner.py:227:89
+    |
+225 |         return admission_route(result, issue=current, scope_issue_keys=scope_issue_keys)
+226 |
+227 |     async def _proof_live(self, scope: ScopeRef, judgments: Sequence[AdmissionResult]) -> bool:
+    |                                                                                         ^^^^^^^
+228 |         revisions = await self._snapshot(scope)
+229 |         selected = {r.issue.issue_key: r.issue for r in revisions if is_organize_subject(r.issue) or "criterion" in r.issue.issue_lab…
+    |
+
+E501 Line too long (137 > 88)
+   --> src/kodezart/services/organize_owner.py:229:89
+    |
+227 | …, judgments: Sequence[AdmissionResult]) -> bool:
+228 | …
+229 | …for r in revisions if is_organize_subject(r.issue) or "criterion" in r.issue.issue_labels}
+    |                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+230 | …r result in judgments}:
+231 | …
+    |
+
+E501 Line too long (132 > 88)
+   --> src/kodezart/services/organize_owner.py:235:89
+    |
+233 |         return all([
+234 |             not result.findings
+235 |             and await self._route(result, issue=selected[result.issue_id], scope_issue_keys=members) is AdmissionRoute.MARK_COMPLETE
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+236 |             for result in judgments
+237 |         ])
+    |
+
+E501 Line too long (133 > 88)
+   --> src/kodezart/services/organize_owner.py:418:89
+    |
+416 |                 await self._may_write(request.issue_key)
+417 |                 if not await self._proof_live(scope, judgments):
+418 |                     raise OrganizeWriteRefusal(issue_key=request.issue_key, reason="phase evidence changed during lease acquisition")
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+419 |                 await settle(
+420 |                     self._tracker.set_issue_classification(
+    |
+
+E501 Line too long (102 > 88)
+   --> src/kodezart/services/organize_owner.py:463:89
+    |
+461 |                 raised_by=job_id,
+462 |                 question=question,
+463 |                 interim_reading="Preparation stops; no completion marker or execution is authorized.",
+    |                                                                                         ^^^^^^^^^^^^^^
+464 |                 interim_basis=evidence,
+465 |                 raised_at_sha=base_ref,
+    |
+
+B023 Function definition does not bind loop variable `issue_key`
+   --> src/kodezart/services/organize_owner.py:485:30
+    |
+483 |                     )
+484 |                 await self._escalations.raise_escalation(
+485 |                     lane_key=issue_key,
+    |                              ^^^^^^^^^
+486 |                     job_id=job_id,
+487 |                     escalation=escalation,
+    |
+
+B023 Function definition does not bind loop variable `escalation`
+   --> src/kodezart/services/organize_owner.py:487:32
+    |
+485 |                     lane_key=issue_key,
+486 |                     job_id=job_id,
+487 |                     escalation=escalation,
+    |                                ^^^^^^^^^^
+488 |                     visibility=visibility,
+489 |                 )
+    |
+
+E501 Line too long (101 > 88)
+   --> src/kodezart/services/organize_owner.py:501:89
+    |
+499 |                 async def confirm_label(finding: WriteBackFinding | None) -> None:
+500 |                     if finding is not None:
+501 |                         raise WriteBackReadError("the escalation classification remains unconfirmed")
+    |                                                                                         ^^^^^^^^^^^^^
+502 |                     current = await self._tracker.read_issue(issue_key=issue_key)
+503 |                     if "decision" not in current.issue_labels:
+    |
+
+B023 Function definition does not bind loop variable `issue_key`
+   --> src/kodezart/services/organize_owner.py:502:72
+    |
+500 |                     if finding is not None:
+501 |                         raise WriteBackReadError("the escalation classification remains unconfirmed")
+502 |                     current = await self._tracker.read_issue(issue_key=issue_key)
+    |                                                                        ^^^^^^^^^
+503 |                     if "decision" not in current.issue_labels:
+504 |                         raise WriteBackReadError("the escalation decision classification is absent")
+    |
+
+E501 Line too long (100 > 88)
+   --> src/kodezart/services/organize_owner.py:504:89
+    |
+502 |                     current = await self._tracker.read_issue(issue_key=issue_key)
+503 |                     if "decision" not in current.issue_labels:
+504 |                         raise WriteBackReadError("the escalation decision classification is absent")
+    |                                                                                         ^^^^^^^^^^^^
+505 |
+506 |                 label_result = await self._verifier.write_back(
+    |
+
+E501 Line too long (119 > 88)
+   --> src/kodezart/services/organize_owner.py:507:89
+    |
+506 |                 label_result = await self._verifier.write_back(
+507 |                     step=_WriteStep(WritableSurface(kind=SurfaceKind.ISSUE_LABEL_SET, ref=surface.ref), confirm_label),
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+508 |                     ref=base_ref,
+509 |                 )
+    |
+
+E501 Line too long (97 > 88)
+   --> src/kodezart/services/organize_owner.py:511:89
+    |
+509 |                 )
+510 |                 if label_result.verdict is not AuditVerdict.HOLDS:
+511 |                     raise WriteBackReadError("the escalation classification remains unconfirmed")
+    |                                                                                         ^^^^^^^^^
+512 |             except (
+513 |                 TrackerUnavailableError,
+    |
+
+E501 Line too long (89 > 88)
+   --> src/kodezart/services/organize_owner.py:521:89
+    |
+519 |                     cause=StageHaltCause.ESCALATION_UNRECORDED,
+520 |                     unrecorded_escalation_issue_ids=(issue_key,),
+521 |                     admission_results=tuple(results), surviving_findings=tuple(findings),
+    |                                                                                         ^
+522 |                 )
+523 |         return StageHaltReport.model_validate(
+    |
+
+E501 Line too long (125 > 88)
+   --> src/kodezart/services/organize_owner.py:548:89
+    |
+546 |                 snapshot = await self._snapshot(scope)
+547 |                 members = {r.issue.issue_key for r in snapshot}
+548 |                 if snapshot and all([await self._tracker.execution_approved(issue_key=r.issue.issue_key) for r in snapshot]):
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+549 |                     return OrganizeReport(completed_phases=tuple(completed))
+550 |                 namespace, gate = split_label_key(phase.spec.gate_label_key)
+    |
+
+E501 Line too long (100 > 88)
+   --> src/kodezart/services/organize_owner.py:594:89
+    |
+592 |                         if route is AdmissionRoute.ESCALATE:
+593 |                             halt = await self._halt(
+594 |                                 cause=StageHaltCause.HUMAN_DECISION, results=(result,), findings=(),
+    |                                                                                         ^^^^^^^^^^^^
+595 |                                 phase=phase, job_id=job_id, base_ref=base_ref,
+596 |                                 visibility=visibility,
+    |
+
+E501 Line too long (95 > 88)
+   --> src/kodezart/services/organize_owner.py:598:89
+    |
+596 |                                 visibility=visibility,
+597 |                             )
+598 |                             return OrganizeReport(completed_phases=tuple(completed), halt=halt)
+    |                                                                                         ^^^^^^^
+599 |                         children = await self._tracker.read_criteria(issue_key=issue.issue_key)
+600 |                         needs_criteria = (
+    |
+
+E501 Line too long (95 > 88)
+   --> src/kodezart/services/organize_owner.py:599:89
+    |
+597 |                             )
+598 |                             return OrganizeReport(completed_phases=tuple(completed), halt=halt)
+599 |                         children = await self._tracker.read_criteria(issue_key=issue.issue_key)
+    |                                                                                         ^^^^^^^
+600 |                         needs_criteria = (
+601 |                             key is PromptKey.ORGANIZE_CRITERIA_AUTHOR
+    |
+
+E501 Line too long (105 > 88)
+   --> src/kodezart/services/organize_owner.py:602:89
+    |
+600 |                         needs_criteria = (
+601 |                             key is PromptKey.ORGANIZE_CRITERIA_AUTHOR
+602 |                             and not any(c.state_kind is not WorkflowStateKind.CANCELED for c in children)
+    |                                                                                         ^^^^^^^^^^^^^^^^^
+603 |                         )
+604 |                         if route is AdmissionRoute.MARK_COMPLETE and not result.findings and not needs_criteria:
+    |
+
+E501 Line too long (112 > 88)
+   --> src/kodezart/services/organize_owner.py:604:89
+    |
+602 |                             and not any(c.state_kind is not WorkflowStateKind.CANCELED for c in children)
+603 |                         )
+604 |                         if route is AdmissionRoute.MARK_COMPLETE and not result.findings and not needs_criteria:
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^
+605 |                             break
+606 |                         if not await self._author_write(
+    |
+
+E501 Line too long (107 > 88)
+   --> src/kodezart/services/organize_owner.py:613:89
+    |
+611 |                             break
+612 |                         result = await self._admission.verify(request)
+613 |                         route = await self._route(result, issue=issue, scope_issue_keys=frozenset(members))
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^
+614 |                         children = await self._tracker.read_criteria(issue_key=issue.issue_key)
+615 |                         if route is AdmissionRoute.MARK_COMPLETE and not result.findings and (
+    |
+
+E501 Line too long (95 > 88)
+   --> src/kodezart/services/organize_owner.py:614:89
+    |
+612 |                         result = await self._admission.verify(request)
+613 |                         route = await self._route(result, issue=issue, scope_issue_keys=frozenset(members))
+614 |                         children = await self._tracker.read_criteria(issue_key=issue.issue_key)
+    |                                                                                         ^^^^^^^
+615 |                         if route is AdmissionRoute.MARK_COMPLETE and not result.findings and (
+616 |                             key is not PromptKey.ORGANIZE_CRITERIA_AUTHOR
+    |
+
+E501 Line too long (94 > 88)
+   --> src/kodezart/services/organize_owner.py:615:89
+    |
+613 |                         route = await self._route(result, issue=issue, scope_issue_keys=frozenset(members))
+614 |                         children = await self._tracker.read_criteria(issue_key=issue.issue_key)
+615 |                         if route is AdmissionRoute.MARK_COMPLETE and not result.findings and (
+    |                                                                                         ^^^^^^
+616 |                             key is not PromptKey.ORGANIZE_CRITERIA_AUTHOR
+617 |                             or any(c.state_kind is not WorkflowStateKind.CANCELED for c in children)
+    |
+
+E501 Line too long (100 > 88)
+   --> src/kodezart/services/organize_owner.py:617:89
+    |
+615 |                         if route is AdmissionRoute.MARK_COMPLETE and not result.findings and (
+616 |                             key is not PromptKey.ORGANIZE_CRITERIA_AUTHOR
+617 |                             or any(c.state_kind is not WorkflowStateKind.CANCELED for c in children)
+    |                                                                                         ^^^^^^^^^^^^
+618 |                         ):
+619 |                             break
+    |
+
+E501 Line too long (89 > 88)
+   --> src/kodezart/services/organize_owner.py:671:89
+    |
+669 |                     else:
+670 |                         admissions[result.issue_id] = result
+671 |                 latest_members = {r.issue.issue_key for r in await self._snapshot(scope)}
+    |                                                                                         ^
+672 |                 if (
+673 |                     latest_members == members
+    |
+
+E501 Line too long (93 > 88)
+   --> src/kodezart/services/organize_owner.py:688:89
+    |
+686 |                         )
+687 |                         if not await self._mark(
+688 |                             request, phase=phase, job_id=job_id, judgments=fresh, scope=scope
+    |                                                                                         ^^^^^
+689 |                         ):
+690 |                             raise OrganizeWriteRefusal(issue_key=issue.issue_key, reason="phase marker remains unverified")
+    |
+
+E501 Line too long (123 > 88)
+   --> src/kodezart/services/organize_owner.py:690:89
+    |
+688 |                             request, phase=phase, job_id=job_id, judgments=fresh, scope=scope
+689 |                         ):
+690 |                             raise OrganizeWriteRefusal(issue_key=issue.issue_key, reason="phase marker remains unverified")
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+691 |                     completed.append(phase.spec.kind)
+692 |                     break
+    |
+
+E501 Line too long (129 > 88)
+  --> src/kodezart/services/organize_tick.py:29:89
+   |
+28 | class OrganizeTick:
+29 |     def __init__(self, *, targets: Sequence[OrganizeTarget], git: GitService, workspace: WorkspaceProvider, remote: str) -> None:
+   |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+30 |         self._targets = tuple(targets)
+31 |         self._git, self._workspace, self._remote = git, workspace, remote
+   |
+
+E501 Line too long (112 > 88)
+  --> src/kodezart/services/organize_tick.py:35:89
+   |
+34 |     async def run(self, started_at: datetime) -> PassRun:
+35 |         identity = RunIdentity(kind=RunKind.GROOMING, name=PromptKey.GROOMING_PASS.value, started_at=started_at)
+   |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^
+36 |         for target in self._targets:
+37 |             async with owned_workspace(self._workspace, repo_url=target.repository.url, ref=target.repository.trunk, cache_key=identit…
+   |
+
+E501 Line too long (158 > 88)
+  --> src/kodezart/services/organize_tick.py:37:89
+   |
+35 | …e=PromptKey.GROOMING_PASS.value, started_at=started_at)
+36 | …
+37 | …epo_url=target.repository.url, ref=target.repository.trunk, cache_key=identity.title()) as workspace:
+   |                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+38 | …it, repository=workspace, remote=self._remote, branch=target.repository.trunk)
+39 | …{40}|[0-9a-f]{64})", head) is None:
+   |
+
+E501 Line too long (135 > 88)
+  --> src/kodezart/services/organize_tick.py:38:89
+   |
+36 | …
+37 | …workspace, repo_url=target.repository.url, ref=target.repository.trunk, cache_key=identity.title()) as workspace:
+38 | …(git=self._git, repository=workspace, remote=self._remote, branch=target.repository.trunk)
+   |                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+39 | …"(?:[0-9a-f]{40}|[0-9a-f]{64})", head) is None:
+40 | …sue_key=target.binding.scope.key, reason="configured repository trunk has no exact remote commit")
+   |
+
+E501 Line too long (92 > 88)
+  --> src/kodezart/services/organize_tick.py:39:89
+   |
+37 | …     async with owned_workspace(self._workspace, repo_url=target.repository.url, ref=target.repository.trunk, cache_key=identity.titl…
+38 | …         head = await read_remote_head(git=self._git, repository=workspace, remote=self._remote, branch=target.repository.trunk)
+39 | …     if head is None or re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", head) is None:
+   |                                                                                   ^^^^
+40 | …         raise OrganizeWriteRefusal(issue_key=target.binding.scope.key, reason="configured repository trunk has no exact remote commi…
+41 | …     report = await target.owner.run(scope=target.binding.scope, repo_url=target.repository.url, base_ref=head, job_id=identity.title…
+   |
+
+E501 Line too long (143 > 88)
+  --> src/kodezart/services/organize_tick.py:40:89
+   |
+38 | …=self._git, repository=workspace, remote=self._remote, branch=target.repository.trunk)
+39 | …[0-9a-f]{40}|[0-9a-f]{64})", head) is None:
+40 | …key=target.binding.scope.key, reason="configured repository trunk has no exact remote commit")
+   |                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+41 | …=target.binding.scope, repo_url=target.repository.url, base_ref=head, job_id=identity.title(), visibility=RepoVisibility.UNKNOWN)
+42 | …_finished", run_identity=identity.title(), scope=target.binding.scope.model_dump(), report=report.model_dump())
+   |
+
+E501 Line too long (178 > 88)
+  --> src/kodezart/services/organize_tick.py:41:89
+   |
+39 | …-f]{64})", head) is None:
+40 | ….scope.key, reason="configured repository trunk has no exact remote commit")
+41 | …ope, repo_url=target.repository.url, base_ref=head, job_id=identity.title(), visibility=RepoVisibility.UNKNOWN)
+   |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+42 | …entity=identity.title(), scope=target.binding.scope.model_dump(), report=report.model_dump())
+43 | …
+   |
+
+E501 Line too long (160 > 88)
+  --> src/kodezart/services/organize_tick.py:42:89
+   |
+40 | …t.binding.scope.key, reason="configured repository trunk has no exact remote commit")
+41 | …inding.scope, repo_url=target.repository.url, base_ref=head, job_id=identity.title(), visibility=RepoVisibility.UNKNOWN)
+42 | …", run_identity=identity.title(), scope=target.binding.scope.model_dump(), report=report.model_dump())
+   |                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+43 | …
+44 | …t.binding.scope.key, reason=f"Organize halted: {report.halt.cause.value}")
+   |
+
+E501 Line too long (132 > 88)
+  --> src/kodezart/services/organize_tick.py:44:89
+   |
+42 | …scope_finished", run_identity=identity.title(), scope=target.binding.scope.model_dump(), report=report.model_dump())
+43 | …
+44 | …ssue_key=target.binding.scope.key, reason=f"Organize halted: {report.halt.cause.value}")
+   |                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+45 | …else PassRun.SKIPPED
+   |
+
+E501 Line too long (89 > 88)
+ --> tests/chains/test_fresh_write_back_judge.py:1:89
+  |
+1 | """The registered write-back role dispatches fresh, typed judgments at the actual ref."""
+  |                                                                                         ^
+2 |
+3 | import pytest
+  |
+
+E501 Line too long (117 > 88)
+  --> tests/chains/test_fresh_write_back_judge.py:17:89
+   |
+16 | HEAD = "a" * 40
+17 | ARTIFACT = TrackerArtifact(surface=SURFACE, native_ref="comment-native-id", content="tests/real.py passed at abc123")
+   |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+
+E501 Line too long (91 > 88)
+  --> tests/chains/test_fresh_write_back_judge.py:33:89
+   |
+32 | @pytest.mark.parametrize("prompt_set", ["claude-opus", "anthropic_v5"])
+33 | async def test_actual_role_preserves_artifact_ref_and_fresh_session_boundaries(prompt_set):
+   |                                                                                         ^^^
+34 |     judge, executor, workspace = build({"verdict": "holds", "evidence": "Read actual tests/real.py at abc123", "cited_refs": ["tests/r…
+35 |     for _ in range(2):
+   |
+
+E501 Line too long (167 > 88)
+  --> tests/chains/test_fresh_write_back_judge.py:34:89
+   |
+32 | …opic_v5"])
+33 | …ession_boundaries(prompt_set):
+34 | …evidence": "Read actual tests/real.py at abc123", "cited_refs": ["tests/real.py"]}, prompt_set=prompt_set)
+   |                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+35 | …
+36 | …AD)
+   |
+
+E501 Line too long (206 > 88)
+  --> tests/chains/test_fresh_write_back_judge.py:48:89
+   |
+48 | …", "evidence": "wrong semantic type"}, {"verdict": "refuted", "evidence": "No actual checked references", "cited_refs": []}])
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+49 | …load):
+50 | …
+   |
+
+E501 Line too long (173 > 88)
+  --> tests/chains/test_fresh_write_back_judge.py:55:89
+   |
+55 | …_result=True), HEAD), (FakeGitService(has_replace_refs_result=True), HEAD), (FakeGitService(), "different")])
+   |                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+56 | …_dispatch(git, ref):
+57 | …"unchecked"}, git=git)
+   |
+
+E402 Module level import not at top of file
+  --> tests/chains/test_organize_owner.py:36:1
+   |
+34 | # Full owner through its actual factory; the executor chooses outputs from the
+35 | # current native board and the requested wire type, not a canned verdict order.
+36 | import json
+   | ^^^^^^^^^^^
+37 | import re
+   |
+
+E402 Module level import not at top of file
+  --> tests/chains/test_organize_owner.py:37:1
+   |
+35 | # current native board and the requested wire type, not a canned verdict order.
+36 | import json
+37 | import re
+   | ^^^^^^^^^
+38 |
+39 | from kodezart.composition.organize import build_organize_owner, build_organize_tick
+   |
+
+E402 Module level import not at top of file
+  --> tests/chains/test_organize_owner.py:39:1
+   |
+37 | import re
+38 |
+39 | from kodezart.composition.organize import build_organize_owner, build_organize_tick
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+40 | from kodezart.core.config import AppConfig
+41 | from kodezart.core.organize_settings import OrganizeSettings
+   |
+
+E402 Module level import not at top of file
+  --> tests/chains/test_organize_owner.py:40:1
+   |
+39 | from kodezart.composition.organize import build_organize_owner, build_organize_tick
+40 | from kodezart.core.config import AppConfig
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+41 | from kodezart.core.organize_settings import OrganizeSettings
+42 | from kodezart.core.prompt_namespaces import operation_bindings
+   |
+
+E402 Module level import not at top of file
+  --> tests/chains/test_organize_owner.py:41:1
+   |
+39 | from kodezart.composition.organize import build_organize_owner, build_organize_tick
+40 | from kodezart.core.config import AppConfig
+41 | from kodezart.core.organize_settings import OrganizeSettings
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+42 | from kodezart.core.prompt_namespaces import operation_bindings
+43 | from kodezart.services.agent_service import AgentService
+   |
+
+E402 Module level import not at top of file
+  --> tests/chains/test_organize_owner.py:42:1
+   |
+40 | from kodezart.core.config import AppConfig
+41 | from kodezart.core.organize_settings import OrganizeSettings
+42 | from kodezart.core.prompt_namespaces import operation_bindings
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+43 | from kodezart.services.agent_service import AgentService
+44 | from kodezart.types.domain.gating import RepoVisibility
+   |
+
+E402 Module level import not at top of file
+  --> tests/chains/test_organize_owner.py:43:1
+   |
+41 | from kodezart.core.organize_settings import OrganizeSettings
+42 | from kodezart.core.prompt_namespaces import operation_bindings
+43 | from kodezart.services.agent_service import AgentService
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+44 | from kodezart.types.domain.gating import RepoVisibility
+45 | from kodezart.types.domain.operation import OperationConfig
+   |
+
+E402 Module level import not at top of file
+  --> tests/chains/test_organize_owner.py:44:1
+   |
+42 | from kodezart.core.prompt_namespaces import operation_bindings
+43 | from kodezart.services.agent_service import AgentService
+44 | from kodezart.types.domain.gating import RepoVisibility
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+45 | from kodezart.types.domain.operation import OperationConfig
+46 | from kodezart.types.domain.scope import ScopeKind, ScopeRef
+   |
+
+E402 Module level import not at top of file
+  --> tests/chains/test_organize_owner.py:45:1
+   |
+43 | from kodezart.services.agent_service import AgentService
+44 | from kodezart.types.domain.gating import RepoVisibility
+45 | from kodezart.types.domain.operation import OperationConfig
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+46 | from kodezart.types.domain.scope import ScopeKind, ScopeRef
+47 | from kodezart.types.domain.session import ToolPreset
+   |
+
+E402 Module level import not at top of file
+  --> tests/chains/test_organize_owner.py:46:1
+   |
+44 | from kodezart.types.domain.gating import RepoVisibility
+45 | from kodezart.types.domain.operation import OperationConfig
+46 | from kodezart.types.domain.scope import ScopeKind, ScopeRef
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+47 | from kodezart.types.domain.session import ToolPreset
+48 | from tests.fakes import SUPPRESS_ALL_SKILLS, FakeGitService, PassThroughGate
+   |
+
+E402 Module level import not at top of file
+  --> tests/chains/test_organize_owner.py:47:1
+   |
+45 | from kodezart.types.domain.operation import OperationConfig
+46 | from kodezart.types.domain.scope import ScopeKind, ScopeRef
+47 | from kodezart.types.domain.session import ToolPreset
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+48 | from tests.fakes import SUPPRESS_ALL_SKILLS, FakeGitService, PassThroughGate
+49 | from tests.prompts.test_organize_mandate_bindings import declared_operation
+   |
+
+E402 Module level import not at top of file
+  --> tests/chains/test_organize_owner.py:48:1
+   |
+46 | from kodezart.types.domain.scope import ScopeKind, ScopeRef
+47 | from kodezart.types.domain.session import ToolPreset
+48 | from tests.fakes import SUPPRESS_ALL_SKILLS, FakeGitService, PassThroughGate
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+49 | from tests.prompts.test_organize_mandate_bindings import declared_operation
+50 | from tests.prompts.test_prompt_wiring import load_registry
+   |
+
+E402 Module level import not at top of file
+  --> tests/chains/test_organize_owner.py:49:1
+   |
+47 | from kodezart.types.domain.session import ToolPreset
+48 | from tests.fakes import SUPPRESS_ALL_SKILLS, FakeGitService, PassThroughGate
+49 | from tests.prompts.test_organize_mandate_bindings import declared_operation
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+50 | from tests.prompts.test_prompt_wiring import load_registry
+51 | from tests.services.test_run_surface_lease import _Board
+   |
+
+E402 Module level import not at top of file
+  --> tests/chains/test_organize_owner.py:50:1
+   |
+48 | from tests.fakes import SUPPRESS_ALL_SKILLS, FakeGitService, PassThroughGate
+49 | from tests.prompts.test_organize_mandate_bindings import declared_operation
+50 | from tests.prompts.test_prompt_wiring import load_registry
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+51 | from tests.services.test_run_surface_lease import _Board
+52 | from tests.tracker.conftest import CLAIMED_ISSUE
+   |
+
+E402 Module level import not at top of file
+  --> tests/chains/test_organize_owner.py:51:1
+   |
+49 | from tests.prompts.test_organize_mandate_bindings import declared_operation
+50 | from tests.prompts.test_prompt_wiring import load_registry
+51 | from tests.services.test_run_surface_lease import _Board
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+52 | from tests.tracker.conftest import CLAIMED_ISSUE
+53 | from tests.tracker.test_linear_mcp_tracker import tracker_over
+   |
+
+E402 Module level import not at top of file
+  --> tests/chains/test_organize_owner.py:52:1
+   |
+50 | from tests.prompts.test_prompt_wiring import load_registry
+51 | from tests.services.test_run_surface_lease import _Board
+52 | from tests.tracker.conftest import CLAIMED_ISSUE
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+53 | from tests.tracker.test_linear_mcp_tracker import tracker_over
+   |
+
+E402 Module level import not at top of file
+  --> tests/chains/test_organize_owner.py:53:1
+   |
+51 | from tests.services.test_run_surface_lease import _Board
+52 | from tests.tracker.conftest import CLAIMED_ISSUE
+53 | from tests.tracker.test_linear_mcp_tracker import tracker_over
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+
+E501 Line too long (114 > 88)
+  --> tests/chains/test_organize_owner.py:68:89
+   |
+66 |         schema = kwargs["output_format"]["schema"]
+67 |         if schema.get("title") == "WriteBackFinding":
+68 |             artifact = json.loads(re.search(r"<written_artifact>\s*(.*?)\s*</written_artifact>", prompt, re.S)[1])
+   |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^
+69 |             payload = {"verdict": "holds", "evidence": f"Read the actual landed artifact: {artifact['content']}", "cited_refs": []}
+70 |         else:
+   |
+
+E501 Line too long (131 > 88)
+  --> tests/chains/test_organize_owner.py:69:89
+   |
+67 |         if schema.get("title") == "WriteBackFinding":
+68 |             artifact = json.loads(re.search(r"<written_artifact>\s*(.*?)\s*</written_artifact>", prompt, re.S)[1])
+69 |             payload = {"verdict": "holds", "evidence": f"Read the actual landed artifact: {artifact['content']}", "cited_refs": []}
+   |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+70 |         else:
+71 |             key = re.findall(r"<issue_key>(.*?)</issue_key>", prompt)[-1]
+   |
+
+E501 Line too long (101 > 88)
+  --> tests/chains/test_organize_owner.py:75:89
+   |
+73 | …     if schema.get("title") == "OrganizeProposal":
+74 | …         if self.wrong_proposal:
+75 | …             payload = {"kind": "body", "issue_id": "wrong-identity", "body": "Prepared body"}
+   |                                                                                   ^^^^^^^^^^^^^
+76 | …         elif "Author criterion sub-issue proposals" in prompt:
+77 | …             payload = {"kind": "criteria", "issue_id": key, "criteria": [{"title": "Check prepared bytes", "check": "Prepared bytes …
+   |
+
+E501 Line too long (218 > 88)
+  --> tests/chains/test_organize_owner.py:77:89
+   |
+75 | …: "Prepared body"}
+76 | …
+77 | …title": "Check prepared bytes", "check": "Prepared bytes match the declared source.", "do": "Compare the source and prepared bytes."}]}
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+78 | …
+79 | …ody grounded in the source."}
+   |
+
+E501 Line too long (112 > 88)
+  --> tests/chains/test_organize_owner.py:79:89
+   |
+77 | …             payload = {"kind": "criteria", "issue_id": key, "criteria": [{"title": "Check prepared bytes", "check": "Prepared bytes …
+78 | …         else:
+79 | …             payload = {"kind": "body", "issue_id": key, "body": "Prepared body grounded in the source."}
+   |                                                                                   ^^^^^^^^^^^^^^^^^^^^^^^^
+80 | …     elif self.refuse_forever or native.description == "Missing specification":
+81 | …         payload = {"issue_id": key, "verdict": "not_buildable", "evidence": "The current body omits the required source.", "refusal_…
+   |
+
+E501 Line too long (214 > 88)
+  --> tests/chains/test_organize_owner.py:81:89
+   |
+79 | …ody grounded in the source."}
+80 | …n":
+81 | … "The current body omits the required source.", "refusal_kind": "spec_gap", "invented_decision": "Restore the source requirement."}
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+82 | …
+83 | …resh native body checked: {native.description}"}
+   |
+
+E501 Line too long (131 > 88)
+  --> tests/chains/test_organize_owner.py:83:89
+   |
+81 | …             payload = {"issue_id": key, "verdict": "not_buildable", "evidence": "The current body omits the required source.", "refu…
+82 | …         else:
+83 | …             payload = {"issue_id": key, "verdict": "buildable", "evidence": f"Fresh native body checked: {native.description}"}
+   |                                                                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+84 | …     yield result(structured_output=payload)
+   |
+
+E501 Line too long (95 > 88)
+  --> tests/chains/test_organize_owner.py:87:89
+   |
+87 | def factory(*, refuse_forever=False, wrong_proposal=False, bound=2, tick=False, settings=None):
+   |                                                                                         ^^^^^^^
+88 |     board = _Board()
+89 |     operation_fields = declared_operation().model_dump()
+   |
+
+E501 Line too long (147 > 88)
+  --> tests/chains/test_organize_owner.py:96:89
+   |
+94 | …_assess"
+95 | …
+96 | …ope": {"kind": "issue", "key": CLAIMED_ISSUE}, "repo_url": operation_fields["repos"][0]["url"]}]
+   |                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+97 | …ation_fields)
+98 | …
+   |
+
+E501 Line too long (190 > 88)
+   --> tests/chains/test_organize_owner.py:101:89
+    |
+ 99 | …
+100 | …
+101 | …d.now, issue_labels=operation.issue_labels, scope_labels=operation.scope_labels, criteria_stage_label_key="criteria")
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+102 | …proposal=wrong_proposal)
+103 | …
+    |
+
+E501 Line too long (97 > 88)
+   --> tests/chains/test_organize_owner.py:102:89
+    |
+100 |     parent.labels = ["candidate scope"]
+101 |     tracker = tracker_over(board.server, caller=board, clock=lambda: board.now, issue_labels=operation.issue_labels, scope_labels=ope…
+102 |     executor = BoardExecutor(board, refuse_forever=refuse_forever, wrong_proposal=wrong_proposal)
+    |                                                                                         ^^^^^^^^^
+103 |     workspace = RecordingWorkspace()
+104 |     constructor = build_organize_tick if tick else build_organize_owner
+    |
+
+E501 Line too long (156 > 88)
+   --> tests/chains/test_organize_owner.py:106:89
+    |
+104 | …_organize_owner
+105 | …
+106 | …ttings(max_admission_rounds=bound, max_convergence_rounds=2)), operation=operation, tracker=tracker,
+    |                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+107 | …=workspace, git_base_url="https://example.invalid"),
+108 | …ranch_shas={repo.trunk: "a" * 40 for repo in operation.repos}),
+    |
+
+E501 Line too long (119 > 88)
+   --> tests/chains/test_organize_owner.py:108:89
+    |
+106 | …     config=settings or AppConfig(organize=OrganizeSettings(max_admission_rounds=bound, max_convergence_rounds=2)), operation=operat…
+107 | …     runner=AgentService(executor=executor, workspace=workspace, git_base_url="https://example.invalid"),
+108 | …     workspace=workspace, git=FakeGitService(remote_branch_shas={repo.trunk: "a" * 40 for repo in operation.repos}),
+    |                                                                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+109 | …     prompts=load_registry(default_set="claude-opus", bindings=operation_bindings(operation)),
+110 | …     skills=SUPPRESS_ALL_SKILLS, gate=PassThroughGate(),
+    |
+
+E501 Line too long (97 > 88)
+   --> tests/chains/test_organize_owner.py:109:89
+    |
+107 |         runner=AgentService(executor=executor, workspace=workspace, git_base_url="https://example.invalid"),
+108 |         workspace=workspace, git=FakeGitService(remote_branch_shas={repo.trunk: "a" * 40 for repo in operation.repos}),
+109 |         prompts=load_registry(default_set="claude-opus", bindings=operation_bindings(operation)),
+    |                                                                                         ^^^^^^^^^
+110 |         skills=SUPPRESS_ALL_SKILLS, gate=PassThroughGate(),
+111 |         **({} if tick else {"repo_url": "https://example.invalid/repository"}),
+    |
+
+E501 Line too long (214 > 88)
+   --> tests/chains/test_organize_owner.py:117:89
+    |
+116 | …
+117 | … repo_url="https://example.invalid/repository", base_ref="a" * 40, job_id="actual-organize-job", visibility=RepoVisibility.PRIVATE)
+    |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+
+E501 Line too long (96 > 88)
+   --> tests/chains/test_organize_owner.py:124:89
+    |
+122 |     report = await run_owner(owner)
+123 |     assert report.halt is None
+124 |     assert [phase.value for phase in report.completed_phases] == ["groom", "ticket", "criteria"]
+    |                                                                                         ^^^^^^^^
+125 |     parent = board.server.issues[CLAIMED_ISSUE]
+126 |     assert {"graph complete", "body complete", "criteria complete"} <= set(parent.labels)
+    |
+
+E501 Line too long (89 > 88)
+   --> tests/chains/test_organize_owner.py:126:89
+    |
+124 |     assert [phase.value for phase in report.completed_phases] == ["groom", "ticket", "criteria"]
+125 |     parent = board.server.issues[CLAIMED_ISSUE]
+126 |     assert {"graph complete", "body complete", "criteria complete"} <= set(parent.labels)
+    |                                                                                         ^
+127 |     children = [issue for issue in board.server.issues.values() if issue.parent_id == CLAIMED_ISSUE]
+128 |     assert len(children) == 1
+    |
+
+E501 Line too long (100 > 88)
+   --> tests/chains/test_organize_owner.py:127:89
+    |
+125 |     parent = board.server.issues[CLAIMED_ISSUE]
+126 |     assert {"graph complete", "body complete", "criteria complete"} <= set(parent.labels)
+127 |     children = [issue for issue in board.server.issues.values() if issue.parent_id == CLAIMED_ISSUE]
+    |                                                                                         ^^^^^^^^^^^^
+128 |     assert len(children) == 1
+129 |     assert children[0].status_type == "unstarted"
+    |
+
+E501 Line too long (120 > 88)
+   --> tests/chains/test_organize_owner.py:132:89
+    |
+130 |     assert children[0].description.endswith("**Evidence:**\n")
+131 |     assert "approved scope" not in parent.labels
+132 |     assert all(call["session_id"] is None and call["allowed_tools"] is ToolPreset.EVALUATION for call in executor.calls)
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+133 |     assert any("Prepared body grounded in the source." in call["prompt"] for call in executor.calls if call["output_format"]["schema"…
+134 |     board.calls.clear()
+    |
+
+E501 Line too long (171 > 88)
+   --> tests/chains/test_organize_owner.py:133:89
+    |
+131 | …
+132 | …s"] is ToolPreset.EVALUATION for call in executor.calls)
+133 | …prompt"] for call in executor.calls if call["output_format"]["schema"].get("title") == "AdmissionJudgment")
+    |                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+134 | …
+135 | …
+    |
+
+E501 Line too long (110 > 88)
+   --> tests/chains/test_organize_owner.py:146:89
+    |
+144 |     parent = board.server.issues[CLAIMED_ISSUE]
+145 |     assert "needs decision" in parent.labels
+146 |     assert not set(parent.labels) & {"graph complete", "body complete", "criteria complete", "approved scope"}
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^
+147 |     assert not any(issue.parent_id == CLAIMED_ISSUE for issue in board.server.issues.values())
+148 |     authors = [call for call in executor.calls if call["output_format"]["schema"].get("title") == "OrganizeProposal"]
+    |
+
+E501 Line too long (94 > 88)
+   --> tests/chains/test_organize_owner.py:147:89
+    |
+145 |     assert "needs decision" in parent.labels
+146 |     assert not set(parent.labels) & {"graph complete", "body complete", "criteria complete", "approved scope"}
+147 |     assert not any(issue.parent_id == CLAIMED_ISSUE for issue in board.server.issues.values())
+    |                                                                                         ^^^^^^
+148 |     authors = [call for call in executor.calls if call["output_format"]["schema"].get("title") == "OrganizeProposal"]
+149 |     assert len(authors) == 1
+    |
+
+E501 Line too long (117 > 88)
+   --> tests/chains/test_organize_owner.py:148:89
+    |
+146 |     assert not set(parent.labels) & {"graph complete", "body complete", "criteria complete", "approved scope"}
+147 |     assert not any(issue.parent_id == CLAIMED_ISSUE for issue in board.server.issues.values())
+148 |     authors = [call for call in executor.calls if call["output_format"]["schema"].get("title") == "OrganizeProposal"]
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+149 |     assert len(authors) == 1
+    |
+
+E501 Line too long (99 > 88)
+   --> tests/chains/test_organize_owner.py:167:89
+    |
+165 |         async for event in original(**kwargs):
+166 |             if kwargs["output_format"]["schema"].get("title") == "OrganizeProposal":
+167 |                 board.server.issues[CLAIMED_ISSUE].description = "Concurrent author's current body"
+    |                                                                                         ^^^^^^^^^^^
+168 |             yield event
+    |
+
+E501 Line too long (95 > 88)
+   --> tests/chains/test_organize_owner.py:173:89
+    |
+171 |     with pytest.raises(StaleWriteError):
+172 |         await run_owner(owner)
+173 |     assert board.server.issues[CLAIMED_ISSUE].description == "Concurrent author's current body"
+    |                                                                                         ^^^^^^^
+174 |     assert not [(name, args) for name, args in board.calls if name == "save_issue"]
+    |
+
+E501 Line too long (97 > 88)
+   --> tests/chains/test_organize_owner.py:177:89
+    |
+177 | async def test_human_approval_arriving_during_authorship_ends_organize_before_write(monkeypatch):
+    |                                                                                         ^^^^^^^^^
+178 |     from kodezart.domain.errors import OrganizeWriteRefusal
+179 |     owner, board, executor = factory()
+    |
+
+RUF059 Unpacked variable `board` is never used
+   --> tests/chains/test_organize_owner.py:217:12
+    |
+216 | async def test_landed_claim_refutation_drives_a_fresh_author_repair(monkeypatch):
+217 |     owner, board, executor = factory()
+    |            ^^^^^
+218 |     original = executor.stream
+219 |     checked = []
+    |
+help: Prefix it with an underscore or any other dummy variable pattern
+
+E501 Line too long (104 > 88)
+   --> tests/chains/test_organize_owner.py:226:89
+    |
+224 |             title = kwargs["output_format"]["schema"].get("title")
+225 |             if title == "OrganizeProposal" and payload.get("kind") == "body":
+226 |                 path = "tests/real.py" if "tests/missing.py" in kwargs["prompt"] else "tests/missing.py"
+    |                                                                                         ^^^^^^^^^^^^^^^^
+227 |                 event = result(structured_output={**payload, "body": f"The artifact is demonstrated by {path}."})
+228 |             elif title == "WriteBackFinding":
+    |
+
+E501 Line too long (113 > 88)
+   --> tests/chains/test_organize_owner.py:227:89
+    |
+225 |             if title == "OrganizeProposal" and payload.get("kind") == "body":
+226 |                 path = "tests/real.py" if "tests/missing.py" in kwargs["prompt"] else "tests/missing.py"
+227 |                 event = result(structured_output={**payload, "body": f"The artifact is demonstrated by {path}."})
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^
+228 |             elif title == "WriteBackFinding":
+229 |                 artifact = json.loads(re.search(r"<written_artifact>\s*(.*?)\s*</written_artifact>", kwargs["prompt"], re.S)[1])
+    |
+
+E501 Line too long (128 > 88)
+   --> tests/chains/test_organize_owner.py:229:89
+    |
+227 |                 event = result(structured_output={**payload, "body": f"The artifact is demonstrated by {path}."})
+228 |             elif title == "WriteBackFinding":
+229 |                 artifact = json.loads(re.search(r"<written_artifact>\s*(.*?)\s*</written_artifact>", kwargs["prompt"], re.S)[1])
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+230 |                 checked.append(artifact["content"])
+231 |                 if "tests/missing.py" in artifact["content"]:
+    |
+
+E501 Line too long (181 > 88)
+   --> tests/chains/test_organize_owner.py:232:89
+    |
+230 | …
+231 | …
+232 | …uted", "evidence": "The named test is absent from the checked repository.", "cited_refs": ["tests/missing.py"]})
+    |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+233 | …
+    |
+
+E501 Line too long (117 > 88)
+   --> tests/chains/test_organize_owner.py:240:89
+    |
+238 |     assert "tests/missing.py" in checked[0]
+239 |     assert "tests/real.py" in checked[1]
+240 |     authors = [call for call in executor.calls if call["output_format"]["schema"].get("title") == "OrganizeProposal"]
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+241 |     assert "tests/missing.py" in authors[1]["prompt"]
+242 |     assert "The named test is absent" in authors[1]["prompt"]
+    |
+
+E501 Line too long (217 > 88)
+  --> tests/core/test_organize_settings.py:29:89
+   |
+29 | …nce_rounds": 1}, {"max_admission_rounds": 0, "max_convergence_rounds": 2}, {"max_admission_rounds": 2, "max_convergence_rounds": -1}])
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+30 | …
+31 | …
+   |
+
+E501 Line too long (100 > 88)
+  --> tests/core/test_organize_settings.py:35:89
+   |
+35 | @pytest.mark.parametrize("change", ["missing_mandates", "undeclared_repository", "duplicate_scope"])
+   |                                                                                         ^^^^^^^^^^^^
+36 | def test_scope_binding_has_one_declared_repository_and_no_ambiguous_authority(change):
+37 |     fields = declared_operation().model_dump()
+   |
+
+E501 Line too long (118 > 88)
+  --> tests/core/test_organize_settings.py:38:89
+   |
+36 | def test_scope_binding_has_one_declared_repository_and_no_ambiguous_authority(change):
+37 |     fields = declared_operation().model_dump()
+38 |     fields["organize_scopes"] = [{"scope": {"kind": "issue", "key": "parent"}, "repo_url": fields["repos"][0]["url"]}]
+   |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+39 |     if change == "missing_mandates":
+40 |         fields["organize_mandates"] = []
+   |
+
+E501 Line too long (102 > 88)
+  --> tests/core/test_organize_settings.py:49:89
+   |
+49 | async def test_nested_environment_bounds_reach_the_actual_tick_and_stop_after_one_author(monkeypatch):
+   |                                                                                         ^^^^^^^^^^^^^^
+50 |     monkeypatch.setenv("KODEZART_ORGANIZE__MAX_ADMISSION_ROUNDS", "1")
+51 |     monkeypatch.setenv("KODEZART_ORGANIZE__MAX_CONVERGENCE_ROUNDS", "7")
+   |
+
+E501 Line too long (124 > 88)
+  --> tests/core/test_organize_settings.py:60:89
+   |
+58 |     with pytest.raises(OrganizeWriteRefusal, match="admission_exhausted"):
+59 |         await tick.run(instant)
+60 |     assert len([call for call in executor.calls if call["output_format"]["schema"].get("title") == "OrganizeProposal"]) == 1
+   |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+61 |     identity = RunIdentity(kind=RunKind.GROOMING, name="grooming_pass", started_at=instant)
+62 |     assert any(identity.title() in str(args.get("body", "")) for name, args in board.calls if name == "save_comment")
+   |
+
+E501 Line too long (91 > 88)
+  --> tests/core/test_organize_settings.py:61:89
+   |
+59 |         await tick.run(instant)
+60 |     assert len([call for call in executor.calls if call["output_format"]["schema"].get("title") == "OrganizeProposal"]) == 1
+61 |     identity = RunIdentity(kind=RunKind.GROOMING, name="grooming_pass", started_at=instant)
+   |                                                                                         ^^^
+62 |     assert any(identity.title() in str(args.get("body", "")) for name, args in board.calls if name == "save_comment")
+   |
+
+E501 Line too long (117 > 88)
+  --> tests/core/test_organize_settings.py:62:89
+   |
+60 |     assert len([call for call in executor.calls if call["output_format"]["schema"].get("title") == "OrganizeProposal"]) == 1
+61 |     identity = RunIdentity(kind=RunKind.GROOMING, name="grooming_pass", started_at=instant)
+62 |     assert any(identity.title() in str(args.get("body", "")) for name, args in board.calls if name == "save_comment")
+   |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+
+E501 Line too long (95 > 88)
+  --> tests/core/test_organize_settings.py:69:89
+   |
+67 |     instant = datetime(2026, 9, 12, tzinfo=UTC)
+68 |     assert await tick.run(instant) is PassRun.RAN
+69 |     assert all(f"<base_ref>{'a' * 40}</base_ref>" in call["prompt"] for call in executor.calls)
+   |                                                                                         ^^^^^^^
+70 |     identity = RunIdentity(kind=RunKind.GROOMING, name="grooming_pass", started_at=instant)
+71 |     assert any(identity.title() in str(args.get("body", "")) for name, args in board.calls if name == "save_comment")
+   |
+
+E501 Line too long (91 > 88)
+  --> tests/core/test_organize_settings.py:70:89
+   |
+68 |     assert await tick.run(instant) is PassRun.RAN
+69 |     assert all(f"<base_ref>{'a' * 40}</base_ref>" in call["prompt"] for call in executor.calls)
+70 |     identity = RunIdentity(kind=RunKind.GROOMING, name="grooming_pass", started_at=instant)
+   |                                                                                         ^^^
+71 |     assert any(identity.title() in str(args.get("body", "")) for name, args in board.calls if name == "save_comment")
+   |
+
+E501 Line too long (117 > 88)
+  --> tests/core/test_organize_settings.py:71:89
+   |
+69 |     assert all(f"<base_ref>{'a' * 40}</base_ref>" in call["prompt"] for call in executor.calls)
+70 |     identity = RunIdentity(kind=RunKind.GROOMING, name="grooming_pass", started_at=instant)
+71 |     assert any(identity.title() in str(args.get("body", "")) for name, args in board.calls if name == "save_comment")
+   |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+
+E501 Line too long (92 > 88)
+  --> tests/tracker/test_criterion_creation.py:22:89
+   |
+21 | def surface(kind=SurfaceKind.CRITERION_CHILD_SET):
+22 |     return WritableSurface(kind=kind, ref=ScopeRef(kind=ScopeKind.ISSUE, key=CLAIMED_ISSUE))
+   |                                                                                         ^^^^
+   |
+
+C408 Unnecessary `dict()` call (rewrite as a literal)
+  --> tests/tracker/test_criterion_creation.py:26:14
+   |
+25 | async def create(tracker, **changes):
+26 |     fields = dict(parent_key=CLAIMED_ISSUE, title="Preserve input bytes", check=CHECK, do=DO, holder=JOB)
+   |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+27 |     fields.update(changes)
+28 |     return await tracker.create_criterion_if_absent(**fields)
+   |
+help: Rewrite as a literal
+
+E501 Line too long (105 > 88)
+  --> tests/tracker/test_criterion_creation.py:26:89
+   |
+25 | async def create(tracker, **changes):
+26 |     fields = dict(parent_key=CLAIMED_ISSUE, title="Preserve input bytes", check=CHECK, do=DO, holder=JOB)
+   |                                                                                         ^^^^^^^^^^^^^^^^^
+27 |     fields.update(changes)
+28 |     return await tracker.create_criterion_if_absent(**fields)
+   |
+
+E501 Line too long (91 > 88)
+  --> tests/tracker/test_criterion_creation.py:35:89
+   |
+35 | async def test_native_create_initializes_only_a_new_todo_criterion_then_replays_no_write():
+   |                                                                                         ^^^
+36 |     board = _Board()
+37 |     tracker = board.tracker()
+   |
+
+E501 Line too long (112 > 88)
+  --> tests/tracker/test_criterion_creation.py:38:89
+   |
+36 |     board = _Board()
+37 |     tracker = board.tracker()
+38 |     async with RunSurfaceLease(tracker=tracker, job_id=JOB, surfaces=frozenset({surface()}), lease_seconds=300):
+   |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^
+39 |         created = await create(tracker)
+40 |     assert created.parent_key == CLAIMED_ISSUE
+   |
+
+E501 Line too long (196 > 88)
+  --> tests/tracker/test_criterion_creation.py:45:89
+   |
+43 | …e:**\n"
+44 | …
+45 | …": created.body, "team": "fixture-team", "parentId": CLAIMED_ISSUE, "labels": ["acceptance-condition"], "state": "Todo"}
+   |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+46 | … must survive."
+47 | …
+   |
+
+E501 Line too long (91 > 88)
+  --> tests/tracker/test_criterion_creation.py:46:89
+   |
+44 |     assert len(saves(board)) == 1
+45 |     assert saves(board)[0] == {"title": "Preserve input bytes", "description": created.body, "team": "fixture-team", "parentId": CLAIM…
+46 |     board.server.issues[created.issue_key].description += "Existing evidence must survive."
+   |                                                                                         ^^^
+47 |     board.server.issues[created.issue_key].status = "Done"
+48 |     board.server.issues[created.issue_key].status_type = "completed"
+   |
+
+E501 Line too long (98 > 88)
+  --> tests/tracker/test_criterion_creation.py:50:89
+   |
+48 |     board.server.issues[created.issue_key].status_type = "completed"
+49 |     board.calls.clear()
+50 |     replay = await create(tracker, title="Never overwrite this", do="Never overwrite this either")
+   |                                                                                         ^^^^^^^^^^
+51 |     assert replay.issue_key == created.issue_key
+52 |     assert replay.body.endswith("Existing evidence must survive.")
+   |
+
+E501 Line too long (120 > 88)
+  --> tests/tracker/test_criterion_creation.py:66:89
+   |
+64 |             await create(tracker)
+65 |     else:
+66 |         async with RunSurfaceLease(tracker=tracker, job_id=JOB, surfaces=frozenset({surface(kind)}), lease_seconds=300):
+   |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+67 |             with pytest.raises(SurfaceLeaseError):
+68 |                 await create(tracker)
+   |
+
+E501 Line too long (183 > 88)
+  --> tests/tracker/test_criterion_creation.py:85:89
+   |
+83 | …
+84 | …
+85 | …IMED_ISSUE, labels=["acceptance-condition"], description=f"**Check:** {CHECK}\n\n**Do:** {DO}\n\n**Evidence:**\n")
+   |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+86 | …heck"):
+87 | …
+   |
+
+E501 Line too long (152 > 88)
+   --> tests/tracker/test_criterion_creation.py:99:89
+    |
+ 99 | …, {"issueId": "existing"}, {"patch": []}, {"parentId": ""}, {"labels": "label"}, {"title": None}])
+    |                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+100 | …an_update_or_malformed_shape(change):
+101 | …y", "team": "team", "parentId": "parent", "labels": ["criterion"], "state": "Todo", **change}
+    |
+
+E501 Line too long (91 > 88)
+   --> tests/tracker/test_criterion_creation.py:100:89
+    |
+ 99 | @pytest.mark.parametrize("change", [{"id": "existing"}, {"issueId": "existing"}, {"patch": []}, {"parentId": ""}, {"labels": "label"}…
+100 | def test_create_initialization_exception_cannot_admit_an_update_or_malformed_shape(change):
+    |                                                                                         ^^^
+101 |     payload = {"title": "new", "description": "new body", "team": "team", "parentId": "parent", "labels": ["criterion"], "state": "To…
+102 |     with pytest.raises(TrackerProtocolError, match="separate writes"):
+    |
+
+E501 Line too long (147 > 88)
+   --> tests/tracker/test_criterion_creation.py:101:89
+    |
+ 99 | …"}, {"issueId": "existing"}, {"patch": []}, {"parentId": ""}, {"labels": "label"}, {"title": None}])
+100 | …t_an_update_or_malformed_shape(change):
+101 | …ody", "team": "team", "parentId": "parent", "labels": ["criterion"], "state": "Todo", **change}
+    |                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+102 | …separate writes"):
+103 | …
+    |
+
+E501 Line too long (108 > 88)
+   --> tests/tracker/test_criterion_creation.py:112:89
+    |
+110 |     tracker = board.tracker()
+111 |     board.pause = lambda name, args: name == "save_issue" and "id" not in args
+112 |     lease = RunSurfaceLease(tracker=tracker, job_id=JOB, surfaces=frozenset({surface()}), lease_seconds=300)
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^
+113 |     await lease.__aenter__()
+114 |     task = asyncio.create_task(create(tracker))
+    |
+
+E501 Line too long (120 > 88)
+   --> tests/tracker/test_criterion_creation.py:117:89
+    |
+115 |     await asyncio.wait_for(board.reached.wait(), timeout=3)
+116 |     board.advance(301)
+117 |     async with RunSurfaceLease(tracker=tracker, job_id="successor", surfaces=frozenset({surface()}), lease_seconds=300):
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+118 |         board.resume.set()
+119 |         created = await task
+    |
+
+Found 132 errors (9 fixed, 123 remaining).
+No fixes available (2 hidden fixes can be enabled with the `--unsafe-fixes` option).

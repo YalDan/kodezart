@@ -1,0 +1,46 @@
+F
+=================================== FAILURES ===================================
+____ test_git_sources_reach_native_cache_remote_and_commit_consumers[init] _____
+
+source = 'init'
+tmp_path = PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-2003/test_git_sources_reach_native_0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a678830>
+
+    @pytest.mark.parametrize("source", ["init", "env", "dotenv", "secret"])
+    async def test_git_sources_reach_native_cache_remote_and_commit_consumers(
+        source, tmp_path, monkeypatch
+    ):
+        values = DEFAULTS | {
+            "remote": "configured",
+            "clone_cache_dir": str(tmp_path / "cache"),
+            "committer_name": "Configured Writer",
+            "committer_email": "writer@example.invalid",
+        }
+        config = from_source(source, values, tmp_path, monkeypatch)
+        assert config.git.model_dump() == values
+        origin = tmp_path / "origin.git"
+        await git(tmp_path, "init", "--bare", str(origin))
+        seed = tmp_path / "seed"
+        await git(tmp_path, "init", "-b", "main", str(seed))
+        await git(seed, "commit", "--allow-empty", "-m", "seed")
+        await git(seed, "push", str(origin), "main")
+        await git(origin, "symbolic-ref", "HEAD", "refs/heads/main")
+        stack = build_git_stack(
+            settings=config.git,
+            github_token=None,
+            prompts=make_prompt_provider(),
+            gate=PassThroughGate(),
+        )
+        cache = await stack.cache.ensure_available(origin.as_uri())
+        assert Path(cache).is_relative_to(tmp_path / "cache")
+>       assert await git(cache, "remote") == "configured"
+E       AssertionError: assert 'origin' == 'configured'
+E         
+E         - configured
+E         + origin
+
+tests/core/test_git_settings.py:100: AssertionError
+=========================== short test summary info ============================
+FAILED tests/core/test_git_settings.py::test_git_sources_reach_native_cache_remote_and_commit_consumers[init]
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed in 1.40s

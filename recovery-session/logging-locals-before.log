@@ -1,0 +1,31 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+__________ test_pretty_tracebacks_do_not_render_live_workflow_locals ___________
+
+    async def test_pretty_tracebacks_do_not_render_live_workflow_locals() -> None:
+        """Formatting diagnostics must not traverse live graph/workspace objects."""
+    
+        class LiveWorkflow:
+            def __init__(self) -> None:
+                self.repr_calls = 0
+    
+            def __repr__(self) -> str:
+                self.repr_calls += 1
+                return "a live workflow with arbitrary user-defined repr work"
+    
+        workflow = LiveWorkflow()
+        with configured_chain(pretty=True) as buffer:
+            log = get_logger("kodezart.tests.logging_chain")
+            try:
+                raise RuntimeError(FAILURE)
+            except RuntimeError:
+                await log.aexception("job_failed", job_id="job-0001")
+    
+>       assert workflow.repr_calls == 0
+E       assert 1 == 0
+E        +  where 1 = a live workflow with arbitrary user-defined repr work.repr_calls
+
+tests/core/test_logging_chain.py:306: AssertionError
+=========================== short test summary info ============================
+FAILED tests/core/test_logging_chain.py::test_pretty_tracebacks_do_not_render_live_workflow_locals
+1 failed, 4 deselected in 1.78s

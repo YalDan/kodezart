@@ -1,0 +1,19 @@
+.........F..................................................             [100%]
+=================================== FAILURES ===================================
+__ test_declared_audit_generic_sink_refuses_until_verified_record_seam_exists __
+
+    def test_declared_audit_generic_sink_refuses_until_verified_record_seam_exists():
+        config, operation, server, tracker, forge = dependencies()
+        fields = operation.model_dump()
+        fields["records"][RunKind.AUDIT.value] = {"system": "linear", "name": "actual-audit-sink", "id": "FIX-1", "append_only": True}
+>       operation = OperationConfig.model_validate(fields)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for OperationConfig
+E       records.audit.system
+E         Input should be 'tracker' or 'knowledge' [type=enum]
+E           For further information visit https://errors.pydantic.dev/2.12/v/enum
+
+tests/integration/test_audit_configuration.py:43: ValidationError
+=========================== short test summary info ============================
+FAILED tests/integration/test_audit_configuration.py::test_declared_audit_generic_sink_refuses_until_verified_record_seam_exists
+1 failed, 59 passed in 2.52s

@@ -1,0 +1,579 @@
+.F.FFFFF.FF                                                              [100%]
+=================================== FAILURES ===================================
+________ test_graph_lease_must_still_hold_after_final_graph_read[True] _________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10cbb68a0>
+expire = True
+
+    @pytest.mark.parametrize("expire", [False, True])
+    async def test_graph_lease_must_still_hold_after_final_graph_read(monkeypatch, expire):
+        board, tracker = fixture()
+        snapshot = await expected(tracker)
+        original = board.call_tool
+        reads = 0
+    
+        async def call_tool(*, name, arguments):
+            nonlocal reads
+            result = await original(name=name, arguments=arguments)
+            if name == "get_issue":
+                reads += 1
+                if reads == 6 and expire:
+                    board.advance(400)
+            return result
+    
+        async with RunSurfaceLease(
+            tracker=tracker,
+            job_id="actual-job",
+            surfaces=frozenset({address("child")}),
+            lease_seconds=321.5,
+        ):
+            monkeypatch.setattr(board, "call_tool", call_tool)
+            error = None
+            try:
+                await tracker.update_issue_graph(
+                    issue_key="child",
+                    expected=snapshot,
+                    changes=changes({"kind": "priority", "priority": "urgent"}),
+                    holder="actual-job",
+                )
+            except SurfaceLeaseError as exc:
+                error = exc
+            assert reads >= 6
+            if expire:
+>               assert saves(board) == [], (
+                    "save was issued after the final awaited read expired ownership"
+                )
+E               AssertionError: save was issued after the final awaited read expired ownership
+E               assert [{'id': 'chil...priority': 1}] == []
+E                 
+E                 Left contains one more item: {'id': 'child', 'priority': 1}
+E                 Use -v to get more diff
+
+tests/tracker/test_organize_graph_independent.py:53: AssertionError
+______ test_split_final_observed_source_is_checked_before_creation[body] _______
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10cc24320>
+change = 'body'
+
+    @pytest.mark.parametrize("change", [None, "body", "priority", "parent", "expiry"])
+    async def test_split_final_observed_source_is_checked_before_creation(
+        monkeypatch, change
+    ):
+        board, tracker = fixture()
+        snapshot = await expected(tracker)
+        original = board.call_tool
+        after_state = False
+        source_reads = 0
+        injected = False
+    
+        async def call_tool(*, name, arguments):
+            nonlocal after_state, source_reads, injected
+            if name == "list_issue_statuses":
+                after_state = True
+            if after_state and name == "get_issue" and arguments["id"] == CLAIMED_ISSUE:
+                source_reads += 1
+                # The first is the source within _read_unchanged_graph; the second
+                # is create_split_if_absent's separate last current-source read.
+                if source_reads == 2:
+                    injected = True
+                    source = board.server.issues[CLAIMED_ISSUE]
+                    if change == "body":
+                        source.description = (
+                            "Current specification changed while awaiting the final read"
+                        )
+                    elif change == "priority":
+                        source.priority_raw = 1
+                    elif change == "parent":
+                        source.parent_id = "peer"
+                    elif change == "expiry":
+                        board.advance(400)
+            return await original(name=name, arguments=arguments)
+    
+        async with RunSurfaceLease(
+            tracker=tracker,
+            job_id="actual-job",
+            surfaces=frozenset({address(CLAIMED_ISSUE, SurfaceKind.ISSUE_SPLIT_SET)}),
+            lease_seconds=321.5,
+        ):
+            monkeypatch.setattr(board, "call_tool", call_tool)
+            error = None
+            try:
+                await tracker.create_split_if_absent(
+                    source_key=CLAIMED_ISSUE,
+                    deliverable_key="new-deliverable",
+                    title="Child",
+                    body="Prepared from the original source",
+                    holder="actual-job",
+                    expected=snapshot,
+                )
+            except (OrganizeWriteRefusalError, SurfaceLeaseError) as exc:
+                error = exc
+            assert injected, "the actual separate final source read was not reached"
+            if change is not None:
+>               assert saves(board) == [], (
+                    "creation used a final source observation that no longer matched"
+                )
+E               AssertionError: creation used a final source observation that no longer matched
+E               assert [{'descriptio...e-team', ...}] == []
+E                 
+E                 Left contains one more item: {'description': '<!-- kodezart-issue {"scopeKey":{"kind":"issue","key":"FIX-1"},"deliverableKey":"new-deliverable"} --...nPrepared from the original source', 'parentId': 'FIX-1', 'state': 'fixture-team-Todo-id', 'team': 'fixture-team', ...}
+E                 Use -v to get more diff
+
+tests/tracker/test_organize_graph_independent.py:118: AssertionError
+____ test_split_final_observed_source_is_checked_before_creation[priority] _____
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10cc271a0>
+change = 'priority'
+
+    @pytest.mark.parametrize("change", [None, "body", "priority", "parent", "expiry"])
+    async def test_split_final_observed_source_is_checked_before_creation(
+        monkeypatch, change
+    ):
+        board, tracker = fixture()
+        snapshot = await expected(tracker)
+        original = board.call_tool
+        after_state = False
+        source_reads = 0
+        injected = False
+    
+        async def call_tool(*, name, arguments):
+            nonlocal after_state, source_reads, injected
+            if name == "list_issue_statuses":
+                after_state = True
+            if after_state and name == "get_issue" and arguments["id"] == CLAIMED_ISSUE:
+                source_reads += 1
+                # The first is the source within _read_unchanged_graph; the second
+                # is create_split_if_absent's separate last current-source read.
+                if source_reads == 2:
+                    injected = True
+                    source = board.server.issues[CLAIMED_ISSUE]
+                    if change == "body":
+                        source.description = (
+                            "Current specification changed while awaiting the final read"
+                        )
+                    elif change == "priority":
+                        source.priority_raw = 1
+                    elif change == "parent":
+                        source.parent_id = "peer"
+                    elif change == "expiry":
+                        board.advance(400)
+            return await original(name=name, arguments=arguments)
+    
+        async with RunSurfaceLease(
+            tracker=tracker,
+            job_id="actual-job",
+            surfaces=frozenset({address(CLAIMED_ISSUE, SurfaceKind.ISSUE_SPLIT_SET)}),
+            lease_seconds=321.5,
+        ):
+            monkeypatch.setattr(board, "call_tool", call_tool)
+            error = None
+            try:
+                await tracker.create_split_if_absent(
+                    source_key=CLAIMED_ISSUE,
+                    deliverable_key="new-deliverable",
+                    title="Child",
+                    body="Prepared from the original source",
+                    holder="actual-job",
+                    expected=snapshot,
+                )
+            except (OrganizeWriteRefusalError, SurfaceLeaseError) as exc:
+                error = exc
+            assert injected, "the actual separate final source read was not reached"
+            if change is not None:
+>               assert saves(board) == [], (
+                    "creation used a final source observation that no longer matched"
+                )
+E               AssertionError: creation used a final source observation that no longer matched
+E               assert [{'descriptio...e-team', ...}] == []
+E                 
+E                 Left contains one more item: {'description': '<!-- kodezart-issue {"scopeKey":{"kind":"issue","key":"FIX-1"},"deliverableKey":"new-deliverable"} --...nPrepared from the original source', 'parentId': 'FIX-1', 'state': 'fixture-team-Todo-id', 'team': 'fixture-team', ...}
+E                 Use -v to get more diff
+
+tests/tracker/test_organize_graph_independent.py:118: AssertionError
+_____ test_split_final_observed_source_is_checked_before_creation[parent] ______
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10cc26f00>
+change = 'parent'
+
+    @pytest.mark.parametrize("change", [None, "body", "priority", "parent", "expiry"])
+    async def test_split_final_observed_source_is_checked_before_creation(
+        monkeypatch, change
+    ):
+        board, tracker = fixture()
+        snapshot = await expected(tracker)
+        original = board.call_tool
+        after_state = False
+        source_reads = 0
+        injected = False
+    
+        async def call_tool(*, name, arguments):
+            nonlocal after_state, source_reads, injected
+            if name == "list_issue_statuses":
+                after_state = True
+            if after_state and name == "get_issue" and arguments["id"] == CLAIMED_ISSUE:
+                source_reads += 1
+                # The first is the source within _read_unchanged_graph; the second
+                # is create_split_if_absent's separate last current-source read.
+                if source_reads == 2:
+                    injected = True
+                    source = board.server.issues[CLAIMED_ISSUE]
+                    if change == "body":
+                        source.description = (
+                            "Current specification changed while awaiting the final read"
+                        )
+                    elif change == "priority":
+                        source.priority_raw = 1
+                    elif change == "parent":
+                        source.parent_id = "peer"
+                    elif change == "expiry":
+                        board.advance(400)
+            return await original(name=name, arguments=arguments)
+    
+        async with RunSurfaceLease(
+            tracker=tracker,
+            job_id="actual-job",
+            surfaces=frozenset({address(CLAIMED_ISSUE, SurfaceKind.ISSUE_SPLIT_SET)}),
+            lease_seconds=321.5,
+        ):
+            monkeypatch.setattr(board, "call_tool", call_tool)
+            error = None
+            try:
+                await tracker.create_split_if_absent(
+                    source_key=CLAIMED_ISSUE,
+                    deliverable_key="new-deliverable",
+                    title="Child",
+                    body="Prepared from the original source",
+                    holder="actual-job",
+                    expected=snapshot,
+                )
+            except (OrganizeWriteRefusalError, SurfaceLeaseError) as exc:
+                error = exc
+            assert injected, "the actual separate final source read was not reached"
+            if change is not None:
+>               assert saves(board) == [], (
+                    "creation used a final source observation that no longer matched"
+                )
+E               AssertionError: creation used a final source observation that no longer matched
+E               assert [{'descriptio...e-team', ...}] == []
+E                 
+E                 Left contains one more item: {'description': '<!-- kodezart-issue {"scopeKey":{"kind":"issue","key":"FIX-1"},"deliverableKey":"new-deliverable"} --...nPrepared from the original source', 'parentId': 'FIX-1', 'state': 'fixture-team-Todo-id', 'team': 'fixture-team', ...}
+E                 Use -v to get more diff
+
+tests/tracker/test_organize_graph_independent.py:118: AssertionError
+_____ test_split_final_observed_source_is_checked_before_creation[expiry] ______
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10cc60620>
+change = 'expiry'
+
+    @pytest.mark.parametrize("change", [None, "body", "priority", "parent", "expiry"])
+    async def test_split_final_observed_source_is_checked_before_creation(
+        monkeypatch, change
+    ):
+        board, tracker = fixture()
+        snapshot = await expected(tracker)
+        original = board.call_tool
+        after_state = False
+        source_reads = 0
+        injected = False
+    
+        async def call_tool(*, name, arguments):
+            nonlocal after_state, source_reads, injected
+            if name == "list_issue_statuses":
+                after_state = True
+            if after_state and name == "get_issue" and arguments["id"] == CLAIMED_ISSUE:
+                source_reads += 1
+                # The first is the source within _read_unchanged_graph; the second
+                # is create_split_if_absent's separate last current-source read.
+                if source_reads == 2:
+                    injected = True
+                    source = board.server.issues[CLAIMED_ISSUE]
+                    if change == "body":
+                        source.description = (
+                            "Current specification changed while awaiting the final read"
+                        )
+                    elif change == "priority":
+                        source.priority_raw = 1
+                    elif change == "parent":
+                        source.parent_id = "peer"
+                    elif change == "expiry":
+                        board.advance(400)
+            return await original(name=name, arguments=arguments)
+    
+        async with RunSurfaceLease(
+            tracker=tracker,
+            job_id="actual-job",
+            surfaces=frozenset({address(CLAIMED_ISSUE, SurfaceKind.ISSUE_SPLIT_SET)}),
+            lease_seconds=321.5,
+        ):
+            monkeypatch.setattr(board, "call_tool", call_tool)
+            error = None
+            try:
+                await tracker.create_split_if_absent(
+                    source_key=CLAIMED_ISSUE,
+                    deliverable_key="new-deliverable",
+                    title="Child",
+                    body="Prepared from the original source",
+                    holder="actual-job",
+                    expected=snapshot,
+                )
+            except (OrganizeWriteRefusalError, SurfaceLeaseError) as exc:
+                error = exc
+            assert injected, "the actual separate final source read was not reached"
+            if change is not None:
+>               assert saves(board) == [], (
+                    "creation used a final source observation that no longer matched"
+                )
+E               AssertionError: creation used a final source observation that no longer matched
+E               assert [{'descriptio...e-team', ...}] == []
+E                 
+E                 Left contains one more item: {'description': '<!-- kodezart-issue {"scopeKey":{"kind":"issue","key":"FIX-1"},"deliverableKey":"new-deliverable"} --...nPrepared from the original source', 'parentId': 'FIX-1', 'state': 'fixture-team-Todo-id', 'team': 'fixture-team', ...}
+E                 Use -v to get more diff
+
+tests/tracker/test_organize_graph_independent.py:118: AssertionError
+______ test_split_identity_appearing_during_state_read_is_not_duplicated _______
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10cc638c0>
+
+    async def test_split_identity_appearing_during_state_read_is_not_duplicated(
+        monkeypatch,
+    ):
+        board, tracker = fixture()
+        surface = address(CLAIMED_ISSUE, SurfaceKind.ISSUE_SPLIT_SET)
+        async with RunSurfaceLease(
+            tracker=tracker,
+            job_id="actual-job",
+            surfaces=frozenset({surface}),
+            lease_seconds=321.5,
+        ):
+            child = await tracker.create_split_if_absent(
+                source_key=CLAIMED_ISSUE,
+                deliverable_key="stable",
+                title="Existing child",
+                body="Existing source-grounded specification",
+                holder="actual-job",
+                expected=await expected(tracker),
+            )
+        native = board.server.issues.pop(child.issue_key)
+        board.calls.clear()
+        snapshot = await expected(tracker)
+        original = board.call_tool
+        injected = False
+    
+        async def call_tool(*, name, arguments):
+            nonlocal injected
+            result = await original(name=name, arguments=arguments)
+            if name == "list_issue_statuses":
+                board.server.issues[child.issue_key] = native
+                injected = True
+            return result
+    
+        async with RunSurfaceLease(
+            tracker=tracker,
+            job_id="actual-job",
+            surfaces=frozenset({surface}),
+            lease_seconds=321.5,
+        ):
+            monkeypatch.setattr(board, "call_tool", call_tool)
+            returned = await tracker.create_split_if_absent(
+                source_key=CLAIMED_ISSUE,
+                deliverable_key="stable",
+                title="Must not overwrite",
+                body="Must not overwrite",
+                holder="actual-job",
+                expected=snapshot,
+            )
+            assert injected
+>           assert saves(board) == [], (
+                "a stable split identity that appeared during awaited preparation was duplicated"
+            )
+E           AssertionError: a stable split identity that appeared during awaited preparation was duplicated
+E           assert [{'descriptio...e-team', ...}] == []
+E             
+E             Left contains one more item: {'description': '<!-- kodezart-issue {"scopeKey":{"kind":"issue","key":"FIX-1"},"deliverableKey":"stable"} -->\n\nMust not overwrite', 'parentId': 'FIX-1', 'state': 'fixture-team-Todo-id', 'team': 'fixture-team', ...}
+E             Use -v to get more diff
+
+tests/tracker/test_organize_graph_independent.py:177: AssertionError
+___________ test_milestone_parent_is_current_after_holder_wait[True] ___________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10cc63ec0>
+move = True
+
+    @pytest.mark.parametrize("move", [False, True])
+    async def test_milestone_parent_is_current_after_holder_wait(monkeypatch, move):
+        from tests.tracker.test_scope_reads import (
+            OTHER_PROJECT,
+            PROJECT,
+            ROOT,
+            ScopeMcpServer,
+            _milestone,
+        )
+    
+        server = ScopeMcpServer()
+        server._comment_clock = lambda: FIXTURE_NOW
+        server.issues["FOREIGN-ROOT"] = FakeMcpIssue(id="FOREIGN-ROOT")
+        milestone = _milestone("new-native-milestone")
+        server.milestones[PROJECT.key].append(milestone)
+        original_save = server._tool_save_issue
+        writes = []
+    
+        def save(arguments):
+            writes.append(dict(arguments))
+            result = original_save(arguments)
+            if "milestone" in arguments:
+                server.issues[arguments["id"]].milestone_key = arguments["milestone"]
+            return result
+    
+        monkeypatch.setattr(server, "_tool_save_issue", save)
+        tracker = linear_over_fake_mcp(server)
+        snapshot = tuple(
+            [
+                graph_snapshot(await tracker.read_issue(issue_key=key))
+                for key in server.issues
+            ]
+        )
+        original = server.call_tool
+        read_milestone = False
+        injected = False
+    
+        async def call_tool(*, name, arguments):
+            nonlocal read_milestone, injected
+            result = await original(name=name, arguments=arguments)
+            if name == "get_milestone" and arguments.get("query") == milestone["id"]:
+                read_milestone = True
+            if name == "list_comments" and read_milestone and move and not injected:
+                server.milestones[PROJECT.key].remove(milestone)
+                server.milestones[OTHER_PROJECT].append(milestone)
+                injected = True
+            return result
+    
+        async with RunSurfaceLease(
+            tracker=tracker,
+            job_id="actual-job",
+            surfaces=frozenset({address(ROOT.key)}),
+            lease_seconds=321.5,
+        ):
+            monkeypatch.setattr(server, "call_tool", call_tool)
+            error = None
+            try:
+                await tracker.update_issue_graph(
+                    issue_key=ROOT.key,
+                    expected=snapshot,
+                    changes=changes({"kind": "milestone", "milestone_id": milestone["id"]}),
+                    holder="actual-job",
+                )
+            except OrganizeWriteRefusalError as exc:
+                error = exc
+            if move:
+                assert injected
+>               assert writes == [], (
+                    "a milestone moved to another project while awaiting holder proof was assigned"
+                )
+E               AssertionError: a milestone moved to another project while awaiting holder proof was assigned
+E               assert [{'id': 'FIX-...e-milestone'}] == []
+E                 
+E                 Left contains one more item: {'id': 'FIX-1', 'milestone': 'new-native-milestone'}
+E                 Use -v to get more diff
+
+tests/tracker/test_organize_graph_independent.py:251: AssertionError
+_______ test_configured_owner_refuses_observed_final_split_source_drift ________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10cca7290>
+
+    async def test_configured_owner_refuses_observed_final_split_source_drift(monkeypatch):
+        owner, board, executor = factory()
+        original_stream = executor.stream
+    
+        async def stream(**kwargs):
+            if kwargs["output_format"]["schema"].get("title") == "OrganizeProposal":
+                yield result(
+                    structured_output={
+                        "kind": "split",
+                        "issue_id": CLAIMED_ISSUE,
+                        "children": [
+                            {
+                                "deliverable_key": "independent",
+                                "title": "Split child",
+                                "body": "Prepared child specification",
+                            }
+                        ],
+                    }
+                )
+                return
+            async for event in original_stream(**kwargs):
+                yield event
+    
+        original_call = board.call_tool
+        after_state = False
+        reads = 0
+        injected = False
+    
+        async def call_tool(*, name, arguments):
+            nonlocal after_state, reads, injected
+            if name == "list_issue_statuses":
+                after_state = True
+            if after_state and name == "get_issue" and arguments["id"] == CLAIMED_ISSUE:
+                reads += 1
+                if reads == 2:
+                    injected = True
+                    board.server.issues[
+                        CLAIMED_ISSUE
+                    ].description = (
+                        "The current source no longer asks for the authored child."
+                    )
+            return await original_call(name=name, arguments=arguments)
+    
+        monkeypatch.setattr(executor, "stream", stream)
+        monkeypatch.setattr(board, "call_tool", call_tool)
+        error = None
+        try:
+            await run_owner(owner)
+        except OrganizeWriteRefusalError as exc:
+            error = exc
+        assert injected
+>       assert [
+            args for name, args in board.calls if name == "save_issue" and "id" not in args
+        ] == []
+E       assert [{'descriptio...e-team', ...}] == []
+E         
+E         Left contains one more item: {'description': '<!-- kodezart-issue {"scopeKey":{"kind":"issue","key":"FIX-1"},"deliverableKey":"independent"} -->\n\nPrepared child specification', 'parentId': 'FIX-1', 'state': 'fixture-team-Todo-id', 'team': 'fixture-team', ...}
+E         Use -v to get more diff
+
+tests/chains/test_organize_graph_independent.py:60: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 19:14:47 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-12 19:14:47 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:14:47 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:14:48 [info     ] outbound_content_gated         categories=[] content_digest=576befbfbf8688387561cbeed76117100b757a37310490feaf11f9d541327ef2 failure=None hits=[] surface=tracker verdict=clean visibility=private writer=tracker_title
+2026-09-12 19:14:48 [info     ] outbound_content_gated         categories=[] content_digest=3a089188edf8e5e9420c9d3c781dc9e3106e087206ba31e3b2c7c1874997cb14 failure=None hits=[] surface=tracker verdict=clean visibility=private writer=tracker_description
+2026-09-12 19:14:48 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:14:48 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_verify resumed_session_id=None session_id=None
+2026-09-12 19:14:48 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:14:48 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_verify resumed_session_id=None session_id=None
+2026-09-12 19:14:48 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:14:48 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=NEW-2 prompt_key=organize_verify resumed_session_id=None session_id=None
+2026-09-12 19:14:48 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:14:48 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:14:48 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:14:48 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-12 19:14:48 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:14:48 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=NEW-2 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-12 19:14:48 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:14:48 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_verify resumed_session_id=None session_id=None
+2026-09-12 19:14:48 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:14:48 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=NEW-2 prompt_key=organize_verify resumed_session_id=None session_id=None
+2026-09-12 19:14:48 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:14:48 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:14:48 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:14:48 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-12 19:14:48 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:14:48 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_criteria_author stop_reason=None subtype=result total_cost_usd=None usage=None
+=========================== short test summary info ============================
+FAILED tests/tracker/test_organize_graph_independent.py::test_graph_lease_must_still_hold_after_final_graph_read[True]
+FAILED tests/tracker/test_organize_graph_independent.py::test_split_final_observed_source_is_checked_before_creation[body]
+FAILED tests/tracker/test_organize_graph_independent.py::test_split_final_observed_source_is_checked_before_creation[priority]
+FAILED tests/tracker/test_organize_graph_independent.py::test_split_final_observed_source_is_checked_before_creation[parent]
+FAILED tests/tracker/test_organize_graph_independent.py::test_split_final_observed_source_is_checked_before_creation[expiry]
+FAILED tests/tracker/test_organize_graph_independent.py::test_split_identity_appearing_during_state_read_is_not_duplicated
+FAILED tests/tracker/test_organize_graph_independent.py::test_milestone_parent_is_current_after_holder_wait[True]
+FAILED tests/chains/test_organize_graph_independent.py::test_configured_owner_refuses_observed_final_split_source_drift
+8 failed, 3 passed in 1.07s

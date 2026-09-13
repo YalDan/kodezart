@@ -1,0 +1,587 @@
+{
+  "candidate": "37723cd8c660de5ad959de1f118b93287da48e64",
+  "tree": "965ce3a5833741293a7405cfed50bc6d2ab960ac",
+  "parents": [
+    "fadf6efe29c7addcc608b22e8345cd9008ce4bab",
+    "268be4057dbcd4d4edb79b35d7e2b60a30f2f3c8"
+  ],
+  "production_functions_changed_from_m2": [
+    {
+      "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+      "name": "LinearMcpTracker.resolve_mappings",
+      "new": false,
+      "exact_shared_ast": true
+    },
+    {
+      "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+      "name": "LinearMcpTracker.ensure_mappings",
+      "new": false,
+      "exact_shared_ast": true
+    },
+    {
+      "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+      "name": "LinearMcpTracker._scope_label_definitions",
+      "new": true,
+      "exact_shared_ast": true
+    },
+    {
+      "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+      "name": "LinearMcpTracker._ensure_scope_label",
+      "new": true,
+      "exact_shared_ast": true
+    },
+    {
+      "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+      "name": "LinearMcpTracker._label_entries",
+      "new": false,
+      "exact_shared_ast": true
+    },
+    {
+      "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+      "name": "LinearMcpTracker._identifiers_of",
+      "new": false,
+      "exact_shared_ast": true
+    },
+    {
+      "path": "src/kodezart/services/scope_resolution.py",
+      "name": "resolve_scope",
+      "new": true,
+      "exact_shared_ast": true
+    },
+    {
+      "path": "src/kodezart/services/tracker_boot.py",
+      "name": "configured_mappings",
+      "new": false,
+      "exact_shared_ast": true
+    },
+    {
+      "path": "src/kodezart/services/tracker_boot.py",
+      "name": "_scope_label_refs",
+      "new": true,
+      "exact_shared_ast": true
+    }
+  ],
+  "production_functions_not_composed_exactly_from_parents": [],
+  "duplicate_definitions": [],
+  "constructor_duplicates": [
+    {
+      "path": "tests/fakes.py",
+      "owner": "module.FakeTrackerPort",
+      "name": "scope_label_members",
+      "lines": [
+        3092,
+        3101
+      ]
+    },
+    {
+      "path": "tests/fakes.py",
+      "owner": "module.FakeTrackerPort",
+      "name": "issue_writes",
+      "lines": [
+        3094,
+        3143
+      ]
+    }
+  ],
+  "fourteen_removals": [
+    {
+      "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+      "name": "LinearMcpTracker.read_scope_labels",
+      "exact_m2_ast": true,
+      "exact_shared_ast": true
+    },
+    {
+      "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+      "name": "LinearMcpTracker.execution_approved",
+      "exact_m2_ast": true,
+      "exact_shared_ast": true
+    },
+    {
+      "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+      "name": "LinearMcpTracker._read_execution_approval",
+      "exact_m2_ast": true,
+      "exact_shared_ast": true
+    },
+    {
+      "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+      "name": "LinearMcpTracker.project_milestones",
+      "exact_m2_ast": true,
+      "exact_shared_ast": true
+    },
+    {
+      "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+      "name": "LinearMcpTracker._scope_label_members",
+      "exact_m2_ast": true,
+      "exact_shared_ast": true
+    },
+    {
+      "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+      "name": "LinearMcpTracker._read_scope_issue",
+      "exact_m2_ast": true,
+      "exact_shared_ast": true
+    },
+    {
+      "path": "src/kodezart/adapters/linear_scope_reader.py",
+      "name": "LinearScopeReader.project_milestones",
+      "exact_m2_ast": true,
+      "exact_shared_ast": true
+    },
+    {
+      "path": "src/kodezart/core/protocols.py",
+      "name": "TrackerPort.read_scope_labels",
+      "exact_m2_ast": true,
+      "exact_shared_ast": true
+    },
+    {
+      "path": "src/kodezart/core/protocols.py",
+      "name": "TrackerPort.execution_approved",
+      "exact_m2_ast": true,
+      "exact_shared_ast": true
+    },
+    {
+      "path": "src/kodezart/core/protocols.py",
+      "name": "TrackerPort.project_milestones",
+      "exact_m2_ast": true,
+      "exact_shared_ast": true
+    },
+    {
+      "path": "tests/fakes.py",
+      "name": "FakeTrackerPort.project_milestones",
+      "exact_m2_ast": true,
+      "exact_shared_ast": true
+    },
+    {
+      "path": "tests/fakes.py",
+      "name": "FakeTrackerPort.execution_approved",
+      "exact_m2_ast": true,
+      "exact_shared_ast": true
+    },
+    {
+      "path": "tests/fakes.py",
+      "name": "FakeTrackerPort._read_execution_approval",
+      "exact_m2_ast": true,
+      "exact_shared_ast": true
+    },
+    {
+      "path": "tests/fakes.py",
+      "name": "FakeTrackerPort.read_scope_labels",
+      "exact_m2_ast": true,
+      "exact_shared_ast": true
+    }
+  ],
+  "tests": [
+    {
+      "path": "tests/domain/test_scope_label_config.py",
+      "exact_shared_file": true,
+      "changed": [
+        {
+          "name": "_write_config",
+          "new": true,
+          "exact_shared_ast": true
+        },
+        {
+          "name": "test_absent_or_empty_scope_labels_load",
+          "new": true,
+          "exact_shared_ast": true
+        },
+        {
+          "name": "test_configured_scope_label_names_are_preserved_on_load",
+          "new": true,
+          "exact_shared_ast": true
+        },
+        {
+          "name": "test_scope_labels_accept_an_additional_configuration_member",
+          "new": true,
+          "exact_shared_ast": true
+        },
+        {
+          "name": "test_each_missing_scope_label_is_a_typed_load_error",
+          "new": true,
+          "exact_shared_ast": true
+        },
+        {
+          "name": "test_populated_mapping_reports_every_missing_scope_label",
+          "new": true,
+          "exact_shared_ast": true
+        },
+        {
+          "name": "test_scope_and_queue_structure_failures_are_reported_together",
+          "new": true,
+          "exact_shared_ast": true
+        },
+        {
+          "name": "test_scope_label_values_remain_strings",
+          "new": true,
+          "exact_shared_ast": true
+        }
+      ],
+      "removed": []
+    },
+    {
+      "path": "tests/domain/test_scope_labels.py",
+      "exact_shared_file": true,
+      "changed": [
+        {
+          "name": "test_scope_admission_has_its_own_type",
+          "new": true,
+          "exact_shared_ast": true
+        },
+        {
+          "name": "test_scope_labels_refuse_queue_only_and_vendor_members",
+          "new": true,
+          "exact_shared_ast": true
+        },
+        {
+          "name": "test_existing_issue_queue_vocabulary_is_preserved",
+          "new": true,
+          "exact_shared_ast": true
+        }
+      ],
+      "removed": []
+    },
+    {
+      "path": "tests/fakes.py",
+      "exact_shared_file": false,
+      "changed": [
+        {
+          "name": "FakeLinearMcpServer.__init__",
+          "new": false,
+          "exact_shared_ast": true
+        },
+        {
+          "name": "FakeLinearMcpServer._tool_list_issue_labels",
+          "new": false,
+          "exact_shared_ast": true
+        },
+        {
+          "name": "FakeLinearMcpServer._label_page",
+          "new": true,
+          "exact_shared_ast": true
+        },
+        {
+          "name": "FakeLinearMcpServer._tool_list_project_labels",
+          "new": true,
+          "exact_shared_ast": true
+        },
+        {
+          "name": "FakeLinearMcpServer._tool_list_initiative_labels",
+          "new": true,
+          "exact_shared_ast": true
+        },
+        {
+          "name": "FakeLinearMcpServer._tool_save_project_label",
+          "new": true,
+          "exact_shared_ast": true
+        },
+        {
+          "name": "FakeLinearMcpServer._tool_create_initiative_label",
+          "new": true,
+          "exact_shared_ast": true
+        },
+        {
+          "name": "FakeTrackerPort.__init__",
+          "new": false,
+          "exact_shared_ast": false
+        },
+        {
+          "name": "FakeTrackerPort.resolve_mappings",
+          "new": false,
+          "exact_shared_ast": true
+        },
+        {
+          "name": "FakeTrackerPort.ensure_mappings",
+          "new": false,
+          "exact_shared_ast": true
+        },
+        {
+          "name": "FakeTrackerPort._ensure_scope_label",
+          "new": true,
+          "exact_shared_ast": true
+        }
+      ],
+      "removed": []
+    },
+    {
+      "path": "tests/prompts/test_operation_config.py",
+      "exact_shared_file": false,
+      "changed": [
+        {
+          "name": "test_all_fields_are_present_with_the_stated_types",
+          "new": false,
+          "exact_shared_ast": false
+        },
+        {
+          "name": "test_no_label_or_status_literal_lives_in_source",
+          "new": false,
+          "exact_shared_ast": true
+        }
+      ],
+      "removed": []
+    },
+    {
+      "path": "tests/prompts/test_scope_label_bindings.py",
+      "exact_shared_file": true,
+      "changed": [
+        {
+          "name": "test_configured_scope_names_and_extra_members_reach_the_render",
+          "new": true,
+          "exact_shared_ast": true
+        },
+        {
+          "name": "test_absent_scope_mapping_has_an_explicit_render_arm",
+          "new": true,
+          "exact_shared_ast": true
+        },
+        {
+          "name": "test_using_an_absent_scope_member_refuses_with_its_name",
+          "new": true,
+          "exact_shared_ast": true
+        }
+      ],
+      "removed": []
+    },
+    {
+      "path": "tests/services/test_scope_resolution.py",
+      "exact_shared_file": true,
+      "changed": [
+        {
+          "name": "ScopeFixtureTracker.__init__",
+          "new": true,
+          "exact_shared_ast": true
+        },
+        {
+          "name": "ScopeFixtureTracker.scope_issues",
+          "new": true,
+          "exact_shared_ast": true
+        },
+        {
+          "name": "test_each_entry_kind_preserves_membership_and_structural_edges",
+          "new": true,
+          "exact_shared_ast": true
+        },
+        {
+          "name": "test_scope_read_failure_does_not_turn_into_an_empty_scope",
+          "new": true,
+          "exact_shared_ast": true
+        }
+      ],
+      "removed": []
+    },
+    {
+      "path": "tests/tracker/conftest.py",
+      "exact_shared_file": false,
+      "changed": [
+        {
+          "name": "linear_over_fake_mcp",
+          "new": false,
+          "exact_shared_ast": false
+        }
+      ],
+      "removed": []
+    },
+    {
+      "path": "tests/tracker/connected_app_label_contract.py",
+      "exact_shared_file": true,
+      "changed": [],
+      "removed": []
+    },
+    {
+      "path": "tests/tracker/native_read_fixtures.py",
+      "exact_shared_file": true,
+      "changed": [
+        {
+          "name": "tracker_over",
+          "new": false,
+          "exact_shared_ast": true
+        }
+      ],
+      "removed": []
+    },
+    {
+      "path": "tests/tracker/test_linear_tool_arguments.py",
+      "exact_shared_file": true,
+      "changed": [
+        {
+          "name": "sent_arguments",
+          "new": false,
+          "exact_shared_ast": true
+        },
+        {
+          "name": "test_the_sweep_reaches_every_tool_the_adapter_names",
+          "new": false,
+          "exact_shared_ast": true
+        },
+        {
+          "name": "test_every_argument_key_is_a_declared_property",
+          "new": false,
+          "exact_shared_ast": true
+        },
+        {
+          "name": "test_every_required_argument_is_sent",
+          "new": false,
+          "exact_shared_ast": true
+        }
+      ],
+      "removed": []
+    },
+    {
+      "path": "tests/tracker/test_linear_tool_roster.py",
+      "exact_shared_file": true,
+      "changed": [
+        {
+          "name": "test_every_tracker_tool_has_a_measured_public_declaration",
+          "new": true,
+          "exact_shared_ast": true
+        }
+      ],
+      "removed": [
+        "test_every_tracker_tool_this_process_names_exists_on_the_server"
+      ]
+    },
+    {
+      "path": "tests/tracker/test_milestone_approval.py",
+      "exact_shared_file": true,
+      "changed": [
+        {
+          "name": "test_actual_milestone_scope_uses_current_project_approval",
+          "new": true,
+          "exact_shared_ast": true
+        }
+      ],
+      "removed": []
+    },
+    {
+      "path": "tests/tracker/test_native_approval_aliases.py",
+      "exact_shared_file": true,
+      "changed": [
+        {
+          "name": "ApprovalAliasServer.__init__",
+          "new": false,
+          "exact_shared_ast": true
+        },
+        {
+          "name": "test_actual_entry_preserves_reported_alias_with_one_subject_read",
+          "new": false,
+          "exact_shared_ast": true
+        },
+        {
+          "name": "test_actual_entry_refuses_foreign_subject_before_membership",
+          "new": false,
+          "exact_shared_ast": true
+        }
+      ],
+      "removed": []
+    },
+    {
+      "path": "tests/tracker/test_project_milestones.py",
+      "exact_shared_file": true,
+      "changed": [
+        {
+          "name": "test_project_milestones_expose_complete_native_identities_and_descriptions",
+          "new": true,
+          "exact_shared_ast": true
+        },
+        {
+          "name": "test_project_milestone_incomplete_identity_evidence_refuses",
+          "new": true,
+          "exact_shared_ast": true
+        }
+      ],
+      "removed": []
+    },
+    {
+      "path": "tests/tracker/test_scope_label_mappings.py",
+      "exact_shared_file": true,
+      "changed": [
+        {
+          "name": "test_scope_mappings_are_owned_once_regardless_of_declared_teams",
+          "new": true,
+          "exact_shared_ast": true
+        },
+        {
+          "name": "test_scope_instate_and_repeat_preserve_issue_approval",
+          "new": true,
+          "exact_shared_ast": true
+        },
+        {
+          "name": "test_scope_labels_boot_with_configured_custom_and_extra_names",
+          "new": true,
+          "exact_shared_ast": true
+        },
+        {
+          "name": "test_scope_refs_cannot_request_a_team_copy",
+          "new": true,
+          "exact_shared_ast": true
+        },
+        {
+          "name": "test_scope_ref_requires_an_identifier",
+          "new": true,
+          "exact_shared_ast": true
+        },
+        {
+          "name": "test_team_queue_label_does_not_resolve_a_workspace_scope_label",
+          "new": true,
+          "exact_shared_ast": true
+        },
+        {
+          "name": "test_only_missing_native_namespaces_are_created",
+          "new": true,
+          "exact_shared_ast": true
+        },
+        {
+          "name": "test_label_definition_pagination_prevents_duplicate_creation",
+          "new": true,
+          "exact_shared_ast": true
+        },
+        {
+          "name": "test_team_collision_refuses_all_namespace_writes",
+          "new": true,
+          "exact_shared_ast": true
+        },
+        {
+          "name": "test_unavailable_project_creator_is_a_typed_failure_without_fallback",
+          "new": true,
+          "exact_shared_ast": true
+        },
+        {
+          "name": "MissingReadbackServer._tool_save_project_label",
+          "new": true,
+          "exact_shared_ast": true
+        },
+        {
+          "name": "test_missing_readback_fails_and_a_later_boot_completes_missing_labels",
+          "new": true,
+          "exact_shared_ast": true
+        },
+        {
+          "name": "BrokenCursorServer._tool_list_project_labels",
+          "new": true,
+          "exact_shared_ast": true
+        },
+        {
+          "name": "test_a_truncated_namespace_cannot_be_treated_as_absence",
+          "new": true,
+          "exact_shared_ast": true
+        },
+        {
+          "name": "test_connected_read_captures_do_not_claim_service_creator_validation",
+          "new": true,
+          "exact_shared_ast": true
+        }
+      ],
+      "removed": []
+    },
+    {
+      "path": "tests/tracker/test_tracker_boot.py",
+      "exact_shared_file": true,
+      "changed": [
+        {
+          "name": "TestConfiguredMappings.test_every_category_is_covered",
+          "new": false,
+          "exact_shared_ast": true
+        }
+      ],
+      "removed": []
+    }
+  ]
+}

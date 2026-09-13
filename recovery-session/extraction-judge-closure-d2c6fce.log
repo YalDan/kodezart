@@ -1,0 +1,158 @@
+src/kodezart/services/audit_sessions.py judge_in_workspace 25-70
+  kodezart.core.constants EVAL_PERMISSION_MODE 5-5
+  kodezart.core.errors soft_failure 6-6
+  kodezart.core.protocols AgentRunner 8-13
+  kodezart.core.protocols PromptSetProvider 8-13
+  kodezart.core.stream_drain drain 14-14
+  kodezart.types.domain.agent RaiseSite 18-18
+  kodezart.types.domain.prompts PromptKey 19-19
+  kodezart.types.domain.session SessionType 20-20
+  kodezart.types.domain.session ToolPreset 20-20
+  kodezart.types.domain.skills SkillsSelection 21-21
+  kodezart.types.domain.subagents NO_SUBAGENTS 22-22
+src/kodezart/services/audit_sessions.py FreshAuditSession 73-135
+  kodezart.core.owned_tasks settle 7-7
+  kodezart.core.protocols AgentRunner 8-13
+  kodezart.core.protocols GitService 8-13
+  kodezart.core.protocols PromptSetProvider 8-13
+  kodezart.core.protocols WorkspaceProvider 8-13
+  kodezart.domain.errors AuditClaimReadError 15-15
+  kodezart.services.git_observations read_workspace_head 16-16
+  kodezart.services.owned_workspace owned_workspace 17-17
+  kodezart.types.domain.agent RaiseSite 18-18
+  kodezart.types.domain.prompts PromptKey 19-19
+  kodezart.types.domain.session SessionType 20-20
+  kodezart.types.domain.skills SkillsSelection 21-21
+src/kodezart/chains/write_back_verifier.py WriteBackStep 50-70
+  typing Protocol 17-17
+  typing runtime_checkable 17-17
+  kodezart.types.domain.surface WritableSurface 40-40
+  kodezart.types.domain.write_back WriteBackFinding 41-43
+src/kodezart/chains/write_back_verifier.py WriteBackJudge 74-84
+  typing Protocol 17-17
+  typing runtime_checkable 17-17
+  kodezart.types.domain.audit TrackerArtifact 36-36
+  kodezart.types.domain.write_back WriteBackFinding 41-43
+src/kodezart/chains/write_back_verifier.py WriteBackVerifier 87-145
+  collections.abc Sequence 16-16
+  kodezart.core.protocols TrackerPort 20-26
+  kodezart.services.tracker_artifacts read_tracker_artifact 31-34
+  kodezart.services.tracker_artifacts require_artifact_read 31-34
+  kodezart.types.domain.audit AuditVerdict 36-36
+  kodezart.types.domain.audit TrackerArtifact 36-36
+  kodezart.types.domain.write_back WriteBackFinding 41-43
+  kodezart.types.domain.write_back WriteBackResult 44-46
+src/kodezart/chains/write_back_verifier.py FreshWriteBackJudge 148-207
+  kodezart.core.owned_tasks settle 19-19
+  kodezart.core.protocols AgentRunner 20-26
+  kodezart.core.protocols GitService 20-26
+  kodezart.core.protocols PromptSetProvider 20-26
+  kodezart.core.protocols WorkspaceProvider 20-26
+  kodezart.domain.errors WriteBackReadError 27-27
+  kodezart.services.audit_sessions judge_in_workspace 28-28
+  kodezart.services.git_observations read_workspace_head 29-29
+  kodezart.services.owned_workspace owned_workspace 30-30
+  kodezart.types.domain.agent WRITE_BACK_SCHEMA 35-35
+  kodezart.types.domain.audit TrackerArtifact 36-36
+  kodezart.types.domain.prompts PromptKey 37-37
+  kodezart.types.domain.session SessionType 38-38
+  kodezart.types.domain.skills SkillsSelection 39-39
+  kodezart.types.domain.write_back WriteBackFinding 41-43
+src/kodezart/services/tracker_artifacts.py _SUPPORTED 11-20
+  kodezart.types.domain.surface SurfaceKind 9-9
+src/kodezart/services/tracker_artifacts.py require_artifact_read 23-28
+  kodezart.domain.errors WriteBackReadError 6-6
+  kodezart.types.domain.surface WritableSurface 9-9
+src/kodezart/services/tracker_artifacts.py read_tracker_artifact 31-112
+  kodezart.core.protocols TrackerPort 5-5
+  kodezart.domain.errors WriteBackReadError 6-6
+  kodezart.domain.tracker_writes comment_under_marker 7-7
+  kodezart.types.domain.audit TrackerArtifact 8-8
+  kodezart.types.domain.surface SurfaceKind 9-9
+  kodezart.types.domain.surface WritableSurface 9-9
+src/kodezart/types/domain/audit.py AuditVerdict 34-42
+  enum StrEnum 3-3
+src/kodezart/types/domain/audit.py TrackerArtifact 89-95
+  pydantic ConfigDict 6-6
+  pydantic Field 6-6
+  kodezart.types.base CamelCaseModel 8-8
+  kodezart.types.domain.surface WritableSurface 11-11
+src/kodezart/types/domain/write_back.py WriteBackFinding 11-50
+  typing Annotated 3-3
+  typing Self 3-3
+  pydantic ConfigDict 5-5
+  pydantic Field 5-5
+  pydantic model_validator 5-5
+  kodezart.types.base CamelCaseModel 7-7
+  kodezart.types.domain.audit AuditVerdict 8-8
+src/kodezart/types/domain/write_back.py WriteBackResult 53-80
+  typing Self 3-3
+  pydantic ConfigDict 5-5
+  pydantic Field 5-5
+  pydantic model_validator 5-5
+  kodezart.types.base CamelCaseModel 7-7
+  kodezart.types.domain.audit AuditVerdict 8-8
+  kodezart.types.domain.audit TrackerArtifact 8-8
+src/kodezart/types/domain/agent.py RaiseSite 77-98
+  typing Literal 4-4
+src/kodezart/types/domain/agent.py WRITE_BACK_SCHEMA 1152-1152
+  kodezart.types.domain.write_back WriteBackFinding 49-49
+src/kodezart/domain/errors.py WriteBackReadError 744-745
+src/kodezart/types/domain/prompts.py PromptKey 16-55
+  enum StrEnum 8-8
+src/kodezart/domain/fire_spec.py _CRITERION_ROW 16-16
+src/kodezart/domain/fire_spec.py _FENCE 17-17
+src/kodezart/domain/fire_spec.py _without_comments 20-39
+src/kodezart/domain/fire_spec.py criterion_field_bodies 42-81
+  typing Literal 5-5
+src/kodezart/domain/fire_spec.py tracker_spec_from_issues 84-97
+  collections.abc Sequence 4-4
+  kodezart.domain.errors EmptyFireCriteriaError 7-11
+  kodezart.types.domain.fire_spec CriterionRef 12-12
+  kodezart.types.domain.fire_spec IssueRef 12-12
+  kodezart.types.domain.fire_spec TrackerSpec 12-12
+  kodezart.types.domain.tracker TrackerIssue 14-14
+src/kodezart/domain/fire_spec.py criterion_check 100-109
+  kodezart.domain.errors InvalidFireCriterionError 7-11
+  kodezart.types.domain.tracker TrackerIssue 14-14
+src/kodezart/domain/fire_spec.py require_fire_entry 112-128
+  kodezart.domain.errors FireSpecEntryError 7-11
+  kodezart.types.domain.operation OperationMemberAbsentError 13-13
+  kodezart.types.domain.tracker TrackerIssue 14-14
+src/kodezart/types/domain/assertion_drift.py ProtectedTestRef 11-32
+  pathlib PurePosixPath 3-3
+  typing Self 4-4
+  pydantic ConfigDict 6-6
+  pydantic Field 6-6
+  pydantic model_validator 6-6
+  kodezart.types.base CamelCaseModel 8-8
+src/kodezart/types/domain/assertion_drift.py GitSourceBlob 59-67
+  pydantic ConfigDict 6-6
+  pydantic Field 6-6
+  kodezart.types.base CamelCaseModel 8-8
+src/kodezart/types/domain/branch.py BranchRole 58-63
+  enum StrEnum 14-14
+src/kodezart/types/domain/branch.py BranchAssociation 66-74
+  typing Annotated 15-15
+  pydantic ConfigDict 17-17
+  pydantic Field 17-17
+  kodezart.types.base CamelCaseModel 19-19
+src/kodezart/types/domain/branch.py WorkRefLanding 77-82
+  enum StrEnum 14-14
+src/kodezart/core/protocols.py GitSourceReader 99-116
+  typing Protocol 4-4
+  typing runtime_checkable 4-4
+  kodezart.types.domain.assertion_drift GitSourceBlob 9-9
+src/kodezart/services/fire_record_facts.py observe_fire_facts 14-33
+  kodezart.types.domain.agent AgentEvent 3-10
+  kodezart.types.domain.agent AuthoredWorkflowCompleteEvent 3-10
+  kodezart.types.domain.agent WorkflowCompleteEvent 3-10
+  kodezart.types.domain.agent WorkflowPREvent 3-10
+  kodezart.types.domain.agent WorkflowScopeBaseEvent 3-10
+  kodezart.types.domain.agent WorkflowVisibilityEvent 3-10
+  kodezart.types.domain.run_records FireRecordFacts 11-11
+src/kodezart/adapters/subprocess_git_source_reader.py SubprocessGitSourceReader 16-156
+  pathlib PurePosixPath 7-7
+  kodezart.core.owned_tasks finish_owned 9-9
+  kodezart.domain.errors GitSourceReadError 10-10
+  kodezart.types.domain.assertion_drift GitSourceBlob 11-11

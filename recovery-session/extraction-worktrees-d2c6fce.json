@@ -1,0 +1,436 @@
+[
+  {
+    "worktree": "/private/tmp/kodezart-v03-recovery",
+    "HEAD": "55a87a5009e1816d1d87c130a7f46a2a83a9f37e",
+    "branch": "refs/heads/codex/v03-recovery",
+    "captured_at": "2026-09-12T16:58:21.561759+00:00",
+    "status": "",
+    "unstaged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "staged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "untracked": [],
+    "acceptance": "not inferred from a worktree/ref"
+  },
+  {
+    "worktree": "/private/tmp/kodezart-v03-recovery-alarm-owner",
+    "HEAD": "179ef5acfad52758fc48ffe6fd0d32b2753931f2",
+    "branch": "refs/heads/codex/v03-recovery-alarm-owner",
+    "captured_at": "2026-09-12T16:58:24.176148+00:00",
+    "status": "",
+    "unstaged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "staged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "untracked": [],
+    "acceptance": "not inferred from a worktree/ref"
+  },
+  {
+    "worktree": "/private/tmp/kodezart-v03-recovery-alarm-payload-fixture",
+    "HEAD": "417ceecabc0b6fb7a9f2d7a05c5fa459ad1b2358",
+    "branch": "refs/heads/codex/v03-recovery-alarm-payload-fixture",
+    "captured_at": "2026-09-12T16:58:25.080069+00:00",
+    "status": "",
+    "unstaged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "staged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "untracked": [],
+    "acceptance": "not inferred from a worktree/ref"
+  },
+  {
+    "worktree": "/private/tmp/kodezart-v03-recovery-amendment-comment",
+    "HEAD": "d80e7fea018f3689778f7d05460fc4d175c563d5",
+    "branch": "refs/heads/codex/v03-recovery-amendment-comment",
+    "captured_at": "2026-09-12T16:58:25.664422+00:00",
+    "status": " M src/kodezart/adapters/linear_mcp_tracker.py\n M src/kodezart/core/protocols.py\n M src/kodezart/domain/errors.py\n M src/kodezart/domain/tracker_writes.py\n M tests/fakes.py\n?? tests/tracker/test_comment_expected.py\n",
+    "unstaged_sha256": "ce6ce4e72a6e4c3d33f63e56f374c7e667c42f71f2ef4b26fb0912ccd5d438bd",
+    "staged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "untracked": [
+      {
+        "path": "tests/tracker/test_comment_expected.py",
+        "sha256": "015ed04b25b877779cb81f88a40d6d164fdc0e36a17cbf824e197520ea9d3e8c",
+        "bytes": 5847
+      }
+    ],
+    "acceptance": "not inferred from a worktree/ref"
+  },
+  {
+    "worktree": "/private/tmp/kodezart-v03-recovery-audit-fixture-review",
+    "HEAD": "556552cb94d1d8ce4b36e358162b43785cd4b23e",
+    "captured_at": "2026-09-12T16:58:26.508182+00:00",
+    "status": "?? tests/adapters/test_audit_fixture_base_independent.py\n",
+    "unstaged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "staged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "untracked": [
+      {
+        "path": "tests/adapters/test_audit_fixture_base_independent.py",
+        "sha256": "366cf913170bbecffcd931d159a8eaaa2347c0d136998a779341a8469336ab43",
+        "bytes": 1075
+      }
+    ],
+    "acceptance": "not inferred from a worktree/ref"
+  },
+  {
+    "worktree": "/private/tmp/kodezart-v03-recovery-audit-report-contract",
+    "HEAD": "fd93cf2a15fc8413fc50a1faf684b1deed254618",
+    "branch": "refs/heads/codex/v03-recovery-audit-report-contract",
+    "captured_at": "2026-09-12T16:58:27.325961+00:00",
+    "status": "",
+    "unstaged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "staged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "untracked": [],
+    "acceptance": "not inferred from a worktree/ref"
+  },
+  {
+    "worktree": "/private/tmp/kodezart-v03-recovery-audit-types",
+    "HEAD": "fc4953e1d3847ad2ffe272b2e89aa88b8fbd4c5c",
+    "branch": "refs/heads/codex/v03-recovery-audit-types",
+    "captured_at": "2026-09-12T16:58:28.172586+00:00",
+    "status": "",
+    "unstaged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "staged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "untracked": [],
+    "acceptance": "not inferred from a worktree/ref"
+  },
+  {
+    "worktree": "/private/tmp/kodezart-v03-recovery-comment-provenance",
+    "HEAD": "03b99acb76a08b4c7000f052d90ef8a691496f95",
+    "branch": "refs/heads/codex/v03-recovery-comment-provenance",
+    "captured_at": "2026-09-12T16:58:28.612947+00:00",
+    "status": "",
+    "unstaged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "staged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "untracked": [],
+    "acceptance": "not inferred from a worktree/ref"
+  },
+  {
+    "worktree": "/private/tmp/kodezart-v03-recovery-criterion-class",
+    "HEAD": "b714b984112efd8471f73985300864d66a3eb814",
+    "branch": "refs/heads/codex/v03-recovery-criterion-class",
+    "captured_at": "2026-09-12T16:58:29.138380+00:00",
+    "status": "",
+    "unstaged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "staged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "untracked": [],
+    "acceptance": "not inferred from a worktree/ref"
+  },
+  {
+    "worktree": "/private/tmp/kodezart-v03-recovery-gate-followup",
+    "HEAD": "01a62d6aa4991fdf6c916873a49940fbfb9eba5b",
+    "branch": "refs/heads/codex/v03-recovery-gate-followup",
+    "captured_at": "2026-09-12T16:58:29.844104+00:00",
+    "status": "",
+    "unstaged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "staged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "untracked": [],
+    "acceptance": "not inferred from a worktree/ref"
+  },
+  {
+    "worktree": "/private/tmp/kodezart-v03-recovery-gate-reconciliation",
+    "HEAD": "1088e18fb35c7cf16da47ad7bab03dcf5f3d9f56",
+    "branch": "refs/heads/codex/v03-recovery-gate-reconciliation",
+    "captured_at": "2026-09-12T16:58:33.249134+00:00",
+    "status": "",
+    "unstaged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "staged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "untracked": [],
+    "acceptance": "not inferred from a worktree/ref"
+  },
+  {
+    "worktree": "/private/tmp/kodezart-v03-recovery-integration",
+    "HEAD": "d14254e1b64b581693fd1032adbdaac57ccc9ce5",
+    "branch": "refs/heads/codex/v03-recovery-integration",
+    "captured_at": "2026-09-12T16:58:34.835908+00:00",
+    "status": "",
+    "unstaged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "staged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "untracked": [],
+    "acceptance": "not inferred from a worktree/ref"
+  },
+  {
+    "worktree": "/private/tmp/kodezart-v03-recovery-job-acceptance",
+    "HEAD": "85fc8a3d2fc5a45535894771d1758c80c4cd8ca8",
+    "branch": "refs/heads/codex/v03-recovery-job-acceptance",
+    "captured_at": "2026-09-12T16:58:35.481131+00:00",
+    "status": "",
+    "unstaged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "staged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "untracked": [],
+    "acceptance": "not inferred from a worktree/ref"
+  },
+  {
+    "worktree": "/private/tmp/kodezart-v03-recovery-lane-delivery",
+    "HEAD": "e7ae430ca2c82addec28b66d5a52d26a2878cc91",
+    "branch": "refs/heads/codex/v03-recovery-lane-delivery",
+    "captured_at": "2026-09-12T16:58:35.995727+00:00",
+    "status": "",
+    "unstaged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "staged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "untracked": [],
+    "acceptance": "not inferred from a worktree/ref"
+  },
+  {
+    "worktree": "/private/tmp/kodezart-v03-recovery-native-compat",
+    "HEAD": "c47a7f112368db35a3d6e50315da9926e4282afc",
+    "branch": "refs/heads/codex/v03-recovery-native-compat",
+    "captured_at": "2026-09-12T16:58:36.579558+00:00",
+    "status": "",
+    "unstaged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "staged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "untracked": [],
+    "acceptance": "not inferred from a worktree/ref"
+  },
+  {
+    "worktree": "/private/tmp/kodezart-v03-recovery-native-fire",
+    "HEAD": "19e5d870ddcd1f602cbfe402519d1c11e444835a",
+    "branch": "refs/heads/codex/v03-recovery-native-fire",
+    "captured_at": "2026-09-12T16:58:37.083075+00:00",
+    "status": "",
+    "unstaged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "staged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "untracked": [],
+    "acceptance": "not inferred from a worktree/ref"
+  },
+  {
+    "worktree": "/private/tmp/kodezart-v03-recovery-native-state-resolver",
+    "HEAD": "53b3ca89efec37b23570bf6cfd78780cc2acddef",
+    "branch": "refs/heads/codex/v03-recovery-native-state-resolver",
+    "captured_at": "2026-09-12T16:58:37.590083+00:00",
+    "status": "",
+    "unstaged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "staged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "untracked": [],
+    "acceptance": "not inferred from a worktree/ref"
+  },
+  {
+    "worktree": "/private/tmp/kodezart-v03-recovery-organize-ci",
+    "HEAD": "3aaad2d0f9b785297f97425eafef07c4d7ef78e3",
+    "captured_at": "2026-09-12T16:58:37.916617+00:00",
+    "status": "",
+    "unstaged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "staged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "untracked": [],
+    "acceptance": "not inferred from a worktree/ref"
+  },
+  {
+    "worktree": "/private/tmp/kodezart-v03-recovery-organize-composition",
+    "HEAD": "68eabb5157bbebd82ed181914bd39e32c62ea21c",
+    "branch": "refs/heads/codex/v03-recovery-organize-composition",
+    "captured_at": "2026-09-12T16:58:38.178666+00:00",
+    "status": "",
+    "unstaged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "staged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "untracked": [],
+    "acceptance": "not inferred from a worktree/ref"
+  },
+  {
+    "worktree": "/private/tmp/kodezart-v03-recovery-organize-graph",
+    "HEAD": "f47a1c64d567cd345fedba572bb2d31b7f6e3625",
+    "captured_at": "2026-09-12T16:58:38.457909+00:00",
+    "status": "",
+    "unstaged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "staged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "untracked": [],
+    "acceptance": "not inferred from a worktree/ref"
+  },
+  {
+    "worktree": "/private/tmp/kodezart-v03-recovery-organize-halt-types",
+    "HEAD": "64d64b315596b3a60ad8f6a05d134e7aa926634c",
+    "captured_at": "2026-09-12T16:58:38.840725+00:00",
+    "status": "",
+    "unstaged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "staged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "untracked": [],
+    "acceptance": "not inferred from a worktree/ref"
+  },
+  {
+    "worktree": "/private/tmp/kodezart-v03-recovery-organize-owner",
+    "HEAD": "ee1d44bd540304f5effce4021f547768cfe5d82d",
+    "branch": "refs/heads/codex/v03-recovery-organize-owner",
+    "captured_at": "2026-09-12T16:58:39.195069+00:00",
+    "status": "",
+    "unstaged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "staged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "untracked": [],
+    "acceptance": "not inferred from a worktree/ref"
+  },
+  {
+    "worktree": "/private/tmp/kodezart-v03-recovery-parent-rollup",
+    "HEAD": "7d6208af8054994ac5a146200f1f7a5b0e420db3",
+    "branch": "refs/heads/codex/v03-recovery-parent-rollup",
+    "captured_at": "2026-09-12T16:58:39.596957+00:00",
+    "status": "",
+    "unstaged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "staged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "untracked": [],
+    "acceptance": "not inferred from a worktree/ref"
+  },
+  {
+    "worktree": "/private/tmp/kodezart-v03-recovery-port-failures",
+    "HEAD": "9b90086768f0481d8fbfc6eb52b5109d3a904a13",
+    "branch": "refs/heads/codex/v03-recovery-port-contract",
+    "captured_at": "2026-09-12T16:58:39.989481+00:00",
+    "status": "",
+    "unstaged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "staged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "untracked": [],
+    "acceptance": "not inferred from a worktree/ref"
+  },
+  {
+    "worktree": "/private/tmp/kodezart-v03-recovery-ruling-reader-before",
+    "HEAD": "44fd521b593f2dd9120d303379babc055f48728e",
+    "captured_at": "2026-09-12T16:58:40.586278+00:00",
+    "status": "?? tests/tracker/test_ruling_reader_independent.py\n",
+    "unstaged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "staged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "untracked": [
+      {
+        "path": "tests/tracker/test_ruling_reader_independent.py",
+        "sha256": "b535a73669b496fd6f95706a925768f0e1a2af86a5e5d02f5265446f01f43092",
+        "bytes": 7351
+      }
+    ],
+    "acceptance": "not inferred from a worktree/ref"
+  },
+  {
+    "worktree": "/private/tmp/kodezart-v03-recovery-ruling-reader-review",
+    "HEAD": "03b99acb76a08b4c7000f052d90ef8a691496f95",
+    "captured_at": "2026-09-12T16:58:40.941061+00:00",
+    "status": "",
+    "unstaged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "staged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "untracked": [],
+    "acceptance": "not inferred from a worktree/ref"
+  },
+  {
+    "worktree": "/private/tmp/kodezart-v03-recovery-rulings-writeback",
+    "HEAD": "375314bd5e625160a306ba79bf3eb7ab3c7553ca",
+    "branch": "refs/heads/codex/v03-recovery-rulings-writeback",
+    "captured_at": "2026-09-12T16:58:41.238262+00:00",
+    "status": "",
+    "unstaged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "staged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "untracked": [],
+    "acceptance": "not inferred from a worktree/ref"
+  },
+  {
+    "worktree": "/private/tmp/kodezart-v03-recovery-scope-runtime",
+    "HEAD": "f632aee96063777628577c38af545b03eec18ee1",
+    "branch": "refs/heads/codex/v03-recovery-scope-runtime",
+    "captured_at": "2026-09-12T16:58:41.584211+00:00",
+    "status": "",
+    "unstaged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "staged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "untracked": [],
+    "acceptance": "not inferred from a worktree/ref"
+  },
+  {
+    "worktree": "/private/tmp/kodezart-v03-recovery-semantic-amended",
+    "HEAD": "2e7fdd9b5412d05ebabc8fd612503038f8737a1e",
+    "branch": "refs/heads/codex/v03-recovery-semantic-amended",
+    "captured_at": "2026-09-12T16:58:41.896042+00:00",
+    "status": "",
+    "unstaged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "staged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "untracked": [],
+    "acceptance": "not inferred from a worktree/ref"
+  },
+  {
+    "worktree": "/private/tmp/kodezart-v03-recovery-semantic-amendment",
+    "HEAD": "d93f3e9734d010e49a0ed1baf59969e5227cbb4e",
+    "branch": "refs/heads/codex/v03-recovery-semantic-amendment",
+    "captured_at": "2026-09-12T16:58:42.265261+00:00",
+    "status": "",
+    "unstaged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "staged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "untracked": [],
+    "acceptance": "not inferred from a worktree/ref"
+  },
+  {
+    "worktree": "/private/tmp/kodezart-v03-recovery-semantic-applied",
+    "HEAD": "d80e7fea018f3689778f7d05460fc4d175c563d5",
+    "branch": "refs/heads/codex/v03-recovery-semantic-applied",
+    "captured_at": "2026-09-12T16:58:42.696765+00:00",
+    "status": " M src/kodezart/chains/fire_implementation.py\n M src/kodezart/chains/ralph_loop.py\n M src/kodezart/chains/ralph_workflow.py\n M src/kodezart/core/config.py\n M src/kodezart/core/protocols.py\n M src/kodezart/domain/fire_spec.py\n M src/kodezart/services/native_amendments.py\n M src/kodezart/services/scope_runtime.py\n M src/kodezart/types/domain/agent.py\n M src/kodezart/types/domain/amendment.py\n M src/kodezart/types/domain/prompts.py\n M src/kodezart/types/domain/workflow.py\n?? src/kodezart/chains/native_amendment.py\n?? src/kodezart/core/amendment_settings.py\n?? src/kodezart/types/domain/amendment_write.py\n",
+    "unstaged_sha256": "39f81446a86701da1c9814bb5b9639913e9cf09f43eed820e0416a4bbbd67e49",
+    "staged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "untracked": [
+      {
+        "path": "src/kodezart/chains/native_amendment.py",
+        "sha256": "ef401fffed1c20c67055660b7a087bc1a8aba5e0c86c642beb48fe555779026b",
+        "bytes": 3241
+      },
+      {
+        "path": "src/kodezart/core/amendment_settings.py",
+        "sha256": "3ce3de9fa3bf2db15112f916c0a2fba28f5729bbcba0a3162cb22bbc2492f7d2",
+        "bytes": 477
+      },
+      {
+        "path": "src/kodezart/types/domain/amendment_write.py",
+        "sha256": "a5d0a5237c4d65a86ea9536e4ba433ef17d2e1c1b09d8985dff1bb091365bb7c",
+        "bytes": 2894
+      }
+    ],
+    "acceptance": "not inferred from a worktree/ref"
+  },
+  {
+    "worktree": "/private/tmp/kodezart-v03-recovery-semantic-independent-review",
+    "HEAD": "1c397368ed14f901e072c0840da2afc58bdbd02a",
+    "captured_at": "2026-09-12T16:58:43.036504+00:00",
+    "status": "",
+    "unstaged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "staged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "untracked": [],
+    "acceptance": "not inferred from a worktree/ref"
+  },
+  {
+    "worktree": "/private/tmp/kodezart-v03-recovery-semantic-writeback",
+    "HEAD": "1c397368ed14f901e072c0840da2afc58bdbd02a",
+    "branch": "refs/heads/codex/v03-recovery-semantic-writeback",
+    "captured_at": "2026-09-12T16:58:43.394593+00:00",
+    "status": "",
+    "unstaged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "staged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "untracked": [],
+    "acceptance": "not inferred from a worktree/ref"
+  },
+  {
+    "worktree": "/private/tmp/kodezart-v03-recovery-shared-contracts",
+    "HEAD": "d59047eb0e465e98dedd0b6a93b727a74d57827c",
+    "branch": "refs/heads/codex/v03-recovery-shared-contracts",
+    "captured_at": "2026-09-12T16:58:43.718152+00:00",
+    "status": "",
+    "unstaged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "staged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "untracked": [],
+    "acceptance": "not inferred from a worktree/ref"
+  },
+  {
+    "worktree": "/private/tmp/kodezart-v03-recovery-state-resolver-review",
+    "HEAD": "53b3ca89efec37b23570bf6cfd78780cc2acddef",
+    "branch": "refs/heads/codex/v03-recovery-state-resolver-review",
+    "captured_at": "2026-09-12T16:58:44.126882+00:00",
+    "status": "",
+    "unstaged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "staged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "untracked": [],
+    "acceptance": "not inferred from a worktree/ref"
+  },
+  {
+    "worktree": "/private/tmp/kodezart-v03-recovery-surface-owner",
+    "HEAD": "3df7469e4da1484eb10d3ca86da825f4b473bba1",
+    "branch": "refs/heads/codex/v03-recovery-surface-owner",
+    "captured_at": "2026-09-12T16:58:44.415592+00:00",
+    "status": "",
+    "unstaged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "staged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "untracked": [],
+    "acceptance": "not inferred from a worktree/ref"
+  },
+  {
+    "worktree": "/private/tmp/kodezart-v03-recovery-wire-boundary",
+    "HEAD": "2e6baba4acbec541e52c42c7794a58265a7ff913",
+    "branch": "refs/heads/codex/v03-recovery-wire-boundary",
+    "captured_at": "2026-09-12T16:58:44.653441+00:00",
+    "status": "",
+    "unstaged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "staged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "untracked": [],
+    "acceptance": "not inferred from a worktree/ref"
+  }
+]

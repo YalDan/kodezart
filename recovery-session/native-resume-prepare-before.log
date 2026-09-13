@@ -1,0 +1,232 @@
+FFF                                                                      [100%]
+=================================== FAILURES ===================================
+_ test_failed_preparation_releases_uncheckpointed_unwritten_workspace[guard_begin] _
+
+repository = (PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1983/test_failed_preparation_releas0/repo'), '20e6192317d737797d2979c456b4b4e48836461b')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10ef5d670>
+cut = 'guard_begin'
+
+    @pytest.mark.parametrize("cut", ["guard_begin", "workspace_capture"])
+    async def test_failed_preparation_releases_uncheckpointed_unwritten_workspace(
+        repository, monkeypatch, cut
+    ):
+        port, saver = tracker(), InMemorySaver()
+        executor = Executor(claim=False)
+        fire, workspace, _, config = await prepared_parent(repository, executor, port, saver)
+        observed_paths = set()
+        actual_scan = port.scope_issues
+        actual_identity = workspace._git.worktree_identity
+    
+        async def unavailable_begin(**kwargs):
+            if workspace._workspaces:
+                observed_paths.update(workspace._workspaces)
+                raise ConnectionError("authority unavailable after acquisition")
+            return await actual_scan(**kwargs)
+    
+        async def unavailable_capture(workspace_path, *, repository_path):
+            identity = await actual_identity(workspace_path, repository_path=repository_path)
+            assert identity.head_sha
+            observed_paths.add(workspace_path)
+            raise GitOperationError("identity readout unavailable before any writer")
+    
+        if cut == "guard_begin":
+            monkeypatch.setattr(port, "scope_issues", unavailable_begin)
+        else:
+            monkeypatch.setattr(workspace._git, "worktree_identity", unavailable_capture)
+        try:
+            with pytest.raises((NativeWriteRefusalError, FireSpecEntryError, GitOperationError)):
+                await fire.native_graph.ainvoke(None, config=config)
+            assert observed_paths
+            assert not executor.calls
+            phases = [
+                row.checkpoint["channel_values"]["execution"]
+                for row in saver.list(None)
+                if "execution" in row.checkpoint["channel_values"]
+            ]
+            assert phases and all(isinstance(phase, NewNativeExecution) for phase in phases)
+            assert not port.comments
+>           assert not workspace._workspaces, "failed preparation retains uncheckpointed ownership"
+E           AssertionError: failed preparation retains uncheckpointed ownership
+E           assert not {'/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-8c0985e7b942435f9100f6240b00be81': _WorkspaceInfo(repo_pat...983/test_failed_preparation_releas0/repo', workspace_id='8c0985e7b942435f9100f6240b00be81', branch_name='native-loop')}
+E            +  where {'/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-8c0985e7b942435f9100f6240b00be81': _WorkspaceInfo(repo_pat...983/test_failed_preparation_releas0/repo', workspace_id='8c0985e7b942435f9100f6240b00be81', branch_name='native-loop')} = <tests.services.test_native_amendments.Workspaces object at 0x10ef5f590>._workspaces
+
+tests/chains/test_native_prepare_cleanup_peer.py:57: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 23:16:34 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 23:16:35 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 23:16:35 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 23:16:35 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 23:16:35 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-8c0985e7b942435f9100f6240b00be81 workspace_id=8c0985e7b942435f9100f6240b00be81
+2026-09-12 23:16:35 [warning  ] native_writer_workspace_retained workspace_path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-8c0985e7b942435f9100f6240b00be81
+2026-09-12 23:16:36 [info     ] workspace_released             workspace_id=8c0985e7b942435f9100f6240b00be81
+------------------------------ Captured log call -------------------------------
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.fire_spec.TrackerSpec from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.fire_spec', 'TrackerSpec')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.criteria.TrackerCriterionSet from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.criteria', 'TrackerCriterionSet')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.gating.RepoVisibility from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.gating', 'RepoVisibility')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.fire_spec.TrackerSpec from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.fire_spec', 'TrackerSpec')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.criteria.TrackerCriterionSet from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.criteria', 'TrackerCriterionSet')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.gating.RepoVisibility from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.gating', 'RepoVisibility')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.ralph_outcome.PendingRalphOutcome from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.ralph_outcome', 'PendingRalphOutcome')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.ralph_outcome.PendingRalphOutcome from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.ralph_outcome', 'PendingRalphOutcome')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.ralph_outcome.PendingRalphOutcome from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.ralph_outcome', 'PendingRalphOutcome')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.native_execution.NewNativeExecution from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.native_execution', 'NewNativeExecution')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.chains.native_execution.NativeExecutionState from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.chains.native_execution', 'NativeExecutionState')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.native_execution.NewNativeExecution from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.native_execution', 'NewNativeExecution')]
+_ test_failed_preparation_releases_uncheckpointed_unwritten_workspace[workspace_capture] _
+
+repository = (PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1983/test_failed_preparation_releas1/repo'), 'db0e26c0a4592a9959011052e317557ddb62ad5e')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10f00f230>
+cut = 'workspace_capture'
+
+    @pytest.mark.parametrize("cut", ["guard_begin", "workspace_capture"])
+    async def test_failed_preparation_releases_uncheckpointed_unwritten_workspace(
+        repository, monkeypatch, cut
+    ):
+        port, saver = tracker(), InMemorySaver()
+        executor = Executor(claim=False)
+        fire, workspace, _, config = await prepared_parent(repository, executor, port, saver)
+        observed_paths = set()
+        actual_scan = port.scope_issues
+        actual_identity = workspace._git.worktree_identity
+    
+        async def unavailable_begin(**kwargs):
+            if workspace._workspaces:
+                observed_paths.update(workspace._workspaces)
+                raise ConnectionError("authority unavailable after acquisition")
+            return await actual_scan(**kwargs)
+    
+        async def unavailable_capture(workspace_path, *, repository_path):
+            identity = await actual_identity(workspace_path, repository_path=repository_path)
+            assert identity.head_sha
+            observed_paths.add(workspace_path)
+            raise GitOperationError("identity readout unavailable before any writer")
+    
+        if cut == "guard_begin":
+            monkeypatch.setattr(port, "scope_issues", unavailable_begin)
+        else:
+            monkeypatch.setattr(workspace._git, "worktree_identity", unavailable_capture)
+        try:
+            with pytest.raises((NativeWriteRefusalError, FireSpecEntryError, GitOperationError)):
+                await fire.native_graph.ainvoke(None, config=config)
+            assert observed_paths
+            assert not executor.calls
+            phases = [
+                row.checkpoint["channel_values"]["execution"]
+                for row in saver.list(None)
+                if "execution" in row.checkpoint["channel_values"]
+            ]
+            assert phases and all(isinstance(phase, NewNativeExecution) for phase in phases)
+            assert not port.comments
+>           assert not workspace._workspaces, "failed preparation retains uncheckpointed ownership"
+E           AssertionError: failed preparation retains uncheckpointed ownership
+E           assert not {'/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-7b6fed493616404cbb36bece728b088f': _WorkspaceInfo(repo_pat...983/test_failed_preparation_releas1/repo', workspace_id='7b6fed493616404cbb36bece728b088f', branch_name='native-loop')}
+E            +  where {'/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-7b6fed493616404cbb36bece728b088f': _WorkspaceInfo(repo_pat...983/test_failed_preparation_releas1/repo', workspace_id='7b6fed493616404cbb36bece728b088f', branch_name='native-loop')} = <tests.services.test_native_amendments.Workspaces object at 0x10f011130>._workspaces
+
+tests/chains/test_native_prepare_cleanup_peer.py:57: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 23:16:38 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 23:16:38 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 23:16:38 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 23:16:39 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 23:16:39 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-7b6fed493616404cbb36bece728b088f workspace_id=7b6fed493616404cbb36bece728b088f
+2026-09-12 23:16:39 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 23:16:40 [warning  ] native_writer_workspace_retained workspace_path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-7b6fed493616404cbb36bece728b088f
+2026-09-12 23:16:41 [info     ] workspace_released             workspace_id=7b6fed493616404cbb36bece728b088f
+------------------------------ Captured log call -------------------------------
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.fire_spec.TrackerSpec from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.fire_spec', 'TrackerSpec')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.criteria.TrackerCriterionSet from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.criteria', 'TrackerCriterionSet')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.gating.RepoVisibility from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.gating', 'RepoVisibility')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.fire_spec.TrackerSpec from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.fire_spec', 'TrackerSpec')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.criteria.TrackerCriterionSet from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.criteria', 'TrackerCriterionSet')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.gating.RepoVisibility from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.gating', 'RepoVisibility')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.ralph_outcome.PendingRalphOutcome from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.ralph_outcome', 'PendingRalphOutcome')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.ralph_outcome.PendingRalphOutcome from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.ralph_outcome', 'PendingRalphOutcome')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.ralph_outcome.PendingRalphOutcome from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.ralph_outcome', 'PendingRalphOutcome')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.native_execution.NewNativeExecution from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.native_execution', 'NewNativeExecution')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.chains.native_execution.NativeExecutionState from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.chains.native_execution', 'NativeExecutionState')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.native_execution.NewNativeExecution from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.native_execution', 'NewNativeExecution')]
+______ test_parent_cancellation_during_prepare_releases_before_any_writer ______
+
+repository = (PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1983/test_parent_cancellation_durin0/repo'), '388fc348ba0f793baee9a5b5a39cafb4e0b8999a')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10f01a1b0>
+
+    async def test_parent_cancellation_during_prepare_releases_before_any_writer(
+        repository, monkeypatch
+    ):
+        port, saver = tracker(), InMemorySaver()
+        executor = Executor(claim=False)
+        fire, workspace, _, config = await prepared_parent(repository, executor, port, saver)
+        reading = asyncio.Event()
+        paths = set()
+        original = port.scope_issues
+    
+        async def hold_preparation(**kwargs):
+            if workspace._workspaces:
+                paths.update(workspace._workspaces)
+                reading.set()
+                await asyncio.Event().wait()
+            return await original(**kwargs)
+    
+        monkeypatch.setattr(port, "scope_issues", hold_preparation)
+        task = asyncio.create_task(fire.native_graph.ainvoke(None, config=config))
+        try:
+            await reading.wait()
+            task.cancel("parent cancelled before native writer")
+            with pytest.raises(asyncio.CancelledError):
+                await task
+            assert task.cancelled()
+            assert paths
+            assert not executor.calls
+            assert not port.comments
+            phases = [
+                row.checkpoint["channel_values"]["execution"]
+                for row in saver.list(None)
+                if "execution" in row.checkpoint["channel_values"]
+            ]
+            assert phases and all(isinstance(phase, NewNativeExecution) for phase in phases)
+>           assert not workspace._workspaces
+E           AssertionError: assert not {'/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-0da356676bb9498ea1d2dea8eee1b2b6': _WorkspaceInfo(repo_pat...983/test_parent_cancellation_durin0/repo', workspace_id='0da356676bb9498ea1d2dea8eee1b2b6', branch_name='native-loop')}
+E            +  where {'/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-0da356676bb9498ea1d2dea8eee1b2b6': _WorkspaceInfo(repo_pat...983/test_parent_cancellation_durin0/repo', workspace_id='0da356676bb9498ea1d2dea8eee1b2b6', branch_name='native-loop')} = <tests.services.test_native_amendments.Workspaces object at 0x10f01af90>._workspaces
+
+tests/chains/test_native_prepare_cancellation.py:51: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 23:16:42 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 23:16:43 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 23:16:43 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 23:16:44 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 23:16:44 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-0da356676bb9498ea1d2dea8eee1b2b6 workspace_id=0da356676bb9498ea1d2dea8eee1b2b6
+2026-09-12 23:16:44 [warning  ] native_writer_workspace_retained workspace_path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-0da356676bb9498ea1d2dea8eee1b2b6
+2026-09-12 23:16:44 [info     ] workspace_released             workspace_id=0da356676bb9498ea1d2dea8eee1b2b6
+------------------------------ Captured log call -------------------------------
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.fire_spec.TrackerSpec from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.fire_spec', 'TrackerSpec')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.criteria.TrackerCriterionSet from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.criteria', 'TrackerCriterionSet')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.gating.RepoVisibility from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.gating', 'RepoVisibility')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.fire_spec.TrackerSpec from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.fire_spec', 'TrackerSpec')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.criteria.TrackerCriterionSet from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.criteria', 'TrackerCriterionSet')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.gating.RepoVisibility from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.gating', 'RepoVisibility')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.ralph_outcome.PendingRalphOutcome from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.ralph_outcome', 'PendingRalphOutcome')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.ralph_outcome.PendingRalphOutcome from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.ralph_outcome', 'PendingRalphOutcome')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.ralph_outcome.PendingRalphOutcome from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.ralph_outcome', 'PendingRalphOutcome')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.native_execution.NewNativeExecution from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.native_execution', 'NewNativeExecution')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.chains.native_execution.NativeExecutionState from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.chains.native_execution', 'NativeExecutionState')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.native_execution.NewNativeExecution from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.native_execution', 'NewNativeExecution')]
+=========================== short test summary info ============================
+FAILED tests/chains/test_native_prepare_cleanup_peer.py::test_failed_preparation_releases_uncheckpointed_unwritten_workspace[guard_begin]
+FAILED tests/chains/test_native_prepare_cleanup_peer.py::test_failed_preparation_releases_uncheckpointed_unwritten_workspace[workspace_capture]
+FAILED tests/chains/test_native_prepare_cancellation.py::test_parent_cancellation_during_prepare_releases_before_any_writer
+3 failed in 14.69s

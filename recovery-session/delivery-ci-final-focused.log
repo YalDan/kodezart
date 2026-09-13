@@ -1,0 +1,248 @@
+........................................................................ [ 14%]
+........................................................................ [ 29%]
+........................................................................ [ 43%]
+........................................................................ [ 58%]
+........................................................................ [ 73%]
+...........................................FF.FF........................ [ 87%]
+.............................................F...............            [100%]
+=================================== FAILURES ===================================
+_ test_unavailable_inputs_are_retained_without_clean_forge_claim[fake-port-capabilities] _
+
+setup = (<function setup.<locals>.build at 0x10afa9940>, <tests.tracker.test_audit_sweep.Executor object at 0x10afa2300>, <tes... <tests.fakes.FakeWorkspaceProvider object at 0x10afa17f0>, <tests.fakes.FakePRStateReader object at 0x10affa7e0>, ...)
+tracker = <tests.fakes.FakeTrackerPort object at 0x10aff9d90>
+server = <tests.fakes.FakeLinearMcpServer object at 0x10afa16d0>
+missing = 'capabilities'
+
+    @pytest.mark.parametrize("missing", ["verifier", "capabilities", "request"])
+    async def test_unavailable_inputs_are_retained_without_clean_forge_claim(
+        setup, tracker, server, missing
+    ):
+        build, _, _, _, _, _, _, operation = setup
+        await completed(tracker, server)
+        op = selected_operation(operation)
+        if missing == "request":
+            op = op.model_copy(update={"teams": {}})
+        child = (
+            await build(
+                selected_op=op,
+                selected_forge=None
+                if missing == "verifier"
+>               else verifier(tracker, op, None, None),
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            ).run()
+        ).observations[0]
+E       TypeError: verifier() takes 3 positional arguments but 4 were given
+
+tests/tracker/test_audit_forge_sweep.py:166: TypeError
+_ test_unavailable_inputs_are_retained_without_clean_forge_claim[fake-port-request] _
+
+setup = (<function setup.<locals>.build at 0x10b0a4040>, <tests.tracker.test_audit_sweep.Executor object at 0x10affb710>, <tes... <tests.fakes.FakeWorkspaceProvider object at 0x10aff93d0>, <tests.fakes.FakePRStateReader object at 0x10aff9b80>, ...)
+tracker = <tests.fakes.FakeTrackerPort object at 0x10aff8ef0>
+server = <tests.fakes.FakeLinearMcpServer object at 0x10aff85c0>
+missing = 'request'
+
+    @pytest.mark.parametrize("missing", ["verifier", "capabilities", "request"])
+    async def test_unavailable_inputs_are_retained_without_clean_forge_claim(
+        setup, tracker, server, missing
+    ):
+        build, _, _, _, _, _, _, operation = setup
+        await completed(tracker, server)
+        op = selected_operation(operation)
+        if missing == "request":
+            op = op.model_copy(update={"teams": {}})
+        child = (
+            await build(
+                selected_op=op,
+                selected_forge=None
+                if missing == "verifier"
+>               else verifier(tracker, op, None, None),
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            ).run()
+        ).observations[0]
+E       TypeError: verifier() takes 3 positional arguments but 4 were given
+
+tests/tracker/test_audit_forge_sweep.py:166: TypeError
+_ test_unavailable_inputs_are_retained_without_clean_forge_claim[linear-mcp-capabilities] _
+
+setup = (<function setup.<locals>.build at 0x10afa9300>, <tests.tracker.test_audit_sweep.Executor object at 0x10affb980>, <tes... <tests.fakes.FakeWorkspaceProvider object at 0x10affbad0>, <tests.fakes.FakePRStateReader object at 0x10affafc0>, ...)
+tracker = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10aff9f70>
+server = <tests.fakes.FakeLinearMcpServer object at 0x10aff9280>
+missing = 'capabilities'
+
+    @pytest.mark.parametrize("missing", ["verifier", "capabilities", "request"])
+    async def test_unavailable_inputs_are_retained_without_clean_forge_claim(
+        setup, tracker, server, missing
+    ):
+        build, _, _, _, _, _, _, operation = setup
+        await completed(tracker, server)
+        op = selected_operation(operation)
+        if missing == "request":
+            op = op.model_copy(update={"teams": {}})
+        child = (
+            await build(
+                selected_op=op,
+                selected_forge=None
+                if missing == "verifier"
+>               else verifier(tracker, op, None, None),
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            ).run()
+        ).observations[0]
+E       TypeError: verifier() takes 3 positional arguments but 4 were given
+
+tests/tracker/test_audit_forge_sweep.py:166: TypeError
+_ test_unavailable_inputs_are_retained_without_clean_forge_claim[linear-mcp-request] _
+
+setup = (<function setup.<locals>.build at 0x10b0a4680>, <tests.tracker.test_audit_sweep.Executor object at 0x10af876e0>, <tes... <tests.fakes.FakeWorkspaceProvider object at 0x10af84440>, <tests.fakes.FakePRStateReader object at 0x10af87560>, ...)
+tracker = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10af874a0>
+server = <tests.fakes.FakeLinearMcpServer object at 0x10af85a00>
+missing = 'request'
+
+    @pytest.mark.parametrize("missing", ["verifier", "capabilities", "request"])
+    async def test_unavailable_inputs_are_retained_without_clean_forge_claim(
+        setup, tracker, server, missing
+    ):
+        build, _, _, _, _, _, _, operation = setup
+        await completed(tracker, server)
+        op = selected_operation(operation)
+        if missing == "request":
+            op = op.model_copy(update={"teams": {}})
+        child = (
+            await build(
+                selected_op=op,
+                selected_forge=None
+                if missing == "verifier"
+>               else verifier(tracker, op, None, None),
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            ).run()
+        ).observations[0]
+E       TypeError: verifier() takes 3 positional arguments but 4 were given
+
+tests/tracker/test_audit_forge_sweep.py:166: TypeError
+_____ test_a_fire_over_a_forge_shaped_origin_still_opens_its_pull_request ______
+
+    async def test_a_fire_over_a_forge_shaped_origin_still_opens_its_pull_request() -> None:
+        """Selection, not removal: the other arm is unchanged from today."""
+        forge = RecordingForge()
+        engine = OriginRoutedWorkflowEngine(
+            forge_arm=_arm(forge=forge),
+            forge_less_arm=_arm(forge=None),
+        )
+    
+>       events = await _drive(engine, repo_url=FORGE_ORIGIN)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_forge_origin_selection.py:340: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_forge_origin_selection.py:215: in _drive
+    return [
+src/kodezart/composition/engine.py:119: in run
+    async for event in arm.run(
+src/kodezart/chains/authored_delivery.py:94: in run
+    async for event in self._delivery_compiled.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.chains.authored_checks.AuthoredChecks object at 0x10ae70a40>
+state = {'accept_verdict': <AcceptVerdict.accepted: 'accepted'>, 'acceptance_criteria': [GeneratedCriterion(id='AC-1', text='Tests pass'), GeneratedCriterion(id='AC-2', text='No lint errors')], 'best_iteration_sha': None, 'ci_red_class': None, ...}
+config = {'callbacks': <langchain_core.callbacks.manager.AsyncCallbackManager object at 0x10adf02f0>, 'configurable': {'__prege...a2e48f6', 'langgraph_node': 'monitor_ci', 'langgraph_path': ('__pregel_pull', 'monitor_ci'), 'langgraph_step': 3, ...}}
+
+    async def monitor_ci(
+        self,
+        state: AuthoredWorkflowState,
+        config: RunnableConfig,
+    ) -> dict[str, object]:
+        """Poll CI status for the latest commit on the feature branch."""
+        ctx = ExecutionContext.from_configurable(config)
+        writer = get_stream_writer()
+    
+        ci_monitor = self._ci_monitor
+        if ci_monitor is None:
+            msg = "monitor_ci requires ci_monitor but self._ci_monitor is None"
+            raise RuntimeError(msg)
+    
+        repo_url = ctx.repo_url
+        if repo_url is None:
+            msg = "monitor_ci requires repo_url but ctx.repo_url is None"
+            raise RuntimeError(msg)
+    
+        ref = state["feature_branch"]
+        canonical = resolve_repo_url(repo_url, self._git_base_url)
+        matches = tuple(
+            repo
+            for repo in self._repositories
+            if resolve_repo_url(repo.url, self._git_base_url) == canonical
+        )
+        if len(matches) > 1:
+            raise ValueError("delivery repository declarations are ambiguous")
+        repository = matches[0] if matches else None
+        red_class = None
+        async with self._watch_slots:
+            observed = await ci_monitor.wait_for_checks(repo_url=repo_url, ref=ref)
+            if isinstance(observed, IncompleteChecks):
+                raise CheckObservationError(
+                    repo_url=repo_url, ref=ref, reason=observed.summary
+                )
+            if isinstance(observed, ObservedChecks) and not observed.checks_passed:
+                red = await classify_red_checks(
+                    ci=ci_monitor,
+                    repo_url=repo_url,
+                    repository=repository,
+                    initial=observed,
+                    max_attempts=self._red_rerun_max_attempts,
+                )
+                red_class = red.red_class
+                observed = red.observation
+            passed = (
+                observed.checks_passed if isinstance(observed, ObservedChecks) else None
+            )
+>           summary = observed.summary
+                      ^^^^^^^^^^^^^^^^
+E           AttributeError: 'tuple' object has no attribute 'summary'
+E           During task with name 'monitor_ci' and id '0fc8f2cd-9794-47ac-47f4-1e37ba2e48f6'
+
+src/kodezart/chains/authored_checks.py:103: AttributeError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 15:14:41 [info     ] forge_capabilities_selected    forge_less_origin=False repo_url=https://github.com/owner/repo
+2026-09-12 15:14:41 [info     ] repo_visibility_resolved       repo_url=https://github.com/owner/repo.git visibility=public
+2026-09-12 15:14:41 [info     ] scope_base_resolved            base_branch=main base_role=None input_count=0
+2026-09-12 15:14:41 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 15:14:41 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 15:14:41 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=public writer=branch_name
+2026-09-12 15:14:41 [info     ] outbound_content_gated         categories=[] content_digest=6db0193b2b2aaacdd5cbcc79e03aa901354e10dce0fb8e7a2096ccf5f0beec53 failure=None hits=[] surface=repository verdict=clean visibility=public writer=artifact_ticket_json
+2026-09-12 15:14:41 [info     ] ticket_persisted               branch=kodezart/test-branch-eeaeded1-ralph-ddff8897 title='Test ticket'
+2026-09-12 15:14:41 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 15:14:41 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=acceptance_criteria stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 15:14:41 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 15:14:41 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=criteria_validation stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 15:14:41 [info     ] criteria_sweep_complete        bound_exhausted=False regeneration_round=0 regeneration_targets=[] satisfiable=True
+2026-09-12 15:14:41 [info     ] outbound_content_gated         categories=[] content_digest=6db0193b2b2aaacdd5cbcc79e03aa901354e10dce0fb8e7a2096ccf5f0beec53 failure=None hits=[] surface=repository verdict=clean visibility=public writer=artifact_ticket_json
+2026-09-12 15:14:41 [info     ] outbound_content_gated         categories=[] content_digest=345d97fb99ec7ff8f49280342898ea2f39a901b387aeff43472f140e124c442d failure=None hits=[] surface=repository verdict=clean visibility=public writer=artifact_criteria_json
+2026-09-12 15:14:41 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 15:14:41 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=post_merge_review stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 15:14:41 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 15:14:41 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=pr_description stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 15:14:41 [info     ] outbound_content_gated         categories=[] content_digest=eb122d7b8735eaeed5d4d2e20e2197a7332385519bb8aea3e476efbbb03973b9 failure=None hits=[] surface=publication verdict=clean visibility=public writer=pr_title
+2026-09-12 15:14:41 [info     ] outbound_content_gated         categories=[] content_digest=0d6622c29c59e41247ac00215f3b527e36219e70124d8dc09479d4ea20dc5ba3 failure=None hits=[] surface=publication verdict=clean visibility=public writer=pr_body
+=========================== short test summary info ============================
+FAILED tests/tracker/test_audit_forge_sweep.py::test_unavailable_inputs_are_retained_without_clean_forge_claim[fake-port-capabilities]
+FAILED tests/tracker/test_audit_forge_sweep.py::test_unavailable_inputs_are_retained_without_clean_forge_claim[fake-port-request]
+FAILED tests/tracker/test_audit_forge_sweep.py::test_unavailable_inputs_are_retained_without_clean_forge_claim[linear-mcp-capabilities]
+FAILED tests/tracker/test_audit_forge_sweep.py::test_unavailable_inputs_are_retained_without_clean_forge_claim[linear-mcp-request]
+FAILED tests/test_forge_origin_selection.py::test_a_fire_over_a_forge_shaped_origin_still_opens_its_pull_request
+5 failed, 488 passed in 81.58s (0:01:21)

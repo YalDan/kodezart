@@ -1,0 +1,26 @@
+RUF059 Unpacked variable `board` is never used
+  --> tests/core/test_write_back_settings.py:54:12
+   |
+52 |         },
+53 |     )
+54 |     owner, board, executor = factory(settings=config)
+   |            ^^^^^
+55 |     original = executor.stream
+56 |     seen = []
+   |
+help: Prefix it with an underscore or any other dummy variable pattern
+
+E501 Line too long (97 > 88)
+  --> tests/core/test_write_back_settings.py:73:89
+   |
+71 |                         structured_output={
+72 |                             "verdict": "refuted",
+73 |                             "evidence": "The landed body does not demonstrate the cited source.",
+   |                                                                                         ^^^^^^^^^
+74 |                             "cited_refs": ["src/missing.py:1"],
+75 |                         }
+   |
+
+Found 2 errors.
+No fixes available (1 hidden fix can be enabled with the `--unsafe-fixes` option).
+731 files already formatted

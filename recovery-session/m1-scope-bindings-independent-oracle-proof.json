@@ -1,0 +1,5 @@
+{
+  "test_project_milestones_expose_complete_native_identities_and_descriptions": true,
+  "test_project_milestone_incomplete_identity_evidence_refuses": true,
+  "tool_roster_file_exact_donor": true
+}

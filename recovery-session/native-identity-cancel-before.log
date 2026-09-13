@@ -1,0 +1,52 @@
+F.                                                                       [100%]
+=================================== FAILURES ===================================
+___________ test_cancelled_git_reader_reaps_its_real_child[identity] ___________
+
+tmp_path = PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1990/test_cancelled_git_reader_reap0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a7e7590>
+reader = 'identity'
+
+    @pytest.mark.parametrize("reader", ["identity", "source"])
+    async def test_cancelled_git_reader_reaps_its_real_child(tmp_path, monkeypatch, reader):
+        executable = tmp_path / "git"
+        marker = tmp_path / "child.pid"
+        executable.write_text(
+            f"#!{sys.executable}\n"
+            "import os, time\n"
+            "from pathlib import Path\n"
+            "Path(os.environ['NATIVE_IDENTITY_PROBE_PID']).write_text(str(os.getpid()))\n"
+            "while True: time.sleep(0.05)\n"
+        )
+        executable.chmod(0o700)
+        monkeypatch.setenv("NATIVE_IDENTITY_PROBE_PID", str(marker))
+        monkeypatch.setenv("PATH", str(tmp_path) + os.pathsep + os.environ["PATH"])
+        if reader == "identity":
+            operation = SubprocessGitService(remote="origin").worktree_identity(
+                str(tmp_path), repository_path=str(tmp_path)
+            )
+        else:
+            operation = SubprocessGitSourceReader().resolve_commit(
+                cwd=str(tmp_path), ref="HEAD"
+            )
+        task = asyncio.create_task(operation)
+        pid = None
+        try:
+            async with asyncio.timeout(5):
+                while not marker.exists():
+                    if task.done():
+                        await task
+                        pytest.fail("reader returned before the real child started")
+                    await asyncio.sleep(0.01)
+            pid = int(marker.read_text())
+            task.cancel("cancel the real Git identity read")
+            with pytest.raises(asyncio.CancelledError):
+                await task
+            assert task.cancelled()
+>           with pytest.raises(ProcessLookupError):
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           Failed: DID NOT RAISE <class 'ProcessLookupError'>
+
+tests/adapters/test_native_identity_process_probe.py:51: Failed
+=========================== short test summary info ============================
+FAILED tests/adapters/test_native_identity_process_probe.py::test_cancelled_git_reader_reaps_its_real_child[identity]
+1 failed, 1 passed in 1.05s

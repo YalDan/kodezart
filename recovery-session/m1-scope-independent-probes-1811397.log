@@ -1,0 +1,28 @@
+FF...                                                                    [100%]
+=================================== FAILURES ===================================
+________ test_requested_root_cannot_be_replaced_by_another_native_issue ________
+
+    async def test_requested_root_cannot_be_replaced_by_another_native_issue():
+        server = ScopeMcpServer()
+        server.issue_detail_updates[ROOT.key] = {"id": "foreign-root"}
+        tracker = linear_over_fake_mcp(server)
+>       with pytest.raises(ScopeReadError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'kodezart.domain.errors.ScopeReadError'>
+
+tests/tracker/test_m1_scope_independent.py:25: Failed
+______ test_native_ancestor_edge_cannot_be_satisfied_by_another_identity _______
+
+    async def test_native_ancestor_edge_cannot_be_satisfied_by_another_identity():
+        server = ScopeMcpServer()
+        server.initiatives[INITIATIVE.key]["id"] = "foreign-initiative"
+        tracker = linear_over_fake_mcp(server)
+>       with pytest.raises(ScopeReadError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'kodezart.domain.errors.ScopeReadError'>
+
+tests/tracker/test_m1_scope_independent.py:34: Failed
+=========================== short test summary info ============================
+FAILED tests/tracker/test_m1_scope_independent.py::test_requested_root_cannot_be_replaced_by_another_native_issue
+FAILED tests/tracker/test_m1_scope_independent.py::test_native_ancestor_edge_cannot_be_satisfied_by_another_identity
+2 failed, 3 passed in 2.34s

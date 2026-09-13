@@ -1,0 +1,13 @@
+........................................................................ [ 26%]
+........................................................................ [ 53%]
+.................................................F...................... [ 79%]
+.......................................................                  [100%]
+=================================== FAILURES ===================================
+_________________________ test_the_census_is_the_enum __________________________
+tests/prompts/test_set_completeness.py:38: in test_the_census_is_the_enum
+    assert len(PromptKey) == PROMPT_FUNCTION_COUNT
+E   assert 26 == 23
+E    +  where 26 = len(PromptKey)
+=========================== short test summary info ============================
+FAILED tests/prompts/test_set_completeness.py::test_the_census_is_the_enum - ...
+1 failed, 270 passed in 36.31s

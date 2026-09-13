@@ -1,0 +1,8 @@
+uv run ruff format --check src/ tests/
+468 files already formatted
+uv run ruff check src/ tests/
+All checks passed!
+uv run mypy src/
+src/kodezart/core/config.py:1263: error: Name "write_back" already defined on line 62  [no-redef]
+Found 1 error in 1 file (checked 215 source files)
+make: *** [type-check] Error 1

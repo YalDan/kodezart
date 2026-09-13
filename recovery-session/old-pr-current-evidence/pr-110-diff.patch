@@ -1,0 +1,826 @@
+diff --git a/src/kodezart/chains/criteria.py b/src/kodezart/chains/criteria.py
+new file mode 100644
+index 00000000..c843bb2a
+--- /dev/null
++++ b/src/kodezart/chains/criteria.py
+@@ -0,0 +1,107 @@
++"""The tracker-native criteria stage a fire runs before its loop."""
++
++from langchain_core.runnables import RunnableConfig
++
++from kodezart.core.logging import BoundLogger, get_logger
++from kodezart.core.protocols import TrackerPort
++from kodezart.domain.errors import InvalidFireCriterionError
++from kodezart.domain.fire_spec import criterion_check
++from kodezart.services.scope_membership import read_scope_members
++from kodezart.types.domain.scope import ScopeKind, ScopeRef
++from kodezart.types.domain.tracker import TrackerIssue, WorkflowStateKind
++from kodezart.types.domain.workflow import WorkflowState
++
++#: The state a criterion the fire still owes sits in at head.
++#:
++#: The tracker owns the vocabulary and ``Todo`` is its unstarted kind. A
++#: criterion in any other kind is finished, abandoned, or already being
++#: worked somewhere else, and re-validating it here would put this fire on
++#: the hook for an obligation the board does not hold it to.
++OWED_CRITERION_STATE = WorkflowStateKind.UNSTARTED
++
++
++class TrackerCriteria:
++    """A fire's criteria, read from the tracker at head, before the loop.
++
++    The spec read IS the source: ``read_fire_spec`` establishes the
++    subject's admission and lists its criterion sub-issues, and nothing a
++    caller carries alongside it can stand in for that read.
++
++    What the fire OWES is then its subtree's own Todo criterion
++    sub-issues.  A deliverable child's criterion sits inside the exit
++    condition and outside the subject's direct family, so a barrier
++    reading only the direct family would be narrower than the obligation
++    it defends — the shape the 2026-09-09 subtree ruling closed on the
++    plan-time refusal, closed here on the fire's own entry.
++    """
++
++    def __init__(self, *, tracker: TrackerPort) -> None:
++        self._tracker = tracker
++        self._log: BoundLogger = get_logger(__name__)
++
++    async def read_owed_criteria(self, *, issue_key: str) -> dict[str, str]:
++        """The Check every criterion this fire owes carries at head.
++
++        Keyed by the criterion sub-issue's own key: identity and
++        provenance are the same value here, and no second identity is
++        minted for the tracker-native arm.  The key is carried as the
++        tracker reports it — ``CriterionRef`` is the captured spec's
++        identity and has exactly one construction site, at the spec read.
++
++        Only the Check is carried.  A criterion's recorded Evidence is
++        what a previous run claimed, never part of what this one is
++        graded against.
++        """
++        spec = await self._tracker.read_fire_spec(issue_key=issue_key)
++        subtree = await read_scope_members(
++            tracker=self._tracker,
++            scope=ScopeRef(kind=ScopeKind.ISSUE, key=issue_key),
++        )
++        criteria: dict[str, TrackerIssue] = {
++            key: issue
++            for key, issue in subtree.items()
++            if "criterion" in issue.issue_labels
++        }
++        for named in spec.criteria:
++            if named not in criteria:
++                raise InvalidFireCriterionError(
++                    issue_key=issue_key,
++                    criterion_key=named,
++                    reason="the spec names a criterion the subtree does not hold",
++                )
++        owed = {
++            key: criterion_check(criterion=issue, issue_key=issue_key)
++            for key, issue in sorted(criteria.items())
++            if issue.state_kind is OWED_CRITERION_STATE
++        }
++        await self._log.ainfo(
++            "fire_criteria_read",
++            subject=issue_key,
++            read_at_version=spec.read_at_version,
++            named=len(spec.criteria),
++            owed=sorted(owed),
++        )
++        return owed
++
++    async def revalidate_criteria(
++        self,
++        state: WorkflowState,
++        config: RunnableConfig,
++    ) -> dict[str, object]:
++        """Re-read what this fire owes, at head, before the loop node runs.
++
++        A barrier node: what it establishes is that every criterion the
++        fire is about still states a Check the run can be graded against.
++        It writes no run state — the loop's own criterion identity is the
++        sub-issue key under the 2026-09-08 ruling, and the models that
++        carry identity into the loop are not this lane's surface — so a
++        criterion that has lost its Check stops the fire HERE rather than
++        after a loop has spent its budget on it.
++        """
++        _ = config
++        issue_key = state["issue_key"]
++        if issue_key is None:
++            msg = "A tracker-native fire carries its subject as issue_key"
++            raise ValueError(msg)
++        await self.read_owed_criteria(issue_key=issue_key)
++        return {}
+diff --git a/src/kodezart/chains/ralph_workflow.py b/src/kodezart/chains/ralph_workflow.py
+index 8fa5b189..547d2dfe 100644
+--- a/src/kodezart/chains/ralph_workflow.py
++++ b/src/kodezart/chains/ralph_workflow.py
+@@ -6,8 +6,10 @@
+ from langgraph.checkpoint.base import BaseCheckpointSaver
+ from langgraph.config import get_stream_writer
+ from langgraph.graph import END, START, StateGraph
++from langgraph.graph.state import CompiledStateGraph
+ from langgraph.types import RetryPolicy
+ 
++from kodezart.chains.criteria import TrackerCriteria
+ from kodezart.chains.fire_consolidation import FireConsolidation
+ from kodezart.chains.fire_implementation import FireImplementation
+ from kodezart.chains.fire_remediation import FireRemediation
+@@ -37,16 +39,26 @@
+     RepoVisibility,
+ )
+ from kodezart.types.domain.run_records import RunIdentity
+-from kodezart.types.domain.scope import ScopeRef
++from kodezart.types.domain.scope import ScopeKind, ScopeRef
+ from kodezart.types.domain.session import AllowedTools, PermissionMode
+ from kodezart.types.domain.workflow import (
+     ExecutionContext,
+     WorkflowState,
+ )
+ 
++#: The compiled shape both compositions produce.
++FireGraph = CompiledStateGraph[WorkflowState, None, WorkflowState, WorkflowState]
++
+ 
+ class RalphWorkflowEngine:
+-    """One fire graph with phase-local dependencies and shared run state."""
++    """One node set, two compositions, over one shared run state.
++
++    The arms differ only in where the fire's subject and criteria come
++    from.  The authored arm generates a ticket and a criteria set in the
++    graph.  The tracker-native arm is EXECUTION-ONLY: it generates
++    neither, and re-validates at head the criterion sub-issues an
++    organize pass already staged, before it reaches the loop.
++    """
+ 
+     def __init__(
+         self,
+@@ -61,12 +73,14 @@ def __init__(
+         retry_max_attempts: int,
+         retry_initial_interval: float,
+         delay_floor_for: DelayFloor,
++        criteria: TrackerCriteria | None = None,
+     ) -> None:
+         self.specification = specification
+         self.implementation = implementation
+         self.consolidation = consolidation
+         self.review = review
+         self.remediation = remediation
++        self.criteria = criteria
+         self._git_base_url = git_base_url
+         self.checkpointer = checkpointer
+         self.retry = RetryPolicy(
+@@ -75,7 +89,16 @@ def __init__(
+             retry_on=should_retry,
+         )
+         self.floor = RetryFloor(delay_floor_for)
+-        self.graph = self._build_graph().compile(checkpointer=self.checkpointer)
++        self.graph: FireGraph = self._build_graph(criteria=None).compile(
++            checkpointer=self.checkpointer
++        )
++        self.native_graph: FireGraph | None = (
++            None
++            if criteria is None
++            else self._build_graph(criteria=criteria).compile(
++                checkpointer=self.checkpointer
++            )
++        )
+ 
+     async def run(
+         self,
+@@ -107,7 +130,7 @@ async def run(
+             run_identity=run_identity,
+         )
+         terminal: WorkflowCompleteEvent | None = None
+-        async for event in self.graph.astream(
++        async for event in self._composition(scope).astream(
+             initial_state,
+             config=config,
+             stream_mode="custom",
+@@ -121,9 +144,37 @@ async def run(
+             raise RuntimeError("Fire graph emitted no terminal")
+         await self.consolidation.cleanup_backups(terminal, config)
+ 
++    def _composition(self, scope: ScopeRef | None) -> FireGraph:
++        """The composition this run's addressing selects, or its refusal.
++
++        An addressed run is a tracker-native fire: the subject is the
++        issue the scope names, and the criteria are its own sub-issues.
++        A deployment with no tracker-native criteria stage wired cannot
++        serve one, and says so before any node runs.
++        """
++        if scope is None:
++            return self.graph
++        if self.native_graph is None:
++            msg = "Scoped execution requires the scope entry pipeline"
++            raise ScopedExecutionUnavailableError(msg, ref=scope)
++        if scope.kind is not ScopeKind.ISSUE:
++            msg = "A tracker-native fire is addressed to one issue"
++            raise ScopedExecutionUnavailableError(msg, ref=scope)
++        return self.native_graph
++
+     def _build_graph(
+         self,
++        *,
++        criteria: TrackerCriteria | None,
+     ) -> StateGraph[WorkflowState, None, WorkflowState, WorkflowState]:
++        """One node set; *criteria* selects the tracker-native composition.
++
++        Everything from the loop onward is the same nodes and the same
++        routes on both arms.  The arms differ in exactly one place — the
++        criteria gate the entry, the validation route and a remediation
++        round all converge on — so the native arm HOLDS no ticket- or
++        criteria-generation node rather than merely skipping one.
++        """
+         graph: StateGraph[WorkflowState, None, WorkflowState, WorkflowState] = (
+             StateGraph(WorkflowState)
+         )
+@@ -137,21 +188,28 @@ def _build_graph(
+             self.floor(self.specification.generate_branch),
+             retry_policy=self.retry,
+         )
+-        graph.add_node(
+-            "generate_ticket",
+-            self.floor(self.specification.generate_ticket),
+-            retry_policy=self.retry,
+-        )
+-        graph.add_node(
+-            "generate_criteria",
+-            self.floor(self.specification.generate_criteria),
+-            retry_policy=self.retry,
+-        )
+-        graph.add_node(
+-            "validate_criteria",
+-            self.floor(self.specification.validate_criteria),
+-            retry_policy=self.retry,
+-        )
++        if criteria is None:
++            graph.add_node(
++                "generate_ticket",
++                self.floor(self.specification.generate_ticket),
++                retry_policy=self.retry,
++            )
++            graph.add_node(
++                "generate_criteria",
++                self.floor(self.specification.generate_criteria),
++                retry_policy=self.retry,
++            )
++            graph.add_node(
++                "validate_criteria",
++                self.floor(self.specification.validate_criteria),
++                retry_policy=self.retry,
++            )
++        else:
++            graph.add_node(
++                "revalidate_criteria",
++                self.floor(criteria.revalidate_criteria),
++                retry_policy=self.retry,
++            )
+         graph.add_node(
+             "run_ralph_loop",
+             self.floor(self.implementation.run_ralph_loop),
+@@ -179,7 +237,10 @@ def _build_graph(
+         )
+         graph.add_node("complete", self._complete_node)
+ 
+-        if self.implementation.persists_artifacts:
++        # The two artifact writes are the authored arm's: both are keyed
++        # off a generated ticket, which the native arm has not got.
++        persists = criteria is None and self.implementation.persists_artifacts
++        if persists:
+             graph.add_node(
+                 "persist_ticket",
+                 self.floor(self.implementation.persist_ticket),
+@@ -191,38 +252,39 @@ def _build_graph(
+                 retry_policy=self.retry,
+             )
+ 
++        # The one node the arms disagree about. The entry router and a
++        # remediation round both name the criteria gate; which node that
++        # is, is the whole difference between the compositions.
++        gate = "generate_criteria" if criteria is None else "revalidate_criteria"
+         graph.add_conditional_edges(
+             START,
+             self._route_entry,
+-            {
+-                "resolve_visibility": "resolve_visibility",
+-                "generate_criteria": "generate_criteria",
+-            },
++            {"resolve_visibility": "resolve_visibility", "generate_criteria": gate},
+         )
+         graph.add_edge("resolve_visibility", "generate_branch")
+-        graph.add_edge("generate_branch", "generate_ticket")
+-        if self.implementation.persists_artifacts:
+-            graph.add_edge("generate_ticket", "persist_ticket")
+-            graph.add_edge("persist_ticket", "generate_criteria")
++        if criteria is None:
++            graph.add_edge("generate_branch", "generate_ticket")
++            if persists:
++                graph.add_edge("generate_ticket", "persist_ticket")
++                graph.add_edge("persist_ticket", "generate_criteria")
++            else:
++                graph.add_edge("generate_ticket", "generate_criteria")
++            graph.add_edge("generate_criteria", "validate_criteria")
++            proceed = "persist_artifacts" if persists else "run_ralph_loop"
++            graph.add_conditional_edges(
++                "validate_criteria",
++                self._route_after_validation,
++                {
++                    "generate_criteria": "generate_criteria",
++                    proceed: proceed,
++                    "complete": "complete",
++                },
++            )
++            if persists:
++                graph.add_edge("persist_artifacts", "run_ralph_loop")
+         else:
+-            graph.add_edge("generate_ticket", "generate_criteria")
+-        graph.add_edge("generate_criteria", "validate_criteria")
+-        proceed = (
+-            "persist_artifacts"
+-            if self.implementation.persists_artifacts
+-            else "run_ralph_loop"
+-        )
+-        graph.add_conditional_edges(
+-            "validate_criteria",
+-            self._route_after_validation,
+-            {
+-                "generate_criteria": "generate_criteria",
+-                proceed: proceed,
+-                "complete": "complete",
+-            },
+-        )
+-        if self.implementation.persists_artifacts:
+-            graph.add_edge("persist_artifacts", "run_ralph_loop")
++            graph.add_edge("generate_branch", "revalidate_criteria")
++            graph.add_edge("revalidate_criteria", "run_ralph_loop")
+         graph.add_edge("run_ralph_loop", "merge_to_feature")
+         graph.add_conditional_edges(
+             "merge_to_feature",
+@@ -240,7 +302,7 @@ def _build_graph(
+             self._route_after_review,
+             {"remediate": "remediate", "complete": "complete"},
+         )
+-        graph.add_edge("remediate", "generate_criteria")
++        graph.add_edge("remediate", gate)
+         graph.add_edge("complete", END)
+         return graph
+ 
+@@ -332,8 +394,15 @@ def prepare(
+         addresses this run's checkpoints.
+         """
+         if scope is not None:
+-            msg = "Scoped execution requires the scope entry pipeline"
+-            raise ScopedExecutionUnavailableError(msg, ref=scope)
++            # Refuses here, before any node, when no composition serves
++            # the address. An addressed run's subject IS the issue the
++            # scope names, so a second, disagreeing identity is refused
++            # rather than silently preferred either way.
++            self._composition(scope)
++            if issue_key is not None and issue_key != scope.key:
++                msg = "The addressed issue and the run's issue key disagree"
++                raise ScopedExecutionUnavailableError(msg, ref=scope)
++            issue_key = scope.key
+         # TODO(time-travel): E2E checkpoint resume still requires:
+         # 2. On resume: pass None (not initial_state) to astream()
+         #    so LangGraph loads from the outer checkpoint.
+diff --git a/tests/chains/test_native_fire.py b/tests/chains/test_native_fire.py
+new file mode 100644
+index 00000000..d596af29
+--- /dev/null
++++ b/tests/chains/test_native_fire.py
+@@ -0,0 +1,434 @@
++"""The tracker-native fire: an execution-only graph over staged criteria.
++
++Two contracts live here.  The graph HOLDS no ticket- or criteria-generation
++node and reaches its loop only through the pre-loop re-validation step; the
++step reads what the fire owes from the tracker's own spec read, over the
++subject's whole subtree, and nothing carried alongside that read stands in
++for it.
++"""
++
++import pytest
++
++from kodezart.chains.criteria import TrackerCriteria
++from kodezart.chains.fire_consolidation import FireConsolidation
++from kodezart.chains.fire_implementation import FireImplementation
++from kodezart.chains.fire_remediation import FireRemediation
++from kodezart.chains.fire_review import FireReview
++from kodezart.chains.fire_specification import FireSpecification
++from kodezart.chains.ralph_workflow import RalphWorkflowEngine
++from kodezart.domain.errors import (
++    FireSpecEntryError,
++    InvalidFireCriterionError,
++    ScopedExecutionUnavailableError,
++)
++from kodezart.services.agent_service import AgentService
++from kodezart.types.domain.branch import trunk_base
++from kodezart.types.domain.fire_spec import TrackerSpec
++from kodezart.types.domain.operation import ScopeLabel
++from kodezart.types.domain.scope import ScopeKind, ScopeRef
++from kodezart.types.domain.session import PermissionMode
++from kodezart.types.domain.tracker import WorkflowStateKind
++from tests.fakes import (
++    SUPPRESS_ALL_SKILLS,
++    FakeAgentExecutor,
++    FakeArtifactPersister,
++    FakeBranchMerger,
++    FakeChangePersister,
++    FakeGitService,
++    FakeQualityGate,
++    FakeRepoCache,
++    FakeTicketGenerator,
++    FakeTrackerPort,
++    FakeWorkspaceProvider,
++    PassThroughGate,
++    make_passing_evaluation,
++    make_prompt_provider,
++    make_tracker_issue,
++    no_delay_floor,
++)
++
++#: The operation's own key for "the criteria stage finished on this issue".
++STAGE_KEY = "criteria-staged"
++
++SUBJECT = "fire/subject"
++#: Two direct criteria the fire owes, one direct criterion already Done,
++#: a deliverable child, and the criterion that sits under THAT child —
++#: the offending shape the 2026-09-09 subtree ruling is about.
++DIRECT_OWED = "fire/owed-direct"
++DIRECT_DONE = "fire/done-direct"
++DELIVERABLE_CHILD = "fire/deliverable-child"
++NESTED_OWED = "fire/owed-nested"
++DIRECT_OWED_TOO = "fire/owed-direct-2"
++NESTED_DONE = "fire/done-nested"
++
++GENERATION_NODES = frozenset(
++    {
++        "generate_ticket",
++        "generate_criteria",
++        "validate_criteria",
++        "persist_ticket",
++        "persist_artifacts",
++    }
++)
++
++
++def criterion_body(key: str) -> str:
++    """A criterion sub-issue on the board's own four-row template."""
++    return (
++        f"**Check:** the check {key} states\n"
++        f"**Do:** the build {key} names\n"
++        f"**Evidence:** the evidence {key} recorded\n"
++        "**Class:** hard"
++    )
++
++
++def check_of(key: str) -> str:
++    return f"the check {key} states"
++
++
++def tracker(
++    *,
++    staged: bool = True,
++    approved: bool = True,
++    bodies: dict[str, str] | None = None,
++) -> FakeTrackerPort:
++    """The subject, its subtree, and the two facts the spec read requires."""
++    overrides = bodies or {}
++    labels = frozenset({STAGE_KEY}) if staged else frozenset()
++    issues = [
++        make_tracker_issue(SUBJECT, issue_labels=labels, body="the subject's own text"),
++        make_tracker_issue(
++            DIRECT_OWED,
++            parent_key=SUBJECT,
++            issue_labels=frozenset({"criterion"}),
++            body=overrides.get(DIRECT_OWED, criterion_body(DIRECT_OWED)),
++        ),
++        make_tracker_issue(
++            DIRECT_DONE,
++            parent_key=SUBJECT,
++            issue_labels=frozenset({"criterion"}),
++            state_name="Done",
++            state_kind=WorkflowStateKind.COMPLETED,
++            body=overrides.get(DIRECT_DONE, criterion_body(DIRECT_DONE)),
++        ),
++        make_tracker_issue(DELIVERABLE_CHILD, parent_key=SUBJECT),
++        make_tracker_issue(
++            NESTED_OWED,
++            parent_key=DELIVERABLE_CHILD,
++            issue_labels=frozenset({"criterion"}),
++            body=overrides.get(NESTED_OWED, criterion_body(NESTED_OWED)),
++        ),
++        make_tracker_issue(
++            DIRECT_OWED_TOO,
++            parent_key=SUBJECT,
++            issue_labels=frozenset({"criterion"}),
++            body=overrides.get(DIRECT_OWED_TOO, criterion_body(DIRECT_OWED_TOO)),
++        ),
++        make_tracker_issue(
++            NESTED_DONE,
++            parent_key=DELIVERABLE_CHILD,
++            issue_labels=frozenset({"criterion"}),
++            state_name="Done",
++            state_kind=WorkflowStateKind.COMPLETED,
++            body=overrides.get(NESTED_DONE, criterion_body(NESTED_DONE)),
++        ),
++    ]
++    return FakeTrackerPort(
++        issues=issues,
++        criteria_stage_label_key=STAGE_KEY,
++        scope_label_members={
++            ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT): (
++                frozenset({ScopeLabel.APPROVED}) if approved else frozenset()
++            )
++        },
++    )
++
++
++def engine(
++    *,
++    criteria: TrackerCriteria | None,
++    quality_gate: FakeQualityGate | None = None,
++) -> RalphWorkflowEngine:
++    """The fire engine, wired the way composition wires it, plus the stage."""
++    service = AgentService(
++        git_base_url="https://github.com",
++        executor=FakeAgentExecutor(events=[]),
++        workspace=FakeWorkspaceProvider(),
++        persister=FakeChangePersister(),
++    )
++    prompts = make_prompt_provider()
++    gate = PassThroughGate()
++    git = FakeGitService(remote_branch_shas={"main": "b" * 40})
++    return RalphWorkflowEngine(
++        specification=FireSpecification(
++            service=service,
++            ticket_generator=FakeTicketGenerator(),
++            prompts=prompts,
++            skills=SUPPRESS_ALL_SKILLS,
++            gate=gate,
++            visibility_resolver=None,
++            criteria_max_regeneration_rounds=1,
++            fan_in_max_attempts=2,
++        ),
++        implementation=FireImplementation(
++            quality_gate=quality_gate
++            or FakeQualityGate(
++                events=[],
++                evaluation=make_passing_evaluation(),
++                last_commit_sha="a" * 40,
++            ),
++            prompts=prompts,
++            # Wired so the authored arm carries both artifact nodes and the
++            # native arm's absence of them is a difference, not an accident.
++            artifact_persister=FakeArtifactPersister(),
++            gate=gate,
++        ),
++        consolidation=FireConsolidation(
++            merger=FakeBranchMerger(),
++            git=git,
++            cache=FakeRepoCache(),
++            git_remote="origin",
++            ref_publisher=None,
++        ),
++        review=FireReview(
++            service=service,
++            prompts=prompts,
++            skills=SUPPRESS_ALL_SKILLS,
++            git=git,
++            cache=FakeRepoCache(),
++            fan_in_max_attempts=2,
++        ),
++        remediation=FireRemediation(remediator=None, remediation_max_rounds=0),
++        git_base_url="https://github.com",
++        retry_max_attempts=1,
++        retry_initial_interval=0,
++        delay_floor_for=no_delay_floor,
++        criteria=criteria,
++    )
++
++
++async def drive(fire: RalphWorkflowEngine, *, scope: ScopeRef | None) -> None:
++    async for _ in fire.run(
++        prompt="Implement the requested behavior",
++        issue_key=None,
++        repo_path="/tmp/fire",
++        repo_url="https://github.com/owner/repo",
++        base_spec=trunk_base("main"),
++        scope=scope,
++        permission_mode=PermissionMode.UNATTENDED,
++        allowed_tools=["Bash"],
++        cache_key="native-fire",
++    ):
++        pass
++
++
++def reachable(fire_graph, *, without: str) -> set[str]:
++    """Every node reachable from the entry with *without* deleted.
++
++    A node's PLACE is what the criterion is about, and a place is not
++    established by the node existing: the question is whether anything
++    can arrive at the loop without passing through it first.
++    """
++    edges = [
++        edge
++        for edge in fire_graph.get_graph().edges
++        if edge.source != without and edge.target != without
++    ]
++    seen = {"__start__"}
++    pending = ["__start__"]
++    while pending:
++        current = pending.pop()
++        for edge in edges:
++            if edge.source == current and edge.target not in seen:
++                seen.add(edge.target)
++                pending.append(edge.target)
++    return seen
++
++
++# ---------------------------------------------------------------------------
++# The graph holds no generation node, and the pre-loop step stands between
++# the entry and the loop.
++# ---------------------------------------------------------------------------
++
++
++def test_the_native_fire_graph_holds_no_ticket_or_criteria_generation_node() -> None:
++    fire = engine(criteria=TrackerCriteria(tracker=tracker()))
++    assert fire.native_graph is not None
++    native = fire.native_graph.get_graph()
++    authored = fire.graph.get_graph()
++
++    assert not GENERATION_NODES & set(native.nodes)
++    assert not [
++        edge
++        for edge in native.edges
++        if edge.source in GENERATION_NODES or edge.target in GENERATION_NODES
++    ]
++    # Not vacuous: every one of those names is a node of the authored arm,
++    # so the native arm dropped them rather than never having had them.
++    assert GENERATION_NODES <= set(authored.nodes)
++    assert "revalidate_criteria" in set(native.nodes)
++    assert "revalidate_criteria" not in set(authored.nodes)
++
++
++def test_an_unwired_deployment_composes_no_native_arm_at_all() -> None:
++    fire = engine(criteria=None)
++    assert fire.native_graph is None
++    assert GENERATION_NODES <= set(fire.graph.get_graph().nodes)
++
++
++def test_the_loop_is_unreachable_without_the_pre_loop_step() -> None:
++    fire = engine(criteria=TrackerCriteria(tracker=tracker()))
++    assert fire.native_graph is not None
++
++    assert "run_ralph_loop" in reachable(fire.native_graph, without="")
++    assert "run_ralph_loop" not in reachable(
++        fire.native_graph, without="revalidate_criteria"
++    )
++    # The authored arm's own gate is load-bearing the same way, so the
++    # check above is a statement about placement, not about one node name.
++    assert "run_ralph_loop" not in reachable(fire.graph, without="generate_criteria")
++
++
++async def test_a_criterion_that_lost_its_check_stops_the_fire_before_the_loop() -> None:
++    gate = FakeQualityGate(
++        events=[],
++        evaluation=make_passing_evaluation(),
++        last_commit_sha="a" * 40,
++    )
++    port = tracker(bodies={NESTED_OWED: "**Do:** a body that states no check"})
++    fire = engine(criteria=TrackerCriteria(tracker=port), quality_gate=gate)
++
++    with pytest.raises(InvalidFireCriterionError) as caught:
++        await drive(fire, scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
++
++    assert caught.value.criterion_key == NESTED_OWED
++    assert caught.value.issue_key == SUBJECT
++    # The loop is what the step precedes: it never ran.
++    assert gate.calls == []
++
++
++async def test_an_unwired_engine_still_refuses_an_addressed_run() -> None:
++    fire = engine(criteria=None)
++    with pytest.raises(ScopedExecutionUnavailableError, match="scope entry pipeline"):
++        await drive(fire, scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
++
++
++async def test_a_container_address_is_not_a_fire() -> None:
++    fire = engine(criteria=TrackerCriteria(tracker=tracker()))
++    with pytest.raises(ScopedExecutionUnavailableError, match="addressed to one issue"):
++        await drive(fire, scope=ScopeRef(kind=ScopeKind.PROJECT, key="a-project"))
++
++
++def test_the_addressed_issue_is_the_subject_the_run_carries() -> None:
++    fire = engine(criteria=TrackerCriteria(tracker=tracker()))
++    state, _ = fire.prepare(
++        prompt="Implement the requested behavior",
++        issue_key=None,
++        repo_path="/tmp/fire",
++        repo_url="https://github.com/owner/repo",
++        base_spec=trunk_base("main"),
++        scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT),
++        permission_mode=PermissionMode.UNATTENDED,
++        allowed_tools=["Bash"],
++        cache_key="native-fire",
++    )
++    assert state["issue_key"] == SUBJECT
++
++    with pytest.raises(ScopedExecutionUnavailableError, match="disagree"):
++        fire.prepare(
++            prompt="Implement the requested behavior",
++            issue_key="fire/other-subject",
++            repo_path="/tmp/fire",
++            repo_url="https://github.com/owner/repo",
++            base_spec=trunk_base("main"),
++            scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT),
++            permission_mode=PermissionMode.UNATTENDED,
++            allowed_tools=["Bash"],
++            cache_key="native-fire",
++        )
++
++
++# ---------------------------------------------------------------------------
++# The spec read is the source; the subtree is the extent it is read over.
++# ---------------------------------------------------------------------------
++
++
++async def test_the_criteria_a_fire_owes_are_its_subtrees_todo_criteria() -> None:
++    stage = TrackerCriteria(tracker=tracker())
++
++    owed = await stage.read_owed_criteria(issue_key=SUBJECT)
++
++    assert owed == {
++        DIRECT_OWED: check_of(DIRECT_OWED),
++        NESTED_OWED: check_of(NESTED_OWED),
++        DIRECT_OWED_TOO: check_of(DIRECT_OWED_TOO),
++    }
++
++
++async def test_only_the_check_reaches_the_fire_never_the_recorded_evidence() -> None:
++    stage = TrackerCriteria(tracker=tracker())
++
++    owed = await stage.read_owed_criteria(issue_key=SUBJECT)
++
++    for key, check in owed.items():
++        assert check == check_of(key)
++        assert "evidence" not in check
++        assert "the build" not in check
++
++
++@pytest.mark.parametrize("absent", ["stage", "approval"])
++async def test_a_refused_spec_read_refuses_the_fire_though_the_subtree_reads(
++    absent: str,
++) -> None:
++    port = tracker(staged=absent != "stage", approved=absent != "approval")
++    stage = TrackerCriteria(tracker=port)
++
++    with pytest.raises(FireSpecEntryError) as caught:
++        await stage.read_owed_criteria(issue_key=SUBJECT)
++
++    assert caught.value.issue_key == SUBJECT
++    # The side channel is intact: the very criteria the fire would have
++    # owed are readable off the subtree, and are not an answer.
++    subtree = await port.scope_issues(ref=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
++    assert {
++        issue.issue_key for issue in subtree if "criterion" in issue.issue_labels
++    } == {DIRECT_OWED, DIRECT_DONE, NESTED_OWED, DIRECT_OWED_TOO, NESTED_DONE}
++
++
++async def test_a_criterion_the_spec_names_that_the_subtree_lost_refuses() -> None:
++    class Moving(FakeTrackerPort):
++        """A criterion archived between the spec read and the subtree read."""
++
++        async def read_fire_spec(self, *, issue_key: str) -> TrackerSpec:
++            spec = await super().read_fire_spec(issue_key=issue_key)
++            del self.issues[DIRECT_OWED_TOO]
++            return spec
++
++    port = tracker()
++    moving = Moving(
++        issues=list(port.issues.values()),
++        criteria_stage_label_key=STAGE_KEY,
++        scope_label_members=port.scope_label_members,
++    )
++
++    with pytest.raises(InvalidFireCriterionError) as caught:
++        await TrackerCriteria(tracker=moving).read_owed_criteria(issue_key=SUBJECT)
++
++    assert caught.value.criterion_key == DIRECT_OWED_TOO
++
++
++async def test_a_criterion_the_fire_does_not_owe_is_not_revalidated() -> None:
++    """A finished criterion is outside the obligation, so its body is too.
++
++    The subject's own direct family is validated whole by the spec read,
++    which is that read's contract.  What this stage adds is the subtree,
++    and there the state is what decides: a Done criterion under a
++    deliverable child is not re-read for a Check it no longer owes.
++    """
++    stage = TrackerCriteria(
++        tracker=tracker(bodies={NESTED_DONE: "no template rows at all"})
++    )
++
++    owed = await stage.read_owed_criteria(issue_key=SUBJECT)
++
++    assert set(owed) == {DIRECT_OWED, NESTED_OWED, DIRECT_OWED_TOO}

@@ -1,0 +1,37 @@
+........................................................................ [ 36%]
+........................................................................ [ 72%]
+....................................................F.F.                 [100%]
+=================================== FAILURES ===================================
+________________ test_the_documented_event_set_is_the_model_set ________________
+
+    def test_the_documented_event_set_is_the_model_set() -> None:
+        """A new or deleted event model reddens until the tables follow it."""
+>       assert set(documented_events()) == set(event_models())
+E       AssertionError: assert {'assistant_t...warning', ...} == {'assistant_t...warning', ...}
+E         
+E         Extra items in the left set:
+E         'scope_walk'
+E         'scope_lane'
+E         Use -v to get more diff
+
+tests/docs/test_api_event_reference.py:96: AssertionError
+___________________ test_each_heading_count_equals_its_rows ____________________
+
+    def test_each_heading_count_equals_its_rows() -> None:
+        """The ``(N)`` in a heading is an aggregate over the table below it."""
+>       assert {
+            heading: (declared, len(rows))
+            for heading, declared, rows in documented_sections()
+            if declared != len(rows)
+        } == {}
+E       AssertionError: assert {'Workflow': (16, 18)} == {}
+E         
+E         Left contains 1 more item:
+E         {'Workflow': (16, 18)}
+E         Use -v to get more diff
+
+tests/docs/test_api_event_reference.py:112: AssertionError
+=========================== short test summary info ============================
+FAILED tests/docs/test_api_event_reference.py::test_the_documented_event_set_is_the_model_set
+FAILED tests/docs/test_api_event_reference.py::test_each_heading_count_equals_its_rows
+2 failed, 198 passed in 29.96s

@@ -1,0 +1,283 @@
+.........................................................FFFFFFFFFF..... [ 51%]
+.FF......................................................FF........      [100%]
+=================================== FAILURES ===================================
+____ test_approval_at_each_real_ancestor_admits_deepest_issue[linear-ref0] _____
+
+approval = ApprovalFixture(tracker=<kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10a04ede0>, server=<tests.tracker.test_scope_reads.ScopeMcpServer object at 0x10a04e690>, fake=<tests.fakes.FakeTrackerPort object at 0x10a04e840>)
+ref = ScopeRef(kind=<ScopeKind.ISSUE: 'issue'>, key='FIX-3')
+
+    @pytest.mark.parametrize("ref", [CHILD, PARENT, ROOT, OTHER, INITIATIVE])
+    async def test_approval_at_each_real_ancestor_admits_deepest_issue(
+        approval: ApprovalFixture, ref: ScopeRef
+    ) -> None:
+        approval.labels(ref, ScopeLabel.APPROVED)
+    
+        assert await approval.tracker.execution_approved(issue_key=CHILD.key) is True
+>       assert not approval.fake.issue_writes
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'FakeTrackerPort' object has no attribute 'issue_writes'. Did you mean: 'queue_writes'?
+
+tests/tracker/test_scope_approval.py:115: AttributeError
+____ test_approval_at_each_real_ancestor_admits_deepest_issue[linear-ref1] _____
+
+approval = ApprovalFixture(tracker=<kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10a04ff20>, server=<tests.tracker.test_scope_reads.ScopeMcpServer object at 0x10a04fd10>, fake=<tests.fakes.FakeTrackerPort object at 0x10a04fe30>)
+ref = ScopeRef(kind=<ScopeKind.ISSUE: 'issue'>, key='FIX-2')
+
+    @pytest.mark.parametrize("ref", [CHILD, PARENT, ROOT, OTHER, INITIATIVE])
+    async def test_approval_at_each_real_ancestor_admits_deepest_issue(
+        approval: ApprovalFixture, ref: ScopeRef
+    ) -> None:
+        approval.labels(ref, ScopeLabel.APPROVED)
+    
+        assert await approval.tracker.execution_approved(issue_key=CHILD.key) is True
+>       assert not approval.fake.issue_writes
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'FakeTrackerPort' object has no attribute 'issue_writes'. Did you mean: 'queue_writes'?
+
+tests/tracker/test_scope_approval.py:115: AttributeError
+____ test_approval_at_each_real_ancestor_admits_deepest_issue[linear-ref2] _____
+
+approval = ApprovalFixture(tracker=<kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10a0dce30>, server=<tests.tracker.test_scope_reads.ScopeMcpServer object at 0x10a0dccb0>, fake=<tests.fakes.FakeTrackerPort object at 0x10a0dcd40>)
+ref = ScopeRef(kind=<ScopeKind.ISSUE: 'issue'>, key='FIX-1')
+
+    @pytest.mark.parametrize("ref", [CHILD, PARENT, ROOT, OTHER, INITIATIVE])
+    async def test_approval_at_each_real_ancestor_admits_deepest_issue(
+        approval: ApprovalFixture, ref: ScopeRef
+    ) -> None:
+        approval.labels(ref, ScopeLabel.APPROVED)
+    
+        assert await approval.tracker.execution_approved(issue_key=CHILD.key) is True
+>       assert not approval.fake.issue_writes
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'FakeTrackerPort' object has no attribute 'issue_writes'. Did you mean: 'queue_writes'?
+
+tests/tracker/test_scope_approval.py:115: AttributeError
+____ test_approval_at_each_real_ancestor_admits_deepest_issue[linear-ref3] _____
+
+approval = ApprovalFixture(tracker=<kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10a04e840>, server=<tests.tracker.test_scope_reads.ScopeMcpServer object at 0x10a04ff80>, fake=<tests.fakes.FakeTrackerPort object at 0x10a04d970>)
+ref = ScopeRef(kind=<ScopeKind.PROJECT: 'project'>, key='project-two')
+
+    @pytest.mark.parametrize("ref", [CHILD, PARENT, ROOT, OTHER, INITIATIVE])
+    async def test_approval_at_each_real_ancestor_admits_deepest_issue(
+        approval: ApprovalFixture, ref: ScopeRef
+    ) -> None:
+        approval.labels(ref, ScopeLabel.APPROVED)
+    
+        assert await approval.tracker.execution_approved(issue_key=CHILD.key) is True
+>       assert not approval.fake.issue_writes
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'FakeTrackerPort' object has no attribute 'issue_writes'. Did you mean: 'queue_writes'?
+
+tests/tracker/test_scope_approval.py:115: AttributeError
+____ test_approval_at_each_real_ancestor_admits_deepest_issue[linear-ref4] _____
+
+approval = ApprovalFixture(tracker=<kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10a0dd040>, server=<tests.tracker.test_scope_reads.ScopeMcpServer object at 0x109fca180>, fake=<tests.fakes.FakeTrackerPort object at 0x10a0dfd10>)
+ref = ScopeRef(kind=<ScopeKind.INITIATIVE: 'initiative'>, key='initiative-one')
+
+    @pytest.mark.parametrize("ref", [CHILD, PARENT, ROOT, OTHER, INITIATIVE])
+    async def test_approval_at_each_real_ancestor_admits_deepest_issue(
+        approval: ApprovalFixture, ref: ScopeRef
+    ) -> None:
+        approval.labels(ref, ScopeLabel.APPROVED)
+    
+        assert await approval.tracker.execution_approved(issue_key=CHILD.key) is True
+>       assert not approval.fake.issue_writes
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'FakeTrackerPort' object has no attribute 'issue_writes'. Did you mean: 'queue_writes'?
+
+tests/tracker/test_scope_approval.py:115: AttributeError
+_____ test_approval_at_each_real_ancestor_admits_deepest_issue[fake-ref0] ______
+
+approval = ApprovalFixture(tracker=<tests.fakes.FakeTrackerPort object at 0x10a0ddd60>, server=<tests.tracker.test_scope_reads.ScopeMcpServer object at 0x10a0ddc40>, fake=<tests.fakes.FakeTrackerPort object at 0x10a0ddd60>)
+ref = ScopeRef(kind=<ScopeKind.ISSUE: 'issue'>, key='FIX-3')
+
+    @pytest.mark.parametrize("ref", [CHILD, PARENT, ROOT, OTHER, INITIATIVE])
+    async def test_approval_at_each_real_ancestor_admits_deepest_issue(
+        approval: ApprovalFixture, ref: ScopeRef
+    ) -> None:
+        approval.labels(ref, ScopeLabel.APPROVED)
+    
+        assert await approval.tracker.execution_approved(issue_key=CHILD.key) is True
+>       assert not approval.fake.issue_writes
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'FakeTrackerPort' object has no attribute 'issue_writes'. Did you mean: 'queue_writes'?
+
+tests/tracker/test_scope_approval.py:115: AttributeError
+_____ test_approval_at_each_real_ancestor_admits_deepest_issue[fake-ref1] ______
+
+approval = ApprovalFixture(tracker=<tests.fakes.FakeTrackerPort object at 0x10a0ded50>, server=<tests.tracker.test_scope_reads.ScopeMcpServer object at 0x10a0dec30>, fake=<tests.fakes.FakeTrackerPort object at 0x10a0ded50>)
+ref = ScopeRef(kind=<ScopeKind.ISSUE: 'issue'>, key='FIX-2')
+
+    @pytest.mark.parametrize("ref", [CHILD, PARENT, ROOT, OTHER, INITIATIVE])
+    async def test_approval_at_each_real_ancestor_admits_deepest_issue(
+        approval: ApprovalFixture, ref: ScopeRef
+    ) -> None:
+        approval.labels(ref, ScopeLabel.APPROVED)
+    
+        assert await approval.tracker.execution_approved(issue_key=CHILD.key) is True
+>       assert not approval.fake.issue_writes
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'FakeTrackerPort' object has no attribute 'issue_writes'. Did you mean: 'queue_writes'?
+
+tests/tracker/test_scope_approval.py:115: AttributeError
+_____ test_approval_at_each_real_ancestor_admits_deepest_issue[fake-ref2] ______
+
+approval = ApprovalFixture(tracker=<tests.fakes.FakeTrackerPort object at 0x10a0dfec0>, server=<tests.tracker.test_scope_reads.ScopeMcpServer object at 0x10a0dfd70>, fake=<tests.fakes.FakeTrackerPort object at 0x10a0dfec0>)
+ref = ScopeRef(kind=<ScopeKind.ISSUE: 'issue'>, key='FIX-1')
+
+    @pytest.mark.parametrize("ref", [CHILD, PARENT, ROOT, OTHER, INITIATIVE])
+    async def test_approval_at_each_real_ancestor_admits_deepest_issue(
+        approval: ApprovalFixture, ref: ScopeRef
+    ) -> None:
+        approval.labels(ref, ScopeLabel.APPROVED)
+    
+        assert await approval.tracker.execution_approved(issue_key=CHILD.key) is True
+>       assert not approval.fake.issue_writes
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'FakeTrackerPort' object has no attribute 'issue_writes'. Did you mean: 'queue_writes'?
+
+tests/tracker/test_scope_approval.py:115: AttributeError
+_____ test_approval_at_each_real_ancestor_admits_deepest_issue[fake-ref3] ______
+
+approval = ApprovalFixture(tracker=<tests.fakes.FakeTrackerPort object at 0x10a120d10>, server=<tests.tracker.test_scope_reads.ScopeMcpServer object at 0x10a120c80>, fake=<tests.fakes.FakeTrackerPort object at 0x10a120d10>)
+ref = ScopeRef(kind=<ScopeKind.PROJECT: 'project'>, key='project-two')
+
+    @pytest.mark.parametrize("ref", [CHILD, PARENT, ROOT, OTHER, INITIATIVE])
+    async def test_approval_at_each_real_ancestor_admits_deepest_issue(
+        approval: ApprovalFixture, ref: ScopeRef
+    ) -> None:
+        approval.labels(ref, ScopeLabel.APPROVED)
+    
+        assert await approval.tracker.execution_approved(issue_key=CHILD.key) is True
+>       assert not approval.fake.issue_writes
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'FakeTrackerPort' object has no attribute 'issue_writes'. Did you mean: 'queue_writes'?
+
+tests/tracker/test_scope_approval.py:115: AttributeError
+_____ test_approval_at_each_real_ancestor_admits_deepest_issue[fake-ref4] ______
+
+approval = ApprovalFixture(tracker=<tests.fakes.FakeTrackerPort object at 0x10a121bb0>, server=<tests.tracker.test_scope_reads.ScopeMcpServer object at 0x10a121970>, fake=<tests.fakes.FakeTrackerPort object at 0x10a121bb0>)
+ref = ScopeRef(kind=<ScopeKind.INITIATIVE: 'initiative'>, key='initiative-one')
+
+    @pytest.mark.parametrize("ref", [CHILD, PARENT, ROOT, OTHER, INITIATIVE])
+    async def test_approval_at_each_real_ancestor_admits_deepest_issue(
+        approval: ApprovalFixture, ref: ScopeRef
+    ) -> None:
+        approval.labels(ref, ScopeLabel.APPROVED)
+    
+        assert await approval.tracker.execution_approved(issue_key=CHILD.key) is True
+>       assert not approval.fake.issue_writes
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'FakeTrackerPort' object has no attribute 'issue_writes'. Did you mean: 'queue_writes'?
+
+tests/tracker/test_scope_approval.py:115: AttributeError
+_____ test_current_reparenting_and_revocation_need_no_copied_label[linear] _____
+
+approval = ApprovalFixture(tracker=<kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10a123410>, server=<tests.tracker.test_scope_reads.ScopeMcpServer object at 0x10a123260>, fake=<tests.fakes.FakeTrackerPort object at 0x10a123080>)
+
+    async def test_current_reparenting_and_revocation_need_no_copied_label(
+        approval: ApprovalFixture,
+    ) -> None:
+        approval.labels(ROOT, ScopeLabel.APPROVED)
+        approval.parent(CHILD.key, None)
+        assert await approval.tracker.execution_approved(issue_key=CHILD.key) is False
+        approval.parent(CHILD.key, PARENT.key)
+        assert await approval.tracker.execution_approved(issue_key=CHILD.key) is True
+        approval.labels(ROOT)
+        assert await approval.tracker.execution_approved(issue_key=CHILD.key) is False
+        assert approval.server.issues[CHILD.key].labels == []
+>       assert not approval.fake.issue_writes
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'FakeTrackerPort' object has no attribute 'issue_writes'. Did you mean: 'queue_writes'?
+
+tests/tracker/test_scope_approval.py:147: AttributeError
+______ test_current_reparenting_and_revocation_need_no_copied_label[fake] ______
+
+approval = ApprovalFixture(tracker=<tests.fakes.FakeTrackerPort object at 0x10a1402c0>, server=<tests.tracker.test_scope_reads.ScopeMcpServer object at 0x10a1401a0>, fake=<tests.fakes.FakeTrackerPort object at 0x10a1402c0>)
+
+    async def test_current_reparenting_and_revocation_need_no_copied_label(
+        approval: ApprovalFixture,
+    ) -> None:
+        approval.labels(ROOT, ScopeLabel.APPROVED)
+        approval.parent(CHILD.key, None)
+        assert await approval.tracker.execution_approved(issue_key=CHILD.key) is False
+        approval.parent(CHILD.key, PARENT.key)
+        assert await approval.tracker.execution_approved(issue_key=CHILD.key) is True
+        approval.labels(ROOT)
+        assert await approval.tracker.execution_approved(issue_key=CHILD.key) is False
+        assert approval.server.issues[CHILD.key].labels == []
+>       assert not approval.fake.issue_writes
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'FakeTrackerPort' object has no attribute 'issue_writes'. Did you mean: 'queue_writes'?
+
+tests/tracker/test_scope_approval.py:147: AttributeError
+______ test_actual_milestone_scope_uses_current_project_approval[linear] _______
+
+approval = ApprovalFixture(tracker=<kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10a1236b0>, server=<tests.tracker.test_scope_reads.ScopeMcpServer object at 0x10a123200>, fake=<tests.fakes.FakeTrackerPort object at 0x10a1237a0>)
+
+    async def test_actual_milestone_scope_uses_current_project_approval(
+        approval: ApprovalFixture,
+    ) -> None:
+        approval.fake.scope_containers[MILESTONE] = _container(MILESTONE, PROJECT)
+        approval.fake.scope_memberships[MILESTONE] = (ROOT.key, PARENT.key)
+        resolved = await resolve_scope(ref=MILESTONE, tracker=approval.tracker)
+        assert resolved.ref == MILESTONE
+        assert {issue.issue_key for issue in resolved.issues} == {ROOT.key, PARENT.key}
+    
+        approval.server.calls.clear()
+        for expected in (False, True, False):
+            approval.labels(PROJECT, *([ScopeLabel.APPROVED] if expected else []))
+            for issue in resolved.issues:
+                assert (
+                    await approval.tracker.execution_approved(issue_key=issue.issue_key)
+                    is expected
+                )
+        assert all("milestone" not in tool for tool, _ in approval.server.calls)
+>       assert not approval.fake.issue_writes
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'FakeTrackerPort' object has no attribute 'issue_writes'. Did you mean: 'queue_writes'?
+
+tests/tracker/test_milestone_approval.py:37: AttributeError
+_______ test_actual_milestone_scope_uses_current_project_approval[fake] ________
+
+approval = ApprovalFixture(tracker=<tests.fakes.FakeTrackerPort object at 0x10a123260>, server=<tests.tracker.test_scope_reads.ScopeMcpServer object at 0x10a123fe0>, fake=<tests.fakes.FakeTrackerPort object at 0x10a123260>)
+
+    async def test_actual_milestone_scope_uses_current_project_approval(
+        approval: ApprovalFixture,
+    ) -> None:
+        approval.fake.scope_containers[MILESTONE] = _container(MILESTONE, PROJECT)
+        approval.fake.scope_memberships[MILESTONE] = (ROOT.key, PARENT.key)
+        resolved = await resolve_scope(ref=MILESTONE, tracker=approval.tracker)
+        assert resolved.ref == MILESTONE
+        assert {issue.issue_key for issue in resolved.issues} == {ROOT.key, PARENT.key}
+    
+        approval.server.calls.clear()
+        for expected in (False, True, False):
+            approval.labels(PROJECT, *([ScopeLabel.APPROVED] if expected else []))
+            for issue in resolved.issues:
+                assert (
+                    await approval.tracker.execution_approved(issue_key=issue.issue_key)
+                    is expected
+                )
+        assert all("milestone" not in tool for tool, _ in approval.server.calls)
+>       assert not approval.fake.issue_writes
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'FakeTrackerPort' object has no attribute 'issue_writes'. Did you mean: 'queue_writes'?
+
+tests/tracker/test_milestone_approval.py:37: AttributeError
+=========================== short test summary info ============================
+FAILED tests/tracker/test_scope_approval.py::test_approval_at_each_real_ancestor_admits_deepest_issue[linear-ref0]
+FAILED tests/tracker/test_scope_approval.py::test_approval_at_each_real_ancestor_admits_deepest_issue[linear-ref1]
+FAILED tests/tracker/test_scope_approval.py::test_approval_at_each_real_ancestor_admits_deepest_issue[linear-ref2]
+FAILED tests/tracker/test_scope_approval.py::test_approval_at_each_real_ancestor_admits_deepest_issue[linear-ref3]
+FAILED tests/tracker/test_scope_approval.py::test_approval_at_each_real_ancestor_admits_deepest_issue[linear-ref4]
+FAILED tests/tracker/test_scope_approval.py::test_approval_at_each_real_ancestor_admits_deepest_issue[fake-ref0]
+FAILED tests/tracker/test_scope_approval.py::test_approval_at_each_real_ancestor_admits_deepest_issue[fake-ref1]
+FAILED tests/tracker/test_scope_approval.py::test_approval_at_each_real_ancestor_admits_deepest_issue[fake-ref2]
+FAILED tests/tracker/test_scope_approval.py::test_approval_at_each_real_ancestor_admits_deepest_issue[fake-ref3]
+FAILED tests/tracker/test_scope_approval.py::test_approval_at_each_real_ancestor_admits_deepest_issue[fake-ref4]
+FAILED tests/tracker/test_scope_approval.py::test_current_reparenting_and_revocation_need_no_copied_label[linear]
+FAILED tests/tracker/test_scope_approval.py::test_current_reparenting_and_revocation_need_no_copied_label[fake]
+FAILED tests/tracker/test_milestone_approval.py::test_actual_milestone_scope_uses_current_project_approval[linear]
+FAILED tests/tracker/test_milestone_approval.py::test_actual_milestone_scope_uses_current_project_approval[fake]
+14 failed, 125 passed in 2.11s

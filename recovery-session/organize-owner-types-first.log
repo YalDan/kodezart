@@ -1,0 +1,3 @@
+src/kodezart/domain/criterion_creation.py:17: error: Argument "field" to "criterion_field_bodies" has incompatible type "str"; expected "Literal['Check', 'Do', 'Evidence', 'Class']"  [arg-type]
+src/kodezart/chains/organize_author.py:66: error: Argument "refusal_evidence" to "organize_variables" has incompatible type "str | None"; expected "AdmissionResult | None"  [arg-type]
+Found 2 errors in 2 files (checked 298 source files)

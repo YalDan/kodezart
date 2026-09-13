@@ -1,0 +1,632 @@
+{
+  "candidate": "ddb8cdef33f90f30aecc4343e36c2293bdf39a27",
+  "candidate_tree": "5ed89888cb982ee2972f5a79e25da681b4323eeb",
+  "comparison_base": "2bc237577da7a3db3101e67c324eea0eaa6e6abd",
+  "donor": "da39c439898aec1233aa8b6157b35e961df1e453",
+  "changed_file_count": 37,
+  "rows": [
+    {
+      "path": "docs/configuration.md",
+      "candidate_sha256": "a6886a7b0807f0c41cccb70640acdc7f320892aad954293c2ed781b699968de0",
+      "donor_sha256": "0fb03dfbfcee89c2efc773a9c80042c5b001fccecacda0dc1442edaa3bc78a2d",
+      "byte_equal_donor": false
+    },
+    {
+      "path": "docs/cutover_mapping.md",
+      "candidate_sha256": "3699934301962ed78ab5f56cf41bf5b6967a944a93936d1a819ae34308a90c58",
+      "donor_sha256": "68b1fd6f0b467571169ac4fd9c55d1d5fd72dc9bbde57701887a53eecb4ccd8f",
+      "byte_equal_donor": false
+    },
+    {
+      "path": "docs/operation.example.toml",
+      "candidate_sha256": "34cec80efa0a723ff0bd7139199a6c2ca84b3a342d30365cb33470caadecafaa",
+      "donor_sha256": "2b8b6cdec94a23c1d75ee87e8dafc3f98d1f72ee80f4dd2bd36ae218063ad157",
+      "byte_equal_donor": false
+    },
+    {
+      "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+      "candidate_sha256": "9cf947cf2b32fbd805d12769de177c1129e51d9851f5cf2ba44d2c1af224fe12",
+      "donor_sha256": "0128d16fa203cac45809f7b2f05145b569fca0b39a6028440eda2a928ad3a590",
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": [
+        "_label_arguments",
+        "_without_mention_syntax",
+        "is_long_lived_credential",
+        "_LabelListings",
+        "LinearMcpTracker",
+        "LinearMcpTracker.__init__",
+        "LinearMcpTracker.scan_issues",
+        "LinearMcpTracker._wrote",
+        "LinearMcpTracker.create_issue",
+        "LinearMcpTracker.update_issue",
+        "LinearMcpTracker._save_state",
+        "LinearMcpTracker.set_queue_state",
+        "LinearMcpTracker.list_issue_assets",
+        "LinearMcpTracker.work_refs",
+        "LinearMcpTracker.recorded_repository",
+        "LinearMcpTracker.initiative_identifiers",
+        "LinearMcpTracker.resolve_mappings",
+        "LinearMcpTracker.ensure_mappings",
+        "LinearMcpTracker._ensure_document",
+        "LinearMcpTracker._label_definitions"
+      ]
+    },
+    {
+      "path": "src/kodezart/adapters/linear_mcp_types.py",
+      "candidate_sha256": "4fbe3f5de1fe9000b91081a0b0aadb4dd4677aca63c285a810a562a550703cc1",
+      "donor_sha256": "a1001764e213f2607dbd6c669e687e2b2f1d5e269ddb132449954a6b6fd0afa8",
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": [
+        "LinearRelatedIssueWire",
+        "LinearAssetWire",
+        "LinearIssueDetailWire",
+        "LinearProjectWire",
+        "LinearNamedWire",
+        "LinearLabelWire",
+        "LinearUserWire"
+      ]
+    },
+    {
+      "path": "src/kodezart/adapters/linear_scope_reader.py",
+      "candidate_sha256": "afd6252990ce227293d150a8ea3710bbff556412d7f820150f83bcdcc001f1e5",
+      "donor_sha256": "afd6252990ce227293d150a8ea3710bbff556412d7f820150f83bcdcc001f1e5",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": []
+    },
+    {
+      "path": "src/kodezart/adapters/linear_scope_types.py",
+      "candidate_sha256": "6a518926008a23023517234085b1635496065555956b4d4cfb9c4093f9241101",
+      "donor_sha256": "6a518926008a23023517234085b1635496065555956b4d4cfb9c4093f9241101",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": []
+    },
+    {
+      "path": "src/kodezart/composition/tracker.py",
+      "candidate_sha256": "e33d6898eb7d7f8895e0cdececc12a04eafd1ab8c36aa53b024ad175238ee7ea",
+      "donor_sha256": "914a835f42e9c18a3ff396a01d641d699ffd459a0bdc39240531d0525381f1f9",
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": [
+        "make_mcp_tool_caller",
+        "build_tracker",
+        "boot_tracker"
+      ]
+    },
+    {
+      "path": "src/kodezart/core/prompt_namespaces.py",
+      "candidate_sha256": "94f2611d58beca49d84797dec8cfc1c98a4cf079546b65467965e3668e9ad14b",
+      "donor_sha256": "35d020812117b55e12331d8584cbdd0cd2c875b006a99b17db2d9002382fe969",
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": [
+        "operation_bindings",
+        "bindings_for"
+      ]
+    },
+    {
+      "path": "src/kodezart/core/protocols.py",
+      "candidate_sha256": "f013d8525f96a91cc8cb9e3f547fd01b5b1a7adf394afa0d37193723a557b4b9",
+      "donor_sha256": "8a56fda394f63b3cec9e000d9d474ad3ae1d552f855d65784485de6143ade285",
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": [
+        "GitService",
+        "AgentExecutor",
+        "AgentExecutor.stream",
+        "WorkspaceProvider",
+        "ChangePersister",
+        "ChangePersister.persist",
+        "CIMonitor",
+        "CIMonitor.wait_for_checks",
+        "RunRecordSink",
+        "ManagedMcpToolCaller",
+        "ManagedMcpToolCaller.probe",
+        "TrackerPort",
+        "TrackerPort.set_workflow_state",
+        "TrackerPort.set_queue_state",
+        "TrackerPort.list_comments",
+        "TrackerPort.list_issue_assets",
+        "TrackerPort.read_document",
+        "TrackerPort.work_refs",
+        "TrackerPort.record_base_spec",
+        "TrackerPort.recorded_repository",
+        "TrackerPort.initiative_identifiers",
+        "AgentRunner",
+        "AgentRunner.stream",
+        "AgentRunner.stream_workflow",
+        "AgentRunner.stream_in_workspace",
+        "QualityGate",
+        "QualityGate.run",
+        "TicketGenerator",
+        "TicketGenerator.run",
+        "Remediator",
+        "Remediator.run",
+        "WorkflowEngine",
+        "WorkflowEngine.run",
+        "ContentScanner",
+        "ContentScanner.routing",
+        "ContentScanner.scan"
+      ]
+    },
+    {
+      "path": "src/kodezart/domain/scope_approval.py",
+      "candidate_sha256": "c30ab514ff2ca41a2652465d096530f5cc0808d2ce706e57d7787f87ec2ae36e",
+      "donor_sha256": "c30ab514ff2ca41a2652465d096530f5cc0808d2ce706e57d7787f87ec2ae36e",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": []
+    },
+    {
+      "path": "src/kodezart/services/scope_resolution.py",
+      "candidate_sha256": "b808dcd4c790fd0ffc13ee1d248799cc193864d02cc3301a62ed78ce1014afda",
+      "donor_sha256": "b808dcd4c790fd0ffc13ee1d248799cc193864d02cc3301a62ed78ce1014afda",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": []
+    },
+    {
+      "path": "src/kodezart/services/tracker_boot.py",
+      "candidate_sha256": "b7eab1626a0b54f0a20d05f10a74faba3be6d0a99a06a0806e43e3bc6ed1eec7",
+      "donor_sha256": "b7eab1626a0b54f0a20d05f10a74faba3be6d0a99a06a0806e43e3bc6ed1eec7",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": []
+    },
+    {
+      "path": "src/kodezart/types/domain/operation.py",
+      "candidate_sha256": "052a4e0c7cd22da45818336e0714713b50bdbf63b08948ee4be0baa487a0939e",
+      "donor_sha256": "c8bb2a7d86cedaca98eea86590be1519edbb513925c0bafa6f674dc9a7e8ad3d",
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": [
+        "RunKind",
+        "CheckStep",
+        "RepoEntry",
+        "RecordDestination",
+        "Initiative",
+        "_check_chain_failures",
+        "OperationConfig",
+        "OperationConfig._check_structure"
+      ]
+    },
+    {
+      "path": "src/kodezart/types/domain/tracker.py",
+      "candidate_sha256": "b521834cd47d3c5aaee605223d19ba388e18067c625bcdba1cafbba25672eb9c",
+      "donor_sha256": "6aa8efa6d1fba6ca6c1ee6d5008647c66a17d4517b3d38fd36a3011e2bdaee60",
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": [
+        "IssueRelationKind"
+      ]
+    },
+    {
+      "path": "tests/adapters/test_tracker_self_writes.py",
+      "candidate_sha256": "34abcef0f1e05d3a382d008f3e6829f4de936c0c915167602cc230ce889733ca",
+      "donor_sha256": "aacdf0378a395a1b30e7cc318bc60424a4b9f885b37950dbc13bd6eb0e24dd9f",
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": [
+        "_tracker",
+        "test_a_read_back_that_fails_does_not_fail_the_write_it_recorded"
+      ],
+      "baseline_test_oracles_changed_or_removed": [
+        "test_a_read_back_that_fails_does_not_fail_the_write_it_recorded"
+      ],
+      "added_test_count": 0,
+      "added_tests_exact_donor": [],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/domain/test_scope_label_config.py",
+      "candidate_sha256": "64611aa836dc4f60cfec867a8170febfb574147980005bace27248a9a03f0f2a",
+      "donor_sha256": "64611aa836dc4f60cfec867a8170febfb574147980005bace27248a9a03f0f2a",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": [],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 7,
+      "added_tests_exact_donor": [
+        "test_absent_or_empty_scope_labels_load",
+        "test_configured_scope_label_names_are_preserved_on_load",
+        "test_scope_labels_accept_an_additional_configuration_member",
+        "test_each_missing_scope_label_is_a_typed_load_error",
+        "test_populated_mapping_reports_every_missing_scope_label",
+        "test_scope_and_queue_structure_failures_are_reported_together",
+        "test_scope_label_values_remain_strings"
+      ],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/domain/test_scope_labels.py",
+      "candidate_sha256": "c3a97b5f0a82da4d042a7791c887766cbd86894a32bd472b2c5d608ec59fca96",
+      "donor_sha256": "c3a97b5f0a82da4d042a7791c887766cbd86894a32bd472b2c5d608ec59fca96",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": [],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 3,
+      "added_tests_exact_donor": [
+        "test_scope_admission_has_its_own_type",
+        "test_scope_labels_refuse_queue_only_and_vendor_members",
+        "test_existing_issue_queue_vocabulary_is_preserved"
+      ],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/fakes.py",
+      "candidate_sha256": "5a8a80ea39e53bc6edbea3d08f2a36743d401eaac3417fe75f9e900c081361f3",
+      "donor_sha256": "ce4f80ab0e6c415d23bd90954d743ca06ed45a7888ce9604848cb9074a8022aa",
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": [
+        "knowledge_grant_for",
+        "executor_for",
+        "recorded_session",
+        "FakeGitService",
+        "FakeGitService.__init__",
+        "FakeAgentExecutor",
+        "FakeAgentExecutor.stream",
+        "FakeRaisingExecutor",
+        "FakeRaisingExecutor.stream",
+        "FakeWorkspaceProvider",
+        "FakeWorkspaceProvider.__init__",
+        "FakeWorkspaceProvider.acquire",
+        "FakeChangePersister",
+        "FakeChangePersister.persist",
+        "FakeAgentRunner",
+        "FakeAgentRunner.stream",
+        "FakeAgentRunner.stream_workflow",
+        "FakeAgentRunner.stream_in_workspace",
+        "ScriptedFakeExecutor",
+        "ScriptedFakeExecutor.stream",
+        "as_validated",
+        "make_minted_criteria",
+        "make_criteria",
+        "make_generated_criteria",
+        "make_passing_evaluation",
+        "FakeQualityGate",
+        "FakeQualityGate.run",
+        "FakeRemediator",
+        "FakeRemediator.run",
+        "FakePRCreator",
+        "FakePRCreator.create_pr",
+        "FakeCIMonitor",
+        "FakeCIMonitor.__init__",
+        "FakeCIMonitor.wait_for_checks",
+        "SequentialCIMonitor",
+        "SequentialCIMonitor.__init__",
+        "SequentialCIMonitor.wait_for_checks",
+        "FakeTicketGenerator",
+        "FakeTicketGenerator.run",
+        "FakeContentScanner",
+        "FakeContentScanner.__init__",
+        "FakeContentScanner.routing",
+        "FakeContentScanner.scan",
+        "FakeMcpIssue",
+        "FakeMcpIssue.entry",
+        "FakeMcpIssue.wire",
+        "FakeLinearMcpServer",
+        "FakeLinearMcpServer.__init__",
+        "FakeLinearMcpServer._tool_save_issue",
+        "FakeTrackerPort",
+        "FakeTrackerPort.__init__",
+        "FakeTrackerPort.create_issue",
+        "FakeTrackerPort.update_issue",
+        "FakeTrackerPort.set_workflow_state",
+        "FakeTrackerPort.restore_workflow_state",
+        "FakeTrackerPort.set_queue_state",
+        "FakeDeliveryProbe",
+        "FakeDeliveryProbe.__init__",
+        "make_tracker_issue",
+        "RefusingRecordSink",
+        "RefusingRecordSink.holds_record",
+        "RefusingRecordSink.write_record"
+      ],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 0,
+      "added_tests_exact_donor": [],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/prompts/test_operation_config.py",
+      "candidate_sha256": "95414770a4c4e85cd9ba65a3be1fdc96e9018484e488fabcf54f7c727a0cf543",
+      "donor_sha256": "b31b43e18f15452f6daf340d00dcfd60b5d32ccbd27fa8077dbcd1c16f058b8c",
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": [
+        "test_all_fields_are_present_with_the_stated_types",
+        "test_claude_opus_completeness_passes_at_the_full_census",
+        "test_ported_templates_pass_the_deny_pattern_engine",
+        "test_placeholder_mapping_is_total_in_both_directions",
+        "test_every_operation_config_field_is_reachable_from_a_pass_template",
+        "_to_toml"
+      ],
+      "baseline_test_oracles_changed_or_removed": [
+        "test_all_fields_are_present_with_the_stated_types",
+        "test_no_label_or_status_literal_lives_in_source",
+        "test_placeholder_mapping_is_total_in_both_directions"
+      ],
+      "added_test_count": 0,
+      "added_tests_exact_donor": [],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/prompts/test_scope_label_bindings.py",
+      "candidate_sha256": "9377c0f982dfd882628f9d698bd355bf8c01e95d18d29d2cd5339e2d9a66d593",
+      "donor_sha256": "9377c0f982dfd882628f9d698bd355bf8c01e95d18d29d2cd5339e2d9a66d593",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": [],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 3,
+      "added_tests_exact_donor": [
+        "test_configured_scope_names_and_extra_members_reach_the_render",
+        "test_absent_scope_mapping_has_an_explicit_render_arm",
+        "test_using_an_absent_scope_member_refuses_with_its_name"
+      ],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/services/test_scope_resolution.py",
+      "candidate_sha256": "718fea55b5a32518b6efa227df9252e1934b1e9848eed2ec123aab7dbc684ce0",
+      "donor_sha256": "718fea55b5a32518b6efa227df9252e1934b1e9848eed2ec123aab7dbc684ce0",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": [],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 2,
+      "added_tests_exact_donor": [
+        "test_each_entry_kind_preserves_membership_and_structural_edges",
+        "test_scope_read_failure_does_not_turn_into_an_empty_scope"
+      ],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/tracker/conftest.py",
+      "candidate_sha256": "64d5928c9133795a3507c2396e827cf54cd3c6ba14db26da3ba9d851a136ff60",
+      "donor_sha256": "ff5036cbc6dc64f215ece5ed47a1412ceaf32dc440c308fe8928b3a7345b944e",
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": [
+        "linear_over_fake_mcp",
+        "_snapshot",
+        "fake_port_over_fixture",
+        "tracker_writes"
+      ],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 0,
+      "added_tests_exact_donor": [],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/tracker/connected_app_label_contract.py",
+      "candidate_sha256": "3f939cd15c594c45b012454d900dab4d836f6652c1053f57a295845875cff1ca",
+      "donor_sha256": "3f939cd15c594c45b012454d900dab4d836f6652c1053f57a295845875cff1ca",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": [],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 0,
+      "added_tests_exact_donor": [],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/tracker/native_read_fixtures.py",
+      "candidate_sha256": "6747e8c28d6e74a002e3f6afe5e8187be14b3b646b89e2b4adcb1f5ce4ab8d9e",
+      "donor_sha256": null,
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": [
+        "tracker_over",
+        "native_tracker"
+      ],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 0,
+      "added_tests_exact_donor": [],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/tracker/test_comment_expected_independent.py",
+      "candidate_sha256": "8ed3fb838e53eac6b663c3e405e39787ae7d097280fb6166874b6dd0138d068c",
+      "donor_sha256": "512792d40e58e4d339f21052b80d4a52e47774fab810d11b41e329a4368cd993",
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": [
+        "test_known_unissued_retry_revalidates_changed_expected_comment"
+      ],
+      "baseline_test_oracles_changed_or_removed": [
+        "test_known_unissued_retry_revalidates_changed_expected_comment"
+      ],
+      "added_test_count": 0,
+      "added_tests_exact_donor": [],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/tracker/test_linear_mcp_tracker.py",
+      "candidate_sha256": "a663a19ee2beb87f5c967a9da03fda306abf487bcd5146cb9ae439c60fd2b717",
+      "donor_sha256": "520ae270a2475a54aaa3fd1aa5d7f876a4b8d2aade58773c0e2be53f02eab206",
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": [
+        "tracker_over",
+        "TestACommentTheVendorAttributesToNobody",
+        "TestACommentTheVendorAttributesToNobody._log_with_every_marker",
+        "TestARetryBudgetIsNotSpentOnASessionThatDied",
+        "TestARetryBudgetIsNotSpentOnASessionThatDied._over_a_dying_endpoint"
+      ],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 0,
+      "added_tests_exact_donor": [],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/tracker/test_linear_tool_arguments.py",
+      "candidate_sha256": "b0d19ae93522e2f1969f67d8bc616133bcc52aae2ad816b91dbc727b74beb8c4",
+      "donor_sha256": "0b4d9442a714ee469a9ab40d4a8057849fb573897226a7de52a02c8be9bea9c8",
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": [
+        "sent_arguments"
+      ],
+      "baseline_test_oracles_changed_or_removed": [
+        "test_the_sweep_reaches_every_tool_the_adapter_names",
+        "test_every_argument_key_is_a_declared_property",
+        "test_every_required_argument_is_sent"
+      ],
+      "added_test_count": 0,
+      "added_tests_exact_donor": [],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/tracker/test_linear_tool_roster.py",
+      "candidate_sha256": "b9fcc353926cb111ed9b428e55e95df76b32b130f8084b6dd0e74fc7f15c8768",
+      "donor_sha256": "b9fcc353926cb111ed9b428e55e95df76b32b130f8084b6dd0e74fc7f15c8768",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": [],
+      "baseline_test_oracles_changed_or_removed": [
+        "test_every_tracker_tool_this_process_names_exists_on_the_server"
+      ],
+      "added_test_count": 1,
+      "added_tests_exact_donor": [
+        "test_every_tracker_tool_has_a_measured_public_declaration"
+      ],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/tracker/test_linear_wire_shapes.py",
+      "candidate_sha256": "9fb1ad87b312a391eb13eb61a71a5b0a23f7caab68a762894f538c85728d9fda",
+      "donor_sha256": "e93932f95dc844ee5040c7cf863044393586fe70c0c2376cd974053d2981e48a",
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": [
+        "tracker_over"
+      ],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 0,
+      "added_tests_exact_donor": [],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/tracker/test_milestone_approval.py",
+      "candidate_sha256": "0a6711dbda8352acd4584c433b3588a85bddd02f086593ee823194ce25ac8a9d",
+      "donor_sha256": "0a6711dbda8352acd4584c433b3588a85bddd02f086593ee823194ce25ac8a9d",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": [],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 3,
+      "added_tests_exact_donor": [
+        "test_actual_milestone_scope_uses_current_project_approval",
+        "test_a_milestone_label_cannot_approve_its_project_or_members",
+        "test_milestone_membership_without_reported_project_refuses"
+      ],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/tracker/test_native_approval_aliases.py",
+      "candidate_sha256": "348b3a03100fa737bcf027ced9670d6ce0ac1696bc119bd923128307154cd760",
+      "donor_sha256": "167704b068599ab0370d481fffc08f19cfedda4c00d5200a52ad80e91e13a044",
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": [
+        "ApprovalAliasServer",
+        "ApprovalAliasServer.__init__",
+        "test_actual_entry_preserves_reported_alias_with_one_subject_read",
+        "test_actual_entry_refuses_foreign_subject_before_membership"
+      ],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 2,
+      "added_tests_exact_donor": [],
+      "added_tests_different_or_not_in_donor_module": [
+        "test_actual_entry_preserves_reported_alias_with_one_subject_read",
+        "test_actual_entry_refuses_foreign_subject_before_membership"
+      ]
+    },
+    {
+      "path": "tests/tracker/test_project_milestones.py",
+      "candidate_sha256": "b54222abc050a25ac59ce8e0e6ffe622f2a7b8d2c8703ad663c51f3dbbb4c3e1",
+      "donor_sha256": null,
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": [
+        "test_project_milestones_expose_complete_native_identities_and_descriptions",
+        "test_project_milestone_incomplete_identity_evidence_refuses"
+      ],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 2,
+      "added_tests_exact_donor": [],
+      "added_tests_different_or_not_in_donor_module": [
+        "test_project_milestones_expose_complete_native_identities_and_descriptions",
+        "test_project_milestone_incomplete_identity_evidence_refuses"
+      ]
+    },
+    {
+      "path": "tests/tracker/test_scope_approval.py",
+      "candidate_sha256": "afdacbb82a027485ea51ea3e2eaaa2ffa61c34b7433b8189390346e97481d676",
+      "donor_sha256": "afdacbb82a027485ea51ea3e2eaaa2ffa61c34b7433b8189390346e97481d676",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": [],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 20,
+      "added_tests_exact_donor": [
+        "test_approval_at_each_real_ancestor_admits_deepest_issue",
+        "test_absent_approval_or_another_meta_member_is_not_approval",
+        "test_current_reparenting_and_revocation_need_no_copied_label",
+        "test_container_label_removal_is_visible_on_the_same_adapter",
+        "test_issue_parent_project_does_not_replace_child_membership",
+        "test_issue_without_container_can_be_unapproved_or_inherit_issue_label",
+        "test_reported_project_without_canonical_key_refuses",
+        "test_native_no_project_retains_omitted_and_null_compatibility",
+        "test_nested_initiative_is_read_and_reparenting_changes_next_resolution",
+        "test_cyclic_ancestry_is_not_a_negative_answer",
+        "test_missing_ancestry_refuses_instead_of_returning_false",
+        "test_returned_identity_must_match_the_address",
+        "test_unmapped_approval_refuses_before_any_native_read",
+        "test_actual_composition_passes_the_remapped_scope_vocabulary",
+        "test_unconfigured_names_never_substitute_for_configured_approval",
+        "test_issue_membership_omission_is_not_an_empty_answer",
+        "test_unreadable_native_labels_do_not_become_absence",
+        "test_omitted_native_labels_refuse",
+        "test_multiple_container_parents_refuse_even_with_an_approval_label",
+        "test_native_cancellation_propagates_without_answer_or_write"
+      ],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/tracker/test_scope_label_mappings.py",
+      "candidate_sha256": "24916e4b93a397e060a9d29442d553e25f764ad7d746834e729bd69474290c89",
+      "donor_sha256": "24916e4b93a397e060a9d29442d553e25f764ad7d746834e729bd69474290c89",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": [],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 13,
+      "added_tests_exact_donor": [
+        "test_scope_mappings_are_owned_once_regardless_of_declared_teams",
+        "test_scope_instate_and_repeat_preserve_issue_approval",
+        "test_scope_labels_boot_with_configured_custom_and_extra_names",
+        "test_scope_refs_cannot_request_a_team_copy",
+        "test_scope_ref_requires_an_identifier",
+        "test_team_queue_label_does_not_resolve_a_workspace_scope_label",
+        "test_only_missing_native_namespaces_are_created",
+        "test_label_definition_pagination_prevents_duplicate_creation",
+        "test_team_collision_refuses_all_namespace_writes",
+        "test_unavailable_project_creator_is_a_typed_failure_without_fallback",
+        "test_missing_readback_fails_and_a_later_boot_completes_missing_labels",
+        "test_a_truncated_namespace_cannot_be_treated_as_absence",
+        "test_connected_read_captures_do_not_claim_service_creator_validation"
+      ],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/tracker/test_scope_tool_arguments.py",
+      "candidate_sha256": "53a84f5561d18ee773f3ced632e57df70fae2e12d0fc7f60d9e0eecf8f5fff4e",
+      "donor_sha256": "53a84f5561d18ee773f3ced632e57df70fae2e12d0fc7f60d9e0eecf8f5fff4e",
+      "byte_equal_donor": true,
+      "candidate_definitions_different_from_donor": [],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 1,
+      "added_tests_exact_donor": [
+        "test_scope_reads_send_declared_arguments_on_every_call"
+      ],
+      "added_tests_different_or_not_in_donor_module": []
+    },
+    {
+      "path": "tests/tracker/test_tracker_boot.py",
+      "candidate_sha256": "3c82cd51689e347a6edeb55e21c980e044ee6fd134d2b045b135518a57d4349d",
+      "donor_sha256": "8ef7cabd46d54415517b2c7b47e5cdb411faeea3996b81e59a667395a46c3054",
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": [
+        "operation_config",
+        "TestConfiguredMappings",
+        "TestConfiguredMappings.test_every_category_is_covered",
+        "TestQueueVocabularyPerDeclaredTeam",
+        "TestQueueVocabularyPerDeclaredTeam._tracker",
+        "TestWorkflowStatesResolvePerTeam",
+        "TestWorkflowStatesResolvePerTeam._server",
+        "TestWorkflowStatesResolvePerTeam._tracker",
+        "_caller_over"
+      ],
+      "baseline_test_oracles_changed_or_removed": [
+        "TestConfiguredMappings.test_every_category_is_covered"
+      ],
+      "added_test_count": 0,
+      "added_tests_exact_donor": [],
+      "added_tests_different_or_not_in_donor_module": []
+    }
+  ]
+}

@@ -1,0 +1,167 @@
+[
+  {
+    "path": "src/kodezart/adapters/asyncio_job_queue.py",
+    "symbol": "AsyncioJobQueue.__init__",
+    "proof": "explicit domain-submission/HTTP conversion cut; compare recorded hunk map"
+  },
+  {
+    "path": "src/kodezart/adapters/asyncio_job_queue.py",
+    "symbol": "AsyncioJobQueue.submit",
+    "proof": "explicit domain-submission/HTTP conversion cut; compare recorded hunk map"
+  },
+  {
+    "path": "src/kodezart/adapters/asyncio_job_queue.py",
+    "symbol": "AsyncioJobQueue._run_job",
+    "proof": "explicit domain-submission/HTTP conversion cut; compare recorded hunk map"
+  },
+  {
+    "path": "src/kodezart/adapters/claude_agent_executor.py",
+    "symbol": "ClaudeAgentExecutor.stream",
+    "baseline_ast_after_reversing_only_policy": true
+  },
+  {
+    "path": "src/kodezart/adapters/claude_client_executor.py",
+    "symbol": "ClaudeClientExecutor.stream",
+    "baseline_ast_after_reversing_only_policy": true
+  },
+  {
+    "path": "src/kodezart/adapters/git_change_persister.py",
+    "symbol": "GitChangePersister._generate_commit_message",
+    "baseline_ast_after_reversing_only_policy": true
+  },
+  {
+    "path": "src/kodezart/api/v1/endpoints/agent.py",
+    "symbol": "stream_workflow",
+    "proof": "explicit domain-submission/HTTP conversion cut; compare recorded hunk map"
+  },
+  {
+    "path": "src/kodezart/api/v1/endpoints/agent.py",
+    "symbol": "fire_workflow",
+    "proof": "explicit domain-submission/HTTP conversion cut; compare recorded hunk map"
+  },
+  {
+    "path": "src/kodezart/chains/ralph_loop.py",
+    "symbol": "RalphLoop.run",
+    "baseline_ast_after_reversing_only_policy": true
+  },
+  {
+    "path": "src/kodezart/chains/ralph_loop.py",
+    "symbol": "RalphLoop._evaluate_node",
+    "baseline_ast_after_reversing_only_policy": true
+  },
+  {
+    "path": "src/kodezart/chains/ralph_workflow.py",
+    "symbol": "RalphWorkflowEngine.run",
+    "baseline_ast_after_reversing_only_policy": true
+  },
+  {
+    "path": "src/kodezart/chains/ralph_workflow.py",
+    "symbol": "RalphWorkflowEngine._generate_criteria_node",
+    "baseline_ast_after_reversing_only_policy": true
+  },
+  {
+    "path": "src/kodezart/chains/ralph_workflow.py",
+    "symbol": "RalphWorkflowEngine._validate_criteria_node",
+    "baseline_ast_after_reversing_only_policy": true
+  },
+  {
+    "path": "src/kodezart/chains/ralph_workflow.py",
+    "symbol": "RalphWorkflowEngine._run_quality_gate",
+    "baseline_ast_after_reversing_only_policy": true
+  },
+  {
+    "path": "src/kodezart/chains/ralph_workflow.py",
+    "symbol": "RalphWorkflowEngine._review_against_ticket_node",
+    "baseline_ast_after_reversing_only_policy": true
+  },
+  {
+    "path": "src/kodezart/chains/remediation.py",
+    "symbol": "RemediationChain.run",
+    "baseline_ast_after_reversing_only_policy": true
+  },
+  {
+    "path": "src/kodezart/chains/ticket_generation.py",
+    "symbol": "TicketGenerationLoop._create_node",
+    "baseline_ast_after_reversing_only_policy": true
+  },
+  {
+    "path": "src/kodezart/chains/ticket_generation.py",
+    "symbol": "TicketGenerationLoop._review_node",
+    "baseline_ast_after_reversing_only_policy": true
+  },
+  {
+    "path": "src/kodezart/composition/engine.py",
+    "symbol": "OriginRoutedWorkflowEngine.run",
+    "baseline_ast_after_reversing_only_policy": true
+  },
+  {
+    "path": "src/kodezart/core/protocols.py",
+    "symbol": "AgentExecutor.stream",
+    "baseline_ast_after_reversing_only_policy": true
+  },
+  {
+    "path": "src/kodezart/core/protocols.py",
+    "symbol": "AgentRunner.stream",
+    "baseline_ast_after_reversing_only_policy": true
+  },
+  {
+    "path": "src/kodezart/core/protocols.py",
+    "symbol": "AgentRunner.stream_workflow",
+    "baseline_ast_after_reversing_only_policy": true
+  },
+  {
+    "path": "src/kodezart/core/protocols.py",
+    "symbol": "AgentRunner.stream_in_workspace",
+    "baseline_ast_after_reversing_only_policy": true
+  },
+  {
+    "path": "src/kodezart/core/protocols.py",
+    "symbol": "QualityGate.run",
+    "baseline_ast_after_reversing_only_policy": true
+  },
+  {
+    "path": "src/kodezart/core/protocols.py",
+    "symbol": "WorkflowEngine.run",
+    "baseline_ast_after_reversing_only_policy": true
+  },
+  {
+    "path": "src/kodezart/core/protocols.py",
+    "symbol": "JobQueue.submit",
+    "baseline_ast_after_reversing_only_policy": true
+  },
+  {
+    "path": "src/kodezart/handlers/agent_handler.py",
+    "symbol": "AgentHandler.stream_query",
+    "proof": "explicit domain-submission/HTTP conversion cut; compare recorded hunk map"
+  },
+  {
+    "path": "src/kodezart/services/agent_service.py",
+    "symbol": "AgentService.stream",
+    "baseline_ast_after_reversing_only_policy": true
+  },
+  {
+    "path": "src/kodezart/services/agent_service.py",
+    "symbol": "AgentService.stream_in_workspace",
+    "baseline_ast_after_reversing_only_policy": true
+  },
+  {
+    "path": "src/kodezart/services/agent_service.py",
+    "symbol": "AgentService.stream_workflow",
+    "baseline_ast_after_reversing_only_policy": true
+  },
+  {
+    "path": "src/kodezart/services/agent_service.py",
+    "symbol": "AgentService._run_in_workspace",
+    "baseline_ast_after_reversing_only_policy": true
+  },
+  {
+    "path": "src/kodezart/services/fire_dispatcher.py",
+    "symbol": "FireDispatcher._claim_and_enqueue",
+    "proof": "explicit domain-submission/HTTP conversion cut; compare recorded hunk map"
+  },
+  {
+    "path": "src/kodezart/services/prompt_pass.py",
+    "symbol": "run_prompt_pass",
+    "baseline_ast_after_reversing_only_policy": true
+  }
+]

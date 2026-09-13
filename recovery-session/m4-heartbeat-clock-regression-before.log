@@ -1,0 +1,52 @@
+F.                                                                       [100%]
+=================================== FAILURES ===================================
+____________ test_awaited_logging_does_not_grant_lease_time[False] _____________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10e691700>
+expire = False
+
+    @pytest.mark.parametrize("expire", [False, True])
+    async def test_awaited_logging_does_not_grant_lease_time(
+        monkeypatch: pytest.MonkeyPatch, expire: bool
+    ) -> None:
+        """Logging preserves handover; explicit expiry still refuses the write."""
+        clock = original.MovingClock(start=FIXTURE_EPOCH)
+    
+        def supplied_clock(*, start: datetime) -> original.MovingClock:
+            assert start == FIXTURE_EPOCH
+            return clock
+    
+        monkeypatch.setattr(original, "MovingClock", supplied_clock)
+        saved_structlog = structlog.get_config()
+        root = logging.getLogger()
+        saved_handlers, saved_level = root.handlers[:], root.level
+        noisy = [logging.getLogger(name) for name in ("uvicorn.access", "uvicorn.error")]
+        saved_noisy_levels = [logger.level for logger in noisy]
+        logger = logging.getLogger("kodezart.services.tracker_lifecycle")
+        held = HeldOutcomeLog()
+        configure_logging()
+        logger.addHandler(held)
+        task = asyncio.create_task(original.watched(events=(original.TERMINAL_EVENT,)))
+        try:
+            async with asyncio.timeout(original.SETTLE_TIMEOUT):
+                while not held.entered.is_set():
+                    await asyncio.sleep(0)
+                for _ in range(original.TURNS_AFTER_THE_STOP):
+                    await asyncio.sleep(0)
+                if expire:
+                    # The original watch's actual surface lease is 321.5 seconds.
+                    # Deliberate elapsed time must still reach its refusal boundary.
+                    clock.advance(seconds=321.5)
+                else:
+>                   assert clock.now == FIXTURE_EPOCH
+E                   assert datetime.datetime(2026, 1, 1, 0, 2, tzinfo=datetime.timezone.utc) == datetime.datetime(2026, 1, 1, 0, 0, tzinfo=datetime.timezone.utc)
+E                    +  where datetime.datetime(2026, 1, 1, 0, 2, tzinfo=datetime.timezone.utc) = <tests.services.test_claim_heartbeat.MovingClock object at 0x10e691d00>.now
+
+tests/services/test_claim_heartbeat_clock.py:69: AssertionError
+----------------------------- Captured stdout call -----------------------------
+{"issue_key": "K-1", "event": "lifecycle_in_progress", "level": "info", "logger": "kodezart.services.tracker_lifecycle", "timestamp": "2026-09-13T00:30:55.900181Z"}
+{"issue_key": "K-1", "event": "lifecycle_done", "level": "info", "logger": "kodezart.services.tracker_lifecycle", "timestamp": "2026-09-13T00:30:55.908647Z"}
+{"writer": "tracker_comment", "surface": "tracker", "verdict": "clean", "visibility": "public", "categories": [], "failure": null, "content_digest": "fdfd09ada3e6d93a2f2e6c1cc13db95ffcdb0cdb1495ec29b06ab7d0a66a2f97", "hits": [], "event": "outbound_content_gated", "level": "info", "logger": "kodezart.services.tracker_lifecycle", "timestamp": "2026-09-13T00:30:55.929343Z"}
+=========================== short test summary info ============================
+FAILED tests/services/test_claim_heartbeat_clock.py::test_awaited_logging_does_not_grant_lease_time[False]
+1 failed, 1 passed, 2 deselected in 1.10s

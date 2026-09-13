@@ -1,0 +1,25 @@
+F.........                                                               [100%]
+=================================== FAILURES ===================================
+_______ test_every_actual_branch_writer_uses_the_native_precommit_owner ________
+
+    def test_every_actual_branch_writer_uses_the_native_precommit_owner():
+>       require_adoption(sources())
+
+tests/chains/test_native_amendment_adoption.py:63: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+sources = {'__init__.py': '"""kodezart — music-inspired AI assistant."""\n', 'adapters/__init__.py': '"""Adapters: infrastructur...return f"{grant.knowledge_map}\\n\\n{prompt}\\n\\n{clause}"\n    return f"{grant.knowledge_map}\\n\\n{prompt}"\n', ...}
+
+    def require_adoption(sources):
+        actual = dispatches(sources)
+>       assert set(actual) == {(path, owner, node) for path, owner, node, _ in WRITING_STAGES}
+E       AssertionError: assert {('api/v1/end...xecute_node')} == {('chains/ral...xecute_node')}
+E         
+E         Extra items in the left set:
+E         ('api/v1/endpoints/agent.py', None, 'generate')
+E         Use -v to get more diff
+
+tests/chains/test_native_amendment_adoption.py:45: AssertionError
+=========================== short test summary info ============================
+FAILED tests/chains/test_native_amendment_adoption.py::test_every_actual_branch_writer_uses_the_native_precommit_owner
+1 failed, 9 passed in 28.89s

@@ -1,0 +1,124 @@
+........................................................................ [  5%]
+..........................................F............................. [ 11%]
+........................................................................ [ 17%]
+........................................................................ [ 23%]
+........................................................................ [ 29%]
+........................................................................ [ 35%]
+........................................................................ [ 41%]
+........................................................................ [ 47%]
+........................................................................ [ 53%]
+........................................................................ [ 59%]
+........................................................................ [ 64%]
+........................................................................ [ 70%]
+........................................................................ [ 76%]
+.........................................................FFFF........... [ 82%]
+........................................................................ [ 88%]
+........................................................................ [ 94%]
+...................................................................      [100%]
+=================================== FAILURES ===================================
+_______________ test_no_label_or_status_literal_lives_in_source ________________
+
+    def test_no_label_or_status_literal_lives_in_source() -> None:
+        """Code addresses members via enum members, never via a label string."""
+        src = REPO_ROOT / "src" / "kodezart"
+        labels = {
+            *example_config().queue_states.values(),
+            *example_config().scope_labels.values(),
+            *example_config().workflow_states.values(),
+        }
+        for path in src.rglob("*.py"):
+            text = path.read_text(encoding="utf-8")
+            for label in labels:
+>               assert label not in text, f"{path} hardcodes {label!r}"
+E               AssertionError: /private/tmp/kodezart-v03-recovery-organize-graph/src/kodezart/types/domain/organize_graph.py hardcodes 'Done'
+E               assert 'Done' not in '"""Explicit...iner, ...]\n'
+E                 
+E                 'Done' is contained here:
+E                            "Done."
+E                 ?           ++++
+E                           )
+E                       )
+E                   ...
+E                 
+E                 ...Full output truncated (57 lines hidden), use '-vv' to show
+
+tests/prompts/test_operation_config.py:338: AssertionError
+_ test_every_injected_artifact_arrives_inside_its_declared_tag[organize_assess] _
+
+golden_name = 'organize_assess'
+
+    @pytest.mark.parametrize("golden_name", sorted(ARTIFACT_TAGS))
+    def test_every_injected_artifact_arrives_inside_its_declared_tag(
+        golden_name: str,
+    ) -> None:
+        """The tags the rendered prompt opens are exactly the declared ones."""
+        rendered = render_v5_case(golden_name)
+>       assert artifact_tag_names(rendered) == ARTIFACT_TAGS[golden_name]
+E       AssertionError: assert ('mandate_rub...d_issue', ...) == ('mandate_rub..._bodies', ...)
+E         
+E         At index 2 diff: 'organize_context' != 'issue_body'
+E         Left contains one more item: 'defect_classes'
+E         Use -v to get more diff
+
+tests/prompts/test_v5_wiring.py:119: AssertionError
+_ test_every_injected_artifact_arrives_inside_its_declared_tag[organize_author] _
+
+golden_name = 'organize_author'
+
+    @pytest.mark.parametrize("golden_name", sorted(ARTIFACT_TAGS))
+    def test_every_injected_artifact_arrives_inside_its_declared_tag(
+        golden_name: str,
+    ) -> None:
+        """The tags the rendered prompt opens are exactly the declared ones."""
+        rendered = render_v5_case(golden_name)
+>       assert artifact_tag_names(rendered) == ARTIFACT_TAGS[golden_name]
+E       AssertionError: assert ('mandate_rub...d_issue', ...) == ('mandate_rub..._bodies', ...)
+E         
+E         At index 2 diff: 'organize_context' != 'issue_body'
+E         Left contains one more item: 'refusal_evidence'
+E         Use -v to get more diff
+
+tests/prompts/test_v5_wiring.py:119: AssertionError
+_ test_every_injected_artifact_arrives_inside_its_declared_tag[organize_criteria_author] _
+
+golden_name = 'organize_criteria_author'
+
+    @pytest.mark.parametrize("golden_name", sorted(ARTIFACT_TAGS))
+    def test_every_injected_artifact_arrives_inside_its_declared_tag(
+        golden_name: str,
+    ) -> None:
+        """The tags the rendered prompt opens are exactly the declared ones."""
+        rendered = render_v5_case(golden_name)
+>       assert artifact_tag_names(rendered) == ARTIFACT_TAGS[golden_name]
+E       AssertionError: assert ('mandate_rub...d_issue', ...) == ('mandate_rub..._bodies', ...)
+E         
+E         At index 2 diff: 'organize_context' != 'issue_body'
+E         Left contains one more item: 'refusal_evidence'
+E         Use -v to get more diff
+
+tests/prompts/test_v5_wiring.py:119: AssertionError
+_ test_every_injected_artifact_arrives_inside_its_declared_tag[organize_verify] _
+
+golden_name = 'organize_verify'
+
+    @pytest.mark.parametrize("golden_name", sorted(ARTIFACT_TAGS))
+    def test_every_injected_artifact_arrives_inside_its_declared_tag(
+        golden_name: str,
+    ) -> None:
+        """The tags the rendered prompt opens are exactly the declared ones."""
+        rendered = render_v5_case(golden_name)
+>       assert artifact_tag_names(rendered) == ARTIFACT_TAGS[golden_name]
+E       AssertionError: assert ('mandate_rub...d_issue', ...) == ('mandate_rub..._bodies', ...)
+E         
+E         At index 2 diff: 'organize_context' != 'issue_body'
+E         Left contains one more item: 'defect_classes'
+E         Use -v to get more diff
+
+tests/prompts/test_v5_wiring.py:119: AssertionError
+=========================== short test summary info ============================
+FAILED tests/prompts/test_operation_config.py::test_no_label_or_status_literal_lives_in_source
+FAILED tests/prompts/test_v5_wiring.py::test_every_injected_artifact_arrives_inside_its_declared_tag[organize_assess]
+FAILED tests/prompts/test_v5_wiring.py::test_every_injected_artifact_arrives_inside_its_declared_tag[organize_author]
+FAILED tests/prompts/test_v5_wiring.py::test_every_injected_artifact_arrives_inside_its_declared_tag[organize_criteria_author]
+FAILED tests/prompts/test_v5_wiring.py::test_every_injected_artifact_arrives_inside_its_declared_tag[organize_verify]
+5 failed, 1214 passed in 103.42s (0:01:43)

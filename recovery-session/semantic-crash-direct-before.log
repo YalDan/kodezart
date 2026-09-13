@@ -1,0 +1,46 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_________ test_writer_exception_after_direct_commit_retains_workspace __________
+
+repository = (PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1768/test_writer_exception_after_di0/repo'), '001e60734101ef9e2d65fd02d551abcc1031e004')
+
+    async def test_writer_exception_after_direct_commit_retains_workspace(repository):
+        async def crash(title, payload, kwargs):
+            if title == "NativeWriterOutput":
+                raise RuntimeError("writer transport failed after its local commit")
+    
+        executor = Executor(claim=False, direct_commit=True, mutate=crash)
+        service, guard, workspace, _ = await build(repository, executor)
+        try:
+            with pytest.raises(NativeWriteRefusalError, match="Writer HEAD changed"):
+>               await drive(service, guard, repository)
+
+tests/services/test_native_amendments.py:251: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/services/test_native_amendments.py:196: in drive
+    return [
+src/kodezart/services/agent_service.py:156: in stream_workflow
+    async for event in self._run_in_workspace(
+src/kodezart/services/agent_service.py:245: in _run_in_workspace
+    async for event in self._executor.stream(
+tests/services/test_native_amendments.py:126: in stream
+    await self.mutate(title, payload, kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+title = 'NativeWriterOutput', payload = {'claims': []}
+kwargs = {'agents': (), 'allowed_tools': <ToolPreset.IMPLEMENTATION: 'implementation'>, 'cwd': '/var/folders/lv/b1m7q5dj1yd5gn9... {'items': {'$ref': '#/$defs/AmendmentClaim'}, 'title': 'Claims', 'type': 'array'}}, ...}, 'type': 'json_schema'}, ...}
+
+    async def crash(title, payload, kwargs):
+        if title == "NativeWriterOutput":
+>           raise RuntimeError("writer transport failed after its local commit")
+E           RuntimeError: writer transport failed after its local commit
+
+tests/services/test_native_amendments.py:245: RuntimeError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 17:41:54 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 17:41:55 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-ee2a301fd07b4544af32a8d9229093a8 workspace_id=ee2a301fd07b4544af32a8d9229093a8
+2026-09-12 17:41:55 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 17:41:56 [info     ] workspace_released             workspace_id=ee2a301fd07b4544af32a8d9229093a8
+=========================== short test summary info ============================
+FAILED tests/services/test_native_amendments.py::test_writer_exception_after_direct_commit_retains_workspace
+1 failed in 4.27s

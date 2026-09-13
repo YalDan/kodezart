@@ -1,0 +1,408 @@
+FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF.FFFFFF..................... [  5%]
+.....................
+=================================== FAILURES ===================================
+_____ test_rerun_wait_and_names_ignore_stale_completed_checks_at_same_sha ______
+tests/adapters/test_ci_rerun.py:122: in test_rerun_wait_and_names_ignore_stale_completed_checks_at_same_sha
+    client = _make_client(server)
+             ^^^^^^^^^^^^^^^^^^^^
+tests/adapters/test_github_api.py:42: in _make_client
+    return GitHubAPIClient(
+E   TypeError: GitHubAPIClient.__init__() got an unexpected keyword argument 'max_retries'
+_________ test_branch_resolves_once_and_attempt_reads_stay_on_that_sha _________
+tests/adapters/test_ci_rerun.py:154: in test_branch_resolves_once_and_attempt_reads_stay_on_that_sha
+    client = _make_client(server)
+             ^^^^^^^^^^^^^^^^^^^^
+tests/adapters/test_github_api.py:42: in _make_client
+    return GitHubAPIClient(
+E   TypeError: GitHubAPIClient.__init__() got an unexpected keyword argument 'max_retries'
+_____ test_multiple_runs_are_preflighted_before_writes_and_all_reobserved ______
+tests/adapters/test_ci_rerun.py:176: in test_multiple_runs_are_preflighted_before_writes_and_all_reobserved
+    client = _make_client(server)
+             ^^^^^^^^^^^^^^^^^^^^
+tests/adapters/test_github_api.py:42: in _make_client
+    return GitHubAPIClient(
+E   TypeError: GitHubAPIClient.__init__() got an unexpected keyword argument 'max_retries'
+________ test_next_rerun_advances_from_the_preceding_completed_attempt _________
+tests/adapters/test_ci_rerun.py:200: in test_next_rerun_advances_from_the_preceding_completed_attempt
+    client = _make_client(server)
+             ^^^^^^^^^^^^^^^^^^^^
+tests/adapters/test_github_api.py:42: in _make_client
+    return GitHubAPIClient(
+E   TypeError: GitHubAPIClient.__init__() got an unexpected keyword argument 'max_retries'
+____ test_repeated_rerun_refuses_a_listing_older_than_its_observed_attempt _____
+tests/adapters/test_ci_rerun.py:227: in test_repeated_rerun_refuses_a_listing_older_than_its_observed_attempt
+    client = _make_client(handler)
+             ^^^^^^^^^^^^^^^^^^^^^
+tests/adapters/test_github_api.py:42: in _make_client
+    return GitHubAPIClient(
+E   TypeError: GitHubAPIClient.__init__() got an unexpected keyword argument 'max_retries'
+__________ test_supplied_commit_sha_cannot_resolve_to_another_commit ___________
+tests/adapters/test_ci_rerun.py:239: in test_supplied_commit_sha_cannot_resolve_to_another_commit
+    client = _make_client(server)
+             ^^^^^^^^^^^^^^^^^^^^
+tests/adapters/test_github_api.py:42: in _make_client
+    return GitHubAPIClient(
+E   TypeError: GitHubAPIClient.__init__() got an unexpected keyword argument 'max_retries'
+_____ test_missing_fresh_attempt_exhausts_poll_bound_as_error[old_attempt] _____
+tests/adapters/test_ci_rerun.py:267: in test_missing_fresh_attempt_exhausts_poll_bound_as_error
+    client = _make_client(handler, ci_poll_max_attempts=2)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/adapters/test_github_api.py:42: in _make_client
+    return GitHubAPIClient(
+E   TypeError: GitHubAPIClient.__init__() got an unexpected keyword argument 'max_retries'
+______ test_missing_fresh_attempt_exhausts_poll_bound_as_error[old_jobs] _______
+tests/adapters/test_ci_rerun.py:267: in test_missing_fresh_attempt_exhausts_poll_bound_as_error
+    client = _make_client(handler, ci_poll_max_attempts=2)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/adapters/test_github_api.py:42: in _make_client
+    return GitHubAPIClient(
+E   TypeError: GitHubAPIClient.__init__() got an unexpected keyword argument 'max_retries'
+_____ test_missing_fresh_attempt_exhausts_poll_bound_as_error[not_visible] _____
+tests/adapters/test_ci_rerun.py:267: in test_missing_fresh_attempt_exhausts_poll_bound_as_error
+    client = _make_client(handler, ci_poll_max_attempts=2)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/adapters/test_github_api.py:42: in _make_client
+    return GitHubAPIClient(
+E   TypeError: GitHubAPIClient.__init__() got an unexpected keyword argument 'max_retries'
+_______ test_missing_fresh_attempt_exhausts_poll_bound_as_error[pending] _______
+tests/adapters/test_ci_rerun.py:267: in test_missing_fresh_attempt_exhausts_poll_bound_as_error
+    client = _make_client(handler, ci_poll_max_attempts=2)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/adapters/test_github_api.py:42: in _make_client
+    return GitHubAPIClient(
+E   TypeError: GitHubAPIClient.__init__() got an unexpected keyword argument 'max_retries'
+________ test_invalid_initial_mapping_refuses_before_any_write[missing] ________
+tests/adapters/test_ci_rerun.py:345: in test_invalid_initial_mapping_refuses_before_any_write
+    client = _make_client(handler, ci_check_runs_max_pages=1)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/adapters/test_github_api.py:42: in _make_client
+    return GitHubAPIClient(
+E   TypeError: GitHubAPIClient.__init__() got an unexpected keyword argument 'max_retries'
+_________ test_invalid_initial_mapping_refuses_before_any_write[empty] _________
+tests/adapters/test_ci_rerun.py:345: in test_invalid_initial_mapping_refuses_before_any_write
+    client = _make_client(handler, ci_check_runs_max_pages=1)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/adapters/test_github_api.py:42: in _make_client
+    return GitHubAPIClient(
+E   TypeError: GitHubAPIClient.__init__() got an unexpected keyword argument 'max_retries'
+________ test_invalid_initial_mapping_refuses_before_any_write[partial] ________
+tests/adapters/test_ci_rerun.py:345: in test_invalid_initial_mapping_refuses_before_any_write
+    client = _make_client(handler, ci_check_runs_max_pages=1)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/adapters/test_github_api.py:42: in _make_client
+    return GitHubAPIClient(
+E   TypeError: GitHubAPIClient.__init__() got an unexpected keyword argument 'max_retries'
+____ test_invalid_initial_mapping_refuses_before_any_write[duplicate_check] ____
+tests/adapters/test_ci_rerun.py:345: in test_invalid_initial_mapping_refuses_before_any_write
+    client = _make_client(handler, ci_check_runs_max_pages=1)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/adapters/test_github_api.py:42: in _make_client
+    return GitHubAPIClient(
+E   TypeError: GitHubAPIClient.__init__() got an unexpected keyword argument 'max_retries'
+_______ test_invalid_initial_mapping_refuses_before_any_write[check_sha] _______
+tests/adapters/test_ci_rerun.py:345: in test_invalid_initial_mapping_refuses_before_any_write
+    client = _make_client(handler, ci_check_runs_max_pages=1)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/adapters/test_github_api.py:42: in _make_client
+    return GitHubAPIClient(
+E   TypeError: GitHubAPIClient.__init__() got an unexpected keyword argument 'max_retries'
+______ test_invalid_initial_mapping_refuses_before_any_write[check_suite] ______
+tests/adapters/test_ci_rerun.py:345: in test_invalid_initial_mapping_refuses_before_any_write
+    client = _make_client(handler, ci_check_runs_max_pages=1)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/adapters/test_github_api.py:42: in _make_client
+    return GitHubAPIClient(
+E   TypeError: GitHubAPIClient.__init__() got an unexpected keyword argument 'max_retries'
+_______ test_invalid_initial_mapping_refuses_before_any_write[unmapped] ________
+tests/adapters/test_ci_rerun.py:345: in test_invalid_initial_mapping_refuses_before_any_write
+    client = _make_client(handler, ci_check_runs_max_pages=1)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/adapters/test_github_api.py:42: in _make_client
+    return GitHubAPIClient(
+E   TypeError: GitHubAPIClient.__init__() got an unexpected keyword argument 'max_retries'
+_______ test_invalid_initial_mapping_refuses_before_any_write[ambiguous] _______
+tests/adapters/test_ci_rerun.py:345: in test_invalid_initial_mapping_refuses_before_any_write
+    client = _make_client(handler, ci_check_runs_max_pages=1)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/adapters/test_github_api.py:42: in _make_client
+    return GitHubAPIClient(
+E   TypeError: GitHubAPIClient.__init__() got an unexpected keyword argument 'max_retries'
+________ test_invalid_initial_mapping_refuses_before_any_write[run_sha] ________
+tests/adapters/test_ci_rerun.py:345: in test_invalid_initial_mapping_refuses_before_any_write
+    client = _make_client(handler, ci_check_runs_max_pages=1)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/adapters/test_github_api.py:42: in _make_client
+    return GitHubAPIClient(
+E   TypeError: GitHubAPIClient.__init__() got an unexpected keyword argument 'max_retries'
+_______ test_invalid_initial_mapping_refuses_before_any_write[run_suite] _______
+tests/adapters/test_ci_rerun.py:345: in test_invalid_initial_mapping_refuses_before_any_write
+    client = _make_client(handler, ci_check_runs_max_pages=1)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/adapters/test_github_api.py:42: in _make_client
+    return GitHubAPIClient(
+E   TypeError: GitHubAPIClient.__init__() got an unexpected keyword argument 'max_retries'
+______ test_invalid_initial_mapping_refuses_before_any_write[run_pending] ______
+tests/adapters/test_ci_rerun.py:345: in test_invalid_initial_mapping_refuses_before_any_write
+    client = _make_client(handler, ci_check_runs_max_pages=1)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/adapters/test_github_api.py:42: in _make_client
+    return GitHubAPIClient(
+E   TypeError: GitHubAPIClient.__init__() got an unexpected keyword argument 'max_retries'
+_______ test_invalid_initial_mapping_refuses_before_any_write[job_link] ________
+tests/adapters/test_ci_rerun.py:345: in test_invalid_initial_mapping_refuses_before_any_write
+    client = _make_client(handler, ci_check_runs_max_pages=1)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/adapters/test_github_api.py:42: in _make_client
+    return GitHubAPIClient(
+E   TypeError: GitHubAPIClient.__init__() got an unexpected keyword argument 'max_retries'
+_______ test_invalid_initial_mapping_refuses_before_any_write[job_host] ________
+tests/adapters/test_ci_rerun.py:345: in test_invalid_initial_mapping_refuses_before_any_write
+    client = _make_client(handler, ci_check_runs_max_pages=1)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/adapters/test_github_api.py:42: in _make_client
+    return GitHubAPIClient(
+E   TypeError: GitHubAPIClient.__init__() got an unexpected keyword argument 'max_retries'
+______ test_invalid_attempt_metadata_cannot_establish_a_flake[wrong_sha] _______
+tests/adapters/test_ci_rerun.py:390: in test_invalid_attempt_metadata_cannot_establish_a_flake
+    client = _make_client(handler)
+             ^^^^^^^^^^^^^^^^^^^^^
+tests/adapters/test_github_api.py:42: in _make_client
+    return GitHubAPIClient(
+E   TypeError: GitHubAPIClient.__init__() got an unexpected keyword argument 'max_retries'
+______ test_invalid_attempt_metadata_cannot_establish_a_flake[wrong_run] _______
+tests/adapters/test_ci_rerun.py:390: in test_invalid_attempt_metadata_cannot_establish_a_flake
+    client = _make_client(handler)
+             ^^^^^^^^^^^^^^^^^^^^^
+tests/adapters/test_github_api.py:42: in _make_client
+    return GitHubAPIClient(
+E   TypeError: GitHubAPIClient.__init__() got an unexpected keyword argument 'max_retries'
+_____ test_invalid_attempt_metadata_cannot_establish_a_flake[wrong_suite] ______
+tests/adapters/test_ci_rerun.py:390: in test_invalid_attempt_metadata_cannot_establish_a_flake
+    client = _make_client(handler)
+             ^^^^^^^^^^^^^^^^^^^^^
+tests/adapters/test_github_api.py:42: in _make_client
+    return GitHubAPIClient(
+E   TypeError: GitHubAPIClient.__init__() got an unexpected keyword argument 'max_retries'
+____ test_invalid_attempt_metadata_cannot_establish_a_flake[wrong_attempt] _____
+tests/adapters/test_ci_rerun.py:390: in test_invalid_attempt_metadata_cannot_establish_a_flake
+    client = _make_client(handler)
+             ^^^^^^^^^^^^^^^^^^^^^
+tests/adapters/test_github_api.py:42: in _make_client
+    return GitHubAPIClient(
+E   TypeError: GitHubAPIClient.__init__() got an unexpected keyword argument 'max_retries'
+____ test_invalid_attempt_metadata_cannot_establish_a_flake[unknown_status] ____
+tests/adapters/test_ci_rerun.py:390: in test_invalid_attempt_metadata_cannot_establish_a_flake
+    client = _make_client(handler)
+             ^^^^^^^^^^^^^^^^^^^^^
+tests/adapters/test_github_api.py:42: in _make_client
+    return GitHubAPIClient(
+E   TypeError: GitHubAPIClient.__init__() got an unexpected keyword argument 'max_retries'
+__ test_invalid_attempt_metadata_cannot_establish_a_flake[unknown_conclusion] __
+tests/adapters/test_ci_rerun.py:390: in test_invalid_attempt_metadata_cannot_establish_a_flake
+    client = _make_client(handler)
+             ^^^^^^^^^^^^^^^^^^^^^
+tests/adapters/test_github_api.py:42: in _make_client
+    return GitHubAPIClient(
+E   TypeError: GitHubAPIClient.__init__() got an unexpected keyword argument 'max_retries'
+______ test_invalid_attempt_metadata_cannot_establish_a_flake[malformed] _______
+tests/adapters/test_ci_rerun.py:390: in test_invalid_attempt_metadata_cannot_establish_a_flake
+    client = _make_client(handler)
+             ^^^^^^^^^^^^^^^^^^^^^
+tests/adapters/test_github_api.py:42: in _make_client
+    return GitHubAPIClient(
+E   TypeError: GitHubAPIClient.__init__() got an unexpected keyword argument 'max_retries'
+______ test_invalid_attempt_metadata_cannot_establish_a_flake[forbidden] _______
+tests/adapters/test_ci_rerun.py:390: in test_invalid_attempt_metadata_cannot_establish_a_flake
+    client = _make_client(handler)
+             ^^^^^^^^^^^^^^^^^^^^^
+tests/adapters/test_github_api.py:42: in _make_client
+    return GitHubAPIClient(
+E   TypeError: GitHubAPIClient.__init__() got an unexpected keyword argument 'max_retries'
+_ test_incomplete_or_inconsistent_attempt_jobs_cannot_establish_a_flake[wrong_sha] _
+tests/adapters/test_ci_rerun.py:440: in test_incomplete_or_inconsistent_attempt_jobs_cannot_establish_a_flake
+    client = _make_client(handler, ci_check_runs_max_pages=2)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/adapters/test_github_api.py:42: in _make_client
+    return GitHubAPIClient(
+E   TypeError: GitHubAPIClient.__init__() got an unexpected keyword argument 'max_retries'
+_ test_incomplete_or_inconsistent_attempt_jobs_cannot_establish_a_flake[wrong_run] _
+tests/adapters/test_ci_rerun.py:440: in test_incomplete_or_inconsistent_attempt_jobs_cannot_establish_a_flake
+    client = _make_client(handler, ci_check_runs_max_pages=2)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/adapters/test_github_api.py:42: in _make_client
+    return GitHubAPIClient(
+E   TypeError: GitHubAPIClient.__init__() got an unexpected keyword argument 'max_retries'
+_ test_incomplete_or_inconsistent_attempt_jobs_cannot_establish_a_flake[empty] _
+tests/adapters/test_ci_rerun.py:440: in test_incomplete_or_inconsistent_attempt_jobs_cannot_establish_a_flake
+    client = _make_client(handler, ci_check_runs_max_pages=2)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/adapters/test_github_api.py:42: in _make_client
+    return GitHubAPIClient(
+E   TypeError: GitHubAPIClient.__init__() got an unexpected keyword argument 'max_retries'
+_ test_incomplete_or_inconsistent_attempt_jobs_cannot_establish_a_flake[unknown] _
+tests/adapters/test_ci_rerun.py:440: in test_incomplete_or_inconsistent_attempt_jobs_cannot_establish_a_flake
+    client = _make_client(handler, ci_check_runs_max_pages=2)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/adapters/test_github_api.py:42: in _make_client
+    return GitHubAPIClient(
+E   TypeError: GitHubAPIClient.__init__() got an unexpected keyword argument 'max_retries'
+_ test_incomplete_or_inconsistent_attempt_jobs_cannot_establish_a_flake[disagree] _
+tests/adapters/test_ci_rerun.py:440: in test_incomplete_or_inconsistent_attempt_jobs_cannot_establish_a_flake
+    client = _make_client(handler, ci_check_runs_max_pages=2)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/adapters/test_github_api.py:42: in _make_client
+    return GitHubAPIClient(
+E   TypeError: GitHubAPIClient.__init__() got an unexpected keyword argument 'max_retries'
+_ test_incomplete_or_inconsistent_attempt_jobs_cannot_establish_a_flake[duplicate] _
+tests/adapters/test_ci_rerun.py:440: in test_incomplete_or_inconsistent_attempt_jobs_cannot_establish_a_flake
+    client = _make_client(handler, ci_check_runs_max_pages=2)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/adapters/test_github_api.py:42: in _make_client
+    return GitHubAPIClient(
+E   TypeError: GitHubAPIClient.__init__() got an unexpected keyword argument 'max_retries'
+_ test_incomplete_or_inconsistent_attempt_jobs_cannot_establish_a_flake[short] _
+tests/adapters/test_ci_rerun.py:440: in test_incomplete_or_inconsistent_attempt_jobs_cannot_establish_a_flake
+    client = _make_client(handler, ci_check_runs_max_pages=2)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/adapters/test_github_api.py:42: in _make_client
+    return GitHubAPIClient(
+E   TypeError: GitHubAPIClient.__init__() got an unexpected keyword argument 'max_retries'
+_ test_incomplete_or_inconsistent_attempt_jobs_cannot_establish_a_flake[changing] _
+tests/adapters/test_ci_rerun.py:440: in test_incomplete_or_inconsistent_attempt_jobs_cannot_establish_a_flake
+    client = _make_client(handler, ci_check_runs_max_pages=2)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/adapters/test_github_api.py:42: in _make_client
+    return GitHubAPIClient(
+E   TypeError: GitHubAPIClient.__init__() got an unexpected keyword argument 'max_retries'
+_ test_incomplete_or_inconsistent_attempt_jobs_cannot_establish_a_flake[over_bound] _
+tests/adapters/test_ci_rerun.py:440: in test_incomplete_or_inconsistent_attempt_jobs_cannot_establish_a_flake
+    client = _make_client(handler, ci_check_runs_max_pages=2)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/adapters/test_github_api.py:42: in _make_client
+    return GitHubAPIClient(
+E   TypeError: GitHubAPIClient.__init__() got an unexpected keyword argument 'max_retries'
+_ test_failed_or_uncertain_post_never_retries_or_falls_back_to_old_checks[forbidden] _
+tests/adapters/test_ci_rerun.py:462: in test_failed_or_uncertain_post_never_retries_or_falls_back_to_old_checks
+    client = _make_client(handler, max_retries=3, retry_backoff_factor=0)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/adapters/test_github_api.py:42: in _make_client
+    return GitHubAPIClient(
+E   TypeError: GitHubAPIClient.__init__() got an unexpected keyword argument 'max_retries'
+_ test_failed_or_uncertain_post_never_retries_or_falls_back_to_old_checks[transport] _
+tests/adapters/test_ci_rerun.py:462: in test_failed_or_uncertain_post_never_retries_or_falls_back_to_old_checks
+    client = _make_client(handler, max_retries=3, retry_backoff_factor=0)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/adapters/test_github_api.py:42: in _make_client
+    return GitHubAPIClient(
+E   TypeError: GitHubAPIClient.__init__() got an unexpected keyword argument 'max_retries'
+_ test_failed_or_uncertain_post_never_retries_or_falls_back_to_old_checks[server] _
+tests/adapters/test_ci_rerun.py:462: in test_failed_or_uncertain_post_never_retries_or_falls_back_to_old_checks
+    client = _make_client(handler, max_retries=3, retry_backoff_factor=0)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/adapters/test_github_api.py:42: in _make_client
+    return GitHubAPIClient(
+E   TypeError: GitHubAPIClient.__init__() got an unexpected keyword argument 'max_retries'
+_ test_failed_or_uncertain_post_never_retries_or_falls_back_to_old_checks[unexpected_success] _
+tests/adapters/test_ci_rerun.py:462: in test_failed_or_uncertain_post_never_retries_or_falls_back_to_old_checks
+    client = _make_client(handler, max_retries=3, retry_backoff_factor=0)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/adapters/test_github_api.py:42: in _make_client
+    return GitHubAPIClient(
+E   TypeError: GitHubAPIClient.__init__() got an unexpected keyword argument 'max_retries'
+______ test_enterprise_api_prefix_and_authority_survive_check_job_mapping ______
+tests/adapters/test_ci_rerun.py:507: in test_enterprise_api_prefix_and_authority_survive_check_job_mapping
+    client = _make_client(handler)
+             ^^^^^^^^^^^^^^^^^^^^^
+tests/adapters/test_github_api.py:42: in _make_client
+    return GitHubAPIClient(
+E   TypeError: GitHubAPIClient.__init__() got an unexpected keyword argument 'max_retries'
+_____ test_parallel_alias_dispatches_refuse_stale_shared_baselines[refs0] ______
+tests/adapters/test_ci_rerun.py:535: in test_parallel_alias_dispatches_refuse_stale_shared_baselines
+    client = _make_client(handler)
+             ^^^^^^^^^^^^^^^^^^^^^
+tests/adapters/test_github_api.py:42: in _make_client
+    return GitHubAPIClient(
+E   TypeError: GitHubAPIClient.__init__() got an unexpected keyword argument 'max_retries'
+_____ test_parallel_alias_dispatches_refuse_stale_shared_baselines[refs1] ______
+tests/adapters/test_ci_rerun.py:535: in test_parallel_alias_dispatches_refuse_stale_shared_baselines
+    client = _make_client(handler)
+             ^^^^^^^^^^^^^^^^^^^^^
+tests/adapters/test_github_api.py:42: in _make_client
+    return GitHubAPIClient(
+E   TypeError: GitHubAPIClient.__init__() got an unexpected keyword argument 'max_retries'
+____ test_parallel_tasks_keep_their_own_attempt_when_later_rerun_completes _____
+tests/adapters/test_ci_rerun.py:571: in test_parallel_tasks_keep_their_own_attempt_when_later_rerun_completes
+    client = _make_client(handler)
+             ^^^^^^^^^^^^^^^^^^^^^
+tests/adapters/test_github_api.py:42: in _make_client
+    return GitHubAPIClient(
+E   TypeError: GitHubAPIClient.__init__() got an unexpected keyword argument 'max_retries'
+_______ test_child_task_does_not_inherit_its_parents_attempt_observation _______
+tests/adapters/test_ci_rerun.py:605: in test_child_task_does_not_inherit_its_parents_attempt_observation
+    client = _make_client(server)
+             ^^^^^^^^^^^^^^^^^^^^
+tests/adapters/test_github_api.py:42: in _make_client
+    return GitHubAPIClient(
+E   TypeError: GitHubAPIClient.__init__() got an unexpected keyword argument 'max_retries'
+___________ test_distinct_shas_can_dispatch_before_either_completes ____________
+tests/adapters/test_ci_rerun.py:632: in test_distinct_shas_can_dispatch_before_either_completes
+    client = _make_client(handler)
+             ^^^^^^^^^^^^^^^^^^^^^
+tests/adapters/test_github_api.py:42: in _make_client
+    return GitHubAPIClient(
+E   TypeError: GitHubAPIClient.__init__() got an unexpected keyword argument 'max_retries'
+=========================== short test summary info ============================
+FAILED tests/adapters/test_ci_rerun.py::test_rerun_wait_and_names_ignore_stale_completed_checks_at_same_sha
+FAILED tests/adapters/test_ci_rerun.py::test_branch_resolves_once_and_attempt_reads_stay_on_that_sha
+FAILED tests/adapters/test_ci_rerun.py::test_multiple_runs_are_preflighted_before_writes_and_all_reobserved
+FAILED tests/adapters/test_ci_rerun.py::test_next_rerun_advances_from_the_preceding_completed_attempt
+FAILED tests/adapters/test_ci_rerun.py::test_repeated_rerun_refuses_a_listing_older_than_its_observed_attempt
+FAILED tests/adapters/test_ci_rerun.py::test_supplied_commit_sha_cannot_resolve_to_another_commit
+FAILED tests/adapters/test_ci_rerun.py::test_missing_fresh_attempt_exhausts_poll_bound_as_error[old_attempt]
+FAILED tests/adapters/test_ci_rerun.py::test_missing_fresh_attempt_exhausts_poll_bound_as_error[old_jobs]
+FAILED tests/adapters/test_ci_rerun.py::test_missing_fresh_attempt_exhausts_poll_bound_as_error[not_visible]
+FAILED tests/adapters/test_ci_rerun.py::test_missing_fresh_attempt_exhausts_poll_bound_as_error[pending]
+FAILED tests/adapters/test_ci_rerun.py::test_invalid_initial_mapping_refuses_before_any_write[missing]
+FAILED tests/adapters/test_ci_rerun.py::test_invalid_initial_mapping_refuses_before_any_write[empty]
+FAILED tests/adapters/test_ci_rerun.py::test_invalid_initial_mapping_refuses_before_any_write[partial]
+FAILED tests/adapters/test_ci_rerun.py::test_invalid_initial_mapping_refuses_before_any_write[duplicate_check]
+FAILED tests/adapters/test_ci_rerun.py::test_invalid_initial_mapping_refuses_before_any_write[check_sha]
+FAILED tests/adapters/test_ci_rerun.py::test_invalid_initial_mapping_refuses_before_any_write[check_suite]
+FAILED tests/adapters/test_ci_rerun.py::test_invalid_initial_mapping_refuses_before_any_write[unmapped]
+FAILED tests/adapters/test_ci_rerun.py::test_invalid_initial_mapping_refuses_before_any_write[ambiguous]
+FAILED tests/adapters/test_ci_rerun.py::test_invalid_initial_mapping_refuses_before_any_write[run_sha]
+FAILED tests/adapters/test_ci_rerun.py::test_invalid_initial_mapping_refuses_before_any_write[run_suite]
+FAILED tests/adapters/test_ci_rerun.py::test_invalid_initial_mapping_refuses_before_any_write[run_pending]
+FAILED tests/adapters/test_ci_rerun.py::test_invalid_initial_mapping_refuses_before_any_write[job_link]
+FAILED tests/adapters/test_ci_rerun.py::test_invalid_initial_mapping_refuses_before_any_write[job_host]
+FAILED tests/adapters/test_ci_rerun.py::test_invalid_attempt_metadata_cannot_establish_a_flake[wrong_sha]
+FAILED tests/adapters/test_ci_rerun.py::test_invalid_attempt_metadata_cannot_establish_a_flake[wrong_run]
+FAILED tests/adapters/test_ci_rerun.py::test_invalid_attempt_metadata_cannot_establish_a_flake[wrong_suite]
+FAILED tests/adapters/test_ci_rerun.py::test_invalid_attempt_metadata_cannot_establish_a_flake[wrong_attempt]
+FAILED tests/adapters/test_ci_rerun.py::test_invalid_attempt_metadata_cannot_establish_a_flake[unknown_status]
+FAILED tests/adapters/test_ci_rerun.py::test_invalid_attempt_metadata_cannot_establish_a_flake[unknown_conclusion]
+FAILED tests/adapters/test_ci_rerun.py::test_invalid_attempt_metadata_cannot_establish_a_flake[malformed]
+FAILED tests/adapters/test_ci_rerun.py::test_invalid_attempt_metadata_cannot_establish_a_flake[forbidden]
+FAILED tests/adapters/test_ci_rerun.py::test_incomplete_or_inconsistent_attempt_jobs_cannot_establish_a_flake[wrong_sha]
+FAILED tests/adapters/test_ci_rerun.py::test_incomplete_or_inconsistent_attempt_jobs_cannot_establish_a_flake[wrong_run]
+FAILED tests/adapters/test_ci_rerun.py::test_incomplete_or_inconsistent_attempt_jobs_cannot_establish_a_flake[empty]
+FAILED tests/adapters/test_ci_rerun.py::test_incomplete_or_inconsistent_attempt_jobs_cannot_establish_a_flake[unknown]
+FAILED tests/adapters/test_ci_rerun.py::test_incomplete_or_inconsistent_attempt_jobs_cannot_establish_a_flake[disagree]
+FAILED tests/adapters/test_ci_rerun.py::test_incomplete_or_inconsistent_attempt_jobs_cannot_establish_a_flake[duplicate]
+FAILED tests/adapters/test_ci_rerun.py::test_incomplete_or_inconsistent_attempt_jobs_cannot_establish_a_flake[short]
+FAILED tests/adapters/test_ci_rerun.py::test_incomplete_or_inconsistent_attempt_jobs_cannot_establish_a_flake[changing]
+FAILED tests/adapters/test_ci_rerun.py::test_incomplete_or_inconsistent_attempt_jobs_cannot_establish_a_flake[over_bound]
+FAILED tests/adapters/test_ci_rerun.py::test_failed_or_uncertain_post_never_retries_or_falls_back_to_old_checks[forbidden]
+FAILED tests/adapters/test_ci_rerun.py::test_failed_or_uncertain_post_never_retries_or_falls_back_to_old_checks[transport]
+FAILED tests/adapters/test_ci_rerun.py::test_failed_or_uncertain_post_never_retries_or_falls_back_to_old_checks[server]
+FAILED tests/adapters/test_ci_rerun.py::test_failed_or_uncertain_post_never_retries_or_falls_back_to_old_checks[unexpected_success]
+FAILED tests/adapters/test_ci_rerun.py::test_enterprise_api_prefix_and_authority_survive_check_job_mapping
+FAILED tests/adapters/test_ci_rerun.py::test_parallel_alias_dispatches_refuse_stale_shared_baselines[refs0]
+FAILED tests/adapters/test_ci_rerun.py::test_parallel_alias_dispatches_refuse_stale_shared_baselines[refs1]
+FAILED tests/adapters/test_ci_rerun.py::test_parallel_tasks_keep_their_own_attempt_when_later_rerun_completes
+FAILED tests/adapters/test_ci_rerun.py::test_child_task_does_not_inherit_its_parents_attempt_observation
+FAILED tests/adapters/test_ci_rerun.py::test_distinct_shas_can_dispatch_before_either_completes
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! KeyboardInterrupt !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/runners.py:123: KeyboardInterrupt
+(to show a full traceback on KeyboardInterrupt use --full-trace)
+50 failed, 43 passed in 88.34s (0:01:28)

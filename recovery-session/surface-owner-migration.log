@@ -1,0 +1,740 @@
+....................................................FF.................. [ 35%]
+........F.F....................................F........................ [ 70%]
+................................................FFFFF........            [100%]
+=================================== FAILURES ===================================
+_ test_raise_is_durable_before_later_report_failure_and_replay_is_noop[linear] _
+
+port = (<kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10ed41d00>, <function port.<locals>.<lambda> at 0x10ec84fe0>, <tests.fakes.FakeLinearMcpServer object at 0x10ed42a20>)
+
+    async def test_raise_is_durable_before_later_report_failure_and_replay_is_noop(port):
+        tracker, writes, server = port
+        gate = PassThroughGate()
+        writer = LaneEscalationWriter(
+            surface_lease_seconds=900.0, tracker=tracker, gate=gate, operation=OPERATION
+        )
+        before = await tracker.read_issue(issue_key=ISSUE)
+    
+        async def node_then_report():
+            await writer.raise_escalation(
+                job_id="fixture-job",
+                lane_key="lane:1",
+                escalation=question(),
+                visibility=RepoVisibility.PUBLIC,
+            )
+            assert "decision" in (await tracker.read_issue(issue_key=ISSUE)).issue_labels
+            assert len(await tracker.list_comments(issue_key=ISSUE)) == 1
+            raise RuntimeError("later stage report failed")
+    
+        with pytest.raises(RuntimeError, match="later stage"):
+>           await node_then_report()
+
+tests/tracker/test_lane_escalation.py:90: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/tracker/test_lane_escalation.py:79: in node_then_report
+    await writer.raise_escalation(
+src/kodezart/services/lane_escalation.py:119: in raise_escalation
+    comment = await settle(
+src/kodezart/core/owned_tasks.py:25: in settle
+    result, cancelled = await finish_owned(asyncio.create_task(operation))
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/owned_tasks.py:12: in finish_owned
+    return await asyncio.shield(task), cancelled
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/adapters/linear_mcp_tracker.py:1773: in upsert_comment
+    await self._require_surface_holder(surface=surface, holder=holder)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10ed41d00>
+
+    async def _require_surface_holder(
+        self, *, surface: WritableSurface, holder: str | None
+    ) -> None:
+        """Refuse a write whose caller does not own the addressed live marker.
+    
+        This reads the same ordered markers as acquisition and renewal.
+        It checks authority immediately before issuing the write; the
+        backend provides no conditional write that could fence a request
+        still in flight when its lease expires.
+        """
+        target = _LEASE_ADDRESSING.target(surface)
+        encoded = _LEASE_ADDRESSING.encode(surface)
+        markers = await self._markers_on(_GrantKind.LEASE, targets=(target,))
+        now = self._clock()
+        live = [
+            entry
+            for entry in markers
+            if not entry.retracted
+            and entry.in_force
+            and entry.deadline > now
+            and encoded in entry.addresses
+        ]
+        owner: str | None = None
+        if live:
+            earliest = min(live, key=lambda entry: entry.order)
+            tying = {
+                entry.holder
+                for entry in live
+                if entry.created_at == earliest.created_at
+            }
+            if earliest.state is _GrantState.HELD and len(tying) == 1:
+                owner = earliest.holder
+        if holder is None or owner != holder:
+>           raise SurfaceLeaseError(
+                "the writing job does not hold this live surface",
+                surface=surface,
+                current_holder=owner,
+            )
+E           kodezart.domain.errors.SurfaceLeaseError: the writing job does not hold this live surface (surface: marker_comment:issue:work/42 (marker: [open-question:lane%3A1:criterion%3Aalpha]); current holder: none)
+
+src/kodezart/adapters/linear_mcp_tracker.py:1816: SurfaceLeaseError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 14:33:46 [info     ] outbound_content_gated         categories=[] content_digest=11bcac81d503c85c6aed79002dd7682e9dbc8d0910cfdb523fe2fae4d2b9fc4f failure=None hits=[] surface=tracker verdict=clean visibility=public writer=tracker_comment
+____ test_failed_decision_write_propagates_and_retry_completes_same_comment ____
+
+    async def test_failed_decision_write_propagates_and_retry_completes_same_comment():
+        server = FakeLinearMcpServer(issues=[FakeMcpIssue(id=ISSUE)])
+        tracker = tracker_over(server, issue_labels=LABELS)
+        writer = LaneEscalationWriter(
+            surface_lease_seconds=900.0,
+            tracker=tracker,
+            gate=PassThroughGate(),
+            operation=OPERATION,
+        )
+        server._tool_errors["save_issue"] = "temporarily refused"
+        with pytest.raises(McpTransportError):
+>           await writer.raise_escalation(
+                job_id="fixture-job",
+                lane_key="lane",
+                escalation=question(),
+                visibility=RepoVisibility.PUBLIC,
+            )
+
+tests/tracker/test_lane_escalation.py:143: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/services/lane_escalation.py:119: in raise_escalation
+    comment = await settle(
+src/kodezart/core/owned_tasks.py:25: in settle
+    result, cancelled = await finish_owned(asyncio.create_task(operation))
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/owned_tasks.py:12: in finish_owned
+    return await asyncio.shield(task), cancelled
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/adapters/linear_mcp_tracker.py:1773: in upsert_comment
+    await self._require_surface_holder(surface=surface, holder=holder)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10ed46a50>
+
+    async def _require_surface_holder(
+        self, *, surface: WritableSurface, holder: str | None
+    ) -> None:
+        """Refuse a write whose caller does not own the addressed live marker.
+    
+        This reads the same ordered markers as acquisition and renewal.
+        It checks authority immediately before issuing the write; the
+        backend provides no conditional write that could fence a request
+        still in flight when its lease expires.
+        """
+        target = _LEASE_ADDRESSING.target(surface)
+        encoded = _LEASE_ADDRESSING.encode(surface)
+        markers = await self._markers_on(_GrantKind.LEASE, targets=(target,))
+        now = self._clock()
+        live = [
+            entry
+            for entry in markers
+            if not entry.retracted
+            and entry.in_force
+            and entry.deadline > now
+            and encoded in entry.addresses
+        ]
+        owner: str | None = None
+        if live:
+            earliest = min(live, key=lambda entry: entry.order)
+            tying = {
+                entry.holder
+                for entry in live
+                if entry.created_at == earliest.created_at
+            }
+            if earliest.state is _GrantState.HELD and len(tying) == 1:
+                owner = earliest.holder
+        if holder is None or owner != holder:
+>           raise SurfaceLeaseError(
+                "the writing job does not hold this live surface",
+                surface=surface,
+                current_holder=owner,
+            )
+E           kodezart.domain.errors.SurfaceLeaseError: the writing job does not hold this live surface (surface: marker_comment:issue:work/42 (marker: [open-question:lane:criterion%3Aalpha]); current holder: none)
+
+src/kodezart/adapters/linear_mcp_tracker.py:1816: SurfaceLeaseError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 14:33:48 [info     ] outbound_content_gated         categories=[] content_digest=583c92cca50946a4f3e41a95f77047a38de291d5076c2df45826380b4b3d741c failure=None hits=[] surface=tracker verdict=clean visibility=public writer=tracker_comment
+_________ test_valid_question_redaction_is_persisted_as_gated[linear] __________
+
+port = (<kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10ed49640>, <function port.<locals>.<lambda> at 0x10f098cc0>, <tests.fakes.FakeLinearMcpServer object at 0x10ed48b30>)
+
+    async def test_valid_question_redaction_is_persisted_as_gated(port):
+        class ProseGate:
+            async def gate(self, **kwargs):
+                return GateDecision(
+                    verdict=GateVerdict.REDACTED,
+                    content=kwargs["content"].replace(
+                        "Which declared owner", "Which [redacted]"
+                    ),
+                )
+    
+        tracker, _, _ = port
+        writer = LaneEscalationWriter(
+            surface_lease_seconds=900.0,
+            tracker=tracker,
+            gate=ProseGate(),
+            operation=OPERATION,
+        )
+>       result = await writer.raise_escalation(
+            job_id="fixture-job",
+            lane_key="lane",
+            escalation=question(),
+            visibility=RepoVisibility.PUBLIC,
+        )
+
+tests/tracker/test_lane_escalation.py:352: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/services/lane_escalation.py:119: in raise_escalation
+    comment = await settle(
+src/kodezart/core/owned_tasks.py:25: in settle
+    result, cancelled = await finish_owned(asyncio.create_task(operation))
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/owned_tasks.py:12: in finish_owned
+    return await asyncio.shield(task), cancelled
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/adapters/linear_mcp_tracker.py:1773: in upsert_comment
+    await self._require_surface_holder(surface=surface, holder=holder)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10ed49640>
+
+    async def _require_surface_holder(
+        self, *, surface: WritableSurface, holder: str | None
+    ) -> None:
+        """Refuse a write whose caller does not own the addressed live marker.
+    
+        This reads the same ordered markers as acquisition and renewal.
+        It checks authority immediately before issuing the write; the
+        backend provides no conditional write that could fence a request
+        still in flight when its lease expires.
+        """
+        target = _LEASE_ADDRESSING.target(surface)
+        encoded = _LEASE_ADDRESSING.encode(surface)
+        markers = await self._markers_on(_GrantKind.LEASE, targets=(target,))
+        now = self._clock()
+        live = [
+            entry
+            for entry in markers
+            if not entry.retracted
+            and entry.in_force
+            and entry.deadline > now
+            and encoded in entry.addresses
+        ]
+        owner: str | None = None
+        if live:
+            earliest = min(live, key=lambda entry: entry.order)
+            tying = {
+                entry.holder
+                for entry in live
+                if entry.created_at == earliest.created_at
+            }
+            if earliest.state is _GrantState.HELD and len(tying) == 1:
+                owner = earliest.holder
+        if holder is None or owner != holder:
+>           raise SurfaceLeaseError(
+                "the writing job does not hold this live surface",
+                surface=surface,
+                current_holder=owner,
+            )
+E           kodezart.domain.errors.SurfaceLeaseError: the writing job does not hold this live surface (surface: marker_comment:issue:work/42 (marker: [open-question:lane:criterion%3Aalpha]); current holder: none)
+
+src/kodezart/adapters/linear_mcp_tracker.py:1816: SurfaceLeaseError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 14:33:49 [info     ] outbound_content_gated         categories=[] content_digest=583c92cca50946a4f3e41a95f77047a38de291d5076c2df45826380b4b3d741c failure=None hits=[] surface=tracker verdict=redacted visibility=public writer=tracker_comment
+___ test_actual_gated_writer_round_trips_through_cold_record_reader[linear] ____
+
+port = (<kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10ed496a0>, <function port.<locals>.<lambda> at 0x10f098860>, <tests.fakes.FakeLinearMcpServer object at 0x10ed4b290>)
+
+    async def test_actual_gated_writer_round_trips_through_cold_record_reader(port):
+        tracker, writes, server = port
+        gate = PassThroughGate()
+        original = question()
+>       stored = await LaneEscalationWriter(
+            surface_lease_seconds=900.0,
+            tracker=tracker,
+            gate=gate,
+            operation=WRITER_OPERATION,
+        ).raise_escalation(
+            job_id="fixture-job",
+            lane_key="lane:1",
+            escalation=original,
+            visibility=RepoVisibility.PUBLIC,
+        )
+
+tests/tracker/test_escalation_record_reader.py:33: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/services/lane_escalation.py:119: in raise_escalation
+    comment = await settle(
+src/kodezart/core/owned_tasks.py:25: in settle
+    result, cancelled = await finish_owned(asyncio.create_task(operation))
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/owned_tasks.py:12: in finish_owned
+    return await asyncio.shield(task), cancelled
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/adapters/linear_mcp_tracker.py:1773: in upsert_comment
+    await self._require_surface_holder(surface=surface, holder=holder)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10ed496a0>
+
+    async def _require_surface_holder(
+        self, *, surface: WritableSurface, holder: str | None
+    ) -> None:
+        """Refuse a write whose caller does not own the addressed live marker.
+    
+        This reads the same ordered markers as acquisition and renewal.
+        It checks authority immediately before issuing the write; the
+        backend provides no conditional write that could fence a request
+        still in flight when its lease expires.
+        """
+        target = _LEASE_ADDRESSING.target(surface)
+        encoded = _LEASE_ADDRESSING.encode(surface)
+        markers = await self._markers_on(_GrantKind.LEASE, targets=(target,))
+        now = self._clock()
+        live = [
+            entry
+            for entry in markers
+            if not entry.retracted
+            and entry.in_force
+            and entry.deadline > now
+            and encoded in entry.addresses
+        ]
+        owner: str | None = None
+        if live:
+            earliest = min(live, key=lambda entry: entry.order)
+            tying = {
+                entry.holder
+                for entry in live
+                if entry.created_at == earliest.created_at
+            }
+            if earliest.state is _GrantState.HELD and len(tying) == 1:
+                owner = earliest.holder
+        if holder is None or owner != holder:
+>           raise SurfaceLeaseError(
+                "the writing job does not hold this live surface",
+                surface=surface,
+                current_holder=owner,
+            )
+E           kodezart.domain.errors.SurfaceLeaseError: the writing job does not hold this live surface (surface: marker_comment:issue:work/42 (marker: [open-question:lane%3A1:criterion%3Aalpha]); current holder: none)
+
+src/kodezart/adapters/linear_mcp_tracker.py:1816: SurfaceLeaseError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 14:33:50 [info     ] outbound_content_gated         categories=[] content_digest=11bcac81d503c85c6aed79002dd7682e9dbc8d0910cfdb523fe2fae4d2b9fc4f failure=None hits=[] surface=tracker verdict=clean visibility=public writer=tracker_comment
+_ TestCommentUpsert.test_identical_replay_is_byte_identical_and_writes_nothing[linear-mcp] _
+
+self = <tests.tracker.test_idempotent_writes.TestCommentUpsert object at 0x10ed19df0>
+tracker = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10eb88170>
+tracker_writes = <function tracker_writes.<locals>.<lambda> at 0x10f099580>
+
+    async def test_identical_replay_is_byte_identical_and_writes_nothing(
+        self, tracker: TrackerPort, tracker_writes: Callable[[], tuple[object, ...]]
+    ):
+        first = await leased_comment(
+            tracker, target=APPROVED_ISSUE, marker=MARKER, body="first body"
+        )
+        issue = await tracker.read_issue(issue_key=APPROVED_ISSUE)
+        calls = tracker_writes()
+        replay = await leased_comment(
+            tracker, target=APPROVED_ISSUE, marker=MARKER, body="first body"
+        )
+        assert replay.model_dump_json() == first.model_dump_json()
+>       assert await tracker.read_issue(issue_key=APPROVED_ISSUE) == issue
+E       AssertionError: assert TrackerIssue(.../issue/FIX-2') == TrackerIssue(.../issue/FIX-2')
+E         
+E         Use -v to get more diff
+
+tests/tracker/test_idempotent_writes.py:56: AssertionError
+______________ test_second_page_match_is_edited_without_creating _______________
+
+    async def test_second_page_match_is_edited_without_creating():
+        neighbour = comment("neighbour", "other")
+        existing = comment("existing", f"{MARKER}\nold")
+        server = CommentPageServer(
+            {
+                None: {
+                    "comments": [neighbour.wire()],
+                    "hasNextPage": True,
+                    "cursor": "next",
+                },
+                "next": {"comments": [existing.wire()], "hasNextPage": False},
+            }
+        )
+        server.comments.extend([neighbour, existing])
+        tracker = linear_over_fake_mcp(server)
+>       updated = await leased_comment(
+            tracker, target=APPROVED_ISSUE, marker=MARKER, body="changed"
+        )
+
+tests/tracker/test_comment_pages.py:58: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/tracker/lease_fixtures.py:26: in leased_comment
+    async with RunSurfaceLease(
+src/kodezart/services/run_surface_lease.py:47: in __aenter__
+    await settle(
+src/kodezart/core/owned_tasks.py:25: in settle
+    result, cancelled = await finish_owned(asyncio.create_task(operation))
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/owned_tasks.py:12: in finish_owned
+    return await asyncio.shield(task), cancelled
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/adapters/linear_mcp_tracker.py:1936: in acquire_surfaces
+    outcome = await self._grant(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10f0db110>
+
+    async def _grant[AddressT](
+        self,
+        *,
+        addressing: _Addressing[AddressT],
+        addresses: frozenset[AddressT],
+        holder: str,
+        lease_seconds: float,
+    ) -> _Granted | _Refused[AddressT]:
+        """Bid for the whole set, then take it only where a read-back says so.
+    
+        The backend orders creations and answers a listing with what it
+        has; it offers no conditional write.  So ownership is never
+        claimed from the echo of the write.  A marker goes on every target
+        as a BID, the whole set is read back, and the bid survives only
+        where no other holder's marker over a requested address was
+        created no later than this one and is still live at the instant
+        the backend stamped this bid.  A bid that survives is then
+        confirmed in place and read back a second time, and only that
+        second read-back makes it a hold.
+    
+        That is what makes a refusal hold nothing without depending on a
+        request the backend may turn down: a bid the read-back refused is
+        never confirmed, so whether or not its retraction lands, no reader
+        will ever answer for it, and it lapses on the bound it declared.
+        """
+        advertised = self._clock() + timedelta(seconds=lease_seconds)
+        nonce = uuid4().hex
+        encoded = addressing.lines(addresses)
+        targets = addressing.targets(addresses)
+    
+        def stated(state: _GrantState) -> str:
+            return self._grant_body(
+                addressing=addressing,
+                holder=holder,
+                nonce=nonce,
+                state=state,
+                lease_seconds=lease_seconds,
+                advertised=advertised,
+                addresses=encoded,
+            )
+    
+        written = {
+            target: await self._write_marker(
+                target=target, body=stated(_GrantState.BID)
+            )
+            for target in targets
+        }
+        markers = await self._markers_on(addressing.kind, targets=targets)
+        mine = self._own(markers, holder=holder, nonce=nonce)
+        if set(mine) != set(written):
+            await self._stand_down(
+                tuple(
+                    _WrittenMarker(
+                        target=target,
+                        comment_key=key,
+                        void_body=stated(_GrantState.VOID),
+                    )
+                    for target, key in written.items()
+                )
+            )
+>           raise TrackerProtocolError(
+                "the grant marker is absent from the log it was written to",
+                tool=_TOOL_LIST_COMMENTS,
+                detail=f"holder={holder!r}; kind={addressing.kind.value}",
+            )
+E           kodezart.core.errors.TrackerProtocolError: the grant marker is absent from the log it was written to (tool: list_comments; holder='c9efe6903fb84adca6c75a8c1d71891f'; kind=lease)
+
+src/kodezart/adapters/linear_mcp_tracker.py:2053: TrackerProtocolError
+_______________ test_duplicate_on_later_page_prevents_any_write ________________
+
+    async def test_duplicate_on_later_page_prevents_any_write():
+        first = comment("first", f"{MARKER}\nsame")
+        second = comment("second", f"{MARKER}\nsame")
+        server = CommentPageServer(
+            {
+                None: {"comments": [first.wire()], "hasNextPage": True, "cursor": "next"},
+                "next": {"comments": [second.wire()], "hasNextPage": False},
+            }
+        )
+        with pytest.raises(DuplicateCommentMarkerError):
+>           await leased_comment(
+                linear_over_fake_mcp(server),
+                target=APPROVED_ISSUE,
+                marker=MARKER,
+                body="same",
+            )
+
+tests/tracker/test_comment_pages.py:82: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/tracker/lease_fixtures.py:26: in leased_comment
+    async with RunSurfaceLease(
+src/kodezart/services/run_surface_lease.py:47: in __aenter__
+    await settle(
+src/kodezart/core/owned_tasks.py:25: in settle
+    result, cancelled = await finish_owned(asyncio.create_task(operation))
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/owned_tasks.py:12: in finish_owned
+    return await asyncio.shield(task), cancelled
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/adapters/linear_mcp_tracker.py:1936: in acquire_surfaces
+    outcome = await self._grant(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10ef699d0>
+
+    async def _grant[AddressT](
+        self,
+        *,
+        addressing: _Addressing[AddressT],
+        addresses: frozenset[AddressT],
+        holder: str,
+        lease_seconds: float,
+    ) -> _Granted | _Refused[AddressT]:
+        """Bid for the whole set, then take it only where a read-back says so.
+    
+        The backend orders creations and answers a listing with what it
+        has; it offers no conditional write.  So ownership is never
+        claimed from the echo of the write.  A marker goes on every target
+        as a BID, the whole set is read back, and the bid survives only
+        where no other holder's marker over a requested address was
+        created no later than this one and is still live at the instant
+        the backend stamped this bid.  A bid that survives is then
+        confirmed in place and read back a second time, and only that
+        second read-back makes it a hold.
+    
+        That is what makes a refusal hold nothing without depending on a
+        request the backend may turn down: a bid the read-back refused is
+        never confirmed, so whether or not its retraction lands, no reader
+        will ever answer for it, and it lapses on the bound it declared.
+        """
+        advertised = self._clock() + timedelta(seconds=lease_seconds)
+        nonce = uuid4().hex
+        encoded = addressing.lines(addresses)
+        targets = addressing.targets(addresses)
+    
+        def stated(state: _GrantState) -> str:
+            return self._grant_body(
+                addressing=addressing,
+                holder=holder,
+                nonce=nonce,
+                state=state,
+                lease_seconds=lease_seconds,
+                advertised=advertised,
+                addresses=encoded,
+            )
+    
+        written = {
+            target: await self._write_marker(
+                target=target, body=stated(_GrantState.BID)
+            )
+            for target in targets
+        }
+        markers = await self._markers_on(addressing.kind, targets=targets)
+        mine = self._own(markers, holder=holder, nonce=nonce)
+        if set(mine) != set(written):
+            await self._stand_down(
+                tuple(
+                    _WrittenMarker(
+                        target=target,
+                        comment_key=key,
+                        void_body=stated(_GrantState.VOID),
+                    )
+                    for target, key in written.items()
+                )
+            )
+>           raise TrackerProtocolError(
+                "the grant marker is absent from the log it was written to",
+                tool=_TOOL_LIST_COMMENTS,
+                detail=f"holder={holder!r}; kind={addressing.kind.value}",
+            )
+E           kodezart.core.errors.TrackerProtocolError: the grant marker is absent from the log it was written to (tool: list_comments; holder='19ec832e0add4138b5c19b76aacf4790'; kind=lease)
+
+src/kodezart/adapters/linear_mcp_tracker.py:2053: TrackerProtocolError
+________ test_missing_or_repeated_cursor_refuses_before_creation[None] _________
+
+cursor = None
+
+    @pytest.mark.parametrize("cursor", [None, "next"])
+    async def test_missing_or_repeated_cursor_refuses_before_creation(cursor):
+        server = CommentPageServer(
+            {
+                None: {"comments": [], "hasNextPage": True, "cursor": "next"},
+                "next": {"comments": [], "hasNextPage": True, "cursor": cursor},
+            }
+        )
+        with pytest.raises(TrackerProtocolError, match="cannot advance"):
+            await leased_comment(
+                linear_over_fake_mcp(server),
+                target=APPROVED_ISSUE,
+                marker=MARKER,
+                body="new",
+            )
+>       assert server.tool_calls("save_comment") == []
+E       AssertionError: assert [{'body': '``...Id': 'FIX-2'}] == []
+E         
+E         Left contains one more item: {'body': '```kodezart-claim\nkind: lease\nholder: 62c5b1b88d8241b482b0a07829464887\nnonce: 8178c07f5638483cae8d108d1cb...t: 2026-03-01T12:15:00+00:00\nsurfaces:\n- marker_comment|issue|FIX-2|%5Bfixture%3Arecord%5D\n```', 'issueId': 'FIX-2'}
+E         Use -v to get more diff
+
+tests/tracker/test_comment_pages.py:106: AssertionError
+________ test_missing_or_repeated_cursor_refuses_before_creation[next] _________
+
+cursor = 'next'
+
+    @pytest.mark.parametrize("cursor", [None, "next"])
+    async def test_missing_or_repeated_cursor_refuses_before_creation(cursor):
+        server = CommentPageServer(
+            {
+                None: {"comments": [], "hasNextPage": True, "cursor": "next"},
+                "next": {"comments": [], "hasNextPage": True, "cursor": cursor},
+            }
+        )
+        with pytest.raises(TrackerProtocolError, match="cannot advance"):
+            await leased_comment(
+                linear_over_fake_mcp(server),
+                target=APPROVED_ISSUE,
+                marker=MARKER,
+                body="new",
+            )
+>       assert server.tool_calls("save_comment") == []
+E       AssertionError: assert [{'body': '``...Id': 'FIX-2'}] == []
+E         
+E         Left contains one more item: {'body': '```kodezart-claim\nkind: lease\nholder: dfaaaabd351d41b6a4c3643725211606\nnonce: e015bf564fdb495a9bdddeee5be...t: 2026-03-01T12:15:00+00:00\nsurfaces:\n- marker_comment|issue|FIX-2|%5Bfixture%3Arecord%5D\n```', 'issueId': 'FIX-2'}
+E         Use -v to get more diff
+
+tests/tracker/test_comment_pages.py:106: AssertionError
+________________ test_page_overlap_does_not_invent_a_duplicate _________________
+
+    async def test_page_overlap_does_not_invent_a_duplicate():
+        existing = comment("existing", f"{MARKER}\nsame")
+        server = CommentPageServer(
+            {
+                None: {
+                    "comments": [existing.wire()],
+                    "hasNextPage": True,
+                    "cursor": "next",
+                },
+                "next": {"comments": [existing.wire()], "hasNextPage": False},
+            }
+        )
+>       updated = await leased_comment(
+            linear_over_fake_mcp(server), target=APPROVED_ISSUE, marker=MARKER, body="same"
+        )
+
+tests/tracker/test_comment_pages.py:121: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/tracker/lease_fixtures.py:26: in leased_comment
+    async with RunSurfaceLease(
+src/kodezart/services/run_surface_lease.py:47: in __aenter__
+    await settle(
+src/kodezart/core/owned_tasks.py:25: in settle
+    result, cancelled = await finish_owned(asyncio.create_task(operation))
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/owned_tasks.py:12: in finish_owned
+    return await asyncio.shield(task), cancelled
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/adapters/linear_mcp_tracker.py:1936: in acquire_surfaces
+    outcome = await self._grant(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10ef9cf20>
+
+    async def _grant[AddressT](
+        self,
+        *,
+        addressing: _Addressing[AddressT],
+        addresses: frozenset[AddressT],
+        holder: str,
+        lease_seconds: float,
+    ) -> _Granted | _Refused[AddressT]:
+        """Bid for the whole set, then take it only where a read-back says so.
+    
+        The backend orders creations and answers a listing with what it
+        has; it offers no conditional write.  So ownership is never
+        claimed from the echo of the write.  A marker goes on every target
+        as a BID, the whole set is read back, and the bid survives only
+        where no other holder's marker over a requested address was
+        created no later than this one and is still live at the instant
+        the backend stamped this bid.  A bid that survives is then
+        confirmed in place and read back a second time, and only that
+        second read-back makes it a hold.
+    
+        That is what makes a refusal hold nothing without depending on a
+        request the backend may turn down: a bid the read-back refused is
+        never confirmed, so whether or not its retraction lands, no reader
+        will ever answer for it, and it lapses on the bound it declared.
+        """
+        advertised = self._clock() + timedelta(seconds=lease_seconds)
+        nonce = uuid4().hex
+        encoded = addressing.lines(addresses)
+        targets = addressing.targets(addresses)
+    
+        def stated(state: _GrantState) -> str:
+            return self._grant_body(
+                addressing=addressing,
+                holder=holder,
+                nonce=nonce,
+                state=state,
+                lease_seconds=lease_seconds,
+                advertised=advertised,
+                addresses=encoded,
+            )
+    
+        written = {
+            target: await self._write_marker(
+                target=target, body=stated(_GrantState.BID)
+            )
+            for target in targets
+        }
+        markers = await self._markers_on(addressing.kind, targets=targets)
+        mine = self._own(markers, holder=holder, nonce=nonce)
+        if set(mine) != set(written):
+            await self._stand_down(
+                tuple(
+                    _WrittenMarker(
+                        target=target,
+                        comment_key=key,
+                        void_body=stated(_GrantState.VOID),
+                    )
+                    for target, key in written.items()
+                )
+            )
+>           raise TrackerProtocolError(
+                "the grant marker is absent from the log it was written to",
+                tool=_TOOL_LIST_COMMENTS,
+                detail=f"holder={holder!r}; kind={addressing.kind.value}",
+            )
+E           kodezart.core.errors.TrackerProtocolError: the grant marker is absent from the log it was written to (tool: list_comments; holder='d54b3c17319541fe86a741c3dc69b8cb'; kind=lease)
+
+src/kodezart/adapters/linear_mcp_tracker.py:2053: TrackerProtocolError
+=========================== short test summary info ============================
+FAILED tests/tracker/test_lane_escalation.py::test_raise_is_durable_before_later_report_failure_and_replay_is_noop[linear]
+FAILED tests/tracker/test_lane_escalation.py::test_failed_decision_write_propagates_and_retry_completes_same_comment
+FAILED tests/tracker/test_lane_escalation.py::test_valid_question_redaction_is_persisted_as_gated[linear]
+FAILED tests/tracker/test_escalation_record_reader.py::test_actual_gated_writer_round_trips_through_cold_record_reader[linear]
+FAILED tests/tracker/test_idempotent_writes.py::TestCommentUpsert::test_identical_replay_is_byte_identical_and_writes_nothing[linear-mcp]
+FAILED tests/tracker/test_comment_pages.py::test_second_page_match_is_edited_without_creating
+FAILED tests/tracker/test_comment_pages.py::test_duplicate_on_later_page_prevents_any_write
+FAILED tests/tracker/test_comment_pages.py::test_missing_or_repeated_cursor_refuses_before_creation[None]
+FAILED tests/tracker/test_comment_pages.py::test_missing_or_repeated_cursor_refuses_before_creation[next]
+FAILED tests/tracker/test_comment_pages.py::test_page_overlap_does_not_invent_a_duplicate
+10 failed, 195 passed in 18.32s

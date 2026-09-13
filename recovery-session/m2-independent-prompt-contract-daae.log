@@ -1,0 +1,146 @@
+2026-09-13 00:59:17 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-13 00:59:17 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 00:59:17 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 00:59:17 [info     ] outbound_content_gated         categories=[] content_digest=f89d1825e4481064a8b5a1ea1946290f442ebe4ad9e7445547d1046d6df1fd1c failure=None hits=[] surface=tracker verdict=clean visibility=private writer=tracker_description
+2026-09-13 00:59:17 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 00:59:17 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_verify resumed_session_id=None session_id=None
+2026-09-13 00:59:17 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 00:59:18 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_verify resumed_session_id=None session_id=None
+2026-09-13 00:59:18 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 00:59:18 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 00:59:18 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-13 00:59:18 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 00:59:18 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_verify resumed_session_id=None session_id=None
+2026-09-13 00:59:18 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 00:59:18 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 00:59:18 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-13 00:59:18 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 00:59:18 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_criteria_author stop_reason=None subtype=result total_cost_usd=None usage=None
+{
+  "claude-opus": {
+    "sha256": "ad5ea987bf60f1f8f087279cb78d185d1534c0589a137aa7da968ea3aa948412",
+    "advertised_capabilities": " edit the addressed issue's body and create criterion\nchildren. It cannot change graph parentage, blockedBy, relatedTo, priority,\nmilestone, splits or an existing criterion's body. If one of those operations\nis necessary, return the unavailable proposal with its exact capability and\nevidence. A missing write capability is not a human decision; reserve the\nunresolved proposal for a real unruled decision. Never hide structural changes\ninside a body-only proposal or claim that description prose changed the graph.\n\n"
+  },
+  "anthropic_v5": {
+    "sha256": "9d7207c392649d16f0c55231e6d4fe4111b556b220bc86d818ade3fdfd1e1b2d",
+    "advertised_capabilities": " edit the addressed issue's body and create criterion\nchildren. It cannot change graph parentage, blockedBy, relatedTo, priority,\nmilestone, splits or an existing criterion's body. If one of those operations\nis necessary, return the unavailable proposal with its exact capability and\nevidence. A missing write capability is not a human decision; reserve the\nunresolved proposal for a real unruled decision. Never hide structural changes\ninside a body-only proposal or claim that description prose changed the graph.\n\n"
+  },
+  "unavailable_rejections": [
+    {
+      "capability": "parent",
+      "errors": [
+        {
+          "type": "literal_error",
+          "loc": [
+            "unavailable",
+            "capability"
+          ],
+          "msg": "Input should be 'criterion_edit'",
+          "input": "parent",
+          "ctx": {
+            "expected": "'criterion_edit'"
+          },
+          "url": "https://errors.pydantic.dev/2.12/v/literal_error"
+        }
+      ]
+    },
+    {
+      "capability": "blocked_by",
+      "errors": [
+        {
+          "type": "literal_error",
+          "loc": [
+            "unavailable",
+            "capability"
+          ],
+          "msg": "Input should be 'criterion_edit'",
+          "input": "blocked_by",
+          "ctx": {
+            "expected": "'criterion_edit'"
+          },
+          "url": "https://errors.pydantic.dev/2.12/v/literal_error"
+        }
+      ]
+    },
+    {
+      "capability": "related_to",
+      "errors": [
+        {
+          "type": "literal_error",
+          "loc": [
+            "unavailable",
+            "capability"
+          ],
+          "msg": "Input should be 'criterion_edit'",
+          "input": "related_to",
+          "ctx": {
+            "expected": "'criterion_edit'"
+          },
+          "url": "https://errors.pydantic.dev/2.12/v/literal_error"
+        }
+      ]
+    },
+    {
+      "capability": "priority",
+      "errors": [
+        {
+          "type": "literal_error",
+          "loc": [
+            "unavailable",
+            "capability"
+          ],
+          "msg": "Input should be 'criterion_edit'",
+          "input": "priority",
+          "ctx": {
+            "expected": "'criterion_edit'"
+          },
+          "url": "https://errors.pydantic.dev/2.12/v/literal_error"
+        }
+      ]
+    },
+    {
+      "capability": "milestone",
+      "errors": [
+        {
+          "type": "literal_error",
+          "loc": [
+            "unavailable",
+            "capability"
+          ],
+          "msg": "Input should be 'criterion_edit'",
+          "input": "milestone",
+          "ctx": {
+            "expected": "'criterion_edit'"
+          },
+          "url": "https://errors.pydantic.dev/2.12/v/literal_error"
+        }
+      ]
+    },
+    {
+      "capability": "split",
+      "errors": [
+        {
+          "type": "literal_error",
+          "loc": [
+            "unavailable",
+            "capability"
+          ],
+          "msg": "Input should be 'criterion_edit'",
+          "input": "split",
+          "ctx": {
+            "expected": "'criterion_edit'"
+          },
+          "url": "https://errors.pydantic.dev/2.12/v/literal_error"
+        }
+      ]
+    }
+  ],
+  "actual_owner_refusal": "organize write for 'FIX-1' refused: author returned another write surface",
+  "criteria_calls": [
+    {
+      "advertises_body_edit": true,
+      "body_is_in_schema": true
+    }
+  ],
+  "children_created": []
+}

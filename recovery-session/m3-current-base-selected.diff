@@ -1,0 +1,719 @@
+diff --git a/src/kodezart/adapters/linear_mcp_tracker.py b/src/kodezart/adapters/linear_mcp_tracker.py
+index e84b9ba..a58ad83 100644
+--- a/src/kodezart/adapters/linear_mcp_tracker.py
++++ b/src/kodezart/adapters/linear_mcp_tracker.py
+@@ -134,6 +134,7 @@ from kodezart.types.domain.surface import (
+     SurfaceKind,
+     SurfaceLease,
+     WritableSurface,
++    WriteRevalidation,
+ )
+ from kodezart.types.domain.tracker import (
+     INSTATABLE_MAPPING_KINDS,
+@@ -174,8 +175,21 @@ _TOOL_GET_USER = "get_user"
+ _TOOL_LIST_TEAMS = "list_teams"
+ _TOOL_LIST_ISSUE_LABELS = "list_issue_labels"
+ _TOOL_CREATE_ISSUE_LABEL = "create_issue_label"
++_TOOL_LIST_PROJECT_LABELS = "list_project_labels"
++_TOOL_SAVE_PROJECT_LABEL = "save_project_label"
++_TOOL_LIST_INITIATIVE_LABELS = "list_initiative_labels"
++_TOOL_CREATE_INITIATIVE_LABEL = "create_initiative_label"
+ _TOOL_LIST_ISSUE_STATUSES = "list_issue_statuses"
+ 
++#: One configured scope label has a separate native definition per kind.
++#: Project creation uses the connected app's declared save tool with no id;
++#: its availability to the deployment's service credential is unverified.
++_SCOPE_LABEL_CREATORS: Final[dict[str, str]] = {
++    _TOOL_LIST_ISSUE_LABELS: _TOOL_CREATE_ISSUE_LABEL,
++    _TOOL_LIST_PROJECT_LABELS: _TOOL_SAVE_PROJECT_LABEL,
++    _TOOL_LIST_INITIATIVE_LABELS: _TOOL_CREATE_INITIATIVE_LABEL,
++}
++
+ #: The tools that change nothing on the board.  A call the server may have
+ #: performed is made again only if performing it twice is the same as once
+ #: (KOD-305): these are, and every other tool is a write.
+@@ -193,6 +207,8 @@ _READ_TOOLS: Final[frozenset[str]] = frozenset(
+         _TOOL_GET_USER,
+         _TOOL_LIST_TEAMS,
+         _TOOL_LIST_ISSUE_LABELS,
++        _TOOL_LIST_PROJECT_LABELS,
++        _TOOL_LIST_INITIATIVE_LABELS,
+         _TOOL_LIST_ISSUE_STATUSES,
+     },
+ )
+@@ -1607,6 +1623,9 @@ class LinearMcpTracker:
+         unresolved: list[MappingRef] = []
+         divergent: list[str] = []
+         for ref in refs:
++            if ref.kind is MappingKind.SCOPE_LABEL and ref.scope is not None:
++                unresolved.append(ref)
++                continue
+             if ref.kind is MappingKind.WORKFLOW_STATE:
+                 if states_by_team is None:
+                     states_by_team = await self._workflow_states_by_team()
+@@ -1693,6 +1712,11 @@ class LinearMcpTracker:
+         """
+         outcomes: list[MappingOutcome] = []
+         definitions = await self._label_definitions()
++        scope_definitions = (
++            await self._scope_label_definitions(definitions)
++            if any(ref.kind is MappingKind.SCOPE_LABEL for ref in refs)
++            else {}
++        )
+         documents = (
+             await self._document_definitions()
+             if any(ref.kind is MappingKind.DOCUMENT for ref in refs)
+@@ -1707,6 +1731,11 @@ class LinearMcpTracker:
+             if ref.kind is MappingKind.DOCUMENT:
+                 outcomes.append(await self._ensure_document(ref, documents))
+                 continue
++            if ref.kind is MappingKind.SCOPE_LABEL:
++                outcomes.append(
++                    await self._ensure_scope_label(ref, definitions, scope_definitions),
++                )
++                continue
+             identifier = ref.identifier
+             if identifier is None:
+                 raise TrackerEnsureConflictError(
+@@ -1761,6 +1790,70 @@ class LinearMcpTracker:
+             )
+         return tuple(outcomes)
+ 
++    async def _scope_label_definitions(
++        self,
++        issue_definitions: _LabelListings,
++    ) -> dict[str, set[str]]:
++        """Keep native namespaces apart: one label id cannot stand for all."""
++        return {
++            tool: (
++                issue_definitions.workspace
++                if tool == _TOOL_LIST_ISSUE_LABELS
++                else {entry.name for entry in await self._label_entries({}, tool=tool)}
++            )
++            for tool in _SCOPE_LABEL_CREATORS
++        }
++
++    async def _ensure_scope_label(
++        self,
++        ref: MappingRef,
++        issues: _LabelListings,
++        definitions: dict[str, set[str]],
++    ) -> MappingOutcome:
++        """Create missing definitions only; never apply approval to an entity.
++
++        Scope labels are workspace-level, including the issue namespace.
++        A declared team's own copy is refused before any namespace write:
++        preserving it and adding a workspace copy would leave issue writes
++        ambiguous. Undeclared teams remain unobservable, as for queue labels.
++
++        Create replies were not captured by the connected-app measurement.
++        Resolve the name through a fresh listing instead of inventing a
++        write-response schema or treating a successful call as readback.
++        """
++        identifier = ref.identifier
++        if identifier is None or ref.scope is not None:
++            raise TrackerEnsureConflictError(
++                "a scope label requires its configured identifier and workspace scope",
++                entry=ref.describe(),
++            )
++        held = issues.teams_holding(identifier)
++        if held:
++            raise TrackerEnsureConflictError(
++                "a workspace scope label conflicts with an existing team label; "
++                f"found {', '.join(repr(team) for team in held)}",
++                entry=ref.describe(),
++            )
++        action = EnsureAction.ADOPTED
++        for tool, creator in _SCOPE_LABEL_CREATORS.items():
++            names = definitions[tool]
++            if identifier in names:
++                continue
++            await self._call(creator, {"name": identifier})
++            observed = {
++                entry.name for entry in await self._label_entries({}, tool=tool)
++            }
++            if identifier not in observed:
++                raise TrackerProtocolError(
++                    "the created scope label is absent from its namespace readback",
++                    tool=tool,
++                    detail=ref.describe(),
++                )
++            names.clear()
++            names.update(observed)
++            action = EnsureAction.CREATED
++        return MappingOutcome(ref=ref, action=action, identifier=identifier)
++
+     async def _ensure_document(
+         self,
+         ref: MappingRef,
+@@ -1882,11 +1975,30 @@ class LinearMcpTracker:
+     async def _label_entries(
+         self,
+         arguments: Mapping[str, object],
++        *,
++        tool: str = _TOOL_LIST_ISSUE_LABELS,
+     ) -> Sequence[LinearLabelWire]:
+-        """One label listing, scoped by *arguments* or not scoped at all."""
+-        tool = _MAPPING_TOOL_BY_KIND[MappingKind.QUEUE_STATE]
+-        payload = await self._call(tool, arguments)
+-        return self._validate(LinearLabelListWire, payload, tool).labels
++        """Every page of one label namespace, preserving the listing scope."""
++        entries: list[LinearLabelWire] = []
++
++        async def read(
++            request: Mapping[str, object],
++        ) -> tuple[LinearLabelListWire, bool, str | None]:
++            payload = await self._call(tool, request)
++            listing = self._validate(LinearLabelListWire, payload, tool)
++            return listing, listing.has_next_page, listing.cursor
++
++        async for listing in cursor_pages(
++            read,
++            arguments=arguments,
++            refusal=lambda cursor: TrackerProtocolError(
++                "label pagination did not provide a new continuation cursor",
++                tool=tool,
++                detail=f"cursor={cursor!r}",
++            ),
++        ):
++            entries.extend(listing.labels)
++        return entries
+ 
+     async def _team_listing(self) -> Sequence[LinearTeamWire]:
+         """Every team the workspace holds, with the UUID it is addressed by."""
+@@ -1958,6 +2070,13 @@ class LinearMcpTracker:
+                 return frozenset(await self._document_definitions())
+             case MappingKind.QUEUE_STATE | MappingKind.ISSUE_LABEL:
+                 return (await self._label_definitions()).names()
++            case MappingKind.SCOPE_LABEL:
++                issues = await self._label_definitions()
++                definitions = await self._scope_label_definitions(issues)
++                shared = set.intersection(*definitions.values())
++                return frozenset(
++                    name for name in shared if not issues.teams_holding(name)
++                )
+             case MappingKind.USER:
+                 return frozenset(
+                     identity
+@@ -3027,17 +3146,25 @@ class LinearMcpTracker:
+         return await self._caller.call_tool(name=tool, arguments=arguments)
+ 
+     async def _retry_call[ResultT](
+-        self, tool: str, invoke: Callable[[], Awaitable[ResultT]]
++        self,
++        tool: str,
++        invoke: Callable[[], Awaitable[ResultT]],
++        *,
++        revalidate: WriteRevalidation | None = None,
+     ) -> ResultT:
+         """Use the existing policy around one complete, safe-to-repeat attempt.
+ 
+         Protected mutations include their fresh preconditions in ``invoke``.
++        A caller's source authorization is revalidated before each attempt;
++        it does not replace the adapter's identity, snapshot or grant checks.
+         They end at the write receipt; subsequent awaited readback belongs
+         outside this scope so a read failure cannot resend a completed write.
+         """
+         attempt = 0
+         while True:
+             try:
++                if revalidate is not None:
++                    await revalidate()
+                 return await invoke()
+             except McpCredentialRefusedError as exc:
+                 # Named once and raised, never retried: the refusal is the
+@@ -3425,13 +3552,16 @@ class LinearMcpTracker:
+         expected: tuple[IssueGraphSnapshot, ...],
+         changes: tuple[GraphChange, ...],
+         holder: str,
++        revalidate: WriteRevalidation | None = None,
+     ) -> TrackerIssue:
+         async def attempt() -> tuple[TrackerIssue, ...]:
+             return await self._update_issue_graph_once(
+                 issue_key=issue_key, expected=expected, changes=changes, holder=holder
+             )
+ 
+-        written = await self._retry_call(_TOOL_SAVE_ISSUE, attempt)
++        written = await self._retry_call(
++            _TOOL_SAVE_ISSUE, attempt, revalidate=revalidate
++        )
+         # A completed save must never be retried because a later read cannot answer.
+         for expected_issue in written:
+             observed = await self.read_issue(issue_key=expected_issue.issue_key)
+@@ -3580,6 +3710,7 @@ class LinearMcpTracker:
+         body: str,
+         holder: str,
+         expected: tuple[IssueGraphSnapshot, ...],
++        revalidate: WriteRevalidation | None = None,
+     ) -> TrackerIssue:
+         if not all(
+             value.strip() for value in (source_key, deliverable_key, title, body)
+@@ -3602,7 +3733,9 @@ class LinearMcpTracker:
+                 expected=expected,
+             )
+ 
+-        written = await self._retry_call(_TOOL_SAVE_ISSUE, attempt)
++        written = await self._retry_call(
++            _TOOL_SAVE_ISSUE, attempt, revalidate=revalidate
++        )
+         if isinstance(written, TrackerIssue):
+             return written
+         created, source, content = written.saved, written.source, written.content
+@@ -3722,7 +3855,14 @@ class LinearMcpTracker:
+         return unstarted[0]
+ 
+     async def create_criterion_if_absent(
+-        self, *, parent_key: str, title: str, check: str, do: str, holder: str
++        self,
++        *,
++        parent_key: str,
++        title: str,
++        check: str,
++        do: str,
++        holder: str,
++        revalidate: WriteRevalidation | None = None,
+     ) -> TrackerIssue:
+         body = criterion_body(parent_key=parent_key, check=check, do=do)
+         if not title.strip():
+@@ -3774,7 +3914,9 @@ class LinearMcpTracker:
+             )
+             return _CriterionCreation(saved=created)
+ 
+-        written = await self._retry_call(_TOOL_SAVE_ISSUE, attempt)
++        written = await self._retry_call(
++            _TOOL_SAVE_ISSUE, attempt, revalidate=revalidate
++        )
+         if isinstance(written, TrackerIssue):
+             return written
+         created = written.saved
+@@ -3942,7 +4084,9 @@ class LinearMcpTracker:
+                 self._saved_issue(payload, written={"description": body})
+                 return DescriptionEditResult.EDITED
+ 
+-            return await self._retry_call(_TOOL_SAVE_ISSUE, attempt)
++            return await self._retry_call(
++                _TOOL_SAVE_ISSUE, attempt, revalidate=authorization.revalidate
++            )
+         current = await self.read_issue(issue_key=target)
+         body = description_replacement(
+             target=target, body=current.body, expected=expected, replacement=replacement
+diff --git a/tests/fakes.py b/tests/fakes.py
+index 18fa5d6..e38d35c 100644
+--- a/tests/fakes.py
++++ b/tests/fakes.py
+@@ -146,6 +146,7 @@ from kodezart.types.domain.surface import (
+     SurfaceKind,
+     SurfaceLease,
+     WritableSurface,
++    WriteRevalidation,
+ )
+ from kodezart.types.domain.ticket_review import TicketApproval, TicketReviewMode
+ from kodezart.types.domain.tracker import (
+@@ -2464,6 +2465,9 @@ class FakeLinearMcpServer:
+         users: Sequence[str] = (),
+         teams: Sequence[str] = (),
+         labels: Sequence[str] = (),
++        project_labels: Sequence[str] = (),
++        initiative_labels: Sequence[str] = (),
++        label_page_size: int | None = None,
+         team_labels: Mapping[str, Sequence[str]] | None = None,
+         statuses: Mapping[str, Sequence[str]] | None = None,
+         state_types: Mapping[str, str] | None = None,
+@@ -2490,6 +2494,9 @@ class FakeLinearMcpServer:
+         #: name is unique per CONTAINER and not per workspace: two boards
+         #: routinely carry their own copy of one queue member (KOD-167).
+         self.labels: list[str] = list(labels)
++        self.project_labels: list[str] = list(project_labels)
++        self.initiative_labels: list[str] = list(initiative_labels)
++        self.label_page_size = label_page_size
+         self.team_labels: dict[str, list[str]] = {
+             container: list(names) for container, names in (team_labels or {}).items()
+         }
+@@ -2948,7 +2955,75 @@ class FakeLinearMcpServer:
+                 self._label_entry(name, container)
+                 for name in self.team_labels.get(container, [])
+             )
+-        return {"labels": entries, "hasNextPage": False}
++        return self._label_page(entries, arguments)
++
++    def _label_page(
++        self,
++        entries: Sequence[Mapping[str, object]],
++        arguments: Mapping[str, object],
++    ) -> Mapping[str, object]:
++        """Synthetic continuation pages under the declared list contract."""
++        name = arguments.get("name")
++        selected = [entry for entry in entries if name is None or entry["name"] == name]
++        start = int(str(arguments.get("cursor", 0)))
++        size = self.label_page_size
++        limit = arguments.get("limit")
++        if isinstance(limit, int):
++            size = limit if size is None else min(size, limit)
++        end = len(selected) if size is None else start + size
++        more = end < len(selected)
++        result: dict[str, object] = {
++            "labels": selected[start:end],
++            "hasNextPage": more,
++        }
++        if more:
++            result["cursor"] = str(end)
++        return result
++
++    def _tool_list_project_labels(
++        self,
++        arguments: Mapping[str, object],
++    ) -> Mapping[str, object]:
++        return self._label_page(
++            [self._label_entry(name, "project") for name in self.project_labels],
++            arguments,
++        )
++
++    def _tool_list_initiative_labels(
++        self,
++        arguments: Mapping[str, object],
++    ) -> Mapping[str, object]:
++        return self._label_page(
++            [self._label_entry(name, "initiative") for name in self.initiative_labels],
++            arguments,
++        )
++
++    def _tool_save_project_label(
++        self,
++        arguments: Mapping[str, object],
++    ) -> Mapping[str, object]:
++        """Creation only: the adapter has no reason to update a definition."""
++        if "id" in arguments:
++            msg = "scope mapping must preserve existing project label definitions"
++            raise AssertionError(msg)
++        name = str(arguments["name"])
++        if name in self.project_labels:
++            msg = f"fake project label namespace already carries {name!r}"
++            raise LookupError(msg)
++        self.project_labels.append(name)
++        # Deliberately no guessed create response; the adapter must re-list.
++        return {}
++
++    def _tool_create_initiative_label(
++        self,
++        arguments: Mapping[str, object],
++    ) -> Mapping[str, object]:
++        name = str(arguments["name"])
++        if name in self.initiative_labels:
++            msg = f"fake initiative label namespace already carries {name!r}"
++            raise LookupError(msg)
++        self.initiative_labels.append(name)
++        return {}
+ 
+     def _label_entry(self, name: str, container: str | None) -> Mapping[str, object]:
+         """One label entry, its id distinct per CONTAINER rather than per name.
+@@ -3149,6 +3224,7 @@ class FakeTrackerPort:
+         documents: Mapping[str, str] | None = None,
+         document_titles: Mapping[str, str] | None = None,
+         known_identifiers: Sequence[str] = (),
++        scope_label_identifiers: Sequence[str] = (),
+         recorded_work_refs: Mapping[str, Sequence[WorkRef]] | None = None,
+         recorded_base_specs: Mapping[str, BaseSpec] | None = None,
+         recorded_repositories: Mapping[str, str] | None = None,
+@@ -3240,6 +3316,8 @@ class FakeTrackerPort:
+         #: one of them would leave the other untestable.
+         self.document_titles: dict[str, str] = dict(document_titles or {})
+         self.known_identifiers: set[str] = set(known_identifiers)
++        #: Scope definitions must exist in all native namespaces.
++        self.scope_label_identifiers: set[str] = set(scope_label_identifiers)
+         #: Every container each INSTATED value is defined in, ``None`` being
+         #: the workspace itself.  A SET per value, because one name is
+         #: defined once per container and a two-board operation carries its
+@@ -3247,7 +3325,8 @@ class FakeTrackerPort:
+         #: knows about is workspace-level, which is what a listing carrying
+         #: no container field reports.
+         self.mapping_containers: dict[str, set[str | None]] = {
+-            identifier: {None} for identifier in self.known_identifiers
++            identifier: {None}
++            for identifier in self.known_identifiers | self.scope_label_identifiers
+         }
+         self._clock: Callable[[], datetime] = clock
+         self._sequence: int = 0
+@@ -3642,9 +3721,23 @@ class FakeTrackerPort:
+         refs: Sequence[MappingRef],
+     ) -> Sequence[MappingRef]:
+         await asyncio.sleep(0)
+-        return tuple(
+-            ref for ref in refs if ref.identifier not in self.known_identifiers
+-        )
++        unresolved: list[MappingRef] = []
++        for ref in refs:
++            if ref.kind is MappingKind.SCOPE_LABEL:
++                identifier = ref.identifier
++                if (
++                    identifier is None
++                    or identifier not in self.scope_label_identifiers
++                    or ref.scope is not None
++                    or any(
++                        container is not None
++                        for container in self.mapping_containers.get(identifier, set())
++                    )
++                ):
++                    unresolved.append(ref)
++            elif ref.identifier not in self.known_identifiers:
++                unresolved.append(ref)
++        return tuple(unresolved)
+ 
+     async def ensure_mappings(
+         self,
+@@ -3671,6 +3764,9 @@ class FakeTrackerPort:
+             if ref.kind is MappingKind.DOCUMENT:
+                 outcomes.append(self._ensure_document(ref))
+                 continue
++            if ref.kind is MappingKind.SCOPE_LABEL:
++                outcomes.append(self._ensure_scope_label(ref))
++                continue
+             identifier = ref.identifier
+             if identifier is None:
+                 raise TrackerEnsureConflictError(
+@@ -3716,6 +3812,34 @@ class FakeTrackerPort:
+             )
+         return tuple(outcomes)
+ 
++    def _ensure_scope_label(self, ref: MappingRef) -> MappingOutcome:
++        identifier = ref.identifier
++        if identifier is None or ref.scope is not None:
++            raise TrackerEnsureConflictError(
++                "a scope label requires its configured identifier and workspace scope",
++                entry=ref.describe(),
++            )
++        held = sorted(
++            repr(container)
++            for container in self.mapping_containers.get(identifier, set())
++            if container is not None
++        )
++        if held:
++            raise TrackerEnsureConflictError(
++                "a workspace scope label conflicts with an existing team label; "
++                f"found {', '.join(held)}",
++                entry=ref.describe(),
++            )
++        action = (
++            EnsureAction.ADOPTED
++            if identifier in self.scope_label_identifiers
++            else EnsureAction.CREATED
++        )
++        self.scope_label_identifiers.add(identifier)
++        self.known_identifiers.add(identifier)
++        self.mapping_containers.setdefault(identifier, set()).add(None)
++        return MappingOutcome(ref=ref, action=action, identifier=identifier)
++
+     def _ensure_document(self, ref: MappingRef) -> MappingOutcome:
+         """The document arm of the ensure contract, held identically here.
+ 
+@@ -4110,7 +4234,10 @@ class FakeTrackerPort:
+         expected: tuple[IssueGraphSnapshot, ...],
+         changes: tuple[GraphChange, ...],
+         holder: str,
++        revalidate: WriteRevalidation | None = None,
+     ) -> TrackerIssue:
++        if revalidate is not None:
++            await revalidate()
+         current = tuple(
+             [await self.read_issue(issue_key=row.issue_key) for row in expected]
+         )
+@@ -4187,7 +4314,10 @@ class FakeTrackerPort:
+         body: str,
+         holder: str,
+         expected: tuple[IssueGraphSnapshot, ...],
++        revalidate: WriteRevalidation | None = None,
+     ) -> TrackerIssue:
++        if revalidate is not None:
++            await revalidate()
+         identity = IssueIdentity(
+             scope_key=ScopeRef(kind=ScopeKind.ISSUE, key=source_key),
+             deliverable_key=deliverable_key,
+@@ -4237,8 +4367,17 @@ class FakeTrackerPort:
+         return child
+ 
+     async def create_criterion_if_absent(
+-        self, *, parent_key: str, title: str, check: str, do: str, holder: str
++        self,
++        *,
++        parent_key: str,
++        title: str,
++        check: str,
++        do: str,
++        holder: str,
++        revalidate: WriteRevalidation | None = None,
+     ) -> TrackerIssue:
++        if revalidate is not None:
++            await revalidate()
+         body = criterion_body(parent_key=parent_key, check=check, do=do)
+         children = await self.read_criteria(issue_key=parent_key)
+         existing = existing_criterion(
+@@ -4330,6 +4469,8 @@ class FakeTrackerPort:
+         replacement: str,
+         authorization: DescriptionWriteAuthority | None = None,
+     ) -> DescriptionEditResult:
++        if authorization is not None and authorization.revalidate is not None:
++            await authorization.revalidate()
+         if authorization is not None and authorization.surface.ref.key != target:
+             raise ValueError("description authority addresses another target")
+         current = await self.read_issue(issue_key=target)
+diff --git a/tests/tracker/test_linear_tool_roster.py b/tests/tracker/test_linear_tool_roster.py
+index 61c0ca9..c65de2f 100644
+--- a/tests/tracker/test_linear_tool_roster.py
++++ b/tests/tracker/test_linear_tool_roster.py
+@@ -1,4 +1,4 @@
+-"""Nothing under ``src/`` calls a tool the live server does not have (KOD-144).
++"""Every tracker tool has a measured public declaration (KOD-144, KOD-379).
+ 
+ The roster below is the vendor server's whole advertised tool list, probed
+ on 2026-08-25 with the operation's own credential: sixty names, and
+@@ -12,11 +12,18 @@ A green suite over a fake is exactly what let a dead tool call ship, so
+ this module asserts against the roster rather than against any double.
+ The roster is a capture: it changes when the server does, and only a fresh
+ probe may change it.
++
++The separately attributed September connected-app label declarations
++extend the known contract. They do not prove that the operation's service
++credential can call the newer project-label creator. The August capture
++below stays unchanged; deployment compatibility remains unverified.
+ """
+ 
+ import re
+ from pathlib import Path
+ 
++from tests.tracker.connected_app_label_contract import CONNECTED_APP_LABEL_TOOLS
++
+ #: Every tool the live server advertises. Measured, not documented.
+ LIVE_TOOL_ROSTER: frozenset[str] = frozenset(
+     {
+@@ -120,13 +127,14 @@ def test_the_server_offers_no_issue_history_tool() -> None:
+ KNOWLEDGE_TOOL_MODULES = frozenset({"notion_record_sink.py"})
+ 
+ 
+-def test_every_tracker_tool_this_process_names_exists_on_the_server() -> None:
++def test_every_tracker_tool_has_a_measured_public_declaration() -> None:
+     named = named_tools()
+     assert named, "no _TOOL_* constant was found under src/"
+     absent = {
+         tool: module
+         for tool, module in named.items()
+-        if module not in KNOWLEDGE_TOOL_MODULES and tool not in LIVE_TOOL_ROSTER
++        if module not in KNOWLEDGE_TOOL_MODULES
++        and tool not in LIVE_TOOL_ROSTER | CONNECTED_APP_LABEL_TOOLS
+     }
+     assert absent == {}
+ 
+diff --git a/tests/tracker/test_milestone_approval.py b/tests/tracker/test_milestone_approval.py
+index e2accab..2e779df 100644
+--- a/tests/tracker/test_milestone_approval.py
++++ b/tests/tracker/test_milestone_approval.py
+@@ -3,17 +3,40 @@
+ import pytest
+ 
+ from kodezart.domain.errors import ScopeReadError
++from kodezart.services.scope_resolution import resolve_scope
+ from kodezart.types.domain.operation import ScopeLabel
+ from tests.tracker.test_scope_approval import (
+     APPROVAL_LABELS,
++    PARENT,
+     ApprovalFixture,
+     approval,
+ )
+-from tests.tracker.test_scope_reads import MILESTONE, PROJECT, ROOT
++from tests.tracker.test_scope_reads import MILESTONE, PROJECT, ROOT, _container
+ 
+ __all__ = ["approval"]
+ 
+ 
++async def test_actual_milestone_scope_uses_current_project_approval(
++    approval: ApprovalFixture,
++) -> None:
++    approval.fake.scope_containers[MILESTONE] = _container(MILESTONE, PROJECT)
++    approval.fake.scope_memberships[MILESTONE] = (ROOT.key, PARENT.key)
++    resolved = await resolve_scope(ref=MILESTONE, tracker=approval.tracker)
++    assert resolved.ref == MILESTONE
++    assert {issue.issue_key for issue in resolved.issues} == {ROOT.key, PARENT.key}
++
++    approval.server.calls.clear()
++    for expected in (False, True, False):
++        approval.labels(PROJECT, *([ScopeLabel.APPROVED] if expected else []))
++        for issue in resolved.issues:
++            assert (
++                await approval.tracker.execution_approved(issue_key=issue.issue_key)
++                is expected
++            )
++    assert all("milestone" not in tool for tool, _ in approval.server.calls)
++    assert not approval.fake.issue_writes
++
++
+ async def test_a_milestone_label_cannot_approve_its_project_or_members(
+     approval: ApprovalFixture,
+ ) -> None:
+diff --git a/tests/tracker/test_native_approval_aliases.py b/tests/tracker/test_native_approval_aliases.py
+index 2984997..dc56715 100644
+--- a/tests/tracker/test_native_approval_aliases.py
++++ b/tests/tracker/test_native_approval_aliases.py
+@@ -1,10 +1,9 @@
+-"""Actual approval and spec entry normalize only a reported native UUID."""
++"""Actual approval reads normalize only a reported native UUID."""
+ 
+ import pytest
+ 
+ from kodezart.domain.errors import ScopeReadError
+ from tests.fakes import FakeLinearMcpServer, FakeMcpIssue
+-from tests.tracker.conftest import FIRE_ENTRY_LABELS
+ from tests.tracker.test_linear_mcp_tracker import tracker_over
+ 
+ NATIVE_UUID = "00000000-0000-4000-8000-000000000073"
+@@ -15,7 +14,7 @@ class ApprovalAliasServer(FakeLinearMcpServer):
+     def __init__(self, *, reported_uuid):
+         super().__init__(
+             issues=[
+-                FakeMcpIssue(id="ROOT-1", labels=list(FIRE_ENTRY_LABELS)),
++                FakeMcpIssue(id="ROOT-1", labels=["execution-consent"]),
+                 FakeMcpIssue(
+                     id="CHECK-1",
+                     parent_id="ROOT-1",
+@@ -39,20 +38,11 @@ class ApprovalAliasServer(FakeLinearMcpServer):
+         return payload
+ 
+ 
+-@pytest.mark.parametrize("entry", ["approval"])
+ @pytest.mark.parametrize("requested", ["ROOT-1", NATIVE_UUID])
+-async def test_actual_entry_preserves_reported_alias_with_one_subject_read(
+-    entry, requested
+-):
++async def test_actual_entry_preserves_reported_alias_with_one_subject_read(requested):
+     server = ApprovalAliasServer(reported_uuid=NATIVE_UUID)
+-    tracker = tracker_over(server)
+-    if entry == "approval":
+-        assert await tracker.execution_approved(issue_key=requested) is True
+-    else:
+-        spec = await tracker.read_fire_spec(issue_key=requested)
+-        assert spec.subject == "ROOT-1"
+-        assert spec.criteria == ("CHECK-1",)
+-        assert server.tool_calls("list_issues")[0]["parentId"] == "ROOT-1"
++    tracker = tracker_over(server, scope_labels={"approved": "execution-consent"})
++    assert await tracker.execution_approved(issue_key=requested) is True
+     assert [
+         call
+         for call in server.tool_calls("get_issue")
+@@ -61,17 +51,11 @@ async def test_actual_entry_preserves_reported_alias_with_one_subject_read(
+     assert server.tool_calls("save_issue") == []
+ 
+ 
+-@pytest.mark.parametrize("entry", ["approval"])
+ @pytest.mark.parametrize("reported_uuid", [None, OTHER_UUID])
+-async def test_actual_entry_refuses_foreign_subject_before_membership(
+-    entry, reported_uuid
+-):
++async def test_actual_entry_refuses_foreign_subject_before_membership(reported_uuid):
+     server = ApprovalAliasServer(reported_uuid=reported_uuid)
+-    tracker = tracker_over(server)
++    tracker = tracker_over(server, scope_labels={"approved": "execution-consent"})
+     with pytest.raises(ScopeReadError):
+-        if entry == "approval":
+-            await tracker.execution_approved(issue_key=NATIVE_UUID)
+-        else:
+-            await tracker.read_fire_spec(issue_key=NATIVE_UUID)
++        await tracker.execution_approved(issue_key=NATIVE_UUID)
+     assert server.tool_calls("list_issues") == []
+     assert server.tool_calls("save_issue") == []

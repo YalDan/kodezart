@@ -1,0 +1,9 @@
+{
+  "donor": "36083f83f42c03240ebb5861fe284da2c9f04180",
+  "symbols_ast_identical": {
+    "LaneEscalation": true,
+    "LaneEscalationWriter": true,
+    "classification_surface": true,
+    "set_issue_classification": true
+  }
+}

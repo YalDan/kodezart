@@ -1,0 +1,192 @@
+E501 Line too long (216 > 88)
+  --> tests/domain/test_escalation_ageing.py:66:89
+   |
+64 | …
+65 | …
+66 | …olutionState.RESOLVED if resolved else EscalationResolutionState.UNRESOLVED, decision_ref="comment/decision" if resolved else None)),
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+67 | …
+68 | …
+   |
+
+E501 Line too long (93 > 88)
+  --> tests/domain/test_escalation_ageing.py:74:89
+   |
+72 |         ),
+73 |         AlarmReading(
+74 |             source_ref="record/walker#ticks-since-question", value=CountEvidence(value=ticks)
+   |                                                                                         ^^^^^
+75 |         ),
+76 |         AlarmReading(source_ref=COMMIT_FIELD, value=CountEvidence(value=max_commits)),
+   |
+
+E501 Line too long (107 > 88)
+  --> tests/domain/test_mandate_graph.py:63:89
+   |
+61 | ) -> tuple[AlarmReading, ...]:
+62 |     return (
+63 |         reading(RulingsEvidence(value=LaneRulingSnapshot.model_validate(ruling_snapshot(baseline or [])))),
+   |                                                                                         ^^^^^^^^^^^^^^^^^^^
+64 |         reading(RulingsEvidence(value=LaneRulingSnapshot.model_validate(ruling_snapshot(rows if rows is not None else [ruling("a"), ru…
+65 |         reading(ReferencesEvidence(value=("criterion/open",))),
+   |
+
+E501 Line too long (149 > 88)
+  --> tests/domain/test_mandate_graph.py:64:89
+   |
+62 | …
+63 | …shot.model_validate(ruling_snapshot(baseline or [])))),
+64 | …shot.model_validate(ruling_snapshot(rows if rows is not None else [ruling("a"), ruling("b")])))),
+   |                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+65 | …/open",))),
+66 | …
+   |
+
+E501 Line too long (143 > 88)
+   --> tests/domain/test_mandate_graph.py:195:89
+    |
+193 | …
+194 | …
+195 | …RulingSnapshot.model_validate({"laneKey": "lane", "issueKeys": ["FIRE"], "rulings": [row]})))
+    |                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+196 | …
+197 | …
+    |
+
+E501 Line too long (184 > 88)
+  --> tests/domain/test_record_consistency.py:81:89
+   |
+79 | …
+80 | …
+81 | …e=head), CountEvidence(value=count), CommitsEvidence(value=tuple(LaneCommit.model_validate(row) for row in rows)))
+   |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+82 | …
+   |
+
+E501 Line too long (99 > 88)
+   --> tests/domain/test_record_superseded.py:116:89
+    |
+114 |     original = readings()
+115 |     assert observe(original) is not None
+116 |     reversed_history = replace(original, 2, value=ReferencesEvidence(value=tuple(reversed(ORDER))))
+    |                                                                                         ^^^^^^^^^^^
+117 |     assert observe(reversed_history) is None
+    |
+
+E501 Line too long (113 > 88)
+   --> tests/domain/test_record_superseded.py:129:89
+    |
+127 |         original,
+128 |         1,
+129 |         value=LaneFieldEvidence(value=LaneFieldValue(value=value, field_key="quality_gate", lane_key="lane/42")),
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^
+130 |     )
+131 |     assert observe(altered) is None
+    |
+
+E501 Line too long (108 > 88)
+   --> tests/domain/test_record_superseded.py:153:89
+    |
+151 |     body = assertion("red" if slot == 0 else "green", **changes)
+152 |     with pytest.raises(RunShapeReadError):
+153 |         observe(replace(original, slot, value=LaneFieldEvidence(value=LaneFieldValue.model_validate(body))))
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^
+    |
+
+E501 Line too long (107 > 88)
+   --> tests/domain/test_record_superseded.py:233:89
+    |
+231 | def test_assertion_projection_is_closed_and_carries_explicit_string_values(body):
+232 |     with pytest.raises(RunShapeReadError):
+233 |         observe(replace(readings(), 1, value=LaneFieldEvidence(value=LaneFieldValue.model_validate(body))))
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^
+    |
+
+E501 Line too long (91 > 88)
+  --> tests/domain/test_scope_tally.py:36:89
+   |
+34 |     return (
+35 |         reading(TICKET_MARKER_SOURCE, TextEvidence(value="issue_labels.body-ready")),
+36 |         reading(CRITERIA_MARKER_SOURCE, TextEvidence(value="issue_labels.criteria-ready")),
+   |                                                                                         ^^^
+37 |         AlarmReading(source_ref=SCOPE.key, value=ScopeEvidence(value=SCOPE)),
+38 |         reading(SCOPE.key, ReferencesEvidence(value=roster)),
+   |
+
+E501 Line too long (120 > 88)
+  --> tests/domain/test_scope_tally.py:39:89
+   |
+37 |         AlarmReading(source_ref=SCOPE.key, value=ScopeEvidence(value=SCOPE)),
+38 |         reading(SCOPE.key, ReferencesEvidence(value=roster)),
+39 |         *(reading(key, LabelsEvidence(value=None if value is None else tuple(value))) for key, value in labels.items()),
+   |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+40 |     )
+   |
+
+E501 Line too long (91 > 88)
+   --> tests/domain/test_scope_tally.py:127:89
+    |
+125 |         values[0] = reading("elsewhere", TextEvidence(value="issue_labels.body-ready"))
+126 |     elif damage == "wrong-next-source":
+127 |         values[1] = reading("elsewhere", TextEvidence(value="issue_labels.criteria-ready"))
+    |                                                                                         ^^^
+128 |     elif damage == "wrong-scope-source":
+129 |         values[2] = values[2].model_copy(update={"source_ref": "elsewhere"})
+    |
+
+E501 Line too long (108 > 88)
+   --> tests/domain/test_scope_tally.py:133:89
+    |
+131 |         values[3] = reading("elsewhere", ReferencesEvidence(value=("one", "two")))
+132 |     elif damage == "wrong-scope-key":
+133 |         values[2] = reading(SCOPE.key, ScopeEvidence(value=ScopeRef(kind=ScopeKind.PROJECT, key="foreign")))
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^
+134 |     elif damage == "duplicate-roster":
+135 |         values[3] = reading(SCOPE.key, ReferencesEvidence(value=("one", "two", "one")))
+    |
+
+E501 Line too long (98 > 88)
+   --> tests/domain/test_scope_tally.py:141:89
+    |
+139 |         values.append(values[4])
+140 |     elif damage == "malformed-member":
+141 |         values[4] = AlarmReading(source_ref="one", value=TextEvidence(value="wrong evidence arm"))
+    |                                                                                         ^^^^^^^^^^
+142 |     elif damage == "string-members":
+143 |         values[3] = reading(SCOPE.key, TextEvidence(value="one"))
+    |
+
+E501 Line too long (98 > 88)
+   --> tests/domain/test_scope_tally.py:147:89
+    |
+145 |         values[3] = reading(SCOPE.key, TextEvidence(value="wrong evidence arm"))
+146 |     elif damage == "same-marker":
+147 |         values[1] = reading(CRITERIA_MARKER_SOURCE, TextEvidence(value="issue_labels.body-ready"))
+    |                                                                                         ^^^^^^^^^^
+148 |     elif damage == "scope-marker":
+149 |         values[0] = reading(TICKET_MARKER_SOURCE, TextEvidence(value="scope_labels.approved"))
+    |
+
+E501 Line too long (94 > 88)
+   --> tests/domain/test_scope_tally.py:149:89
+    |
+147 |         values[1] = reading(CRITERIA_MARKER_SOURCE, TextEvidence(value="issue_labels.body-ready"))
+148 |     elif damage == "scope-marker":
+149 |         values[0] = reading(TICKET_MARKER_SOURCE, TextEvidence(value="scope_labels.approved"))
+    |                                                                                         ^^^^^^
+150 |     elif damage == "malformed-marker":
+151 |         values[0] = reading(TICKET_MARKER_SOURCE, LabelsEvidence(value=()))
+    |
+
+E501 Line too long (92 > 88)
+   --> tests/domain/test_scope_tally.py:171:89
+    |
+169 |     values = list(inputs())
+170 |     values[0] = reading(GROOM_MARKER_SOURCE, TextEvidence(value="issue_labels.groomed"))
+171 |     values[1] = reading(TICKET_MARKER_SOURCE, TextEvidence(value="issue_labels.body-ready"))
+    |                                                                                         ^^^^
+172 |     values[4] = reading("one", LabelsEvidence(value=("body-ready",)))
+173 |     alarm = observe(tuple(values))
+    |
+
+Found 40 errors (22 fixed, 18 remaining).

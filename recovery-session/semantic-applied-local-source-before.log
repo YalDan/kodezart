@@ -1,0 +1,57 @@
+Using CPython 3.12.13
+Creating virtual environment at: .venv
+   Building kodezart @ file:///private/tmp/kodezart-v03-recovery-semantic-local-source-before
+warning: `build_system.requires = ["uv-build>=0.10.9,<0.11.0"]` does not contain the current uv version 0.11.6
+      Built kodezart @ file:///private/tmp/kodezart-v03-recovery-semantic-local-source-before
+Installed 174 packages in 1.52s
+F                                                                        [100%]
+=================================== FAILURES ===================================
+______ test_path_only_native_amendment_uses_real_separate_base_worktrees _______
+
+repository = (PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1842/test_path_only_native_amendmen0/repo'), '3b4c287d51003a524c78343dc8c8f272cc1a86c7')
+
+    async def test_path_only_native_amendment_uses_real_separate_base_worktrees(repository):
+        executor = Executor(reproduced=True)
+>       service, guard, workspace, _ = await build(repository, executor, repo_url=None)
+                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/services/test_applied_native_amendments.py:28: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/services/test_native_amendments.py:214: in build
+    guard = owner.for_writer(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.services.native_amendments.NativeAmendments object at 0x10ed7a2d0>
+
+    def for_writer(
+        self,
+        *,
+        spec: TrackerSpec,
+        criteria: TrackerCriterionSet,
+        base_ref: str,
+        repo_url: str | None,
+        holder: str | None,
+        visibility: RepoVisibility,
+        stage: PromptKey,
+    ) -> NativeWriteGuard:
+        """Create a runtime guard; no service or tracker enters graph state."""
+        if stage not in NATIVE_WRITING_STAGES:
+            raise NativeWriteRefusalError(
+                "The native writing stage has no amendment gate registration"
+            )
+        if holder is None or not holder.strip():
+            raise NativeWriteRefusalError(
+                "Native writing requires the actual parent job holder"
+            )
+        if repo_url is None:
+>           raise NativeWriteRefusalError(
+                "Native amendment verification requires the actual repository"
+            )
+E           kodezart.domain.amendment.NativeWriteRefusalError: Native amendment verification requires the actual repository
+
+src/kodezart/services/native_amendments.py:142: NativeWriteRefusalError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 20:13:11 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+=========================== short test summary info ============================
+FAILED tests/services/test_applied_native_amendments.py::test_path_only_native_amendment_uses_real_separate_base_worktrees
+1 failed, 14 deselected in 3.90s

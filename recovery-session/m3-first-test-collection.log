@@ -1,0 +1,31 @@
+ImportError while loading conftest '/private/tmp/kodezart-v03-m3-plan-walk/tests/conftest.py'.
+tests/conftest.py:9: in <module>
+    from kodezart.adapters.git_branch_merger import GitBranchMerger
+src/kodezart/adapters/git_branch_merger.py:7: in <module>
+    from kodezart.core.logging import BoundLogger, get_logger
+src/kodezart/core/logging.py:12: in <module>
+    from kodezart.core.protocols import LogEmitter
+src/kodezart/core/protocols.py:6: in <module>
+    from kodezart.core.prompt_rendering import PromptTemplate
+src/kodezart/core/prompt_rendering.py:21: in <module>
+    from kodezart.core.errors import PromptRenderError
+src/kodezart/core/errors.py:7: in <module>
+    from kodezart.domain.errors import TransientAPIError
+src/kodezart/domain/errors.py:6: in <module>
+    from kodezart.types.domain.organize_owner import OrganizeReport
+src/kodezart/types/domain/organize_owner.py:9: in <module>
+    from kodezart.types.domain.audit import AuditVerdict
+src/kodezart/types/domain/audit.py:8: in <module>
+    from kodezart.types.domain.surface import WritableSurface
+src/kodezart/types/domain/surface.py:7: in <module>
+    from kodezart.types.domain.scope import ScopeKind, ScopeRef
+src/kodezart/types/domain/scope.py:12: in <module>
+    from kodezart.types.domain.tracker import TrackerIssue
+src/kodezart/types/domain/tracker.py:22: in <module>
+    from kodezart.types.domain.operation import OperationConfig, QueueState
+src/kodezart/types/domain/operation.py:439: in <module>
+    class OperationConfig(OperationModel):
+src/kodezart/types/domain/operation.py:472: in OperationConfig
+    initiatives: list[Initiative] = Field(default_factory=list)
+                      ^^^^^^^^^^
+E   NameError: name 'Initiative' is not defined

@@ -1,0 +1,525 @@
+E501 Line too long (91 > 88)
+   --> src/kodezart/composition/engine.py:213:89
+    |
+211 |                 repositories=repositories,
+212 |             )
+213 |             if scope_tracker is not None and operation is not None and criteria is not None
+    |                                                                                         ^^^
+214 |             else None
+215 |         ),
+    |
+
+E501 Line too long (89 > 88)
+   --> src/kodezart/services/agent_service.py:238:89
+    |
+236 |             if native_guard is not None:
+237 |                 if self._persister is None or not persist_branch:
+238 |                     raise NativeWriteRefusalError("Native persistence is not configured")
+    |                                                                                         ^
+239 |                 native_start = await native_guard.begin(workspace_path=workspace_path)
+240 |                 prompt += "\n\n" + native_start.instructions
+    |
+
+E501 Line too long (95 > 88)
+   --> src/kodezart/services/agent_service.py:270:89
+    |
+268 |                     or buffered_result.structured_output is None
+269 |                 ):
+270 |                     raise NativeWriteRefusalError("The native writer returned no claim report")
+    |                                                                                         ^^^^^^^
+271 |                 try:
+272 |                     output = NativeWriterOutput.model_validate(buffered_result.structured_output)
+    |
+
+E501 Line too long (97 > 88)
+   --> src/kodezart/services/agent_service.py:272:89
+    |
+270 |                     raise NativeWriteRefusalError("The native writer returned no claim report")
+271 |                 try:
+272 |                     output = NativeWriterOutput.model_validate(buffered_result.structured_output)
+    |                                                                                         ^^^^^^^^^
+273 |                 except ValidationError as exc:
+274 |                     raise NativeWriteRefusalError("The native writer claim report is malformed") from exc
+    |
+
+E501 Line too long (105 > 88)
+   --> src/kodezart/services/agent_service.py:274:89
+    |
+272 |                     output = NativeWriterOutput.model_validate(buffered_result.structured_output)
+273 |                 except ValidationError as exc:
+274 |                     raise NativeWriteRefusalError("The native writer claim report is malformed") from exc
+    |                                                                                         ^^^^^^^^^^^^^^^^^
+275 |                 report = await native_guard.judge(
+276 |                     workspace_path=workspace_path, start=native_start, output=output,
+    |
+
+E501 Line too long (97 > 88)
+   --> src/kodezart/services/native_amendments.py:106:89
+    |
+104 |             ConnectionError, TimeoutError, ScopeReadError,
+105 |         ) as exc:
+106 |             raise NativeWriteRefusalError("Current ruling membership could not be read") from exc
+    |                                                                                         ^^^^^^^^^
+107 |         rulings: list[Ruling] = []
+108 |         for key in sorted(members):
+    |
+
+E501 Line too long (99 > 88)
+   --> src/kodezart/services/native_amendments.py:114:89
+    |
+112 |                 )
+113 |             except RulingRecordReadError as exc:
+114 |                 raise NativeWriteRefusalError("The current ruling registry is unreadable") from exc
+    |                                                                                         ^^^^^^^^^^^
+115 |             rulings.extend(ruling for _, ruling in records)
+116 |         identities = [ruling.ruling_id for ruling in rulings]
+    |
+
+E501 Line too long (89 > 88)
+   --> src/kodezart/services/native_amendments.py:118:89
+    |
+116 |         identities = [ruling.ruling_id for ruling in rulings]
+117 |         if len(identities) != len(set(identities)):
+118 |             raise NativeWriteRefusalError("The pinned ruling roster repeats an identity")
+    |                                                                                         ^
+119 |         return tuple(sorted(rulings, key=lambda ruling: ruling.ruling_id))
+    |
+
+E501 Line too long (89 > 88)
+   --> src/kodezart/services/native_amendments.py:160:89
+    |
+158 |             raise NativeWriteRefusalError("The native writer was not initialized")
+159 |         if await owner._read_rulings(self._spec) != self._rulings:
+160 |             raise NativeWriteRefusalError("Pinned rulings changed during native writing")
+    |                                                                                         ^
+161 |         current = await owner._criteria.read_current(spec=self._spec)
+162 |         if current != self._criteria:
+    |
+
+E501 Line too long (89 > 88)
+   --> src/kodezart/services/native_amendments.py:163:89
+    |
+161 |         current = await owner._criteria.read_current(spec=self._spec)
+162 |         if current != self._criteria:
+163 |             raise NativeWriteRefusalError("Current Checks changed during native writing")
+    |                                                                                         ^
+164 |         if await settle(owner._git.has_replace_refs(workspace_path)):
+165 |             raise NativeWriteRefusalError("Native writing cannot use replacement refs")
+    |
+
+E501 Line too long (91 > 88)
+   --> src/kodezart/services/native_amendments.py:181:89
+    |
+179 |         owner = self._owner
+180 |         if self._base_sha is None or self._rulings is None:
+181 |             raise NativeWriteRefusalError("A judgment requires initialized base authority")
+    |                                                                                         ^^^
+182 |         prompt = owner._prompts.template_for(PromptKey.AMENDMENT_JUDGE).render({
+183 |             "claim": claim.model_dump_json(),
+    |
+
+E501 Line too long (90 > 88)
+   --> src/kodezart/services/native_amendments.py:216:89
+    |
+214 |                 or judgment.ground is not claim.ground
+215 |             ):
+216 |                 raise NativeWriteRefusalError("The judgment addresses another claim/base")
+    |                                                                                         ^^
+217 |             for citation in judgment.citations:
+218 |                 blob = await owner._source.read_source(
+    |
+
+E501 Line too long (97 > 88)
+   --> src/kodezart/services/native_amendments.py:240:89
+    |
+238 |         upheld = []
+239 |         for claim in output.claims:
+240 |             roster = criterion_ids if isinstance(claim.subject, CriterionSubject) else ruling_ids
+    |                                                                                         ^^^^^^^^^
+241 |             if claim.subject.id not in roster:
+242 |                 raise NativeWriteRefusalError("A claim names no current native subject")
+    |
+
+E501 Line too long (90 > 88)
+   --> src/kodezart/services/native_amendments.py:243:89
+    |
+241 |             if claim.subject.id not in roster:
+242 |                 raise NativeWriteRefusalError("A claim names no current native subject")
+243 |             judgment = await self._judge_claim(workspace_path=workspace_path, claim=claim)
+    |                                                                                         ^^
+244 |             await self.require_current(workspace_path=workspace_path, start=start)
+245 |             reason = self._upheld_reason(claim, judgment)
+    |
+
+E501 Line too long (89 > 88)
+   --> src/kodezart/services/native_amendments.py:262:89
+    |
+260 |             return (
+261 |                 UpheldReason.COST_MEASURED_AFFORDABLE
+262 |                 if cost.measurement.affordable else UpheldReason.COST_MEASURED_UNECONOMIC
+    |                                                                                         ^
+263 |             )
+264 |         if judgment.finding.verdict is CriterionVerdict.unverifiable:
+    |
+
+E501 Line too long (90 > 88)
+   --> src/kodezart/services/native_amendments.py:278:89
+    |
+276 |             or not judgment.citations
+277 |         ):
+278 |             raise NativeWriteRefusalError("A reproduced ground requires cited refutation")
+    |                                                                                         ^^
+279 |         return None
+    |
+
+E501 Line too long (89 > 88)
+   --> src/kodezart/types/domain/amendment.py:135:89
+    |
+133 |             raise ValueError("the upheld record addresses the claimed ground")
+134 |         if self.reason in {
+135 |             UpheldReason.COST_MEASURED_AFFORDABLE, UpheldReason.COST_MEASURED_UNECONOMIC,
+    |                                                                                         ^
+136 |         }:
+137 |             cost = self.judgment.finding.cost_claim
+    |
+
+E501 Line too long (93 > 88)
+   --> src/kodezart/types/domain/amendment.py:138:89
+    |
+136 |         }:
+137 |             cost = self.judgment.finding.cost_claim
+138 |             if cost is None or cost.measurement is None or self.judgment.measured_by is None:
+    |                                                                                         ^^^^^
+139 |                 raise ValueError("a measured cost reason retains the actual measurement")
+140 |             if cost.measurement.affordable != (self.reason is UpheldReason.COST_MEASURED_AFFORDABLE):
+    |
+
+E501 Line too long (89 > 88)
+   --> src/kodezart/types/domain/amendment.py:139:89
+    |
+137 |             cost = self.judgment.finding.cost_claim
+138 |             if cost is None or cost.measurement is None or self.judgment.measured_by is None:
+139 |                 raise ValueError("a measured cost reason retains the actual measurement")
+    |                                                                                         ^
+140 |             if cost.measurement.affordable != (self.reason is UpheldReason.COST_MEASURED_AFFORDABLE):
+141 |                 raise ValueError("the reason must match the measured affordability")
+    |
+
+E501 Line too long (101 > 88)
+   --> src/kodezart/types/domain/amendment.py:140:89
+    |
+138 |             if cost is None or cost.measurement is None or self.judgment.measured_by is None:
+139 |                 raise ValueError("a measured cost reason retains the actual measurement")
+140 |             if cost.measurement.affordable != (self.reason is UpheldReason.COST_MEASURED_AFFORDABLE):
+    |                                                                                         ^^^^^^^^^^^^^
+141 |                 raise ValueError("the reason must match the measured affordability")
+142 |         if self.reason is UpheldReason.ENVIRONMENT_LACKS_CAPABILITY and self.claim.claimed_capability is None:
+    |
+
+E501 Line too long (110 > 88)
+   --> src/kodezart/types/domain/amendment.py:142:89
+    |
+140 |             if cost.measurement.affordable != (self.reason is UpheldReason.COST_MEASURED_AFFORDABLE):
+141 |                 raise ValueError("the reason must match the measured affordability")
+142 |         if self.reason is UpheldReason.ENVIRONMENT_LACKS_CAPABILITY and self.claim.claimed_capability is None:
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^
+143 |             raise ValueError("a missing-capability reason requires the typed claimed capability")
+144 |         return self
+    |
+
+E501 Line too long (97 > 88)
+   --> src/kodezart/types/domain/amendment.py:143:89
+    |
+141 |                 raise ValueError("the reason must match the measured affordability")
+142 |         if self.reason is UpheldReason.ENVIRONMENT_LACKS_CAPABILITY and self.claim.claimed_capability is None:
+143 |             raise ValueError("a missing-capability reason requires the typed claimed capability")
+    |                                                                                         ^^^^^^^^^
+144 |         return self
+    |
+
+E501 Line too long (90 > 88)
+  --> tests/domain/test_amendment.py:21:89
+   |
+21 | def record(kind="criterion", identity="opaque/criterion", reason="ground_not_reproduced"):
+   |                                                                                         ^^
+22 |     subject = TypeAdapter(AmendmentSubject).validate_python({"kind": kind, "id": identity})
+23 |     finding = {"verdict": "feasible", "smallest_repair": "none"}
+   |
+
+E501 Line too long (91 > 88)
+  --> tests/domain/test_amendment.py:22:89
+   |
+21 | def record(kind="criterion", identity="opaque/criterion", reason="ground_not_reproduced"):
+22 |     subject = TypeAdapter(AmendmentSubject).validate_python({"kind": kind, "id": identity})
+   |                                                                                         ^^^
+23 |     finding = {"verdict": "feasible", "smallest_repair": "none"}
+24 |     if reason.startswith("cost_measured"):
+   |
+
+E501 Line too long (109 > 88)
+  --> tests/domain/test_amendment.py:31:89
+   |
+29 |         subject=subject, base_sha="a" * 40, ground="unsatisfiable_at_base",
+30 |         reproduced=False, finding=finding,
+31 |         citations=(), measured_by="Recorded base experiment" if reason.startswith("cost_measured") else None,
+   |                                                                                         ^^^^^^^^^^^^^^^^^^^^^
+32 |     )
+33 |     claim = AmendmentClaim(subject=subject, stage="implementation", ground="unsatisfiable_at_base",
+   |
+
+E501 Line too long (99 > 88)
+  --> tests/domain/test_amendment.py:33:89
+   |
+31 |         citations=(), measured_by="Recorded base experiment" if reason.startswith("cost_measured") else None,
+32 |     )
+33 |     claim = AmendmentClaim(subject=subject, stage="implementation", ground="unsatisfiable_at_base",
+   |                                                                                         ^^^^^^^^^^^
+34 |                            departure="A proposed change", claimed_capability=None)
+35 |     return UpheldAmendment(claim=claim, reason=reason, judgment=judgment)
+   |
+
+RUF001 String contains ambiguous `α` (GREEK SMALL LETTER ALPHA). Did you mean `a` (LATIN SMALL LETTER A)?
+  --> tests/domain/test_amendment.py:40:30
+   |
+38 | def test_same_ruling_newtype_object_reexported_and_native_ids_remain_opaque():
+39 |     assert ExistingRulingId is RulingId
+40 |     for identity in ["vendor/α", "KOD-97-AC-3", "some key"]:
+   |                              ^
+41 |         assert CriterionSubject(id=identity).id == identity
+42 |     for identity in ["", "  ", "\n"]:
+   |
+
+C408 Unnecessary `dict()` call (rewrite as a literal)
+  --> tests/domain/test_amendment.py:65:13
+   |
+64 |   def test_claim_cannot_carry_writer_reasoning_unknown_stage_or_unknown_ground():
+65 |       valid = dict(subject={"kind": "criterion", "id": "native/1"},
+   |  _____________^
+66 | |                  stage="implementation", ground="premise_false_at_base",
+67 | |                  departure="Different behavior", claimed_capability=None)
+   | |_________________________________________________________________________^
+68 |       assert NativeWriterOutput(claims=[AmendmentClaim(**valid)])
+69 |       for changes in [dict(reasoning="trust me"), dict(stage="guessed_fix"),
+   |
+help: Rewrite as a literal
+
+C408 Unnecessary `dict()` call (rewrite as a literal)
+  --> tests/domain/test_amendment.py:69:21
+   |
+67 |                  departure="Different behavior", claimed_capability=None)
+68 |     assert NativeWriterOutput(claims=[AmendmentClaim(**valid)])
+69 |     for changes in [dict(reasoning="trust me"), dict(stage="guessed_fix"),
+   |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+70 |                     dict(ground="a_quote_exists"), dict(claimed_capability="unknown")]:
+71 |         with pytest.raises(ValidationError):
+   |
+help: Rewrite as a literal
+
+C408 Unnecessary `dict()` call (rewrite as a literal)
+  --> tests/domain/test_amendment.py:69:49
+   |
+67 |                  departure="Different behavior", claimed_capability=None)
+68 |     assert NativeWriterOutput(claims=[AmendmentClaim(**valid)])
+69 |     for changes in [dict(reasoning="trust me"), dict(stage="guessed_fix"),
+   |                                                 ^^^^^^^^^^^^^^^^^^^^^^^^^
+70 |                     dict(ground="a_quote_exists"), dict(claimed_capability="unknown")]:
+71 |         with pytest.raises(ValidationError):
+   |
+help: Rewrite as a literal
+
+C408 Unnecessary `dict()` call (rewrite as a literal)
+  --> tests/domain/test_amendment.py:70:21
+   |
+68 |     assert NativeWriterOutput(claims=[AmendmentClaim(**valid)])
+69 |     for changes in [dict(reasoning="trust me"), dict(stage="guessed_fix"),
+70 |                     dict(ground="a_quote_exists"), dict(claimed_capability="unknown")]:
+   |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+71 |         with pytest.raises(ValidationError):
+72 |             AmendmentClaim.model_validate(valid | changes)
+   |
+help: Rewrite as a literal
+
+C408 Unnecessary `dict()` call (rewrite as a literal)
+  --> tests/domain/test_amendment.py:70:52
+   |
+68 |     assert NativeWriterOutput(claims=[AmendmentClaim(**valid)])
+69 |     for changes in [dict(reasoning="trust me"), dict(stage="guessed_fix"),
+70 |                     dict(ground="a_quote_exists"), dict(claimed_capability="unknown")]:
+   |                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+71 |         with pytest.raises(ValidationError):
+72 |             AmendmentClaim.model_validate(valid | changes)
+   |
+help: Rewrite as a literal
+
+E501 Line too long (122 > 88)
+  --> tests/domain/test_amendment.py:82:89
+   |
+80 |         UpheldAmendment.model_validate(value | {"verdict": "amended"})
+81 |     with pytest.raises(ValidationError):
+82 |         UpheldAmendment.model_validate(value | {"claim": value["claim"] | {"subject": {"kind": "ruling", "id": "other"}}})
+   |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+
+E501 Line too long (102 > 88)
+  --> tests/services/test_native_amendments.py:88:89
+   |
+86 |                     "verdict": "infeasible" if self.reproduced else "feasible",
+87 |                     "smallest_repair": "criterion_text" if self.reproduced else "none",
+88 |                     "refutation": "A reproduced semantic contradiction." if self.reproduced else None,
+   |                                                                                         ^^^^^^^^^^^^^^
+89 |                 },
+90 |                 "citations": [{"path": "policy.py", "quote": QUOTE}],
+   |
+
+E501 Line too long (89 > 88)
+   --> tests/services/test_native_amendments.py:127:89
+    |
+127 | async def build(repository, executor, *, prompt_set="claude-opus", port=None, gate=None):
+    |                                                                                         ^
+128 |     repo, base = repository
+129 |     git_service = SubprocessGitService(remote="origin")
+    |
+
+E501 Line too long (89 > 88)
+   --> tests/services/test_native_amendments.py:149:89
+    |
+147 |         ),
+148 |         criteria=criteria, git=git_service, source=SubprocessGitSourceReader(),
+149 |         workspace=workspace, runner=service, prompts=prompts, skills=SUPPRESS_ALL_SKILLS,
+    |                                                                                         ^
+150 |         repositories=(RepoEntry(url=REPO_URL, trunk="main"),),
+151 |     )
+    |
+
+E501 Line too long (91 > 88)
+   --> tests/services/test_native_amendments.py:163:89
+    |
+161 |         prompt="Implement the exact current Checks.", repo_path=str(repository[0]),
+162 |         base_branch="main", branch_name="native-test", ralph_branch="native-test",
+163 |         permission_mode=PermissionMode.UNATTENDED, allowed_tools=ToolPreset.IMPLEMENTATION,
+    |                                                                                         ^^^
+164 |         skills=SUPPRESS_ALL_SKILLS, session_type=SessionType.TICKET_FIRE,
+165 |         visibility=RepoVisibility.PUBLIC, native_guard=guard,
+    |
+
+E501 Line too long (94 > 88)
+   --> tests/services/test_native_amendments.py:188:89
+    |
+186 |         assert Path(path).exists() and path not in workspace.released
+187 |         assert await git(path, "log", "-1", "--format=%s") == "writer bypass"
+188 |         assert await git(repository[0], "ls-remote", "origin", "refs/heads/native-test") == ""
+    |                                                                                         ^^^^^^
+189 |     finally:
+190 |         await cleanup(workspace)
+    |
+
+E501 Line too long (91 > 88)
+   --> tests/services/test_native_amendments.py:199:89
+    |
+197 | ):
+198 |     executor = Executor(ground=ground)
+199 |     service, guard, workspace, _ = await build(repository, executor, prompt_set=prompt_set)
+    |                                                                                         ^^^
+200 |     events = await drive(service, guard, repository)
+201 |     report = next(event.report for event in events if isinstance(event, NativeAmendmentEvent))
+    |
+
+E501 Line too long (94 > 88)
+   --> tests/services/test_native_amendments.py:201:89
+    |
+199 |     service, guard, workspace, _ = await build(repository, executor, prompt_set=prompt_set)
+200 |     events = await drive(service, guard, repository)
+201 |     report = next(event.report for event in events if isinstance(event, NativeAmendmentEvent))
+    |                                                                                         ^^^^^^
+202 |     assert report.upheld[0].reason is UpheldReason.GROUND_NOT_REPRODUCED
+203 |     assert not any(isinstance(event, ResultEvent) for event in events)
+    |
+
+E501 Line too long (90 > 88)
+   --> tests/services/test_native_amendments.py:213:89
+    |
+211 |     assert judge["allowed_tools"] is ToolPreset.EVALUATION
+212 |     assert "Author rationale must never be forwarded" not in judge["prompt"]
+213 |     assert await git(repository[0], "ls-remote", "origin", "refs/heads/native-test") == ""
+    |                                                                                         ^^
+214 |     assert len(workspace.released) == 2
+    |
+
+E501 Line too long (94 > 88)
+   --> tests/services/test_native_amendments.py:225:89
+    |
+223 |         assert "AMENDED" not in failure.value.judgment.model_dump_json()
+224 |         assert Path(workspace.acquired[0][0], "change.py").exists()
+225 |         assert await git(repository[0], "ls-remote", "origin", "refs/heads/native-test") == ""
+    |                                                                                         ^^^^^^
+226 |     finally:
+227 |         await cleanup(workspace)
+    |
+
+E501 Line too long (93 > 88)
+   --> tests/services/test_native_amendments.py:231:89
+    |
+230 | @pytest.mark.parametrize("guarded", [True, False])
+231 | async def test_direct_commit_refuses_native_publication_and_preserves_authored_compatibility(
+    |                                                                                         ^^^^^
+232 |     repository, guarded,
+233 | ):
+    |
+
+E501 Line too long (98 > 88)
+   --> tests/services/test_native_amendments.py:243:89
+    |
+241 |             assert Path(path).exists() and path not in workspace.released
+242 |             assert await git(path, "log", "-1", "--format=%s") == "writer bypass"
+243 |             assert await git(repository[0], "ls-remote", "origin", "refs/heads/native-test") == ""
+    |                                                                                         ^^^^^^^^^^
+244 |             assert len(executor.calls) == 1
+245 |         else:
+    |
+
+E501 Line too long (95 > 88)
+   --> tests/services/test_native_amendments.py:247:89
+    |
+245 |         else:
+246 |             events = await drive(service, None, repository)
+247 |             assert any(isinstance(event, ResultEvent) and event.commit_sha for event in events)
+    |                                                                                         ^^^^^^^
+248 |             assert await git(repository[0], "ls-remote", "origin", "refs/heads/native-test")
+249 |     finally:
+    |
+
+E501 Line too long (92 > 88)
+   --> tests/services/test_native_amendments.py:248:89
+    |
+246 |             events = await drive(service, None, repository)
+247 |             assert any(isinstance(event, ResultEvent) and event.commit_sha for event in events)
+248 |             assert await git(repository[0], "ls-remote", "origin", "refs/heads/native-test")
+    |                                                                                         ^^^^
+249 |     finally:
+250 |         await cleanup(workspace)
+    |
+
+E501 Line too long (98 > 88)
+   --> tests/services/test_native_amendments.py:280:89
+    |
+278 |             with pytest.raises((NativeWriteRefusalError, FireSpecEntryError)):
+279 |                 await drive(service, guard, repository)
+280 |             assert await git(repository[0], "ls-remote", "origin", "refs/heads/native-test") == ""
+    |                                                                                         ^^^^^^^^^^
+281 |             assert await git(repository[0], "log", "native-test", "--format=%s", "-1") == "newer writer starting point"
+282 |     finally:
+    |
+
+E501 Line too long (119 > 88)
+   --> tests/services/test_native_amendments.py:281:89
+    |
+279 |                 await drive(service, guard, repository)
+280 |             assert await git(repository[0], "ls-remote", "origin", "refs/heads/native-test") == ""
+281 |             assert await git(repository[0], "log", "native-test", "--format=%s", "-1") == "newer writer starting point"
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+282 |     finally:
+283 |         await cleanup(workspace)
+    |
+
+Found 55 errors (7 fixed, 48 remaining).
+No fixes available (5 hidden fixes can be enabled with the `--unsafe-fixes` option).

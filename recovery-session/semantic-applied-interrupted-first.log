@@ -1,0 +1,81 @@
+..F.                                                                     [100%]
+=================================== FAILURES ===================================
+_ test_interrupted_amendment_preserves_history_and_fresh_reentry_uses_actual_state[after_applied_holds] _
+
+repository = (PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1860/test_interrupted_amendment_pre2/repo'), '8ec127058fec600513f6e4892b0d51d1a0d5be87')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10c960860>
+position = 'after_applied_holds'
+
+    @pytest.mark.parametrize("position", ["after_archive", "after_reset", "after_applied_holds", "before_commit"])
+    async def test_interrupted_amendment_preserves_history_and_fresh_reentry_uses_actual_state(repository, monkeypatch, position):
+        port = tracker()
+        original = port.issues[DIRECT_DONE]
+        failure = RuntimeError(f"process boundary {position}")
+        verifies = 0
+        after_applied_holds = False
+        source_read = None
+    
+        async def answers(title, payload, kwargs):
+            nonlocal verifies, after_applied_holds
+            if title == "WriteBackFinding":
+                verifies += 1
+                if position == "after_archive" and verifies == 1:
+                    raise failure
+                if position == "after_applied_holds" and verifies == 2:
+                    # The result reaches the real verifier. Its following guard
+                    # read injects the interruption before the parent gets a report.
+                    after_applied_holds = True
+            elif position == "before_commit" and title == "CommitMessageOutput":
+                raise failure
+    
+        executor = Executor(reproduced=True, subject={"kind": "criterion", "id": DIRECT_DONE}, mutate=answers)
+        service, guard, workspace, _ = await build(repository, executor, port=port)
+        reset = port.reset_criterion_pending
+    
+        async def reset_then_interrupt(**kwargs):
+            await reset(**kwargs)
+            raise failure
+    
+        async def current_sha(**kwargs):
+            nonlocal after_applied_holds
+            if after_applied_holds:
+                after_applied_holds = False
+                raise failure
+            return await source_read(**kwargs)
+    
+        if position == "after_reset":
+            monkeypatch.setattr(port, "reset_criterion_pending", reset_then_interrupt)
+        if position == "after_applied_holds":
+            source_read = workspace._git.current_sha
+            monkeypatch.setattr(workspace._git, "current_sha", current_sha)
+        try:
+            with pytest.raises(RuntimeError) as caught:
+>               await drive(service, guard, repository)
+
+tests/services/test_amendment_interrupted_writes.py:64: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/services/test_native_amendments.py:235: in drive
+    return [
+src/kodezart/services/agent_service.py:156: in stream_workflow
+    async for event in self._run_in_workspace(
+src/kodezart/services/agent_service.py:241: in _run_in_workspace
+    native_start = await native_guard.begin(workspace_path=workspace_path)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.services.native_amendments._NativeWriterGuard object at 0x10c961fd0>
+
+    async def begin(self, *, workspace_path: str) -> NativeWriterStart:
+        owner = self._owner
+>       head = await settle(owner._git.current_sha(workspace_path))
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: test_interrupted_amendment_preserves_history_and_fresh_reentry_uses_actual_state.<locals>.current_sha() takes 0 positional arguments but 1 was given
+
+src/kodezart/services/native_amendments.py:239: TypeError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 20:28:49 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:28:49 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-7c39ac3bddff4e7e862e010354212788 workspace_id=7c39ac3bddff4e7e862e010354212788
+2026-09-12 20:28:49 [info     ] workspace_released             workspace_id=7c39ac3bddff4e7e862e010354212788
+=========================== short test summary info ============================
+FAILED tests/services/test_amendment_interrupted_writes.py::test_interrupted_amendment_preserves_history_and_fresh_reentry_uses_actual_state[after_applied_holds]
+1 failed, 3 passed in 67.75s (0:01:07)

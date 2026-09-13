@@ -1,0 +1,42 @@
+Using CPython 3.12.13
+Creating virtual environment at: .venv
+   Building kodezart @ file:///private/tmp/kodezart-v03-recovery-alarm-owner
+warning: `build_system.requires = ["uv-build>=0.10.9,<0.11.0"]` does not contain the current uv version 0.11.6
+      Built kodezart @ file:///private/tmp/kodezart-v03-recovery-alarm-owner
+Installed 174 packages in 1.76s
+FFF                                                                      [100%]
+=================================== FAILURES ===================================
+____________ test_subject_schema_exposes_six_discriminated_regions _____________
+
+    def test_subject_schema_exposes_six_discriminated_regions():
+        schema = TypeAdapter(AlarmSubject).json_schema()
+>       assert set(schema["discriminator"]["mapping"]) == {
+                   ^^^^^^^^^^^^^^^^^^^^^^^
+            "scope", "lane", "issue", "criterion", "surface", "escalation"
+        }
+E       KeyError: 'discriminator'
+
+tests/domain/test_alarm_typed_evidence.py:11: KeyError
+_________ test_reading_refuses_opaque_json_in_place_of_typed_evidence __________
+
+    def test_reading_refuses_opaque_json_in_place_of_typed_evidence():
+>       with pytest.raises(ValidationError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'pydantic_core._pydantic_core.ValidationError'>
+
+tests/domain/test_alarm_typed_evidence.py:17: Failed
+_______________ test_actual_tracker_exposes_addressed_alarm_port _______________
+
+    def test_actual_tracker_exposes_addressed_alarm_port():
+        tracker = _Board().tracker()
+>       assert callable(getattr(tracker, "record_run_alarm", None))
+E       AssertionError: assert False
+E        +  where False = callable(None)
+E        +    where None = getattr(<kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10af47230>, 'record_run_alarm', None)
+
+tests/tracker/test_run_alarm_records.py:8: AssertionError
+=========================== short test summary info ============================
+FAILED tests/domain/test_alarm_typed_evidence.py::test_subject_schema_exposes_six_discriminated_regions
+FAILED tests/domain/test_alarm_typed_evidence.py::test_reading_refuses_opaque_json_in_place_of_typed_evidence
+FAILED tests/tracker/test_run_alarm_records.py::test_actual_tracker_exposes_addressed_alarm_port
+3 failed in 0.92s

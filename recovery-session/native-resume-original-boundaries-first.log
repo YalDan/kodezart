@@ -1,0 +1,83 @@
+.F
+=================================== FAILURES ===================================
+__ test_writer_cancellation_stays_cancellation_and_retains_moved_head[False] ___
+
+repository = (PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1955/test_writer_cancellation_stays0/repo'), '9109e89d8cd00c1c584dc0100179659086ed05af')
+direct_commit = False
+
+    @pytest.mark.parametrize("direct_commit", [False, True])
+    async def test_writer_cancellation_stays_cancellation_and_retains_moved_head(
+        repository, direct_commit
+    ):
+        async def cancel(title, payload, kwargs):
+            if title == "NativeWriterOutput":
+                raise asyncio.CancelledError("actual executor cancellation")
+    
+        service, guard, workspace, _ = await build(
+            repository, Executor(claim=False, direct_commit=direct_commit, mutate=cancel)
+        )
+        try:
+            with pytest.raises(asyncio.CancelledError):
+>               await drive(service, guard, repository)
+
+tests/services/test_native_amendment_independent.py:71: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/services/test_native_amendments.py:236: in drive
+    return [
+src/kodezart/services/agent_service.py:152: in stream_workflow
+    async for event in self._run_in_workspace(
+src/kodezart/services/agent_service.py:236: in _run_in_workspace
+    async for event in execution.stream():
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.services.native_execution.NativeExecution object at 0x10b373230>
+
+    async def stream(self) -> AsyncIterator[AgentEvent]:
+        """Stream existing events and retain interrupted native workspace evidence."""
+        completed = False
+        report_emitted = False
+        state = NativeExecutionState(execution=NewNativeExecution())
+        graph = NativeExecutionGraph(actions=self).graph
+        try:
+            async for mode, value in graph.astream(
+                state,
+                stream_mode=["custom", "values"],
+            ):
+                if mode == "custom":
+                    if not isinstance(value, AgentEvent):
+                        raise TypeError(
+                            "Native phase stream requires an actual AgentEvent"
+                        )
+                    report_emitted = report_emitted or isinstance(
+                        value, NativeAmendmentEvent
+                    )
+                    yield value
+                else:
+                    state = NativeExecutionState.model_validate(value)
+            phase = state.execution
+            if not isinstance(
+                phase,
+                (
+                    PersistedNativeExecution,
+                    UnchangedNativeExecution,
+                    RefusedNativeExecution,
+                ),
+            ):
+>               raise NativeWriteRefusalError(
+                    "Native execution stopped before a completed phase"
+                )
+E               kodezart.domain.amendment.NativeWriteRefusalError: Native execution stopped before a completed phase
+
+src/kodezart/services/native_execution.py:285: NativeWriteRefusalError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 22:35:34 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:35:34 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-45ef86be7099477392ef203435ae43ec workspace_id=45ef86be7099477392ef203435ae43ec
+2026-09-12 22:35:35 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:35:38 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:35:39 [warning  ] native_writer_workspace_retained workspace_path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-45ef86be7099477392ef203435ae43ec
+2026-09-12 22:35:40 [warning  ] workspace_release_unclean      branch_name=native-test path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-45ef86be7099477392ef203435ae43ec workspace_id=45ef86be7099477392ef203435ae43ec
+2026-09-12 22:35:40 [info     ] workspace_released             workspace_id=45ef86be7099477392ef203435ae43ec
+=========================== short test summary info ============================
+FAILED tests/services/test_native_amendment_independent.py::test_writer_cancellation_stays_cancellation_and_retains_moved_head[False]
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed, 1 passed in 17.70s

@@ -1,0 +1,383 @@
+{
+  "donor": "36083f83f42c03240ebb5861fe284da2c9f04180",
+  "comparison_base": "25c32f603f9c9cb59852304743e653f70be309ff",
+  "whole_file_import_closure": [
+    "src/kodezart/chains/organize.py",
+    "src/kodezart/chains/organize_author.py",
+    "src/kodezart/composition/organize.py",
+    "src/kodezart/core/organize_settings.py",
+    "src/kodezart/domain/criterion_creation.py",
+    "src/kodezart/domain/fire_spec.py",
+    "src/kodezart/domain/organize.py",
+    "src/kodezart/domain/organize_graph.py",
+    "src/kodezart/domain/rulings.py",
+    "src/kodezart/domain/topology.py",
+    "src/kodezart/services/organize_context.py",
+    "src/kodezart/services/organize_owner.py",
+    "src/kodezart/services/organize_tick.py",
+    "src/kodezart/services/ruling_records.py",
+    "src/kodezart/types/domain/criterion_ref.py",
+    "src/kodezart/types/domain/fire_spec.py",
+    "src/kodezart/types/domain/organize.py",
+    "src/kodezart/types/domain/organize_graph.py",
+    "src/kodezart/types/domain/organize_owner.py",
+    "src/kodezart/types/domain/topology.py"
+  ],
+  "shared_import_symbols": [
+    {
+      "path": "src/kodezart/core/config.py",
+      "symbols": [
+        {
+          "symbol": "AppConfig",
+          "status": "different",
+          "donor_lines": [
+            32,
+            766
+          ]
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/core/protocols.py",
+      "symbols": [
+        {
+          "symbol": "AgentRunner",
+          "status": "different",
+          "donor_lines": [
+            1453,
+            1523
+          ]
+        },
+        {
+          "symbol": "GitService",
+          "status": "different",
+          "donor_lines": [
+            130,
+            292
+          ]
+        },
+        {
+          "symbol": "TrackerCommentReader",
+          "status": "missing",
+          "donor_lines": [
+            704,
+            709
+          ]
+        },
+        {
+          "symbol": "TrackerPort",
+          "status": "different",
+          "donor_lines": [
+            741,
+            1415
+          ]
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/domain/agent.py",
+      "symbols": [
+        {
+          "symbol": "mint_ruling_id",
+          "status": "missing",
+          "donor_lines": [
+            10,
+            21
+          ]
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/domain/errors.py",
+      "symbols": [
+        {
+          "symbol": "EmptyFireCriteriaError",
+          "status": "missing",
+          "donor_lines": [
+            266,
+            271
+          ]
+        },
+        {
+          "symbol": "FireSpecEntryError",
+          "status": "missing",
+          "donor_lines": [
+            257,
+            263
+          ]
+        },
+        {
+          "symbol": "InvalidFireCriterionError",
+          "status": "missing",
+          "donor_lines": [
+            274,
+            284
+          ]
+        },
+        {
+          "symbol": "OrganizeAdmissionIdentityError",
+          "status": "missing",
+          "donor_lines": [
+            708,
+            716
+          ]
+        },
+        {
+          "symbol": "OrganizeDecisionRequiredError",
+          "status": "missing",
+          "donor_lines": [
+            796,
+            803
+          ]
+        },
+        {
+          "symbol": "OrganizeHaltError",
+          "status": "missing",
+          "donor_lines": [
+            782,
+            793
+          ]
+        },
+        {
+          "symbol": "OrganizeWriteRefusalError",
+          "status": "missing",
+          "donor_lines": [
+            773,
+            779
+          ]
+        },
+        {
+          "symbol": "OutboundContentBlockedError",
+          "status": "different",
+          "donor_lines": [
+            453,
+            489
+          ]
+        },
+        {
+          "symbol": "RulingRecordReadError",
+          "status": "missing",
+          "donor_lines": [
+            183,
+            195
+          ]
+        },
+        {
+          "symbol": "ScopeCycleError",
+          "status": "missing",
+          "donor_lines": [
+            302,
+            312
+          ]
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/domain/prompt_variables.py",
+      "symbols": [
+        {
+          "symbol": "organize_variables",
+          "status": "missing",
+          "donor_lines": [
+            35,
+            64
+          ]
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/services/git_observations.py",
+      "symbols": [
+        {
+          "symbol": "read_remote_head",
+          "status": "missing",
+          "donor_lines": [
+            13,
+            18
+          ]
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/types/domain/agent.py",
+      "symbols": [
+        {
+          "symbol": "ORGANIZE_ADMISSION_SCHEMA",
+          "status": "missing",
+          "donor_lines": [
+            1167,
+            1167
+          ]
+        },
+        {
+          "symbol": "ORGANIZE_PROPOSAL_SCHEMA",
+          "status": "missing",
+          "donor_lines": [
+            1171,
+            1171
+          ]
+        },
+        {
+          "symbol": "RaiseSite",
+          "status": "different",
+          "donor_lines": [
+            83,
+            106
+          ]
+        },
+        {
+          "symbol": "Ruling",
+          "status": "missing",
+          "donor_lines": [
+            753,
+            818
+          ]
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/types/domain/dispatch.py",
+      "symbols": [
+        {
+          "symbol": "PassRun",
+          "status": "different",
+          "donor_lines": [
+            346,
+            357
+          ]
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/types/domain/gating.py",
+      "symbols": [
+        {
+          "symbol": "OutboundDestination",
+          "status": "different",
+          "donor_lines": [
+            132,
+            149
+          ]
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/types/domain/operation.py",
+      "symbols": [
+        {
+          "symbol": "OperationConfig",
+          "status": "different",
+          "donor_lines": [
+            552,
+            1031
+          ]
+        },
+        {
+          "symbol": "OrganizeScopeBinding",
+          "status": "missing",
+          "donor_lines": [
+            535,
+            540
+          ]
+        },
+        {
+          "symbol": "RepoEntry",
+          "status": "different",
+          "donor_lines": [
+            313,
+            338
+          ]
+        },
+        {
+          "symbol": "RunKind",
+          "status": "different",
+          "donor_lines": [
+            82,
+            97
+          ]
+        },
+        {
+          "symbol": "ScopeLabel",
+          "status": "missing",
+          "donor_lines": [
+            155,
+            164
+          ]
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/types/domain/prompts.py",
+      "symbols": [
+        {
+          "symbol": "PromptKey",
+          "status": "different",
+          "donor_lines": [
+            16,
+            58
+          ]
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/types/domain/run_records.py",
+      "symbols": [
+        {
+          "symbol": "RunIdentity",
+          "status": "different",
+          "donor_lines": [
+            82,
+            101
+          ]
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/types/domain/session.py",
+      "symbols": [
+        {
+          "symbol": "SessionType",
+          "status": "different",
+          "donor_lines": [
+            68,
+            85
+          ]
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/types/domain/surface.py",
+      "symbols": [
+        {
+          "symbol": "SurfaceKind",
+          "status": "different",
+          "donor_lines": [
+            10,
+            35
+          ]
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/types/domain/tracker.py",
+      "symbols": [
+        {
+          "symbol": "IssueRelationKind",
+          "status": "different",
+          "donor_lines": [
+            99,
+            113
+          ]
+        },
+        {
+          "symbol": "TrackerIssueRevision",
+          "status": "missing",
+          "donor_lines": [
+            235,
+            251
+          ]
+        }
+      ]
+    }
+  ]
+}

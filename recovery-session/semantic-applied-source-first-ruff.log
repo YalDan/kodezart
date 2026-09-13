@@ -1,0 +1,737 @@
+E501 Line too long (93 > 88)
+    --> src/kodezart/adapters/linear_mcp_tracker.py:1454:89
+     |
+1452 |         async def attempt() -> TrackerIssue:
+1453 |             current = await self.read_issue(issue_key=expected.issue_key)
+1454 |             require_criterion_source(expected=expected, current=current, pending_replay=True)
+     |                                                                                         ^^^^^
+1455 |             if current.team_key is None:
+1456 |                 raise CriterionReadError(
+     |
+
+E501 Line too long (93 > 88)
+    --> src/kodezart/adapters/linear_mcp_tracker.py:1457:89
+     |
+1455 |             if current.team_key is None:
+1456 |                 raise CriterionReadError(
+1457 |                     issue_key=expected.issue_key, reason="the criterion has no declared team"
+     |                                                                                         ^^^^^
+1458 |                 )
+1459 |             state = await self._unstarted_state_id(
+     |
+
+E501 Line too long (93 > 88)
+    --> src/kodezart/adapters/linear_mcp_tracker.py:1460:89
+     |
+1458 |                 )
+1459 |             state = await self._unstarted_state_id(
+1460 |                 team_id=self._team_identifier(current.team_key), issue_key=expected.issue_key
+     |                                                                                         ^^^^^
+1461 |             )
+1462 |             markers = await self._markers_on(
+     |
+
+E501 Line too long (93 > 88)
+    --> src/kodezart/adapters/linear_mcp_tracker.py:1466:89
+     |
+1464 |             )
+1465 |             current = await self.read_issue(issue_key=expected.issue_key)
+1466 |             require_criterion_source(expected=expected, current=current, pending_replay=True)
+     |                                                                                         ^^^^^
+1467 |             self._assert_surface_holder(surface=surface, holder=holder, markers=markers)
+1468 |             if current.state_kind is WorkflowStateKind.UNSTARTED:
+     |
+
+E501 Line too long (100 > 88)
+    --> src/kodezart/adapters/linear_mcp_tracker.py:1470:89
+     |
+1468 |             if current.state_kind is WorkflowStateKind.UNSTARTED:
+1469 |                 return current
+1470 |             payload = await self._send(_TOOL_SAVE_ISSUE, {"id": expected.issue_key, "state": state})
+     |                                                                                         ^^^^^^^^^^^^
+1471 |             return self._saved_issue(payload, written={"state": state})
+     |
+
+E501 Line too long (89 > 88)
+    --> src/kodezart/adapters/linear_mcp_tracker.py:1476:89
+     |
+1474 |         # Outside the write retry: a failed read must never resend a completed move.
+1475 |         current = await self.read_issue(issue_key=expected.issue_key)
+1476 |         require_criterion_source(expected=expected, current=current, pending_replay=True)
+     |                                                                                         ^
+1477 |         if current.state_kind is not WorkflowStateKind.UNSTARTED:
+1478 |             raise CriterionReadError(
+     |
+
+E501 Line too long (107 > 88)
+    --> src/kodezart/adapters/linear_mcp_tracker.py:1479:89
+     |
+1477 |         if current.state_kind is not WorkflowStateKind.UNSTARTED:
+1478 |             raise CriterionReadError(
+1479 |                 issue_key=expected.issue_key, reason="the reset did not land in the native unstarted state"
+     |                                                                                         ^^^^^^^^^^^^^^^^^^^
+1480 |             )
+1481 |         return current
+     |
+
+E501 Line too long (96 > 88)
+    --> src/kodezart/adapters/linear_mcp_tracker.py:1719:89
+     |
+1717 |                 current = await self.read_issue(issue_key=target)
+1718 |                 require_criterion_source(
+1719 |                     expected=original.model_copy(update={"body": current.body}), current=current
+     |                                                                                         ^^^^^^^^
+1720 |                 )
+1721 |                 body = description_replacement(
+     |
+
+E501 Line too long (96 > 88)
+    --> src/kodezart/adapters/linear_mcp_tracker.py:1722:89
+     |
+1720 |                 )
+1721 |                 body = description_replacement(
+1722 |                     target=target, body=current.body, expected=expected, replacement=replacement
+     |                                                                                         ^^^^^^^^
+1723 |                 )
+1724 |                 self._assert_surface_holder(surface=surface, holder=holder, markers=markers)
+     |
+
+E501 Line too long (92 > 88)
+    --> src/kodezart/adapters/linear_mcp_tracker.py:1724:89
+     |
+1722 |                     target=target, body=current.body, expected=expected, replacement=replacement
+1723 |                 )
+1724 |                 self._assert_surface_holder(surface=surface, holder=holder, markers=markers)
+     |                                                                                         ^^^^
+1725 |                 if body is None:
+1726 |                     return DescriptionEditResult.UNCHANGED
+     |
+
+E501 Line too long (93 > 88)
+    --> src/kodezart/adapters/linear_mcp_tracker.py:1729:89
+     |
+1727 |                 identity = self._issue_identity.decode(current.body, issue_key=target)
+1728 |                 if identity is not None:
+1729 |                     body = self._issue_identity.encode(identity, body=body, issue_key=target)
+     |                                                                                         ^^^^^
+1730 |                 payload = await self._send(_TOOL_SAVE_ISSUE, {"id": target, "description": body})
+1731 |                 self._saved_issue(payload, written={"description": body})
+     |
+
+E501 Line too long (97 > 88)
+    --> src/kodezart/adapters/linear_mcp_tracker.py:1730:89
+     |
+1728 |                 if identity is not None:
+1729 |                     body = self._issue_identity.encode(identity, body=body, issue_key=target)
+1730 |                 payload = await self._send(_TOOL_SAVE_ISSUE, {"id": target, "description": body})
+     |                                                                                         ^^^^^^^^^
+1731 |                 self._saved_issue(payload, written={"description": body})
+1732 |                 return DescriptionEditResult.EDITED
+     |
+
+E501 Line too long (98 > 88)
+  --> src/kodezart/chains/native_amendment.py:51:89
+   |
+49 |         graph.add_node("canonical_write_back", self._write_back)
+50 |         graph.add_node("complete", self._complete)
+51 |         graph.add_conditional_edges(START, self._next, {"judge": "judge", "complete": "complete"})
+   |                                                                                         ^^^^^^^^^^
+52 |         graph.add_edge("judge", "canonical_write_back")
+53 |         graph.add_conditional_edges("canonical_write_back", self._next, {"judge": "judge", "complete": "complete"})
+   |
+
+E501 Line too long (115 > 88)
+  --> src/kodezart/chains/native_amendment.py:53:89
+   |
+51 |         graph.add_conditional_edges(START, self._next, {"judge": "judge", "complete": "complete"})
+52 |         graph.add_edge("judge", "canonical_write_back")
+53 |         graph.add_conditional_edges("canonical_write_back", self._next, {"judge": "judge", "complete": "complete"})
+   |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+54 |         graph.add_edge("complete", END)
+55 |         self.graph = graph.compile()
+   |
+
+E501 Line too long (94 > 88)
+  --> src/kodezart/chains/native_amendment.py:71:89
+   |
+70 |     def _next(self, state: AmendmentState) -> Literal["judge", "complete"]:
+71 |         return "judge" if len(state["verdicts"]) < len(state["output"].claims) else "complete"
+   |                                                                                         ^^^^^^
+72 |
+73 |     async def _complete(self, state: AmendmentState) -> dict[str, object]:
+   |
+
+E501 Line too long (105 > 88)
+  --> src/kodezart/domain/criterion_amendment.py:13:89
+   |
+11 |     if "criterion" not in current.issue_labels or current.parent_key is None:
+12 |         raise CriterionReadError(
+13 |             issue_key=expected.issue_key, reason="the native criterion lost its classification or parent"
+   |                                                                                         ^^^^^^^^^^^^^^^^^
+14 |         )
+15 |     ignored = {"updated_at"}
+   |
+
+E501 Line too long (98 > 88)
+  --> src/kodezart/domain/criterion_amendment.py:20:89
+   |
+18 |     if expected.model_dump(exclude=ignored) != current.model_dump(exclude=ignored):
+19 |         raise CriterionReadError(
+20 |             issue_key=expected.issue_key, reason="native criterion facts changed before amendment"
+   |                                                                                         ^^^^^^^^^^
+21 |         )
+   |
+
+E501 Line too long (92 > 88)
+   --> src/kodezart/services/amendment_writeback.py:171:89
+    |
+169 |                     or await settle(self._git.has_replace_refs(workspace))
+170 |                 ):
+171 |                     raise NativeWriteRefusalError("Amendment author changed its clean base")
+    |                                                                                         ^^^^
+172 |
+173 |             await require_base()
+    |
+
+E501 Line too long (89 > 88)
+   --> src/kodezart/services/amendment_writeback.py:189:89
+    |
+187 |             await require_base()
+188 |         if preserve != isinstance(output.replacement, PreservedSubject):
+189 |             raise NativeWriteRefusalError("The amendment author exceeded its write role")
+    |                                                                                         ^
+190 |         if not isinstance(output.replacement, PreservedSubject) and (
+191 |             output.replacement.subject != claim.subject
+    |
+
+E501 Line too long (90 > 88)
+   --> src/kodezart/services/amendment_writeback.py:193:89
+    |
+191 |             output.replacement.subject != claim.subject
+192 |         ):
+193 |             raise NativeWriteRefusalError("The amendment author changed subject identity")
+    |                                                                                         ^^
+194 |         return output
+    |
+
+E501 Line too long (98 > 88)
+   --> src/kodezart/services/amendment_writeback.py:240:89
+    |
+238 |         """An actual claimed subject takes exactly one native surface branch."""
+239 |         if not holder.strip():
+240 |             raise NativeWriteRefusalError("Native amendment writes require the parent job holder")
+    |                                                                                         ^^^^^^^^^^
+241 |         if (criterion is None) == (ruling_record is None):
+242 |             raise NativeWriteRefusalError("The amendment requires one actual native subject")
+    |
+
+E501 Line too long (93 > 88)
+   --> src/kodezart/services/amendment_writeback.py:242:89
+    |
+240 |             raise NativeWriteRefusalError("Native amendment writes require the parent job holder")
+241 |         if (criterion is None) == (ruling_record is None):
+242 |             raise NativeWriteRefusalError("The amendment requires one actual native subject")
+    |                                                                                         ^^^^^
+243 |         if criterion is not None:
+244 |             surface = WritableSurface(
+    |
+
+E501 Line too long (101 > 88)
+   --> src/kodezart/services/amendment_writeback.py:281:89
+    |
+279 |             await authority.require_current()
+280 |             explanation = judgment.finding.refutation or (
+281 |                 f"The independently judged departure remains {reason.value if reason else 'pending'}"
+    |                                                                                         ^^^^^^^^^^^^^
+282 |             )
+    |
+
+E501 Line too long (90 > 88)
+   --> src/kodezart/services/amendment_writeback.py:331:89
+    |
+329 |                     )
+330 |                 return UpheldAmendment(
+331 |                     claim=claim, reason=reason, judgment=judgment, publication=publication
+    |                                                                                         ^^
+332 |                 )
+    |
+
+E501 Line too long (99 > 88)
+   --> src/kodezart/services/amendment_writeback.py:345:89
+    |
+343 |                 await authority.require_current()
+344 |                 replacement = text.replacement
+345 |                 if current_criterion is not None and isinstance(replacement, CriterionReplacement):
+    |                                                                                         ^^^^^^^^^^^
+346 |                     retired = {"Evidence": ""}
+347 |                     if criterion_field_bodies(current_criterion.body, field="Class"):
+    |
+
+E501 Line too long (100 > 88)
+   --> src/kodezart/services/amendment_writeback.py:349:89
+    |
+347 |                     if criterion_field_bodies(current_criterion.body, field="Class"):
+348 |                         retired["Class"] = ""
+349 |                     cleared = replace_criterion_fields(current_criterion.body, replacements=retired)
+    |                                                                                         ^^^^^^^^^^^^
+350 |                     await self._gate_exact(
+351 |                         body=cleared, visibility=visibility,
+    |
+
+E501 Line too long (96 > 88)
+   --> src/kodezart/services/amendment_writeback.py:372:89
+    |
+370 |                     )
+371 |                     amended = replace_criterion_fields(
+372 |                         cleared, replacements={"Check": replacement.check, "Do": replacement.do}
+    |                                                                                         ^^^^^^^^
+373 |                     )
+374 |                     await self._gate_exact(
+    |
+
+E501 Line too long (95 > 88)
+   --> src/kodezart/services/amendment_writeback.py:387:89
+    |
+385 |                         previous=current_criterion, body=amended, reset=False
+386 |                     )
+387 |                 elif current_ruling is not None and isinstance(replacement, RulingReplacement):
+    |                                                                                         ^^^^^^^
+388 |                     comment, ruling = current_ruling
+389 |                     changed = Ruling.model_validate({
+    |
+
+E501 Line too long (94 > 88)
+   --> src/kodezart/services/amendment_writeback.py:396:89
+    |
+394 |                         "authored_by": RulingAuthor.MACHINE,
+395 |                     })
+396 |                     native_lane = unquote(comment.body.partition("\n")[0][1:-1].split(":")[1])
+    |                                                                                         ^^^^^^
+397 |                     body = render_ruling(
+398 |                         ruling=changed, lane_key=native_lane,
+    |
+
+E501 Line too long (100 > 88)
+   --> src/kodezart/services/amendment_writeback.py:413:89
+    |
+411 |                     ))
+412 |                     current_ruling = (
+413 |                         await authority.observe_ruling(previous=comment, ruling=changed, body=body),
+    |                                                                                         ^^^^^^^^^^^^
+414 |                         changed,
+415 |                     )
+    |
+
+E501 Line too long (105 > 88)
+   --> src/kodezart/services/amendment_writeback.py:417:89
+    |
+415 |                     )
+416 |                 else:
+417 |                     raise NativeWriteRefusalError("The replacement does not address this native subject")
+    |                                                                                         ^^^^^^^^^^^^^^^^^
+418 |
+419 |             applied = await self._verify(
+    |
+
+E501 Line too long (90 > 88)
+   --> src/kodezart/services/amendment_writeback.py:462:89
+    |
+460 |                 raised_by=holder,
+461 |                 question=question,
+462 |                 interim_reading="UPHELD: retain the existing criterion or pinned ruling.",
+    |                                                                                         ^^
+463 |                 interim_basis=judgment.model_dump_json(),
+464 |                 raised_at_sha=judgment.base_sha,
+    |
+
+E501 Line too long (104 > 88)
+   --> src/kodezart/services/native_amendments.py:125:89
+    |
+123 |         """Create a runtime guard; no service or tracker enters graph state."""
+124 |         if stage not in NATIVE_WRITING_STAGES:
+125 |             raise NativeWriteRefusalError("The native writing stage has no amendment gate registration")
+    |                                                                                         ^^^^^^^^^^^^^^^^
+126 |         if holder is None or not holder.strip():
+127 |             raise NativeWriteRefusalError("Native writing requires the actual parent job holder")
+    |
+
+E501 Line too long (97 > 88)
+   --> src/kodezart/services/native_amendments.py:127:89
+    |
+125 |             raise NativeWriteRefusalError("The native writing stage has no amendment gate registration")
+126 |         if holder is None or not holder.strip():
+127 |             raise NativeWriteRefusalError("Native writing requires the actual parent job holder")
+    |                                                                                         ^^^^^^^^^
+128 |         if repo_url is None:
+129 |             raise NativeWriteRefusalError("Native amendment verification requires the actual repository")
+    |
+
+E501 Line too long (105 > 88)
+   --> src/kodezart/services/native_amendments.py:129:89
+    |
+127 |             raise NativeWriteRefusalError("Native writing requires the actual parent job holder")
+128 |         if repo_url is None:
+129 |             raise NativeWriteRefusalError("Native amendment verification requires the actual repository")
+    |                                                                                         ^^^^^^^^^^^^^^^^^
+130 |         for purpose in ("amendment", "escalation"):
+131 |             configured_marker_prefix(self._operation.marker_prefixes, purpose=purpose)
+    |
+
+E501 Line too long (102 > 88)
+   --> src/kodezart/services/native_amendments.py:134:89
+    |
+132 |         if "decision" not in self._operation.issue_labels:
+133 |             raise OperationMemberAbsentError(
+134 |                 missing="issue_labels['decision']", stops="native amendment escalation is unavailable"
+    |                                                                                         ^^^^^^^^^^^^^^
+135 |             )
+136 |         matches = [repo for repo in self._repositories if repo.url == repo_url]
+    |
+
+E501 Line too long (89 > 88)
+   --> src/kodezart/services/native_amendments.py:200:89
+    |
+198 |                 "The pinned ruling roster repeats an identity"
+199 |             )
+200 |         return criterion_issues, tuple(sorted(rulings, key=lambda row: row[1].ruling_id))
+    |                                                                                         ^
+    |
+
+E501 Line too long (89 > 88)
+   --> src/kodezart/services/native_amendments.py:227:89
+    |
+225 |         self._ruling_records: tuple[tuple[TrackerComment, Ruling], ...] | None = None
+226 |         self._base_sha: str | None = None
+227 |         self._write_back, self._holder, self._visibility = write_back, holder, visibility
+    |                                                                                         ^
+228 |
+229 |     async def begin(self, *, workspace_path: str) -> NativeWriterStart:
+    |
+
+E501 Line too long (96 > 88)
+   --> src/kodezart/services/native_amendments.py:294:89
+    |
+292 |                 "Pinned rulings changed during native writing"
+293 |             )
+294 |         if self._criterion_issues is None or len(current_issues) != len(self._criterion_issues):
+    |                                                                                         ^^^^^^^^
+295 |             raise NativeWriteRefusalError("Native criterion facts changed during writing")
+296 |         for expected, current_issue in zip(self._criterion_issues, current_issues, strict=True):
+    |
+
+E501 Line too long (90 > 88)
+   --> src/kodezart/services/native_amendments.py:295:89
+    |
+293 |             )
+294 |         if self._criterion_issues is None or len(current_issues) != len(self._criterion_issues):
+295 |             raise NativeWriteRefusalError("Native criterion facts changed during writing")
+    |                                                                                         ^^
+296 |         for expected, current_issue in zip(self._criterion_issues, current_issues, strict=True):
+297 |             require_criterion_source(expected=expected, current=current_issue)
+    |
+
+E501 Line too long (96 > 88)
+   --> src/kodezart/services/native_amendments.py:296:89
+    |
+294 |         if self._criterion_issues is None or len(current_issues) != len(self._criterion_issues):
+295 |             raise NativeWriteRefusalError("Native criterion facts changed during writing")
+296 |         for expected, current_issue in zip(self._criterion_issues, current_issues, strict=True):
+    |                                                                                         ^^^^^^^^
+297 |             require_criterion_source(expected=expected, current=current_issue)
+298 |         current = await owner._criteria.read_current(spec=self._spec)
+    |
+
+E501 Line too long (90 > 88)
+   --> src/kodezart/services/native_amendments.py:431:89
+    |
+429 |                 raise NativeWriteRefusalError("A claim names no current native subject")
+430 |         return await NativeAmendmentGraph(
+431 |             actions=_WriterActions(guard=self, workspace_path=workspace_path, start=start)
+    |                                                                                         ^^
+432 |         ).run(output=output)
+    |
+
+E501 Line too long (108 > 88)
+   --> src/kodezart/services/native_amendments.py:438:89
+    |
+436 |     """Bind graph behavior to the actual guarded writer without storing services."""
+437 |
+438 |     def __init__(self, *, guard: _NativeWriterGuard, workspace_path: str, start: NativeWriterStart) -> None:
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^
+439 |         self._guard, self._workspace_path, self._start = guard, workspace_path, start
+    |
+
+E501 Line too long (97 > 88)
+   --> src/kodezart/services/native_amendments.py:442:89
+    |
+441 |     async def require_current(self) -> None:
+442 |         await self._guard.require_current(workspace_path=self._workspace_path, start=self._start)
+    |                                                                                         ^^^^^^^^^
+443 |
+444 |     async def judge_claim(self, claim: AmendmentClaim) -> AmendmentJudgment:
+    |
+
+E501 Line too long (95 > 88)
+   --> src/kodezart/services/native_amendments.py:445:89
+    |
+444 |     async def judge_claim(self, claim: AmendmentClaim) -> AmendmentJudgment:
+445 |         return await self._guard._judge_claim(workspace_path=self._workspace_path, claim=claim)
+    |                                                                                         ^^^^^^^
+446 |
+447 |     async def apply_judgment(self, claim: AmendmentClaim, judgment: AmendmentJudgment) -> AmendmentVerdict:
+    |
+
+E501 Line too long (107 > 88)
+   --> src/kodezart/services/native_amendments.py:447:89
+    |
+445 |         return await self._guard._judge_claim(workspace_path=self._workspace_path, claim=claim)
+446 |
+447 |     async def apply_judgment(self, claim: AmendmentClaim, judgment: AmendmentJudgment) -> AmendmentVerdict:
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^
+448 |         guard = self._guard
+449 |         criterion = next((i for i in guard._criterion_issues or () if i.issue_key == claim.subject.id), None) if isinstance(claim.sub…
+    |
+
+E501 Line too long (166 > 88)
+   --> src/kodezart/services/native_amendments.py:449:89
+    |
+447 | …gment: AmendmentJudgment) -> AmendmentVerdict:
+448 | …
+449 | …or () if i.issue_key == claim.subject.id), None) if isinstance(claim.subject, CriterionSubject) else None
+    |                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+450 | …r () if row[1].ruling_id == claim.subject.id), None) if not isinstance(claim.subject, CriterionSubject) else None
+451 | …
+    |
+
+E501 Line too long (174 > 88)
+   --> src/kodezart/services/native_amendments.py:450:89
+    |
+448 | …
+449 | …) if i.issue_key == claim.subject.id), None) if isinstance(claim.subject, CriterionSubject) else None
+450 | … if row[1].ruling_id == claim.subject.id), None) if not isinstance(claim.subject, CriterionSubject) else None
+    |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+451 | …
+452 | …
+    |
+
+E501 Line too long (93 > 88)
+   --> src/kodezart/services/native_amendments.py:454:89
+    |
+452 |             claim=claim, judgment=judgment,
+453 |             reason=upheld_reason(claim, judgment, environment=guard._environment),
+454 |             lane_key=guard._spec.subject, holder=guard._holder, visibility=guard._visibility,
+    |                                                                                         ^^^^^
+455 |             authority=self, criterion=criterion, ruling_record=ruling,
+456 |         )
+    |
+
+E501 Line too long (105 > 88)
+   --> src/kodezart/services/native_amendments.py:458:89
+    |
+456 |         )
+457 |
+458 |     async def observe_criterion(self, *, previous: TrackerIssue, body: str, reset: bool) -> TrackerIssue:
+    |                                                                                         ^^^^^^^^^^^^^^^^^
+459 |         guard = self._guard
+460 |         current = await guard._owner._tracker.read_issue(issue_key=previous.issue_key)
+    |
+
+E501 Line too long (90 > 88)
+   --> src/kodezart/services/native_amendments.py:462:89
+    |
+460 |         current = await guard._owner._tracker.read_issue(issue_key=previous.issue_key)
+461 |         expected = previous.model_copy(update={"body": body})
+462 |         require_criterion_source(expected=expected, current=current, pending_replay=reset)
+    |                                                                                         ^^
+463 |         if reset and current.state_kind is not WorkflowStateKind.UNSTARTED:
+464 |             raise NativeWriteRefusalError("The amended criterion did not reset")
+    |
+
+E501 Line too long (131 > 88)
+   --> src/kodezart/services/native_amendments.py:465:89
+    |
+463 |         if reset and current.state_kind is not WorkflowStateKind.UNSTARTED:
+464 |             raise NativeWriteRefusalError("The amended criterion did not reset")
+465 |         guard._criterion_issues = tuple(current if i.issue_key == previous.issue_key else i for i in guard._criterion_issues or ())
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+466 |         guard._criteria = TrackerCriterionSet(criteria=[
+467 |             TrackerCriterion(id=CriterionId(i.issue_key), text=criterion_check(criterion=i, issue_key=guard._spec.subject))
+    |
+
+E501 Line too long (123 > 88)
+   --> src/kodezart/services/native_amendments.py:467:89
+    |
+465 |         guard._criterion_issues = tuple(current if i.issue_key == previous.issue_key else i for i in guard._criterion_issues or ())
+466 |         guard._criteria = TrackerCriterionSet(criteria=[
+467 |             TrackerCriterion(id=CriterionId(i.issue_key), text=criterion_check(criterion=i, issue_key=guard._spec.subject))
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+468 |             for i in guard._criterion_issues if i.state_kind is WorkflowStateKind.UNSTARTED
+469 |         ])
+    |
+
+E501 Line too long (91 > 88)
+   --> src/kodezart/services/native_amendments.py:468:89
+    |
+466 |         guard._criteria = TrackerCriterionSet(criteria=[
+467 |             TrackerCriterion(id=CriterionId(i.issue_key), text=criterion_check(criterion=i, issue_key=guard._spec.subject))
+468 |             for i in guard._criterion_issues if i.state_kind is WorkflowStateKind.UNSTARTED
+    |                                                                                         ^^^
+469 |         ])
+470 |         await self.require_current()
+    |
+
+E501 Line too long (109 > 88)
+   --> src/kodezart/services/native_amendments.py:473:89
+    |
+471 |         return current
+472 |
+473 |     async def observe_ruling(self, *, previous: TrackerComment, ruling: Ruling, body: str) -> TrackerComment:
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^
+474 |         guard = self._guard
+475 |         records = await guard._owner._rulings.read_issue(issue_key=previous.issue_key)
+    |
+
+E501 Line too long (132 > 88)
+   --> src/kodezart/services/native_amendments.py:477:89
+    |
+475 | …s.read_issue(issue_key=previous.issue_key)
+476 | … value in records if value == ruling), None)
+477 | …dump(exclude={"body"}) != previous.model_dump(exclude={"body"}) or current.body != body:
+    |                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+478 | …he amended ruling changed native identity or text")
+479 | …nt, ruling) if c.comment_key == previous.comment_key else (c, r) for c, r in guard._ruling_records or ())
+    |
+
+E501 Line too long (95 > 88)
+   --> src/kodezart/services/native_amendments.py:478:89
+    |
+476 | …     current = next((comment for comment, value in records if value == ruling), None)
+477 | …     if current is None or current.model_dump(exclude={"body"}) != previous.model_dump(exclude={"body"}) or current.body != body:
+478 | …         raise NativeWriteRefusalError("The amended ruling changed native identity or text")
+    |                                                                                       ^^^^^^^
+479 | …     guard._ruling_records = tuple((current, ruling) if c.comment_key == previous.comment_key else (c, r) for c, r in guard._ruling_…
+480 | …     guard._rulings = tuple(r for _, r in guard._ruling_records)
+    |
+
+E501 Line too long (149 > 88)
+   --> src/kodezart/services/native_amendments.py:479:89
+    |
+477 | …ude={"body"}) != previous.model_dump(exclude={"body"}) or current.body != body:
+478 | …d ruling changed native identity or text")
+479 | …g) if c.comment_key == previous.comment_key else (c, r) for c, r in guard._ruling_records or ())
+    |                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+480 | …uling_records)
+481 | …
+    |
+
+E501 Line too long (89 > 88)
+    --> tests/fakes.py:3657:89
+     |
+3655 |     ) -> TrackerIssue:
+3656 |         current = await self.read_issue(issue_key=expected.issue_key)
+3657 |         require_criterion_source(expected=expected, current=current, pending_replay=True)
+     |                                                                                         ^
+3658 |         surface = WritableSurface(
+3659 |             kind=SurfaceKind.CRITERION_SUB_ISSUE,
+     |
+
+E501 Line too long (96 > 88)
+    --> tests/fakes.py:3663:89
+     |
+3661 |         )
+3662 |         grant = self.leases.get(surface)
+3663 |         owner = grant.holder if grant is not None and grant.expires_at > self._clock() else None
+     |                                                                                         ^^^^^^^^
+3664 |         if not holder.strip() or holder != owner:
+3665 |             raise SurfaceLeaseError("native criterion amendment requires its grant", surface=surface, current_holder=owner)
+     |
+
+E501 Line too long (123 > 88)
+    --> tests/fakes.py:3665:89
+     |
+3663 |         owner = grant.holder if grant is not None and grant.expires_at > self._clock() else None
+3664 |         if not holder.strip() or holder != owner:
+3665 |             raise SurfaceLeaseError("native criterion amendment requires its grant", surface=surface, current_holder=owner)
+     |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+3666 |         if current.state_kind is WorkflowStateKind.UNSTARTED:
+3667 |             return current
+     |
+
+E501 Line too long (107 > 88)
+    --> tests/fakes.py:3668:89
+     |
+3666 |         if current.state_kind is WorkflowStateKind.UNSTARTED:
+3667 |             return current
+3668 |         pending = [name for name, kind in self._state_kinds.items() if kind is WorkflowStateKind.UNSTARTED]
+     |                                                                                         ^^^^^^^^^^^^^^^^^^^
+3669 |         if len(pending) != 1:
+3670 |             raise CriterionReadError(issue_key=expected.issue_key, reason="reset requires exactly one unstarted team state")
+     |
+
+E501 Line too long (124 > 88)
+    --> tests/fakes.py:3670:89
+     |
+3668 |         pending = [name for name, kind in self._state_kinds.items() if kind is WorkflowStateKind.UNSTARTED]
+3669 |         if len(pending) != 1:
+3670 |             raise CriterionReadError(issue_key=expected.issue_key, reason="reset requires exactly one unstarted team state")
+     |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+3671 |         updated = current.model_copy(update={"state_name": pending[0], "state_kind": WorkflowStateKind.UNSTARTED})
+3672 |         self.issues[expected.issue_key] = updated
+     |
+
+E501 Line too long (114 > 88)
+    --> tests/fakes.py:3671:89
+     |
+3669 |         if len(pending) != 1:
+3670 |             raise CriterionReadError(issue_key=expected.issue_key, reason="reset requires exactly one unstarted team state")
+3671 |         updated = current.model_copy(update={"state_name": pending[0], "state_kind": WorkflowStateKind.UNSTARTED})
+     |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^
+3672 |         self.issues[expected.issue_key] = updated
+3673 |         self._wrote(expected.issue_key)
+     |
+
+E501 Line too long (100 > 88)
+    --> tests/fakes.py:3816:89
+     |
+3814 |             )
+3815 |             grant = self.leases.get(surface)
+3816 |             owner = grant.holder if grant is not None and grant.expires_at > self._clock() else None
+     |                                                                                         ^^^^^^^^^^^^
+3817 |             if not holder.strip() or holder != owner:
+3818 |                 raise SurfaceLeaseError("native criterion amendment requires its grant", surface=surface, current_holder=owner)
+     |
+
+E501 Line too long (127 > 88)
+    --> tests/fakes.py:3818:89
+     |
+3816 |             owner = grant.holder if grant is not None and grant.expires_at > self._clock() else None
+3817 |             if not holder.strip() or holder != owner:
+3818 |                 raise SurfaceLeaseError("native criterion amendment requires its grant", surface=surface, current_holder=owner)
+     |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+3819 |         body = description_replacement(
+3820 |             target=target, body=current.body, expected=expected, replacement=replacement
+     |
+
+E501 Line too long (109 > 88)
+  --> tests/tracker/test_native_criterion_amendment.py:88:89
+   |
+86 |                         row.labels.clear()
+87 |                     else:
+88 |                         board.now = max(c.updated_at for c in board.server.comments) + timedelta(seconds=901)
+   |                                                                                         ^^^^^^^^^^^^^^^^^^^^^
+89 |             if name == "save_issue":
+90 |                 writes += 1
+   |
+
+E501 Line too long (106 > 88)
+   --> tests/tracker/test_native_criterion_amendment.py:103:89
+    |
+101 |             else:
+102 |                 await tracker.edit_description(
+103 |                     target=KEY, expected=BODY, replacement=BODY.replace("old predicate", "new predicate"),
+    |                                                                                         ^^^^^^^^^^^^^^^^^^
+104 |                     holder=HOLDER,
+105 |                 )
+    |
+
+Found 73 errors (5 fixed, 68 remaining).

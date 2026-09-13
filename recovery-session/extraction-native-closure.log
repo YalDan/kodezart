@@ -1,0 +1,6 @@
+Candidate head: f7c8b1f8a961f07325eb41f4a3cb2da56d168d08
+Tracked diff snapshot: 5e68161082a01593f1baaf3be2bf9d45820d691734cb6dbee4849400232f3cd0 5e68161082a01593f1baaf3be2bf9d45820d691734cb6dbee4849400232f3cd0
+Captured candidate files: 11 unchanged-at-end: True
+Main existing symbols: 14 ticket patch: 2d6893e6e7c0b8d554db5e515cc391bf8afdc9fae7796f7551b28b02c6390cfe
+src/kodezart/services/amendment_writeback.py has no TrackerSpec/workflow import; captured hash 1836b9d494bc89fda57f3ac4e50d059bfe0dac24822f4942156a51078a141226
+src/kodezart/chains/native_amendment.py has no TrackerSpec/workflow import; captured hash 99c0b6560f00b4feeb328615de483dabffa15fb852baa00fc2ddad33abb59a79

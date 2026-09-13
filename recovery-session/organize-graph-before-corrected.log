@@ -1,0 +1,133 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+___ test_configured_owner_applies_graph_priority_then_reentry_writes_nothing ___
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10cd9ac90>
+
+    async def test_configured_owner_applies_graph_priority_then_reentry_writes_nothing(
+        monkeypatch,
+    ):
+        owner, board, executor = factory(convergence_bound=4, bound=3)
+        original = executor.stream
+    
+        async def stream(**kwargs):
+            schema = kwargs["output_format"]["schema"]
+            key = re.findall(r"<issue_key>(.*?)</issue_key>", kwargs["prompt"])
+            if (
+                key
+                and key[-1] == CLAIMED_ISSUE
+                and board.server.issues[CLAIMED_ISSUE].priority_raw != 1
+            ):
+                executor.calls.append(kwargs)
+                if schema.get("title") == "OrganizeProposal":
+                    yield result(
+                        structured_output={
+                            "kind": "graph",
+                            "issue_id": CLAIMED_ISSUE,
+                            "changes": [{"kind": "priority", "priority": "urgent"}],
+                        }
+                    )
+                else:
+                    yield result(
+                        structured_output={
+                            "issue_id": CLAIMED_ISSUE,
+                            "verdict": "not_buildable",
+                            "evidence": "The configured mandate requires urgent priority.",
+                            "refusal_kind": "spec_gap",
+                            "invented_decision": "Apply the recorded urgent priority.",
+                        }
+                    )
+                return
+            async for event in original(**kwargs):
+                yield event
+    
+        monkeypatch.setattr(executor, "stream", stream)
+>       report = await run_owner(owner)
+                 ^^^^^^^^^^^^^^^^^^^^^^
+
+tests/chains/test_organize_graph_owner.py:48: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/chains/test_organize_owner.py:190: in run_owner
+    return await owner.run(
+src/kodezart/services/organize_owner.py:806: in run
+    verified_write = await self._author_write(
+src/kodezart/services/organize_owner.py:463: in _author_write
+    return await self._verifier.write_back(
+src/kodezart/chains/write_back_verifier.py:121: in write_back
+    await step.write(finding=finding)
+src/kodezart/services/organize_owner.py:87: in write
+    await self.apply(finding)
+src/kodezart/services/organize_owner.py:337: in apply
+    proposal = await self._author.propose(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.chains.organize_author.OrganizeAuthor object at 0x10cd9b9e0>
+request = OrganizeAdmissionRequest(issue_key='FIX-1', mandate_rubric='── SKILLS AVAILABLE FOR THIS ROLE ──\nLoad each skill belo...ache_key='actual-organize-job', defect_classes=(), admission_prompt_key=<PromptKey.ORGANIZE_ASSESS: 'organize_assess'>)
+
+    async def propose(
+        self, request: OrganizeAdmissionRequest, *, key: PromptKey, evidence: str | None
+    ) -> ProposedWrite:
+        revision = await self._tracker.read_issue_revision(issue_key=request.issue_key)
+        subject = revision.issue
+        if subject.issue_key != request.issue_key:
+            raise OrganizeAdmissionIdentityError(
+                expected=request.issue_key, observed=subject.issue_key
+            )
+        linked = [
+            await self._tracker.read_issue(issue_key=key)
+            for key in sorted(
+                {r.issue_key for r in subject.relations} - {subject.issue_key}
+            )
+        ]
+        criteria = await self._tracker.read_criteria(issue_key=subject.issue_key)
+        prompt = self._prompts.template_for(key).render(
+            {
+                **organize_variables(
+                    mandate_rubric=request.mandate_rubric,
+                    issue_body=subject.body,
+                    linked_issue_bodies=[i.body for i in linked],
+                    criterion_issue_bodies=[i.body for i in criteria],
+                    refusal_evidence=None,
+                    defect_classes=request.defect_classes,
+                ),
+                "refusal_evidence": evidence,
+                "issue_key": subject.issue_key,
+                "base_ref": request.base_ref,
+            }
+        )
+        async with owned_workspace(
+            self._workspace,
+            repo_url=request.repo_url,
+            ref=request.base_ref,
+            cache_key=request.cache_key,
+        ) as workspace:
+            structured = await judge_in_workspace(
+                runner=self._runner,
+                prompts=self._prompts,
+                skills=self._skills,
+                workspace=workspace,
+                key=key,
+                prompt=prompt,
+                output_schema=ORGANIZE_PROPOSAL_SCHEMA,
+                site=(
+                    "organize_criteria_author"
+                    if key is PromptKey.ORGANIZE_CRITERIA_AUTHOR
+                    else "organize_author"
+                ),
+                session_type=SessionType.ORGANIZE_PASS,
+                failure_message="Organize author produced no structured proposal.",
+            )
+>       proposal = OrganizeProposal.model_validate(structured)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for OrganizeProposal
+E         Input tag 'graph' found using 'kind' does not match any of the expected tags: 'body', 'criteria', 'unresolved', 'unavailable' [type=union_tag_invalid, input_value={'kind': 'graph', 'issue_... 'priority': 'urgent'}]}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.12/v/union_tag_invalid
+
+src/kodezart/chains/organize_author.py:96: ValidationError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 17:48:18 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-12 17:48:18 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 17:48:18 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+=========================== short test summary info ============================
+FAILED tests/chains/test_organize_graph_owner.py::test_configured_owner_applies_graph_priority_then_reentry_writes_nothing
+1 failed in 0.40s

@@ -1,0 +1,2878 @@
+{
+  "candidate_head": "f7c8b1f8a961f07325eb41f4a3cb2da56d168d08",
+  "candidate_status": " M src/kodezart/adapters/linear_mcp_tracker.py\n M src/kodezart/chains/native_amendment.py\n M src/kodezart/chains/ralph_loop.py\n M src/kodezart/composition/engine.py\n M src/kodezart/core/protocols.py\n M src/kodezart/domain/amendment.py\n M src/kodezart/domain/fire_spec.py\n M src/kodezart/services/amendment_writeback.py\n M src/kodezart/services/native_amendments.py\n M src/kodezart/types/domain/amendment.py\n M src/kodezart/types/domain/surface.py\n M tests/fakes.py\n M tests/services/test_native_amendments.py\n?? src/kodezart/domain/criterion_amendment.py\n?? tests/tracker/test_native_criterion_amendment.py\n",
+  "tracked_diff_before_sha256": "5e68161082a01593f1baaf3be2bf9d45820d691734cb6dbee4849400232f3cd0",
+  "tracked_diff_after_sha256": "5e68161082a01593f1baaf3be2bf9d45820d691734cb6dbee4849400232f3cd0",
+  "captured_files_unchanged_at_end": {
+    "src/kodezart/services/native_amendments.py": true,
+    "src/kodezart/services/amendment_writeback.py": true,
+    "src/kodezart/chains/native_amendment.py": true,
+    "src/kodezart/types/domain/amendment.py": true,
+    "src/kodezart/types/domain/amendment_write.py": true,
+    "src/kodezart/domain/amendment.py": true,
+    "src/kodezart/domain/criterion_amendment.py": true,
+    "src/kodezart/domain/fire_spec.py": true,
+    "src/kodezart/core/protocols.py": true,
+    "src/kodezart/adapters/linear_mcp_tracker.py": true,
+    "src/kodezart/composition/engine.py": true
+  },
+  "is_frozen": false,
+  "acceptance_claim": false,
+  "rows": [
+    {
+      "path": "src/kodezart/services/native_amendments.py",
+      "sha256": "a7eb339eab0ef9731975828d3c8b65c1eb3cf59f728abf8e6da0c47cf9b1c700",
+      "snapshot": "src__kodezart__services__native_amendments.py",
+      "census": [
+        {
+          "kind": "import",
+          "module": "collections.abc",
+          "names": [
+            "Sequence"
+          ],
+          "start": 3,
+          "end": 3
+        },
+        {
+          "kind": "import",
+          "module": "typing",
+          "names": [
+            "Final"
+          ],
+          "start": 4,
+          "end": 4
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.chains.native_amendment",
+          "names": [
+            "NativeAmendmentGraph"
+          ],
+          "start": 6,
+          "end": 6
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.core.errors",
+          "names": [
+            "TrackerAccessDeniedError",
+            "TrackerProtocolError",
+            "TrackerUnavailableError"
+          ],
+          "start": 7,
+          "end": 11
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.core.owned_tasks",
+          "names": [
+            "settle"
+          ],
+          "start": 12,
+          "end": 12
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.core.protocols",
+          "names": [
+            "AgentRunner",
+            "FireCriteriaReader",
+            "GitService",
+            "GitSourceReader",
+            "NativeWriteGuard",
+            "OutboundContentGate",
+            "PromptSetProvider",
+            "TrackerPort",
+            "WorkspaceProvider"
+          ],
+          "start": 13,
+          "end": 23
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.domain.amendment",
+          "names": [
+            "NativeWriteRefusalError",
+            "upheld_reason"
+          ],
+          "start": 24,
+          "end": 27
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.domain.comment_markers",
+          "names": [
+            "configured_marker_prefix"
+          ],
+          "start": 28,
+          "end": 28
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.domain.criterion_amendment",
+          "names": [
+            "require_criterion_source"
+          ],
+          "start": 29,
+          "end": 29
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.domain.errors",
+          "names": [
+            "CriterionReadError",
+            "RulingRecordReadError",
+            "ScopeReadError"
+          ],
+          "start": 30,
+          "end": 30
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.domain.fire_spec",
+          "names": [
+            "criterion_check"
+          ],
+          "start": 31,
+          "end": 31
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.services.amendment_writeback",
+          "names": [
+            "AmendmentSource",
+            "AmendmentWriteBack",
+            "CriterionAmendmentSource",
+            "RulingAmendmentSource"
+          ],
+          "start": 32,
+          "end": 37
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.services.audit_sessions",
+          "names": [
+            "judge_in_workspace"
+          ],
+          "start": 38,
+          "end": 38
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.services.owned_workspace",
+          "names": [
+            "owned_workspace"
+          ],
+          "start": 39,
+          "end": 39
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.services.ruling_records",
+          "names": [
+            "RulingRecordReader"
+          ],
+          "start": 40,
+          "end": 40
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.services.scope_membership",
+          "names": [
+            "read_scope_members"
+          ],
+          "start": 41,
+          "end": 41
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.agent",
+          "names": [
+            "AMENDMENT_JUDGMENT_SCHEMA",
+            "Ruling"
+          ],
+          "start": 42,
+          "end": 42
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.amendment",
+          "names": [
+            "AmendmentClaim",
+            "AmendmentJudgment",
+            "AmendmentReport",
+            "AmendmentVerdict",
+            "CriterionSubject",
+            "NativeWriterOutput",
+            "NativeWriterStart"
+          ],
+          "start": 43,
+          "end": 51
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.criteria",
+          "names": [
+            "CriterionId",
+            "TrackerCriterion",
+            "TrackerCriterionSet"
+          ],
+          "start": 52,
+          "end": 56
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.fire_spec",
+          "names": [
+            "TrackerSpec"
+          ],
+          "start": 57,
+          "end": 57
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.gating",
+          "names": [
+            "RepoVisibility"
+          ],
+          "start": 58,
+          "end": 58
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.operation",
+          "names": [
+            "CheckPrerequisite",
+            "OperationConfig",
+            "OperationMemberAbsentError",
+            "RepoEntry"
+          ],
+          "start": 59,
+          "end": 64
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.prompts",
+          "names": [
+            "PromptKey"
+          ],
+          "start": 65,
+          "end": 65
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.scope",
+          "names": [
+            "ScopeKind",
+            "ScopeRef"
+          ],
+          "start": 66,
+          "end": 66
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.session",
+          "names": [
+            "SessionType"
+          ],
+          "start": 67,
+          "end": 67
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.skills",
+          "names": [
+            "SkillsSelection"
+          ],
+          "start": 68,
+          "end": 68
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.tracker",
+          "names": [
+            "TrackerComment",
+            "TrackerIssue",
+            "WorkflowStateKind"
+          ],
+          "start": 69,
+          "end": 73
+        },
+        {
+          "kind": "ClassDef",
+          "name": "NativeAmendments",
+          "start": 80,
+          "end": 222
+        },
+        {
+          "kind": "ClassDef",
+          "name": "_NativeWriterGuard",
+          "start": 225,
+          "end": 467
+        },
+        {
+          "kind": "ClassDef",
+          "name": "_WriterActions",
+          "start": 470,
+          "end": 603
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/services/amendment_writeback.py",
+      "sha256": "1836b9d494bc89fda57f3ac4e50d059bfe0dac24822f4942156a51078a141226",
+      "snapshot": "src__kodezart__services__amendment_writeback.py",
+      "census": [
+        {
+          "kind": "import",
+          "module": "collections.abc",
+          "names": [
+            "Awaitable",
+            "Callable"
+          ],
+          "start": 3,
+          "end": 3
+        },
+        {
+          "kind": "import",
+          "module": "dataclasses",
+          "names": [
+            "dataclass"
+          ],
+          "start": 4,
+          "end": 4
+        },
+        {
+          "kind": "import",
+          "module": "hashlib",
+          "names": [
+            "sha256"
+          ],
+          "start": 5,
+          "end": 5
+        },
+        {
+          "kind": "import",
+          "module": "typing",
+          "names": [
+            "Protocol"
+          ],
+          "start": 6,
+          "end": 6
+        },
+        {
+          "kind": "import",
+          "module": "urllib.parse",
+          "names": [
+            "unquote"
+          ],
+          "start": 7,
+          "end": 7
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.chains.write_back_verifier",
+          "names": [
+            "FreshWriteBackJudge",
+            "WriteBackFinding",
+            "WriteBackResult",
+            "WriteBackVerifier"
+          ],
+          "start": 9,
+          "end": 14
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.core.logging",
+          "names": [
+            "get_logger"
+          ],
+          "start": 15,
+          "end": 15
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.core.outbound_write",
+          "names": [
+            "gated_write"
+          ],
+          "start": 16,
+          "end": 16
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.core.owned_tasks",
+          "names": [
+            "settle"
+          ],
+          "start": 17,
+          "end": 17
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.core.protocols",
+          "names": [
+            "AgentRunner",
+            "GitService",
+            "OutboundContentGate",
+            "PromptSetProvider",
+            "TrackerPort",
+            "WorkspaceProvider"
+          ],
+          "start": 18,
+          "end": 25
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.domain.amendment",
+          "names": [
+            "AmendmentWriteBackRefusalError",
+            "NativeWriteRefusalError"
+          ],
+          "start": 26,
+          "end": 29
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.domain.comment_markers",
+          "names": [
+            "compose_comment_marker"
+          ],
+          "start": 30,
+          "end": 30
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.domain.fire_spec",
+          "names": [
+            "CriterionField",
+            "criterion_field_bodies",
+            "replace_criterion_fields"
+          ],
+          "start": 31,
+          "end": 35
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.domain.rulings",
+          "names": [
+            "render_ruling"
+          ],
+          "start": 36,
+          "end": 36
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.domain.tracker_writes",
+          "names": [
+            "comment_under_marker",
+            "marked_comment_body"
+          ],
+          "start": 37,
+          "end": 37
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.services.audit_sessions",
+          "names": [
+            "judge_in_workspace"
+          ],
+          "start": 38,
+          "end": 38
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.services.lane_escalation",
+          "names": [
+            "LaneEscalationWriter"
+          ],
+          "start": 39,
+          "end": 39
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.services.owned_workspace",
+          "names": [
+            "owned_workspace"
+          ],
+          "start": 40,
+          "end": 40
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.services.run_surface_lease",
+          "names": [
+            "RunSurfaceLease"
+          ],
+          "start": 41,
+          "end": 41
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.services.tracker_artifacts",
+          "names": [
+            "read_tracker_artifact"
+          ],
+          "start": 42,
+          "end": 42
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.agent",
+          "names": [
+            "AMENDMENT_TEXT_SCHEMA",
+            "Ruling",
+            "RulingAuthor"
+          ],
+          "start": 43,
+          "end": 43
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.amendment",
+          "names": [
+            "AmendedAmendment",
+            "AmendmentClaim",
+            "AmendmentJudgment",
+            "AmendmentVerdict",
+            "EscalatedRefusal",
+            "RecordedRefusal",
+            "UpheldAmendment",
+            "UpheldReason"
+          ],
+          "start": 44,
+          "end": 53
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.amendment_write",
+          "names": [
+            "AmendmentRecord",
+            "AmendmentTextOutput",
+            "CriterionReplacement",
+            "PreservedSubject",
+            "RulingReplacement"
+          ],
+          "start": 54,
+          "end": 60
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.audit",
+          "names": [
+            "AuditVerdict",
+            "TrackerArtifact"
+          ],
+          "start": 61,
+          "end": 61
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.gating",
+          "names": [
+            "ContentClass",
+            "GateDecision",
+            "GateVerdict",
+            "OutboundDestination",
+            "RepoVisibility",
+            "WriterShape"
+          ],
+          "start": 62,
+          "end": 69
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.operation",
+          "names": [
+            "OperationConfig"
+          ],
+          "start": 70,
+          "end": 70
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.prompts",
+          "names": [
+            "PromptKey"
+          ],
+          "start": 71,
+          "end": 71
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.run_state",
+          "names": [
+            "LaneEscalation"
+          ],
+          "start": 72,
+          "end": 72
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.scope",
+          "names": [
+            "ScopeKind",
+            "ScopeRef"
+          ],
+          "start": 73,
+          "end": 73
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.session",
+          "names": [
+            "SessionType"
+          ],
+          "start": 74,
+          "end": 74
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.skills",
+          "names": [
+            "SkillsSelection"
+          ],
+          "start": 75,
+          "end": 75
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.surface",
+          "names": [
+            "DescriptionWriteAuthority",
+            "SurfaceKind",
+            "WritableSurface"
+          ],
+          "start": 76,
+          "end": 76
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.tracker",
+          "names": [
+            "TrackerComment",
+            "TrackerIssue"
+          ],
+          "start": 77,
+          "end": 77
+        },
+        {
+          "kind": "ClassDef",
+          "name": "AmendmentWriteAuthority",
+          "start": 80,
+          "end": 101
+        },
+        {
+          "kind": "ClassDef",
+          "name": "CriterionAmendmentSource",
+          "start": 105,
+          "end": 106
+        },
+        {
+          "kind": "ClassDef",
+          "name": "RulingAmendmentSource",
+          "start": 110,
+          "end": 112
+        },
+        {
+          "kind": "ClassDef",
+          "name": "_ExactEvidenceGate",
+          "start": 118,
+          "end": 144
+        },
+        {
+          "kind": "ClassDef",
+          "name": "_Step",
+          "start": 148,
+          "end": 153
+        },
+        {
+          "kind": "ClassDef",
+          "name": "AmendmentWriteBack",
+          "start": 156,
+          "end": 650
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/chains/native_amendment.py",
+      "sha256": "99c0b6560f00b4feeb328615de483dabffa15fb852baa00fc2ddad33abb59a79",
+      "snapshot": "src__kodezart__chains__native_amendment.py",
+      "census": [
+        {
+          "kind": "import",
+          "module": "typing",
+          "names": [
+            "Literal",
+            "Protocol",
+            "TypedDict"
+          ],
+          "start": 3,
+          "end": 3
+        },
+        {
+          "kind": "import",
+          "module": "langgraph.graph",
+          "names": [
+            "END",
+            "START",
+            "StateGraph"
+          ],
+          "start": 5,
+          "end": 5
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.amendment",
+          "names": [
+            "AmendmentClaim",
+            "AmendmentJudgment",
+            "AmendmentReport",
+            "AmendmentVerdict",
+            "NativeWriterOutput"
+          ],
+          "start": 7,
+          "end": 13
+        },
+        {
+          "kind": "ClassDef",
+          "name": "AmendmentActions",
+          "start": 16,
+          "end": 31
+        },
+        {
+          "kind": "ClassDef",
+          "name": "AmendmentState",
+          "start": 34,
+          "end": 39
+        },
+        {
+          "kind": "ClassDef",
+          "name": "NativeAmendmentGraph",
+          "start": 42,
+          "end": 93
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/types/domain/amendment.py",
+      "sha256": "8a700bac3c22b61d48f0d0a1371cd9d88c640ba3d70c27f0f89eea976014bd15",
+      "snapshot": "src__kodezart__types__domain__amendment.py",
+      "census": [
+        {
+          "kind": "import",
+          "module": "enum",
+          "names": [
+            "StrEnum"
+          ],
+          "start": 3,
+          "end": 3
+        },
+        {
+          "kind": "import",
+          "module": "typing",
+          "names": [
+            "Annotated",
+            "Literal",
+            "Self"
+          ],
+          "start": 4,
+          "end": 4
+        },
+        {
+          "kind": "import",
+          "module": "pydantic",
+          "names": [
+            "ConfigDict",
+            "Field",
+            "model_validator"
+          ],
+          "start": 6,
+          "end": 6
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.base",
+          "names": [
+            "CamelCaseModel"
+          ],
+          "start": 8,
+          "end": 8
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.audit",
+          "names": [
+            "AuditVerdict",
+            "TrackerArtifact"
+          ],
+          "start": 9,
+          "end": 9
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.criteria",
+          "names": [
+            "CriterionId",
+            "CriterionVerdict",
+            "FindingEvidence"
+          ],
+          "start": 10,
+          "end": 14
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.operation",
+          "names": [
+            "CheckPrerequisite"
+          ],
+          "start": 15,
+          "end": 15
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.ruling_id",
+          "names": [
+            "RulingId"
+          ],
+          "start": 16,
+          "end": 16
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.surface",
+          "names": [
+            "SurfaceKind"
+          ],
+          "start": 17,
+          "end": 17
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.write_back",
+          "names": [
+            "WriteBackResult"
+          ],
+          "start": 18,
+          "end": 18
+        },
+        {
+          "kind": "ClassDef",
+          "name": "CriterionSubject",
+          "start": 24,
+          "end": 35
+        },
+        {
+          "kind": "ClassDef",
+          "name": "RulingSubject",
+          "start": 38,
+          "end": 49
+        },
+        {
+          "kind": "ClassDef",
+          "name": "AmendmentGround",
+          "start": 57,
+          "end": 63
+        },
+        {
+          "kind": "ClassDef",
+          "name": "AmendmentClaim",
+          "start": 66,
+          "end": 96
+        },
+        {
+          "kind": "ClassDef",
+          "name": "NativeWriterOutput",
+          "start": 99,
+          "end": 115
+        },
+        {
+          "kind": "ClassDef",
+          "name": "BaseCitation",
+          "start": 118,
+          "end": 143
+        },
+        {
+          "kind": "ClassDef",
+          "name": "AmendmentJudgment",
+          "start": 146,
+          "end": 189
+        },
+        {
+          "kind": "ClassDef",
+          "name": "UpheldReason",
+          "start": 192,
+          "end": 198
+        },
+        {
+          "kind": "ClassDef",
+          "name": "UpheldJudgment",
+          "start": 201,
+          "end": 245
+        },
+        {
+          "kind": "ClassDef",
+          "name": "RecordedRefusal",
+          "start": 248,
+          "end": 253
+        },
+        {
+          "kind": "ClassDef",
+          "name": "EscalatedRefusal",
+          "start": 256,
+          "end": 262
+        },
+        {
+          "kind": "ClassDef",
+          "name": "UpheldAmendment",
+          "start": 270,
+          "end": 290
+        },
+        {
+          "kind": "ClassDef",
+          "name": "AmendedAmendment",
+          "start": 293,
+          "end": 343
+        },
+        {
+          "kind": "ClassDef",
+          "name": "AmendmentReport",
+          "start": 351,
+          "end": 367
+        },
+        {
+          "kind": "ClassDef",
+          "name": "RepeatedUpheld",
+          "start": 370,
+          "end": 376
+        },
+        {
+          "kind": "ClassDef",
+          "name": "NativeWriterStart",
+          "start": 379,
+          "end": 384
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/types/domain/amendment_write.py",
+      "sha256": "a5d0a5237c4d65a86ea9536e4ba433ef17d2e1c1b09d8985dff1bb091365bb7c",
+      "snapshot": "src__kodezart__types__domain__amendment_write.py",
+      "census": [
+        {
+          "kind": "import",
+          "module": "typing",
+          "names": [
+            "Annotated",
+            "Literal"
+          ],
+          "start": 3,
+          "end": 3
+        },
+        {
+          "kind": "import",
+          "module": "pydantic",
+          "names": [
+            "ConfigDict",
+            "Field"
+          ],
+          "start": 5,
+          "end": 5
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.base",
+          "names": [
+            "CamelCaseModel"
+          ],
+          "start": 7,
+          "end": 7
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.amendment",
+          "names": [
+            "AmendmentClaim",
+            "AmendmentJudgment",
+            "CriterionSubject",
+            "Nonblank",
+            "RulingSubject"
+          ],
+          "start": 8,
+          "end": 14
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.audit",
+          "names": [
+            "TrackerArtifact"
+          ],
+          "start": 15,
+          "end": 15
+        },
+        {
+          "kind": "ClassDef",
+          "name": "CriterionReplacement",
+          "start": 18,
+          "end": 27
+        },
+        {
+          "kind": "ClassDef",
+          "name": "RulingReplacement",
+          "start": 30,
+          "end": 44
+        },
+        {
+          "kind": "ClassDef",
+          "name": "PreservedSubject",
+          "start": 47,
+          "end": 53
+        },
+        {
+          "kind": "ClassDef",
+          "name": "AmendmentTextOutput",
+          "start": 62,
+          "end": 71
+        },
+        {
+          "kind": "ClassDef",
+          "name": "AmendmentRecord",
+          "start": 74,
+          "end": 82
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/domain/amendment.py",
+      "sha256": "578fc607cc99b5a90877786217e12175473c9d90c7dc99ba14eb63aca7998daa",
+      "snapshot": "src__kodezart__domain__amendment.py",
+      "census": [
+        {
+          "kind": "import",
+          "module": "collections",
+          "names": [
+            "Counter"
+          ],
+          "start": 3,
+          "end": 3
+        },
+        {
+          "kind": "import",
+          "module": "collections.abc",
+          "names": [
+            "Mapping",
+            "Sequence"
+          ],
+          "start": 4,
+          "end": 4
+        },
+        {
+          "kind": "import",
+          "module": "typing",
+          "names": [
+            "TYPE_CHECKING"
+          ],
+          "start": 5,
+          "end": 5
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.amendment",
+          "names": [
+            "AmendmentClaim",
+            "AmendmentJudgment",
+            "AmendmentReport",
+            "AmendmentSubject",
+            "RepeatedUpheld",
+            "UpheldReason"
+          ],
+          "start": 7,
+          "end": 14
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.criteria",
+          "names": [
+            "CriterionVerdict"
+          ],
+          "start": 15,
+          "end": 15
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.operation",
+          "names": [
+            "CheckPrerequisite"
+          ],
+          "start": 16,
+          "end": 16
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.write_back",
+          "names": [
+            "WriteBackResult"
+          ],
+          "start": 17,
+          "end": 17
+        },
+        {
+          "kind": "ClassDef",
+          "name": "NativeWriteRefusalError",
+          "start": 23,
+          "end": 24
+        },
+        {
+          "kind": "ClassDef",
+          "name": "NativeAmendmentRefusalError",
+          "start": 27,
+          "end": 41
+        },
+        {
+          "kind": "ClassDef",
+          "name": "AmendmentRequiresWriteError",
+          "start": 44,
+          "end": 52
+        },
+        {
+          "kind": "ClassDef",
+          "name": "AmendmentWriteBackRefusalError",
+          "start": 55,
+          "end": 62
+        },
+        {
+          "kind": "FunctionDef",
+          "name": "upheld_reason",
+          "start": 65,
+          "end": 105
+        },
+        {
+          "kind": "FunctionDef",
+          "name": "repeated_upheld",
+          "start": 108,
+          "end": 121
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/domain/criterion_amendment.py",
+      "sha256": "eb8e02009636fae364a7d8383c1ce6ea8e8a9733d40c2ac1d8cdecea447e50f8",
+      "snapshot": "src__kodezart__domain__criterion_amendment.py",
+      "census": [
+        {
+          "kind": "import",
+          "module": "kodezart.domain.errors",
+          "names": [
+            "CriterionReadError"
+          ],
+          "start": 3,
+          "end": 3
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.tracker",
+          "names": [
+            "TrackerIssue",
+            "WorkflowStateKind"
+          ],
+          "start": 4,
+          "end": 4
+        },
+        {
+          "kind": "FunctionDef",
+          "name": "require_criterion_source",
+          "start": 7,
+          "end": 23
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/domain/fire_spec.py",
+      "sha256": "480df47c8de6a0d1e5bac13d5f514efa67f6313aafdc2a14ffda10b8a429892e",
+      "snapshot": "src__kodezart__domain__fire_spec.py",
+      "census": [
+        {
+          "kind": "import",
+          "module": "collections.abc",
+          "names": [
+            "Mapping",
+            "Sequence"
+          ],
+          "start": 4,
+          "end": 4
+        },
+        {
+          "kind": "import",
+          "module": "typing",
+          "names": [
+            "Literal"
+          ],
+          "start": 5,
+          "end": 5
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.domain.errors",
+          "names": [
+            "EmptyFireCriteriaError",
+            "FireSpecEntryError",
+            "InvalidFireCriterionError"
+          ],
+          "start": 7,
+          "end": 11
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.fire_spec",
+          "names": [
+            "CriterionRef",
+            "IssueRef",
+            "TrackerSpec"
+          ],
+          "start": 12,
+          "end": 12
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.operation",
+          "names": [
+            "OperationMemberAbsentError"
+          ],
+          "start": 13,
+          "end": 13
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.tracker",
+          "names": [
+            "TrackerIssue"
+          ],
+          "start": 14,
+          "end": 14
+        },
+        {
+          "kind": "FunctionDef",
+          "name": "_without_comments",
+          "start": 21,
+          "end": 40
+        },
+        {
+          "kind": "FunctionDef",
+          "name": "criterion_field_bodies",
+          "start": 43,
+          "end": 80
+        },
+        {
+          "kind": "FunctionDef",
+          "name": "replace_criterion_fields",
+          "start": 83,
+          "end": 134
+        },
+        {
+          "kind": "FunctionDef",
+          "name": "tracker_spec_from_issues",
+          "start": 137,
+          "end": 150
+        },
+        {
+          "kind": "FunctionDef",
+          "name": "criterion_check",
+          "start": 153,
+          "end": 162
+        },
+        {
+          "kind": "FunctionDef",
+          "name": "require_fire_entry",
+          "start": 165,
+          "end": 181
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/core/protocols.py",
+      "sha256": "15a68811f517eecbb5c1fafc7e332c002d37e9005c8b516bca305e2aadb79fc1",
+      "snapshot": "src__kodezart__core__protocols.py",
+      "census": [
+        {
+          "kind": "import",
+          "module": "collections.abc",
+          "names": [
+            "AsyncIterator",
+            "Awaitable",
+            "Callable",
+            "Mapping",
+            "Sequence"
+          ],
+          "start": 3,
+          "end": 3
+        },
+        {
+          "kind": "import",
+          "module": "typing",
+          "names": [
+            "Protocol",
+            "runtime_checkable"
+          ],
+          "start": 4,
+          "end": 4
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.core.prompt_rendering",
+          "names": [
+            "PromptTemplate"
+          ],
+          "start": 6,
+          "end": 6
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.domain.run_event_stream",
+          "names": [
+            "LaneRunEvent"
+          ],
+          "start": 7,
+          "end": 7
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.agent",
+          "names": [
+            "AgentEvent"
+          ],
+          "start": 8,
+          "end": 8
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.amendment",
+          "names": [
+            "AmendmentReport",
+            "NativeWriterOutput",
+            "NativeWriterStart"
+          ],
+          "start": 9,
+          "end": 13
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.assertion_drift",
+          "names": [
+            "GitSourceBlob"
+          ],
+          "start": 14,
+          "end": 14
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.branch",
+          "names": [
+            "BaseSpec",
+            "WorkRef"
+          ],
+          "start": 15,
+          "end": 15
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.check_chain",
+          "names": [
+            "CheckChainResult"
+          ],
+          "start": 16,
+          "end": 16
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.check_observation",
+          "names": [
+            "CIWatchResult"
+          ],
+          "start": 17,
+          "end": 17
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.consolidation",
+          "names": [
+            "ChangesetDigest",
+            "ConsolidationOutcome"
+          ],
+          "start": 18,
+          "end": 21
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.criteria",
+          "names": [
+            "ExecutionCriterion",
+            "TrackerCriterionSet"
+          ],
+          "start": 22,
+          "end": 22
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.dispatch",
+          "names": [
+            "DispatchReport",
+            "PassSignal"
+          ],
+          "start": 23,
+          "end": 23
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.escalation",
+          "names": [
+            "EscalationResolution"
+          ],
+          "start": 24,
+          "end": 24
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.fire_spec",
+          "names": [
+            "TrackerSpec"
+          ],
+          "start": 25,
+          "end": 25
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.gating",
+          "names": [
+            "ContentClass",
+            "GateDecision",
+            "OutboundDestination",
+            "RepoVisibility",
+            "ScanResult",
+            "WriterShape"
+          ],
+          "start": 26,
+          "end": 33
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.issue_identity",
+          "names": [
+            "IssueIdentity"
+          ],
+          "start": 34,
+          "end": 34
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.job",
+          "names": [
+            "JobRecord"
+          ],
+          "start": 35,
+          "end": 35
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.operation",
+          "names": [
+            "CheckStep",
+            "LifecycleStage",
+            "QueueState",
+            "RecordDestination",
+            "ScopeLabel"
+          ],
+          "start": 36,
+          "end": 42
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.persist",
+          "names": [
+            "ArtifactPersistStatus",
+            "PersistResult"
+          ],
+          "start": 43,
+          "end": 43
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.pr_state",
+          "names": [
+            "PRState"
+          ],
+          "start": 44,
+          "end": 44
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.prompts",
+          "names": [
+            "PromptKey"
+          ],
+          "start": 45,
+          "end": 45
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.run",
+          "names": [
+            "RunState"
+          ],
+          "start": 46,
+          "end": 46
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.run_alarm",
+          "names": [
+            "AlarmSignal",
+            "AlarmSubject",
+            "RunAlarm"
+          ],
+          "start": 47,
+          "end": 47
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.run_records",
+          "names": [
+            "RunIdentity",
+            "RunOutcome",
+            "RunRecord"
+          ],
+          "start": 48,
+          "end": 48
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.scope",
+          "names": [
+            "ScopeContainer",
+            "ScopeRef"
+          ],
+          "start": 49,
+          "end": 49
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.self_writes",
+          "names": [
+            "IssueMovementSnapshot"
+          ],
+          "start": 50,
+          "end": 50
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.session",
+          "names": [
+            "AllowedTools",
+            "PermissionMode",
+            "SessionType"
+          ],
+          "start": 51,
+          "end": 51
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.skills",
+          "names": [
+            "SkillsSelection"
+          ],
+          "start": 52,
+          "end": 52
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.subagents",
+          "names": [
+            "NO_SUBAGENTS",
+            "UNCONFIGURED_SESSION_POLICY",
+            "AgentDefinition",
+            "SessionPolicy"
+          ],
+          "start": 53,
+          "end": 58
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.surface",
+          "names": [
+            "DescriptionWriteAuthority",
+            "SurfaceLease",
+            "WritableSurface"
+          ],
+          "start": 59,
+          "end": 59
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.tracker",
+          "names": [
+            "ClaimResult",
+            "IssuePriority",
+            "IssueQuery",
+            "MappingOutcome",
+            "MappingRef",
+            "ReviewQuery",
+            "TrackerAsset",
+            "TrackerComment",
+            "TrackerIssue",
+            "TrackerIssueRevision",
+            "TrackerIssueStateChange",
+            "TrackerReview"
+          ],
+          "start": 60,
+          "end": 73
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.tracker_writes",
+          "names": [
+            "DescriptionEditResult"
+          ],
+          "start": 74,
+          "end": 74
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.workflow",
+          "names": [
+            "RemediationRequest",
+            "WorkflowSubmission"
+          ],
+          "start": 75,
+          "end": 75
+        },
+        {
+          "kind": "ClassDef",
+          "name": "LogEmitter",
+          "start": 79,
+          "end": 100
+        },
+        {
+          "kind": "ClassDef",
+          "name": "GitSourceReader",
+          "start": 104,
+          "end": 121
+        },
+        {
+          "kind": "ClassDef",
+          "name": "GitService",
+          "start": 125,
+          "end": 281
+        },
+        {
+          "kind": "ClassDef",
+          "name": "RepoCache",
+          "start": 285,
+          "end": 294
+        },
+        {
+          "kind": "ClassDef",
+          "name": "AgentExecutor",
+          "start": 298,
+          "end": 329
+        },
+        {
+          "kind": "ClassDef",
+          "name": "WorkspaceProvider",
+          "start": 333,
+          "end": 351
+        },
+        {
+          "kind": "ClassDef",
+          "name": "ChangePersister",
+          "start": 355,
+          "end": 376
+        },
+        {
+          "kind": "ClassDef",
+          "name": "BranchMerger",
+          "start": 380,
+          "end": 418
+        },
+        {
+          "kind": "ClassDef",
+          "name": "RefPublisher",
+          "start": 422,
+          "end": 442
+        },
+        {
+          "kind": "ClassDef",
+          "name": "PRCreator",
+          "start": 446,
+          "end": 479
+        },
+        {
+          "kind": "ClassDef",
+          "name": "ForgeQuery",
+          "start": 483,
+          "end": 521
+        },
+        {
+          "kind": "ClassDef",
+          "name": "PRStateReader",
+          "start": 525,
+          "end": 530
+        },
+        {
+          "kind": "ClassDef",
+          "name": "CIMonitor",
+          "start": 534,
+          "end": 563
+        },
+        {
+          "kind": "ClassDef",
+          "name": "DeliveryProbe",
+          "start": 567,
+          "end": 583
+        },
+        {
+          "kind": "TypeAlias",
+          "name": "McpToolResult",
+          "start": 593,
+          "end": 593
+        },
+        {
+          "kind": "ClassDef",
+          "name": "RunRecordSink",
+          "start": 597,
+          "end": 640
+        },
+        {
+          "kind": "ClassDef",
+          "name": "McpToolCaller",
+          "start": 644,
+          "end": 660
+        },
+        {
+          "kind": "ClassDef",
+          "name": "ManagedMcpToolCaller",
+          "start": 664,
+          "end": 689
+        },
+        {
+          "kind": "ClassDef",
+          "name": "TrackerCommentReader",
+          "start": 693,
+          "end": 698
+        },
+        {
+          "kind": "ClassDef",
+          "name": "TrackerCriteriaReader",
+          "start": 702,
+          "end": 713
+        },
+        {
+          "kind": "ClassDef",
+          "name": "TrackerContextReader",
+          "start": 717,
+          "end": 726
+        },
+        {
+          "kind": "ClassDef",
+          "name": "TrackerPort",
+          "start": 730,
+          "end": 1354
+        },
+        {
+          "kind": "ClassDef",
+          "name": "ArtifactPersister",
+          "start": 1358,
+          "end": 1388
+        },
+        {
+          "kind": "ClassDef",
+          "name": "AgentRunner",
+          "start": 1392,
+          "end": 1462
+        },
+        {
+          "kind": "ClassDef",
+          "name": "NativeWriteGuard",
+          "start": 1466,
+          "end": 1509
+        },
+        {
+          "kind": "ClassDef",
+          "name": "GitAuth",
+          "start": 1513,
+          "end": 1522
+        },
+        {
+          "kind": "ClassDef",
+          "name": "FireCriteriaReader",
+          "start": 1526,
+          "end": 1535
+        },
+        {
+          "kind": "ClassDef",
+          "name": "FireCriteriaSource",
+          "start": 1539,
+          "end": 1544
+        },
+        {
+          "kind": "ClassDef",
+          "name": "QualityGate",
+          "start": 1548,
+          "end": 1577
+        },
+        {
+          "kind": "ClassDef",
+          "name": "TicketGenerator",
+          "start": 1581,
+          "end": 1595
+        },
+        {
+          "kind": "ClassDef",
+          "name": "Remediator",
+          "start": 1599,
+          "end": 1617
+        },
+        {
+          "kind": "ClassDef",
+          "name": "WorkflowEngine",
+          "start": 1621,
+          "end": 1648
+        },
+        {
+          "kind": "ClassDef",
+          "name": "DispatchProducer",
+          "start": 1652,
+          "end": 1678
+        },
+        {
+          "kind": "ClassDef",
+          "name": "JobQueue",
+          "start": 1682,
+          "end": 1698
+        },
+        {
+          "kind": "ClassDef",
+          "name": "JobRegistry",
+          "start": 1702,
+          "end": 1707
+        },
+        {
+          "kind": "ClassDef",
+          "name": "RunStateReader",
+          "start": 1711,
+          "end": 1716
+        },
+        {
+          "kind": "ClassDef",
+          "name": "PromptProvider",
+          "start": 1720,
+          "end": 1738
+        },
+        {
+          "kind": "ClassDef",
+          "name": "PromptSetProvider",
+          "start": 1742,
+          "end": 1780
+        },
+        {
+          "kind": "ClassDef",
+          "name": "SkillInventory",
+          "start": 1784,
+          "end": 1789
+        },
+        {
+          "kind": "ClassDef",
+          "name": "RepoVisibilityResolver",
+          "start": 1793,
+          "end": 1798
+        },
+        {
+          "kind": "ClassDef",
+          "name": "ContentJudgment",
+          "start": 1802,
+          "end": 1812
+        },
+        {
+          "kind": "ClassDef",
+          "name": "OutboundContentGate",
+          "start": 1816,
+          "end": 1835
+        },
+        {
+          "kind": "ClassDef",
+          "name": "CheckChainRunner",
+          "start": 1839,
+          "end": 1844
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+      "sha256": "c7a5a902ebacf23cb16cbd21ad28d4ec348e41fff8109ea2fac4c86ea06ec8bd",
+      "snapshot": "src__kodezart__adapters__linear_mcp_tracker.py",
+      "census": [
+        {
+          "kind": "import",
+          "module": "collections.abc",
+          "names": [
+            "Awaitable",
+            "Callable",
+            "Mapping",
+            "Sequence"
+          ],
+          "start": 13,
+          "end": 13
+        },
+        {
+          "kind": "import",
+          "module": "dataclasses",
+          "names": [
+            "dataclass"
+          ],
+          "start": 14,
+          "end": 14
+        },
+        {
+          "kind": "import",
+          "module": "datetime",
+          "names": [
+            "UTC",
+            "datetime",
+            "timedelta"
+          ],
+          "start": 15,
+          "end": 15
+        },
+        {
+          "kind": "import",
+          "module": "enum",
+          "names": [
+            "StrEnum"
+          ],
+          "start": 16,
+          "end": 16
+        },
+        {
+          "kind": "import",
+          "module": "hashlib",
+          "names": [
+            "sha256"
+          ],
+          "start": 17,
+          "end": 17
+        },
+        {
+          "kind": "import",
+          "module": "typing",
+          "names": [
+            "Final",
+            "assert_never"
+          ],
+          "start": 18,
+          "end": 18
+        },
+        {
+          "kind": "import",
+          "module": "urllib.parse",
+          "names": [
+            "quote"
+          ],
+          "start": 19,
+          "end": 19
+        },
+        {
+          "kind": "import",
+          "module": "uuid",
+          "names": [
+            "uuid4"
+          ],
+          "start": 20,
+          "end": 20
+        },
+        {
+          "kind": "import",
+          "module": "pydantic",
+          "names": [
+            "ValidationError"
+          ],
+          "start": 22,
+          "end": 22
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.adapters.linear_history_receipt",
+          "names": [
+            "state_history_receipt"
+          ],
+          "start": 24,
+          "end": 24
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.adapters.linear_issue_identity",
+          "names": [
+            "LinearIssueIdentityCarrier"
+          ],
+          "start": 25,
+          "end": 25
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.adapters.linear_markers",
+          "names": [
+            "LinearMarkers"
+          ],
+          "start": 26,
+          "end": 26
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.adapters.linear_mcp_types",
+          "names": [
+            "LINEAR_NAMED_ARRAY",
+            "LINEAR_WORKFLOW_STATES",
+            "LinearAssetWire",
+            "LinearCommentEntryWire",
+            "LinearCommentListWire",
+            "LinearCommentWire",
+            "LinearCriterionIssueWire",
+            "LinearDiffListWire",
+            "LinearDocumentListWire",
+            "LinearDocumentSummaryWire",
+            "LinearDocumentWire",
+            "LinearIssueDetailWire",
+            "LinearIssueListWire",
+            "LinearIssueStateHistoryWire",
+            "LinearIssueWire",
+            "LinearLabelListWire",
+            "LinearLabelWire",
+            "LinearNamedWire",
+            "LinearPlanningIssueWire",
+            "LinearProjectWire",
+            "LinearTeamListWire",
+            "LinearTeamWire",
+            "LinearUserListWire",
+            "LinearUserWire",
+            "LinearWireModel"
+          ],
+          "start": 27,
+          "end": 53
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.adapters.linear_scope_reader",
+          "names": [
+            "SCOPE_READ_TOOLS",
+            "LinearScopeReader"
+          ],
+          "start": 54,
+          "end": 54
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.adapters.linear_scope_types",
+          "names": [
+            "LinearApprovalIssueWire",
+            "LinearScopeIssuesWire"
+          ],
+          "start": 55,
+          "end": 58
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.adapters.pagination",
+          "names": [
+            "cursor_pages"
+          ],
+          "start": 59,
+          "end": 59
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.core.backoff",
+          "names": [
+            "RetryPolicy"
+          ],
+          "start": 60,
+          "end": 60
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.core.errors",
+          "names": [
+            "McpCallUnansweredError",
+            "McpCredentialRefusedError",
+            "McpTransportError",
+            "TrackerAccessDeniedError",
+            "TrackerBootValidationError",
+            "TrackerEnsureConflictError",
+            "TrackerProtocolError",
+            "TrackerUnavailableError"
+          ],
+          "start": 61,
+          "end": 70
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.core.logging",
+          "names": [
+            "BoundLogger",
+            "get_logger"
+          ],
+          "start": 71,
+          "end": 71
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.core.protocols",
+          "names": [
+            "McpToolCaller",
+            "McpToolResult"
+          ],
+          "start": 72,
+          "end": 72
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.domain.criterion_amendment",
+          "names": [
+            "require_criterion_source"
+          ],
+          "start": 73,
+          "end": 73
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.domain.criterion_creation",
+          "names": [
+            "criterion_body",
+            "existing_criterion"
+          ],
+          "start": 74,
+          "end": 74
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.domain.errors",
+          "names": [
+            "CriterionReadError",
+            "DuplicateIssueIdentityError",
+            "DuplicateWorkRefError",
+            "EscalationReadError",
+            "IssueLabelReadError",
+            "ScopeReadError",
+            "SurfaceLeaseError",
+            "SurfaceWriteAttributionError",
+            "TransientAPIError"
+          ],
+          "start": 75,
+          "end": 85
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.domain.escalation_resolution",
+          "names": [
+            "resolution_from_comments"
+          ],
+          "start": 86,
+          "end": 86
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.domain.fire_spec",
+          "names": [
+            "require_fire_entry",
+            "tracker_spec_from_issues"
+          ],
+          "start": 87,
+          "end": 87
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.domain.git_url",
+          "names": [
+            "extract_owner_repo"
+          ],
+          "start": 88,
+          "end": 88
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.domain.run_alarm_record",
+          "names": [
+            "parse_run_alarm",
+            "render_run_alarm",
+            "run_alarm_marker"
+          ],
+          "start": 89,
+          "end": 93
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.domain.run_event_stream",
+          "names": [
+            "LaneRunEvent",
+            "lane_run_events",
+            "render_run_event"
+          ],
+          "start": 94,
+          "end": 98
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.domain.scope_approval",
+          "names": [
+            "resolve_execution_approval"
+          ],
+          "start": 99,
+          "end": 99
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.domain.surface_lease",
+          "names": [
+            "live_conflict",
+            "one_ownership",
+            "renewed_deadline",
+            "renews",
+            "surface_address"
+          ],
+          "start": 100,
+          "end": 106
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.domain.tracker_writes",
+          "names": [
+            "comment_under_marker",
+            "description_replacement",
+            "marked_comment_body",
+            "require_expected_comment"
+          ],
+          "start": 107,
+          "end": 112
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.branch",
+          "names": [
+            "BaseSpec",
+            "WorkRef",
+            "WorkRefLanding",
+            "WorkRefRole"
+          ],
+          "start": 113,
+          "end": 113
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.dispatch",
+          "names": [
+            "PassSignal",
+            "SelfWriteLedger"
+          ],
+          "start": 114,
+          "end": 114
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.escalation",
+          "names": [
+            "EscalationResolution"
+          ],
+          "start": 115,
+          "end": 115
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.fire_spec",
+          "names": [
+            "TrackerSpec"
+          ],
+          "start": 116,
+          "end": 116
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.issue_identity",
+          "names": [
+            "IssueIdentity"
+          ],
+          "start": 117,
+          "end": 117
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.operation",
+          "names": [
+            "LifecycleStage",
+            "OperationMemberAbsentError",
+            "QueueState",
+            "ScopeLabel"
+          ],
+          "start": 118,
+          "end": 123
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.run_alarm",
+          "names": [
+            "AlarmSignal",
+            "AlarmSubject",
+            "RunAlarm"
+          ],
+          "start": 124,
+          "end": 124
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.scope",
+          "names": [
+            "ScopeContainer",
+            "ScopeKind",
+            "ScopeRef"
+          ],
+          "start": 125,
+          "end": 125
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.self_writes",
+          "names": [
+            "CommentValues",
+            "IssueMovementSnapshot",
+            "OwnMutation",
+            "field_value",
+            "field_values"
+          ],
+          "start": 126,
+          "end": 132
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.surface",
+          "names": [
+            "DescriptionWriteAuthority",
+            "SurfaceKind",
+            "SurfaceLease",
+            "WritableSurface"
+          ],
+          "start": 133,
+          "end": 133
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.tracker",
+          "names": [
+            "INSTATABLE_MAPPING_KINDS",
+            "ClaimResult",
+            "ClaimStatus",
+            "EnsureAction",
+            "IssuePriority",
+            "IssueQuery",
+            "IssueRelation",
+            "IssueRelationKind",
+            "MappingKind",
+            "MappingOutcome",
+            "MappingRef",
+            "ReviewQuery",
+            "TrackerAsset",
+            "TrackerComment",
+            "TrackerIssue",
+            "TrackerIssueRevision",
+            "TrackerIssueStateChange",
+            "TrackerReview",
+            "WorkflowStateKind"
+          ],
+          "start": 134,
+          "end": 154
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.tracker_writes",
+          "names": [
+            "DescriptionEditResult"
+          ],
+          "start": 155,
+          "end": 155
+        },
+        {
+          "kind": "FunctionDef",
+          "name": "_label_arguments",
+          "start": 305,
+          "end": 318
+        },
+        {
+          "kind": "FunctionDef",
+          "name": "_without_mention_syntax",
+          "start": 321,
+          "end": 336
+        },
+        {
+          "kind": "FunctionDef",
+          "name": "is_long_lived_credential",
+          "start": 339,
+          "end": 357
+        },
+        {
+          "kind": "FunctionDef",
+          "name": "_utc_now",
+          "start": 360,
+          "end": 362
+        },
+        {
+          "kind": "ClassDef",
+          "name": "_LabelListings",
+          "start": 366,
+          "end": 430
+        },
+        {
+          "kind": "ClassDef",
+          "name": "_GrantKind",
+          "start": 433,
+          "end": 442
+        },
+        {
+          "kind": "ClassDef",
+          "name": "_GrantState",
+          "start": 450,
+          "end": 468
+        },
+        {
+          "kind": "ClassDef",
+          "name": "_Target",
+          "start": 487,
+          "end": 491
+        },
+        {
+          "kind": "ClassDef",
+          "name": "_WrittenMarker",
+          "start": 495,
+          "end": 508
+        },
+        {
+          "kind": "ClassDef",
+          "name": "_GrantMarker",
+          "start": 512,
+          "end": 567
+        },
+        {
+          "kind": "ClassDef",
+          "name": "_Granted",
+          "start": 571,
+          "end": 574
+        },
+        {
+          "kind": "ClassDef",
+          "name": "_OwnGrant",
+          "start": 578,
+          "end": 589
+        },
+        {
+          "kind": "FunctionDef",
+          "name": "_own_grants",
+          "start": 592,
+          "end": 621
+        },
+        {
+          "kind": "ClassDef",
+          "name": "_Conflict",
+          "start": 625,
+          "end": 637
+        },
+        {
+          "kind": "ClassDef",
+          "name": "_Refused",
+          "start": 641,
+          "end": 647
+        },
+        {
+          "kind": "ClassDef",
+          "name": "_Addressing",
+          "start": 651,
+          "end": 675
+        },
+        {
+          "kind": "FunctionDef",
+          "name": "_surface_line",
+          "start": 678,
+          "end": 681
+        },
+        {
+          "kind": "FunctionDef",
+          "name": "_surface_target",
+          "start": 684,
+          "end": 688
+        },
+        {
+          "kind": "FunctionDef",
+          "name": "_retraction",
+          "start": 706,
+          "end": 710
+        },
+        {
+          "kind": "FunctionDef",
+          "name": "_may_resend",
+          "start": 713,
+          "end": 724
+        },
+        {
+          "kind": "FunctionDef",
+          "name": "refuse_combined_issue_write",
+          "start": 727,
+          "end": 765
+        },
+        {
+          "kind": "ClassDef",
+          "name": "LinearMcpTracker",
+          "start": 768,
+          "end": 4066
+        }
+      ]
+    },
+    {
+      "path": "src/kodezart/composition/engine.py",
+      "sha256": "c840036e4ad0368cc3d9ad0e5e46301a110e96efd74570c7fa311295aa150d86",
+      "snapshot": "src__kodezart__composition__engine.py",
+      "census": [
+        {
+          "kind": "import",
+          "module": "collections.abc",
+          "names": [
+            "AsyncIterator",
+            "Sequence"
+          ],
+          "start": 7,
+          "end": 7
+        },
+        {
+          "kind": "import",
+          "module": "langgraph.checkpoint.base",
+          "names": [
+            "BaseCheckpointSaver"
+          ],
+          "start": 9,
+          "end": 9
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.adapters.github_api",
+          "names": [
+            "GitHubAPIClient"
+          ],
+          "start": 11,
+          "end": 11
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.adapters.subprocess_git_source_reader",
+          "names": [
+            "SubprocessGitSourceReader"
+          ],
+          "start": 12,
+          "end": 12
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.chains.authored_checks",
+          "names": [
+            "AuthoredChecks"
+          ],
+          "start": 13,
+          "end": 13
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.chains.authored_delivery",
+          "names": [
+            "AuthoredDeliveryCoordinator"
+          ],
+          "start": 14,
+          "end": 14
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.chains.authored_publication",
+          "names": [
+            "AuthoredPublication"
+          ],
+          "start": 15,
+          "end": 15
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.chains.fire_consolidation",
+          "names": [
+            "FireConsolidation"
+          ],
+          "start": 16,
+          "end": 16
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.chains.fire_implementation",
+          "names": [
+            "FireImplementation"
+          ],
+          "start": 17,
+          "end": 17
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.chains.fire_remediation",
+          "names": [
+            "FireRemediation"
+          ],
+          "start": 18,
+          "end": 18
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.chains.fire_review",
+          "names": [
+            "FireReview"
+          ],
+          "start": 19,
+          "end": 19
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.chains.fire_specification",
+          "names": [
+            "FireSpecification"
+          ],
+          "start": 20,
+          "end": 20
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.chains.ralph_loop",
+          "names": [
+            "RalphLoop"
+          ],
+          "start": 21,
+          "end": 21
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.chains.ralph_workflow",
+          "names": [
+            "RalphWorkflowEngine"
+          ],
+          "start": 22,
+          "end": 22
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.chains.remediation",
+          "names": [
+            "RemediationChain"
+          ],
+          "start": 23,
+          "end": 23
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.chains.ticket_generation",
+          "names": [
+            "TicketGenerationLoop"
+          ],
+          "start": 24,
+          "end": 24
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.composition.delivery",
+          "names": [
+            "build_native_lane_workflow"
+          ],
+          "start": 25,
+          "end": 25
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.composition.scope_runtime",
+          "names": [
+            "build_scope_runtime"
+          ],
+          "start": 26,
+          "end": 26
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.core.config",
+          "names": [
+            "AppConfig"
+          ],
+          "start": 27,
+          "end": 27
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.core.errors",
+          "names": [
+            "RateLimitedSoftFailureError"
+          ],
+          "start": 28,
+          "end": 28
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.core.logging",
+          "names": [
+            "BoundLogger",
+            "get_logger"
+          ],
+          "start": 29,
+          "end": 29
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.core.protocols",
+          "names": [
+            "ArtifactPersister",
+            "BranchMerger",
+            "FireCriteriaSource",
+            "GitService",
+            "OutboundContentGate",
+            "PromptSetProvider",
+            "RefPublisher",
+            "RepoCache",
+            "TrackerPort",
+            "WorkflowEngine",
+            "WorkspaceProvider"
+          ],
+          "start": 30,
+          "end": 42
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.core.retry",
+          "names": [
+            "DelayFloor"
+          ],
+          "start": 43,
+          "end": 43
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.domain.errors",
+          "names": [
+            "RateLimitError",
+            "ScopedExecutionUnavailableError"
+          ],
+          "start": 44,
+          "end": 44
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.domain.git_url",
+          "names": [
+            "is_forge_less_origin"
+          ],
+          "start": 45,
+          "end": 45
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.services.agent_service",
+          "names": [
+            "AgentService"
+          ],
+          "start": 46,
+          "end": 46
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.services.native_amendments",
+          "names": [
+            "NativeAmendments"
+          ],
+          "start": 47,
+          "end": 47
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.agent",
+          "names": [
+            "AgentEvent"
+          ],
+          "start": 48,
+          "end": 48
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.branch",
+          "names": [
+            "BaseSpec"
+          ],
+          "start": 49,
+          "end": 49
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.operation",
+          "names": [
+            "OperationConfig",
+            "RepoEntry"
+          ],
+          "start": 50,
+          "end": 50
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.run_records",
+          "names": [
+            "RunIdentity"
+          ],
+          "start": 51,
+          "end": 51
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.scope",
+          "names": [
+            "ScopeRef"
+          ],
+          "start": 52,
+          "end": 52
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.session",
+          "names": [
+            "AllowedTools",
+            "PermissionMode"
+          ],
+          "start": 53,
+          "end": 53
+        },
+        {
+          "kind": "import",
+          "module": "kodezart.types.domain.skills",
+          "names": [
+            "SkillsSelection"
+          ],
+          "start": 54,
+          "end": 54
+        },
+        {
+          "kind": "ClassDef",
+          "name": "OriginRoutedWorkflowEngine",
+          "start": 57,
+          "end": 144
+        },
+        {
+          "kind": "FunctionDef",
+          "name": "rate_limit_delay_floor",
+          "start": 147,
+          "end": 167
+        },
+        {
+          "kind": "FunctionDef",
+          "name": "build_workflow_engine",
+          "start": 170,
+          "end": 367
+        }
+      ]
+    }
+  ]
+}

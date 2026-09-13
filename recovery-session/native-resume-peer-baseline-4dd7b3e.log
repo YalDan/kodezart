@@ -1,0 +1,103 @@
+........................................................................ [ 52%]
+...............F................................................         [100%]
+=================================== FAILURES ===================================
+_____ test_upheld_after_real_grade_preserves_criterion_history_and_plateau _____
+
+repository = (PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1971/test_upheld_after_real_grade_p0/repo'), 'ad904da57e9b49b8fc553f214c74128e13141340')
+
+    async def test_upheld_after_real_grade_preserves_criterion_history_and_plateau(
+        repository,
+    ):
+        executor = Executor()
+        service, _, workspace, port = await build(repository, executor)
+        criteria = TrackerCriteria(tracker=port)
+        spec = await criteria.read_spec(issue_key=SUBJECT)
+        current = await criteria.read_current(spec=spec)
+        observed = native_evaluation()
+        observed["criteriaResults"][0]["passed"] = False
+        previous_grade = grade_iteration(
+            current.criteria, AcceptanceCriteriaOutput.model_validate(observed)
+        )
+        previous_record = IterationRecord(
+            iteration=1,
+            passed_count=previous_grade.passed_count,
+            failing_criterion_ids=[row.criterion_id for row in previous_grade.failures],
+            commit_sha=await git(repository[0], "rev-parse", "HEAD"),
+        )
+        previous_records = [
+            previous_record,
+            previous_record.model_copy(update={"iteration": 2}),
+        ]
+        await git(repository[0], "branch", "native-loop", "main")
+        router = build_workflow_engine(
+            config=AppConfig(
+                write_back=WriteBackSettings(max_verify_rounds=2),
+                ticket_review_mode=TicketReviewMode.REVIEWED,
+                max_iterations=3,
+                loop_plateau_window=2,
+                retry_max_attempts=1,
+                retry_initial_interval=0.1,
+            ),
+            operation=native_operation(),
+            scope_tracker=port,
+            criteria=criteria,
+            repositories=(RepoEntry(url=REPO_URL, trunk="main"),),
+            agent_service=service,
+            git=workspace._git,
+            cache=FakeRepoCache(str(repository[0])),
+            workspace=workspace,
+            merger=FakeBranchMerger(),
+            artifact_persister=FakeArtifactPersister(),
+            ref_publisher=FakeRefPublisher(),
+            prompts=load_registry(),
+            skills=SUPPRESS_ALL_SKILLS,
+            gate=PassThroughGate(),
+            github_api=None,
+            checkpointer=None,
+        )
+        loop = router.arm_for(None).fire.implementation._quality_gate
+        context = RalphLoopContext(
+            prompt="Implement the exact native Checks",
+            repo_path=str(repository[0]),
+            repo_url=REPO_URL,
+            cache_key="independent-upheld-history",
+            surface_holder="independent-upheld-history",
+            base_spec=trunk_base(repository[1]),
+            permission_mode=PermissionMode.UNATTENDED,
+            allowed_tools=ToolPreset.IMPLEMENTATION,
+            feature_branch="native-feature",
+            ralph_branch="native-loop",
+            work_base_ref="main",
+            acceptance_criteria=list(current.criteria),
+            tracker_spec=spec,
+            repo_visibility=RepoVisibility.PUBLIC,
+        )
+        state = {
+            "iteration": 2,
+            "verdict": previous_grade.verdict,
+            "pending_failures": previous_grade.failures,
+            "iteration_records": previous_records,
+>           "outcome": NativeEvaluatedRalphOutcome(
+                event=WorkflowIterationEvent(
+                    iteration=2,
+                    branch="native-loop",
+                    commit_sha=previous_record.commit_sha,
+                    verdict=previous_grade.verdict,
+                    evaluation=AcceptanceCriteriaOutput.model_validate(observed),
+                    trajectory=fold_trajectory(previous_records, plateau_window=2),
+                ),
+                criteria=tuple(current.criteria),
+                head_sha=previous_record.commit_sha,
+            ),
+        }
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for NativeEvaluatedRalphOutcome
+E         Value error, the saved evaluation must cover its exact dispatched roster [type=value_error, input_value={'event': WorkflowIterati...276a85eac4a40f86e8b3db'}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.12/v/value_error
+
+tests/chains/test_native_amendment_trajectory_independent.py:116: ValidationError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 23:09:00 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 23:09:00 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+=========================== short test summary info ============================
+FAILED tests/chains/test_native_amendment_trajectory_independent.py::test_upheld_after_real_grade_preserves_criterion_history_and_plateau
+1 failed, 135 passed in 525.34s (0:08:45)

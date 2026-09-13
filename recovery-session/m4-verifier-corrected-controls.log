@@ -1,0 +1,157 @@
+..............FF........................................................ [ 88%]
+.........                                                                [100%]
+=================================== FAILURES ===================================
+_____________ test_actual_adapter_rounds_reread_and_repair[False] ______________
+
+repair = False
+
+    @pytest.mark.parametrize("repair", [False, True])
+    async def test_actual_adapter_rounds_reread_and_repair(repair):
+        tracker, _ = adapter()
+        judge = PathCheckingJudge(paths_at_ref=PATHS_AT_REF)
+        step_type = EvidenceWriteBack if repair else StubbornWriteBack
+        step = step_type(tracker=tracker, first_output=FIRST_OUTPUT, correction=REAL_PATH)
+>       result = await WriteBackVerifier(
+            tracker=tracker, judge=judge, max_rounds=2
+        ).write_back(step=step, ref=HEAD)
+
+tests/chains/test_write_back_tracker_boundary.py:60: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/chains/write_back_verifier.py:121: in write_back
+    await step.write(finding=finding)
+tests/chains/test_write_back_verifier.py:138: in write
+    await leased_comment(
+tests/tracker/lease_fixtures.py:40: in leased_comment
+    return await tracker.upsert_comment(
+src/kodezart/adapters/linear_mcp_tracker.py:2831: in upsert_comment
+    return await self._upsert_comment(
+src/kodezart/adapters/linear_mcp_tracker.py:2857: in _upsert_comment
+    return await self._retry_call(_TOOL_SAVE_COMMENT, attempt)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/adapters/linear_mcp_tracker.py:2796: in _retry_call
+    return await invoke()
+           ^^^^^^^^^^^^^^
+src/kodezart/adapters/linear_mcp_tracker.py:2848: in attempt
+    return await self._upsert_comment_once(
+src/kodezart/adapters/linear_mcp_tracker.py:2895: in _upsert_comment_once
+    self._assert_surface_holder(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10aac4590>
+
+    def _assert_surface_holder(
+        self,
+        *,
+        surface: WritableSurface,
+        holder: str | None,
+        markers: Sequence[_GrantMarker],
+    ) -> None:
+        """Apply the existing lease arithmetic to the final native snapshot."""
+        encoded = _LEASE_ADDRESSING.encode(surface)
+        now = self._clock()
+        live = [
+            entry
+            for entry in markers
+            if not entry.retracted
+            and entry.in_force
+            and entry.deadline > now
+            and encoded in entry.addresses
+        ]
+        owner: str | None = None
+        if live:
+            earliest = min(live, key=lambda entry: entry.order)
+            tying = {
+                entry.holder
+                for entry in live
+                if entry.created_at == earliest.created_at
+            }
+            if earliest.state is _GrantState.HELD and len(tying) == 1:
+                owner = earliest.holder
+        if holder is None or owner != holder:
+>           raise SurfaceLeaseError(
+                "the writing job does not hold this live surface",
+                surface=surface,
+                current_holder=owner,
+            )
+E           kodezart.domain.errors.SurfaceLeaseError: the writing job does not hold this live surface (surface: marker_comment:issue:FIX-77 (marker: [fixture-evidence:lane-alpha]); current holder: none)
+
+src/kodezart/adapters/linear_mcp_tracker.py:2980: SurfaceLeaseError
+______________ test_actual_adapter_rounds_reread_and_repair[True] ______________
+
+repair = True
+
+    @pytest.mark.parametrize("repair", [False, True])
+    async def test_actual_adapter_rounds_reread_and_repair(repair):
+        tracker, _ = adapter()
+        judge = PathCheckingJudge(paths_at_ref=PATHS_AT_REF)
+        step_type = EvidenceWriteBack if repair else StubbornWriteBack
+        step = step_type(tracker=tracker, first_output=FIRST_OUTPUT, correction=REAL_PATH)
+>       result = await WriteBackVerifier(
+            tracker=tracker, judge=judge, max_rounds=2
+        ).write_back(step=step, ref=HEAD)
+
+tests/chains/test_write_back_tracker_boundary.py:60: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/chains/write_back_verifier.py:121: in write_back
+    await step.write(finding=finding)
+tests/chains/test_write_back_verifier.py:128: in write
+    await leased_comment(
+tests/tracker/lease_fixtures.py:40: in leased_comment
+    return await tracker.upsert_comment(
+src/kodezart/adapters/linear_mcp_tracker.py:2831: in upsert_comment
+    return await self._upsert_comment(
+src/kodezart/adapters/linear_mcp_tracker.py:2857: in _upsert_comment
+    return await self._retry_call(_TOOL_SAVE_COMMENT, attempt)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/adapters/linear_mcp_tracker.py:2796: in _retry_call
+    return await invoke()
+           ^^^^^^^^^^^^^^
+src/kodezart/adapters/linear_mcp_tracker.py:2848: in attempt
+    return await self._upsert_comment_once(
+src/kodezart/adapters/linear_mcp_tracker.py:2895: in _upsert_comment_once
+    self._assert_surface_holder(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10aac6780>
+
+    def _assert_surface_holder(
+        self,
+        *,
+        surface: WritableSurface,
+        holder: str | None,
+        markers: Sequence[_GrantMarker],
+    ) -> None:
+        """Apply the existing lease arithmetic to the final native snapshot."""
+        encoded = _LEASE_ADDRESSING.encode(surface)
+        now = self._clock()
+        live = [
+            entry
+            for entry in markers
+            if not entry.retracted
+            and entry.in_force
+            and entry.deadline > now
+            and encoded in entry.addresses
+        ]
+        owner: str | None = None
+        if live:
+            earliest = min(live, key=lambda entry: entry.order)
+            tying = {
+                entry.holder
+                for entry in live
+                if entry.created_at == earliest.created_at
+            }
+            if earliest.state is _GrantState.HELD and len(tying) == 1:
+                owner = earliest.holder
+        if holder is None or owner != holder:
+>           raise SurfaceLeaseError(
+                "the writing job does not hold this live surface",
+                surface=surface,
+                current_holder=owner,
+            )
+E           kodezart.domain.errors.SurfaceLeaseError: the writing job does not hold this live surface (surface: marker_comment:issue:FIX-77 (marker: [fixture-evidence:lane-alpha]); current holder: none)
+
+src/kodezart/adapters/linear_mcp_tracker.py:2980: SurfaceLeaseError
+=========================== short test summary info ============================
+FAILED tests/chains/test_write_back_tracker_boundary.py::test_actual_adapter_rounds_reread_and_repair[False]
+FAILED tests/chains/test_write_back_tracker_boundary.py::test_actual_adapter_rounds_reread_and_repair[True]
+2 failed, 79 passed in 3.68s

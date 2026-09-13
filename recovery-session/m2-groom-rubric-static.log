@@ -1,0 +1,47 @@
+uv run ruff format --check src/ tests/
+483 files already formatted
+uv run ruff check src/ tests/
+E501 Line too long (92 > 88)
+   --> tests/chains/test_organize_rubric.py:174:89
+    |
+173 | ORGANIZATIONAL_EVIDENCE = {
+174 |     "blockers": "An issue is blocked by work in another project without an ownership edge.",
+    |                                                                                         ^^^^
+175 |     "decisions": "The documented API choice is still open and has not been asked of its owner.",
+176 |     "dates_order": "The deadline and priority conflict with the recorded dependency order.",
+    |
+
+E501 Line too long (96 > 88)
+   --> tests/chains/test_organize_rubric.py:175:89
+    |
+173 | ORGANIZATIONAL_EVIDENCE = {
+174 |     "blockers": "An issue is blocked by work in another project without an ownership edge.",
+175 |     "decisions": "The documented API choice is still open and has not been asked of its owner.",
+    |                                                                                         ^^^^^^^^
+176 |     "dates_order": "The deadline and priority conflict with the recorded dependency order.",
+177 |     "measurable_goal": "The issue ends with 'improve it' and has no observable completion condition.",
+    |
+
+E501 Line too long (92 > 88)
+   --> tests/chains/test_organize_rubric.py:176:89
+    |
+174 |     "blockers": "An issue is blocked by work in another project without an ownership edge.",
+175 |     "decisions": "The documented API choice is still open and has not been asked of its owner.",
+176 |     "dates_order": "The deadline and priority conflict with the recorded dependency order.",
+    |                                                                                         ^^^^
+177 |     "measurable_goal": "The issue ends with 'improve it' and has no observable completion condition.",
+178 | }
+    |
+
+E501 Line too long (102 > 88)
+   --> tests/chains/test_organize_rubric.py:177:89
+    |
+175 |     "decisions": "The documented API choice is still open and has not been asked of its owner.",
+176 |     "dates_order": "The deadline and priority conflict with the recorded dependency order.",
+177 |     "measurable_goal": "The issue ends with 'improve it' and has no observable completion condition.",
+    |                                                                                         ^^^^^^^^^^^^^^
+178 | }
+    |
+
+Found 4 errors.
+make: *** [lint] Error 1

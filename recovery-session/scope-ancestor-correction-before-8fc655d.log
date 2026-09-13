@@ -1,0 +1,22 @@
+Using CPython 3.12.13
+Creating virtual environment at: .venv
+   Building kodezart @ file:///private/tmp/kodezart-v03-recovery-scope-ancestor
+warning: `build_system.requires = ["uv-build>=0.10.9,<0.11.0"]` does not contain the current uv version 0.11.6
+      Built kodezart @ file:///private/tmp/kodezart-v03-recovery-scope-ancestor
+Installed 174 packages in 2.45s
+F....                                                                    [100%]
+=================================== FAILURES ===================================
+______ test_native_ancestor_edge_cannot_be_satisfied_by_another_identity _______
+
+    async def test_native_ancestor_edge_cannot_be_satisfied_by_another_identity():
+        server = ScopeMcpServer()
+        server.initiatives[INITIATIVE.key]["id"] = "foreign-initiative"
+        tracker = linear_over_fake_mcp(server)
+>       with pytest.raises(ScopeReadError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'kodezart.domain.errors.ScopeReadError'>
+
+tests/tracker/test_scope_ancestor_identity.py:25: Failed
+=========================== short test summary info ============================
+FAILED tests/tracker/test_scope_ancestor_identity.py::test_native_ancestor_edge_cannot_be_satisfied_by_another_identity
+1 failed, 4 passed in 1.28s

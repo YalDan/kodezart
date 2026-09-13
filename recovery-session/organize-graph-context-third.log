@@ -1,0 +1,1464 @@
+.FFFF......FF....................................................FFFFFF. [ 25%]
+........................................................................ [ 51%]
+........................................................................ [ 77%]
+..............................................................           [100%]
+=================================== FAILURES ===================================
+_ test_every_call_reads_full_tracker_sources_and_dispatches_fresh_at_base[assess-organize_assess-claude-opus] _
+
+set_name = 'claude-opus', method = 'assess'
+key = <PromptKey.ORGANIZE_ASSESS: 'organize_assess'>
+
+    @pytest.mark.parametrize("set_name", [OPUS_SET, V5_SET])
+    @pytest.mark.parametrize(
+        "method,key",
+        [
+            ("assess", PromptKey.ORGANIZE_ASSESS),
+            ("verify", PromptKey.ORGANIZE_VERIFY),
+        ],
+    )
+    async def test_every_call_reads_full_tracker_sources_and_dispatches_fresh_at_base(
+        set_name, method, key
+    ):
+        source = tracker()
+        executor = RecordingExecutor([result()])
+        workspace = RecordingWorkspace()
+        admission = consumer(source, executor, workspace, set_name)
+        before = dict(source.issues)
+    
+        with structlog.testing.capture_logs() as logs:
+            for _ in range(2):
+                verdict = await getattr(admission, method)(request())
+                assert verdict.verdict is AdmissionVerdict.BUILDABLE
+    
+        assert len(executor.calls) == 2
+        for call in executor.calls:
+            prompt = call["prompt"]
+            for body in (
+                source.issues[SUBJECT].body,
+                "First linked body.",
+                "Second linked body.",
+                "First criterion body.",
+                "Second criterion body.",
+                "Unlabelled child is not a criterion.",
+                "Apply the selected rubric.",
+                "unsupported-claim",
+                SUBJECT,
+                BASE,
+            ):
+                assert body in prompt
+            for excluded in (
+                "Unrelated issue stays outside the prompt.",
+                "Author rationale must never be forwarded.",
+                "previous-agent-session",
+            ):
+                assert excluded not in prompt
+            assert call["session_id"] is None
+            assert call["session_type"] is SessionType.ORGANIZE_PASS
+            assert call["permission_mode"] == "plan"
+            assert call["allowed_tools"] is ToolPreset.EVALUATION
+            assert call["agents"] == ()
+            assert call["run_identity"] is None
+            assert call["skills"] == SUPPRESS_ALL_SKILLS
+            assert call["session_policy"] == load_registry(
+                default_set=set_name
+            ).session_policy(key)
+            assert call["cwd"] == "/tmp/fake-workspace"
+            assert call["output_format"]["schema"] == AdmissionJudgment.model_json_schema()
+        attempts = [log for log in logs if log["event"] == "organize_admission_attempt"]
+        assert len(attempts) == 2
+        for attempt in attempts:
+            assert attempt["session_id"] is None
+            assert attempt["resumed_session_id"] is None
+            assert attempt["prompt_key"] == key.value
+            assert attempt["base_ref"] == BASE
+        assert (
+            workspace.arguments
+            == [
+                {
+                    "repo_path": None,
+                    "repo_url": REPO,
+                    "ref": BASE,
+                    "create_branch": False,
+                    "cache_key": "selected-cache",
+                }
+            ]
+            * 2
+        )
+        assert workspace.calls.count(("release", "/tmp/fake-workspace")) == 2
+>       assert source.issue_reads.count("linked/a") == 2
+E       AssertionError: assert 4 == 2
+E        +  where 4 = <built-in method count of list object at 0x10f616d40>('linked/a')
+E        +    where <built-in method count of list object at 0x10f616d40> = ['subject/42', 'criterion/a', 'criterion/b', 'ordinary/child', 'subject/42', 'linked/a', ...].count
+E        +      where ['subject/42', 'criterion/a', 'criterion/b', 'ordinary/child', 'subject/42', 'linked/a', ...] = <tests.fakes.FakeTrackerPort object at 0x10eff2ff0>.issue_reads
+
+tests/chains/test_organize.py:298: AssertionError
+_ test_every_call_reads_full_tracker_sources_and_dispatches_fresh_at_base[assess-organize_assess-anthropic_v5] _
+
+set_name = 'anthropic_v5', method = 'assess'
+key = <PromptKey.ORGANIZE_ASSESS: 'organize_assess'>
+
+    @pytest.mark.parametrize("set_name", [OPUS_SET, V5_SET])
+    @pytest.mark.parametrize(
+        "method,key",
+        [
+            ("assess", PromptKey.ORGANIZE_ASSESS),
+            ("verify", PromptKey.ORGANIZE_VERIFY),
+        ],
+    )
+    async def test_every_call_reads_full_tracker_sources_and_dispatches_fresh_at_base(
+        set_name, method, key
+    ):
+        source = tracker()
+        executor = RecordingExecutor([result()])
+        workspace = RecordingWorkspace()
+        admission = consumer(source, executor, workspace, set_name)
+        before = dict(source.issues)
+    
+        with structlog.testing.capture_logs() as logs:
+            for _ in range(2):
+                verdict = await getattr(admission, method)(request())
+                assert verdict.verdict is AdmissionVerdict.BUILDABLE
+    
+        assert len(executor.calls) == 2
+        for call in executor.calls:
+            prompt = call["prompt"]
+            for body in (
+                source.issues[SUBJECT].body,
+                "First linked body.",
+                "Second linked body.",
+                "First criterion body.",
+                "Second criterion body.",
+                "Unlabelled child is not a criterion.",
+                "Apply the selected rubric.",
+                "unsupported-claim",
+                SUBJECT,
+                BASE,
+            ):
+                assert body in prompt
+            for excluded in (
+                "Unrelated issue stays outside the prompt.",
+                "Author rationale must never be forwarded.",
+                "previous-agent-session",
+            ):
+                assert excluded not in prompt
+            assert call["session_id"] is None
+            assert call["session_type"] is SessionType.ORGANIZE_PASS
+            assert call["permission_mode"] == "plan"
+            assert call["allowed_tools"] is ToolPreset.EVALUATION
+            assert call["agents"] == ()
+            assert call["run_identity"] is None
+            assert call["skills"] == SUPPRESS_ALL_SKILLS
+            assert call["session_policy"] == load_registry(
+                default_set=set_name
+            ).session_policy(key)
+            assert call["cwd"] == "/tmp/fake-workspace"
+            assert call["output_format"]["schema"] == AdmissionJudgment.model_json_schema()
+        attempts = [log for log in logs if log["event"] == "organize_admission_attempt"]
+        assert len(attempts) == 2
+        for attempt in attempts:
+            assert attempt["session_id"] is None
+            assert attempt["resumed_session_id"] is None
+            assert attempt["prompt_key"] == key.value
+            assert attempt["base_ref"] == BASE
+        assert (
+            workspace.arguments
+            == [
+                {
+                    "repo_path": None,
+                    "repo_url": REPO,
+                    "ref": BASE,
+                    "create_branch": False,
+                    "cache_key": "selected-cache",
+                }
+            ]
+            * 2
+        )
+        assert workspace.calls.count(("release", "/tmp/fake-workspace")) == 2
+>       assert source.issue_reads.count("linked/a") == 2
+E       AssertionError: assert 4 == 2
+E        +  where 4 = <built-in method count of list object at 0x10f1c5680>('linked/a')
+E        +    where <built-in method count of list object at 0x10f1c5680> = ['subject/42', 'criterion/a', 'criterion/b', 'ordinary/child', 'subject/42', 'linked/a', ...].count
+E        +      where ['subject/42', 'criterion/a', 'criterion/b', 'ordinary/child', 'subject/42', 'linked/a', ...] = <tests.fakes.FakeTrackerPort object at 0x10efede50>.issue_reads
+
+tests/chains/test_organize.py:298: AssertionError
+_ test_every_call_reads_full_tracker_sources_and_dispatches_fresh_at_base[verify-organize_verify-claude-opus] _
+
+set_name = 'claude-opus', method = 'verify'
+key = <PromptKey.ORGANIZE_VERIFY: 'organize_verify'>
+
+    @pytest.mark.parametrize("set_name", [OPUS_SET, V5_SET])
+    @pytest.mark.parametrize(
+        "method,key",
+        [
+            ("assess", PromptKey.ORGANIZE_ASSESS),
+            ("verify", PromptKey.ORGANIZE_VERIFY),
+        ],
+    )
+    async def test_every_call_reads_full_tracker_sources_and_dispatches_fresh_at_base(
+        set_name, method, key
+    ):
+        source = tracker()
+        executor = RecordingExecutor([result()])
+        workspace = RecordingWorkspace()
+        admission = consumer(source, executor, workspace, set_name)
+        before = dict(source.issues)
+    
+        with structlog.testing.capture_logs() as logs:
+            for _ in range(2):
+                verdict = await getattr(admission, method)(request())
+                assert verdict.verdict is AdmissionVerdict.BUILDABLE
+    
+        assert len(executor.calls) == 2
+        for call in executor.calls:
+            prompt = call["prompt"]
+            for body in (
+                source.issues[SUBJECT].body,
+                "First linked body.",
+                "Second linked body.",
+                "First criterion body.",
+                "Second criterion body.",
+                "Unlabelled child is not a criterion.",
+                "Apply the selected rubric.",
+                "unsupported-claim",
+                SUBJECT,
+                BASE,
+            ):
+                assert body in prompt
+            for excluded in (
+                "Unrelated issue stays outside the prompt.",
+                "Author rationale must never be forwarded.",
+                "previous-agent-session",
+            ):
+                assert excluded not in prompt
+            assert call["session_id"] is None
+            assert call["session_type"] is SessionType.ORGANIZE_PASS
+            assert call["permission_mode"] == "plan"
+            assert call["allowed_tools"] is ToolPreset.EVALUATION
+            assert call["agents"] == ()
+            assert call["run_identity"] is None
+            assert call["skills"] == SUPPRESS_ALL_SKILLS
+            assert call["session_policy"] == load_registry(
+                default_set=set_name
+            ).session_policy(key)
+            assert call["cwd"] == "/tmp/fake-workspace"
+            assert call["output_format"]["schema"] == AdmissionJudgment.model_json_schema()
+        attempts = [log for log in logs if log["event"] == "organize_admission_attempt"]
+        assert len(attempts) == 2
+        for attempt in attempts:
+            assert attempt["session_id"] is None
+            assert attempt["resumed_session_id"] is None
+            assert attempt["prompt_key"] == key.value
+            assert attempt["base_ref"] == BASE
+        assert (
+            workspace.arguments
+            == [
+                {
+                    "repo_path": None,
+                    "repo_url": REPO,
+                    "ref": BASE,
+                    "create_branch": False,
+                    "cache_key": "selected-cache",
+                }
+            ]
+            * 2
+        )
+        assert workspace.calls.count(("release", "/tmp/fake-workspace")) == 2
+>       assert source.issue_reads.count("linked/a") == 2
+E       AssertionError: assert 4 == 2
+E        +  where 4 = <built-in method count of list object at 0x10f3d8740>('linked/a')
+E        +    where <built-in method count of list object at 0x10f3d8740> = ['subject/42', 'criterion/a', 'criterion/b', 'ordinary/child', 'subject/42', 'linked/a', ...].count
+E        +      where ['subject/42', 'criterion/a', 'criterion/b', 'ordinary/child', 'subject/42', 'linked/a', ...] = <tests.fakes.FakeTrackerPort object at 0x10efea390>.issue_reads
+
+tests/chains/test_organize.py:298: AssertionError
+_ test_every_call_reads_full_tracker_sources_and_dispatches_fresh_at_base[verify-organize_verify-anthropic_v5] _
+
+set_name = 'anthropic_v5', method = 'verify'
+key = <PromptKey.ORGANIZE_VERIFY: 'organize_verify'>
+
+    @pytest.mark.parametrize("set_name", [OPUS_SET, V5_SET])
+    @pytest.mark.parametrize(
+        "method,key",
+        [
+            ("assess", PromptKey.ORGANIZE_ASSESS),
+            ("verify", PromptKey.ORGANIZE_VERIFY),
+        ],
+    )
+    async def test_every_call_reads_full_tracker_sources_and_dispatches_fresh_at_base(
+        set_name, method, key
+    ):
+        source = tracker()
+        executor = RecordingExecutor([result()])
+        workspace = RecordingWorkspace()
+        admission = consumer(source, executor, workspace, set_name)
+        before = dict(source.issues)
+    
+        with structlog.testing.capture_logs() as logs:
+            for _ in range(2):
+                verdict = await getattr(admission, method)(request())
+                assert verdict.verdict is AdmissionVerdict.BUILDABLE
+    
+        assert len(executor.calls) == 2
+        for call in executor.calls:
+            prompt = call["prompt"]
+            for body in (
+                source.issues[SUBJECT].body,
+                "First linked body.",
+                "Second linked body.",
+                "First criterion body.",
+                "Second criterion body.",
+                "Unlabelled child is not a criterion.",
+                "Apply the selected rubric.",
+                "unsupported-claim",
+                SUBJECT,
+                BASE,
+            ):
+                assert body in prompt
+            for excluded in (
+                "Unrelated issue stays outside the prompt.",
+                "Author rationale must never be forwarded.",
+                "previous-agent-session",
+            ):
+                assert excluded not in prompt
+            assert call["session_id"] is None
+            assert call["session_type"] is SessionType.ORGANIZE_PASS
+            assert call["permission_mode"] == "plan"
+            assert call["allowed_tools"] is ToolPreset.EVALUATION
+            assert call["agents"] == ()
+            assert call["run_identity"] is None
+            assert call["skills"] == SUPPRESS_ALL_SKILLS
+            assert call["session_policy"] == load_registry(
+                default_set=set_name
+            ).session_policy(key)
+            assert call["cwd"] == "/tmp/fake-workspace"
+            assert call["output_format"]["schema"] == AdmissionJudgment.model_json_schema()
+        attempts = [log for log in logs if log["event"] == "organize_admission_attempt"]
+        assert len(attempts) == 2
+        for attempt in attempts:
+            assert attempt["session_id"] is None
+            assert attempt["resumed_session_id"] is None
+            assert attempt["prompt_key"] == key.value
+            assert attempt["base_ref"] == BASE
+        assert (
+            workspace.arguments
+            == [
+                {
+                    "repo_path": None,
+                    "repo_url": REPO,
+                    "ref": BASE,
+                    "create_branch": False,
+                    "cache_key": "selected-cache",
+                }
+            ]
+            * 2
+        )
+        assert workspace.calls.count(("release", "/tmp/fake-workspace")) == 2
+>       assert source.issue_reads.count("linked/a") == 2
+E       AssertionError: assert 4 == 2
+E        +  where 4 = <built-in method count of list object at 0x10f3c8f00>('linked/a')
+E        +    where <built-in method count of list object at 0x10f3c8f00> = ['subject/42', 'criterion/a', 'criterion/b', 'ordinary/child', 'subject/42', 'linked/a', ...].count
+E        +      where ['subject/42', 'criterion/a', 'criterion/b', 'ordinary/child', 'subject/42', 'linked/a', ...] = <tests.fakes.FakeTrackerPort object at 0x10efeb110>.issue_reads
+
+tests/chains/test_organize.py:298: AssertionError
+___ test_real_revision_reader_lapses_the_exact_admission_surface[subject/42] ___
+
+self = <tests.fakes.FakeLinearMcpServer object at 0x10efead50>
+
+    async def call_tool(
+        self,
+        *,
+        name: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        # Yield to the scheduler at every tool boundary so concurrent callers
+        # genuinely interleave: a claim race that never interleaves proves
+        # nothing about exactly-once semantics.
+        await asyncio.sleep(0)
+        self.calls.append((name, dict(arguments)))
+        served = self._credential_refused_after.get(name)
+        if served is not None and len(self.tool_calls(name)) > served:
+            raise McpCredentialRefusedError(
+                "the MCP server refused the configured credential",
+                server_name="fake-linear",
+                tool_name=name,
+            )
+        remaining = self._transient_failures.get(name, 0)
+        if remaining > 0:
+            self._transient_failures[name] = remaining - 1
+            raise TransientAPIError(f"fake transient failure on {name}")
+        failing = self._transport_failures.get(name, 0)
+        if failing > 0:
+            self._transport_failures[name] = failing - 1
+            raise McpTransportError(
+                "fake transport failure",
+                server_name="fake-linear",
+                tool_name=name,
+            )
+        reported = self._tool_errors.get(name)
+        if reported is not None:
+            # The shape a real tool error arrives in: an error RESULT, which
+            # the transport turns into this exception carrying the server's
+            # own words. A caller cannot tell a refused scope from an outage
+            # by type — only those words distinguish them.
+            raise McpTransportError(
+                f"the MCP server reported a tool error: {reported}",
+                server_name="fake-linear",
+                tool_name=name,
+            )
+        handler = getattr(self, f"_tool_{name}", None)
+        if handler is None:
+            msg = f"fake MCP server exposes no tool named {name!r}"
+            raise LookupError(msg)
+        try:
+>           result: McpToolResult = handler(arguments)
+                                    ^^^^^^^^^^^^^^^^^^
+
+tests/fakes.py:2597: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <tests.fakes.FakeLinearMcpServer object at 0x10efead50>
+arguments = {'id': 'subject/42', 'title': 'A later title'}
+
+    def _tool_save_issue(
+        self,
+        arguments: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        state = str(arguments.get("state", "Backlog"))
+        if state not in self.state_types:
+            matches = [
+                name
+                for team, names in self.statuses.items()
+                for name in names
+                if f"{team}-{name}-id" == state
+            ]
+            if len(matches) != 1:
+>               raise LookupError(f"unknown or ambiguous native state {state!r}")
+E               LookupError: unknown or ambiguous native state 'Backlog'
+
+tests/fakes.py:2717: LookupError
+
+The above exception was the direct cause of the following exception:
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10efee210>
+tool = 'save_issue', arguments = {'id': 'subject/42', 'title': 'A later title'}
+
+    async def _call(
+        self,
+        tool: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        if tool == _TOOL_SAVE_ISSUE:
+            # Every issue write funnels through here, so the refusal is
+            # stated once and no future write path can route around it.
+            refuse_combined_issue_write(arguments)
+        attempt = 0
+        while True:
+            try:
+>               return await self._caller.call_tool(name=tool, arguments=arguments)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+src/kodezart/adapters/linear_mcp_tracker.py:3849: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <tests.fakes.FakeLinearMcpServer object at 0x10efead50>
+
+    async def call_tool(
+        self,
+        *,
+        name: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        # Yield to the scheduler at every tool boundary so concurrent callers
+        # genuinely interleave: a claim race that never interleaves proves
+        # nothing about exactly-once semantics.
+        await asyncio.sleep(0)
+        self.calls.append((name, dict(arguments)))
+        served = self._credential_refused_after.get(name)
+        if served is not None and len(self.tool_calls(name)) > served:
+            raise McpCredentialRefusedError(
+                "the MCP server refused the configured credential",
+                server_name="fake-linear",
+                tool_name=name,
+            )
+        remaining = self._transient_failures.get(name, 0)
+        if remaining > 0:
+            self._transient_failures[name] = remaining - 1
+            raise TransientAPIError(f"fake transient failure on {name}")
+        failing = self._transport_failures.get(name, 0)
+        if failing > 0:
+            self._transport_failures[name] = failing - 1
+            raise McpTransportError(
+                "fake transport failure",
+                server_name="fake-linear",
+                tool_name=name,
+            )
+        reported = self._tool_errors.get(name)
+        if reported is not None:
+            # The shape a real tool error arrives in: an error RESULT, which
+            # the transport turns into this exception carrying the server's
+            # own words. A caller cannot tell a refused scope from an outage
+            # by type — only those words distinguish them.
+            raise McpTransportError(
+                f"the MCP server reported a tool error: {reported}",
+                server_name="fake-linear",
+                tool_name=name,
+            )
+        handler = getattr(self, f"_tool_{name}", None)
+        if handler is None:
+            msg = f"fake MCP server exposes no tool named {name!r}"
+            raise LookupError(msg)
+        try:
+            result: McpToolResult = handler(arguments)
+        except LookupError as exc:
+>           raise McpTransportError(
+                f"the MCP server reported a tool error: {exc}",
+                server_name="fake-linear",
+                tool_name=name,
+            ) from exc
+E           kodezart.core.errors.McpTransportError: the MCP server reported a tool error: unknown or ambiguous native state 'Backlog' (fake-linear/save_issue)
+
+tests/fakes.py:2599: McpTransportError
+
+The above exception was the direct cause of the following exception:
+
+issue_key = 'subject/42'
+
+    @pytest.mark.parametrize("issue_key", [SUBJECT, "criterion/native"])
+    async def test_real_revision_reader_lapses_the_exact_admission_surface(issue_key):
+        server = FakeLinearMcpServer(
+            issues=[
+                FakeMcpIssue(id=SUBJECT, description="Parent body."),
+                FakeMcpIssue(
+                    id="criterion/native",
+                    parent_id=SUBJECT,
+                    labels=["acceptance-condition"],
+                    description="Criterion body.",
+                ),
+            ]
+        )
+        source = tracker_over(server)
+        executor = RecordingExecutor(
+            [
+                result(
+                    structured_output={
+                        "issue_id": issue_key,
+                        "verdict": "buildable",
+                        "evidence": "Observed.",
+                    }
+                )
+            ]
+        )
+        admission = consumer(source, executor, RecordingWorkspace())
+        judged = await admission.verify(
+            request().model_copy(update={"issue_key": issue_key})
+        )
+        recorded = judged.model_dump_json()
+        assert await admission.is_live(judged) is True
+        await source.post_comment(issue_key=issue_key, body="A later discussion.")
+        assert await admission.is_live(judged) is True
+>       await source.update_issue(issue_key=issue_key, title="A later title")
+
+tests/chains/test_organize.py:476: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/adapters/linear_mcp_tracker.py:1682: in update_issue
+    payload = await self._call(_TOOL_SAVE_ISSUE, arguments)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10efee210>
+tool = 'save_issue', arguments = {'id': 'subject/42', 'title': 'A later title'}
+
+    async def _call(
+        self,
+        tool: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        if tool == _TOOL_SAVE_ISSUE:
+            # Every issue write funnels through here, so the refusal is
+            # stated once and no future write path can route around it.
+            refuse_combined_issue_write(arguments)
+        attempt = 0
+        while True:
+            try:
+                return await self._caller.call_tool(name=tool, arguments=arguments)
+            except McpCredentialRefusedError as exc:
+                # Named once and raised, never retried: the refusal is the
+                # same on every attempt, so a budget spent on it buys the
+                # first answer again and delays the one event an operator
+                # can act on by the whole back-off.
+                await self._log.aerror(
+                    "tracker_credential_refused",
+                    tool=tool,
+                    server_name=exc.server_name,
+                )
+                raise TrackerAccessDeniedError(str(exc)) from exc
+            except (McpTransportError, TransientAPIError) as exc:
+                if attempt + 1 >= self._retry.attempts or not _may_resend(tool, exc):
+>                   raise TrackerUnavailableError(str(exc)) from exc
+E                   kodezart.core.errors.TrackerUnavailableError: the MCP server reported a tool error: unknown or ambiguous native state 'Backlog' (fake-linear/save_issue)
+
+src/kodezart/adapters/linear_mcp_tracker.py:3863: TrackerUnavailableError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 18:17:56 [info     ] organize_admission_attempt     base_ref=refs/heads/selected-base issue_key=subject/42 prompt_key=organize_verify resumed_session_id=None session_id=None
+2026-09-12 18:17:56 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+_ test_real_revision_reader_lapses_the_exact_admission_surface[criterion/native] _
+
+self = <tests.fakes.FakeLinearMcpServer object at 0x10f289910>
+
+    async def call_tool(
+        self,
+        *,
+        name: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        # Yield to the scheduler at every tool boundary so concurrent callers
+        # genuinely interleave: a claim race that never interleaves proves
+        # nothing about exactly-once semantics.
+        await asyncio.sleep(0)
+        self.calls.append((name, dict(arguments)))
+        served = self._credential_refused_after.get(name)
+        if served is not None and len(self.tool_calls(name)) > served:
+            raise McpCredentialRefusedError(
+                "the MCP server refused the configured credential",
+                server_name="fake-linear",
+                tool_name=name,
+            )
+        remaining = self._transient_failures.get(name, 0)
+        if remaining > 0:
+            self._transient_failures[name] = remaining - 1
+            raise TransientAPIError(f"fake transient failure on {name}")
+        failing = self._transport_failures.get(name, 0)
+        if failing > 0:
+            self._transport_failures[name] = failing - 1
+            raise McpTransportError(
+                "fake transport failure",
+                server_name="fake-linear",
+                tool_name=name,
+            )
+        reported = self._tool_errors.get(name)
+        if reported is not None:
+            # The shape a real tool error arrives in: an error RESULT, which
+            # the transport turns into this exception carrying the server's
+            # own words. A caller cannot tell a refused scope from an outage
+            # by type — only those words distinguish them.
+            raise McpTransportError(
+                f"the MCP server reported a tool error: {reported}",
+                server_name="fake-linear",
+                tool_name=name,
+            )
+        handler = getattr(self, f"_tool_{name}", None)
+        if handler is None:
+            msg = f"fake MCP server exposes no tool named {name!r}"
+            raise LookupError(msg)
+        try:
+>           result: McpToolResult = handler(arguments)
+                                    ^^^^^^^^^^^^^^^^^^
+
+tests/fakes.py:2597: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <tests.fakes.FakeLinearMcpServer object at 0x10f289910>
+arguments = {'id': 'criterion/native', 'title': 'A later title'}
+
+    def _tool_save_issue(
+        self,
+        arguments: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        state = str(arguments.get("state", "Backlog"))
+        if state not in self.state_types:
+            matches = [
+                name
+                for team, names in self.statuses.items()
+                for name in names
+                if f"{team}-{name}-id" == state
+            ]
+            if len(matches) != 1:
+>               raise LookupError(f"unknown or ambiguous native state {state!r}")
+E               LookupError: unknown or ambiguous native state 'Backlog'
+
+tests/fakes.py:2717: LookupError
+
+The above exception was the direct cause of the following exception:
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10f289970>
+tool = 'save_issue'
+arguments = {'id': 'criterion/native', 'title': 'A later title'}
+
+    async def _call(
+        self,
+        tool: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        if tool == _TOOL_SAVE_ISSUE:
+            # Every issue write funnels through here, so the refusal is
+            # stated once and no future write path can route around it.
+            refuse_combined_issue_write(arguments)
+        attempt = 0
+        while True:
+            try:
+>               return await self._caller.call_tool(name=tool, arguments=arguments)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+src/kodezart/adapters/linear_mcp_tracker.py:3849: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <tests.fakes.FakeLinearMcpServer object at 0x10f289910>
+
+    async def call_tool(
+        self,
+        *,
+        name: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        # Yield to the scheduler at every tool boundary so concurrent callers
+        # genuinely interleave: a claim race that never interleaves proves
+        # nothing about exactly-once semantics.
+        await asyncio.sleep(0)
+        self.calls.append((name, dict(arguments)))
+        served = self._credential_refused_after.get(name)
+        if served is not None and len(self.tool_calls(name)) > served:
+            raise McpCredentialRefusedError(
+                "the MCP server refused the configured credential",
+                server_name="fake-linear",
+                tool_name=name,
+            )
+        remaining = self._transient_failures.get(name, 0)
+        if remaining > 0:
+            self._transient_failures[name] = remaining - 1
+            raise TransientAPIError(f"fake transient failure on {name}")
+        failing = self._transport_failures.get(name, 0)
+        if failing > 0:
+            self._transport_failures[name] = failing - 1
+            raise McpTransportError(
+                "fake transport failure",
+                server_name="fake-linear",
+                tool_name=name,
+            )
+        reported = self._tool_errors.get(name)
+        if reported is not None:
+            # The shape a real tool error arrives in: an error RESULT, which
+            # the transport turns into this exception carrying the server's
+            # own words. A caller cannot tell a refused scope from an outage
+            # by type — only those words distinguish them.
+            raise McpTransportError(
+                f"the MCP server reported a tool error: {reported}",
+                server_name="fake-linear",
+                tool_name=name,
+            )
+        handler = getattr(self, f"_tool_{name}", None)
+        if handler is None:
+            msg = f"fake MCP server exposes no tool named {name!r}"
+            raise LookupError(msg)
+        try:
+            result: McpToolResult = handler(arguments)
+        except LookupError as exc:
+>           raise McpTransportError(
+                f"the MCP server reported a tool error: {exc}",
+                server_name="fake-linear",
+                tool_name=name,
+            ) from exc
+E           kodezart.core.errors.McpTransportError: the MCP server reported a tool error: unknown or ambiguous native state 'Backlog' (fake-linear/save_issue)
+
+tests/fakes.py:2599: McpTransportError
+
+The above exception was the direct cause of the following exception:
+
+issue_key = 'criterion/native'
+
+    @pytest.mark.parametrize("issue_key", [SUBJECT, "criterion/native"])
+    async def test_real_revision_reader_lapses_the_exact_admission_surface(issue_key):
+        server = FakeLinearMcpServer(
+            issues=[
+                FakeMcpIssue(id=SUBJECT, description="Parent body."),
+                FakeMcpIssue(
+                    id="criterion/native",
+                    parent_id=SUBJECT,
+                    labels=["acceptance-condition"],
+                    description="Criterion body.",
+                ),
+            ]
+        )
+        source = tracker_over(server)
+        executor = RecordingExecutor(
+            [
+                result(
+                    structured_output={
+                        "issue_id": issue_key,
+                        "verdict": "buildable",
+                        "evidence": "Observed.",
+                    }
+                )
+            ]
+        )
+        admission = consumer(source, executor, RecordingWorkspace())
+        judged = await admission.verify(
+            request().model_copy(update={"issue_key": issue_key})
+        )
+        recorded = judged.model_dump_json()
+        assert await admission.is_live(judged) is True
+        await source.post_comment(issue_key=issue_key, body="A later discussion.")
+        assert await admission.is_live(judged) is True
+>       await source.update_issue(issue_key=issue_key, title="A later title")
+
+tests/chains/test_organize.py:476: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/adapters/linear_mcp_tracker.py:1682: in update_issue
+    payload = await self._call(_TOOL_SAVE_ISSUE, arguments)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10f289970>
+tool = 'save_issue'
+arguments = {'id': 'criterion/native', 'title': 'A later title'}
+
+    async def _call(
+        self,
+        tool: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        if tool == _TOOL_SAVE_ISSUE:
+            # Every issue write funnels through here, so the refusal is
+            # stated once and no future write path can route around it.
+            refuse_combined_issue_write(arguments)
+        attempt = 0
+        while True:
+            try:
+                return await self._caller.call_tool(name=tool, arguments=arguments)
+            except McpCredentialRefusedError as exc:
+                # Named once and raised, never retried: the refusal is the
+                # same on every attempt, so a budget spent on it buys the
+                # first answer again and delays the one event an operator
+                # can act on by the whole back-off.
+                await self._log.aerror(
+                    "tracker_credential_refused",
+                    tool=tool,
+                    server_name=exc.server_name,
+                )
+                raise TrackerAccessDeniedError(str(exc)) from exc
+            except (McpTransportError, TransientAPIError) as exc:
+                if attempt + 1 >= self._retry.attempts or not _may_resend(tool, exc):
+>                   raise TrackerUnavailableError(str(exc)) from exc
+E                   kodezart.core.errors.TrackerUnavailableError: the MCP server reported a tool error: unknown or ambiguous native state 'Backlog' (fake-linear/save_issue)
+
+src/kodezart/adapters/linear_mcp_tracker.py:3863: TrackerUnavailableError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 18:17:56 [info     ] organize_admission_attempt     base_ref=refs/heads/selected-base issue_key=criterion/native prompt_key=organize_verify resumed_session_id=None session_id=None
+2026-09-12 18:17:56 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+_ test_port_criterion_changes_use_only_surface_digests_for_parent_gap[fake-amended_body] _
+
+organized_port = (<tests.fakes.FakeTrackerPort object at 0x10eff3350>, ('subject/42', 'subject/42/check', 'other/17', 'other/17/check'))
+change = 'amended_body'
+
+    @pytest.mark.parametrize("change", ["amended_body", "unchanged_body", "state_only"])
+    async def test_port_criterion_changes_use_only_surface_digests_for_parent_gap(
+        organized_port, change
+    ):
+        source, keys = organized_port
+        executor = RecordingExecutor([])
+        workspace = RecordingWorkspace()
+        admission = consumer(source, executor, workspace)
+        judged = []
+        for key in keys:
+            executor.events = [
+                result(
+                    structured_output={
+                        "issue_id": key,
+                        "verdict": "buildable",
+                        "evidence": "The current body is implementable.",
+                    }
+                )
+            ]
+            judged.append(
+                await admission.assess(request().model_copy(update={"issue_key": key}))
+            )
+        baseline = tuple(value.model_dump_json() for value in judged)
+        assert gap_of(await read_gap_revisions(source, keys), admissions=judged) == ()
+        child_key = keys[1]
+        before = await source.read_issue(issue_key=child_key)
+        if change == "amended_body":
+            await source.update_issue(
+                issue_key=child_key, body="Check: revised runnable condition."
+            )
+        elif change == "unchanged_body":
+            assert (
+                await source.edit_description(
+                    target=child_key,
+                    expected="prior body no longer present",
+                    replacement=before.body,
+                )
+                is DescriptionEditResult.UNCHANGED
+            )
+        else:
+            assert before.state_kind is WorkflowStateKind.COMPLETED
+            moved = await source.restore_workflow_state(
+                issue_key=child_key, state_name="Todo"
+            )
+            assert moved.state_kind is WorkflowStateKind.UNSTARTED
+        calls = len(executor.calls)
+        acquisitions = list(workspace.arguments)
+        current = await read_gap_revisions(source, keys)
+        gap = gap_of(current, admissions=judged)
+        assert tuple(item.issue_key for item in gap) == (
+            (SUBJECT,) if change == "amended_body" else ()
+        )
+        assert await admission.is_live(judged[0]) is (change == "exact_replay")
+        assert await admission.is_live(judged[1]) is (change != "amended_body")
+>       assert await admission.is_live(judged[2]) is True
+E       assert False is True
+
+tests/chains/test_organize.py:1004: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 18:17:58 [info     ] organize_admission_attempt     base_ref=refs/heads/selected-base issue_key=subject/42 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-12 18:17:58 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 18:17:58 [info     ] organize_admission_attempt     base_ref=refs/heads/selected-base issue_key=subject/42/check prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-12 18:17:58 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 18:17:58 [info     ] organize_admission_attempt     base_ref=refs/heads/selected-base issue_key=other/17 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-12 18:17:58 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 18:17:58 [info     ] organize_admission_attempt     base_ref=refs/heads/selected-base issue_key=other/17/check prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-12 18:17:58 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+_ test_port_criterion_changes_use_only_surface_digests_for_parent_gap[fake-unchanged_body] _
+
+organized_port = (<tests.fakes.FakeTrackerPort object at 0x10f293410>, ('subject/42', 'subject/42/check', 'other/17', 'other/17/check'))
+change = 'unchanged_body'
+
+    @pytest.mark.parametrize("change", ["amended_body", "unchanged_body", "state_only"])
+    async def test_port_criterion_changes_use_only_surface_digests_for_parent_gap(
+        organized_port, change
+    ):
+        source, keys = organized_port
+        executor = RecordingExecutor([])
+        workspace = RecordingWorkspace()
+        admission = consumer(source, executor, workspace)
+        judged = []
+        for key in keys:
+            executor.events = [
+                result(
+                    structured_output={
+                        "issue_id": key,
+                        "verdict": "buildable",
+                        "evidence": "The current body is implementable.",
+                    }
+                )
+            ]
+            judged.append(
+                await admission.assess(request().model_copy(update={"issue_key": key}))
+            )
+        baseline = tuple(value.model_dump_json() for value in judged)
+        assert gap_of(await read_gap_revisions(source, keys), admissions=judged) == ()
+        child_key = keys[1]
+        before = await source.read_issue(issue_key=child_key)
+        if change == "amended_body":
+            await source.update_issue(
+                issue_key=child_key, body="Check: revised runnable condition."
+            )
+        elif change == "unchanged_body":
+            assert (
+                await source.edit_description(
+                    target=child_key,
+                    expected="prior body no longer present",
+                    replacement=before.body,
+                )
+                is DescriptionEditResult.UNCHANGED
+            )
+        else:
+            assert before.state_kind is WorkflowStateKind.COMPLETED
+            moved = await source.restore_workflow_state(
+                issue_key=child_key, state_name="Todo"
+            )
+            assert moved.state_kind is WorkflowStateKind.UNSTARTED
+        calls = len(executor.calls)
+        acquisitions = list(workspace.arguments)
+        current = await read_gap_revisions(source, keys)
+        gap = gap_of(current, admissions=judged)
+        assert tuple(item.issue_key for item in gap) == (
+            (SUBJECT,) if change == "amended_body" else ()
+        )
+>       assert await admission.is_live(judged[0]) is (change == "exact_replay")
+E       AssertionError: assert True is ('unchanged_body' == 'exact_replay'
+E         
+E         - exact_replay
+E         + unchanged_body)
+
+tests/chains/test_organize.py:1002: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 18:17:58 [info     ] organize_admission_attempt     base_ref=refs/heads/selected-base issue_key=subject/42 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-12 18:17:58 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 18:17:58 [info     ] organize_admission_attempt     base_ref=refs/heads/selected-base issue_key=subject/42/check prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-12 18:17:58 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 18:17:58 [info     ] organize_admission_attempt     base_ref=refs/heads/selected-base issue_key=other/17 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-12 18:17:58 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 18:17:58 [info     ] organize_admission_attempt     base_ref=refs/heads/selected-base issue_key=other/17/check prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-12 18:17:58 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+_ test_port_criterion_changes_use_only_surface_digests_for_parent_gap[fake-state_only] _
+
+organized_port = (<tests.fakes.FakeTrackerPort object at 0x10f299850>, ('subject/42', 'subject/42/check', 'other/17', 'other/17/check'))
+change = 'state_only'
+
+    @pytest.mark.parametrize("change", ["amended_body", "unchanged_body", "state_only"])
+    async def test_port_criterion_changes_use_only_surface_digests_for_parent_gap(
+        organized_port, change
+    ):
+        source, keys = organized_port
+        executor = RecordingExecutor([])
+        workspace = RecordingWorkspace()
+        admission = consumer(source, executor, workspace)
+        judged = []
+        for key in keys:
+            executor.events = [
+                result(
+                    structured_output={
+                        "issue_id": key,
+                        "verdict": "buildable",
+                        "evidence": "The current body is implementable.",
+                    }
+                )
+            ]
+            judged.append(
+                await admission.assess(request().model_copy(update={"issue_key": key}))
+            )
+        baseline = tuple(value.model_dump_json() for value in judged)
+        assert gap_of(await read_gap_revisions(source, keys), admissions=judged) == ()
+        child_key = keys[1]
+        before = await source.read_issue(issue_key=child_key)
+        if change == "amended_body":
+            await source.update_issue(
+                issue_key=child_key, body="Check: revised runnable condition."
+            )
+        elif change == "unchanged_body":
+            assert (
+                await source.edit_description(
+                    target=child_key,
+                    expected="prior body no longer present",
+                    replacement=before.body,
+                )
+                is DescriptionEditResult.UNCHANGED
+            )
+        else:
+            assert before.state_kind is WorkflowStateKind.COMPLETED
+            moved = await source.restore_workflow_state(
+                issue_key=child_key, state_name="Todo"
+            )
+            assert moved.state_kind is WorkflowStateKind.UNSTARTED
+        calls = len(executor.calls)
+        acquisitions = list(workspace.arguments)
+        current = await read_gap_revisions(source, keys)
+        gap = gap_of(current, admissions=judged)
+        assert tuple(item.issue_key for item in gap) == (
+            (SUBJECT,) if change == "amended_body" else ()
+        )
+        assert await admission.is_live(judged[0]) is (change == "exact_replay")
+>       assert await admission.is_live(judged[1]) is (change != "amended_body")
+E       AssertionError: assert False is ('state_only' != 'amended_body')
+
+tests/chains/test_organize.py:1003: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 18:17:58 [info     ] organize_admission_attempt     base_ref=refs/heads/selected-base issue_key=subject/42 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-12 18:17:58 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 18:17:58 [info     ] organize_admission_attempt     base_ref=refs/heads/selected-base issue_key=subject/42/check prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-12 18:17:58 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 18:17:58 [info     ] organize_admission_attempt     base_ref=refs/heads/selected-base issue_key=other/17 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-12 18:17:58 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 18:17:58 [info     ] organize_admission_attempt     base_ref=refs/heads/selected-base issue_key=other/17/check prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-12 18:17:58 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+_ test_port_criterion_changes_use_only_surface_digests_for_parent_gap[linear-amended_body] _
+
+self = <tests.fakes.FakeLinearMcpServer object at 0x10f299d60>
+
+    async def call_tool(
+        self,
+        *,
+        name: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        # Yield to the scheduler at every tool boundary so concurrent callers
+        # genuinely interleave: a claim race that never interleaves proves
+        # nothing about exactly-once semantics.
+        await asyncio.sleep(0)
+        self.calls.append((name, dict(arguments)))
+        served = self._credential_refused_after.get(name)
+        if served is not None and len(self.tool_calls(name)) > served:
+            raise McpCredentialRefusedError(
+                "the MCP server refused the configured credential",
+                server_name="fake-linear",
+                tool_name=name,
+            )
+        remaining = self._transient_failures.get(name, 0)
+        if remaining > 0:
+            self._transient_failures[name] = remaining - 1
+            raise TransientAPIError(f"fake transient failure on {name}")
+        failing = self._transport_failures.get(name, 0)
+        if failing > 0:
+            self._transport_failures[name] = failing - 1
+            raise McpTransportError(
+                "fake transport failure",
+                server_name="fake-linear",
+                tool_name=name,
+            )
+        reported = self._tool_errors.get(name)
+        if reported is not None:
+            # The shape a real tool error arrives in: an error RESULT, which
+            # the transport turns into this exception carrying the server's
+            # own words. A caller cannot tell a refused scope from an outage
+            # by type — only those words distinguish them.
+            raise McpTransportError(
+                f"the MCP server reported a tool error: {reported}",
+                server_name="fake-linear",
+                tool_name=name,
+            )
+        handler = getattr(self, f"_tool_{name}", None)
+        if handler is None:
+            msg = f"fake MCP server exposes no tool named {name!r}"
+            raise LookupError(msg)
+        try:
+>           result: McpToolResult = handler(arguments)
+                                    ^^^^^^^^^^^^^^^^^^
+
+tests/fakes.py:2597: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <tests.fakes.FakeLinearMcpServer object at 0x10f299d60>
+arguments = {'description': 'Check: revised runnable condition.', 'id': 'subject/42/check'}
+
+    def _tool_save_issue(
+        self,
+        arguments: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        state = str(arguments.get("state", "Backlog"))
+        if state not in self.state_types:
+            matches = [
+                name
+                for team, names in self.statuses.items()
+                for name in names
+                if f"{team}-{name}-id" == state
+            ]
+            if len(matches) != 1:
+>               raise LookupError(f"unknown or ambiguous native state {state!r}")
+E               LookupError: unknown or ambiguous native state 'Backlog'
+
+tests/fakes.py:2717: LookupError
+
+The above exception was the direct cause of the following exception:
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10f29b380>
+tool = 'save_issue'
+arguments = {'description': 'Check: revised runnable condition.', 'id': 'subject/42/check'}
+
+    async def _call(
+        self,
+        tool: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        if tool == _TOOL_SAVE_ISSUE:
+            # Every issue write funnels through here, so the refusal is
+            # stated once and no future write path can route around it.
+            refuse_combined_issue_write(arguments)
+        attempt = 0
+        while True:
+            try:
+>               return await self._caller.call_tool(name=tool, arguments=arguments)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+src/kodezart/adapters/linear_mcp_tracker.py:3849: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <tests.fakes.FakeLinearMcpServer object at 0x10f299d60>
+
+    async def call_tool(
+        self,
+        *,
+        name: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        # Yield to the scheduler at every tool boundary so concurrent callers
+        # genuinely interleave: a claim race that never interleaves proves
+        # nothing about exactly-once semantics.
+        await asyncio.sleep(0)
+        self.calls.append((name, dict(arguments)))
+        served = self._credential_refused_after.get(name)
+        if served is not None and len(self.tool_calls(name)) > served:
+            raise McpCredentialRefusedError(
+                "the MCP server refused the configured credential",
+                server_name="fake-linear",
+                tool_name=name,
+            )
+        remaining = self._transient_failures.get(name, 0)
+        if remaining > 0:
+            self._transient_failures[name] = remaining - 1
+            raise TransientAPIError(f"fake transient failure on {name}")
+        failing = self._transport_failures.get(name, 0)
+        if failing > 0:
+            self._transport_failures[name] = failing - 1
+            raise McpTransportError(
+                "fake transport failure",
+                server_name="fake-linear",
+                tool_name=name,
+            )
+        reported = self._tool_errors.get(name)
+        if reported is not None:
+            # The shape a real tool error arrives in: an error RESULT, which
+            # the transport turns into this exception carrying the server's
+            # own words. A caller cannot tell a refused scope from an outage
+            # by type — only those words distinguish them.
+            raise McpTransportError(
+                f"the MCP server reported a tool error: {reported}",
+                server_name="fake-linear",
+                tool_name=name,
+            )
+        handler = getattr(self, f"_tool_{name}", None)
+        if handler is None:
+            msg = f"fake MCP server exposes no tool named {name!r}"
+            raise LookupError(msg)
+        try:
+            result: McpToolResult = handler(arguments)
+        except LookupError as exc:
+>           raise McpTransportError(
+                f"the MCP server reported a tool error: {exc}",
+                server_name="fake-linear",
+                tool_name=name,
+            ) from exc
+E           kodezart.core.errors.McpTransportError: the MCP server reported a tool error: unknown or ambiguous native state 'Backlog' (fake-linear/save_issue)
+
+tests/fakes.py:2599: McpTransportError
+
+The above exception was the direct cause of the following exception:
+
+organized_port = (<kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10f29b380>, ('subject/42', 'subject/42/check', 'other/17', 'other/17/check'))
+change = 'amended_body'
+
+    @pytest.mark.parametrize("change", ["amended_body", "unchanged_body", "state_only"])
+    async def test_port_criterion_changes_use_only_surface_digests_for_parent_gap(
+        organized_port, change
+    ):
+        source, keys = organized_port
+        executor = RecordingExecutor([])
+        workspace = RecordingWorkspace()
+        admission = consumer(source, executor, workspace)
+        judged = []
+        for key in keys:
+            executor.events = [
+                result(
+                    structured_output={
+                        "issue_id": key,
+                        "verdict": "buildable",
+                        "evidence": "The current body is implementable.",
+                    }
+                )
+            ]
+            judged.append(
+                await admission.assess(request().model_copy(update={"issue_key": key}))
+            )
+        baseline = tuple(value.model_dump_json() for value in judged)
+        assert gap_of(await read_gap_revisions(source, keys), admissions=judged) == ()
+        child_key = keys[1]
+        before = await source.read_issue(issue_key=child_key)
+        if change == "amended_body":
+>           await source.update_issue(
+                issue_key=child_key, body="Check: revised runnable condition."
+
+tests/chains/test_organize.py:977: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/adapters/linear_mcp_tracker.py:1682: in update_issue
+    payload = await self._call(_TOOL_SAVE_ISSUE, arguments)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10f29b380>
+tool = 'save_issue'
+arguments = {'description': 'Check: revised runnable condition.', 'id': 'subject/42/check'}
+
+    async def _call(
+        self,
+        tool: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        if tool == _TOOL_SAVE_ISSUE:
+            # Every issue write funnels through here, so the refusal is
+            # stated once and no future write path can route around it.
+            refuse_combined_issue_write(arguments)
+        attempt = 0
+        while True:
+            try:
+                return await self._caller.call_tool(name=tool, arguments=arguments)
+            except McpCredentialRefusedError as exc:
+                # Named once and raised, never retried: the refusal is the
+                # same on every attempt, so a budget spent on it buys the
+                # first answer again and delays the one event an operator
+                # can act on by the whole back-off.
+                await self._log.aerror(
+                    "tracker_credential_refused",
+                    tool=tool,
+                    server_name=exc.server_name,
+                )
+                raise TrackerAccessDeniedError(str(exc)) from exc
+            except (McpTransportError, TransientAPIError) as exc:
+                if attempt + 1 >= self._retry.attempts or not _may_resend(tool, exc):
+>                   raise TrackerUnavailableError(str(exc)) from exc
+E                   kodezart.core.errors.TrackerUnavailableError: the MCP server reported a tool error: unknown or ambiguous native state 'Backlog' (fake-linear/save_issue)
+
+src/kodezart/adapters/linear_mcp_tracker.py:3863: TrackerUnavailableError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 18:17:58 [info     ] organize_admission_attempt     base_ref=refs/heads/selected-base issue_key=subject/42 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-12 18:17:58 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 18:17:58 [info     ] organize_admission_attempt     base_ref=refs/heads/selected-base issue_key=subject/42/check prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-12 18:17:58 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 18:17:58 [info     ] organize_admission_attempt     base_ref=refs/heads/selected-base issue_key=other/17 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-12 18:17:58 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 18:17:58 [info     ] organize_admission_attempt     base_ref=refs/heads/selected-base issue_key=other/17/check prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-12 18:17:58 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+_ test_port_criterion_changes_use_only_surface_digests_for_parent_gap[linear-unchanged_body] _
+
+organized_port = (<kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10f2a3650>, ('subject/42', 'subject/42/check', 'other/17', 'other/17/check'))
+change = 'unchanged_body'
+
+    @pytest.mark.parametrize("change", ["amended_body", "unchanged_body", "state_only"])
+    async def test_port_criterion_changes_use_only_surface_digests_for_parent_gap(
+        organized_port, change
+    ):
+        source, keys = organized_port
+        executor = RecordingExecutor([])
+        workspace = RecordingWorkspace()
+        admission = consumer(source, executor, workspace)
+        judged = []
+        for key in keys:
+            executor.events = [
+                result(
+                    structured_output={
+                        "issue_id": key,
+                        "verdict": "buildable",
+                        "evidence": "The current body is implementable.",
+                    }
+                )
+            ]
+            judged.append(
+                await admission.assess(request().model_copy(update={"issue_key": key}))
+            )
+        baseline = tuple(value.model_dump_json() for value in judged)
+        assert gap_of(await read_gap_revisions(source, keys), admissions=judged) == ()
+        child_key = keys[1]
+        before = await source.read_issue(issue_key=child_key)
+        if change == "amended_body":
+            await source.update_issue(
+                issue_key=child_key, body="Check: revised runnable condition."
+            )
+        elif change == "unchanged_body":
+            assert (
+                await source.edit_description(
+                    target=child_key,
+                    expected="prior body no longer present",
+                    replacement=before.body,
+                )
+                is DescriptionEditResult.UNCHANGED
+            )
+        else:
+            assert before.state_kind is WorkflowStateKind.COMPLETED
+            moved = await source.restore_workflow_state(
+                issue_key=child_key, state_name="Todo"
+            )
+            assert moved.state_kind is WorkflowStateKind.UNSTARTED
+        calls = len(executor.calls)
+        acquisitions = list(workspace.arguments)
+        current = await read_gap_revisions(source, keys)
+        gap = gap_of(current, admissions=judged)
+        assert tuple(item.issue_key for item in gap) == (
+            (SUBJECT,) if change == "amended_body" else ()
+        )
+>       assert await admission.is_live(judged[0]) is (change == "exact_replay")
+E       AssertionError: assert True is ('unchanged_body' == 'exact_replay'
+E         
+E         - exact_replay
+E         + unchanged_body)
+
+tests/chains/test_organize.py:1002: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 18:17:59 [info     ] organize_admission_attempt     base_ref=refs/heads/selected-base issue_key=subject/42 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-12 18:17:59 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 18:17:59 [info     ] organize_admission_attempt     base_ref=refs/heads/selected-base issue_key=subject/42/check prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-12 18:17:59 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 18:17:59 [info     ] organize_admission_attempt     base_ref=refs/heads/selected-base issue_key=other/17 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-12 18:17:59 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 18:17:59 [info     ] organize_admission_attempt     base_ref=refs/heads/selected-base issue_key=other/17/check prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-12 18:17:59 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+_ test_port_criterion_changes_use_only_surface_digests_for_parent_gap[linear-state_only] _
+
+organized_port = (<kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10f298c50>, ('subject/42', 'subject/42/check', 'other/17', 'other/17/check'))
+change = 'state_only'
+
+    @pytest.mark.parametrize("change", ["amended_body", "unchanged_body", "state_only"])
+    async def test_port_criterion_changes_use_only_surface_digests_for_parent_gap(
+        organized_port, change
+    ):
+        source, keys = organized_port
+        executor = RecordingExecutor([])
+        workspace = RecordingWorkspace()
+        admission = consumer(source, executor, workspace)
+        judged = []
+        for key in keys:
+            executor.events = [
+                result(
+                    structured_output={
+                        "issue_id": key,
+                        "verdict": "buildable",
+                        "evidence": "The current body is implementable.",
+                    }
+                )
+            ]
+            judged.append(
+                await admission.assess(request().model_copy(update={"issue_key": key}))
+            )
+        baseline = tuple(value.model_dump_json() for value in judged)
+        assert gap_of(await read_gap_revisions(source, keys), admissions=judged) == ()
+        child_key = keys[1]
+        before = await source.read_issue(issue_key=child_key)
+        if change == "amended_body":
+            await source.update_issue(
+                issue_key=child_key, body="Check: revised runnable condition."
+            )
+        elif change == "unchanged_body":
+            assert (
+                await source.edit_description(
+                    target=child_key,
+                    expected="prior body no longer present",
+                    replacement=before.body,
+                )
+                is DescriptionEditResult.UNCHANGED
+            )
+        else:
+            assert before.state_kind is WorkflowStateKind.COMPLETED
+            moved = await source.restore_workflow_state(
+                issue_key=child_key, state_name="Todo"
+            )
+            assert moved.state_kind is WorkflowStateKind.UNSTARTED
+        calls = len(executor.calls)
+        acquisitions = list(workspace.arguments)
+        current = await read_gap_revisions(source, keys)
+        gap = gap_of(current, admissions=judged)
+        assert tuple(item.issue_key for item in gap) == (
+            (SUBJECT,) if change == "amended_body" else ()
+        )
+        assert await admission.is_live(judged[0]) is (change == "exact_replay")
+>       assert await admission.is_live(judged[1]) is (change != "amended_body")
+E       AssertionError: assert False is ('state_only' != 'amended_body')
+
+tests/chains/test_organize.py:1003: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 18:17:59 [info     ] organize_admission_attempt     base_ref=refs/heads/selected-base issue_key=subject/42 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-12 18:17:59 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 18:17:59 [info     ] organize_admission_attempt     base_ref=refs/heads/selected-base issue_key=subject/42/check prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-12 18:17:59 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 18:17:59 [info     ] organize_admission_attempt     base_ref=refs/heads/selected-base issue_key=other/17 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-12 18:17:59 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 18:17:59 [info     ] organize_admission_attempt     base_ref=refs/heads/selected-base issue_key=other/17/check prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-12 18:17:59 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+=========================== short test summary info ============================
+FAILED tests/chains/test_organize.py::test_every_call_reads_full_tracker_sources_and_dispatches_fresh_at_base[assess-organize_assess-claude-opus]
+FAILED tests/chains/test_organize.py::test_every_call_reads_full_tracker_sources_and_dispatches_fresh_at_base[assess-organize_assess-anthropic_v5]
+FAILED tests/chains/test_organize.py::test_every_call_reads_full_tracker_sources_and_dispatches_fresh_at_base[verify-organize_verify-claude-opus]
+FAILED tests/chains/test_organize.py::test_every_call_reads_full_tracker_sources_and_dispatches_fresh_at_base[verify-organize_verify-anthropic_v5]
+FAILED tests/chains/test_organize.py::test_real_revision_reader_lapses_the_exact_admission_surface[subject/42]
+FAILED tests/chains/test_organize.py::test_real_revision_reader_lapses_the_exact_admission_surface[criterion/native]
+FAILED tests/chains/test_organize.py::test_port_criterion_changes_use_only_surface_digests_for_parent_gap[fake-amended_body]
+FAILED tests/chains/test_organize.py::test_port_criterion_changes_use_only_surface_digests_for_parent_gap[fake-unchanged_body]
+FAILED tests/chains/test_organize.py::test_port_criterion_changes_use_only_surface_digests_for_parent_gap[fake-state_only]
+FAILED tests/chains/test_organize.py::test_port_criterion_changes_use_only_surface_digests_for_parent_gap[linear-amended_body]
+FAILED tests/chains/test_organize.py::test_port_criterion_changes_use_only_surface_digests_for_parent_gap[linear-unchanged_body]
+FAILED tests/chains/test_organize.py::test_port_criterion_changes_use_only_surface_digests_for_parent_gap[linear-state_only]
+12 failed, 266 passed in 11.91s

@@ -1,0 +1,30 @@
+{
+  "source_commit": "4dd7b3eb4646bc1490c5bf0b13e079991a63c575",
+  "base_commit": "62a86add7740352da314e7788b7ad1423457f7ab",
+  "tree": "5b2d8adf588532f6171460c9502f7cf3600067f2",
+  "diff_sha256": "51f468683f37f203c38553618e02d104fa3fc42bd770c7b0b1a41d7aca1e0a95",
+  "git_version": "git version 2.50.1 (Apple Git-155)",
+  "files": {
+    "src/kodezart/adapters/git_worktree_provider.py": "337d46d7b8c16173d4fd0e188de93629ccecc4570c7c015bb03a23d0f302213d",
+    "src/kodezart/adapters/subprocess_git_service.py": "265a17f6c00e151eefb052e086de5b05f0d8bc6082029a5d608e41610d9e8526",
+    "src/kodezart/chains/native_execution.py": "2d70f7ed418d2aba4b6ee4f3316a797452df816eef5688034bfcc97a12a91059",
+    "src/kodezart/chains/ralph_loop.py": "16ed80e791c931e7ff8ab79eaf840c170743c42b361725cf52a4c4ce186d8763",
+    "src/kodezart/chains/ralph_workflow.py": "6aafaf9ffb406bb47f7ef4fb63770fb930e0858a9c11fbdb1c6e61da15e90865",
+    "src/kodezart/composition/engine.py": "f0d54e62d8e52edd6bee124ddfa5bc0e0527f2df6b434696a879fec82ac34166",
+    "src/kodezart/core/protocols.py": "a1994d5f16177cd329e42dc7ca3a05e737332b389a13c2b2da351863191e10a0",
+    "src/kodezart/domain/errors.py": "21803faa273e896aa3b3f9a6ee704df2ee3aa8a9e1bfca5433599190e4a99ab6",
+    "src/kodezart/services/agent_service.py": "27d861013864fb0a2d3a712165bdc09804b2a48fcac4c9696e2a5a77727b7901",
+    "src/kodezart/services/native_amendments.py": "451be150d6931d1efea51f76aa913d1d7b97826fded44c048322cb292fad6b33",
+    "src/kodezart/services/native_execution.py": "692cf88aad7bdf2a8f4c0c077d7dd191bd28830a98da64e6a7adb11c84ed188b",
+    "src/kodezart/types/domain/native_execution.py": "1ed8f1035f58f7de6cc2cd78b94902d112a6b1aba5e5a641218923a841587018",
+    "src/kodezart/types/domain/ralph_outcome.py": "58df9fa2a122ca6abbfcf26412ea3bccb9bd855d8bb4cf2b440498eeaad8a914",
+    "src/kodezart/types/domain/workflow.py": "b8726ae92a226f4b967317316e1f8e807d5653eca381db3b32a1228ea55148c9",
+    "src/kodezart/types/domain/workspace.py": "e4bca214100e4f44a7040195f3eddf8f97e5d3543100d98ac82d27793d8af7e9",
+    "tests/adapters/test_native_workspace_resume.py": "2e998db6de26ecfd5b37d3704d722c7b4c036e9c765fbcdadc01fe168250abd2",
+    "tests/chains/test_native_amendment_trajectory_independent.py": "c215f48af91eaf0f73058f9fa0580d465c53d8760052451957d5ed866cda82c7",
+    "tests/chains/test_native_fire.py": "06afd93c584259e1ad63ec15355a2d6f41970b8235435b75030c4901aaa56ccb",
+    "tests/chains/test_native_parent_resume.py": "5641e3ae0d9aa63aa141ec10d8c9a4e0706088cf9a99852d5af32434f56737bd",
+    "tests/chains/test_retry_floor_wiring.py": "ffef0cfe61a6d722d920022b130d03e6991f9f1677642cd911d2712230216bef",
+    "tests/fakes.py": "ce4f80ab0e6c415d23bd90954d743ca06ed45a7888ce9604848cb9074a8022aa"
+  }
+}

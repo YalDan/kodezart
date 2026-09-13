@@ -1,0 +1,36 @@
+{
+  "captured_at": "2026-09-12T16:58:44.704838+00:00",
+  "main": "4661a24b599d75503a997f3ce122f3ad2da77048",
+  "donor": "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+  "donor_tree": "4e98a9622f828fe5f8cce7bd65af6198dd0e185f",
+  "patch_sha256": "bf17cd69b1c97113130816229fa4ffb6f4e7f494320a37b17c133c988dd3d22d",
+  "path_count": 659,
+  "history_commit_count": 499,
+  "changed_line_count": 103233,
+  "changed_lines_by_proposed_owner": {
+    "M1": 36727,
+    "M2": 9225,
+    "M3": 19114,
+    "M4": 10796,
+    "M5": 9542,
+    "M6": 11886,
+    "M7": 5943
+  },
+  "milestones": {
+    "M1": "L1 scope input and port surface",
+    "M2": "L2 organize",
+    "M3": "L3/L9 plan and walk",
+    "M4": "L4 criterion lifecycle and tracker state",
+    "M5": "L5/L6 deliver and terminate",
+    "M6": "L7 audit",
+    "M7": "L8 run supervisor"
+  },
+  "all_lines_assigned_once": true,
+  "ownership_is_proposed": true,
+  "extraction_performed": false,
+  "destination_prs_verified": false,
+  "tree_equivalence_tested": false,
+  "revised_at": "2026-09-12T17:07:11.603341+00:00",
+  "historical_tree_errors": 0,
+  "ownership_revision": "v1 root agreed M3/M5 composition split; line responsibility is proposed, not a directly applicable standalone patch"
+}

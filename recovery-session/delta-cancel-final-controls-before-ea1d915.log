@@ -1,0 +1,118 @@
+FFFF......                                                               [100%]
+=================================== FAILURES ===================================
+_______ test_cancellation_after_delta_observation_rearms_before_dispatch _______
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10cbb9a60>
+
+    async def test_cancellation_after_delta_observation_rearms_before_dispatch(monkeypatch):
+        entered = asyncio.Event()
+        blocked = asyncio.Event()
+        tracker = FakeTrackerPort(issues=[make_tracker_issue("K-1")])
+        tick, gate, dispatcher = failing_tick(tracker)
+    
+        async def delayed_log(*args, **kwargs):
+            entered.set()
+            await blocked.wait()
+    
+        monkeypatch.setattr(gate._log, "ainfo", delayed_log)
+        task = asyncio.create_task(tick.run(TICK_STARTED_AT))
+        await asyncio.wait_for(entered.wait(), timeout=5)
+        assert gate.mark(PassSignal.approved_changed, container=TEAM_KEYS[0]) is not None
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert dispatcher.calls == 0
+>       assert gate.mark(PassSignal.approved_changed, container=TEAM_KEYS[0]) is None
+E       AssertionError: assert datetime.datetime(2026, 1, 1, 0, 0, tzinfo=datetime.timezone.utc) is None
+E        +  where datetime.datetime(2026, 1, 1, 0, 0, tzinfo=datetime.timezone.utc) = mark(<PassSignal.approved_changed: 'approved_changed'>, container='engineering')
+E        +    where mark = <kodezart.services.pass_gate.PassGate object at 0x10ca56e70>.mark
+E        +    and   <PassSignal.approved_changed: 'approved_changed'> = PassSignal.approved_changed
+
+../kodezart-v03-m1-delta-cancel/tests/services/test_dispatch_delta_cancel_independent.py:34: AssertionError
+______ test_prompt_cancellation_after_observation_does_not_consume_window ______
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10cc1ec90>
+
+    async def test_prompt_cancellation_after_observation_does_not_consume_window(
+        monkeypatch,
+    ):
+        tracker = FakeTrackerPort(issues=[make_tracker_issue("K-1")])
+        _, gate, _ = failing_tick(tracker)
+        runner = FakeAgentRunner(events=[])
+        entered = asyncio.Event()
+    
+        async def blocked_log(*args, **kwargs):
+            entered.set()
+            await asyncio.Event().wait()
+    
+        monkeypatch.setattr(gate._log, "ainfo", blocked_log)
+        task = asyncio.create_task(run(prompts=bound_registry(), runner=runner, gate=gate))
+        await asyncio.wait_for(entered.wait(), timeout=5)
+        assert gate.mark(PassSignal.approved_changed, container=TEAM_KEYS[0]) is not None
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert runner.calls == []
+>       assert gate.mark(PassSignal.approved_changed, container=TEAM_KEYS[0]) is None
+E       AssertionError: assert datetime.datetime(2026, 1, 1, 0, 0, tzinfo=datetime.timezone.utc) is None
+E        +  where datetime.datetime(2026, 1, 1, 0, 0, tzinfo=datetime.timezone.utc) = mark(<PassSignal.approved_changed: 'approved_changed'>, container='engineering')
+E        +    where mark = <kodezart.services.pass_gate.PassGate object at 0x10c709e20>.mark
+E        +    and   <PassSignal.approved_changed: 'approved_changed'> = PassSignal.approved_changed
+
+../kodezart-v03-m1-delta-cancel/tests/services/test_prompt_delta_cancel_independent.py:33: AssertionError
+_ test_cancelled_gate_reasks_the_same_window_and_preserves_another_pass[dispatch] _
+
+consumer = ('dispatch', <tests.fakes.FakeTrackerPort object at 0x10cc421e0>, <kodezart.services.pass_gate.PassGate object at 0x10cc41c40>, <function consumer.<locals>.invoke at 0x10cc7b1a0>, <function consumer.<locals>.calls at 0x10cc7b380>)
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10cc414f0>
+
+    async def test_cancelled_gate_reasks_the_same_window_and_preserves_another_pass(
+        consumer, monkeypatch
+    ):
+        kind, tracker, gate, invoke, calls = consumer
+        later = TICK_STARTED_AT + timedelta(hours=1)
+        other_tracker = FakeTrackerPort(
+            issues=[make_tracker_issue("K-2", updated_at=later)]
+        )
+        _, other_gate, _ = failing_tick(other_tracker)
+        await cancel_at_log(gate, invoke, monkeypatch, while_paused=other_gate.delta)
+        assert calls() == 0
+>       assert gate.mark(PassSignal.approved_changed, container=TEAM_KEYS[0]) is None
+E       AssertionError: assert datetime.datetime(2026, 1, 1, 0, 0, tzinfo=datetime.timezone.utc) is None
+E        +  where datetime.datetime(2026, 1, 1, 0, 0, tzinfo=datetime.timezone.utc) = mark(<PassSignal.approved_changed: 'approved_changed'>, container='engineering')
+E        +    where mark = <kodezart.services.pass_gate.PassGate object at 0x10cc41c40>.mark
+E        +    and   <PassSignal.approved_changed: 'approved_changed'> = PassSignal.approved_changed
+
+../kodezart-v03-m1-delta-cancel/tests/services/test_pass_delta_cancellation.py:60: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 22:47:45 [info     ] pass_gate_delta                changed=['K-2'] mark=2026-01-01T01:00:00+00:00 signals=['approved_changed'] unanswerable=[]
+_ test_cancelled_gate_reasks_the_same_window_and_preserves_another_pass[prompt] _
+
+consumer = ('prompt', <tests.fakes.FakeTrackerPort object at 0x10cc43560>, <kodezart.services.pass_gate.PassGate object at 0x10cc431d0>, <function consumer.<locals>.invoke at 0x10cc7bba0>, <function consumer.<locals>.calls at 0x10cc7bb00>)
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10cc43740>
+
+    async def test_cancelled_gate_reasks_the_same_window_and_preserves_another_pass(
+        consumer, monkeypatch
+    ):
+        kind, tracker, gate, invoke, calls = consumer
+        later = TICK_STARTED_AT + timedelta(hours=1)
+        other_tracker = FakeTrackerPort(
+            issues=[make_tracker_issue("K-2", updated_at=later)]
+        )
+        _, other_gate, _ = failing_tick(other_tracker)
+        await cancel_at_log(gate, invoke, monkeypatch, while_paused=other_gate.delta)
+        assert calls() == 0
+>       assert gate.mark(PassSignal.approved_changed, container=TEAM_KEYS[0]) is None
+E       AssertionError: assert datetime.datetime(2026, 1, 1, 0, 0, tzinfo=datetime.timezone.utc) is None
+E        +  where datetime.datetime(2026, 1, 1, 0, 0, tzinfo=datetime.timezone.utc) = mark(<PassSignal.approved_changed: 'approved_changed'>, container='engineering')
+E        +    where mark = <kodezart.services.pass_gate.PassGate object at 0x10cc431d0>.mark
+E        +    and   <PassSignal.approved_changed: 'approved_changed'> = PassSignal.approved_changed
+
+../kodezart-v03-m1-delta-cancel/tests/services/test_pass_delta_cancellation.py:60: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 22:47:45 [info     ] pass_gate_delta                changed=['K-2'] mark=2026-01-01T01:00:00+00:00 signals=['approved_changed'] unanswerable=[]
+=========================== short test summary info ============================
+FAILED ::test_cancellation_after_delta_observation_rearms_before_dispatch - A...
+FAILED ::test_prompt_cancellation_after_observation_does_not_consume_window
+FAILED ::test_cancelled_gate_reasks_the_same_window_and_preserves_another_pass[dispatch]
+FAILED ::test_cancelled_gate_reasks_the_same_window_and_preserves_another_pass[prompt]
+4 failed, 6 passed in 1.42s

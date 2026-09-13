@@ -1,0 +1,120 @@
+FFFF                                                                     [100%]
+=================================== FAILURES ===================================
+________ test_delivery_wire_rejects_non_open_or_unaddressed_pr[closed] _________
+
+damage = 'closed'
+
+    @pytest.mark.parametrize("damage", ["closed", "empty_url", "zero_number"])
+    async def test_delivery_wire_rejects_non_open_or_unaddressed_pr(damage):
+        record = await deliver(await setup())
+        payload = record.model_dump(mode="json")
+        if damage == "closed":
+            payload["pr"]["state"] = "closed"
+        elif damage == "empty_url":
+            payload["pr"]["url"] = ""
+        else:
+            payload["pr"]["number"] = 0
+>       with pytest.raises(ValidationError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'pydantic_core._pydantic_core.ValidationError'>
+
+tests/chains/test_lane_delivery_root_review.py:24: Failed
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 15:59:40 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:59:40 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:59:40 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 15:59:40 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=pr_description stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 15:59:40 [info     ] outbound_content_gated         categories=[] content_digest=eb122d7b8735eaeed5d4d2e20e2197a7332385519bb8aea3e476efbbb03973b9 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=pr_title
+2026-09-12 15:59:40 [info     ] outbound_content_gated         categories=[] content_digest=67ea6610ea7acff978f8bc9bfd466e5e33f2fa503f68961b4548c20b172578db failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=pr_body
+2026-09-12 15:59:40 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+_______ test_delivery_wire_rejects_non_open_or_unaddressed_pr[empty_url] _______
+
+damage = 'empty_url'
+
+    @pytest.mark.parametrize("damage", ["closed", "empty_url", "zero_number"])
+    async def test_delivery_wire_rejects_non_open_or_unaddressed_pr(damage):
+        record = await deliver(await setup())
+        payload = record.model_dump(mode="json")
+        if damage == "closed":
+            payload["pr"]["state"] = "closed"
+        elif damage == "empty_url":
+            payload["pr"]["url"] = ""
+        else:
+            payload["pr"]["number"] = 0
+>       with pytest.raises(ValidationError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'pydantic_core._pydantic_core.ValidationError'>
+
+tests/chains/test_lane_delivery_root_review.py:24: Failed
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 15:59:40 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:59:40 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:59:40 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 15:59:40 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=pr_description stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 15:59:40 [info     ] outbound_content_gated         categories=[] content_digest=eb122d7b8735eaeed5d4d2e20e2197a7332385519bb8aea3e476efbbb03973b9 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=pr_title
+2026-09-12 15:59:40 [info     ] outbound_content_gated         categories=[] content_digest=67ea6610ea7acff978f8bc9bfd466e5e33f2fa503f68961b4548c20b172578db failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=pr_body
+2026-09-12 15:59:40 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+______ test_delivery_wire_rejects_non_open_or_unaddressed_pr[zero_number] ______
+
+damage = 'zero_number'
+
+    @pytest.mark.parametrize("damage", ["closed", "empty_url", "zero_number"])
+    async def test_delivery_wire_rejects_non_open_or_unaddressed_pr(damage):
+        record = await deliver(await setup())
+        payload = record.model_dump(mode="json")
+        if damage == "closed":
+            payload["pr"]["state"] = "closed"
+        elif damage == "empty_url":
+            payload["pr"]["url"] = ""
+        else:
+            payload["pr"]["number"] = 0
+>       with pytest.raises(ValidationError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'pydantic_core._pydantic_core.ValidationError'>
+
+tests/chains/test_lane_delivery_root_review.py:24: Failed
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 15:59:40 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:59:40 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:59:40 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 15:59:40 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=pr_description stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 15:59:40 [info     ] outbound_content_gated         categories=[] content_digest=eb122d7b8735eaeed5d4d2e20e2197a7332385519bb8aea3e476efbbb03973b9 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=pr_title
+2026-09-12 15:59:40 [info     ] outbound_content_gated         categories=[] content_digest=67ea6610ea7acff978f8bc9bfd466e5e33f2fa503f68961b4548c20b172578db failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=pr_body
+2026-09-12 15:59:40 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+_________ test_changed_pr_base_during_comment_gate_refuses_before_post _________
+
+    async def test_changed_pr_base_during_comment_gate_refuses_before_post():
+        parts = await setup(monitor=FakeCIMonitor(passed=False), bound=0)
+        owner, _, _, creator, *_ = parts
+    
+        class ChangedBase(PassThroughGate):
+            async def gate(self, **kwargs):
+                if kwargs["destination"] is OutboundDestination.PR_COMMENT:
+                    current = owner._pr_state_reader.records[(REPO, 1)]
+                    wire = current.model_dump()
+                    wire["base_branch"] = "unrelated-base"
+                    owner._pr_state_reader.records[(REPO, 1)] = PRState.model_validate(wire)
+                return await super().gate(**kwargs)
+    
+        owner._gate = ChangedBase()
+        with pytest.raises(PRStateReadError):
+            await deliver(parts)
+>       assert not [call for call in creator.calls if call["method"] == "comment_on_pr"]
+E       AssertionError: assert not [{'body': '## Lane checks: ci_failed_fix_budget_exhausted\n\nAll CI checks passed.', 'method': 'comment_on_pr', 'pr_number': 1, 'repo_url': 'https://github.com/owner/repo.git'}]
+
+tests/chains/test_lane_delivery_root_review.py:44: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 15:59:41 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:59:41 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:59:41 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 15:59:41 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=pr_description stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 15:59:41 [info     ] outbound_content_gated         categories=[] content_digest=eb122d7b8735eaeed5d4d2e20e2197a7332385519bb8aea3e476efbbb03973b9 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=pr_title
+2026-09-12 15:59:41 [info     ] outbound_content_gated         categories=[] content_digest=67ea6610ea7acff978f8bc9bfd466e5e33f2fa503f68961b4548c20b172578db failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=pr_body
+2026-09-12 15:59:41 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 15:59:41 [info     ] outbound_content_gated         categories=[] content_digest=d3ebee9e8942463b18b6f0fb2def4d2365edf3ac86dae1404c7384f114c08ff8 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=pr_comment
+=========================== short test summary info ============================
+FAILED tests/chains/test_lane_delivery_root_review.py::test_delivery_wire_rejects_non_open_or_unaddressed_pr[closed]
+FAILED tests/chains/test_lane_delivery_root_review.py::test_delivery_wire_rejects_non_open_or_unaddressed_pr[empty_url]
+FAILED tests/chains/test_lane_delivery_root_review.py::test_delivery_wire_rejects_non_open_or_unaddressed_pr[zero_number]
+FAILED tests/chains/test_lane_delivery_root_review.py::test_changed_pr_base_during_comment_gate_refuses_before_post
+4 failed in 0.76s

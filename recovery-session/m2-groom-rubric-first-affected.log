@@ -1,0 +1,414 @@
+...........FFFF......................................................... [ 43%]
+........................................................................ [ 87%]
+.....................                                                    [100%]
+=================================== FAILURES ===================================
+____ test_each_organizational_refusal_prevents_groom_convergence[blockers] _____
+
+defect = 'blockers'
+
+    @pytest.mark.parametrize("defect", ORGANIZATIONAL_EVIDENCE)
+    async def test_each_organizational_refusal_prevents_groom_convergence(defect):
+        evidence = ORGANIZATIONAL_EVIDENCE[defect]
+        # A typed grader response is an input oracle for the owner. No prompt-text
+        # classifier or fake model judgment is used to derive it.
+        verdict = result(
+            structured_output={
+                "issue_id": CLAIMED_ISSUE,
+                "verdict": "not_buildable",
+                "evidence": evidence,
+                "refusal_kind": "spec_gap",
+                "invented_decision": evidence,
+            }
+        )
+        owner, board, executor, _ = build(events=[verdict], body=evidence)
+>       report = await run_owner(owner)
+                 ^^^^^^^^^^^^^^^^^^^^^^
+
+tests/chains/test_organize_rubric.py:196: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/chains/test_organize_owner.py:188: in run_owner
+    return await owner.run(
+src/kodezart/services/organize_owner.py:1073: in run
+    verified_write = await self._author_write(
+src/kodezart/services/organize_owner.py:371: in _author_write
+    initial = await self._author.propose(request, key=key, evidence=evidence)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.chains.organize_author.OrganizeAuthor object at 0x10f1339e0>
+request = OrganizeAdmissionRequest(issue_key='FIX-1', scope=ScopeRef(kind=<ScopeKind.ISSUE: 'issue'>, key='FIX-1'), mandate_rubr...ache_key='actual-organize-job', defect_classes=(), admission_prompt_key=<PromptKey.ORGANIZE_ASSESS: 'organize_assess'>)
+
+    async def propose(
+        self, request: OrganizeAdmissionRequest, *, key: PromptKey, evidence: str | None
+    ) -> ProposedWrite:
+        context = await self._context.read(scope=request.scope)
+        revision = await self._tracker.read_issue_revision(issue_key=request.issue_key)
+        subject = revision.issue
+        if subject.issue_key != request.issue_key:
+            raise OrganizeAdmissionIdentityError(
+                expected=request.issue_key, observed=subject.issue_key
+            )
+        self._context.require_revision(context, revision)
+        linked_keys = {relation.issue_key for relation in subject.relations} - {
+            subject.issue_key
+        }
+        linked = [issue for issue in context.issues if issue.issue_key in linked_keys]
+        criteria = await self._tracker.read_criteria(issue_key=subject.issue_key)
+        prompt = self._prompts.template_for(key).render(
+            {
+                **organize_variables(
+                    graph_context=context.model_dump_json(),
+                    mandate_rubric=request.mandate_rubric,
+                    issue_body=subject.body,
+                    linked_issue_bodies=[i.body for i in linked],
+                    criterion_issue_bodies=[i.body for i in criteria],
+                    refusal_evidence=None,
+                    defect_classes=request.defect_classes,
+                ),
+                "refusal_evidence": evidence,
+                "issue_key": subject.issue_key,
+                "base_ref": request.base_ref,
+            }
+        )
+        async with owned_workspace(
+            self._workspace,
+            repo_url=request.repo_url,
+            ref=request.base_ref,
+            cache_key=request.cache_key,
+        ) as workspace:
+            structured = await judge_in_workspace(
+                runner=self._runner,
+                prompts=self._prompts,
+                skills=self._skills,
+                workspace=workspace,
+                key=key,
+                prompt=prompt,
+                output_schema=ORGANIZE_PROPOSAL_SCHEMA,
+                site=(
+                    "organize_criteria_author"
+                    if key is PromptKey.ORGANIZE_CRITERIA_AUTHOR
+                    else "organize_author"
+                ),
+                session_type=SessionType.ORGANIZE_PASS,
+                failure_message="Organize author produced no structured proposal.",
+            )
+>       proposal = OrganizeProposal.model_validate(structured)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for OrganizeProposal
+E         Unable to extract tag using discriminator 'kind' [type=union_tag_not_found, input_value={'issue_id': 'FIX-1', 've...out an ownership edge.'}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.12/v/union_tag_not_found
+
+src/kodezart/chains/organize_author.py:102: ValidationError
+----------------------------- Captured stdout call -----------------------------
+2026-09-13 02:18:10 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-13 02:18:10 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 02:18:10 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+____ test_each_organizational_refusal_prevents_groom_convergence[decisions] ____
+
+defect = 'decisions'
+
+    @pytest.mark.parametrize("defect", ORGANIZATIONAL_EVIDENCE)
+    async def test_each_organizational_refusal_prevents_groom_convergence(defect):
+        evidence = ORGANIZATIONAL_EVIDENCE[defect]
+        # A typed grader response is an input oracle for the owner. No prompt-text
+        # classifier or fake model judgment is used to derive it.
+        verdict = result(
+            structured_output={
+                "issue_id": CLAIMED_ISSUE,
+                "verdict": "not_buildable",
+                "evidence": evidence,
+                "refusal_kind": "spec_gap",
+                "invented_decision": evidence,
+            }
+        )
+        owner, board, executor, _ = build(events=[verdict], body=evidence)
+>       report = await run_owner(owner)
+                 ^^^^^^^^^^^^^^^^^^^^^^
+
+tests/chains/test_organize_rubric.py:196: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/chains/test_organize_owner.py:188: in run_owner
+    return await owner.run(
+src/kodezart/services/organize_owner.py:1073: in run
+    verified_write = await self._author_write(
+src/kodezart/services/organize_owner.py:371: in _author_write
+    initial = await self._author.propose(request, key=key, evidence=evidence)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.chains.organize_author.OrganizeAuthor object at 0x10f136720>
+request = OrganizeAdmissionRequest(issue_key='FIX-1', scope=ScopeRef(kind=<ScopeKind.ISSUE: 'issue'>, key='FIX-1'), mandate_rubr...ache_key='actual-organize-job', defect_classes=(), admission_prompt_key=<PromptKey.ORGANIZE_ASSESS: 'organize_assess'>)
+
+    async def propose(
+        self, request: OrganizeAdmissionRequest, *, key: PromptKey, evidence: str | None
+    ) -> ProposedWrite:
+        context = await self._context.read(scope=request.scope)
+        revision = await self._tracker.read_issue_revision(issue_key=request.issue_key)
+        subject = revision.issue
+        if subject.issue_key != request.issue_key:
+            raise OrganizeAdmissionIdentityError(
+                expected=request.issue_key, observed=subject.issue_key
+            )
+        self._context.require_revision(context, revision)
+        linked_keys = {relation.issue_key for relation in subject.relations} - {
+            subject.issue_key
+        }
+        linked = [issue for issue in context.issues if issue.issue_key in linked_keys]
+        criteria = await self._tracker.read_criteria(issue_key=subject.issue_key)
+        prompt = self._prompts.template_for(key).render(
+            {
+                **organize_variables(
+                    graph_context=context.model_dump_json(),
+                    mandate_rubric=request.mandate_rubric,
+                    issue_body=subject.body,
+                    linked_issue_bodies=[i.body for i in linked],
+                    criterion_issue_bodies=[i.body for i in criteria],
+                    refusal_evidence=None,
+                    defect_classes=request.defect_classes,
+                ),
+                "refusal_evidence": evidence,
+                "issue_key": subject.issue_key,
+                "base_ref": request.base_ref,
+            }
+        )
+        async with owned_workspace(
+            self._workspace,
+            repo_url=request.repo_url,
+            ref=request.base_ref,
+            cache_key=request.cache_key,
+        ) as workspace:
+            structured = await judge_in_workspace(
+                runner=self._runner,
+                prompts=self._prompts,
+                skills=self._skills,
+                workspace=workspace,
+                key=key,
+                prompt=prompt,
+                output_schema=ORGANIZE_PROPOSAL_SCHEMA,
+                site=(
+                    "organize_criteria_author"
+                    if key is PromptKey.ORGANIZE_CRITERIA_AUTHOR
+                    else "organize_author"
+                ),
+                session_type=SessionType.ORGANIZE_PASS,
+                failure_message="Organize author produced no structured proposal.",
+            )
+>       proposal = OrganizeProposal.model_validate(structured)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for OrganizeProposal
+E         Unable to extract tag using discriminator 'kind' [type=union_tag_not_found, input_value={'issue_id': 'FIX-1', 've...en asked of its owner.'}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.12/v/union_tag_not_found
+
+src/kodezart/chains/organize_author.py:102: ValidationError
+----------------------------- Captured stdout call -----------------------------
+2026-09-13 02:18:11 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-13 02:18:11 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 02:18:11 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+___ test_each_organizational_refusal_prevents_groom_convergence[dates_order] ___
+
+defect = 'dates_order'
+
+    @pytest.mark.parametrize("defect", ORGANIZATIONAL_EVIDENCE)
+    async def test_each_organizational_refusal_prevents_groom_convergence(defect):
+        evidence = ORGANIZATIONAL_EVIDENCE[defect]
+        # A typed grader response is an input oracle for the owner. No prompt-text
+        # classifier or fake model judgment is used to derive it.
+        verdict = result(
+            structured_output={
+                "issue_id": CLAIMED_ISSUE,
+                "verdict": "not_buildable",
+                "evidence": evidence,
+                "refusal_kind": "spec_gap",
+                "invented_decision": evidence,
+            }
+        )
+        owner, board, executor, _ = build(events=[verdict], body=evidence)
+>       report = await run_owner(owner)
+                 ^^^^^^^^^^^^^^^^^^^^^^
+
+tests/chains/test_organize_rubric.py:196: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/chains/test_organize_owner.py:188: in run_owner
+    return await owner.run(
+src/kodezart/services/organize_owner.py:1073: in run
+    verified_write = await self._author_write(
+src/kodezart/services/organize_owner.py:371: in _author_write
+    initial = await self._author.propose(request, key=key, evidence=evidence)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.chains.organize_author.OrganizeAuthor object at 0x10f130cb0>
+request = OrganizeAdmissionRequest(issue_key='FIX-1', scope=ScopeRef(kind=<ScopeKind.ISSUE: 'issue'>, key='FIX-1'), mandate_rubr...ache_key='actual-organize-job', defect_classes=(), admission_prompt_key=<PromptKey.ORGANIZE_ASSESS: 'organize_assess'>)
+
+    async def propose(
+        self, request: OrganizeAdmissionRequest, *, key: PromptKey, evidence: str | None
+    ) -> ProposedWrite:
+        context = await self._context.read(scope=request.scope)
+        revision = await self._tracker.read_issue_revision(issue_key=request.issue_key)
+        subject = revision.issue
+        if subject.issue_key != request.issue_key:
+            raise OrganizeAdmissionIdentityError(
+                expected=request.issue_key, observed=subject.issue_key
+            )
+        self._context.require_revision(context, revision)
+        linked_keys = {relation.issue_key for relation in subject.relations} - {
+            subject.issue_key
+        }
+        linked = [issue for issue in context.issues if issue.issue_key in linked_keys]
+        criteria = await self._tracker.read_criteria(issue_key=subject.issue_key)
+        prompt = self._prompts.template_for(key).render(
+            {
+                **organize_variables(
+                    graph_context=context.model_dump_json(),
+                    mandate_rubric=request.mandate_rubric,
+                    issue_body=subject.body,
+                    linked_issue_bodies=[i.body for i in linked],
+                    criterion_issue_bodies=[i.body for i in criteria],
+                    refusal_evidence=None,
+                    defect_classes=request.defect_classes,
+                ),
+                "refusal_evidence": evidence,
+                "issue_key": subject.issue_key,
+                "base_ref": request.base_ref,
+            }
+        )
+        async with owned_workspace(
+            self._workspace,
+            repo_url=request.repo_url,
+            ref=request.base_ref,
+            cache_key=request.cache_key,
+        ) as workspace:
+            structured = await judge_in_workspace(
+                runner=self._runner,
+                prompts=self._prompts,
+                skills=self._skills,
+                workspace=workspace,
+                key=key,
+                prompt=prompt,
+                output_schema=ORGANIZE_PROPOSAL_SCHEMA,
+                site=(
+                    "organize_criteria_author"
+                    if key is PromptKey.ORGANIZE_CRITERIA_AUTHOR
+                    else "organize_author"
+                ),
+                session_type=SessionType.ORGANIZE_PASS,
+                failure_message="Organize author produced no structured proposal.",
+            )
+>       proposal = OrganizeProposal.model_validate(structured)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for OrganizeProposal
+E         Unable to extract tag using discriminator 'kind' [type=union_tag_not_found, input_value={'issue_id': 'FIX-1', 've...rded dependency order.'}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.12/v/union_tag_not_found
+
+src/kodezart/chains/organize_author.py:102: ValidationError
+----------------------------- Captured stdout call -----------------------------
+2026-09-13 02:18:11 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-13 02:18:11 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 02:18:11 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+_ test_each_organizational_refusal_prevents_groom_convergence[measurable_goal] _
+
+defect = 'measurable_goal'
+
+    @pytest.mark.parametrize("defect", ORGANIZATIONAL_EVIDENCE)
+    async def test_each_organizational_refusal_prevents_groom_convergence(defect):
+        evidence = ORGANIZATIONAL_EVIDENCE[defect]
+        # A typed grader response is an input oracle for the owner. No prompt-text
+        # classifier or fake model judgment is used to derive it.
+        verdict = result(
+            structured_output={
+                "issue_id": CLAIMED_ISSUE,
+                "verdict": "not_buildable",
+                "evidence": evidence,
+                "refusal_kind": "spec_gap",
+                "invented_decision": evidence,
+            }
+        )
+        owner, board, executor, _ = build(events=[verdict], body=evidence)
+>       report = await run_owner(owner)
+                 ^^^^^^^^^^^^^^^^^^^^^^
+
+tests/chains/test_organize_rubric.py:196: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/chains/test_organize_owner.py:188: in run_owner
+    return await owner.run(
+src/kodezart/services/organize_owner.py:1073: in run
+    verified_write = await self._author_write(
+src/kodezart/services/organize_owner.py:371: in _author_write
+    initial = await self._author.propose(request, key=key, evidence=evidence)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.chains.organize_author.OrganizeAuthor object at 0x10f1317f0>
+request = OrganizeAdmissionRequest(issue_key='FIX-1', scope=ScopeRef(kind=<ScopeKind.ISSUE: 'issue'>, key='FIX-1'), mandate_rubr...ache_key='actual-organize-job', defect_classes=(), admission_prompt_key=<PromptKey.ORGANIZE_ASSESS: 'organize_assess'>)
+
+    async def propose(
+        self, request: OrganizeAdmissionRequest, *, key: PromptKey, evidence: str | None
+    ) -> ProposedWrite:
+        context = await self._context.read(scope=request.scope)
+        revision = await self._tracker.read_issue_revision(issue_key=request.issue_key)
+        subject = revision.issue
+        if subject.issue_key != request.issue_key:
+            raise OrganizeAdmissionIdentityError(
+                expected=request.issue_key, observed=subject.issue_key
+            )
+        self._context.require_revision(context, revision)
+        linked_keys = {relation.issue_key for relation in subject.relations} - {
+            subject.issue_key
+        }
+        linked = [issue for issue in context.issues if issue.issue_key in linked_keys]
+        criteria = await self._tracker.read_criteria(issue_key=subject.issue_key)
+        prompt = self._prompts.template_for(key).render(
+            {
+                **organize_variables(
+                    graph_context=context.model_dump_json(),
+                    mandate_rubric=request.mandate_rubric,
+                    issue_body=subject.body,
+                    linked_issue_bodies=[i.body for i in linked],
+                    criterion_issue_bodies=[i.body for i in criteria],
+                    refusal_evidence=None,
+                    defect_classes=request.defect_classes,
+                ),
+                "refusal_evidence": evidence,
+                "issue_key": subject.issue_key,
+                "base_ref": request.base_ref,
+            }
+        )
+        async with owned_workspace(
+            self._workspace,
+            repo_url=request.repo_url,
+            ref=request.base_ref,
+            cache_key=request.cache_key,
+        ) as workspace:
+            structured = await judge_in_workspace(
+                runner=self._runner,
+                prompts=self._prompts,
+                skills=self._skills,
+                workspace=workspace,
+                key=key,
+                prompt=prompt,
+                output_schema=ORGANIZE_PROPOSAL_SCHEMA,
+                site=(
+                    "organize_criteria_author"
+                    if key is PromptKey.ORGANIZE_CRITERIA_AUTHOR
+                    else "organize_author"
+                ),
+                session_type=SessionType.ORGANIZE_PASS,
+                failure_message="Organize author produced no structured proposal.",
+            )
+>       proposal = OrganizeProposal.model_validate(structured)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for OrganizeProposal
+E         Unable to extract tag using discriminator 'kind' [type=union_tag_not_found, input_value={'issue_id': 'FIX-1', 've... completion condition."}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.12/v/union_tag_not_found
+
+src/kodezart/chains/organize_author.py:102: ValidationError
+----------------------------- Captured stdout call -----------------------------
+2026-09-13 02:18:12 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-13 02:18:12 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 02:18:12 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+=========================== short test summary info ============================
+FAILED tests/chains/test_organize_rubric.py::test_each_organizational_refusal_prevents_groom_convergence[blockers]
+FAILED tests/chains/test_organize_rubric.py::test_each_organizational_refusal_prevents_groom_convergence[decisions]
+FAILED tests/chains/test_organize_rubric.py::test_each_organizational_refusal_prevents_groom_convergence[dates_order]
+FAILED tests/chains/test_organize_rubric.py::test_each_organizational_refusal_prevents_groom_convergence[measurable_goal]
+4 failed, 161 passed in 12.14s

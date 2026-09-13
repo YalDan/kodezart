@@ -1,0 +1,34 @@
+==== PRE-KILL CAPTURE 2026-09-12 13:20:18 CEST ====
+process:
+  PID  PPID STARTED                          ELAPSED      TIME
+53987 53979 Tue Sep  8 20:57:48 2026     03-16:22:30   0:25.06
+
+last assistant messages:
+[11:12:42Z] The current native-fire PR is still a divergent two-commit sibling of the integration trunk. Its tests prove graph placement and refusal cases, but omit the successful path into an iteration—the exact gap behind KOD-815.
+
+[11:14:34Z] Fresh Linear reads show two important limits: several authority rulings remain open, and the old lane-claim lease mechanism has been explicitly retired. I’ll record those constraints and continue the independent repairs: native fire’s typed state handoff, the approved criterion-class removal, and shared validation for job acceptance responses.
+
+
+[11:15:00Z] The repair can proceed without deciding branch-cache persistence. I’m isolating the execution-state change and checking the existing native criterion types so the shared loop receives real tracker identities and Checks without inventing an authored ticket or feasibility result.
+
+[11:17:16Z] The fresh baseline gate is running on PR #107’s unchanged commit; it may take 30–40 minutes locally. The independent repairs are in separate worktrees. For the HTTP repair, I’ll share the field constraints between JSON and SSE and derive links from registered routes so mounts and prefixes are covered by tests.
+
+
+dirty worktrees (uncommitted work):
+unpushed commits total: 
+
+dirty worktrees at kill time:
+  /private/tmp/kodezart-v03-audit-evidence-review [] 11 files
+  /private/tmp/kodezart-v03-escalation-review [codex/v03-escalation-review] 1 files
+  /private/tmp/kodezart-v03-forge-settings-and-live-tests [codex/v03-forge-settings-and-live-tests] 1 files
+  /private/tmp/kodezart-v03-http-dependencies-before [codex/v03-http-dependencies-before] 2 files
+  /private/tmp/kodezart-v03-knowledge-mutants [] 1 files
+  /private/tmp/kodezart-v03-knowledge-settings [codex/v03-knowledge-settings] 1 files
+  /private/tmp/kodezart-v03-operation-sections [codex/kod-139-operation-sections] 114 files
+  /private/tmp/kodezart-v03-queue-settings-before [] 1 files
+  /private/tmp/kodezart-v03-recovery-criterion-class [codex/v03-recovery-criterion-class] 1 files
+  /private/tmp/kodezart-v03-recovery-job-acceptance [codex/v03-recovery-job-acceptance] 6 files
+  /private/tmp/kodezart-v03-recovery-native-fire [codex/v03-recovery-native-fire] 1 files
+  /private/tmp/kodezart-v03-scanner-sdk-before [] 1 files
+  /private/tmp/kodezart-v03-workflow-ownership-before [] 1 files
+  /private/tmp/kodezart-v03-workflow-readiness-review [] 2 files

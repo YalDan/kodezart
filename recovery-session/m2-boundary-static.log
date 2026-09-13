@@ -1,0 +1,6 @@
+uv run ruff format --check src/ tests/
+470 files already formatted
+uv run ruff check src/ tests/
+All checks passed!
+uv run mypy src/
+Success: no issues found in 215 source files

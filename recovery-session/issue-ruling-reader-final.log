@@ -1,0 +1,41 @@
+..............F......................................................... [ 60%]
+...............................................                          [100%]
+=================================== FAILURES ===================================
+____ test_native_pages_retain_historical_lane_and_current_native_provenance ____
+
+    async def test_native_pages_retain_historical_lane_and_current_native_provenance():
+        first = Ruling.model_validate(ruling_data(issue_ref=APPROVED_ISSUE))
+        second = Ruling.model_validate(
+            ruling_data(issue_ref=APPROVED_ISSUE, question="A later choice?")
+        )
+        bodies = [
+            render_ruling(ruling=value, lane_key=lane, marker_prefixes=PREFIXES)
+            for value, lane in ((first, "historical:lane/café"), (second, "current%lane"))
+        ]
+        server = CommentPageServer(
+            {
+                None: {
+                    "comments": [comment("old-native-record", bodies[0]).wire()],
+                    "hasNextPage": True,
+                    "cursor": "next",
+                },
+                "next": {
+                    "comments": [comment("new-native-record", bodies[1]).wire()],
+                    "hasNextPage": False,
+                },
+            }
+        )
+        rows = await reader(linear_over_fake_mcp(server)).read_issue(
+            issue_key=APPROVED_ISSUE
+        )
+>       assert tuple(value for _, value in rows) == (first, second)
+E       AssertionError: assert (Ruling(rulin...d_tests=None)) == (Ruling(rulin...d_tests=None))
+E         
+E         At index 0 diff: Ruling(ruling_id='20c9fdfe1976239a4ee47e00aa0cc79b1d461cf3b62fc83d06435bf58a6a3f8e', issue_ref='FIX-2', question='A later choice?', ruling_class=<RulingClass.PIN_READING: 'pin_reading'>, resolution='Use the observable reading.', rejected_alternative='The reading that cannot terminate.', repo_evidence=('src/one.py:12 — existing behavior', 'HEAD:path/二.py'), authored_by=<RulingAuthor.MACHINE: 'machine'>, protected_tests=None) != Ruling(ruling_id='9018ded143009936a4e51a6f34a6e055bb4dca68f4457ee6abacd26141057fa8', issue_ref='FIX-2', question='Which interpre...
+E         
+E         ...Full output truncated (2 lines hidden), use '-vv' to show
+
+tests/tracker/test_issue_ruling_records.py:97: AssertionError
+=========================== short test summary info ============================
+FAILED tests/tracker/test_issue_ruling_records.py::test_native_pages_retain_historical_lane_and_current_native_provenance
+1 failed, 118 passed in 1.84s

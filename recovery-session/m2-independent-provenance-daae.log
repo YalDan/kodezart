@@ -1,0 +1,27 @@
+{"candidate": "daae8df4c4e09499f0401c9406251ec88af9a8dd", "candidate_tree": "a0881f14bbf76515233bb94a9f2bded8a5fe3c14", "comparison_base": "25c32f603f9c9cb59852304743e653f70be309ff", "donor": "36083f83f42c03240ebb5861fe284da2c9f04180", "changed_file_count": 121}
+{
+  "original_test_changes": {
+    "tests/adapters/test_tracker_self_writes.py": [
+      "test_a_read_back_that_fails_does_not_fail_the_write_it_recorded"
+    ],
+    "tests/tracker/test_comment_expected_independent.py": [
+      "test_known_unissued_retry_revalidates_changed_expected_comment"
+    ]
+  },
+  "nonidentical_added_test_oracles": {
+    "tests/chains/test_organize_ownership.py": [
+      "test_repeated_cancellation_settles_native_admission_worktree"
+    ],
+    "tests/services/test_git_source_lookup.py": [
+      "test_native_read_preserves_exact_bytes_and_refuses_symlink_or_tree"
+    ],
+    "tests/tracker/test_native_approval_aliases.py": [
+      "test_actual_entry_preserves_reported_alias_with_one_subject_read",
+      "test_actual_entry_refuses_foreign_subject_before_membership"
+    ],
+    "tests/tracker/test_ruling_protocol_boundary.py": [
+      "test_comment_reader_runtime_contract_accepts_actual_adapter"
+    ]
+  },
+  "total_added_test_functions": 292
+}

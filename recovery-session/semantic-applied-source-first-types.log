@@ -1,0 +1,2 @@
+src/kodezart/services/amendment_writeback.py:387: error: Argument "replacements" to "replace_criterion_fields" has incompatible type "dict[str, str]"; expected "Mapping[Literal['Check', 'Do', 'Evidence', 'Class'], str]"  [arg-type]
+Found 1 error in 1 file (checked 3 source files)

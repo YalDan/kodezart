@@ -1,0 +1,486 @@
+........................................................................ [ 30%]
+................................FFFFFFFFFF
+=================================== FAILURES ===================================
+___________ test_recovered_same_sha_never_enters_remediation[-True] ____________
+tests/chains/test_authored_check_routing.py:73: in test_recovered_same_sha_never_enters_remediation
+    result = await finish(workflow)
+             ^^^^^^^^^^^^^^^^^^^^^^
+tests/chains/test_authored_check_routing.py:42: in finish
+    events = [
+src/kodezart/chains/authored_delivery.py:94: in run
+    async for event in self._delivery_compiled.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/authored_publication.py:187: in open_pr
+    prompt = self._prompts.template_for(PromptKey.PR_DESCRIPTION).render(
+src/kodezart/core/prompt_rendering.py:206: in render
+    return render_template(self.body, merged)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/prompt_rendering.py:184: in render_template
+    raise PromptRenderError(msg, missing=missing)
+E   kodezart.core.errors.PromptRenderError: Unbound template placeholders: this.criterion_class
+E   During task with name 'open_pr' and id '4eae538b-3a00-e98a-a37c-96d2faad9956'
+----------------------------- Captured stdout call -----------------------------
+2026-09-13 01:54:07 [info     ] repo_visibility_resolved       repo_url=https://github.com/example/project.git visibility=unknown
+2026-09-13 01:54:07 [info     ] scope_base_resolved            base_branch=main base_role=None input_count=0
+2026-09-13 01:54:07 [debug    ] output_format_requested        format_type=json_schema
+2026-09-13 01:54:07 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 01:54:07 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=branch_name
+2026-09-13 01:54:07 [debug    ] output_format_requested        format_type=json_schema
+2026-09-13 01:54:07 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=acceptance_criteria stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 01:54:07 [debug    ] output_format_requested        format_type=json_schema
+2026-09-13 01:54:07 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=criteria_validation stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 01:54:07 [info     ] criteria_sweep_complete        bound_exhausted=False regeneration_round=0 regeneration_targets=[] satisfiable=True
+2026-09-13 01:54:07 [debug    ] output_format_requested        format_type=json_schema
+2026-09-13 01:54:07 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=post_merge_review stop_reason=None subtype=result total_cost_usd=None usage=None
+___________ test_recovered_same_sha_never_enters_remediation[-None] ____________
+tests/chains/test_authored_check_routing.py:73: in test_recovered_same_sha_never_enters_remediation
+    result = await finish(workflow)
+             ^^^^^^^^^^^^^^^^^^^^^^
+tests/chains/test_authored_check_routing.py:42: in finish
+    events = [
+src/kodezart/chains/authored_delivery.py:94: in run
+    async for event in self._delivery_compiled.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/authored_publication.py:187: in open_pr
+    prompt = self._prompts.template_for(PromptKey.PR_DESCRIPTION).render(
+src/kodezart/core/prompt_rendering.py:206: in render
+    return render_template(self.body, merged)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/prompt_rendering.py:184: in render_template
+    raise PromptRenderError(msg, missing=missing)
+E   kodezart.core.errors.PromptRenderError: Unbound template placeholders: this.criterion_class
+E   During task with name 'open_pr' and id '92878eb2-2b29-b5e7-6629-6dbafa8f79ca'
+----------------------------- Captured stdout call -----------------------------
+2026-09-13 01:54:09 [info     ] repo_visibility_resolved       repo_url=https://github.com/example/project.git visibility=unknown
+2026-09-13 01:54:09 [info     ] scope_base_resolved            base_branch=main base_role=None input_count=0
+2026-09-13 01:54:09 [debug    ] output_format_requested        format_type=json_schema
+2026-09-13 01:54:09 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 01:54:09 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=branch_name
+2026-09-13 01:54:09 [debug    ] output_format_requested        format_type=json_schema
+2026-09-13 01:54:09 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=acceptance_criteria stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 01:54:09 [debug    ] output_format_requested        format_type=json_schema
+2026-09-13 01:54:09 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=criteria_validation stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 01:54:09 [info     ] criteria_sweep_complete        bound_exhausted=False regeneration_round=0 regeneration_targets=[] satisfiable=True
+2026-09-13 01:54:09 [debug    ] output_format_requested        format_type=json_schema
+2026-09-13 01:54:09 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=post_merge_review stop_reason=None subtype=result total_cost_usd=None usage=None
+_ test_recovered_same_sha_never_enters_remediation[history unavailable and a flaky network-True] _
+tests/chains/test_authored_check_routing.py:73: in test_recovered_same_sha_never_enters_remediation
+    result = await finish(workflow)
+             ^^^^^^^^^^^^^^^^^^^^^^
+tests/chains/test_authored_check_routing.py:42: in finish
+    events = [
+src/kodezart/chains/authored_delivery.py:94: in run
+    async for event in self._delivery_compiled.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/authored_publication.py:187: in open_pr
+    prompt = self._prompts.template_for(PromptKey.PR_DESCRIPTION).render(
+src/kodezart/core/prompt_rendering.py:206: in render
+    return render_template(self.body, merged)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/prompt_rendering.py:184: in render_template
+    raise PromptRenderError(msg, missing=missing)
+E   kodezart.core.errors.PromptRenderError: Unbound template placeholders: this.criterion_class
+E   During task with name 'open_pr' and id 'c140d73e-586c-a731-307b-8cf2644db62b'
+----------------------------- Captured stdout call -----------------------------
+2026-09-13 01:54:09 [info     ] repo_visibility_resolved       repo_url=https://github.com/example/project.git visibility=unknown
+2026-09-13 01:54:09 [info     ] scope_base_resolved            base_branch=main base_role=None input_count=0
+2026-09-13 01:54:09 [debug    ] output_format_requested        format_type=json_schema
+2026-09-13 01:54:09 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 01:54:09 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=branch_name
+2026-09-13 01:54:09 [debug    ] output_format_requested        format_type=json_schema
+2026-09-13 01:54:09 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=acceptance_criteria stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 01:54:09 [debug    ] output_format_requested        format_type=json_schema
+2026-09-13 01:54:09 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=criteria_validation stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 01:54:09 [info     ] criteria_sweep_complete        bound_exhausted=False regeneration_round=0 regeneration_targets=[] satisfiable=True
+2026-09-13 01:54:09 [debug    ] output_format_requested        format_type=json_schema
+2026-09-13 01:54:09 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=post_merge_review stop_reason=None subtype=result total_cost_usd=None usage=None
+_ test_recovered_same_sha_never_enters_remediation[history unavailable and a flaky network-None] _
+tests/chains/test_authored_check_routing.py:73: in test_recovered_same_sha_never_enters_remediation
+    result = await finish(workflow)
+             ^^^^^^^^^^^^^^^^^^^^^^
+tests/chains/test_authored_check_routing.py:42: in finish
+    events = [
+src/kodezart/chains/authored_delivery.py:94: in run
+    async for event in self._delivery_compiled.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/authored_publication.py:187: in open_pr
+    prompt = self._prompts.template_for(PromptKey.PR_DESCRIPTION).render(
+src/kodezart/core/prompt_rendering.py:206: in render
+    return render_template(self.body, merged)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/prompt_rendering.py:184: in render_template
+    raise PromptRenderError(msg, missing=missing)
+E   kodezart.core.errors.PromptRenderError: Unbound template placeholders: this.criterion_class
+E   During task with name 'open_pr' and id 'abb3d4aa-e0c9-933b-80a5-efc1de40d283'
+----------------------------- Captured stdout call -----------------------------
+2026-09-13 01:54:09 [info     ] repo_visibility_resolved       repo_url=https://github.com/example/project.git visibility=unknown
+2026-09-13 01:54:09 [info     ] scope_base_resolved            base_branch=main base_role=None input_count=0
+2026-09-13 01:54:09 [debug    ] output_format_requested        format_type=json_schema
+2026-09-13 01:54:09 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 01:54:09 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=branch_name
+2026-09-13 01:54:09 [debug    ] output_format_requested        format_type=json_schema
+2026-09-13 01:54:10 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=acceptance_criteria stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 01:54:10 [debug    ] output_format_requested        format_type=json_schema
+2026-09-13 01:54:10 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=criteria_validation stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 01:54:10 [info     ] criteria_sweep_complete        bound_exhausted=False regeneration_round=0 regeneration_targets=[] satisfiable=True
+2026-09-13 01:54:10 [debug    ] output_format_requested        format_type=json_schema
+2026-09-13 01:54:10 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=post_merge_review stop_reason=None subtype=result total_cost_usd=None usage=None
+_________ test_zero_operator_rerun_bound_spends_one_fix_round_instead __________
+tests/chains/test_authored_check_routing.py:91: in test_zero_operator_rerun_bound_spends_one_fix_round_instead
+    result = await finish(workflow)
+             ^^^^^^^^^^^^^^^^^^^^^^
+tests/chains/test_authored_check_routing.py:42: in finish
+    events = [
+src/kodezart/chains/authored_delivery.py:94: in run
+    async for event in self._delivery_compiled.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/authored_publication.py:187: in open_pr
+    prompt = self._prompts.template_for(PromptKey.PR_DESCRIPTION).render(
+src/kodezart/core/prompt_rendering.py:206: in render
+    return render_template(self.body, merged)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/prompt_rendering.py:184: in render_template
+    raise PromptRenderError(msg, missing=missing)
+E   kodezart.core.errors.PromptRenderError: Unbound template placeholders: this.criterion_class
+E   During task with name 'open_pr' and id 'bb2f06e3-f728-ce62-0242-b8659cb660b8'
+----------------------------- Captured stdout call -----------------------------
+2026-09-13 01:54:10 [info     ] repo_visibility_resolved       repo_url=https://github.com/example/project.git visibility=unknown
+2026-09-13 01:54:10 [info     ] scope_base_resolved            base_branch=main base_role=None input_count=0
+2026-09-13 01:54:10 [debug    ] output_format_requested        format_type=json_schema
+2026-09-13 01:54:10 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 01:54:10 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=branch_name
+2026-09-13 01:54:10 [debug    ] output_format_requested        format_type=json_schema
+2026-09-13 01:54:10 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=acceptance_criteria stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 01:54:10 [debug    ] output_format_requested        format_type=json_schema
+2026-09-13 01:54:10 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=criteria_validation stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 01:54:10 [info     ] criteria_sweep_complete        bound_exhausted=False regeneration_round=0 regeneration_targets=[] satisfiable=True
+2026-09-13 01:54:10 [debug    ] output_format_requested        format_type=json_schema
+2026-09-13 01:54:10 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=post_merge_review stop_reason=None subtype=result total_cost_usd=None usage=None
+_______ test_positive_nonwork_red_terminates_without_a_fix[environment] ________
+tests/chains/test_authored_check_routing.py:120: in test_positive_nonwork_red_terminates_without_a_fix
+    result = await finish(workflow)
+             ^^^^^^^^^^^^^^^^^^^^^^
+tests/chains/test_authored_check_routing.py:42: in finish
+    events = [
+src/kodezart/chains/authored_delivery.py:94: in run
+    async for event in self._delivery_compiled.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/authored_publication.py:187: in open_pr
+    prompt = self._prompts.template_for(PromptKey.PR_DESCRIPTION).render(
+src/kodezart/core/prompt_rendering.py:206: in render
+    return render_template(self.body, merged)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/prompt_rendering.py:184: in render_template
+    raise PromptRenderError(msg, missing=missing)
+E   kodezart.core.errors.PromptRenderError: Unbound template placeholders: this.criterion_class
+E   During task with name 'open_pr' and id 'f43a89f7-7065-2bc1-7887-b80cad59661e'
+----------------------------- Captured stdout call -----------------------------
+2026-09-13 01:54:11 [info     ] repo_visibility_resolved       repo_url=https://github.com/example/project.git visibility=unknown
+2026-09-13 01:54:11 [info     ] scope_base_resolved            base_branch=main base_role=None input_count=0
+2026-09-13 01:54:11 [debug    ] output_format_requested        format_type=json_schema
+2026-09-13 01:54:11 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 01:54:11 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=branch_name
+2026-09-13 01:54:11 [debug    ] output_format_requested        format_type=json_schema
+2026-09-13 01:54:11 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=acceptance_criteria stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 01:54:11 [debug    ] output_format_requested        format_type=json_schema
+2026-09-13 01:54:11 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=criteria_validation stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 01:54:11 [info     ] criteria_sweep_complete        bound_exhausted=False regeneration_round=0 regeneration_targets=[] satisfiable=True
+2026-09-13 01:54:11 [debug    ] output_format_requested        format_type=json_schema
+2026-09-13 01:54:11 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=post_merge_review stop_reason=None subtype=result total_cost_usd=None usage=None
+_______ test_positive_nonwork_red_terminates_without_a_fix[unclassified] _______
+tests/chains/test_authored_check_routing.py:120: in test_positive_nonwork_red_terminates_without_a_fix
+    result = await finish(workflow)
+             ^^^^^^^^^^^^^^^^^^^^^^
+tests/chains/test_authored_check_routing.py:42: in finish
+    events = [
+src/kodezart/chains/authored_delivery.py:94: in run
+    async for event in self._delivery_compiled.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/authored_publication.py:187: in open_pr
+    prompt = self._prompts.template_for(PromptKey.PR_DESCRIPTION).render(
+src/kodezart/core/prompt_rendering.py:206: in render
+    return render_template(self.body, merged)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/prompt_rendering.py:184: in render_template
+    raise PromptRenderError(msg, missing=missing)
+E   kodezart.core.errors.PromptRenderError: Unbound template placeholders: this.criterion_class
+E   During task with name 'open_pr' and id 'af82d3b1-4c1a-f0fc-1480-25f76efceae7'
+----------------------------- Captured stdout call -----------------------------
+2026-09-13 01:54:11 [info     ] repo_visibility_resolved       repo_url=https://github.com/example/project.git visibility=unknown
+2026-09-13 01:54:11 [info     ] scope_base_resolved            base_branch=main base_role=None input_count=0
+2026-09-13 01:54:11 [debug    ] output_format_requested        format_type=json_schema
+2026-09-13 01:54:11 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 01:54:11 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=branch_name
+2026-09-13 01:54:11 [debug    ] output_format_requested        format_type=json_schema
+2026-09-13 01:54:11 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=acceptance_criteria stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 01:54:11 [debug    ] output_format_requested        format_type=json_schema
+2026-09-13 01:54:11 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=criteria_validation stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 01:54:11 [info     ] criteria_sweep_complete        bound_exhausted=False regeneration_round=0 regeneration_targets=[] satisfiable=True
+2026-09-13 01:54:11 [debug    ] output_format_requested        format_type=json_schema
+2026-09-13 01:54:11 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=post_merge_review stop_reason=None subtype=result total_cost_usd=None usage=None
+_ test_only_explicit_matching_environment_declarations_preempt_retry[False-False] _
+tests/chains/test_authored_check_routing.py:159: in test_only_explicit_matching_environment_declarations_preempt_retry
+    assert (await finish(workflow)).outcome is WorkflowOutcome.ci_passed
+            ^^^^^^^^^^^^^^^^^^^^^^
+tests/chains/test_authored_check_routing.py:42: in finish
+    events = [
+src/kodezart/chains/authored_delivery.py:94: in run
+    async for event in self._delivery_compiled.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/authored_publication.py:187: in open_pr
+    prompt = self._prompts.template_for(PromptKey.PR_DESCRIPTION).render(
+src/kodezart/core/prompt_rendering.py:206: in render
+    return render_template(self.body, merged)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/prompt_rendering.py:184: in render_template
+    raise PromptRenderError(msg, missing=missing)
+E   kodezart.core.errors.PromptRenderError: Unbound template placeholders: this.criterion_class
+E   During task with name 'open_pr' and id 'd68ad0fa-069f-9902-746b-3a941d210e46'
+----------------------------- Captured stdout call -----------------------------
+2026-09-13 01:54:11 [info     ] repo_visibility_resolved       repo_url=https://github.com/example/project.git visibility=unknown
+2026-09-13 01:54:11 [info     ] scope_base_resolved            base_branch=main base_role=None input_count=0
+2026-09-13 01:54:11 [debug    ] output_format_requested        format_type=json_schema
+2026-09-13 01:54:11 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 01:54:11 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=branch_name
+2026-09-13 01:54:11 [debug    ] output_format_requested        format_type=json_schema
+2026-09-13 01:54:11 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=acceptance_criteria stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 01:54:11 [debug    ] output_format_requested        format_type=json_schema
+2026-09-13 01:54:11 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=criteria_validation stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 01:54:11 [info     ] criteria_sweep_complete        bound_exhausted=False regeneration_round=0 regeneration_targets=[] satisfiable=True
+2026-09-13 01:54:11 [debug    ] output_format_requested        format_type=json_schema
+2026-09-13 01:54:11 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=post_merge_review stop_reason=None subtype=result total_cost_usd=None usage=None
+_ test_only_explicit_matching_environment_declarations_preempt_retry[True-None] _
+tests/chains/test_authored_check_routing.py:159: in test_only_explicit_matching_environment_declarations_preempt_retry
+    assert (await finish(workflow)).outcome is WorkflowOutcome.ci_passed
+            ^^^^^^^^^^^^^^^^^^^^^^
+tests/chains/test_authored_check_routing.py:42: in finish
+    events = [
+src/kodezart/chains/authored_delivery.py:94: in run
+    async for event in self._delivery_compiled.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/authored_publication.py:187: in open_pr
+    prompt = self._prompts.template_for(PromptKey.PR_DESCRIPTION).render(
+src/kodezart/core/prompt_rendering.py:206: in render
+    return render_template(self.body, merged)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/prompt_rendering.py:184: in render_template
+    raise PromptRenderError(msg, missing=missing)
+E   kodezart.core.errors.PromptRenderError: Unbound template placeholders: this.criterion_class
+E   During task with name 'open_pr' and id 'c21893ab-5ae5-3ccb-65fc-ee12a0e6aeb0'
+----------------------------- Captured stdout call -----------------------------
+2026-09-13 01:54:12 [info     ] repo_visibility_resolved       repo_url=https://github.com/example/project.git visibility=unknown
+2026-09-13 01:54:12 [info     ] scope_base_resolved            base_branch=main base_role=None input_count=0
+2026-09-13 01:54:12 [debug    ] output_format_requested        format_type=json_schema
+2026-09-13 01:54:12 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 01:54:12 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=branch_name
+2026-09-13 01:54:12 [debug    ] output_format_requested        format_type=json_schema
+2026-09-13 01:54:12 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=acceptance_criteria stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 01:54:12 [debug    ] output_format_requested        format_type=json_schema
+2026-09-13 01:54:12 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=criteria_validation stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 01:54:12 [info     ] criteria_sweep_complete        bound_exhausted=False regeneration_round=0 regeneration_targets=[] satisfiable=True
+2026-09-13 01:54:12 [debug    ] output_format_requested        format_type=json_schema
+2026-09-13 01:54:12 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=post_merge_review stop_reason=None subtype=result total_cost_usd=None usage=None
+_ test_only_explicit_matching_environment_declarations_preempt_retry[True-True] _
+tests/chains/test_authored_check_routing.py:159: in test_only_explicit_matching_environment_declarations_preempt_retry
+    assert (await finish(workflow)).outcome is WorkflowOutcome.ci_passed
+            ^^^^^^^^^^^^^^^^^^^^^^
+tests/chains/test_authored_check_routing.py:42: in finish
+    events = [
+src/kodezart/chains/authored_delivery.py:94: in run
+    async for event in self._delivery_compiled.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/authored_publication.py:187: in open_pr
+    prompt = self._prompts.template_for(PromptKey.PR_DESCRIPTION).render(
+src/kodezart/core/prompt_rendering.py:206: in render
+    return render_template(self.body, merged)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/prompt_rendering.py:184: in render_template
+    raise PromptRenderError(msg, missing=missing)
+E   kodezart.core.errors.PromptRenderError: Unbound template placeholders: this.criterion_class
+E   During task with name 'open_pr' and id '483faf42-5222-1eee-e9f3-d21ddd8a0a0d'
+----------------------------- Captured stdout call -----------------------------
+2026-09-13 01:54:12 [info     ] repo_visibility_resolved       repo_url=https://github.com/example/project.git visibility=unknown
+2026-09-13 01:54:12 [info     ] scope_base_resolved            base_branch=main base_role=None input_count=0
+2026-09-13 01:54:12 [debug    ] output_format_requested        format_type=json_schema
+2026-09-13 01:54:12 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 01:54:12 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=branch_name
+2026-09-13 01:54:12 [debug    ] output_format_requested        format_type=json_schema
+2026-09-13 01:54:12 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=acceptance_criteria stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 01:54:12 [debug    ] output_format_requested        format_type=json_schema
+2026-09-13 01:54:12 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=criteria_validation stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 01:54:12 [info     ] criteria_sweep_complete        bound_exhausted=False regeneration_round=0 regeneration_targets=[] satisfiable=True
+2026-09-13 01:54:12 [debug    ] output_format_requested        format_type=json_schema
+2026-09-13 01:54:12 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=post_merge_review stop_reason=None subtype=result total_cost_usd=None usage=None
+=========================== short test summary info ============================
+FAILED tests/chains/test_authored_check_routing.py::test_recovered_same_sha_never_enters_remediation[-True]
+FAILED tests/chains/test_authored_check_routing.py::test_recovered_same_sha_never_enters_remediation[-None]
+FAILED tests/chains/test_authored_check_routing.py::test_recovered_same_sha_never_enters_remediation[history unavailable and a flaky network-True]
+FAILED tests/chains/test_authored_check_routing.py::test_recovered_same_sha_never_enters_remediation[history unavailable and a flaky network-None]
+FAILED tests/chains/test_authored_check_routing.py::test_zero_operator_rerun_bound_spends_one_fix_round_instead
+FAILED tests/chains/test_authored_check_routing.py::test_positive_nonwork_red_terminates_without_a_fix[environment]
+FAILED tests/chains/test_authored_check_routing.py::test_positive_nonwork_red_terminates_without_a_fix[unclassified]
+FAILED tests/chains/test_authored_check_routing.py::test_only_explicit_matching_environment_declarations_preempt_retry[False-False]
+FAILED tests/chains/test_authored_check_routing.py::test_only_explicit_matching_environment_declarations_preempt_retry[True-None]
+FAILED tests/chains/test_authored_check_routing.py::test_only_explicit_matching_environment_declarations_preempt_retry[True-True]
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 10 failures !!!!!!!!!!!!!!!!!!!!!!!!!!
+10 failed, 104 passed in 502.97s (0:08:22)

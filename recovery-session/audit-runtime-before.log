@@ -1,0 +1,40 @@
+Using CPython 3.12.13
+Creating virtual environment at: .venv
+   Building kodezart @ file:///private/tmp/kodezart-v03-recovery-audit-runtime
+warning: `build_system.requires = ["uv-build>=0.10.9,<0.11.0"]` does not contain the current uv version 0.11.6
+      Built kodezart @ file:///private/tmp/kodezart-v03-recovery-audit-runtime
+Installed 174 packages in 1.66s
+F                                                                        [100%]
+=================================== FAILURES ===================================
+__________ test_absent_audit_configuration_has_a_named_runtime_event ___________
+
+    async def test_absent_audit_configuration_has_a_named_runtime_event():
+        queue = FakeJobQueue()
+        with structlog.testing.capture_logs() as events:
+            runtime = await build_dispatch_runtime(
+                config=AppConfig(audit_sweep_interval_seconds=3777.0),
+                operation=None,
+                dialled=None,
+                github_api=None,
+                queue=queue,
+                registry=queue,
+                gate=PassThroughGate(),
+                git=FakeGitService(),
+                cache=FakeRepoCache(),
+                workspace=FakeWorkspaceProvider(),
+                prompts=load_registry(),
+                runner=FakeAgentRunner([]),
+                skills=SUPPRESS_ALL_SKILLS,
+                recorder=RunRecorder(records={}, sinks={}),
+                log=get_logger(__name__),
+            )
+        assert not [entry for entry in runtime.scheduler.passes if entry.name == "audit"]
+        absent = [event for event in events if event["event"] == "audit_pass_not_wired"]
+>       assert len(absent) == 1
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/integration/test_audit_scheduler.py:43: AssertionError
+=========================== short test summary info ============================
+FAILED tests/integration/test_audit_scheduler.py::test_absent_audit_configuration_has_a_named_runtime_event
+1 failed in 0.57s

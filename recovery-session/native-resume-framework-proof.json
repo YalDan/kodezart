@@ -1,0 +1,8 @@
+{
+  "langgraph": "1.0.10",
+  "url": "https://raw.githubusercontent.com/langchain-ai/langgraph/1.0.10/libs/langgraph/langgraph/pregel/_runner.py",
+  "installed_sha256": "ee69240ff47a0c2a90c60e0ba920ed842786cf5f141ee291223d07357e190dcf",
+  "official_sha256": "ee69240ff47a0c2a90c60e0ba920ed842786cf5f141ee291223d07357e190dcf",
+  "equal": true,
+  "observation": "_panic_or_proceed skips cancelled futures; commit records ERROR for child cancellation. Per-invocation native boundary captures exact exception for its direct stream consumer, not checkpoint state."
+}

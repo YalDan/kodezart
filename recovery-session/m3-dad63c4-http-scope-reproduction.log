@@ -1,0 +1,36 @@
+FF..FF                                                                   [100%]
+=================================== FAILURES ===================================
+__ test_base_input_is_validated_before_domain_queue_submission[missing-fire] ___
+tests/api/v1/test_session_policy_base_boundary.py:41: in test_base_input_is_validated_before_domain_queue_submission
+    assert response.status_code == (202 if route == "fire" else 200)
+E   assert 500 == 202
+E    +  where 500 = <Response [500 Internal Server Error]>.status_code
+----------------------------- Captured stdout call -----------------------------
+2026-09-13 02:05:56 [debug    ] fire_workflow_endpoint
+_ test_base_input_is_validated_before_domain_queue_submission[missing-workflow] _
+tests/api/v1/test_session_policy_base_boundary.py:41: in test_base_input_is_validated_before_domain_queue_submission
+    assert response.status_code == (202 if route == "fire" else 200)
+E   assert 500 == 200
+E    +  where 500 = <Response [500 Internal Server Error]>.status_code
+----------------------------- Captured stdout call -----------------------------
+2026-09-13 02:05:56 [debug    ] stream_workflow_endpoint
+__ test_base_input_is_validated_before_domain_queue_submission[recorded-fire] __
+tests/api/v1/test_session_policy_base_boundary.py:41: in test_base_input_is_validated_before_domain_queue_submission
+    assert response.status_code == (202 if route == "fire" else 200)
+E   assert 500 == 202
+E    +  where 500 = <Response [500 Internal Server Error]>.status_code
+----------------------------- Captured stdout call -----------------------------
+2026-09-13 02:05:56 [debug    ] fire_workflow_endpoint
+_ test_base_input_is_validated_before_domain_queue_submission[recorded-workflow] _
+tests/api/v1/test_session_policy_base_boundary.py:41: in test_base_input_is_validated_before_domain_queue_submission
+    assert response.status_code == (202 if route == "fire" else 200)
+E   assert 500 == 200
+E    +  where 500 = <Response [500 Internal Server Error]>.status_code
+----------------------------- Captured stdout call -----------------------------
+2026-09-13 02:05:56 [debug    ] stream_workflow_endpoint
+=========================== short test summary info ============================
+FAILED tests/api/v1/test_session_policy_base_boundary.py::test_base_input_is_validated_before_domain_queue_submission[missing-fire]
+FAILED tests/api/v1/test_session_policy_base_boundary.py::test_base_input_is_validated_before_domain_queue_submission[missing-workflow]
+FAILED tests/api/v1/test_session_policy_base_boundary.py::test_base_input_is_validated_before_domain_queue_submission[recorded-fire]
+FAILED tests/api/v1/test_session_policy_base_boundary.py::test_base_input_is_validated_before_domain_queue_submission[recorded-workflow]
+4 failed, 2 passed in 0.52s

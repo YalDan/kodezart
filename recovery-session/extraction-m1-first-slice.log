@@ -1,0 +1,4 @@
+BASE 4661a24b599d75503a997f3ce122f3ad2da77048 DONOR d2c6fceab762191d4e40b23c8cd349ef476e4b12 EXTRACTED_TREE c81d812ea7a602906c2f558704bbadabbd73aa88
+............................................................             [100%]
+60 passed in 2.66s
+EXTRACTED_TREE c81d812ea7a602906c2f558704bbadabbd73aa88 PYTEST_EXIT 0

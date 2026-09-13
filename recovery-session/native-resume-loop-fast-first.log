@@ -1,0 +1,3182 @@
+..............................................................FFFF...FFF [ 50%]
+FFFFF.F.FFFFF.F.FF.F..F................................................  [100%]
+=================================== FAILURES ===================================
+_____________ test_native_graph_executes_and_reviews_exact_checks ______________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10ec70890>
+
+    async def test_native_graph_executes_and_reviews_exact_checks(monkeypatch):
+        port = CountingTracker()
+        executor = NativeExecutor([native_evaluation(), native_evaluation()])
+        saver = InMemorySaver()
+        fire = engine(
+            criteria=TrackerCriteria(tracker=port),
+            executor=executor,
+            real_loop=True,
+            checkpointer=saver,
+        )
+        monkeypatch.setattr(TicketDraftOutput, "__init__", no_authored_ticket)
+    
+>       events = await drive(fire, scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/chains/test_native_fire.py:682: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/chains/test_native_fire.py:294: in drive
+    async for event in fire.run(
+src/kodezart/chains/ralph_workflow.py:139: in run
+    async for event in self._composition(scope).astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/fire_implementation.py:169: in run_ralph_loop
+    last_iteration_event = await self.run_quality_gate(
+src/kodezart/chains/fire_implementation.py:103: in run_quality_gate
+    async for event in self._quality_gate.run(
+src/kodezart/chains/ralph_loop.py:197: in run
+    async for mode, value in self._compiled.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/ralph_loop.py:339: in _execute_node
+    async for event in self._service.stream_workflow(
+src/kodezart/services/agent_service.py:152: in stream_workflow
+    async for event in self._run_in_workspace(
+src/kodezart/services/agent_service.py:236: in _run_in_workspace
+    async for event in execution.stream():
+src/kodezart/services/native_execution.py:261: in stream
+    async for mode, value in graph.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/native_execution.py:85: in _write
+    return {"execution": await self._actions.write(state.execution)}
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/services/native_execution.py:141: in write
+    await self._restore(phase)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.services.native_execution.NativeExecution object at 0x10ec73aa0>
+phase = PreparedNativeExecution(workspace=WorkspaceSnapshot(workspace_path='/tmp/fake-workspace', workspace_id='fixture-worksp...bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', holder='native-fire'), cache_key='native-fire', run_identity=None, phase='prepared')
+
+    async def _restore(self, phase: ActiveNativeExecution) -> None:
+        request = self._request
+        if (
+            phase.cache_key != request.cache_key
+            or phase.run_identity != request.run_identity
+            or phase.workspace.identity.branch != request.branch
+            or phase.authority.holder != self._guard.holder
+        ):
+>           raise NativeWriteRefusalError(
+                "The saved writer belongs to another native invocation"
+            )
+E           kodezart.domain.amendment.NativeWriteRefusalError: The saved writer belongs to another native invocation
+E           During task with name 'write' and id 'aa6bcbbf-7180-3a58-f643-12721d006adf'
+E           During task with name 'execute' and id '0c84a93c-1c10-33bd-a578-41cb180e3185'
+E           During task with name 'run_ralph_loop' and id '64c1f268-67c8-baa2-e997-2fd2b6eb436c'
+
+src/kodezart/services/native_execution.py:91: NativeWriteRefusalError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 22:18:50 [info     ] repo_visibility_resolved       repo_url=https://github.com/owner/repo.git visibility=unknown
+2026-09-12 22:18:50 [info     ] scope_base_resolved            base_branch=main base_role=None input_count=0
+2026-09-12 22:18:50 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 22:18:50 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 22:18:50 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=branch_name
+2026-09-12 22:18:50 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:18:50 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:18:50 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:18:50 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:18:50 [warning  ] native_writer_workspace_retained workspace_path=/tmp/fake-workspace
+_____ test_native_remediation_refreshes_checks_without_recapturing_subject _____
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10ea70a10>
+
+    async def test_native_remediation_refreshes_checks_without_recapturing_subject(
+        monkeypatch,
+    ):
+        port = CountingTracker()
+        changed_check = "changed Check with  spaces and `code`"
+    
+        def amend():
+            issue = port.issues[DIRECT_OWED]
+            port.issues[DIRECT_OWED] = issue.model_copy(
+                update={
+                    "body": f"**Check:** {changed_check}\n**Do:** repair\n**Evidence:** —"
+                }
+            )
+            port.issues[SUBJECT] = port.issues[SUBJECT].model_copy(
+                update={"body": "a later subject text"}
+            )
+    
+        executor = NativeExecutor(
+            [native_evaluation(failed=True), native_evaluation(), native_evaluation()],
+            on_remediation=amend,
+        )
+        fire = engine(
+            criteria=TrackerCriteria(tracker=port),
+            executor=executor,
+            real_loop=True,
+            remediation_rounds=1,
+        )
+        monkeypatch.setattr(TicketDraftOutput, "__init__", no_authored_ticket)
+    
+>       events = await drive(fire, scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/chains/test_native_fire.py:739: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/chains/test_native_fire.py:294: in drive
+    async for event in fire.run(
+src/kodezart/chains/ralph_workflow.py:139: in run
+    async for event in self._composition(scope).astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/fire_implementation.py:169: in run_ralph_loop
+    last_iteration_event = await self.run_quality_gate(
+src/kodezart/chains/fire_implementation.py:103: in run_quality_gate
+    async for event in self._quality_gate.run(
+src/kodezart/chains/ralph_loop.py:197: in run
+    async for mode, value in self._compiled.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/ralph_loop.py:339: in _execute_node
+    async for event in self._service.stream_workflow(
+src/kodezart/services/agent_service.py:152: in stream_workflow
+    async for event in self._run_in_workspace(
+src/kodezart/services/agent_service.py:236: in _run_in_workspace
+    async for event in execution.stream():
+src/kodezart/services/native_execution.py:261: in stream
+    async for mode, value in graph.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/native_execution.py:85: in _write
+    return {"execution": await self._actions.write(state.execution)}
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/services/native_execution.py:141: in write
+    await self._restore(phase)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.services.native_execution.NativeExecution object at 0x10ec82ae0>
+phase = PreparedNativeExecution(workspace=WorkspaceSnapshot(workspace_path='/tmp/fake-workspace', workspace_id='fixture-worksp...bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', holder='native-fire'), cache_key='native-fire', run_identity=None, phase='prepared')
+
+    async def _restore(self, phase: ActiveNativeExecution) -> None:
+        request = self._request
+        if (
+            phase.cache_key != request.cache_key
+            or phase.run_identity != request.run_identity
+            or phase.workspace.identity.branch != request.branch
+            or phase.authority.holder != self._guard.holder
+        ):
+>           raise NativeWriteRefusalError(
+                "The saved writer belongs to another native invocation"
+            )
+E           kodezart.domain.amendment.NativeWriteRefusalError: The saved writer belongs to another native invocation
+E           During task with name 'write' and id 'a09c6f62-46e1-3bd9-d44e-80a42d46d34d'
+E           During task with name 'execute' and id '8776964b-65b7-28cc-6c03-122612a2526c'
+E           During task with name 'run_ralph_loop' and id 'c7827d29-864c-bb9a-e9a4-4c0e4e726fe3'
+
+src/kodezart/services/native_execution.py:91: NativeWriteRefusalError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 22:18:51 [info     ] repo_visibility_resolved       repo_url=https://github.com/owner/repo.git visibility=unknown
+2026-09-12 22:18:51 [info     ] scope_base_resolved            base_branch=main base_role=None input_count=0
+2026-09-12 22:18:51 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 22:18:51 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 22:18:51 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=branch_name
+2026-09-12 22:18:51 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:18:51 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:18:51 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:18:51 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:18:51 [warning  ] native_writer_workspace_retained workspace_path=/tmp/fake-workspace
+__ test_native_remediation_cannot_bypass_tracker_revalidation[missing-check] ___
+
+failure = 'missing-check'
+
+    @pytest.mark.parametrize("failure", ["missing-check", "outage"])
+    async def test_native_remediation_cannot_bypass_tracker_revalidation(failure):
+        port = CountingTracker()
+    
+        def break_tracker():
+            if failure == "outage":
+                port.unavailable = True
+            else:
+                port.issues[NESTED_OWED] = port.issues[NESTED_OWED].model_copy(
+                    update={"body": "**Do:** no Check"}
+                )
+    
+        executor = NativeExecutor(
+            [native_evaluation(failed=True)], on_remediation=break_tracker
+        )
+        fire = engine(
+            criteria=TrackerCriteria(tracker=port),
+            executor=executor,
+            real_loop=True,
+            remediation_rounds=1,
+        )
+    
+        error = FireSpecEntryError if failure == "outage" else InvalidFireCriterionError
+        with pytest.raises(error):
+>           await drive(fire, scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
+
+tests/chains/test_native_fire.py:780: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/chains/test_native_fire.py:294: in drive
+    async for event in fire.run(
+src/kodezart/chains/ralph_workflow.py:139: in run
+    async for event in self._composition(scope).astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/fire_implementation.py:169: in run_ralph_loop
+    last_iteration_event = await self.run_quality_gate(
+src/kodezart/chains/fire_implementation.py:103: in run_quality_gate
+    async for event in self._quality_gate.run(
+src/kodezart/chains/ralph_loop.py:197: in run
+    async for mode, value in self._compiled.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/ralph_loop.py:339: in _execute_node
+    async for event in self._service.stream_workflow(
+src/kodezart/services/agent_service.py:152: in stream_workflow
+    async for event in self._run_in_workspace(
+src/kodezart/services/agent_service.py:236: in _run_in_workspace
+    async for event in execution.stream():
+src/kodezart/services/native_execution.py:261: in stream
+    async for mode, value in graph.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/native_execution.py:85: in _write
+    return {"execution": await self._actions.write(state.execution)}
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/services/native_execution.py:141: in write
+    await self._restore(phase)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.services.native_execution.NativeExecution object at 0x10ea15580>
+phase = PreparedNativeExecution(workspace=WorkspaceSnapshot(workspace_path='/tmp/fake-workspace', workspace_id='fixture-worksp...bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', holder='native-fire'), cache_key='native-fire', run_identity=None, phase='prepared')
+
+    async def _restore(self, phase: ActiveNativeExecution) -> None:
+        request = self._request
+        if (
+            phase.cache_key != request.cache_key
+            or phase.run_identity != request.run_identity
+            or phase.workspace.identity.branch != request.branch
+            or phase.authority.holder != self._guard.holder
+        ):
+>           raise NativeWriteRefusalError(
+                "The saved writer belongs to another native invocation"
+            )
+E           kodezart.domain.amendment.NativeWriteRefusalError: The saved writer belongs to another native invocation
+E           During task with name 'write' and id '166d09c5-f788-3840-8b3d-cf5c7847cc8d'
+E           During task with name 'execute' and id '767a61b4-45a7-8533-bf73-fa191aad4184'
+E           During task with name 'run_ralph_loop' and id '59308633-bf89-7835-d187-6bd3f449ad04'
+
+src/kodezart/services/native_execution.py:91: NativeWriteRefusalError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 22:18:52 [info     ] repo_visibility_resolved       repo_url=https://github.com/owner/repo.git visibility=unknown
+2026-09-12 22:18:52 [info     ] scope_base_resolved            base_branch=main base_role=None input_count=0
+2026-09-12 22:18:52 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 22:18:52 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 22:18:52 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=branch_name
+2026-09-12 22:18:52 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:18:52 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:18:52 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:18:52 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:18:52 [warning  ] native_writer_workspace_retained workspace_path=/tmp/fake-workspace
+______ test_native_remediation_cannot_bypass_tracker_revalidation[outage] ______
+
+failure = 'outage'
+
+    @pytest.mark.parametrize("failure", ["missing-check", "outage"])
+    async def test_native_remediation_cannot_bypass_tracker_revalidation(failure):
+        port = CountingTracker()
+    
+        def break_tracker():
+            if failure == "outage":
+                port.unavailable = True
+            else:
+                port.issues[NESTED_OWED] = port.issues[NESTED_OWED].model_copy(
+                    update={"body": "**Do:** no Check"}
+                )
+    
+        executor = NativeExecutor(
+            [native_evaluation(failed=True)], on_remediation=break_tracker
+        )
+        fire = engine(
+            criteria=TrackerCriteria(tracker=port),
+            executor=executor,
+            real_loop=True,
+            remediation_rounds=1,
+        )
+    
+        error = FireSpecEntryError if failure == "outage" else InvalidFireCriterionError
+        with pytest.raises(error):
+>           await drive(fire, scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
+
+tests/chains/test_native_fire.py:780: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/chains/test_native_fire.py:294: in drive
+    async for event in fire.run(
+src/kodezart/chains/ralph_workflow.py:139: in run
+    async for event in self._composition(scope).astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/fire_implementation.py:169: in run_ralph_loop
+    last_iteration_event = await self.run_quality_gate(
+src/kodezart/chains/fire_implementation.py:103: in run_quality_gate
+    async for event in self._quality_gate.run(
+src/kodezart/chains/ralph_loop.py:197: in run
+    async for mode, value in self._compiled.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/ralph_loop.py:339: in _execute_node
+    async for event in self._service.stream_workflow(
+src/kodezart/services/agent_service.py:152: in stream_workflow
+    async for event in self._run_in_workspace(
+src/kodezart/services/agent_service.py:236: in _run_in_workspace
+    async for event in execution.stream():
+src/kodezart/services/native_execution.py:261: in stream
+    async for mode, value in graph.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/native_execution.py:85: in _write
+    return {"execution": await self._actions.write(state.execution)}
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/services/native_execution.py:141: in write
+    await self._restore(phase)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.services.native_execution.NativeExecution object at 0x10ea25be0>
+phase = PreparedNativeExecution(workspace=WorkspaceSnapshot(workspace_path='/tmp/fake-workspace', workspace_id='fixture-worksp...bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', holder='native-fire'), cache_key='native-fire', run_identity=None, phase='prepared')
+
+    async def _restore(self, phase: ActiveNativeExecution) -> None:
+        request = self._request
+        if (
+            phase.cache_key != request.cache_key
+            or phase.run_identity != request.run_identity
+            or phase.workspace.identity.branch != request.branch
+            or phase.authority.holder != self._guard.holder
+        ):
+>           raise NativeWriteRefusalError(
+                "The saved writer belongs to another native invocation"
+            )
+E           kodezart.domain.amendment.NativeWriteRefusalError: The saved writer belongs to another native invocation
+E           During task with name 'write' and id 'aaf7fb9e-a8b5-8709-5cb6-53c81272e31c'
+E           During task with name 'execute' and id '73bb10a5-b70e-abee-e396-720016e56e7e'
+E           During task with name 'run_ralph_loop' and id '1bada2e8-9e53-89a9-5e36-774febafdb48'
+
+src/kodezart/services/native_execution.py:91: NativeWriteRefusalError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 22:18:53 [info     ] repo_visibility_resolved       repo_url=https://github.com/owner/repo.git visibility=unknown
+2026-09-12 22:18:53 [info     ] scope_base_resolved            base_branch=main base_role=None input_count=0
+2026-09-12 22:18:53 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 22:18:53 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 22:18:53 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=branch_name
+2026-09-12 22:18:53 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:18:53 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:18:53 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:18:53 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:18:53 [warning  ] native_writer_workspace_retained workspace_path=/tmp/fake-workspace
+_______ test_native_inner_iterations_read_current_checks[changed-check] ________
+
+change = 'changed-check'
+
+    @pytest.mark.parametrize(
+        "change", ["changed-check", "state", "missing-check", "outage"]
+    )
+    async def test_native_inner_iterations_read_current_checks(change):
+        port = CountingTracker()
+        remaining = {key: check_of(key) for key in OWED_KEYS if key != NESTED_OWED}
+        executor = NativeExecutor(
+            [
+                native_evaluation(failed=True),
+                native_evaluation(checks=remaining if change == "state" else None),
+                native_evaluation(checks=remaining if change == "state" else None),
+            ]
+        )
+        executor.on_evaluation = lambda count: (
+            change_tracker(port, change) if count == 1 else None
+        )
+        fire = engine(
+            criteria=TrackerCriteria(tracker=port),
+            executor=executor,
+            real_loop=True,
+            max_iterations=2,
+        )
+        if change in {"missing-check", "outage"}:
+            error = FireSpecEntryError if change == "outage" else InvalidFireCriterionError
+            with pytest.raises(error):
+                await drive(fire, scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
+            assert len(executor.execution_prompts) == 1
+            return
+>       events = await drive(fire, scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/chains/test_native_fire.py:847: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/chains/test_native_fire.py:294: in drive
+    async for event in fire.run(
+src/kodezart/chains/ralph_workflow.py:139: in run
+    async for event in self._composition(scope).astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/fire_implementation.py:169: in run_ralph_loop
+    last_iteration_event = await self.run_quality_gate(
+src/kodezart/chains/fire_implementation.py:103: in run_quality_gate
+    async for event in self._quality_gate.run(
+src/kodezart/chains/ralph_loop.py:197: in run
+    async for mode, value in self._compiled.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/ralph_loop.py:339: in _execute_node
+    async for event in self._service.stream_workflow(
+src/kodezart/services/agent_service.py:152: in stream_workflow
+    async for event in self._run_in_workspace(
+src/kodezart/services/agent_service.py:236: in _run_in_workspace
+    async for event in execution.stream():
+src/kodezart/services/native_execution.py:261: in stream
+    async for mode, value in graph.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/native_execution.py:85: in _write
+    return {"execution": await self._actions.write(state.execution)}
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/services/native_execution.py:141: in write
+    await self._restore(phase)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.services.native_execution.NativeExecution object at 0x10ea8fb00>
+phase = PreparedNativeExecution(workspace=WorkspaceSnapshot(workspace_path='/tmp/fake-workspace', workspace_id='fixture-worksp...bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', holder='native-fire'), cache_key='native-fire', run_identity=None, phase='prepared')
+
+    async def _restore(self, phase: ActiveNativeExecution) -> None:
+        request = self._request
+        if (
+            phase.cache_key != request.cache_key
+            or phase.run_identity != request.run_identity
+            or phase.workspace.identity.branch != request.branch
+            or phase.authority.holder != self._guard.holder
+        ):
+>           raise NativeWriteRefusalError(
+                "The saved writer belongs to another native invocation"
+            )
+E           kodezart.domain.amendment.NativeWriteRefusalError: The saved writer belongs to another native invocation
+E           During task with name 'write' and id '55049582-1c46-a172-e996-8974c6b7da2a'
+E           During task with name 'execute' and id 'f84bb3ee-b66f-6dbb-37a6-16192ef549f2'
+E           During task with name 'run_ralph_loop' and id 'b7a23152-3f25-b855-672d-f008083edaa9'
+
+src/kodezart/services/native_execution.py:91: NativeWriteRefusalError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 22:18:54 [info     ] repo_visibility_resolved       repo_url=https://github.com/owner/repo.git visibility=unknown
+2026-09-12 22:18:54 [info     ] scope_base_resolved            base_branch=main base_role=None input_count=0
+2026-09-12 22:18:54 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 22:18:54 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 22:18:54 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=branch_name
+2026-09-12 22:18:54 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:18:54 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:18:54 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:18:54 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:18:54 [warning  ] native_writer_workspace_retained workspace_path=/tmp/fake-workspace
+___________ test_native_inner_iterations_read_current_checks[state] ____________
+
+change = 'state'
+
+    @pytest.mark.parametrize(
+        "change", ["changed-check", "state", "missing-check", "outage"]
+    )
+    async def test_native_inner_iterations_read_current_checks(change):
+        port = CountingTracker()
+        remaining = {key: check_of(key) for key in OWED_KEYS if key != NESTED_OWED}
+        executor = NativeExecutor(
+            [
+                native_evaluation(failed=True),
+                native_evaluation(checks=remaining if change == "state" else None),
+                native_evaluation(checks=remaining if change == "state" else None),
+            ]
+        )
+        executor.on_evaluation = lambda count: (
+            change_tracker(port, change) if count == 1 else None
+        )
+        fire = engine(
+            criteria=TrackerCriteria(tracker=port),
+            executor=executor,
+            real_loop=True,
+            max_iterations=2,
+        )
+        if change in {"missing-check", "outage"}:
+            error = FireSpecEntryError if change == "outage" else InvalidFireCriterionError
+            with pytest.raises(error):
+                await drive(fire, scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
+            assert len(executor.execution_prompts) == 1
+            return
+>       events = await drive(fire, scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/chains/test_native_fire.py:847: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/chains/test_native_fire.py:294: in drive
+    async for event in fire.run(
+src/kodezart/chains/ralph_workflow.py:139: in run
+    async for event in self._composition(scope).astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/fire_implementation.py:169: in run_ralph_loop
+    last_iteration_event = await self.run_quality_gate(
+src/kodezart/chains/fire_implementation.py:103: in run_quality_gate
+    async for event in self._quality_gate.run(
+src/kodezart/chains/ralph_loop.py:197: in run
+    async for mode, value in self._compiled.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/ralph_loop.py:339: in _execute_node
+    async for event in self._service.stream_workflow(
+src/kodezart/services/agent_service.py:152: in stream_workflow
+    async for event in self._run_in_workspace(
+src/kodezart/services/agent_service.py:236: in _run_in_workspace
+    async for event in execution.stream():
+src/kodezart/services/native_execution.py:261: in stream
+    async for mode, value in graph.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/native_execution.py:85: in _write
+    return {"execution": await self._actions.write(state.execution)}
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/services/native_execution.py:141: in write
+    await self._restore(phase)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.services.native_execution.NativeExecution object at 0x10e53af30>
+phase = PreparedNativeExecution(workspace=WorkspaceSnapshot(workspace_path='/tmp/fake-workspace', workspace_id='fixture-worksp...bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', holder='native-fire'), cache_key='native-fire', run_identity=None, phase='prepared')
+
+    async def _restore(self, phase: ActiveNativeExecution) -> None:
+        request = self._request
+        if (
+            phase.cache_key != request.cache_key
+            or phase.run_identity != request.run_identity
+            or phase.workspace.identity.branch != request.branch
+            or phase.authority.holder != self._guard.holder
+        ):
+>           raise NativeWriteRefusalError(
+                "The saved writer belongs to another native invocation"
+            )
+E           kodezart.domain.amendment.NativeWriteRefusalError: The saved writer belongs to another native invocation
+E           During task with name 'write' and id 'eed3223b-f5fc-c714-f5cb-725ea924cafa'
+E           During task with name 'execute' and id '8261365e-eb66-c9a2-b633-e74f796393dd'
+E           During task with name 'run_ralph_loop' and id 'dcb6519b-0bc2-9449-9106-be01e38186e0'
+
+src/kodezart/services/native_execution.py:91: NativeWriteRefusalError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 22:18:55 [info     ] repo_visibility_resolved       repo_url=https://github.com/owner/repo.git visibility=unknown
+2026-09-12 22:18:55 [info     ] scope_base_resolved            base_branch=main base_role=None input_count=0
+2026-09-12 22:18:55 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 22:18:55 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 22:18:55 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=branch_name
+2026-09-12 22:18:55 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:18:55 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:18:55 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:18:55 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:18:55 [warning  ] native_writer_workspace_retained workspace_path=/tmp/fake-workspace
+_______ test_native_inner_iterations_read_current_checks[missing-check] ________
+
+change = 'missing-check'
+
+    @pytest.mark.parametrize(
+        "change", ["changed-check", "state", "missing-check", "outage"]
+    )
+    async def test_native_inner_iterations_read_current_checks(change):
+        port = CountingTracker()
+        remaining = {key: check_of(key) for key in OWED_KEYS if key != NESTED_OWED}
+        executor = NativeExecutor(
+            [
+                native_evaluation(failed=True),
+                native_evaluation(checks=remaining if change == "state" else None),
+                native_evaluation(checks=remaining if change == "state" else None),
+            ]
+        )
+        executor.on_evaluation = lambda count: (
+            change_tracker(port, change) if count == 1 else None
+        )
+        fire = engine(
+            criteria=TrackerCriteria(tracker=port),
+            executor=executor,
+            real_loop=True,
+            max_iterations=2,
+        )
+        if change in {"missing-check", "outage"}:
+            error = FireSpecEntryError if change == "outage" else InvalidFireCriterionError
+            with pytest.raises(error):
+>               await drive(fire, scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
+
+tests/chains/test_native_fire.py:844: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/chains/test_native_fire.py:294: in drive
+    async for event in fire.run(
+src/kodezart/chains/ralph_workflow.py:139: in run
+    async for event in self._composition(scope).astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/fire_implementation.py:169: in run_ralph_loop
+    last_iteration_event = await self.run_quality_gate(
+src/kodezart/chains/fire_implementation.py:103: in run_quality_gate
+    async for event in self._quality_gate.run(
+src/kodezart/chains/ralph_loop.py:197: in run
+    async for mode, value in self._compiled.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/ralph_loop.py:339: in _execute_node
+    async for event in self._service.stream_workflow(
+src/kodezart/services/agent_service.py:152: in stream_workflow
+    async for event in self._run_in_workspace(
+src/kodezart/services/agent_service.py:236: in _run_in_workspace
+    async for event in execution.stream():
+src/kodezart/services/native_execution.py:261: in stream
+    async for mode, value in graph.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/native_execution.py:85: in _write
+    return {"execution": await self._actions.write(state.execution)}
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/services/native_execution.py:141: in write
+    await self._restore(phase)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.services.native_execution.NativeExecution object at 0x10e65a090>
+phase = PreparedNativeExecution(workspace=WorkspaceSnapshot(workspace_path='/tmp/fake-workspace', workspace_id='fixture-worksp...bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', holder='native-fire'), cache_key='native-fire', run_identity=None, phase='prepared')
+
+    async def _restore(self, phase: ActiveNativeExecution) -> None:
+        request = self._request
+        if (
+            phase.cache_key != request.cache_key
+            or phase.run_identity != request.run_identity
+            or phase.workspace.identity.branch != request.branch
+            or phase.authority.holder != self._guard.holder
+        ):
+>           raise NativeWriteRefusalError(
+                "The saved writer belongs to another native invocation"
+            )
+E           kodezart.domain.amendment.NativeWriteRefusalError: The saved writer belongs to another native invocation
+E           During task with name 'write' and id 'c430c995-4d37-0f38-c047-cb985d3668e8'
+E           During task with name 'execute' and id 'bb47d402-b064-257c-ba95-3c4b26a2fed1'
+E           During task with name 'run_ralph_loop' and id '824f5964-e0ca-266c-050f-e3be85383294'
+
+src/kodezart/services/native_execution.py:91: NativeWriteRefusalError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 22:18:56 [info     ] repo_visibility_resolved       repo_url=https://github.com/owner/repo.git visibility=unknown
+2026-09-12 22:18:56 [info     ] scope_base_resolved            base_branch=main base_role=None input_count=0
+2026-09-12 22:18:56 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 22:18:56 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 22:18:56 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=branch_name
+2026-09-12 22:18:56 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:18:56 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:18:56 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:18:56 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:18:56 [warning  ] native_writer_workspace_retained workspace_path=/tmp/fake-workspace
+___________ test_native_inner_iterations_read_current_checks[outage] ___________
+
+change = 'outage'
+
+    @pytest.mark.parametrize(
+        "change", ["changed-check", "state", "missing-check", "outage"]
+    )
+    async def test_native_inner_iterations_read_current_checks(change):
+        port = CountingTracker()
+        remaining = {key: check_of(key) for key in OWED_KEYS if key != NESTED_OWED}
+        executor = NativeExecutor(
+            [
+                native_evaluation(failed=True),
+                native_evaluation(checks=remaining if change == "state" else None),
+                native_evaluation(checks=remaining if change == "state" else None),
+            ]
+        )
+        executor.on_evaluation = lambda count: (
+            change_tracker(port, change) if count == 1 else None
+        )
+        fire = engine(
+            criteria=TrackerCriteria(tracker=port),
+            executor=executor,
+            real_loop=True,
+            max_iterations=2,
+        )
+        if change in {"missing-check", "outage"}:
+            error = FireSpecEntryError if change == "outage" else InvalidFireCriterionError
+            with pytest.raises(error):
+>               await drive(fire, scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
+
+tests/chains/test_native_fire.py:844: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/chains/test_native_fire.py:294: in drive
+    async for event in fire.run(
+src/kodezart/chains/ralph_workflow.py:139: in run
+    async for event in self._composition(scope).astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/fire_implementation.py:169: in run_ralph_loop
+    last_iteration_event = await self.run_quality_gate(
+src/kodezart/chains/fire_implementation.py:103: in run_quality_gate
+    async for event in self._quality_gate.run(
+src/kodezart/chains/ralph_loop.py:197: in run
+    async for mode, value in self._compiled.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/ralph_loop.py:339: in _execute_node
+    async for event in self._service.stream_workflow(
+src/kodezart/services/agent_service.py:152: in stream_workflow
+    async for event in self._run_in_workspace(
+src/kodezart/services/agent_service.py:236: in _run_in_workspace
+    async for event in execution.stream():
+src/kodezart/services/native_execution.py:261: in stream
+    async for mode, value in graph.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/native_execution.py:85: in _write
+    return {"execution": await self._actions.write(state.execution)}
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/services/native_execution.py:141: in write
+    await self._restore(phase)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.services.native_execution.NativeExecution object at 0x10e655f10>
+phase = PreparedNativeExecution(workspace=WorkspaceSnapshot(workspace_path='/tmp/fake-workspace', workspace_id='fixture-worksp...bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', holder='native-fire'), cache_key='native-fire', run_identity=None, phase='prepared')
+
+    async def _restore(self, phase: ActiveNativeExecution) -> None:
+        request = self._request
+        if (
+            phase.cache_key != request.cache_key
+            or phase.run_identity != request.run_identity
+            or phase.workspace.identity.branch != request.branch
+            or phase.authority.holder != self._guard.holder
+        ):
+>           raise NativeWriteRefusalError(
+                "The saved writer belongs to another native invocation"
+            )
+E           kodezart.domain.amendment.NativeWriteRefusalError: The saved writer belongs to another native invocation
+E           During task with name 'write' and id '873c04c3-9c21-7dbc-8baf-bcc4916870eb'
+E           During task with name 'execute' and id 'b10aa5c5-aa03-5847-f5ca-1fdfb2d8b3c3'
+E           During task with name 'run_ralph_loop' and id '2f7fe555-e64a-35ac-243c-331679567ddf'
+
+src/kodezart/services/native_execution.py:91: NativeWriteRefusalError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 22:18:57 [info     ] repo_visibility_resolved       repo_url=https://github.com/owner/repo.git visibility=unknown
+2026-09-12 22:18:57 [info     ] scope_base_resolved            base_branch=main base_role=None input_count=0
+2026-09-12 22:18:57 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 22:18:57 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 22:18:57 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=branch_name
+2026-09-12 22:18:57 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:18:57 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:18:57 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:18:57 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:18:57 [warning  ] native_writer_workspace_retained workspace_path=/tmp/fake-workspace
+_ test_native_fresh_engine_resume_reads_current_checks[changed-check-run_ralph_loop] _
+
+barrier = 'run_ralph_loop', change = 'changed-check'
+
+    @pytest.mark.parametrize("barrier", ["run_ralph_loop", "review_against_ticket"])
+    @pytest.mark.parametrize(
+        "change", ["changed-check", "state", "missing-check", "outage"]
+    )
+    async def test_native_fresh_engine_resume_reads_current_checks(barrier, change):
+        port = CountingTracker()
+        saver = InMemorySaver()
+        executor = NativeExecutor([native_evaluation()])
+        fire = engine(
+            criteria=TrackerCriteria(tracker=port),
+            executor=executor,
+            real_loop=True,
+            checkpointer=saver,
+        )
+        initial, config = fire.prepare(
+            prompt="Implement the requested behavior",
+            issue_key=None,
+            repo_path="/tmp/fire",
+            repo_url="https://github.com/owner/repo",
+            base_spec=trunk_base("main"),
+            scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT),
+            permission_mode=PermissionMode.UNATTENDED,
+            allowed_tools=["Bash"],
+            cache_key="native-fire",
+            surface_holder="native-fire",
+        )
+        async for _ in fire.native_graph.astream(
+            initial, config=config, interrupt_before=[barrier]
+        ):
+            pass
+        paused = fire.native_graph.get_state(config)
+        assert paused.next == (barrier,)
+        frozen = paused.values["fire_spec"]
+        change_tracker(port, change)
+        remaining = {key: check_of(key) for key in OWED_KEYS if key != NESTED_OWED}
+        resumed_executor = NativeExecutor(
+            [
+                native_evaluation(checks=remaining if change == "state" else None),
+                native_evaluation(checks=remaining if change == "state" else None),
+            ]
+        )
+        resumed = engine(
+            criteria=TrackerCriteria(tracker=port),
+            executor=resumed_executor,
+            real_loop=True,
+            checkpointer=saver,
+        )
+        if change in {"missing-check", "outage"}:
+            error = FireSpecEntryError if change == "outage" else InvalidFireCriterionError
+            with pytest.raises(error):
+                async for _ in resumed.native_graph.astream(
+                    None, config=config, stream_mode="custom"
+                ):
+                    pass
+            assert resumed_executor.execution_prompts == []
+            assert resumed_executor.evaluation_prompts == []
+            return
+>       events = [
+            event
+            async for event in resumed.native_graph.astream(
+                None, config=config, stream_mode="custom"
+            )
+        ]
+
+tests/chains/test_native_fire.py:936: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/fire_implementation.py:169: in run_ralph_loop
+    last_iteration_event = await self.run_quality_gate(
+src/kodezart/chains/fire_implementation.py:103: in run_quality_gate
+    async for event in self._quality_gate.run(
+src/kodezart/chains/ralph_loop.py:197: in run
+    async for mode, value in self._compiled.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/ralph_loop.py:339: in _execute_node
+    async for event in self._service.stream_workflow(
+src/kodezart/services/agent_service.py:152: in stream_workflow
+    async for event in self._run_in_workspace(
+src/kodezart/services/agent_service.py:236: in _run_in_workspace
+    async for event in execution.stream():
+src/kodezart/services/native_execution.py:261: in stream
+    async for mode, value in graph.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/native_execution.py:85: in _write
+    return {"execution": await self._actions.write(state.execution)}
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/services/native_execution.py:141: in write
+    await self._restore(phase)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.services.native_execution.NativeExecution object at 0x10ebd8f20>
+phase = PreparedNativeExecution(workspace=WorkspaceSnapshot(workspace_path='/tmp/fake-workspace', workspace_id='fixture-worksp...bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', holder='native-fire'), cache_key='native-fire', run_identity=None, phase='prepared')
+
+    async def _restore(self, phase: ActiveNativeExecution) -> None:
+        request = self._request
+        if (
+            phase.cache_key != request.cache_key
+            or phase.run_identity != request.run_identity
+            or phase.workspace.identity.branch != request.branch
+            or phase.authority.holder != self._guard.holder
+        ):
+>           raise NativeWriteRefusalError(
+                "The saved writer belongs to another native invocation"
+            )
+E           kodezart.domain.amendment.NativeWriteRefusalError: The saved writer belongs to another native invocation
+E           During task with name 'write' and id '869fbf98-6668-a6bc-b444-6f7cb896095e'
+E           During task with name 'execute' and id '39c7a242-4ac3-a4d3-d680-43a0427b3e45'
+E           During task with name 'run_ralph_loop' and id '6271b7b2-5c73-67c7-70e8-d1cdf2a1fc88'
+
+src/kodezart/services/native_execution.py:91: NativeWriteRefusalError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 22:18:59 [info     ] repo_visibility_resolved       repo_url=https://github.com/owner/repo.git visibility=unknown
+2026-09-12 22:18:59 [info     ] scope_base_resolved            base_branch=main base_role=None input_count=0
+2026-09-12 22:18:59 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 22:18:59 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 22:18:59 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=branch_name
+2026-09-12 22:18:59 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:18:59 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:18:59 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:18:59 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:18:59 [warning  ] native_writer_workspace_retained workspace_path=/tmp/fake-workspace
+------------------------------ Captured log call -------------------------------
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.fire_spec.TrackerSpec from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.fire_spec', 'TrackerSpec')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.criteria.TrackerCriterionSet from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.criteria', 'TrackerCriterionSet')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.gating.RepoVisibility from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.gating', 'RepoVisibility')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.fire_spec.TrackerSpec from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.fire_spec', 'TrackerSpec')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.criteria.TrackerCriterionSet from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.criteria', 'TrackerCriterionSet')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.gating.RepoVisibility from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.gating', 'RepoVisibility')]
+_ test_native_fresh_engine_resume_reads_current_checks[changed-check-review_against_ticket] _
+
+barrier = 'review_against_ticket', change = 'changed-check'
+
+    @pytest.mark.parametrize("barrier", ["run_ralph_loop", "review_against_ticket"])
+    @pytest.mark.parametrize(
+        "change", ["changed-check", "state", "missing-check", "outage"]
+    )
+    async def test_native_fresh_engine_resume_reads_current_checks(barrier, change):
+        port = CountingTracker()
+        saver = InMemorySaver()
+        executor = NativeExecutor([native_evaluation()])
+        fire = engine(
+            criteria=TrackerCriteria(tracker=port),
+            executor=executor,
+            real_loop=True,
+            checkpointer=saver,
+        )
+        initial, config = fire.prepare(
+            prompt="Implement the requested behavior",
+            issue_key=None,
+            repo_path="/tmp/fire",
+            repo_url="https://github.com/owner/repo",
+            base_spec=trunk_base("main"),
+            scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT),
+            permission_mode=PermissionMode.UNATTENDED,
+            allowed_tools=["Bash"],
+            cache_key="native-fire",
+            surface_holder="native-fire",
+        )
+>       async for _ in fire.native_graph.astream(
+            initial, config=config, interrupt_before=[barrier]
+        ):
+
+tests/chains/test_native_fire.py:905: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:304: in atick
+    await arun_with_retry(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/fire_implementation.py:169: in run_ralph_loop
+    last_iteration_event = await self.run_quality_gate(
+src/kodezart/chains/fire_implementation.py:103: in run_quality_gate
+    async for event in self._quality_gate.run(
+src/kodezart/chains/ralph_loop.py:197: in run
+    async for mode, value in self._compiled.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/ralph_loop.py:339: in _execute_node
+    async for event in self._service.stream_workflow(
+src/kodezart/services/agent_service.py:152: in stream_workflow
+    async for event in self._run_in_workspace(
+src/kodezart/services/agent_service.py:236: in _run_in_workspace
+    async for event in execution.stream():
+src/kodezart/services/native_execution.py:261: in stream
+    async for mode, value in graph.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/native_execution.py:85: in _write
+    return {"execution": await self._actions.write(state.execution)}
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/services/native_execution.py:141: in write
+    await self._restore(phase)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.services.native_execution.NativeExecution object at 0x10ea14f80>
+phase = PreparedNativeExecution(workspace=WorkspaceSnapshot(workspace_path='/tmp/fake-workspace', workspace_id='fixture-worksp...bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', holder='native-fire'), cache_key='native-fire', run_identity=None, phase='prepared')
+
+    async def _restore(self, phase: ActiveNativeExecution) -> None:
+        request = self._request
+        if (
+            phase.cache_key != request.cache_key
+            or phase.run_identity != request.run_identity
+            or phase.workspace.identity.branch != request.branch
+            or phase.authority.holder != self._guard.holder
+        ):
+>           raise NativeWriteRefusalError(
+                "The saved writer belongs to another native invocation"
+            )
+E           kodezart.domain.amendment.NativeWriteRefusalError: The saved writer belongs to another native invocation
+E           During task with name 'write' and id '4acc6785-f064-4eba-9a68-77309d59a1d7'
+E           During task with name 'execute' and id '67a60af6-8b0e-6310-298b-41997cc986b6'
+E           During task with name 'run_ralph_loop' and id 'bc21b384-801c-cf5e-ddfc-da4ae376742c'
+
+src/kodezart/services/native_execution.py:91: NativeWriteRefusalError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 22:19:00 [info     ] repo_visibility_resolved       repo_url=https://github.com/owner/repo.git visibility=unknown
+2026-09-12 22:19:00 [info     ] scope_base_resolved            base_branch=main base_role=None input_count=0
+2026-09-12 22:19:00 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 22:19:00 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 22:19:00 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=branch_name
+2026-09-12 22:19:00 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:19:00 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:19:00 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:19:00 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:19:00 [warning  ] native_writer_workspace_retained workspace_path=/tmp/fake-workspace
+__ test_native_fresh_engine_resume_reads_current_checks[state-run_ralph_loop] __
+
+barrier = 'run_ralph_loop', change = 'state'
+
+    @pytest.mark.parametrize("barrier", ["run_ralph_loop", "review_against_ticket"])
+    @pytest.mark.parametrize(
+        "change", ["changed-check", "state", "missing-check", "outage"]
+    )
+    async def test_native_fresh_engine_resume_reads_current_checks(barrier, change):
+        port = CountingTracker()
+        saver = InMemorySaver()
+        executor = NativeExecutor([native_evaluation()])
+        fire = engine(
+            criteria=TrackerCriteria(tracker=port),
+            executor=executor,
+            real_loop=True,
+            checkpointer=saver,
+        )
+        initial, config = fire.prepare(
+            prompt="Implement the requested behavior",
+            issue_key=None,
+            repo_path="/tmp/fire",
+            repo_url="https://github.com/owner/repo",
+            base_spec=trunk_base("main"),
+            scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT),
+            permission_mode=PermissionMode.UNATTENDED,
+            allowed_tools=["Bash"],
+            cache_key="native-fire",
+            surface_holder="native-fire",
+        )
+        async for _ in fire.native_graph.astream(
+            initial, config=config, interrupt_before=[barrier]
+        ):
+            pass
+        paused = fire.native_graph.get_state(config)
+        assert paused.next == (barrier,)
+        frozen = paused.values["fire_spec"]
+        change_tracker(port, change)
+        remaining = {key: check_of(key) for key in OWED_KEYS if key != NESTED_OWED}
+        resumed_executor = NativeExecutor(
+            [
+                native_evaluation(checks=remaining if change == "state" else None),
+                native_evaluation(checks=remaining if change == "state" else None),
+            ]
+        )
+        resumed = engine(
+            criteria=TrackerCriteria(tracker=port),
+            executor=resumed_executor,
+            real_loop=True,
+            checkpointer=saver,
+        )
+        if change in {"missing-check", "outage"}:
+            error = FireSpecEntryError if change == "outage" else InvalidFireCriterionError
+            with pytest.raises(error):
+                async for _ in resumed.native_graph.astream(
+                    None, config=config, stream_mode="custom"
+                ):
+                    pass
+            assert resumed_executor.execution_prompts == []
+            assert resumed_executor.evaluation_prompts == []
+            return
+>       events = [
+            event
+            async for event in resumed.native_graph.astream(
+                None, config=config, stream_mode="custom"
+            )
+        ]
+
+tests/chains/test_native_fire.py:936: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/fire_implementation.py:169: in run_ralph_loop
+    last_iteration_event = await self.run_quality_gate(
+src/kodezart/chains/fire_implementation.py:103: in run_quality_gate
+    async for event in self._quality_gate.run(
+src/kodezart/chains/ralph_loop.py:197: in run
+    async for mode, value in self._compiled.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/ralph_loop.py:339: in _execute_node
+    async for event in self._service.stream_workflow(
+src/kodezart/services/agent_service.py:152: in stream_workflow
+    async for event in self._run_in_workspace(
+src/kodezart/services/agent_service.py:236: in _run_in_workspace
+    async for event in execution.stream():
+src/kodezart/services/native_execution.py:261: in stream
+    async for mode, value in graph.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/native_execution.py:85: in _write
+    return {"execution": await self._actions.write(state.execution)}
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/services/native_execution.py:141: in write
+    await self._restore(phase)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.services.native_execution.NativeExecution object at 0x10ec70560>
+phase = PreparedNativeExecution(workspace=WorkspaceSnapshot(workspace_path='/tmp/fake-workspace', workspace_id='fixture-worksp...bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', holder='native-fire'), cache_key='native-fire', run_identity=None, phase='prepared')
+
+    async def _restore(self, phase: ActiveNativeExecution) -> None:
+        request = self._request
+        if (
+            phase.cache_key != request.cache_key
+            or phase.run_identity != request.run_identity
+            or phase.workspace.identity.branch != request.branch
+            or phase.authority.holder != self._guard.holder
+        ):
+>           raise NativeWriteRefusalError(
+                "The saved writer belongs to another native invocation"
+            )
+E           kodezart.domain.amendment.NativeWriteRefusalError: The saved writer belongs to another native invocation
+E           During task with name 'write' and id 'a37a81e1-b020-d165-4b98-22ed194f3131'
+E           During task with name 'execute' and id '1b5cee8a-4889-4b14-ed2e-ed1023c2af16'
+E           During task with name 'run_ralph_loop' and id '3fb7e0ca-f0c4-74d7-e6f9-40ed6503b016'
+
+src/kodezart/services/native_execution.py:91: NativeWriteRefusalError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 22:19:01 [info     ] repo_visibility_resolved       repo_url=https://github.com/owner/repo.git visibility=unknown
+2026-09-12 22:19:01 [info     ] scope_base_resolved            base_branch=main base_role=None input_count=0
+2026-09-12 22:19:01 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 22:19:01 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 22:19:01 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=branch_name
+2026-09-12 22:19:01 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:19:01 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:19:01 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:19:01 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:19:01 [warning  ] native_writer_workspace_retained workspace_path=/tmp/fake-workspace
+------------------------------ Captured log call -------------------------------
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.fire_spec.TrackerSpec from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.fire_spec', 'TrackerSpec')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.criteria.TrackerCriterionSet from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.criteria', 'TrackerCriterionSet')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.gating.RepoVisibility from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.gating', 'RepoVisibility')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.fire_spec.TrackerSpec from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.fire_spec', 'TrackerSpec')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.criteria.TrackerCriterionSet from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.criteria', 'TrackerCriterionSet')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.gating.RepoVisibility from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.gating', 'RepoVisibility')]
+_ test_native_fresh_engine_resume_reads_current_checks[state-review_against_ticket] _
+
+barrier = 'review_against_ticket', change = 'state'
+
+    @pytest.mark.parametrize("barrier", ["run_ralph_loop", "review_against_ticket"])
+    @pytest.mark.parametrize(
+        "change", ["changed-check", "state", "missing-check", "outage"]
+    )
+    async def test_native_fresh_engine_resume_reads_current_checks(barrier, change):
+        port = CountingTracker()
+        saver = InMemorySaver()
+        executor = NativeExecutor([native_evaluation()])
+        fire = engine(
+            criteria=TrackerCriteria(tracker=port),
+            executor=executor,
+            real_loop=True,
+            checkpointer=saver,
+        )
+        initial, config = fire.prepare(
+            prompt="Implement the requested behavior",
+            issue_key=None,
+            repo_path="/tmp/fire",
+            repo_url="https://github.com/owner/repo",
+            base_spec=trunk_base("main"),
+            scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT),
+            permission_mode=PermissionMode.UNATTENDED,
+            allowed_tools=["Bash"],
+            cache_key="native-fire",
+            surface_holder="native-fire",
+        )
+>       async for _ in fire.native_graph.astream(
+            initial, config=config, interrupt_before=[barrier]
+        ):
+
+tests/chains/test_native_fire.py:905: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:304: in atick
+    await arun_with_retry(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/fire_implementation.py:169: in run_ralph_loop
+    last_iteration_event = await self.run_quality_gate(
+src/kodezart/chains/fire_implementation.py:103: in run_quality_gate
+    async for event in self._quality_gate.run(
+src/kodezart/chains/ralph_loop.py:197: in run
+    async for mode, value in self._compiled.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/ralph_loop.py:339: in _execute_node
+    async for event in self._service.stream_workflow(
+src/kodezart/services/agent_service.py:152: in stream_workflow
+    async for event in self._run_in_workspace(
+src/kodezart/services/agent_service.py:236: in _run_in_workspace
+    async for event in execution.stream():
+src/kodezart/services/native_execution.py:261: in stream
+    async for mode, value in graph.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/native_execution.py:85: in _write
+    return {"execution": await self._actions.write(state.execution)}
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/services/native_execution.py:141: in write
+    await self._restore(phase)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.services.native_execution.NativeExecution object at 0x10ea70b30>
+phase = PreparedNativeExecution(workspace=WorkspaceSnapshot(workspace_path='/tmp/fake-workspace', workspace_id='fixture-worksp...bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', holder='native-fire'), cache_key='native-fire', run_identity=None, phase='prepared')
+
+    async def _restore(self, phase: ActiveNativeExecution) -> None:
+        request = self._request
+        if (
+            phase.cache_key != request.cache_key
+            or phase.run_identity != request.run_identity
+            or phase.workspace.identity.branch != request.branch
+            or phase.authority.holder != self._guard.holder
+        ):
+>           raise NativeWriteRefusalError(
+                "The saved writer belongs to another native invocation"
+            )
+E           kodezart.domain.amendment.NativeWriteRefusalError: The saved writer belongs to another native invocation
+E           During task with name 'write' and id '3cca2b34-b9ca-09c6-b02c-6a60d74ad1b1'
+E           During task with name 'execute' and id 'edb6da29-3138-ade5-b4d3-2a63dfcba6f8'
+E           During task with name 'run_ralph_loop' and id 'e7ef2291-b3ee-94ae-5d44-85b099983f0f'
+
+src/kodezart/services/native_execution.py:91: NativeWriteRefusalError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 22:19:02 [info     ] repo_visibility_resolved       repo_url=https://github.com/owner/repo.git visibility=unknown
+2026-09-12 22:19:02 [info     ] scope_base_resolved            base_branch=main base_role=None input_count=0
+2026-09-12 22:19:02 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 22:19:02 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 22:19:02 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=branch_name
+2026-09-12 22:19:02 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:19:02 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:19:02 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:19:02 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:19:02 [warning  ] native_writer_workspace_retained workspace_path=/tmp/fake-workspace
+_ test_native_fresh_engine_resume_reads_current_checks[missing-check-review_against_ticket] _
+
+barrier = 'review_against_ticket', change = 'missing-check'
+
+    @pytest.mark.parametrize("barrier", ["run_ralph_loop", "review_against_ticket"])
+    @pytest.mark.parametrize(
+        "change", ["changed-check", "state", "missing-check", "outage"]
+    )
+    async def test_native_fresh_engine_resume_reads_current_checks(barrier, change):
+        port = CountingTracker()
+        saver = InMemorySaver()
+        executor = NativeExecutor([native_evaluation()])
+        fire = engine(
+            criteria=TrackerCriteria(tracker=port),
+            executor=executor,
+            real_loop=True,
+            checkpointer=saver,
+        )
+        initial, config = fire.prepare(
+            prompt="Implement the requested behavior",
+            issue_key=None,
+            repo_path="/tmp/fire",
+            repo_url="https://github.com/owner/repo",
+            base_spec=trunk_base("main"),
+            scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT),
+            permission_mode=PermissionMode.UNATTENDED,
+            allowed_tools=["Bash"],
+            cache_key="native-fire",
+            surface_holder="native-fire",
+        )
+>       async for _ in fire.native_graph.astream(
+            initial, config=config, interrupt_before=[barrier]
+        ):
+
+tests/chains/test_native_fire.py:905: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:304: in atick
+    await arun_with_retry(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/fire_implementation.py:169: in run_ralph_loop
+    last_iteration_event = await self.run_quality_gate(
+src/kodezart/chains/fire_implementation.py:103: in run_quality_gate
+    async for event in self._quality_gate.run(
+src/kodezart/chains/ralph_loop.py:197: in run
+    async for mode, value in self._compiled.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/ralph_loop.py:339: in _execute_node
+    async for event in self._service.stream_workflow(
+src/kodezart/services/agent_service.py:152: in stream_workflow
+    async for event in self._run_in_workspace(
+src/kodezart/services/agent_service.py:236: in _run_in_workspace
+    async for event in execution.stream():
+src/kodezart/services/native_execution.py:261: in stream
+    async for mode, value in graph.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/native_execution.py:85: in _write
+    return {"execution": await self._actions.write(state.execution)}
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/services/native_execution.py:141: in write
+    await self._restore(phase)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.services.native_execution.NativeExecution object at 0x10f2cb830>
+phase = PreparedNativeExecution(workspace=WorkspaceSnapshot(workspace_path='/tmp/fake-workspace', workspace_id='fixture-worksp...bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', holder='native-fire'), cache_key='native-fire', run_identity=None, phase='prepared')
+
+    async def _restore(self, phase: ActiveNativeExecution) -> None:
+        request = self._request
+        if (
+            phase.cache_key != request.cache_key
+            or phase.run_identity != request.run_identity
+            or phase.workspace.identity.branch != request.branch
+            or phase.authority.holder != self._guard.holder
+        ):
+>           raise NativeWriteRefusalError(
+                "The saved writer belongs to another native invocation"
+            )
+E           kodezart.domain.amendment.NativeWriteRefusalError: The saved writer belongs to another native invocation
+E           During task with name 'write' and id 'af68eab5-bc63-081c-d6d4-ec03cc4db4f6'
+E           During task with name 'execute' and id 'c640376c-d49b-f274-e1ef-aa645db4108a'
+E           During task with name 'run_ralph_loop' and id '27c72635-c9c2-77a8-d9d1-0414b9878df0'
+
+src/kodezart/services/native_execution.py:91: NativeWriteRefusalError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 22:19:03 [info     ] repo_visibility_resolved       repo_url=https://github.com/owner/repo.git visibility=unknown
+2026-09-12 22:19:03 [info     ] scope_base_resolved            base_branch=main base_role=None input_count=0
+2026-09-12 22:19:03 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 22:19:03 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 22:19:03 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=branch_name
+2026-09-12 22:19:03 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:19:03 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:19:03 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:19:03 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:19:03 [warning  ] native_writer_workspace_retained workspace_path=/tmp/fake-workspace
+_ test_native_fresh_engine_resume_reads_current_checks[outage-review_against_ticket] _
+
+barrier = 'review_against_ticket', change = 'outage'
+
+    @pytest.mark.parametrize("barrier", ["run_ralph_loop", "review_against_ticket"])
+    @pytest.mark.parametrize(
+        "change", ["changed-check", "state", "missing-check", "outage"]
+    )
+    async def test_native_fresh_engine_resume_reads_current_checks(barrier, change):
+        port = CountingTracker()
+        saver = InMemorySaver()
+        executor = NativeExecutor([native_evaluation()])
+        fire = engine(
+            criteria=TrackerCriteria(tracker=port),
+            executor=executor,
+            real_loop=True,
+            checkpointer=saver,
+        )
+        initial, config = fire.prepare(
+            prompt="Implement the requested behavior",
+            issue_key=None,
+            repo_path="/tmp/fire",
+            repo_url="https://github.com/owner/repo",
+            base_spec=trunk_base("main"),
+            scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT),
+            permission_mode=PermissionMode.UNATTENDED,
+            allowed_tools=["Bash"],
+            cache_key="native-fire",
+            surface_holder="native-fire",
+        )
+>       async for _ in fire.native_graph.astream(
+            initial, config=config, interrupt_before=[barrier]
+        ):
+
+tests/chains/test_native_fire.py:905: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:304: in atick
+    await arun_with_retry(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/fire_implementation.py:169: in run_ralph_loop
+    last_iteration_event = await self.run_quality_gate(
+src/kodezart/chains/fire_implementation.py:103: in run_quality_gate
+    async for event in self._quality_gate.run(
+src/kodezart/chains/ralph_loop.py:197: in run
+    async for mode, value in self._compiled.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/ralph_loop.py:339: in _execute_node
+    async for event in self._service.stream_workflow(
+src/kodezart/services/agent_service.py:152: in stream_workflow
+    async for event in self._run_in_workspace(
+src/kodezart/services/agent_service.py:236: in _run_in_workspace
+    async for event in execution.stream():
+src/kodezart/services/native_execution.py:261: in stream
+    async for mode, value in graph.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/native_execution.py:85: in _write
+    return {"execution": await self._actions.write(state.execution)}
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/services/native_execution.py:141: in write
+    await self._restore(phase)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.services.native_execution.NativeExecution object at 0x10f247ad0>
+phase = PreparedNativeExecution(workspace=WorkspaceSnapshot(workspace_path='/tmp/fake-workspace', workspace_id='fixture-worksp...bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', holder='native-fire'), cache_key='native-fire', run_identity=None, phase='prepared')
+
+    async def _restore(self, phase: ActiveNativeExecution) -> None:
+        request = self._request
+        if (
+            phase.cache_key != request.cache_key
+            or phase.run_identity != request.run_identity
+            or phase.workspace.identity.branch != request.branch
+            or phase.authority.holder != self._guard.holder
+        ):
+>           raise NativeWriteRefusalError(
+                "The saved writer belongs to another native invocation"
+            )
+E           kodezart.domain.amendment.NativeWriteRefusalError: The saved writer belongs to another native invocation
+E           During task with name 'write' and id 'b98c0129-fae4-ed98-c92c-f3403c218952'
+E           During task with name 'execute' and id '2b10ab9e-0082-d92d-bf64-783dbdac0302'
+E           During task with name 'run_ralph_loop' and id 'c4063a2b-0943-f128-6c4c-86f352e4dfd6'
+
+src/kodezart/services/native_execution.py:91: NativeWriteRefusalError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 22:19:05 [info     ] repo_visibility_resolved       repo_url=https://github.com/owner/repo.git visibility=unknown
+2026-09-12 22:19:05 [info     ] scope_base_resolved            base_branch=main base_role=None input_count=0
+2026-09-12 22:19:05 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 22:19:05 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 22:19:05 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=branch_name
+2026-09-12 22:19:05 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:19:05 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:19:05 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:19:05 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:19:05 [warning  ] native_writer_workspace_retained workspace_path=/tmp/fake-workspace
+_ test_native_inner_checkpoint_resume_requires_current_checks[changed-check-execute] _
+
+barrier = 'execute', change = 'changed-check'
+
+    @pytest.mark.parametrize("barrier", ["execute", "evaluate"])
+    @pytest.mark.parametrize(
+        "change", ["changed-check", "state", "missing-check", "outage"]
+    )
+    async def test_native_inner_checkpoint_resume_requires_current_checks(barrier, change):
+        from kodezart.types.domain.workflow import RalphLoopContext
+    
+        port = CountingTracker()
+        source = TrackerCriteria(tracker=port)
+        spec = await source.read_spec(issue_key=SUBJECT)
+        snapshot = await source.read_current(spec=spec)
+        saver = InMemorySaver()
+        original = engine(criteria=source, executor=NativeExecutor([]), real_loop=True)
+        loop = original.implementation._quality_gate
+        graph = loop._build_graph().compile(checkpointer=saver)
+        context = RalphLoopContext(
+            prompt=spec.body,
+            repo_path="/tmp/fire",
+            repo_url=None,
+            cache_key="inner-resume",
+            surface_holder="inner-resume",
+            base_spec=trunk_base("main"),
+            permission_mode=PermissionMode.UNATTENDED,
+            allowed_tools=["Bash"],
+            feature_branch="feature",
+            ralph_branch="ralph",
+            work_base_ref="main",
+            acceptance_criteria=snapshot.criteria,
+            tracker_spec=spec,
+            repo_visibility=RepoVisibility.UNKNOWN,
+        )
+        config = {"configurable": {**context.model_dump(), "thread_id": "inner-resume"}}
+        initial = {
+            "iteration": 0,
+            "verdict": AcceptVerdict.rejected,
+            "pending_failures": [],
+            "iteration_records": [],
+        }
+        async for _ in graph.astream(initial, config=config, interrupt_before=[barrier]):
+            pass
+        assert graph.get_state(config).next == (barrier,)
+        change_tracker(port, change)
+        remaining = {key: check_of(key) for key in OWED_KEYS if key != NESTED_OWED}
+        executor = NativeExecutor(
+            [native_evaluation(checks=remaining if change == "state" else None)]
+        )
+        fresh = engine(
+            criteria=TrackerCriteria(tracker=port), executor=executor, real_loop=True
+        )
+        replay = fresh.implementation._quality_gate._build_graph().compile(
+            checkpointer=saver
+        )
+        if change in {"missing-check", "outage"}:
+            error = FireSpecEntryError if change == "outage" else InvalidFireCriterionError
+            with pytest.raises(error):
+                async for _ in replay.astream(None, config=config, stream_mode="custom"):
+                    pass
+            assert executor.execution_prompts == []
+            assert executor.evaluation_prompts == []
+            return
+>       events = [
+            event
+            async for event in replay.astream(None, config=config, stream_mode="custom")
+        ]
+
+tests/chains/test_native_fire.py:1019: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/ralph_loop.py:339: in _execute_node
+    async for event in self._service.stream_workflow(
+src/kodezart/services/agent_service.py:152: in stream_workflow
+    async for event in self._run_in_workspace(
+src/kodezart/services/agent_service.py:236: in _run_in_workspace
+    async for event in execution.stream():
+src/kodezart/services/native_execution.py:261: in stream
+    async for mode, value in graph.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/native_execution.py:85: in _write
+    return {"execution": await self._actions.write(state.execution)}
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/services/native_execution.py:141: in write
+    await self._restore(phase)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.services.native_execution.NativeExecution object at 0x10f2cd100>
+phase = PreparedNativeExecution(workspace=WorkspaceSnapshot(workspace_path='/tmp/fake-workspace', workspace_id='fixture-worksp...bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', holder='inner-resume'), cache_key='inner-resume', run_identity=None, phase='prepared')
+
+    async def _restore(self, phase: ActiveNativeExecution) -> None:
+        request = self._request
+        if (
+            phase.cache_key != request.cache_key
+            or phase.run_identity != request.run_identity
+            or phase.workspace.identity.branch != request.branch
+            or phase.authority.holder != self._guard.holder
+        ):
+>           raise NativeWriteRefusalError(
+                "The saved writer belongs to another native invocation"
+            )
+E           kodezart.domain.amendment.NativeWriteRefusalError: The saved writer belongs to another native invocation
+E           During task with name 'write' and id '5033edce-41bf-d53c-7777-dc5cb7190d45'
+E           During task with name 'execute' and id '7658892d-8619-5bc6-1f51-ad5099f2b813'
+
+src/kodezart/services/native_execution.py:91: NativeWriteRefusalError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 22:19:05 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:19:06 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:19:06 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:19:06 [warning  ] native_writer_workspace_retained workspace_path=/tmp/fake-workspace
+------------------------------ Captured log call -------------------------------
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+_ test_native_inner_checkpoint_resume_requires_current_checks[changed-check-evaluate] _
+
+barrier = 'evaluate', change = 'changed-check'
+
+    @pytest.mark.parametrize("barrier", ["execute", "evaluate"])
+    @pytest.mark.parametrize(
+        "change", ["changed-check", "state", "missing-check", "outage"]
+    )
+    async def test_native_inner_checkpoint_resume_requires_current_checks(barrier, change):
+        from kodezart.types.domain.workflow import RalphLoopContext
+    
+        port = CountingTracker()
+        source = TrackerCriteria(tracker=port)
+        spec = await source.read_spec(issue_key=SUBJECT)
+        snapshot = await source.read_current(spec=spec)
+        saver = InMemorySaver()
+        original = engine(criteria=source, executor=NativeExecutor([]), real_loop=True)
+        loop = original.implementation._quality_gate
+        graph = loop._build_graph().compile(checkpointer=saver)
+        context = RalphLoopContext(
+            prompt=spec.body,
+            repo_path="/tmp/fire",
+            repo_url=None,
+            cache_key="inner-resume",
+            surface_holder="inner-resume",
+            base_spec=trunk_base("main"),
+            permission_mode=PermissionMode.UNATTENDED,
+            allowed_tools=["Bash"],
+            feature_branch="feature",
+            ralph_branch="ralph",
+            work_base_ref="main",
+            acceptance_criteria=snapshot.criteria,
+            tracker_spec=spec,
+            repo_visibility=RepoVisibility.UNKNOWN,
+        )
+        config = {"configurable": {**context.model_dump(), "thread_id": "inner-resume"}}
+        initial = {
+            "iteration": 0,
+            "verdict": AcceptVerdict.rejected,
+            "pending_failures": [],
+            "iteration_records": [],
+        }
+>       async for _ in graph.astream(initial, config=config, interrupt_before=[barrier]):
+
+tests/chains/test_native_fire.py:997: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:304: in atick
+    await arun_with_retry(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/ralph_loop.py:339: in _execute_node
+    async for event in self._service.stream_workflow(
+src/kodezart/services/agent_service.py:152: in stream_workflow
+    async for event in self._run_in_workspace(
+src/kodezart/services/agent_service.py:236: in _run_in_workspace
+    async for event in execution.stream():
+src/kodezart/services/native_execution.py:261: in stream
+    async for mode, value in graph.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/native_execution.py:85: in _write
+    return {"execution": await self._actions.write(state.execution)}
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/services/native_execution.py:141: in write
+    await self._restore(phase)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.services.native_execution.NativeExecution object at 0x10ea14290>
+phase = PreparedNativeExecution(workspace=WorkspaceSnapshot(workspace_path='/tmp/fake-workspace', workspace_id='fixture-worksp...bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', holder='inner-resume'), cache_key='inner-resume', run_identity=None, phase='prepared')
+
+    async def _restore(self, phase: ActiveNativeExecution) -> None:
+        request = self._request
+        if (
+            phase.cache_key != request.cache_key
+            or phase.run_identity != request.run_identity
+            or phase.workspace.identity.branch != request.branch
+            or phase.authority.holder != self._guard.holder
+        ):
+>           raise NativeWriteRefusalError(
+                "The saved writer belongs to another native invocation"
+            )
+E           kodezart.domain.amendment.NativeWriteRefusalError: The saved writer belongs to another native invocation
+E           During task with name 'write' and id '3f3b4b09-02be-fb96-bd7a-53da7067b715'
+E           During task with name 'execute' and id 'b2b544be-d600-e1d9-9ae0-e2a039fa0b89'
+
+src/kodezart/services/native_execution.py:91: NativeWriteRefusalError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 22:19:06 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:19:07 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:19:07 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:19:07 [warning  ] native_writer_workspace_retained workspace_path=/tmp/fake-workspace
+__ test_native_inner_checkpoint_resume_requires_current_checks[state-execute] __
+
+barrier = 'execute', change = 'state'
+
+    @pytest.mark.parametrize("barrier", ["execute", "evaluate"])
+    @pytest.mark.parametrize(
+        "change", ["changed-check", "state", "missing-check", "outage"]
+    )
+    async def test_native_inner_checkpoint_resume_requires_current_checks(barrier, change):
+        from kodezart.types.domain.workflow import RalphLoopContext
+    
+        port = CountingTracker()
+        source = TrackerCriteria(tracker=port)
+        spec = await source.read_spec(issue_key=SUBJECT)
+        snapshot = await source.read_current(spec=spec)
+        saver = InMemorySaver()
+        original = engine(criteria=source, executor=NativeExecutor([]), real_loop=True)
+        loop = original.implementation._quality_gate
+        graph = loop._build_graph().compile(checkpointer=saver)
+        context = RalphLoopContext(
+            prompt=spec.body,
+            repo_path="/tmp/fire",
+            repo_url=None,
+            cache_key="inner-resume",
+            surface_holder="inner-resume",
+            base_spec=trunk_base("main"),
+            permission_mode=PermissionMode.UNATTENDED,
+            allowed_tools=["Bash"],
+            feature_branch="feature",
+            ralph_branch="ralph",
+            work_base_ref="main",
+            acceptance_criteria=snapshot.criteria,
+            tracker_spec=spec,
+            repo_visibility=RepoVisibility.UNKNOWN,
+        )
+        config = {"configurable": {**context.model_dump(), "thread_id": "inner-resume"}}
+        initial = {
+            "iteration": 0,
+            "verdict": AcceptVerdict.rejected,
+            "pending_failures": [],
+            "iteration_records": [],
+        }
+        async for _ in graph.astream(initial, config=config, interrupt_before=[barrier]):
+            pass
+        assert graph.get_state(config).next == (barrier,)
+        change_tracker(port, change)
+        remaining = {key: check_of(key) for key in OWED_KEYS if key != NESTED_OWED}
+        executor = NativeExecutor(
+            [native_evaluation(checks=remaining if change == "state" else None)]
+        )
+        fresh = engine(
+            criteria=TrackerCriteria(tracker=port), executor=executor, real_loop=True
+        )
+        replay = fresh.implementation._quality_gate._build_graph().compile(
+            checkpointer=saver
+        )
+        if change in {"missing-check", "outage"}:
+            error = FireSpecEntryError if change == "outage" else InvalidFireCriterionError
+            with pytest.raises(error):
+                async for _ in replay.astream(None, config=config, stream_mode="custom"):
+                    pass
+            assert executor.execution_prompts == []
+            assert executor.evaluation_prompts == []
+            return
+>       events = [
+            event
+            async for event in replay.astream(None, config=config, stream_mode="custom")
+        ]
+
+tests/chains/test_native_fire.py:1019: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/ralph_loop.py:339: in _execute_node
+    async for event in self._service.stream_workflow(
+src/kodezart/services/agent_service.py:152: in stream_workflow
+    async for event in self._run_in_workspace(
+src/kodezart/services/agent_service.py:236: in _run_in_workspace
+    async for event in execution.stream():
+src/kodezart/services/native_execution.py:261: in stream
+    async for mode, value in graph.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/native_execution.py:85: in _write
+    return {"execution": await self._actions.write(state.execution)}
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/services/native_execution.py:141: in write
+    await self._restore(phase)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.services.native_execution.NativeExecution object at 0x10ebd8fe0>
+phase = PreparedNativeExecution(workspace=WorkspaceSnapshot(workspace_path='/tmp/fake-workspace', workspace_id='fixture-worksp...bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', holder='inner-resume'), cache_key='inner-resume', run_identity=None, phase='prepared')
+
+    async def _restore(self, phase: ActiveNativeExecution) -> None:
+        request = self._request
+        if (
+            phase.cache_key != request.cache_key
+            or phase.run_identity != request.run_identity
+            or phase.workspace.identity.branch != request.branch
+            or phase.authority.holder != self._guard.holder
+        ):
+>           raise NativeWriteRefusalError(
+                "The saved writer belongs to another native invocation"
+            )
+E           kodezart.domain.amendment.NativeWriteRefusalError: The saved writer belongs to another native invocation
+E           During task with name 'write' and id 'a618ea36-a08e-03bd-7e9e-6cfcde9ae65b'
+E           During task with name 'execute' and id '9a8b8029-19c4-7d32-b344-90c6fce818fa'
+
+src/kodezart/services/native_execution.py:91: NativeWriteRefusalError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 22:19:07 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:19:08 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:19:08 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:19:08 [warning  ] native_writer_workspace_retained workspace_path=/tmp/fake-workspace
+------------------------------ Captured log call -------------------------------
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+_ test_native_inner_checkpoint_resume_requires_current_checks[state-evaluate] __
+
+barrier = 'evaluate', change = 'state'
+
+    @pytest.mark.parametrize("barrier", ["execute", "evaluate"])
+    @pytest.mark.parametrize(
+        "change", ["changed-check", "state", "missing-check", "outage"]
+    )
+    async def test_native_inner_checkpoint_resume_requires_current_checks(barrier, change):
+        from kodezart.types.domain.workflow import RalphLoopContext
+    
+        port = CountingTracker()
+        source = TrackerCriteria(tracker=port)
+        spec = await source.read_spec(issue_key=SUBJECT)
+        snapshot = await source.read_current(spec=spec)
+        saver = InMemorySaver()
+        original = engine(criteria=source, executor=NativeExecutor([]), real_loop=True)
+        loop = original.implementation._quality_gate
+        graph = loop._build_graph().compile(checkpointer=saver)
+        context = RalphLoopContext(
+            prompt=spec.body,
+            repo_path="/tmp/fire",
+            repo_url=None,
+            cache_key="inner-resume",
+            surface_holder="inner-resume",
+            base_spec=trunk_base("main"),
+            permission_mode=PermissionMode.UNATTENDED,
+            allowed_tools=["Bash"],
+            feature_branch="feature",
+            ralph_branch="ralph",
+            work_base_ref="main",
+            acceptance_criteria=snapshot.criteria,
+            tracker_spec=spec,
+            repo_visibility=RepoVisibility.UNKNOWN,
+        )
+        config = {"configurable": {**context.model_dump(), "thread_id": "inner-resume"}}
+        initial = {
+            "iteration": 0,
+            "verdict": AcceptVerdict.rejected,
+            "pending_failures": [],
+            "iteration_records": [],
+        }
+>       async for _ in graph.astream(initial, config=config, interrupt_before=[barrier]):
+
+tests/chains/test_native_fire.py:997: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:304: in atick
+    await arun_with_retry(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/ralph_loop.py:339: in _execute_node
+    async for event in self._service.stream_workflow(
+src/kodezart/services/agent_service.py:152: in stream_workflow
+    async for event in self._run_in_workspace(
+src/kodezart/services/agent_service.py:236: in _run_in_workspace
+    async for event in execution.stream():
+src/kodezart/services/native_execution.py:261: in stream
+    async for mode, value in graph.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/native_execution.py:85: in _write
+    return {"execution": await self._actions.write(state.execution)}
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/services/native_execution.py:141: in write
+    await self._restore(phase)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.services.native_execution.NativeExecution object at 0x10e64d400>
+phase = PreparedNativeExecution(workspace=WorkspaceSnapshot(workspace_path='/tmp/fake-workspace', workspace_id='fixture-worksp...bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', holder='inner-resume'), cache_key='inner-resume', run_identity=None, phase='prepared')
+
+    async def _restore(self, phase: ActiveNativeExecution) -> None:
+        request = self._request
+        if (
+            phase.cache_key != request.cache_key
+            or phase.run_identity != request.run_identity
+            or phase.workspace.identity.branch != request.branch
+            or phase.authority.holder != self._guard.holder
+        ):
+>           raise NativeWriteRefusalError(
+                "The saved writer belongs to another native invocation"
+            )
+E           kodezart.domain.amendment.NativeWriteRefusalError: The saved writer belongs to another native invocation
+E           During task with name 'write' and id 'e73a6c5e-e3db-639c-c54b-d66f8ba95839'
+E           During task with name 'execute' and id '309fd44a-0ff8-df6a-2b11-9b7846874bdb'
+
+src/kodezart/services/native_execution.py:91: NativeWriteRefusalError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 22:19:08 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:19:09 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:19:09 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:19:09 [warning  ] native_writer_workspace_retained workspace_path=/tmp/fake-workspace
+_ test_native_inner_checkpoint_resume_requires_current_checks[missing-check-evaluate] _
+
+barrier = 'evaluate', change = 'missing-check'
+
+    @pytest.mark.parametrize("barrier", ["execute", "evaluate"])
+    @pytest.mark.parametrize(
+        "change", ["changed-check", "state", "missing-check", "outage"]
+    )
+    async def test_native_inner_checkpoint_resume_requires_current_checks(barrier, change):
+        from kodezart.types.domain.workflow import RalphLoopContext
+    
+        port = CountingTracker()
+        source = TrackerCriteria(tracker=port)
+        spec = await source.read_spec(issue_key=SUBJECT)
+        snapshot = await source.read_current(spec=spec)
+        saver = InMemorySaver()
+        original = engine(criteria=source, executor=NativeExecutor([]), real_loop=True)
+        loop = original.implementation._quality_gate
+        graph = loop._build_graph().compile(checkpointer=saver)
+        context = RalphLoopContext(
+            prompt=spec.body,
+            repo_path="/tmp/fire",
+            repo_url=None,
+            cache_key="inner-resume",
+            surface_holder="inner-resume",
+            base_spec=trunk_base("main"),
+            permission_mode=PermissionMode.UNATTENDED,
+            allowed_tools=["Bash"],
+            feature_branch="feature",
+            ralph_branch="ralph",
+            work_base_ref="main",
+            acceptance_criteria=snapshot.criteria,
+            tracker_spec=spec,
+            repo_visibility=RepoVisibility.UNKNOWN,
+        )
+        config = {"configurable": {**context.model_dump(), "thread_id": "inner-resume"}}
+        initial = {
+            "iteration": 0,
+            "verdict": AcceptVerdict.rejected,
+            "pending_failures": [],
+            "iteration_records": [],
+        }
+>       async for _ in graph.astream(initial, config=config, interrupt_before=[barrier]):
+
+tests/chains/test_native_fire.py:997: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:304: in atick
+    await arun_with_retry(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/ralph_loop.py:339: in _execute_node
+    async for event in self._service.stream_workflow(
+src/kodezart/services/agent_service.py:152: in stream_workflow
+    async for event in self._run_in_workspace(
+src/kodezart/services/agent_service.py:236: in _run_in_workspace
+    async for event in execution.stream():
+src/kodezart/services/native_execution.py:261: in stream
+    async for mode, value in graph.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/native_execution.py:85: in _write
+    return {"execution": await self._actions.write(state.execution)}
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/services/native_execution.py:141: in write
+    await self._restore(phase)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.services.native_execution.NativeExecution object at 0x10ec73ef0>
+phase = PreparedNativeExecution(workspace=WorkspaceSnapshot(workspace_path='/tmp/fake-workspace', workspace_id='fixture-worksp...bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', holder='inner-resume'), cache_key='inner-resume', run_identity=None, phase='prepared')
+
+    async def _restore(self, phase: ActiveNativeExecution) -> None:
+        request = self._request
+        if (
+            phase.cache_key != request.cache_key
+            or phase.run_identity != request.run_identity
+            or phase.workspace.identity.branch != request.branch
+            or phase.authority.holder != self._guard.holder
+        ):
+>           raise NativeWriteRefusalError(
+                "The saved writer belongs to another native invocation"
+            )
+E           kodezart.domain.amendment.NativeWriteRefusalError: The saved writer belongs to another native invocation
+E           During task with name 'write' and id '39da8608-4a38-f9df-a4c8-22a8aa73c318'
+E           During task with name 'execute' and id '8de1e744-5574-9974-d9e4-1da29f775ef0'
+
+src/kodezart/services/native_execution.py:91: NativeWriteRefusalError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 22:19:10 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:19:11 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:19:11 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:19:11 [warning  ] native_writer_workspace_retained workspace_path=/tmp/fake-workspace
+_ test_native_inner_checkpoint_resume_requires_current_checks[outage-evaluate] _
+
+barrier = 'evaluate', change = 'outage'
+
+    @pytest.mark.parametrize("barrier", ["execute", "evaluate"])
+    @pytest.mark.parametrize(
+        "change", ["changed-check", "state", "missing-check", "outage"]
+    )
+    async def test_native_inner_checkpoint_resume_requires_current_checks(barrier, change):
+        from kodezart.types.domain.workflow import RalphLoopContext
+    
+        port = CountingTracker()
+        source = TrackerCriteria(tracker=port)
+        spec = await source.read_spec(issue_key=SUBJECT)
+        snapshot = await source.read_current(spec=spec)
+        saver = InMemorySaver()
+        original = engine(criteria=source, executor=NativeExecutor([]), real_loop=True)
+        loop = original.implementation._quality_gate
+        graph = loop._build_graph().compile(checkpointer=saver)
+        context = RalphLoopContext(
+            prompt=spec.body,
+            repo_path="/tmp/fire",
+            repo_url=None,
+            cache_key="inner-resume",
+            surface_holder="inner-resume",
+            base_spec=trunk_base("main"),
+            permission_mode=PermissionMode.UNATTENDED,
+            allowed_tools=["Bash"],
+            feature_branch="feature",
+            ralph_branch="ralph",
+            work_base_ref="main",
+            acceptance_criteria=snapshot.criteria,
+            tracker_spec=spec,
+            repo_visibility=RepoVisibility.UNKNOWN,
+        )
+        config = {"configurable": {**context.model_dump(), "thread_id": "inner-resume"}}
+        initial = {
+            "iteration": 0,
+            "verdict": AcceptVerdict.rejected,
+            "pending_failures": [],
+            "iteration_records": [],
+        }
+>       async for _ in graph.astream(initial, config=config, interrupt_before=[barrier]):
+
+tests/chains/test_native_fire.py:997: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:304: in atick
+    await arun_with_retry(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/ralph_loop.py:339: in _execute_node
+    async for event in self._service.stream_workflow(
+src/kodezart/services/agent_service.py:152: in stream_workflow
+    async for event in self._run_in_workspace(
+src/kodezart/services/agent_service.py:236: in _run_in_workspace
+    async for event in execution.stream():
+src/kodezart/services/native_execution.py:261: in stream
+    async for mode, value in graph.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/native_execution.py:85: in _write
+    return {"execution": await self._actions.write(state.execution)}
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/services/native_execution.py:141: in write
+    await self._restore(phase)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.services.native_execution.NativeExecution object at 0x10e53fb00>
+phase = PreparedNativeExecution(workspace=WorkspaceSnapshot(workspace_path='/tmp/fake-workspace', workspace_id='fixture-worksp...bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', holder='inner-resume'), cache_key='inner-resume', run_identity=None, phase='prepared')
+
+    async def _restore(self, phase: ActiveNativeExecution) -> None:
+        request = self._request
+        if (
+            phase.cache_key != request.cache_key
+            or phase.run_identity != request.run_identity
+            or phase.workspace.identity.branch != request.branch
+            or phase.authority.holder != self._guard.holder
+        ):
+>           raise NativeWriteRefusalError(
+                "The saved writer belongs to another native invocation"
+            )
+E           kodezart.domain.amendment.NativeWriteRefusalError: The saved writer belongs to another native invocation
+E           During task with name 'write' and id 'baa94845-62f4-5633-c310-7b2affec814f'
+E           During task with name 'execute' and id 'e3101353-c050-8c1c-8147-cb2b7be57d1f'
+
+src/kodezart/services/native_execution.py:91: NativeWriteRefusalError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 22:19:12 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:19:12 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:19:12 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:19:12 [warning  ] native_writer_workspace_retained workspace_path=/tmp/fake-workspace
+_____ test_production_constructor_wires_native_source_to_shared_consumers ______
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10ea41d30>
+
+    async def test_production_constructor_wires_native_source_to_shared_consumers(
+        monkeypatch,
+    ):
+        from kodezart.composition.engine import build_workflow_engine
+        from kodezart.core.config import AppConfig
+        from tests.fakes import FakeRefPublisher
+    
+        monkeypatch.setattr(
+            "kodezart.composition.engine.SubprocessGitSourceReader",
+            NativeSourceReader,
+        )
+    
+        port = CountingTracker()
+        source = TrackerCriteria(tracker=port)
+        executor = NativeExecutor([native_evaluation(), native_evaluation()])
+        workspace = FakeWorkspaceProvider()
+        service = AgentService(
+            git_base_url="https://github.com",
+            executor=executor,
+            workspace=workspace,
+            persister=FakeChangePersister(),
+        )
+        artifacts = FakeArtifactPersister()
+        router = build_workflow_engine(
+            operation=native_operation(),
+            scope_tracker=port,
+            config=AppConfig(
+                write_back=WriteBackSettings(max_verify_rounds=2),
+                ticket_review_mode=TicketReviewMode.REVIEWED,
+                max_iterations=1,
+                retry_max_attempts=1,
+                retry_initial_interval=0.1,
+            ),
+            repositories=(),
+            agent_service=service,
+            git=FakeGitService(remote_branch_shas={"main": "b" * 40}),
+            cache=FakeRepoCache(),
+            workspace=workspace,
+            merger=FakeBranchMerger(),
+            artifact_persister=artifacts,
+            ref_publisher=FakeRefPublisher(),
+            prompts=make_prompt_provider(),
+            skills=SUPPRESS_ALL_SKILLS,
+            gate=PassThroughGate(),
+            github_api=None,
+            checkpointer=InMemorySaver(),
+            criteria=source,
+        )
+        monkeypatch.setattr(TicketDraftOutput, "__init__", no_authored_ticket)
+        # Direct fire proves constructor capability. The scope wrapper has its own
+        # production-route tests; only the immutable Git adapter is doubled here.
+        fire = router.arm_for(None).fire
+>       events = await drive(fire, scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/chains/test_native_fire.py:1090: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/chains/test_native_fire.py:294: in drive
+    async for event in fire.run(
+src/kodezart/chains/ralph_workflow.py:139: in run
+    async for event in self._composition(scope).astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/fire_implementation.py:169: in run_ralph_loop
+    last_iteration_event = await self.run_quality_gate(
+src/kodezart/chains/fire_implementation.py:103: in run_quality_gate
+    async for event in self._quality_gate.run(
+src/kodezart/chains/ralph_loop.py:197: in run
+    async for mode, value in self._compiled.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/ralph_loop.py:339: in _execute_node
+    async for event in self._service.stream_workflow(
+src/kodezart/services/agent_service.py:152: in stream_workflow
+    async for event in self._run_in_workspace(
+src/kodezart/services/agent_service.py:236: in _run_in_workspace
+    async for event in execution.stream():
+src/kodezart/services/native_execution.py:261: in stream
+    async for mode, value in graph.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/native_execution.py:85: in _write
+    return {"execution": await self._actions.write(state.execution)}
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/services/native_execution.py:141: in write
+    await self._restore(phase)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.services.native_execution.NativeExecution object at 0x10ea73ad0>
+phase = PreparedNativeExecution(workspace=WorkspaceSnapshot(workspace_path='/tmp/fake-workspace', workspace_id='fixture-worksp...bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', holder='native-fire'), cache_key='native-fire', run_identity=None, phase='prepared')
+
+    async def _restore(self, phase: ActiveNativeExecution) -> None:
+        request = self._request
+        if (
+            phase.cache_key != request.cache_key
+            or phase.run_identity != request.run_identity
+            or phase.workspace.identity.branch != request.branch
+            or phase.authority.holder != self._guard.holder
+        ):
+>           raise NativeWriteRefusalError(
+                "The saved writer belongs to another native invocation"
+            )
+E           kodezart.domain.amendment.NativeWriteRefusalError: The saved writer belongs to another native invocation
+E           During task with name 'write' and id '02cb92d5-c16e-f485-6eb8-ece4f9770a52'
+E           During task with name 'execute' and id 'af53d206-5469-c4ef-1aa3-029200fd0f35'
+E           During task with name 'run_ralph_loop' and id '5fa2edb8-d836-5ffc-2c4d-6df95ca658cc'
+
+src/kodezart/services/native_execution.py:91: NativeWriteRefusalError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 22:19:13 [info     ] repo_visibility_resolved       repo_url=https://github.com/owner/repo.git visibility=unknown
+2026-09-12 22:19:13 [info     ] scope_base_resolved            base_branch=main base_role=None input_count=0
+2026-09-12 22:19:13 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 22:19:13 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 22:19:13 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=branch_name
+2026-09-12 22:19:13 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:19:13 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:19:13 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:19:13 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:19:13 [warning  ] native_writer_workspace_retained workspace_path=/tmp/fake-workspace
+_________ test_native_consumer_without_runtime_reader_refuses[review] __________
+
+consumer = 'review'
+
+    @pytest.mark.parametrize("consumer", ["implementation", "review", "loop"])
+    async def test_native_consumer_without_runtime_reader_refuses(consumer):
+        port = CountingTracker()
+        executor = NativeExecutor([native_evaluation(), native_evaluation()])
+        fire = engine(
+            criteria=TrackerCriteria(tracker=port), executor=executor, real_loop=True
+        )
+        target = {
+            "implementation": fire.implementation,
+            "review": fire.review,
+            "loop": fire.implementation._quality_gate,
+        }[consumer]
+        target._criteria_reader = None
+        with pytest.raises(FireSpecEntryError, match="reader is not configured"):
+>           await drive(fire, scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
+
+tests/chains/test_native_fire.py:1113: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/chains/test_native_fire.py:294: in drive
+    async for event in fire.run(
+src/kodezart/chains/ralph_workflow.py:139: in run
+    async for event in self._composition(scope).astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/fire_implementation.py:169: in run_ralph_loop
+    last_iteration_event = await self.run_quality_gate(
+src/kodezart/chains/fire_implementation.py:103: in run_quality_gate
+    async for event in self._quality_gate.run(
+src/kodezart/chains/ralph_loop.py:197: in run
+    async for mode, value in self._compiled.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/ralph_loop.py:339: in _execute_node
+    async for event in self._service.stream_workflow(
+src/kodezart/services/agent_service.py:152: in stream_workflow
+    async for event in self._run_in_workspace(
+src/kodezart/services/agent_service.py:236: in _run_in_workspace
+    async for event in execution.stream():
+src/kodezart/services/native_execution.py:261: in stream
+    async for mode, value in graph.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/native_execution.py:85: in _write
+    return {"execution": await self._actions.write(state.execution)}
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/services/native_execution.py:141: in write
+    await self._restore(phase)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.services.native_execution.NativeExecution object at 0x10e539370>
+phase = PreparedNativeExecution(workspace=WorkspaceSnapshot(workspace_path='/tmp/fake-workspace', workspace_id='fixture-worksp...bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', holder='native-fire'), cache_key='native-fire', run_identity=None, phase='prepared')
+
+    async def _restore(self, phase: ActiveNativeExecution) -> None:
+        request = self._request
+        if (
+            phase.cache_key != request.cache_key
+            or phase.run_identity != request.run_identity
+            or phase.workspace.identity.branch != request.branch
+            or phase.authority.holder != self._guard.holder
+        ):
+>           raise NativeWriteRefusalError(
+                "The saved writer belongs to another native invocation"
+            )
+E           kodezart.domain.amendment.NativeWriteRefusalError: The saved writer belongs to another native invocation
+E           During task with name 'write' and id 'ce596394-113b-878a-c62a-5036f923bb8c'
+E           During task with name 'execute' and id '4274f9ea-d40a-2291-92cf-808cb8a0fb71'
+E           During task with name 'run_ralph_loop' and id 'a7300f9b-9603-79a3-ff68-fa746eb8b003'
+
+src/kodezart/services/native_execution.py:91: NativeWriteRefusalError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 22:19:14 [info     ] repo_visibility_resolved       repo_url=https://github.com/owner/repo.git visibility=unknown
+2026-09-12 22:19:14 [info     ] scope_base_resolved            base_branch=main base_role=None input_count=0
+2026-09-12 22:19:14 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 22:19:14 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 22:19:14 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=branch_name
+2026-09-12 22:19:14 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:19:14 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:19:14 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:19:14 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:19:14 [warning  ] native_writer_workspace_retained workspace_path=/tmp/fake-workspace
+_____ test_native_remediation_receives_the_final_inner_evaluation_snapshot _____
+
+    async def test_native_remediation_receives_the_final_inner_evaluation_snapshot():
+        port = CountingTracker()
+        executor = NativeExecutor(
+            [
+                native_evaluation(failed=True),
+                native_evaluation(failed=True),
+                native_evaluation(),
+                native_evaluation(),
+            ]
+        )
+        executor.on_evaluation = lambda count: (
+            change_tracker(port, "changed-check") if count == 1 else None
+        )
+        fire = engine(
+            criteria=TrackerCriteria(tracker=port),
+            executor=executor,
+            real_loop=True,
+            max_iterations=2,
+            remediation_rounds=1,
+        )
+>       await drive(fire, scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
+
+tests/chains/test_native_fire.py:1163: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/chains/test_native_fire.py:294: in drive
+    async for event in fire.run(
+src/kodezart/chains/ralph_workflow.py:139: in run
+    async for event in self._composition(scope).astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/fire_implementation.py:169: in run_ralph_loop
+    last_iteration_event = await self.run_quality_gate(
+src/kodezart/chains/fire_implementation.py:103: in run_quality_gate
+    async for event in self._quality_gate.run(
+src/kodezart/chains/ralph_loop.py:197: in run
+    async for mode, value in self._compiled.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/ralph_loop.py:339: in _execute_node
+    async for event in self._service.stream_workflow(
+src/kodezart/services/agent_service.py:152: in stream_workflow
+    async for event in self._run_in_workspace(
+src/kodezart/services/agent_service.py:236: in _run_in_workspace
+    async for event in execution.stream():
+src/kodezart/services/native_execution.py:261: in stream
+    async for mode, value in graph.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:410: in atick
+    _panic_or_proceed(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:520: in _panic_or_proceed
+    raise exc
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/native_execution.py:85: in _write
+    return {"execution": await self._actions.write(state.execution)}
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/services/native_execution.py:141: in write
+    await self._restore(phase)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.services.native_execution.NativeExecution object at 0x10f244860>
+phase = PreparedNativeExecution(workspace=WorkspaceSnapshot(workspace_path='/tmp/fake-workspace', workspace_id='fixture-worksp...bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', holder='native-fire'), cache_key='native-fire', run_identity=None, phase='prepared')
+
+    async def _restore(self, phase: ActiveNativeExecution) -> None:
+        request = self._request
+        if (
+            phase.cache_key != request.cache_key
+            or phase.run_identity != request.run_identity
+            or phase.workspace.identity.branch != request.branch
+            or phase.authority.holder != self._guard.holder
+        ):
+>           raise NativeWriteRefusalError(
+                "The saved writer belongs to another native invocation"
+            )
+E           kodezart.domain.amendment.NativeWriteRefusalError: The saved writer belongs to another native invocation
+E           During task with name 'write' and id 'd4a551e6-e503-02d9-a4af-10e017a990f9'
+E           During task with name 'execute' and id 'edc14f1c-1638-1744-fd43-88780b54ea05'
+E           During task with name 'run_ralph_loop' and id '660335de-b95b-f972-c431-7da2b2275902'
+
+src/kodezart/services/native_execution.py:91: NativeWriteRefusalError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 22:19:15 [info     ] repo_visibility_resolved       repo_url=https://github.com/owner/repo.git visibility=unknown
+2026-09-12 22:19:15 [info     ] scope_base_resolved            base_branch=main base_role=None input_count=0
+2026-09-12 22:19:15 [debug    ] output_format_requested        format_type=json_schema
+2026-09-12 22:19:15 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fake site=branch_name stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 22:19:15 [info     ] outbound_content_gated         categories=[] content_digest=23a116c5a2a543a9ec246e0f2e6a02ffad6700608ccf30ac8590785c69feebf6 failure=None hits=[] surface=publication verdict=clean visibility=unknown writer=branch_name
+2026-09-12 22:19:15 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:19:15 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:19:15 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:19:15 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:19:15 [warning  ] native_writer_workspace_retained workspace_path=/tmp/fake-workspace
+=========================== short test summary info ============================
+FAILED tests/chains/test_native_fire.py::test_native_graph_executes_and_reviews_exact_checks
+FAILED tests/chains/test_native_fire.py::test_native_remediation_refreshes_checks_without_recapturing_subject
+FAILED tests/chains/test_native_fire.py::test_native_remediation_cannot_bypass_tracker_revalidation[missing-check]
+FAILED tests/chains/test_native_fire.py::test_native_remediation_cannot_bypass_tracker_revalidation[outage]
+FAILED tests/chains/test_native_fire.py::test_native_inner_iterations_read_current_checks[changed-check]
+FAILED tests/chains/test_native_fire.py::test_native_inner_iterations_read_current_checks[state]
+FAILED tests/chains/test_native_fire.py::test_native_inner_iterations_read_current_checks[missing-check]
+FAILED tests/chains/test_native_fire.py::test_native_inner_iterations_read_current_checks[outage]
+FAILED tests/chains/test_native_fire.py::test_native_fresh_engine_resume_reads_current_checks[changed-check-run_ralph_loop]
+FAILED tests/chains/test_native_fire.py::test_native_fresh_engine_resume_reads_current_checks[changed-check-review_against_ticket]
+FAILED tests/chains/test_native_fire.py::test_native_fresh_engine_resume_reads_current_checks[state-run_ralph_loop]
+FAILED tests/chains/test_native_fire.py::test_native_fresh_engine_resume_reads_current_checks[state-review_against_ticket]
+FAILED tests/chains/test_native_fire.py::test_native_fresh_engine_resume_reads_current_checks[missing-check-review_against_ticket]
+FAILED tests/chains/test_native_fire.py::test_native_fresh_engine_resume_reads_current_checks[outage-review_against_ticket]
+FAILED tests/chains/test_native_fire.py::test_native_inner_checkpoint_resume_requires_current_checks[changed-check-execute]
+FAILED tests/chains/test_native_fire.py::test_native_inner_checkpoint_resume_requires_current_checks[changed-check-evaluate]
+FAILED tests/chains/test_native_fire.py::test_native_inner_checkpoint_resume_requires_current_checks[state-execute]
+FAILED tests/chains/test_native_fire.py::test_native_inner_checkpoint_resume_requires_current_checks[state-evaluate]
+FAILED tests/chains/test_native_fire.py::test_native_inner_checkpoint_resume_requires_current_checks[missing-check-evaluate]
+FAILED tests/chains/test_native_fire.py::test_native_inner_checkpoint_resume_requires_current_checks[outage-evaluate]
+FAILED tests/chains/test_native_fire.py::test_production_constructor_wires_native_source_to_shared_consumers
+FAILED tests/chains/test_native_fire.py::test_native_consumer_without_runtime_reader_refuses[review]
+FAILED tests/chains/test_native_fire.py::test_native_remediation_receives_the_final_inner_evaluation_snapshot
+23 failed, 120 passed in 34.39s

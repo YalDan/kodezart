@@ -1,0 +1,173 @@
+..F
+=================================== FAILURES ===================================
+__ test_cancelled_incomplete_writer_releases_and_saved_parent_refuses_restart __
+
+repository = (PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1963/test_cancelled_incomplete_writ0/repo'), '3a0b3ca703556cd8387a7bc3fe7f02f88088d8c1')
+
+    async def test_cancelled_incomplete_writer_releases_and_saved_parent_refuses_restart(
+        repository,
+    ):
+        import asyncio
+        from pathlib import Path
+    
+        from kodezart.domain.amendment import NativeWriteRefusalError
+        from kodezart.types.domain.native_execution import PreparedNativeExecution
+    
+        async def cancel_writer(title, payload, kwargs):
+            if title == "NativeWriterOutput":
+                raise asyncio.CancelledError("incomplete original writer")
+    
+        port, saver = tracker(), InMemorySaver()
+        executor = Executor(claim=False, mutate=cancel_writer)
+        fire, workspace, _spec, config = await prepared_parent(
+            repository, executor, port, saver
+        )
+        with pytest.raises(asyncio.CancelledError):
+>           await fire.native_graph.ainvoke(None, config=config)
+
+tests/chains/test_native_parent_resume.py:645: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:3184: in ainvoke
+    async for chunk in self.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:304: in atick
+    await arun_with_retry(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/core/retry.py:109: in guarded
+    return await node(state, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/fire_implementation.py:169: in run_ralph_loop
+    last_iteration_event = await self.run_quality_gate(
+src/kodezart/chains/fire_implementation.py:103: in run_quality_gate
+    async for event in self._quality_gate.run(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.chains.ralph_loop.RalphLoop object at 0x10d3bf710>
+
+    async def run(
+        self,
+        *,
+        prompt: str,
+        repo_path: str | None,
+        repo_url: str | None,
+        feature_branch: str,
+        ralph_branch: str,
+        base_spec: BaseSpec,
+        work_base_ref: str,
+        permission_mode: PermissionMode,
+        allowed_tools: AllowedTools,
+        acceptance_criteria: list[ExecutionCriterion],
+        tracker_spec: TrackerSpec | None = None,
+        cache_key: str,
+        run_identity: RunIdentity | None = None,
+        surface_holder: str | None = None,
+        repo_visibility: RepoVisibility,
+    ) -> AsyncIterator[AgentEvent]:
+        """Execute the quality-gating loop.
+    
+        Build ``RalphLoopContext`` from parameters, configure thread ID for
+        checkpointing, and stream events from the compiled LangGraph graph.
+        """
+        ctx = RalphLoopContext(
+            prompt=prompt,
+            repo_path=repo_path,
+            repo_url=repo_url,
+            cache_key=cache_key,
+            run_identity=run_identity,
+            surface_holder=surface_holder,
+            base_spec=base_spec,
+            permission_mode=permission_mode,
+            allowed_tools=allowed_tools,
+            feature_branch=feature_branch,
+            ralph_branch=ralph_branch,
+            work_base_ref=work_base_ref,
+            acceptance_criteria=acceptance_criteria,
+            tracker_spec=tracker_spec,
+            repo_visibility=repo_visibility,
+        )
+        configurable: dict[str, object] = ctx.model_dump()
+        if self._checkpointer is not None:
+            configurable["thread_id"] = ralph_thread_id(cache_key)
+    
+        config: RunnableConfig = (
+            {"configurable": configurable}
+            if tracker_spec is None
+            else patch_config(None, configurable=configurable)
+        )
+    
+        initial_state: RalphLoopState = {
+            "iteration": 0,
+            "verdict": AcceptVerdict.rejected,
+            "pending_failures": [],
+            "iteration_records": [],
+            "outcome": PendingRalphOutcome(),
+        }
+    
+        # Native nested invocation retains the framework's parent-task namespace
+        # and resume signal. A new authored invocation keeps its existing config.
+        # Values carry the actual completed consumer receipt when a saved child
+        # has no nodes left to run (and consequently emits no fresh custom event).
+        outcome: RalphOutcome = PendingRalphOutcome()
+        forwarded: WorkflowIterationEvent | NativeAmendmentEvent | None = None
+        async for mode, value in self._compiled.astream(
+            initial_state,
+            config=config,
+            stream_mode=["custom", "values"],
+        ):
+            if mode == "custom":
+                if not isinstance(value, AgentEvent):
+                    raise TypeError("Ralph custom output requires an actual AgentEvent")
+                if isinstance(value, (WorkflowIterationEvent, NativeAmendmentEvent)):
+                    forwarded = value
+                yield value
+            elif tracker_spec is not None:
+                if not isinstance(value, dict):
+                    raise TypeError("Ralph values output requires a state mapping")
+                try:
+                    outcome = TypeAdapter(RalphOutcome).validate_python(
+                        value.get("outcome")
+                    )
+                except ValidationError as exc:
+                    raise NativeWriteRefusalError(
+                        "The native checkpoint has no valid completed-loop receipt"
+                    ) from exc
+        if tracker_spec is not None:
+            current = await current_native_criteria(
+                spec=tracker_spec, reader=self._criteria_reader
+            )
+            if isinstance(outcome, (PendingRalphOutcome, EvaluatedRalphOutcome)):
+>               raise NativeWriteRefusalError(
+                    "The native loop has no completed outcome"
+                )
+E               kodezart.domain.amendment.NativeWriteRefusalError: The native loop has no completed outcome
+E               During task with name 'run_ralph_loop' and id '35aa30b2-8ab0-9d95-3f56-acf0692c23d5'
+
+src/kodezart/chains/ralph_loop.py:224: NativeWriteRefusalError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 22:48:18 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:48:18 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:48:19 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:48:19 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:48:19 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-aa3aa82583444574a665bc70bc1dce8b workspace_id=aa3aa82583444574a665bc70bc1dce8b
+2026-09-12 22:48:20 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:48:24 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 22:48:26 [warning  ] workspace_release_unclean      branch_name=native-loop path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-aa3aa82583444574a665bc70bc1dce8b workspace_id=aa3aa82583444574a665bc70bc1dce8b
+2026-09-12 22:48:26 [info     ] workspace_released             workspace_id=aa3aa82583444574a665bc70bc1dce8b
+2026-09-12 22:48:26 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+------------------------------ Captured log call -------------------------------
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.fire_spec.TrackerSpec from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.fire_spec', 'TrackerSpec')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.criteria.TrackerCriterionSet from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.criteria', 'TrackerCriterionSet')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.gating.RepoVisibility from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.gating', 'RepoVisibility')]
+=========================== short test summary info ============================
+FAILED tests/chains/test_native_parent_resume.py::test_cancelled_incomplete_writer_releases_and_saved_parent_refuses_restart
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed, 2 passed in 34.39s

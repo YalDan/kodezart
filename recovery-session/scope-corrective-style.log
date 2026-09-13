@@ -1,0 +1,13 @@
+E501 Line too long (91 > 88)
+   --> tests/integration/test_scope_runtime.py:677:89
+    |
+675 |             lane_key="A", event=LaneDeliveryEvent(delivery=phase)
+676 |         )
+677 |         assert ScopeLaneEvent.model_validate_json(addressed.model_dump_json()) == addressed
+    |                                                                                         ^^^
+678 |         lane = harness.engine._scoped_arm._lane_for(origin)
+679 |         final = await lane.graph.aget_state(checkpoint_config())
+    |
+
+Found 3 errors (2 fixed, 1 remaining).
+2 files reformatted, 4 files left unchanged

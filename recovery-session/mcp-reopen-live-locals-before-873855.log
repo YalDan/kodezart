@@ -1,0 +1,658 @@
+FF.                                                                      [100%]
+=================================== FAILURES ===================================
+___________ test_reopen_does_not_render_live_failure_locals[default] ___________
+
+logging_mode = 'default'
+
+    @pytest.mark.parametrize("logging_mode", ["default", "pretty", "json"])
+    async def test_reopen_does_not_render_live_failure_locals(logging_mode):
+        loop = asyncio.get_running_loop()
+        entered = asyncio.Event()
+        release = threading.Event()
+        repr_calls = []
+    
+        class ExternalServer(_FakeStreamableServer):
+            def __repr__(self):
+                repr_calls.append(threading.get_ident())
+                loop.call_soon_threadsafe(entered.set)
+                release.wait(timeout=_HANG_CEILING_SECONDS)
+                return "external-live-native-server"
+    
+        server = ExternalServer(on_call=_CallBehaviour.DROPS_ONCE)
+        chain = (
+            nullcontext()
+            if logging_mode == "default"
+            else configured_chain(pretty=logging_mode == "pretty")
+        )
+        first = None
+        waiting = None
+        evidence = {}
+        with chain:
+            caller = caller_fixture(client_factory=client_over(server.transport))
+            await caller.open()
+            try:
+                with pytest.raises(McpCallUnansweredError):
+                    await caller.call_tool(name="get_issue", arguments={})
+                first = asyncio.create_task(
+                    caller.call_tool(name="get_issue", arguments={})
+                )
+                waiting = asyncio.create_task(entered.wait())
+                async with asyncio.timeout(_HANG_CEILING_SECONDS):
+                    await asyncio.wait(
+                        {first, waiting}, return_when=asyncio.FIRST_COMPLETED
+                    )
+                if entered.is_set():
+                    # The external object's repr is held in the logging worker.
+                    # Inspect the real host/reopen chain before letting it finish.
+                    evidence = {
+                        "initialize_count": server.requests.count("initialize"),
+                        "reopen": awaited_names(first),
+                        "tasks": [awaited_names(task) for task in asyncio.all_tasks()],
+                    }
+                    assert not first.done()
+                    assert server.requests.count("initialize") == 1
+                release.set()
+                async with asyncio.timeout(_HANG_CEILING_SECONDS):
+                    assert await first == {"id": "K-1"}
+                assert server.requests.count("initialize") == 2
+                assert server.calls == ["tools/call", "tools/call"]
+            finally:
+                release.set()
+                if waiting is not None:
+                    waiting.cancel()
+                    await asyncio.gather(waiting, return_exceptions=True)
+                if first is not None:
+                    await asyncio.gather(first, return_exceptions=True)
+                await caller.close()
+>       assert repr_calls == [], evidence
+E       AssertionError: {'initialize_count': 1, 'reopen': ['call_tool', 'call_tool', '_call_on_a_reopened_session', '_reopen', '_discard_host'...ssion', 'ameth'], ['call_tool', 'call_tool', '_call_on_a_reopened_session', '_reopen', '_discard_host', '_join', ...]]}
+E       assert [6139441152] == []
+E         
+E         Left contains one more item: 6139441152
+E         Use -v to get more diff
+
+tests/adapters/test_mcp_reopen_logging_independent.py:91: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 23:07:57 [info     ] mcp_session_opened             address=https://mcp.invalid/mcp server_name=fixture-server
+2026-09-12 23:07:57 [error    ] mcp_session_ended              server_name=fixture-server
+╭───────────────────── [1mTraceback [0m[1;2m(most recent call last)[0m ──────────────────────╮
+│ [2m/private/tmp/kodezart-v03-mcp-reopen-diagnosis/src/kodezart/adapters/[0m[1mhosted_[0m │
+│ [1mmcp_session.py[0m:701 in _host_session                                          │
+│                                                                              │
+│   [2m698 [0m[2m│   │   [0mbut the garbage collector.                                     │
+│   [2m699 [0m[2m│   │   [0m"""                                                            │
+│   [2m700 [0m[2m│   │   [0mtry:                                                           │
+│ ❱ 701 [2m│   │   │   [0masync with posted, self._transport.session() as session:   │
+│   [2m702 [0m[2m│   │   │   │   [0mif not self._is_current(generation):                   │
+│   [2m703 [0m[2m│   │   │   │   │   [0mreturn                                             │
+│   [2m704 [0m[2m│   │   │   │   [0mself._phase = _Phase.SERVING                           │
+│                                                                              │
+│ ╭───────────────────────────────── locals ─────────────────────────────────╮ │
+│ │        [3mexc[0m = [1mExceptionGroup[0m[1m([0m'unhandled errors in a TaskGroup',           │ │
+│ │              [1m[[0m[1mReadError[0m[1m([0m'the server dropped the stream mid-call'[1m)[0m[1m][0m[1m)[0m      │ │
+│ │ [3mgeneration[0m = [1m1[0m                                                           │ │
+│ │     [3mposted[0m = [1mMemoryObjectReceiveStream[0m[1m([0m                                  │ │
+│ │              [2m│   [0m_state=[1m_MemoryObjectStreamState[0m[1m([0m                        │ │
+│ │              [2m│   │   [0mmax_buffer_size=inf,                                │ │
+│ │              [2m│   │   [0mbuffer=[1mdeque[0m[1m([0m[1m)[0m,                                     │ │
+│ │              [2m│   │   [0mopen_send_channels=[1m0[0m,                               │ │
+│ │              [2m│   │   [0mopen_receive_channels=[1m0[0m,                            │ │
+│ │              [2m│   │   [0mwaiting_receivers=[1mOrderedDict[0m[1m([0m[1m)[0m,                    │ │
+│ │              [2m│   │   [0mwaiting_senders=[1mOrderedDict[0m[1m([0m[1m)[0m                       │ │
+│ │              [2m│   [0m[1m)[0m,                                                      │ │
+│ │              [2m│   [0m_closed=[3mTrue[0m                                            │ │
+│ │              [1m)[0m                                                           │ │
+│ │      [3mready[0m = [1m<[0m[1mFuture[0m finished result=[3mNone[0m[1m>[0m                               │ │
+│ │       [3mself[0m = [1m<[0m[1mkodezart.adapters.hosted_mcp_session.HostedMcpSession[0m      │ │
+│ │              object at [1m0x10cccac60[0m[1m>[0m                                      │ │
+│ │    [3msession[0m = [1m<[0m[1mmcp.client.session.ClientSession[0m object at [1m0x10ccc9ca0[0m[1m>[0m    │ │
+│ ╰──────────────────────────────────────────────────────────────────────────╯ │
+│                                                                              │
+│ [2m/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/li[0m │
+│ [2mb/python3.12/[0m[1mcontextlib.py[0m:231 in __aexit__                                  │
+│                                                                              │
+│   [2m228 [0m[2m│   │   │   │   [0m[2m# tell if we get the same exception back[0m               │
+│   [2m229 [0m[2m│   │   │   │   [0mvalue = typ()                                          │
+│   [2m230 [0m[2m│   │   │   [0mtry:                                                       │
+│ ❱ 231 [2m│   │   │   │   [0mawait self.gen.athrow(value)                           │
+│   [2m232 [0m[2m│   │   │   [0mexcept StopAsyncIteration as exc:                          │
+│   [2m233 [0m[2m│   │   │   │   [0m[2m# Suppress StopIteration *unless* it's the same except[0m │
+│   [2m234 [0m[2m│   │   │   │   [0m[2m# was passed to throw().  This prevents a StopIteratio[0m │
+│                                                                              │
+│ ╭───────────────────────────────── locals ─────────────────────────────────╮ │
+│ │      [3mself[0m = [1m<[0m[1mcontextlib._AsyncGeneratorContextManager[0m object at          │ │
+│ │             [1m0x10cccabd0[0m[1m>[0m                                                 │ │
+│ │ [3mtraceback[0m = [1m<[0m[1mtraceback[0m object at [1m0x10d0103c0[0m[1m>[0m                            │ │
+│ │     [3mvalue[0m = [1mCancelledError[0m[1m([0m'Cancelled via cancel scope 10ccca5d0'[1m)[0m       │ │
+│ ╰──────────────────────────────────────────────────────────────────────────╯ │
+│                                                                              │
+│ [2m/private/tmp/kodezart-v03-mcp-reopen-diagnosis/src/kodezart/adapters/[0m[1mhttp_mc[0m │
+│ [1mp_tool_caller.py[0m:236 in session                                              │
+│                                                                              │
+│   [2m233 [0m[2m│   │   [0mself._last_error_status = None                                 │
+│   [2m234 [0m[2m│   │   [0masync with (                                                   │
+│   [2m235 [0m[2m│   │   │   [0mclient,                                                    │
+│ ❱ 236 [2m│   │   │   [0m[1;4mstreamable_http_client([0m[1;4mself[0m[1;4m._url, http_client=client)[0m as ( │
+│   [2m237 [0m[2m│   │   │   [0mClientSession(                                             │
+│   [2m238 [0m[2m│   │   │   │   [0mread,                                                  │
+│   [2m239 [0m[2m│   │   │   │   [0mwrite,                                                 │
+│                                                                              │
+│ ╭───────────────────────────────── locals ─────────────────────────────────╮ │
+│ │       [3m_[0m = [1m<[0m[1mbound[0m method StreamableHTTPTransport.get_session_id of        │ │
+│ │           <mcp.client.streamable_http.StreamableHTTPTransport object at  │ │
+│ │           [1m0x10ccca4b0[0m>[1m>[0m                                                  │ │
+│ │  [3mclient[0m = [1m<[0m[1mhttpx.AsyncClient[0m object at [1m0x10ccca9c0[0m[1m>[0m                      │ │
+│ │    [3mread[0m = [1mMemoryObjectReceiveStream[0m[1m([0m                                     │ │
+│ │           [2m│   [0m_state=[1m_MemoryObjectStreamState[0m[1m([0m                           │ │
+│ │           [2m│   │   [0mmax_buffer_size=[1m0[0m,                                     │ │
+│ │           [2m│   │   [0mbuffer=[1mdeque[0m[1m([0m[1m)[0m,                                        │ │
+│ │           [2m│   │   [0mopen_send_channels=[1m0[0m,                                  │ │
+│ │           [2m│   │   [0mopen_receive_channels=[1m0[0m,                               │ │
+│ │           [2m│   │   [0mwaiting_receivers=[1mOrderedDict[0m[1m([0m[1m)[0m,                       │ │
+│ │           [2m│   │   [0mwaiting_senders=[1mOrderedDict[0m[1m([0m[1m)[0m                          │ │
+│ │           [2m│   [0m[1m)[0m,                                                         │ │
+│ │           [2m│   [0m_closed=[3mTrue[0m                                               │ │
+│ │           [1m)[0m                                                              │ │
+│ │    [3mself[0m = [1m<[0m[1mkodezart.adapters.http_mcp_tool_caller._RemoteServer[0m object   │ │
+│ │           at [1m0x10cccaa80[0m[1m>[0m                                                │ │
+│ │ [3msession[0m = [1m<[0m[1mmcp.client.session.ClientSession[0m object at [1m0x10ccc9ca0[0m[1m>[0m       │ │
+│ │   [3mwrite[0m = [1mMemoryObjectSendStream[0m[1m([0m                                        │ │
+│ │           [2m│   [0m_state=[1m_MemoryObjectStreamState[0m[1m([0m                           │ │
+│ │           [2m│   │   [0mmax_buffer_size=[1m0[0m,                                     │ │
+│ │           [2m│   │   [0mbuffer=[1mdeque[0m[1m([0m[1m)[0m,                                        │ │
+│ │           [2m│   │   [0mopen_send_channels=[1m0[0m,                                  │ │
+│ │           [2m│   │   [0mopen_receive_channels=[1m0[0m,                               │ │
+│ │           [2m│   │   [0mwaiting_receivers=[1mOrderedDict[0m[1m([0m[1m)[0m,                       │ │
+│ │           [2m│   │   [0mwaiting_senders=[1mOrderedDict[0m[1m([0m[1m)[0m                          │ │
+│ │           [2m│   [0m[1m)[0m,                                                         │ │
+│ │           [2m│   [0m_closed=[3mTrue[0m                                               │ │
+│ │           [1m)[0m                                                              │ │
+│ ╰──────────────────────────────────────────────────────────────────────────╯ │
+│                                                                              │
+│ [2m/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/li[0m │
+│ [2mb/python3.12/[0m[1mcontextlib.py[0m:231 in __aexit__                                  │
+│                                                                              │
+│   [2m228 [0m[2m│   │   │   │   [0m[2m# tell if we get the same exception back[0m               │
+│   [2m229 [0m[2m│   │   │   │   [0mvalue = typ()                                          │
+│   [2m230 [0m[2m│   │   │   [0mtry:                                                       │
+│ ❱ 231 [2m│   │   │   │   [0mawait self.gen.athrow(value)                           │
+│   [2m232 [0m[2m│   │   │   [0mexcept StopAsyncIteration as exc:                          │
+│   [2m233 [0m[2m│   │   │   │   [0m[2m# Suppress StopIteration *unless* it's the same except[0m │
+│   [2m234 [0m[2m│   │   │   │   [0m[2m# was passed to throw().  This prevents a StopIteratio[0m │
+│                                                                              │
+│ ╭───────────────────────────────── locals ─────────────────────────────────╮ │
+│ │      [3mself[0m = [1m<[0m[1mcontextlib._AsyncGeneratorContextManager[0m object at          │ │
+│ │             [1m0x10ccca8a0[0m[1m>[0m                                                 │ │
+│ │ [3mtraceback[0m = [1m<[0m[1mtraceback[0m object at [1m0x10d010440[0m[1m>[0m                            │ │
+│ │     [3mvalue[0m = [1mCancelledError[0m[1m([0m'Cancelled via cancel scope 10ccca5d0'[1m)[0m       │ │
+│ ╰──────────────────────────────────────────────────────────────────────────╯ │
+│                                                                              │
+│ [2m/private/tmp/kodezart-v03-mcp-reopen-diagnosis/.venv/lib/python3.12/site-pac[0m │
+│ [2mkages/mcp/client/[0m[1mstreamable_http.py[0m:647 in streamable_http_client            │
+│                                                                              │
+│   [2m644 [0m[2m│   [0m                                                                   │
+│   [2m645 [0m[2m│   [0mtransport = StreamableHTTPTransport(url)                           │
+│   [2m646 [0m[2m│   [0m                                                                   │
+│ ❱ 647 [2m│   [0masync with [1;4manyio.create_task_group()[0m as tg:                        │
+│   [2m648 [0m[2m│   │   [0mtry:                                                           │
+│   [2m649 [0m[2m│   │   │   [0mlogger.debug(f"Connecting to StreamableHTTP endpoint: {url │
+│   [2m650 [0m                                                                       │
+│                                                                              │
+│ ╭───────────────────────────────── locals ─────────────────────────────────╮ │
+│ │              [3mclient[0m = [1m<[0m[1mhttpx.AsyncClient[0m object at [1m0x10ccca9c0[0m[1m>[0m          │ │
+│ │     [3mclient_provided[0m = [3mTrue[0m                                               │ │
+│ │         [3mhttp_client[0m = [1m<[0m[1mhttpx.AsyncClient[0m object at [1m0x10ccca9c0[0m[1m>[0m          │ │
+│ │         [3mread_stream[0m = [1mMemoryObjectReceiveStream[0m[1m([0m                         │ │
+│ │                       [2m│   [0m_state=[1m_MemoryObjectStreamState[0m[1m([0m               │ │
+│ │                       [2m│   │   [0mmax_buffer_size=[1m0[0m,                         │ │
+│ │                       [2m│   │   [0mbuffer=[1mdeque[0m[1m([0m[1m)[0m,                            │ │
+│ │                       [2m│   │   [0mopen_send_channels=[1m0[0m,                      │ │
+│ │                       [2m│   │   [0mopen_receive_channels=[1m0[0m,                   │ │
+│ │                       [2m│   │   [0mwaiting_receivers=[1mOrderedDict[0m[1m([0m[1m)[0m,           │ │
+│ │                       [2m│   │   [0mwaiting_senders=[1mOrderedDict[0m[1m([0m[1m)[0m              │ │
+│ │                       [2m│   [0m[1m)[0m,                                             │ │
+│ │                       [2m│   [0m_closed=[3mTrue[0m                                   │ │
+│ │                       [1m)[0m                                                  │ │
+│ │  [3mread_stream_writer[0m = [1mMemoryObjectSendStream[0m[1m([0m                            │ │
+│ │                       [2m│   [0m_state=[1m_MemoryObjectStreamState[0m[1m([0m               │ │
+│ │                       [2m│   │   [0mmax_buffer_size=[1m0[0m,                         │ │
+│ │                       [2m│   │   [0mbuffer=[1mdeque[0m[1m([0m[1m)[0m,                            │ │
+│ │                       [2m│   │   [0mopen_send_channels=[1m0[0m,                      │ │
+│ │                       [2m│   │   [0mopen_receive_channels=[1m0[0m,                   │ │
+│ │                       [2m│   │   [0mwaiting_receivers=[1mOrderedDict[0m[1m([0m[1m)[0m,           │ │
+│ │                       [2m│   │   [0mwaiting_senders=[1mOrderedDict[0m[1m([0m[1m)[0m              │ │
+│ │                       [2m│   [0m[1m)[0m,                                             │ │
+│ │                       [2m│   [0m_closed=[3mTrue[0m                                   │ │
+│ │                       [1m)[0m                                                  │ │
+│ │               [3mstack[0m = [1m<[0m[1mcontextlib.AsyncExitStack[0m object at [1m0x10ccca660[0m[1m>[0m  │ │
+│ │  [3mterminate_on_close[0m = [3mTrue[0m                                               │ │
+│ │                  [3mtg[0m = [1m<[0m[1manyio._backends._asyncio.TaskGroup[0m object at      │ │
+│ │                       [1m0x10ccca510[0m[1m>[0m                                       │ │
+│ │           [3mtransport[0m = [1m<[0m[1mmcp.client.streamable_http.StreamableHTTPTranspo…[0m │ │
+│ │                       object at [1m0x10ccca4b0[0m[1m>[0m                             │ │
+│ │                 [3murl[0m = 'https://mcp.invalid/mcp'                          │ │
+│ │        [3mwrite_stream[0m = [1mMemoryObjectSendStream[0m[1m([0m                            │ │
+│ │                       [2m│   [0m_state=[1m_MemoryObjectStreamState[0m[1m([0m               │ │
+│ │                       [2m│   │   [0mmax_buffer_size=[1m0[0m,                         │ │
+│ │                       [2m│   │   [0mbuffer=[1mdeque[0m[1m([0m[1m)[0m,                            │ │
+│ │                       [2m│   │   [0mopen_send_channels=[1m0[0m,                      │ │
+│ │                       [2m│   │   [0mopen_receive_channels=[1m0[0m,                   │ │
+│ │                       [2m│   │   [0mwaiting_receivers=[1mOrderedDict[0m[1m([0m[1m)[0m,           │ │
+│ │                       [2m│   │   [0mwaiting_senders=[1mOrderedDict[0m[1m([0m[1m)[0m              │ │
+│ │                       [2m│   [0m[1m)[0m,                                             │ │
+│ │                       [2m│   [0m_closed=[3mTrue[0m                                   │ │
+│ │                       [1m)[0m                                                  │ │
+│ │ [3mwrite_stream_reader[0m = [1mMemoryObjectReceiveStream[0m[1m([0m                         │ │
+│ │                       [2m│   [0m_state=[1m_MemoryObjectStreamState[0m[1m([0m               │ │
+│ │                       [2m│   │   [0mmax_buffer_size=[1m0[0m,                         │ │
+│ │                       [2m│   │   [0mbuffer=[1mdeque[0m[1m([0m[1m)[0m,                            │ │
+│ │                       [2m│   │   [0mopen_send_channels=[1m0[0m,                      │ │
+│ │                       [2m│   │   [0mopen_receive_channels=[1m0[0m,                   │ │
+│ │                       [2m│   │   [0mwaiting_receivers=[1mOrderedDict[0m[1m([0m[1m)[0m,           │ │
+│ │                       [2m│   │   [0mwaiting_senders=[1mOrderedDict[0m[1m([0m[1m)[0m              │ │
+│ │                       [2m│   [0m[1m)[0m,                                             │ │
+│ │                       [2m│   [0m_closed=[3mTrue[0m                                   │ │
+│ │                       [1m)[0m                                                  │ │
+│ ╰──────────────────────────────────────────────────────────────────────────╯ │
+│                                                                              │
+│ [2m/private/tmp/kodezart-v03-mcp-reopen-diagnosis/.venv/lib/python3.12/site-pac[0m │
+│ [2mkages/anyio/_backends/[0m[1m_asyncio.py[0m:783 in __aexit__                           │
+│                                                                              │
+│   [2m 780 [0m[2m│   │   │   │   │   [0m[2m# added to self._exceptions so it's ok to break e[0m │
+│   [2m 781 [0m[2m│   │   │   │   │   [0m[2m# chaining and avoid adding a "During handling of[0m │
+│   [2m 782 [0m[2m│   │   │   │   │   [0m[2m# for each nesting level.[0m                         │
+│ ❱  783 [2m│   │   │   │   │   [0mraise BaseExceptionGroup(                         │
+│   [2m 784 [0m[2m│   │   │   │   │   │   [0m"unhandled errors in a TaskGroup", self._exce │
+│   [2m 785 [0m[2m│   │   │   │   │   [0m) from None                                       │
+│   [2m 786 [0m[2m│   │   │   │   [0melif exc_val:                                         │
+│                                                                              │
+│ ╭─────────────────────────────── locals ────────────────────────────────╮    │
+│ │ [3mloop[0m = [1m<[0m[1m_UnixSelectorEventLoop[0m running=[3mTrue[0m closed=[3mFalse[0m debug=[3mFalse[0m[1m>[0m │    │
+│ │ [3mself[0m = [1m<[0m[1manyio._backends._asyncio.TaskGroup[0m object at [1m0x10ccca510[0m[1m>[0m     │    │
+│ ╰───────────────────────────────────────────────────────────────────────╯    │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[1mExceptionGroup: [0munhandled errors in a TaskGroup [1m([0m[1m1[0m sub-exception[1m)[0m
+
+╭────────────────────────────── Sub-exception #1 ──────────────────────────────╮
+│ ╭─────────────────── [1mTraceback [0m[1;2m(most recent call last)[0m ────────────────────╮ │
+│ │ [2m/private/tmp/kodezart-v03-mcp-reopen-diagnosis/.venv/lib/python3.12/site[0m │ │
+│ │ [2m-packages/mcp/client/[0m[1mstreamable_http.py[0m:565 in handle_request_async      │ │
+│ │                                                                          │ │
+│ │   [2m562 [0m[2m│   │   │   │   │   │   [0mif is_resumption:                          │ │
+│ │   [2m563 [0m[2m│   │   │   │   │   │   │   [0mawait self._handle_resumption_request( │ │
+│ │   [2m564 [0m[2m│   │   │   │   │   │   [0melse:                                      │ │
+│ │ ❱ 565 [2m│   │   │   │   │   │   │   [0m[1;4mawait[0m[1;4m [0m[1;4mself[0m[1;4m._handle_post_request(ctx)[0m   │ │
+│ │   [2m566 [0m[2m│   │   │   │   │   [0m                                               │ │
+│ │   [2m567 [0m[2m│   │   │   │   │   [0m[2m# If this is a request, start a new task to ha[0m │ │
+│ │   [2m568 [0m[2m│   │   │   │   │   [0mif isinstance(message.root, JSONRPCRequest):   │ │
+│ │                                                                          │ │
+│ │ ╭─────────────────────────────── locals ───────────────────────────────╮ │ │
+│ │ │           [3mctx[0m = [1mRequestContext[0m[1m([0m                                      │ │ │
+│ │ │                 [2m│   [0mclient=[1m<[0m[1mhttpx.AsyncClient[0m object at              │ │ │
+│ │ │                 [1m0x10ccca9c0[0m[1m>[0m,                                        │ │ │
+│ │ │                 [2m│   [0msession_id=[3mNone[0m,                                 │ │ │
+│ │ │                 [2m│   [0msession_message=[1mSessionMessage[0m[1m([0m                  │ │ │
+│ │ │                 [2m│   │   [0mmessage=[1mJSONRPCMessage[0m[1m([0m                      │ │ │
+│ │ │                 [2m│   │   │   [0mroot=[1mJSONRPCRequest[0m[1m([0m                     │ │ │
+│ │ │                 [2m│   │   │   │   [0mmethod='tools/call',                 │ │ │
+│ │ │                 [2m│   │   │   │   [0mparams=[1m{[0m                             │ │ │
+│ │ │                 [2m│   │   │   │   │   [0m'name': 'get_issue',             │ │ │
+│ │ │                 [2m│   │   │   │   │   [0m'arguments': [1m{[0m[1m}[0m                  │ │ │
+│ │ │                 [2m│   │   │   │   [0m[1m}[0m,                                   │ │ │
+│ │ │                 [2m│   │   │   │   [0mjsonrpc='2.0',                       │ │ │
+│ │ │                 [2m│   │   │   │   [0mid=[1m1[0m                                 │ │ │
+│ │ │                 [2m│   │   │   [0m[1m)[0m                                        │ │ │
+│ │ │                 [2m│   │   [0m[1m)[0m,                                           │ │ │
+│ │ │                 [2m│   │   [0mmetadata=[3mNone[0m                                │ │ │
+│ │ │                 [2m│   [0m[1m)[0m,                                               │ │ │
+│ │ │                 [2m│   [0mmetadata=[3mNone[0m,                                   │ │ │
+│ │ │                 [2m│   [0mread_stream_writer=[1mMemoryObjectSendStream[0m[1m([0m       │ │ │
+│ │ │                 [2m│   │   [0m_state=[1m_MemoryObjectStreamState[0m[1m([0m             │ │ │
+│ │ │                 [2m│   │   │   [0mmax_buffer_size=[1m0[0m,                       │ │ │
+│ │ │                 [2m│   │   │   [0mbuffer=[1mdeque[0m[1m([0m[1m)[0m,                          │ │ │
+│ │ │                 [2m│   │   │   [0mopen_send_channels=[1m0[0m,                    │ │ │
+│ │ │                 [2m│   │   │   [0mopen_receive_channels=[1m0[0m,                 │ │ │
+│ │ │                 [2m│   │   │   [0mwaiting_receivers=[1mOrderedDict[0m[1m([0m[1m)[0m,         │ │ │
+│ │ │                 [2m│   │   │   [0mwaiting_senders=[1mOrderedDict[0m[1m([0m[1m)[0m            │ │ │
+│ │ │                 [2m│   │   [0m[1m)[0m,                                           │ │ │
+│ │ │                 [2m│   │   [0m_closed=[3mTrue[0m                                 │ │ │
+│ │ │                 [2m│   [0m[1m)[0m,                                               │ │ │
+│ │ │                 [2m│   [0mheaders=[3mNone[0m,                                    │ │ │
+│ │ │                 [2m│   [0msse_read_timeout=[3mNone[0m                            │ │ │
+│ │ │                 [1m)[0m                                                    │ │ │
+│ │ │ [3mis_resumption[0m = [3mFalse[0m                                                │ │ │
+│ │ │          [3mself[0m = [1m<[0m[1mmcp.client.streamable_http.StreamableHTTPTransport[0m  │ │ │
+│ │ │                 object at [1m0x10ccca4b0[0m[1m>[0m                               │ │ │
+│ │ ╰──────────────────────────────────────────────────────────────────────╯ │ │
+│ │                                                                          │ │
+│ │ [2m/private/tmp/kodezart-v03-mcp-reopen-diagnosis/.venv/lib/python3.12/site[0m │ │
+│ │ [2m-packages/mcp/client/[0m[1mstreamable_http.py[0m:340 in _handle_post_request      │ │
+│ │                                                                          │ │
+│ │   [2m337 [0m[2m│   │   [0mmessage = ctx.session_message.message                      │ │
+│ │   [2m338 [0m[2m│   │   [0mis_initialization = self._is_initialization_request(messag │ │
+│ │   [2m339 [0m[2m│   │   [0m                                                           │ │
+│ │ ❱ 340 [2m│   │   [0masync with [1;4mctx.client.stream([0m                              │ │
+│ │   [2m341 [0m[2m│   │   │   [0m[1;4m"[0m[1;4mPOST[0m[1;4m"[0m[1;4m,[0m                                                │ │
+│ │   [2m342 [0m[2m│   │   │   [0m[1;4mself[0m[1;4m.url,[0m                                              │ │
+│ │   [2m343 [0m[2m│   │   │   [0m[1;4mjson=message.model_dump(by_alias=[0m[1;4mTrue[0m[1;4m, mode=[0m[1;4m"[0m[1;4mjson[0m[1;4m"[0m[1;4m, ex[0m │ │
+│ │                                                                          │ │
+│ │ ╭─────────────────────────────── locals ───────────────────────────────╮ │ │
+│ │ │               [3mctx[0m = [1mRequestContext[0m[1m([0m                                  │ │ │
+│ │ │                     [2m│   [0mclient=[1m<[0m[1mhttpx.AsyncClient[0m object at          │ │ │
+│ │ │                     [1m0x10ccca9c0[0m[1m>[0m,                                    │ │ │
+│ │ │                     [2m│   [0msession_id=[3mNone[0m,                             │ │ │
+│ │ │                     [2m│   [0msession_message=[1mSessionMessage[0m[1m([0m              │ │ │
+│ │ │                     [2m│   │   [0mmessage=[1mJSONRPCMessage[0m[1m([0m                  │ │ │
+│ │ │                     [2m│   │   │   [0mroot=[1mJSONRPCRequest[0m[1m([0m                 │ │ │
+│ │ │                     [2m│   │   │   │   [0mmethod='tools/call',             │ │ │
+│ │ │                     [2m│   │   │   │   [0mparams=[1m{[0m                         │ │ │
+│ │ │                     [2m│   │   │   │   │   [0m'name': 'get_issue',         │ │ │
+│ │ │                     [2m│   │   │   │   │   [0m'arguments': [1m{[0m[1m}[0m              │ │ │
+│ │ │                     [2m│   │   │   │   [0m[1m}[0m,                               │ │ │
+│ │ │                     [2m│   │   │   │   [0mjsonrpc='2.0',                   │ │ │
+│ │ │                     [2m│   │   │   │   [0mid=[1m1[0m                             │ │ │
+│ │ │                     [2m│   │   │   [0m[1m)[0m                                    │ │ │
+│ │ │                     [2m│   │   [0m[1m)[0m,                                       │ │ │
+│ │ │                     [2m│   │   [0mmetadata=[3mNone[0m                            │ │ │
+│ │ │                     [2m│   [0m[1m)[0m,                                           │ │ │
+│ │ │                     [2m│   [0mmetadata=[3mNone[0m,                               │ │ │
+│ │ │                     [2m│   [0mread_stream_writer=[1mMemoryObjectSendStream[0m[1m([0m   │ │ │
+│ │ │                     [2m│   │   [0m_state=[1m_MemoryObjectStreamState[0m[1m([0m         │ │ │
+│ │ │                     [2m│   │   │   [0mmax_buffer_size=[1m0[0m,                   │ │ │
+│ │ │                     [2m│   │   │   [0mbuffer=[1mdeque[0m[1m([0m[1m)[0m,                      │ │ │
+│ │ │                     [2m│   │   │   [0mopen_send_channels=[1m0[0m,                │ │ │
+│ │ │                     [2m│   │   │   [0mopen_receive_channels=[1m0[0m,             │ │ │
+│ │ │                     [2m│   │   │   [0mwaiting_receivers=[1mOrderedDict[0m[1m([0m[1m)[0m,     │ │ │
+│ │ │                     [2m│   │   │   [0mwaiting_senders=[1mOrderedDict[0m[1m([0m[1m)[0m        │ │ │
+│ │ │                     [2m│   │   [0m[1m)[0m,                                       │ │ │
+│ │ │                     [2m│   │   [0m_closed=[3mTrue[0m                             │ │ │
+│ │ │                     [2m│   [0m[1m)[0m,                                           │ │ │
+│ │ │                     [2m│   [0mheaders=[3mNone[0m,                                │ │ │
+│ │ │                     [2m│   [0msse_read_timeout=[3mNone[0m                        │ │ │
+│ │ │                     [1m)[0m                                                │ │ │
+│ │ │           [3mheaders[0m = [1m{[0m                                                │ │ │
+│ │ │                     [2m│   [0m'accept': 'application/json,                 │ │ │
+│ │ │                     text/event-stream',                              │ │ │
+│ │ │                     [2m│   [0m'content-type': 'application/json',          │ │ │
+│ │ │                     [2m│   [0m'mcp-protocol-version': '2025-11-25'         │ │ │
+│ │ │                     [1m}[0m                                                │ │ │
+│ │ │ [3mis_initialization[0m = [3mFalse[0m                                            │ │ │
+│ │ │           [3mmessage[0m = [1mJSONRPCMessage[0m[1m([0m                                  │ │ │
+│ │ │                     [2m│   [0mroot=[1mJSONRPCRequest[0m[1m([0m                         │ │ │
+│ │ │                     [2m│   │   [0mmethod='tools/call',                     │ │ │
+│ │ │                     [2m│   │   [0mparams=[1m{[0m                                 │ │ │
+│ │ │                     [2m│   │   │   [0m'name': 'get_issue',                 │ │ │
+│ │ │                     [2m│   │   │   [0m'arguments': [1m{[0m[1m}[0m                      │ │ │
+│ │ │                     [2m│   │   [0m[1m}[0m,                                       │ │ │
+│ │ │                     [2m│   │   [0mjsonrpc='2.0',                           │ │ │
+│ │ │                     [2m│   │   [0mid=[1m1[0m                                     │ │ │
+│ │ │                     [2m│   [0m[1m)[0m                                            │ │ │
+│ │ │                     [1m)[0m                                                │ │ │
+│ │ │              [3mself[0m = [1m<[0m[1mmcp.client.streamable_http.StreamableHTTPTrans…[0m │ │ │
+│ │ │                     object at [1m0x10ccca4b0[0m[1m>[0m                           │ │ │
+│ │ ╰──────────────────────────────────────────────────────────────────────╯ │ │
+│ │                                                                          │ │
+│ │ [2m/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-non[0m │ │
+│ │ [2me/lib/python3.12/[0m[1mcontextlib.py[0m:210 in __aenter__                         │ │
+│ │                                                                          │ │
+│ │   [2m207 [0m[2m│   │   [0m[2m# they are only needed for recreation, which is not possib[0m │ │
+│ │   [2m208 [0m[2m│   │   [0mdel self.args, self.kwds, self.func                        │ │
+│ │   [2m209 [0m[2m│   │   [0mtry:                                                       │ │
+│ │ ❱ 210 [2m│   │   │   [0mreturn await anext(self.gen)                           │ │
+│ │   [2m211 [0m[2m│   │   [0m[1;4mexcept[0m[1;4m [0m[1;4mStopAsyncIteration[0m[1;4m:[0m                                 │ │
+│ │   [2m212 [0m[2m│   │   │   [0m[1;4mraise[0m[1;4m [0m[1;4mRuntimeError[0m[1;4m([0m[1;4m"[0m[1;4mgenerator didn[0m[1;4m'[0m[1;4mt yield[0m[1;4m"[0m[1;4m) [0m[1;4mfrom[0m[1;4m [0m[1;4mNone[0m │ │
+│ │   [2m213 [0m                                                                   │ │
+│ │                                                                          │ │
+│ │ ╭─────────────────────────────── locals ───────────────────────────────╮ │ │
+│ │ │ [3mself[0m = [1m<[0m[1mcontextlib._AsyncGeneratorContextManager[0m object at           │ │ │
+│ │ │        [1m0x10cccb920[0m[1m>[0m                                                  │ │ │
+│ │ ╰──────────────────────────────────────────────────────────────────────╯ │ │
+│ │                                                                          │ │
+│ │ [2m/private/tmp/kodezart-v03-mcp-reopen-diagnosis/.venv/lib/python3.12/site[0m │ │
+│ │ [2m-packages/httpx/[0m[1m_client.py[0m:1583 in stream                                │ │
+│ │                                                                          │ │
+│ │   [2m1580 [0m[2m│   │   │   [0mtimeout=timeout,                                      │ │
+│ │   [2m1581 [0m[2m│   │   │   [0mextensions=extensions,                                │ │
+│ │   [2m1582 [0m[2m│   │   [0m)                                                         │ │
+│ │ ❱ 1583 [2m│   │   [0mresponse = [1;4mawait[0m[1;4m [0m[1;4mself[0m[1;4m.send([0m                               │ │
+│ │   [2m1584 [0m[2m│   │   │   [0m[1;4mrequest=request,[0m                                      │ │
+│ │   [2m1585 [0m[2m│   │   │   [0m[1;4mauth=auth,[0m                                            │ │
+│ │   [2m1586 [0m[2m│   │   │   [0m[1;4mfollow_redirects=follow_redirects,[0m                    │ │
+│ │                                                                          │ │
+│ │ ╭─────────────────────────────── locals ───────────────────────────────╮ │ │
+│ │ │             [3mauth[0m = [1m<[0m[1mhttpx._client.UseClientDefault[0m object at         │ │ │
+│ │ │                    [1m0x109992bd0[0m[1m>[0m                                      │ │ │
+│ │ │          [3mcontent[0m = [3mNone[0m                                              │ │ │
+│ │ │          [3mcookies[0m = [3mNone[0m                                              │ │ │
+│ │ │             [3mdata[0m = [3mNone[0m                                              │ │ │
+│ │ │       [3mextensions[0m = [3mNone[0m                                              │ │ │
+│ │ │            [3mfiles[0m = [3mNone[0m                                              │ │ │
+│ │ │ [3mfollow_redirects[0m = [1m<[0m[1mhttpx._client.UseClientDefault[0m object at         │ │ │
+│ │ │                    [1m0x109992bd0[0m[1m>[0m                                      │ │ │
+│ │ │          [3mheaders[0m = [1m{[0m                                                 │ │ │
+│ │ │                    [2m│   [0m'accept': 'application/json,                  │ │ │
+│ │ │                    text/event-stream',                               │ │ │
+│ │ │                    [2m│   [0m'content-type': 'application/json',           │ │ │
+│ │ │                    [2m│   [0m'mcp-protocol-version': '2025-11-25'          │ │ │
+│ │ │                    [1m}[0m                                                 │ │ │
+│ │ │             [3mjson[0m = [1m{[0m                                                 │ │ │
+│ │ │                    [2m│   [0m'method': 'tools/call',                       │ │ │
+│ │ │                    [2m│   [0m'params': [1m{[0m                                   │ │ │
+│ │ │                    [2m│   │   [0m'name': 'get_issue',                      │ │ │
+│ │ │                    [2m│   │   [0m'arguments': [1m{[0m[1m}[0m                           │ │ │
+│ │ │                    [2m│   [0m[1m}[0m,                                            │ │ │
+│ │ │                    [2m│   [0m'jsonrpc': '2.0',                             │ │ │
+│ │ │                    [2m│   [0m'id': [1m1[0m                                       │ │ │
+│ │ │                    [1m}[0m                                                 │ │ │
+│ │ │           [3mmethod[0m = 'POST'                                            │ │ │
+│ │ │           [3mparams[0m = [3mNone[0m                                              │ │ │
+│ │ │          [3mrequest[0m = [1m<[0m[1mRequest[0m[1m([0m'POST', 'https://mcp.invalid/mcp'[1m)[0m[1m>[0m      │ │ │
+│ │ │             [3mself[0m = [1m<[0m[1mhttpx.AsyncClient[0m object at [1m0x10ccca9c0[0m[1m>[0m         │ │ │
+│ │ │          [3mtimeout[0m = [1m<[0m[1mhttpx._client.UseClientDefault[0m object at         │ │ │
+│ │ │                    [1m0x109992bd0[0m[1m>[0m                                      │ │ │
+│ │ │              [3murl[0m = 'https://mcp.invalid/mcp'                         │ │ │
+│ │ ╰──────────────────────────────────────────────────────────────────────╯ │ │
+│ │                                                                          │ │
+│ │ [2m/private/tmp/kodezart-v03-mcp-reopen-diagnosis/.venv/lib/python3.12/site[0m │ │
+│ │ [2m-packages/httpx/[0m[1m_client.py[0m:1629 in send                                  │ │
+│ │                                                                          │ │
+│ │   [2m1626 [0m[2m│   │   [0m                                                          │ │
+│ │   [2m1627 [0m[2m│   │   [0mauth = self._build_request_auth(request, auth)            │ │
+│ │   [2m1628 [0m[2m│   │   [0m                                                          │ │
+│ │ ❱ 1629 [2m│   │   [0mresponse = [1;4mawait[0m[1;4m [0m[1;4mself[0m[1;4m._send_handling_auth([0m                │ │
+│ │   [2m1630 [0m[2m│   │   │   [0m[1;4mrequest,[0m                                              │ │
+│ │   [2m1631 [0m[2m│   │   │   [0m[1;4mauth=auth,[0m                                            │ │
+│ │   [2m1632 [0m[2m│   │   │   [0m[1;4mfollow_redirects=follow_redirects,[0m                    │ │
+│ │                                                                          │ │
+│ │ ╭──────────────────────────── locals ─────────────────────────────╮      │ │
+│ │ │             [3mauth[0m = [1m<[0m[1mhttpx.Auth[0m object at [1m0x10ccc86b0[0m[1m>[0m           │      │ │
+│ │ │ [3mfollow_redirects[0m = [3mTrue[0m                                         │      │ │
+│ │ │          [3mrequest[0m = [1m<[0m[1mRequest[0m[1m([0m'POST', 'https://mcp.invalid/mcp'[1m)[0m[1m>[0m │      │ │
+│ │ │             [3mself[0m = [1m<[0m[1mhttpx.AsyncClient[0m object at [1m0x10ccca9c0[0m[1m>[0m    │      │ │
+│ │ │           [3mstream[0m = [3mTrue[0m                                         │      │ │
+│ │ ╰─────────────────────────────────────────────────────────────────╯      │ │
+│ │                                                                          │ │
+│ │ [2m/private/tmp/kodezart-v03-mcp-reopen-diagnosis/.venv/lib/python3.12/site[0m │ │
+│ │ [2m-packages/httpx/[0m[1m_client.py[0m:1657 in _send_handling_auth                   │ │
+│ │                                                                          │ │
+│ │   [2m1654 [0m[2m│   │   │   [0mrequest = await auth_flow.__anext__()                 │ │
+│ │   [2m1655 [0m[2m│   │   │   [0m                                                      │ │
+│ │   [2m1656 [0m[2m│   │   │   [0mwhile True:                                           │ │
+│ │ ❱ 1657 [2m│   │   │   │   [0mresponse = await self._send_handling_redirects(   │ │
+│ │   [2m1658 [0m[2m│   │   │   │   │   [0mrequest,                                      │ │
+│ │   [2m1659 [0m[2m│   │   │   │   │   [0mfollow_redirects=follow_redirects,            │ │
+│ │   [2m1660 [0m[2m│   │   │   │   │   [0mhistory=history,                              │ │
+│ │                                                                          │ │
+│ │ ╭─────────────────────────────── locals ───────────────────────────────╮ │ │
+│ │ │             [3mauth[0m = [1m<[0m[1mhttpx.Auth[0m object at [1m0x10ccc86b0[0m[1m>[0m                │ │ │
+│ │ │        [3mauth_flow[0m = [1m<[0m[1masync_generator[0m object Auth.async_auth_flow at   │ │ │
+│ │ │                    [1m0x10ccd98c0[0m[1m>[0m                                      │ │ │
+│ │ │ [3mfollow_redirects[0m = [3mTrue[0m                                              │ │ │
+│ │ │          [3mhistory[0m = [1m[[0m[1m][0m                                                │ │ │
+│ │ │          [3mrequest[0m = [1m<[0m[1mRequest[0m[1m([0m'POST', 'https://mcp.invalid/mcp'[1m)[0m[1m>[0m      │ │ │
+│ │ │             [3mself[0m = [1m<[0m[1mhttpx.AsyncClient[0m object at [1m0x10ccca9c0[0m[1m>[0m         │ │ │
+│ │ ╰──────────────────────────────────────────────────────────────────────╯ │ │
+│ │                                                                          │ │
+│ │ [2m/private/tmp/kodezart-v03-mcp-reopen-diagnosis/.venv/lib/python3.12/site[0m │ │
+│ │ [2m-packages/httpx/[0m[1m_client.py[0m:1694 in _send_handling_redirects              │ │
+│ │                                                                          │ │
+│ │   [2m1691 [0m[2m│   │   │   [0mfor hook in self._event_hooks["request"]:             │ │
+│ │   [2m1692 [0m[2m│   │   │   │   [0mawait hook(request)                               │ │
+│ │   [2m1693 [0m[2m│   │   │   [0m                                                      │ │
+│ │ ❱ 1694 [2m│   │   │   [0mresponse = [1;4mawait[0m[1;4m [0m[1;4mself[0m[1;4m._send_single_request(request)[0m   │ │
+│ │   [2m1695 [0m[2m│   │   │   [0mtry:                                                  │ │
+│ │   [2m1696 [0m[2m│   │   │   │   [0mfor hook in self._event_hooks["response"]:        │ │
+│ │   [2m1697 [0m[2m│   │   │   │   │   [0mawait hook(response)                          │ │
+│ │                                                                          │ │
+│ │ ╭──────────────────────────── locals ─────────────────────────────╮      │ │
+│ │ │ [3mfollow_redirects[0m = [3mTrue[0m                                         │      │ │
+│ │ │          [3mhistory[0m = [1m[[0m[1m][0m                                           │      │ │
+│ │ │          [3mrequest[0m = [1m<[0m[1mRequest[0m[1m([0m'POST', 'https://mcp.invalid/mcp'[1m)[0m[1m>[0m │      │ │
+│ │ │             [3mself[0m = [1m<[0m[1mhttpx.AsyncClient[0m object at [1m0x10ccca9c0[0m[1m>[0m    │      │ │
+│ │ ╰─────────────────────────────────────────────────────────────────╯      │ │
+│ │                                                                          │ │
+│ │ [2m/private/tmp/kodezart-v03-mcp-reopen-diagnosis/.venv/lib/python3.12/site[0m │ │
+│ │ [2m-packages/httpx/[0m[1m_client.py[0m:1730 in _send_single_request                  │ │
+│ │                                                                          │ │
+│ │   [2m1727 [0m[2m│   │   │   [0m)                                                     │ │
+│ │   [2m1728 [0m[2m│   │   [0m                                                          │ │
+│ │   [2m1729 [0m[2m│   │   [0mwith request_context(request=request):                    │ │
+│ │ ❱ 1730 [2m│   │   │   [0mresponse = [1;4mawait[0m[1;4m transport.handle_async_request(reque[0m │ │
+│ │   [2m1731 [0m[2m│   │   [0m                                                          │ │
+│ │   [2m1732 [0m[2m│   │   [0massert isinstance(response.stream, AsyncByteStream)       │ │
+│ │   [2m1733 [0m[2m│   │   [0mresponse.request = request                                │ │
+│ │                                                                          │ │
+│ │ ╭───────────────────────── locals ─────────────────────────╮             │ │
+│ │ │   [3mrequest[0m = [1m<[0m[1mRequest[0m[1m([0m'POST', 'https://mcp.invalid/mcp'[1m)[0m[1m>[0m │             │ │
+│ │ │      [3mself[0m = [1m<[0m[1mhttpx.AsyncClient[0m object at [1m0x10ccca9c0[0m[1m>[0m    │             │ │
+│ │ │     [3mstart[0m = [1m1663796.792061333[0m                            │             │ │
+│ │ │ [3mtransport[0m = [1m<[0m[1mhttpx.MockTransport[0m object at [1m0x10ccca7b0[0m[1m>[0m  │             │ │
+│ │ ╰──────────────────────────────────────────────────────────╯             │ │
+│ │                                                                          │ │
+│ │ [2m/private/tmp/kodezart-v03-mcp-reopen-diagnosis/.venv/lib/python3.12/site[0m │ │
+│ │ [2m-packages/httpx/_transports/[0m[1mmock.py[0m:41 in handle_async_request           │ │
+│ │                                                                          │ │
+│ │   [2m38 [0m[2m│   │   [0m[2m# return the result.[0m                                        │ │
+│ │   [2m39 [0m[2m│   │   [0m                                                            │ │
+│ │   [2m40 [0m[2m│   │   [0mif not isinstance(response, Response):                      │ │
+│ │ ❱ 41 [2m│   │   │   [0mresponse = [1;4mawait[0m[1;4m response[0m                               │ │
+│ │   [2m42 [0m[2m│   │   [0m                                                            │ │
+│ │   [2m43 [0m[2m│   │   [0mreturn response                                             │ │
+│ │   [2m44 [0m                                                                    │ │
+│ │                                                                          │ │
+│ │ ╭─────────────────────────────── locals ───────────────────────────────╮ │ │
+│ │ │  [3mrequest[0m = [1m<[0m[1mRequest[0m[1m([0m'POST', 'https://mcp.invalid/mcp'[1m)[0m[1m>[0m              │ │ │
+│ │ │ [3mresponse[0m = [1m<[0m[1mcoroutine[0m object _FakeStreamableServer._answer at        │ │ │
+│ │ │            [1m0x10ccff890[0m[1m>[0m                                              │ │ │
+│ │ │     [3mself[0m = [1m<[0m[1mhttpx.MockTransport[0m object at [1m0x10ccca7b0[0m[1m>[0m               │ │ │
+│ │ ╰──────────────────────────────────────────────────────────────────────╯ │ │
+│ │                                                                          │ │
+│ │ [2m/private/tmp/kodezart-v03-mcp-reopen-diagnosis/tests/adapters/[0m[1mtest_http_[0m │ │
+│ │ [1mmcp_tool_caller.py[0m:814 in _answer                                        │ │
+│ │                                                                          │ │
+│ │   [2m 811 [0m[2m│   │   [0mif self._on_call is _CallBehaviour.DROPS or (             │ │
+│ │   [2m 812 [0m[2m│   │   │   [0mself._on_call is _CallBehaviour.DROPS_ONCE and first_ │ │
+│ │   [2m 813 [0m[2m│   │   [0m):                                                        │ │
+│ │ ❱  814 [2m│   │   │   [0m[1;4mraise[0m[1;4m httpx.ReadError([0m[1;4m"[0m[1;4mthe server dropped the stream [0m │ │
+│ │   [2m 815 [0m[2m│   │   [0mif self._on_call is _CallBehaviour.UNWELL_ONCE and first_ │ │
+│ │   [2m 816 [0m[2m│   │   │   [0mreturn httpx.Response(status_code=self._unwell_status │ │
+│ │   [2m 817 [0m[2m│   │   [0mif self._on_call is _CallBehaviour.REFUSES:               │ │
+│ │                                                                          │ │
+│ │ ╭────────────────────────────── locals ──────────────────────────────╮   │ │
+│ │ │ [3mfirst_call[0m = [3mTrue[0m                                                  │   │ │
+│ │ │    [3mmessage[0m = [1m{[0m                                                     │   │ │
+│ │ │              [2m│   [0m'method': 'tools/call',                           │   │ │
+│ │ │              [2m│   [0m'params': [1m{[0m                                       │   │ │
+│ │ │              [2m│   │   [0m'name': 'get_issue',                          │   │ │
+│ │ │              [2m│   │   [0m'arguments': [1m{[0m[1m}[0m                               │   │ │
+│ │ │              [2m│   [0m[1m}[0m,                                                │   │ │
+│ │ │              [2m│   [0m'jsonrpc': '2.0',                                 │   │ │
+│ │ │              [2m│   [0m'id': [1m1[0m                                           │   │ │
+│ │ │              [1m}[0m                                                     │   │ │
+│ │ │     [3mmethod[0m = 'tools/call'                                          │   │ │
+│ │ │    [3mrequest[0m = [1m<[0m[1mRequest[0m[1m([0m'POST', 'https://mcp.invalid/mcp'[1m)[0m[1m>[0m          │   │ │
+│ │ │       [3mself[0m = external-live-native-server                           │   │ │
+│ │ ╰────────────────────────────────────────────────────────────────────╯   │ │
+│ ╰──────────────────────────────────────────────────────────────────────────╯ │
+│ [1mReadError: [0mthe server dropped the stream mid-call                            │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+2026-09-12 23:08:02 [info     ] mcp_session_opened             address=https://mcp.invalid/mcp server_name=fixture-server
+2026-09-12 23:08:02 [warning  ] mcp_session_reopened           closed_by=ReadError server_name=fixture-server tool_name=get_issue
+2026-09-12 23:08:02 [info     ] mcp_session_closed             server_name=fixture-server
+___________ test_reopen_does_not_render_live_failure_locals[pretty] ____________
+
+logging_mode = 'pretty'
+
+    @pytest.mark.parametrize("logging_mode", ["default", "pretty", "json"])
+    async def test_reopen_does_not_render_live_failure_locals(logging_mode):
+        loop = asyncio.get_running_loop()
+        entered = asyncio.Event()
+        release = threading.Event()
+        repr_calls = []
+    
+        class ExternalServer(_FakeStreamableServer):
+            def __repr__(self):
+                repr_calls.append(threading.get_ident())
+                loop.call_soon_threadsafe(entered.set)
+                release.wait(timeout=_HANG_CEILING_SECONDS)
+                return "external-live-native-server"
+    
+        server = ExternalServer(on_call=_CallBehaviour.DROPS_ONCE)
+        chain = (
+            nullcontext()
+            if logging_mode == "default"
+            else configured_chain(pretty=logging_mode == "pretty")
+        )
+        first = None
+        waiting = None
+        evidence = {}
+        with chain:
+            caller = caller_fixture(client_factory=client_over(server.transport))
+            await caller.open()
+            try:
+                with pytest.raises(McpCallUnansweredError):
+                    await caller.call_tool(name="get_issue", arguments={})
+                first = asyncio.create_task(
+                    caller.call_tool(name="get_issue", arguments={})
+                )
+                waiting = asyncio.create_task(entered.wait())
+                async with asyncio.timeout(_HANG_CEILING_SECONDS):
+                    await asyncio.wait(
+                        {first, waiting}, return_when=asyncio.FIRST_COMPLETED
+                    )
+                if entered.is_set():
+                    # The external object's repr is held in the logging worker.
+                    # Inspect the real host/reopen chain before letting it finish.
+                    evidence = {
+                        "initialize_count": server.requests.count("initialize"),
+                        "reopen": awaited_names(first),
+                        "tasks": [awaited_names(task) for task in asyncio.all_tasks()],
+                    }
+                    assert not first.done()
+                    assert server.requests.count("initialize") == 1
+                release.set()
+                async with asyncio.timeout(_HANG_CEILING_SECONDS):
+                    assert await first == {"id": "K-1"}
+                assert server.requests.count("initialize") == 2
+                assert server.calls == ["tools/call", "tools/call"]
+            finally:
+                release.set()
+                if waiting is not None:
+                    waiting.cancel()
+                    await asyncio.gather(waiting, return_exceptions=True)
+                if first is not None:
+                    await asyncio.gather(first, return_exceptions=True)
+                await caller.close()
+>       assert repr_calls == [], evidence
+E       AssertionError: {'initialize_count': 1, 'reopen': ['call_tool', 'call_tool', '_call_on_a_reopened_session', '_reopen', '_discard_host'... '_join', ...], ['_host_session', 'aerror', '_dispatch_to_sync'], ['test_reopen_does_not_render_live_failure_locals']]}
+E       assert [6139441152] == []
+E         
+E         Left contains one more item: 6139441152
+E         Use -v to get more diff
+
+tests/adapters/test_mcp_reopen_logging_independent.py:91: AssertionError
+=========================== short test summary info ============================
+FAILED tests/adapters/test_mcp_reopen_logging_independent.py::test_reopen_does_not_render_live_failure_locals[default]
+FAILED tests/adapters/test_mcp_reopen_logging_independent.py::test_reopen_does_not_render_live_failure_locals[pretty]
+2 failed, 1 passed in 10.25s

@@ -1,0 +1,5 @@
+src/kodezart/chains/audit_pass.py:224: error: Unexpected keyword argument "claim" for "AuditClaimReport"  [call-arg]
+src/kodezart/chains/audit_pass.py:224: error: Unexpected keyword argument "mandate" for "AuditClaimReport"  [call-arg]
+src/kodezart/chains/audit_pass.py:235: error: Unexpected keyword argument "claim" for "AuditClaimReport"  [call-arg]
+src/kodezart/chains/audit_pass.py:235: error: Unexpected keyword argument "mandate" for "AuditClaimReport"  [call-arg]
+Found 4 errors in 1 file (checked 309 source files)

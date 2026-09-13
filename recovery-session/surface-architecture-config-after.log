@@ -1,0 +1,4 @@
+Python 3.12.13 pydantic 2.12.5 pydantic-settings 2.13.1
+KODEZART_TRACKER_SURFACE_LEASE_SECONDS 321.5 refused: extra_forbidden
+KODEZART_TRACKER_SURFACE_LEASE_SECONDS 0 refused: extra_forbidden
+KODEZART_TRACKER__SURFACE_LEASE_SECONDS 321.5 accepted: 321.5

@@ -1,0 +1,138 @@
+FFFF...                                                                  [100%]
+=================================== FAILURES ===================================
+_ test_actual_role_preserves_artifact_ref_and_fresh_session_boundaries[claude-opus] _
+
+prompt_set = 'claude-opus'
+
+    @pytest.mark.parametrize("prompt_set", ["claude-opus", "anthropic_v5"])
+    async def test_actual_role_preserves_artifact_ref_and_fresh_session_boundaries(prompt_set):
+        judge, executor, workspace = build({"verdict": "holds", "evidence": "Read actual tests/real.py at abc123", "cited_refs": ["tests/real.py"]}, prompt_set=prompt_set)
+        for _ in range(2):
+>           finding = await judge.judge(artifact=ARTIFACT, ref=HEAD)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/chains/test_fresh_write_back_judge.py:36: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/chains/write_back_verifier.py:185: in judge
+    await self._require_head(workspace, ref)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.chains.write_back_verifier.FreshWriteBackJudge object at 0x10e1c0e30>
+workspace = '/tmp/fake-workspace', ref = 'abc123'
+
+    async def _require_head(self, workspace: str, ref: str) -> None:
+        if await settle(
+            self._git.has_replace_refs(workspace)
+        ) or await read_workspace_head(git=self._git, workspace=workspace) != (
+            ref,
+            False,
+        ):
+>           raise WriteBackReadError(
+                "write-back verification requires a clean repository at the exact commit"
+            )
+E           kodezart.domain.errors.WriteBackReadError: write-back verification requires a clean repository at the exact commit
+
+src/kodezart/chains/write_back_verifier.py:170: WriteBackReadError
+_ test_actual_role_preserves_artifact_ref_and_fresh_session_boundaries[anthropic_v5] _
+
+prompt_set = 'anthropic_v5'
+
+    @pytest.mark.parametrize("prompt_set", ["claude-opus", "anthropic_v5"])
+    async def test_actual_role_preserves_artifact_ref_and_fresh_session_boundaries(prompt_set):
+        judge, executor, workspace = build({"verdict": "holds", "evidence": "Read actual tests/real.py at abc123", "cited_refs": ["tests/real.py"]}, prompt_set=prompt_set)
+        for _ in range(2):
+>           finding = await judge.judge(artifact=ARTIFACT, ref=HEAD)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/chains/test_fresh_write_back_judge.py:36: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/chains/write_back_verifier.py:185: in judge
+    await self._require_head(workspace, ref)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.chains.write_back_verifier.FreshWriteBackJudge object at 0x10e693da0>
+workspace = '/tmp/fake-workspace', ref = 'abc123'
+
+    async def _require_head(self, workspace: str, ref: str) -> None:
+        if await settle(
+            self._git.has_replace_refs(workspace)
+        ) or await read_workspace_head(git=self._git, workspace=workspace) != (
+            ref,
+            False,
+        ):
+>           raise WriteBackReadError(
+                "write-back verification requires a clean repository at the exact commit"
+            )
+E           kodezart.domain.errors.WriteBackReadError: write-back verification requires a clean repository at the exact commit
+
+src/kodezart/chains/write_back_verifier.py:170: WriteBackReadError
+_ test_buildability_or_uncited_refutation_is_not_a_writeback_judgment[payload0] _
+
+payload = {'evidence': 'wrong semantic type', 'issue_id': 'parent', 'verdict': 'buildable'}
+
+    @pytest.mark.parametrize("payload", [{"verdict": "buildable", "issue_id": "parent", "evidence": "wrong semantic type"}, {"verdict": "refuted", "evidence": "No actual checked references", "cited_refs": []}])
+    async def test_buildability_or_uncited_refutation_is_not_a_writeback_judgment(payload):
+        judge, _, _ = build(payload)
+        with pytest.raises(ValidationError):
+>           await judge.judge(artifact=ARTIFACT, ref=HEAD)
+
+tests/chains/test_fresh_write_back_judge.py:52: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/chains/write_back_verifier.py:185: in judge
+    await self._require_head(workspace, ref)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.chains.write_back_verifier.FreshWriteBackJudge object at 0x10e71e1b0>
+workspace = '/tmp/fake-workspace', ref = 'abc123'
+
+    async def _require_head(self, workspace: str, ref: str) -> None:
+        if await settle(
+            self._git.has_replace_refs(workspace)
+        ) or await read_workspace_head(git=self._git, workspace=workspace) != (
+            ref,
+            False,
+        ):
+>           raise WriteBackReadError(
+                "write-back verification requires a clean repository at the exact commit"
+            )
+E           kodezart.domain.errors.WriteBackReadError: write-back verification requires a clean repository at the exact commit
+
+src/kodezart/chains/write_back_verifier.py:170: WriteBackReadError
+_ test_buildability_or_uncited_refutation_is_not_a_writeback_judgment[payload1] _
+
+payload = {'cited_refs': [], 'evidence': 'No actual checked references', 'verdict': 'refuted'}
+
+    @pytest.mark.parametrize("payload", [{"verdict": "buildable", "issue_id": "parent", "evidence": "wrong semantic type"}, {"verdict": "refuted", "evidence": "No actual checked references", "cited_refs": []}])
+    async def test_buildability_or_uncited_refutation_is_not_a_writeback_judgment(payload):
+        judge, _, _ = build(payload)
+        with pytest.raises(ValidationError):
+>           await judge.judge(artifact=ARTIFACT, ref=HEAD)
+
+tests/chains/test_fresh_write_back_judge.py:52: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/chains/write_back_verifier.py:185: in judge
+    await self._require_head(workspace, ref)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.chains.write_back_verifier.FreshWriteBackJudge object at 0x10e692450>
+workspace = '/tmp/fake-workspace', ref = 'abc123'
+
+    async def _require_head(self, workspace: str, ref: str) -> None:
+        if await settle(
+            self._git.has_replace_refs(workspace)
+        ) or await read_workspace_head(git=self._git, workspace=workspace) != (
+            ref,
+            False,
+        ):
+>           raise WriteBackReadError(
+                "write-back verification requires a clean repository at the exact commit"
+            )
+E           kodezart.domain.errors.WriteBackReadError: write-back verification requires a clean repository at the exact commit
+
+src/kodezart/chains/write_back_verifier.py:170: WriteBackReadError
+=========================== short test summary info ============================
+FAILED tests/chains/test_fresh_write_back_judge.py::test_actual_role_preserves_artifact_ref_and_fresh_session_boundaries[claude-opus]
+FAILED tests/chains/test_fresh_write_back_judge.py::test_actual_role_preserves_artifact_ref_and_fresh_session_boundaries[anthropic_v5]
+FAILED tests/chains/test_fresh_write_back_judge.py::test_buildability_or_uncited_refutation_is_not_a_writeback_judgment[payload0]
+FAILED tests/chains/test_fresh_write_back_judge.py::test_buildability_or_uncited_refutation_is_not_a_writeback_judgment[payload1]
+4 failed, 3 passed in 0.57s

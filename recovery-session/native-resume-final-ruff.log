@@ -1,0 +1,15 @@
+RUF059 Unpacked variable `service` is never used
+   --> tests/adapters/test_native_workspace_resume.py:207:5
+    |
+205 | @pytest.mark.parametrize("flag", ["--assume-unchanged", "--skip-worktree"])
+206 | async def test_native_resume_rejects_changed_index_flags(repository, flag):
+207 |     service, _cache, owner, workspace = await acquired(repository)
+    |     ^^^^^^^
+208 |     snapshot = await owner.capture(workspace_path=workspace, holder="job")
+209 |     await git(workspace, "update-index", flag, "policy.py")
+    |
+help: Prefix it with an underscore or any other dummy variable pattern
+
+Found 1 error.
+No fixes available (1 hidden fix can be enabled with the `--unsafe-fixes` option).
+769 files already formatted

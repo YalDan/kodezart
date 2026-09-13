@@ -1,0 +1,2 @@
+src/kodezart/chains/native_execution.py:75: error: Incompatible return value type (got "str", expected "Literal['prepare', 'write', 'reconcile', 'persist', '__end__']")  [return-value]
+Found 1 error in 1 file (checked 8 source files)

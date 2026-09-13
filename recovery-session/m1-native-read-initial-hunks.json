@@ -1,0 +1,213 @@
+[
+  {
+    "file": "src/kodezart/domain/errors.py",
+    "symbols": [
+      "CriterionReadError"
+    ],
+    "start": 227,
+    "end": 233,
+    "donor": "7892ca1a47adbcfd91fbcfb1e580dfc86f066a99"
+  },
+  {
+    "file": "src/kodezart/core/protocols.py",
+    "symbols": [
+      "TrackerCriteriaReader"
+    ],
+    "start": 702,
+    "end": 714,
+    "donor": "7892ca1a47adbcfd91fbcfb1e580dfc86f066a99"
+  },
+  {
+    "file": "src/kodezart/core/protocols.py",
+    "symbols": [
+      "TrackerPort",
+      "read_planning_issue"
+    ],
+    "start": 818,
+    "end": 820,
+    "donor": "7892ca1a47adbcfd91fbcfb1e580dfc86f066a99"
+  },
+  {
+    "file": "src/kodezart/core/protocols.py",
+    "symbols": [
+      "TrackerPort",
+      "require_scope_plan_reads"
+    ],
+    "start": 833,
+    "end": 839,
+    "donor": "7892ca1a47adbcfd91fbcfb1e580dfc86f066a99"
+  },
+  {
+    "file": "src/kodezart/core/protocols.py",
+    "symbols": [
+      "TrackerPort",
+      "require_issue_classification_reads"
+    ],
+    "start": 841,
+    "end": 851,
+    "donor": "7892ca1a47adbcfd91fbcfb1e580dfc86f066a99"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_types.py",
+    "symbols": [
+      "LinearCriterionIssueWire"
+    ],
+    "start": 216,
+    "end": 224,
+    "donor": "7892ca1a47adbcfd91fbcfb1e580dfc86f066a99"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbols": [
+      "LinearMcpTracker",
+      "read_planning_issue"
+    ],
+    "start": 1005,
+    "end": 1011,
+    "donor": "7892ca1a47adbcfd91fbcfb1e580dfc86f066a99"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbols": [
+      "LinearMcpTracker",
+      "_classification_label"
+    ],
+    "start": 1013,
+    "end": 1019,
+    "donor": "7892ca1a47adbcfd91fbcfb1e580dfc86f066a99"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbols": [
+      "LinearMcpTracker",
+      "require_scope_plan_reads"
+    ],
+    "start": 1074,
+    "end": 1079,
+    "donor": "7892ca1a47adbcfd91fbcfb1e580dfc86f066a99"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbols": [
+      "LinearMcpTracker",
+      "require_issue_classification_reads"
+    ],
+    "start": 1081,
+    "end": 1088,
+    "donor": "7892ca1a47adbcfd91fbcfb1e580dfc86f066a99"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbols": [
+      "LinearMcpTracker",
+      "read_criteria"
+    ],
+    "start": 1822,
+    "end": 1824,
+    "donor": "7892ca1a47adbcfd91fbcfb1e580dfc86f066a99"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbols": [
+      "LinearMcpTracker",
+      "_read_criterion_family"
+    ],
+    "start": 1850,
+    "end": 1868,
+    "donor": "7892ca1a47adbcfd91fbcfb1e580dfc86f066a99"
+  },
+  {
+    "file": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbols": [
+      "LinearMcpTracker",
+      "_read_criteria"
+    ],
+    "start": 1870,
+    "end": 1913,
+    "donor": "7892ca1a47adbcfd91fbcfb1e580dfc86f066a99"
+  },
+  {
+    "file": "src/kodezart/services/tracker_boot.py",
+    "symbols": [
+      "_issue_label_refs"
+    ],
+    "start": 136,
+    "end": 150,
+    "donor": "7892ca1a47adbcfd91fbcfb1e580dfc86f066a99"
+  },
+  {
+    "file": "tests/fakes.py",
+    "symbols": [
+      "FakeTrackerPort",
+      "read_planning_issue"
+    ],
+    "start": 3487,
+    "end": 3488,
+    "donor": "7892ca1a47adbcfd91fbcfb1e580dfc86f066a99"
+  },
+  {
+    "file": "tests/fakes.py",
+    "symbols": [
+      "FakeTrackerPort",
+      "require_scope_plan_reads"
+    ],
+    "start": 3515,
+    "end": 3516,
+    "donor": "7892ca1a47adbcfd91fbcfb1e580dfc86f066a99"
+  },
+  {
+    "file": "tests/fakes.py",
+    "symbols": [
+      "FakeTrackerPort",
+      "require_issue_classification_reads"
+    ],
+    "start": 3518,
+    "end": 3521,
+    "donor": "7892ca1a47adbcfd91fbcfb1e580dfc86f066a99"
+  },
+  {
+    "file": "tests/fakes.py",
+    "symbols": [
+      "FakeTrackerPort",
+      "read_criteria"
+    ],
+    "start": 3873,
+    "end": 3875,
+    "donor": "7892ca1a47adbcfd91fbcfb1e580dfc86f066a99"
+  },
+  {
+    "file": "tests/fakes.py",
+    "symbols": [
+      "FakeTrackerPort",
+      "_read_criterion_family"
+    ],
+    "start": 3893,
+    "end": 3915,
+    "donor": "7892ca1a47adbcfd91fbcfb1e580dfc86f066a99"
+  },
+  {
+    "file": "tests/adapters/test_tracker_self_writes.py",
+    "normalization": "existing constructor explicit empty semantic mapping",
+    "sites": 2
+  },
+  {
+    "file": "tests/tracker/conftest.py",
+    "normalization": "existing constructor explicit empty semantic mapping",
+    "sites": 1
+  },
+  {
+    "file": "tests/tracker/test_comment_expected_independent.py",
+    "normalization": "existing constructor explicit empty semantic mapping",
+    "sites": 1
+  },
+  {
+    "file": "tests/tracker/test_linear_wire_shapes.py",
+    "normalization": "existing constructor explicit empty semantic mapping",
+    "sites": 1
+  },
+  {
+    "file": "tests/tracker/test_tracker_boot.py",
+    "normalization": "existing constructor explicit empty semantic mapping",
+    "sites": 2
+  }
+]

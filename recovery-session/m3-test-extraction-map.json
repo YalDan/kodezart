@@ -1,0 +1,267 @@
+[
+  {
+    "path": "tests/adapters/test_git_change_persister.py",
+    "donor": "da39c439898aec1233aa8b6157b35e961df1e453",
+    "byte_identical": true
+  },
+  {
+    "path": "tests/adapters/test_git_worktree_provider.py",
+    "donor": "da39c439898aec1233aa8b6157b35e961df1e453",
+    "byte_identical": true
+  },
+  {
+    "path": "tests/adapters/test_native_identity_process_probe.py",
+    "donor": "da39c439898aec1233aa8b6157b35e961df1e453",
+    "byte_identical": true
+  },
+  {
+    "path": "tests/adapters/test_native_workspace_resume.py",
+    "donor": "da39c439898aec1233aa8b6157b35e961df1e453",
+    "byte_identical": true
+  },
+  {
+    "path": "tests/chains/test_accept_gate.py",
+    "donor": "da39c439898aec1233aa8b6157b35e961df1e453",
+    "byte_identical": true
+  },
+  {
+    "path": "tests/chains/test_amendment_review_reentry.py",
+    "donor": "da39c439898aec1233aa8b6157b35e961df1e453",
+    "byte_identical": true
+  },
+  {
+    "path": "tests/chains/test_authored_check_routing.py",
+    "donor": "da39c439898aec1233aa8b6157b35e961df1e453",
+    "byte_identical": true
+  },
+  {
+    "path": "tests/chains/test_native_amendment_adoption.py",
+    "donor": "da39c439898aec1233aa8b6157b35e961df1e453",
+    "byte_identical": true
+  },
+  {
+    "path": "tests/chains/test_native_amendment_runtime.py",
+    "donor": "da39c439898aec1233aa8b6157b35e961df1e453",
+    "byte_identical": true
+  },
+  {
+    "path": "tests/chains/test_native_amendment_trajectory_independent.py",
+    "donor": "da39c439898aec1233aa8b6157b35e961df1e453",
+    "byte_identical": true
+  },
+  {
+    "path": "tests/chains/test_native_fire.py",
+    "donor": "da39c439898aec1233aa8b6157b35e961df1e453",
+    "byte_identical": true
+  },
+  {
+    "path": "tests/chains/test_native_fresh_boundaries.py",
+    "donor": "da39c439898aec1233aa8b6157b35e961df1e453",
+    "byte_identical": true
+  },
+  {
+    "path": "tests/chains/test_native_parent_resume.py",
+    "donor": "da39c439898aec1233aa8b6157b35e961df1e453",
+    "byte_identical": true
+  },
+  {
+    "path": "tests/chains/test_native_port_failures.py",
+    "donor": "da39c439898aec1233aa8b6157b35e961df1e453",
+    "byte_identical": true
+  },
+  {
+    "path": "tests/chains/test_native_prepare_cancel_peer.py",
+    "donor": "da39c439898aec1233aa8b6157b35e961df1e453",
+    "byte_identical": true
+  },
+  {
+    "path": "tests/chains/test_native_prepare_cleanup_peer.py",
+    "donor": "da39c439898aec1233aa8b6157b35e961df1e453",
+    "byte_identical": true
+  },
+  {
+    "path": "tests/chains/test_ralph_loop.py",
+    "donor": "da39c439898aec1233aa8b6157b35e961df1e453",
+    "byte_identical": true
+  },
+  {
+    "path": "tests/chains/test_ralph_workflow.py",
+    "donor": "da39c439898aec1233aa8b6157b35e961df1e453",
+    "byte_identical": true
+  },
+  {
+    "path": "tests/chains/test_remediation.py",
+    "donor": "da39c439898aec1233aa8b6157b35e961df1e453",
+    "byte_identical": true
+  },
+  {
+    "path": "tests/chains/test_scope_gap_membership.py",
+    "donor": "da39c439898aec1233aa8b6157b35e961df1e453",
+    "byte_identical": true
+  },
+  {
+    "path": "tests/chains/test_scope_gap_selection.py",
+    "donor": "da39c439898aec1233aa8b6157b35e961df1e453",
+    "byte_identical": true
+  },
+  {
+    "path": "tests/chains/test_scope_observations.py",
+    "donor": "da39c439898aec1233aa8b6157b35e961df1e453",
+    "byte_identical": true
+  },
+  {
+    "path": "tests/chains/test_scope_ready.py",
+    "donor": "da39c439898aec1233aa8b6157b35e961df1e453",
+    "byte_identical": true
+  },
+  {
+    "path": "tests/chains/test_ticket_generation.py",
+    "donor": "da39c439898aec1233aa8b6157b35e961df1e453",
+    "byte_identical": true
+  },
+  {
+    "path": "tests/domain/test_amendment.py",
+    "donor": "da39c439898aec1233aa8b6157b35e961df1e453",
+    "byte_identical": true
+  },
+  {
+    "path": "tests/domain/test_authored_feasibility_compatibility.py",
+    "donor": "da39c439898aec1233aa8b6157b35e961df1e453",
+    "byte_identical": true
+  },
+  {
+    "path": "tests/domain/test_criteria_feasibility.py",
+    "donor": "da39c439898aec1233aa8b6157b35e961df1e453",
+    "byte_identical": true
+  },
+  {
+    "path": "tests/domain/test_criteria_grading.py",
+    "donor": "da39c439898aec1233aa8b6157b35e961df1e453",
+    "byte_identical": true
+  },
+  {
+    "path": "tests/domain/test_criterion_amendment_fields.py",
+    "donor": "da39c439898aec1233aa8b6157b35e961df1e453",
+    "byte_identical": true
+  },
+  {
+    "path": "tests/domain/test_criterion_evidence.py",
+    "donor": "da39c439898aec1233aa8b6157b35e961df1e453",
+    "byte_identical": true
+  },
+  {
+    "path": "tests/domain/test_fire_spec.py",
+    "donor": "da39c439898aec1233aa8b6157b35e961df1e453",
+    "byte_identical": true
+  },
+  {
+    "path": "tests/domain/test_gap.py",
+    "donor": "da39c439898aec1233aa8b6157b35e961df1e453",
+    "byte_identical": true
+  },
+  {
+    "path": "tests/domain/test_outcome.py",
+    "donor": "da39c439898aec1233aa8b6157b35e961df1e453",
+    "byte_identical": true
+  },
+  {
+    "path": "tests/domain/test_subtree_closure.py",
+    "donor": "da39c439898aec1233aa8b6157b35e961df1e453",
+    "byte_identical": true
+  },
+  {
+    "path": "tests/services/test_agent_service.py",
+    "donor": "da39c439898aec1233aa8b6157b35e961df1e453",
+    "byte_identical": true
+  },
+  {
+    "path": "tests/services/test_amendment_interrupted_writes.py",
+    "donor": "da39c439898aec1233aa8b6157b35e961df1e453",
+    "byte_identical": true
+  },
+  {
+    "path": "tests/services/test_applied_native_amendments.py",
+    "donor": "da39c439898aec1233aa8b6157b35e961df1e453",
+    "byte_identical": true
+  },
+  {
+    "path": "tests/services/test_check_classification.py",
+    "donor": "da39c439898aec1233aa8b6157b35e961df1e453",
+    "byte_identical": true
+  },
+  {
+    "path": "tests/services/test_fire_context.py",
+    "donor": "da39c439898aec1233aa8b6157b35e961df1e453",
+    "byte_identical": true
+  },
+  {
+    "path": "tests/services/test_fire_dispatcher.py",
+    "donor": "da39c439898aec1233aa8b6157b35e961df1e453",
+    "byte_identical": true
+  },
+  {
+    "path": "tests/services/test_native_amendment_archive_independent.py",
+    "donor": "da39c439898aec1233aa8b6157b35e961df1e453",
+    "byte_identical": true
+  },
+  {
+    "path": "tests/services/test_native_amendment_archive_publication.py",
+    "donor": "da39c439898aec1233aa8b6157b35e961df1e453",
+    "byte_identical": true
+  },
+  {
+    "path": "tests/services/test_native_amendment_independent.py",
+    "donor": "da39c439898aec1233aa8b6157b35e961df1e453",
+    "byte_identical": true
+  },
+  {
+    "path": "tests/services/test_native_amendments.py",
+    "donor": "da39c439898aec1233aa8b6157b35e961df1e453",
+    "byte_identical": true
+  },
+  {
+    "path": "tests/services/test_native_commit_receipt_independent.py",
+    "donor": "da39c439898aec1233aa8b6157b35e961df1e453",
+    "byte_identical": true
+  },
+  {
+    "path": "tests/services/test_scope_dispatcher.py",
+    "donor": "da39c439898aec1233aa8b6157b35e961df1e453",
+    "byte_identical": true
+  },
+  {
+    "path": "tests/services/test_scope_planning.py",
+    "donor": "da39c439898aec1233aa8b6157b35e961df1e453",
+    "byte_identical": true
+  },
+  {
+    "path": "tests/services/test_scope_resolution.py",
+    "donor": "da39c439898aec1233aa8b6157b35e961df1e453",
+    "byte_identical": true
+  },
+  {
+    "path": "tests/tracker/test_criterion_resolution.py",
+    "donor": "da39c439898aec1233aa8b6157b35e961df1e453",
+    "byte_identical": true
+  },
+  {
+    "path": "tests/tracker/test_criterion_resolution_consumers.py",
+    "donor": "da39c439898aec1233aa8b6157b35e961df1e453",
+    "byte_identical": true
+  },
+  {
+    "path": "tests/tracker/test_native_criterion_amendment.py",
+    "donor": "da39c439898aec1233aa8b6157b35e961df1e453",
+    "byte_identical": true
+  },
+  {
+    "path": "tests/tracker/test_scope_planning.py",
+    "donor": "da39c439898aec1233aa8b6157b35e961df1e453",
+    "byte_identical": true
+  },
+  {
+    "path": "tests/tracker/test_scope_subtree_reach.py",
+    "donor": "da39c439898aec1233aa8b6157b35e961df1e453",
+    "byte_identical": true
+  }
+]

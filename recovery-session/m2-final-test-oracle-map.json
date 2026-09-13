@@ -1,0 +1,1430 @@
+[
+  {
+    "path": "tests/adapters/test_tracker_self_writes.py",
+    "symbol": "test_a_read_back_that_fails_does_not_fail_the_write_it_recorded",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/chains/test_organize.py",
+    "symbol": "test_every_call_reads_full_tracker_sources_and_dispatches_fresh_at_base",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/chains/test_organize.py",
+    "symbol": "test_verify_rereads_mutated_tracker_bodies_instead_of_reusing_assess_input",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/chains/test_organize.py",
+    "symbol": "test_surface_liveness_reads_never_retest_or_restamp",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/chains/test_organize.py",
+    "symbol": "test_body_edit_during_session_does_not_stamp_the_later_revision",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/chains/test_organize.py",
+    "symbol": "test_agent_cannot_supply_its_own_revision_metadata",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/chains/test_organize.py",
+    "symbol": "test_liveness_read_refuses_missing_or_mismatched_source_identity",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/chains/test_organize.py",
+    "symbol": "test_real_revision_reader_lapses_the_exact_admission_surface",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/chains/test_organize.py",
+    "symbol": "test_incomplete_source_reads_fail_before_any_workspace_or_session",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/chains/test_organize.py",
+    "symbol": "test_missing_or_failed_output_releases_workspace_without_admission",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/chains/test_organize.py",
+    "symbol": "test_rejected_rate_limit_is_not_an_admission_even_with_structured_output",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/chains/test_organize.py",
+    "symbol": "test_judgment_for_another_issue_is_refused_and_workspace_is_released",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/chains/test_organize.py",
+    "symbol": "test_all_three_verdicts_return_without_coercion_or_phase_writes",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/chains/test_organize.py",
+    "symbol": "test_session_type_is_required_by_the_actual_runner_call",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/chains/test_organize.py",
+    "symbol": "test_request_cannot_carry_author_context_or_a_previous_session",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/chains/test_organize.py",
+    "symbol": "test_real_tracker_hydrates_evidence_before_real_runner_dispatch",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/chains/test_organize.py",
+    "symbol": "test_the_organize_dispatch_census_names_its_type_and_read_only_policy",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/chains/test_organize.py",
+    "symbol": "test_organized_scope_has_empty_gap_and_preserves_source_records",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/chains/test_organize.py",
+    "symbol": "test_each_missing_organize_fact_puts_only_its_issue_in_gap",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/chains/test_organize.py",
+    "symbol": "test_open_finding_of_either_role_puts_only_its_issue_in_gap",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/chains/test_organize.py",
+    "symbol": "test_child_state_only_controls_non_canceled_existence_not_code_satisfaction",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/chains/test_organize.py",
+    "symbol": "test_canceled_child_does_not_hide_another_live_criterion",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/chains/test_organize.py",
+    "symbol": "test_deliverable_child_does_not_count_as_a_criterion",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/chains/test_organize.py",
+    "symbol": "test_record_shaped_members_are_outside_gap_even_without_markers_or_verdicts",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/chains/test_organize.py",
+    "symbol": "test_gap_uses_the_configured_semantic_body_marker",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/chains/test_organize.py",
+    "symbol": "test_gap_preserves_input_order_and_exact_records",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/chains/test_organize.py",
+    "symbol": "test_gap_refuses_incoherent_snapshots_instead_of_dropping_evidence",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/chains/test_organize.py",
+    "symbol": "test_child_surface_liveness_reenters_parent_without_lapsing_its_body",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/chains/test_organize.py",
+    "symbol": "test_open_child_surface_finding_routes_to_parent_only",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/chains/test_organize.py",
+    "symbol": "test_port_criterion_changes_use_only_surface_digests_for_parent_gap",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/chains/test_organize.py",
+    "symbol": "test_mention_ripple_bumps_the_stamp_without_entering_the_gap",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/chains/test_organize.py",
+    "symbol": "test_gap_has_no_amendment_input_or_body_judgment_branch",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/chains/test_organize_correction.py",
+    "symbol": "test_escalation_rechecks_approval_before_its_second_write",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/chains/test_organize_delivery_independent.py",
+    "symbol": "test_halted_first_binding_does_not_starve_second_binding",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/chains/test_organize_delivery_independent.py",
+    "symbol": "test_approval_is_current_after_last_awaited_gate_read",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/chains/test_organize_delivery_independent.py",
+    "symbol": "test_criterion_author_is_bound_to_current_parent_revision",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/chains/test_organize_delivery_independent.py",
+    "symbol": "test_current_scope_membership_binds_author_write",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/chains/test_organize_delivery_independent.py",
+    "symbol": "test_foreign_holder_cannot_create_while_first_owner_holds_set",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/chains/test_organize_delivery_independent.py",
+    "symbol": "test_cancel_during_owner_create_settles_before_release",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/chains/test_organize_graph_independent.py",
+    "symbol": "test_configured_owner_refuses_observed_final_split_source_drift",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/chains/test_organize_graph_owner.py",
+    "symbol": "test_configured_owner_applies_graph_priority_then_reentry_writes_nothing",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/chains/test_organize_graph_owner.py",
+    "symbol": "test_configured_split_prepares_children_without_execution_and_replays_cleanly",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/chains/test_organize_graph_owner.py",
+    "symbol": "test_graph_author_metadata_drift_refuses_before_native_write",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/chains/test_organize_graph_owner.py",
+    "symbol": "test_cancel_during_issued_split_settles_before_lease_release",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/chains/test_organize_graph_owner.py",
+    "symbol": "test_peer_refutation_retains_citations_and_bound_without_peer_repair",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/chains/test_organize_graph_owner.py",
+    "symbol": "test_recorded_ruling_context_reaches_author_and_lapses_on_actual_edit",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/chains/test_organize_native_independent.py",
+    "symbol": "test_criterion_mint_requires_the_parent_revision_its_author_read",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/chains/test_organize_native_independent.py",
+    "symbol": "test_writeback_exhaustion_retains_its_actual_cited_refutation",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/chains/test_organize_native_independent.py",
+    "symbol": "test_scope_approval_ends_organize_before_escalation_writes",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/chains/test_organize_owner.py",
+    "symbol": "test_source_identity_is_checked_before_any_session",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/chains/test_organize_owner.py",
+    "symbol": "test_actual_factory_runs_all_configured_phases_and_reentry_writes_nothing",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/chains/test_organize_owner.py",
+    "symbol": "test_single_admission_round_stops_with_durable_refusal_and_no_completion",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/chains/test_organize_owner.py",
+    "symbol": "test_wrong_author_identity_refuses_before_native_issue_write",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/chains/test_organize_owner.py",
+    "symbol": "test_author_source_changed_during_session_cannot_be_overwritten",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/chains/test_organize_owner.py",
+    "symbol": "test_human_approval_arriving_during_authorship_ends_organize_before_write",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/chains/test_organize_owner.py",
+    "symbol": "test_cancelled_author_never_reaches_a_tracker_mutation",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/chains/test_organize_owner.py",
+    "symbol": "test_landed_claim_refutation_drives_a_fresh_author_repair",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/chains/test_organize_owner.py",
+    "symbol": "test_author_decision_is_recorded_without_inventing_an_admission",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/chains/test_organize_owner.py",
+    "symbol": "test_unanswered_escalation_is_unrecorded_with_exact_issue_and_no_resend",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/chains/test_organize_owner.py",
+    "symbol": "test_assessment_dispatch_uses_the_configured_admission_role",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/chains/test_organize_owner.py",
+    "symbol": "test_already_approved_scope_starts_no_author_or_judgment",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/chains/test_organize_owner.py",
+    "symbol": "test_full_scope_finding_exhausts_the_actual_convergence_bound",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/chains/test_organize_owner.py",
+    "symbol": "test_missing_criterion_edit_capability_is_not_invented_as_a_human_fork",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/chains/test_organize_owner.py",
+    "symbol": "test_removed_phase_gate_refuses_author_write",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/chains/test_organize_ownership.py",
+    "symbol": "test_repeated_cancellation_settles_native_admission_worktree",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/core/test_organize_settings.py",
+    "symbol": "test_scope_address_reexport_preserves_type_and_wire_shape",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/core/test_organize_settings.py",
+    "symbol": "test_bounds_are_both_required_and_positive",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/core/test_organize_settings.py",
+    "symbol": "test_scope_binding_has_one_declared_repository_and_no_ambiguous_authority",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/core/test_organize_settings.py",
+    "symbol": "test_environment_bounds_reach_the_tick_and_stop_after_one_author",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/core/test_organize_settings.py",
+    "symbol": "test_actual_tick_uses_fresh_remote_trunk_and_existing_run_identity",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/core/test_organize_settings.py",
+    "symbol": "test_declared_owner_bindings_without_bounds_refuse_construction",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_organize.py",
+    "symbol": "test_admission_verdict_is_exactly_three_distinct_states",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_organize.py",
+    "symbol": "test_admission_verdict_cannot_be_coerced_to_boolean",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_organize.py",
+    "symbol": "test_no_source_call_booleanizes_admission_verdict",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_organize.py",
+    "symbol": "test_static_detector_catches_typed_consumer_mutations",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_organize.py",
+    "symbol": "test_static_detector_accepts_explicit_comparison_and_unrelated_boolean",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_organize.py",
+    "symbol": "test_admission_result_round_trips_without_changing_verdict",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_organize.py",
+    "symbol": "test_every_verdict_requires_a_nonempty_admitted_body_digest",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_organize.py",
+    "symbol": "test_admission_liveness_is_exact_digest_arithmetic",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_organize.py",
+    "symbol": "test_liveness_cannot_treat_unavailable_digests_as_live",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_organize.py",
+    "symbol": "test_admission_refusal_requires_actionable_fields",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_organize.py",
+    "symbol": "test_defect_role_has_exact_instance_and_mandate_members",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_organize.py",
+    "symbol": "test_mandate_finding_requires_a_quoted_sentence",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_organize.py",
+    "symbol": "test_instance_finding_refuses_any_mandate_text",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_organize.py",
+    "symbol": "test_finding_round_trip_keeps_role_and_verbatim_instruction",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_organize.py",
+    "symbol": "test_instance_finding_needs_no_mandate_text",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_organize.py",
+    "symbol": "test_finding_is_frozen_and_rejects_unknown_fields",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_organize.py",
+    "symbol": "test_refusal_kind_has_exact_spec_gap_and_human_decision_members",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_organize.py",
+    "symbol": "test_not_buildable_requires_an_explicit_refusal_kind",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_organize.py",
+    "symbol": "test_only_not_buildable_can_carry_a_refusal_kind",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_organize.py",
+    "symbol": "test_non_refusals_round_trip_with_no_refusal_kind",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_organize.py",
+    "symbol": "test_admission_refusal_route_uses_kind_without_reading_tone",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_organize.py",
+    "symbol": "test_mandate_kind_names_and_values_are_the_three_organize_phases",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_organize.py",
+    "symbol": "test_mandate_has_only_its_five_configured_differences",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_organize.py",
+    "symbol": "test_every_mandate_field_is_required",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_organize.py",
+    "symbol": "test_mandate_is_frozen_closed_and_round_trips_qualified_keys",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_organize.py",
+    "symbol": "test_mandate_refs_name_an_explicit_supported_mapping",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_organize.py",
+    "symbol": "test_gate_reference_can_name_either_label_family_without_guessing",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_organize.py",
+    "symbol": "test_phase_completion_is_an_issue_marker_not_scope_approval",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_organize.py",
+    "symbol": "test_mandate_prompt_references_must_be_registered_prompt_roles",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_organize.py",
+    "symbol": "test_all_phase_references_resolve_to_operation_values_at_construction",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_organize.py",
+    "symbol": "test_absent_mandate_table_is_legal_without_any_label_mapping",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_organize.py",
+    "symbol": "test_a_declared_table_cannot_omit_a_phase",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_organize.py",
+    "symbol": "test_duplicate_phases_are_rejected_even_with_every_phase_present",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_organize.py",
+    "symbol": "test_unmapped_keys_fail_while_constructing_the_operation",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_organize.py",
+    "symbol": "test_all_bad_references_are_reported_in_the_same_load_error",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_organize.py",
+    "symbol": "test_qualified_reference_selects_the_mapping_even_when_keys_overlap",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_organize.py",
+    "symbol": "test_scope_approval_cannot_be_used_through_an_issue_label_alias",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_organize.py",
+    "symbol": "test_scope_approval_is_not_an_organize_gate",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_organize.py",
+    "symbol": "test_blank_scope_label_is_not_a_resolved_gate",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_organize.py",
+    "symbol": "test_normal_toml_loader_resolves_the_declared_phase_table",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_organize.py",
+    "symbol": "test_invalid_table_stops_normal_boot_before_tracker_or_dispatch",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_organize_routing.py",
+    "symbol": "test_unverifiable_requires_both_the_real_blocked_by_edge_and_scope_membership",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_organize_routing.py",
+    "symbol": "test_another_in_scope_blocker_cannot_substitute_for_the_named_blocker",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_organize_routing.py",
+    "symbol": "test_unverifiable_prose_cannot_approve_or_escalate_without_an_edge",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_organize_routing.py",
+    "symbol": "test_result_cannot_be_routed_using_another_issues_edges",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_organize_routing.py",
+    "symbol": "test_buildable_requires_no_pending_blocker_proof",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_topology.py",
+    "symbol": "test_deep_dependency_priority_outranks_parallel_older_roots",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_topology.py",
+    "symbol": "test_priority_flows_to_blockers_never_to_dependents",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_topology.py",
+    "symbol": "test_fan_in_propagates_priority_to_each_root_without_linearizing_them",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_topology.py",
+    "symbol": "test_ready_set_reuses_the_domain_open_blocker_partition",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_topology.py",
+    "symbol": "test_replanning_observes_changed_blocker_state",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_topology.py",
+    "symbol": "test_only_explicit_candidates_can_appear_in_the_ready_set",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_topology.py",
+    "symbol": "test_parent_and_non_blocking_relations_do_not_create_dependencies",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_topology.py",
+    "symbol": "test_exact_priority_and_age_ties_keep_the_snapshot_order",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_topology.py",
+    "symbol": "test_an_empty_candidate_set_does_not_dispatch_every_issue",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_topology.py",
+    "symbol": "test_missing_blocker_facts_are_refused_instead_of_treated_as_closed",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_topology.py",
+    "symbol": "test_unknown_candidates_are_refused_instead_of_silently_dropped",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_topology.py",
+    "symbol": "test_duplicate_issue_keys_cannot_replace_a_snapshot_fact",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_topology.py",
+    "symbol": "test_duplicate_blocker_edges_do_not_duplicate_the_report",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_topology.py",
+    "symbol": "test_deep_stacks_do_not_depend_on_the_python_recursion_limit",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_topology_cycles.py",
+    "symbol": "test_a_cycle_raises_the_domain_error_naming_only_its_offending_keys",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_topology_cycles.py",
+    "symbol": "test_a_self_dependency_is_a_cycle",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_topology_cycles.py",
+    "symbol": "test_a_cycle_is_not_hidden_by_candidate_filtering_or_closed_states",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_topology_cycles.py",
+    "symbol": "test_an_acyclic_diamond_returns_its_ready_set",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_topology_cycles.py",
+    "symbol": "test_cycle_detection_does_not_stop_at_the_python_recursion_limit",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/domain/test_topology_cycles.py",
+    "symbol": "test_cycle_error_copies_primitive_keys",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/integration/test_organize_scheduler.py",
+    "symbol": "test_scheduled_owner_prepares_native_children_and_reentry_is_idempotent",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/integration/test_organize_scheduler.py",
+    "symbol": "test_partial_owner_configuration_refuses_during_preflight",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/integration/test_organize_scheduler.py",
+    "symbol": "test_actual_lifespan_registers_and_runs_the_owner",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/integration/test_organize_tick_halt.py",
+    "symbol": "test_halted_first_binding_does_not_starve_second_binding",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/prompts/test_organize_call_bindings.py",
+    "symbol": "test_named_per_call_roster_is_disjoint_from_both_other_namespaces",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/prompts/test_organize_call_bindings.py",
+    "symbol": "test_a_configuration_field_collision_is_named_at_prompt_boot",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/prompts/test_organize_call_bindings.py",
+    "symbol": "test_a_projected_configuration_binding_collision_is_named_at_boot",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/prompts/test_organize_call_bindings.py",
+    "symbol": "test_two_calls_render_distinct_rubrics_and_all_current_source_bodies",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/prompts/test_organize_call_bindings.py",
+    "symbol": "test_read_only_roles_do_not_render_prior_refusal_or_author_rationale",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/prompts/test_organize_call_bindings.py",
+    "symbol": "test_authoring_receives_the_typed_refusal_decision_and_evidence",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/prompts/test_organize_call_bindings.py",
+    "symbol": "test_an_empty_child_family_and_first_authoring_round_remain_explicit",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/prompts/test_organize_call_bindings.py",
+    "symbol": "test_required_source_bindings_cannot_silently_disappear",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/prompts/test_organize_mandate_bindings.py",
+    "symbol": "test_operation_binding_contains_resolved_phase_metadata",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/prompts/test_organize_mandate_bindings.py",
+    "symbol": "test_grooming_consumes_the_declared_or_absent_phase_table",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/prompts/test_organize_roles.py",
+    "symbol": "test_organize_roles_have_the_named_enum_members_and_values",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/prompts/test_organize_roles.py",
+    "symbol": "test_removing_each_organize_data_file_fails_application_prompt_boot",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/prompts/test_organize_roles.py",
+    "symbol": "test_each_role_renders_its_own_data_file",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/prompts/test_organize_roles.py",
+    "symbol": "test_organize_roles_inherit_the_existing_authorship_and_judgment_policies",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/test_organize_portability.py",
+    "symbol": "test_source_and_prompt_data_have_no_literal_phase_labels",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/test_organize_portability.py",
+    "symbol": "test_literal_constructions_cannot_hide_labels",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/test_organize_portability.py",
+    "symbol": "test_constant_aliases_are_followed_within_nested_scopes",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/test_organize_portability.py",
+    "symbol": "test_unknown_bindings_and_semantic_keys_are_not_backend_labels",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/test_organize_portability.py",
+    "symbol": "test_alias_cycles_end_without_executing_the_source",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/test_organize_portability.py",
+    "symbol": "test_tree_guard_reports_literal_sources_and_exempts_only_config_model",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/test_organize_portability.py",
+    "symbol": "test_template_bindings_remain_configurable",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/test_organize_portability.py",
+    "symbol": "test_literal_namespace_plus_unknown_runtime_suffix_is_still_hardcoded",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/test_organize_portability.py",
+    "symbol": "test_toml_escaped_string_values_are_decoded_before_checking",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/test_organize_portability.py",
+    "symbol": "test_literal_namespace_before_a_template_binding_is_hardcoded",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/test_organize_portability.py",
+    "symbol": "test_function_and_class_headers_cannot_hide_literal_labels",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/test_organize_portability.py",
+    "symbol": "test_real_source_gate_rejects_an_injected_offending_tree",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/test_organize_portability.py",
+    "symbol": "test_fstring_folding_handles_formatted_prefix_and_suffix",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_artifact_native_fields.py",
+    "symbol": "test_missing_consumed_native_facts_cannot_be_a_complete_artifact",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_artifact_native_fields.py",
+    "symbol": "test_reported_native_facts_form_the_requested_complete_artifact",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_artifact_native_fields.py",
+    "symbol": "test_description_only_read_does_not_claim_unconsumed_classification",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_artifact_split_identity_independent.py",
+    "symbol": "test_a_split_artifact_never_pairs_identity_with_another_body",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_artifact_split_identity_independent.py",
+    "symbol": "test_a_foreign_identity_read_cannot_supply_the_split_receipt",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_body_revisions.py",
+    "symbol": "test_repeated_reads_preserve_body_and_digest_without_writes",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_body_revisions.py",
+    "symbol": "test_metadata_changes_preserve_the_body_revision",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_body_revisions.py",
+    "symbol": "test_body_change_moves_only_its_surface_and_unchanged_replay_moves_none",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_body_revisions.py",
+    "symbol": "test_every_exact_body_has_a_nonempty_stable_revision",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_body_revisions.py",
+    "symbol": "test_revision_rejects_an_unavailable_digest",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_body_revisions.py",
+    "symbol": "test_revision_is_frozen_closed_and_does_not_normalize_opaque_digests",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_body_revisions.py",
+    "symbol": "test_linear_revision_uses_one_full_hydration_and_hashes_its_exact_body",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_comment_expected_independent.py",
+    "symbol": "test_known_unissued_retry_revalidates_changed_expected_comment",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_criterion_creation.py",
+    "symbol": "test_native_create_initializes_a_new_todo_criterion_then_replays_no_write",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_criterion_creation.py",
+    "symbol": "test_missing_or_other_surface_grant_cannot_authorize_creation",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_criterion_creation.py",
+    "symbol": "test_ambiguous_or_absent_native_initial_state_refuses_before_write",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_criterion_creation.py",
+    "symbol": "test_duplicate_check_identity_refuses_before_any_write",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_criterion_creation.py",
+    "symbol": "test_invalid_authored_fields_refuse_before_any_native_call",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_criterion_creation.py",
+    "symbol": "test_create_initialization_exception_cannot_admit_an_update_or_malformed_shape",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_criterion_creation.py",
+    "symbol": "test_backend_can_land_an_already_issued_create_after_expiry",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_criterion_creation.py",
+    "symbol": "test_unknown_create_response_preserves_committed_child_without_resend",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_criterion_creation.py",
+    "symbol": "test_initial_state_requires_actual_nonblank_native_id",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_criterion_creation.py",
+    "symbol": "test_initial_state_uses_the_selected_team_id_not_shared_name",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_milestone_approval.py",
+    "symbol": "test_a_milestone_label_cannot_approve_its_project_or_members",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_milestone_approval.py",
+    "symbol": "test_milestone_membership_without_reported_project_refuses",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_native_approval_aliases.py",
+    "symbol": "test_actual_entry_preserves_reported_alias_with_one_subject_read",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_native_approval_aliases.py",
+    "symbol": "test_actual_entry_refuses_foreign_subject_before_membership",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_organize_graph_final_boundary.py",
+    "symbol": "test_final_split_observation_after_refreshed_identity_is_authoritative",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_organize_graph_final_boundary.py",
+    "symbol": "test_final_writers_refuse_missing_and_foreign_holder",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_organize_graph_independent.py",
+    "symbol": "test_graph_lease_must_still_hold_after_final_graph_read",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_organize_graph_independent.py",
+    "symbol": "test_split_final_observed_source_is_checked_before_creation",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_organize_graph_independent.py",
+    "symbol": "test_split_identity_appearing_during_state_read_is_not_duplicated",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_organize_graph_independent.py",
+    "symbol": "test_milestone_parent_is_current_after_holder_wait",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_organize_graph_receipt_boundary.py",
+    "symbol": "test_post_save_read_failure_never_reissues_a_completed_write",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_organize_graph_retry_boundary.py",
+    "symbol": "test_known_unsent_retry_revalidates_current_write_preconditions",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_organize_graph_writes.py",
+    "symbol": "test_actual_adapter_preserves_unrequested_edges_and_updates_inverse",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_organize_graph_writes.py",
+    "symbol": "test_graph_refuses_before_save",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_organize_graph_writes.py",
+    "symbol": "test_split_creation_uses_native_initial_state_and_replay_never_overwrites",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_organize_graph_writes.py",
+    "symbol": "test_graph_surfaces_never_alias_container_or_parent_body",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_organize_graph_writes.py",
+    "symbol": "test_split_source_drift_during_state_lookup_refuses_before_create",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_organize_graph_writes.py",
+    "symbol": "test_initial_state_requires_actual_nonblank_native_identity",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_organize_graph_writes.py",
+    "symbol": "test_split_creation_shape_never_bypasses_existing_issue_transition_guard",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_organize_graph_writes.py",
+    "symbol": "test_project_milestones_expose_complete_native_identities_and_descriptions",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_organize_graph_writes.py",
+    "symbol": "test_project_milestone_incomplete_identity_evidence_refuses",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_organize_graph_writes.py",
+    "symbol": "test_parent_change_and_clear_use_exact_native_keys",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_organize_graph_writes.py",
+    "symbol": "test_milestone_assignment_requires_actual_current_project",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_organize_graph_writes.py",
+    "symbol": "test_existing_split_identity_damage_never_creates_or_overwrites",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_scope_approval.py",
+    "symbol": "test_approval_at_each_real_ancestor_admits_deepest_issue",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_scope_approval.py",
+    "symbol": "test_absent_approval_or_another_meta_member_is_not_approval",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_scope_approval.py",
+    "symbol": "test_current_reparenting_and_revocation_need_no_copied_label",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_scope_approval.py",
+    "symbol": "test_container_label_removal_is_visible_on_the_same_adapter",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_scope_approval.py",
+    "symbol": "test_issue_parent_project_does_not_replace_child_membership",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_scope_approval.py",
+    "symbol": "test_issue_without_container_can_be_unapproved_or_inherit_issue_label",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_scope_approval.py",
+    "symbol": "test_reported_project_without_canonical_key_refuses",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_scope_approval.py",
+    "symbol": "test_native_no_project_retains_omitted_and_null_compatibility",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_scope_approval.py",
+    "symbol": "test_nested_initiative_is_read_and_reparenting_changes_next_resolution",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_scope_approval.py",
+    "symbol": "test_cyclic_ancestry_is_not_a_negative_answer",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_scope_approval.py",
+    "symbol": "test_missing_ancestry_refuses_instead_of_returning_false",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_scope_approval.py",
+    "symbol": "test_returned_identity_must_match_the_address",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_scope_approval.py",
+    "symbol": "test_unmapped_approval_refuses_before_any_native_read",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_scope_approval.py",
+    "symbol": "test_actual_composition_passes_the_remapped_scope_vocabulary",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_scope_approval.py",
+    "symbol": "test_unconfigured_names_never_substitute_for_configured_approval",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_scope_approval.py",
+    "symbol": "test_issue_membership_omission_is_not_an_empty_answer",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_scope_approval.py",
+    "symbol": "test_unreadable_native_labels_do_not_become_absence",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_scope_approval.py",
+    "symbol": "test_omitted_native_labels_refuse",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_scope_approval.py",
+    "symbol": "test_multiple_container_parents_refuse_even_with_an_approval_label",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_scope_approval.py",
+    "symbol": "test_native_cancellation_propagates_without_answer_or_write",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/tracker/test_scope_tool_arguments.py",
+    "symbol": "test_scope_reads_send_declared_arguments_on_every_call",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/types/test_organize_halt.py",
+    "symbol": "test_wrong_cause_or_missing_evidence_refuses",
+    "assertions_identical": true,
+    "raises_identical": true
+  },
+  {
+    "path": "tests/types/test_organize_halt.py",
+    "symbol": "test_valid_halt_roundtrips_the_existing_flat_json",
+    "assertions_identical": true,
+    "raises_identical": true
+  }
+]

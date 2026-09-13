@@ -1,0 +1,11 @@
+E501 Line too long (89 > 88)
+   --> src/kodezart/domain/errors.py:170:89
+    |
+168 |         self.reason = reason
+169 |         super().__init__(
+170 |             f"comment {expected_comment_key!r} on {target!r} cannot be amended: {reason}"
+    |                                                                                         ^
+171 |         )
+    |
+
+Found 1 error.

@@ -1,0 +1,68 @@
+Using CPython 3.12.13
+Creating virtual environment at: .venv
+   Building kodezart @ file:///private/tmp/kodezart-v03-audit-workspace-corrective
+warning: `build_system.requires = ["uv-build>=0.10.9,<0.11.0"]` does not contain the current uv version 0.11.6
+      Built kodezart @ file:///private/tmp/kodezart-v03-audit-workspace-corrective
+Installed 174 packages in 1.61s
+F                                                                        [100%]
+=================================== FAILURES ===================================
+__ test_actual_audit_worktree_acquisition_keeps_failure_identity[programmer] ___
+
+native_audit = (<kodezart.services.audit_runtime.AuditScheduledPass object at 0x10b1b8080>, <tests.integration.test_audit_runtime_nat...rvice object at 0x10b1a88f0>, <kodezart.adapters.git_worktree_provider.GitWorktreeProvider object at 0x10b0958e0>, ...)
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10b1b78c0>
+kind = 'programmer'
+
+    @pytest.mark.parametrize("kind", ["programmer", "cancel"])
+    async def test_actual_audit_worktree_acquisition_keeps_failure_identity(
+        native_audit, monkeypatch, kind
+    ):
+        audit, executor, _backend, _tracker, _git, workspace, _repository = native_audit
+        create = asyncio.create_subprocess_exec
+        failure = (
+            RuntimeError("independent subprocess implementation defect")
+            if kind == "programmer"
+            else asyncio.CancelledError("independent cancellation")
+        )
+        reached = False
+    
+        async def subprocess(*args, **kwargs):
+            nonlocal reached
+            if args[:3] == ("git", "worktree", "add"):
+                reached = True
+                raise failure
+            return await create(*args, **kwargs)
+    
+        monkeypatch.setattr(asyncio, "create_subprocess_exec", subprocess)
+        with pytest.raises(type(failure)) as caught:
+>           await audit.run(FIXTURE_NOW)
+
+tests/integration/test_audit_workspace_failure_review.py:35: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.services.audit_runtime.AuditScheduledPass object at 0x10b1b8080>
+started_at = datetime.datetime(2026, 3, 1, 12, 0, tzinfo=datetime.timezone.utc)
+
+    async def run(self, started_at: datetime) -> PassRun:
+        identity = RunIdentity(kind=RunKind.AUDIT, name="audit", started_at=started_at)
+        self._last_report = None
+        scopes = tuple(
+            [await self._scope(target, identity) for target in self._targets]
+        )
+        report = AuditRunReport(identity=identity, scopes=scopes)
+        self._last_report = report
+        await self._log.ainfo(
+            "audit_run_finished",
+            run_identity=identity.title(),
+            report=report.model_dump(mode="json"),
+        )
+        if any(isinstance(scope, AuditScopeIncomplete) for scope in scopes):
+>           raise AuditRunIncompleteError(report=report)
+E           kodezart.domain.errors.AuditRunIncompleteError: audit run 'audit — audit @ 2026-03-01T12:00:00Z' is incomplete
+
+src/kodezart/services/audit_runtime.py:643: AuditRunIncompleteError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 21:43:12 [info     ] outbound_content_gated         categories=[] content_digest=473b1a813e8ec5890e18bcef9d72b2dbd4a5467da326da94947f03aa40c0000b failure=None hits=[] surface=tracker verdict=clean visibility=public writer=tracker_comment
+2026-09-12 21:43:14 [info     ] audit_run_finished             report={'identity': {'kind': 'audit', 'name': 'audit', 'started_at': '2026-03-01T12:00:00Z'}, 'scopes': [{'scope': {'kind': 'issue', 'key': 'audit/root'}, 'writes': [], 'observations': [{'kind': 'forge', 'graded_sha': '2a2b972afa702ad5c17ec531a14f07a96901b359', 'report': {'claim': {'judgment': {'criterion_key': 'audit/criterion', 'verdict': 'holds', 'evidence': 'audit/criterion at 2a2b972afa702ad5c17ec531a14f07a96901b359: the recorded SHA has green checks'}, 'head_sha': '2a2b972afa702ad5c17ec531a14f07a96901b359', 'record_ref': 'comment-0001', 'check': 'The current check.txt contains the committed contents.'}, 'mandate': None}}, {'kind': 'terminal', 'report': {'observation': {'issue_key': 'audit/root', 'record_ref': 'comment-0001', 'verdict': 'holds', 'discrepancies': [], 'branch_head': '2a2b972afa702ad5c17ec531a14f07a96901b359', 'pr': {'url': 'file:///private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1920/test_actual_audit_worktree_acq0/remote/pull/7', 'number': 7, 'head_repo_url': 'file:///private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1920/test_actual_audit_worktree_acq0/remote', 'head_branch': 'ordinary-name', 'head_sha': '2a2b972afa702ad5c17ec531a14f07a96901b359', 'base_repo_url': 'file:///private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1920/test_actual_audit_worktree_acq0/remote', 'base_branch': 'ordinary-name', 'lifecycle': 'open'}}, 'mandate': None}}], 'raw_observations': [{'criterion': {'issue_key': 'audit/criterion', 'title': 'fixture issue', 'body': '**Check:** The current check.txt contains the committed contents.\n**Do:** AUTHOR REASONING\n**Evidence:**\n```json\n{\n  "gradedSha": "2a2b972afa702ad5c17ec531a14f07a96901b359",\n  "test": "historical author reasoning"\n}\n```', 'priority': 'none', 'state_name': 'Done', 'state_kind': 'completed', 'queue_states': [], 'issue_labels': ['criterion'], 'team_key': 'engineering', 'project': None, 'project_id': None, 'milestone_key': None, 'relations': [], 'parent_key': 'audit/root', 'assignee_key': None, 'created_at': '2026-01-01T00:00:00Z', 'updated_at': '2026-01-01T00:01:40Z', 'url': 'https://tracker.invalid/issue/audit/criterion'}, 'recorded_evidence': {'graded_sha': '2a2b972afa702ad5c17ec531a14f07a96901b359', 'test': 'historical author reasoning'}, 'required_check_names': ['test'], 'checks': {'kind': 'completed', 'commit_sha': '2a2b972afa702ad5c17ec531a14f07a96901b359', 'checks_passed': True, 'check_names': ['test'], 'failed_check_names': [], 'summary': 'All CI checks passed.'}, 'red': None, 'verdict': 'holds', 'reason': 'audit/criterion at 2a2b972afa702ad5c17ec531a14f07a96901b359: the recorded SHA has green checks'}, {'issue_key': 'audit/root', 'record_ref': 'comment-0001', 'verdict': 'holds', 'discrepancies': [], 'branch_head': '2a2b972afa702ad5c17ec531a14f07a96901b359', 'pr': {'url': 'file:///private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1920/test_actual_audit_worktree_acq0/remote/pull/7', 'number': 7, 'head_repo_url': 'file:///private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1920/test_actual_audit_worktree_acq0/remote', 'head_branch': 'ordinary-name', 'head_sha': '2a2b972afa702ad5c17ec531a14f07a96901b359', 'base_repo_url': 'file:///private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1920/test_actual_audit_worktree_acq0/remote', 'base_branch': 'ordinary-name', 'lifecycle': 'open'}}], 'status': 'incomplete', 'unavailable': [{'subject': {'kind': 'issue', 'key': 'audit/criterion'}, 'reason': "AuditEvidenceReadError: Evidence for 'audit/criterion' could not be read: independent subprocess implementation defect"}, {'subject': {'kind': 'issue', 'key': 'audit/criterion'}, 'reason': 'WorkspaceError: independent subprocess implementation defect'}, {'subject': {'kind': 'issue', 'key': 'audit/criterion'}, 'reason': "AuditEvidenceReadError: Evidence for 'audit/criterion' could not be read: independent subprocess implementation defect"}, {'subject': {'kind': 'issue', 'key': 'audit/criterion'}, 'reason': 'WorkspaceError: independent subprocess implementation defect'}, {'subject': {'kind': 'issue', 'key': 'audit/root'}, 'reason': 'AuditClaimReadError: the native audit requests changed during the sweep'}], 'repair_inputs': []}]} run_identity='audit — audit @ 2026-03-01T12:00:00Z'
+=========================== short test summary info ============================
+FAILED tests/integration/test_audit_workspace_failure_review.py::test_actual_audit_worktree_acquisition_keeps_failure_identity[programmer]
+1 failed, 1 deselected in 13.24s

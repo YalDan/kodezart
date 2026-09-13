@@ -1,0 +1,345 @@
+E501 Line too long (89 > 88)
+    --> src/kodezart/adapters/linear_mcp_tracker.py:1439:89
+     |
+1437 |                     raise OrganizeWriteRefusalError(
+1438 |                         issue_key=issue_key,
+1439 |                         reason="milestone does not belong to the current native project",
+     |                                                                                         ^
+1440 |                     )
+1441 |                 arguments["milestone"] = change.milestone_id
+     |
+
+E501 Line too long (93 > 88)
+  --> src/kodezart/services/organize_context.py:86:89
+   |
+84 |                     raise OrganizeWriteRefusalError(
+85 |                         issue_key=scope.key,
+86 |                         reason="milestone context has a duplicate or wrong project identity",
+   |                                                                                         ^^^^^
+87 |                     )
+88 |                 milestone_keys.add(milestone.ref.key)
+   |
+
+E501 Line too long (100 > 88)
+   --> src/kodezart/services/organize_owner.py:456:89
+    |
+454 |                         raise OrganizeWriteRefusalError(
+455 |                             issue_key=request.issue_key,
+456 |                             reason="the milestone identity was not in the author's current context",
+    |                                                                                         ^^^^^^^^^^^^
+457 |                         )
+458 |                 _, peers = validate_graph_change(
+    |
+
+E501 Line too long (98 > 88)
+  --> tests/chains/test_organize_graph_owner.py:95:89
+   |
+93 |                     "verdict": "not_buildable",
+94 |                     "refusal_kind": "spec_gap",
+95 |                     "evidence": "The settled mandate calls for an independent child deliverable.",
+   |                                                                                         ^^^^^^^^^^
+96 |                     "invented_decision": "Prepare the specified split.",
+97 |                 }
+   |
+
+I001 [*] Import block is un-sorted or un-formatted
+   --> tests/chains/test_organize_graph_owner.py:160:5
+    |
+159 |   async def test_cancel_during_issued_split_settles_before_lease_release(monkeypatch):
+160 | /     import asyncio
+161 | |     import pytest
+    | |_________________^
+162 |       owner, board, executor = factory()
+163 |       original = executor.stream
+    |
+help: Organize imports
+
+E501 Line too long (203 > 88)
+   --> tests/chains/test_organize_graph_owner.py:166:89
+    |
+164 | …
+165 | …
+166 | …_ISSUE, "children": [{"deliverable_key": "cancellation-child", "title": "Split child", "body": "Prepared specification"}]})
+    |          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+167 | …
+168 | …
+    |
+
+E501 Line too long (102 > 88)
+   --> tests/chains/test_organize_graph_owner.py:184:89
+    |
+182 |         await task
+183 |     assert not board.grants()
+184 |     assert len([issue for issue in board.server.issues.values() if issue.title == "Split child"]) == 1
+    |                                                                                         ^^^^^^^^^^^^^^
+185 |     assert "graph complete" not in board.server.issues[CLAIMED_ISSUE].labels
+    |
+
+E501 Line too long (106 > 88)
+   --> tests/chains/test_organize_graph_owner.py:188:89
+    |
+188 | async def test_removed_peer_refutation_retains_exact_citations_and_bound_without_peer_repair(monkeypatch):
+    |                                                                                         ^^^^^^^^^^^^^^^^^^
+189 |     import json
+190 |     from tests.fakes import FakeMcpIssue
+    |
+
+I001 [*] Import block is un-sorted or un-formatted
+   --> tests/chains/test_organize_graph_owner.py:189:5
+    |
+188 |   async def test_removed_peer_refutation_retains_exact_citations_and_bound_without_peer_repair(monkeypatch):
+189 | /     import json
+190 | |     from tests.fakes import FakeMcpIssue
+    | |________________________________________^
+191 |       owner, board, executor = factory(bound=2)
+192 |       board.server.issues["peer"] = FakeMcpIssue(id="peer", parent_id=CLAIMED_ISSUE, description="Prepared peer body", relations=[("rel…
+    |
+help: Organize imports
+
+E501 Line too long (158 > 88)
+   --> tests/chains/test_organize_graph_owner.py:192:89
+    |
+190 | …
+191 | …
+192 | … parent_id=CLAIMED_ISSUE, description="Prepared peer body", relations=[("relatedTo", CLAIMED_ISSUE)])
+    |                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+193 | …atedTo", "peer")]
+194 | …
+    |
+
+E501 Line too long (145 > 88)
+   --> tests/chains/test_organize_graph_owner.py:199:89
+    |
+197 | …et("title")
+198 | …
+199 | … "graph", "issue_id": CLAIMED_ISSUE, "changes": [{"kind": "related_to", "remove": ["peer"]}]})
+    |                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+200 | …
+201 | …
+    |
+
+E501 Line too long (126 > 88)
+   --> tests/chains/test_organize_graph_owner.py:202:89
+    |
+200 |             return
+201 |         if title == "WriteBackFinding":
+202 |             artifact = json.loads(re.findall(r"<written_artifact>\s*(.*?)\s*</written_artifact>", kwargs["prompt"], re.S)[-1])
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+203 |             if artifact["nativeRef"] == "peer" and artifact["surface"]["kind"] == "issue_graph":
+204 |                 peer_judgments.append(kwargs)
+    |
+
+E501 Line too long (96 > 88)
+   --> tests/chains/test_organize_graph_owner.py:203:89
+    |
+201 | …     if title == "WriteBackFinding":
+202 | …         artifact = json.loads(re.findall(r"<written_artifact>\s*(.*?)\s*</written_artifact>", kwargs["prompt"], re.S)[-1])
+203 | …         if artifact["nativeRef"] == "peer" and artifact["surface"]["kind"] == "issue_graph":
+    |                                                                                       ^^^^^^^^
+204 | …             peer_judgments.append(kwargs)
+205 | …             yield result(structured_output={"verdict": "refuted", "evidence": "The peer's retained claim names an absent test.", "c…
+    |
+
+E501 Line too long (173 > 88)
+   --> tests/chains/test_organize_graph_owner.py:205:89
+    |
+203 | …ace"]["kind"] == "issue_graph":
+204 | …
+205 | …ed", "evidence": "The peer's retained claim names an absent test.", "cited_refs": ["tests/absent_peer.py"]})
+    |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+206 | …
+207 | …
+    |
+
+E501 Line too long (95 > 88)
+   --> tests/chains/test_organize_graph_owner.py:216:89
+    |
+214 |     actual = report.halt.write_back_results[0]
+215 |     assert actual.artifact.native_ref == "peer"
+216 |     assert [finding.cited_refs for finding in actual.rounds] == [("tests/absent_peer.py",)] * 2
+    |                                                                                         ^^^^^^^
+217 |     assert len(peer_judgments) == 2
+218 |     assert all(call["session_id"] is None for call in peer_judgments)
+    |
+
+E501 Line too long (153 > 88)
+   --> tests/chains/test_organize_graph_owner.py:219:89
+    |
+217 | …
+218 | …eer_judgments)
+219 | …== "save_issue" and args.get("id") == "peer"] == [{"id": "peer", "addLabels": ["needs decision"]}]
+    |                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+220 | …== "save_issue" and "removeRelatedTo" in args] == [{"id": CLAIMED_ISSUE, "removeRelatedTo": ["peer"]}]
+    |
+
+E501 Line too long (157 > 88)
+   --> tests/chains/test_organize_graph_owner.py:220:89
+    |
+218 | …r_judgments)
+219 | … "save_issue" and args.get("id") == "peer"] == [{"id": "peer", "addLabels": ["needs decision"]}]
+220 | … "save_issue" and "removeRelatedTo" in args] == [{"id": CLAIMED_ISSUE, "removeRelatedTo": ["peer"]}]
+    |                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+
+E501 Line too long (105 > 88)
+   --> tests/tracker/test_organize_graph_writes.py:306:89
+    |
+304 |     board, tracker = fixture()
+305 |     surfaces = frozenset(address(key) for key in (CLAIMED_ISSUE, "child", "peer"))
+306 |     async with RunSurfaceLease(tracker=tracker, job_id="writer", surfaces=surfaces, lease_seconds=321.5):
+    |                                                                                         ^^^^^^^^^^^^^^^^^
+307 |         await tracker.update_issue_graph(issue_key="child", expected=await expected(tracker), changes=changes({"kind": "parent", "par…
+308 |         assert board.server.issues["child"].parent_id == "peer"
+    |
+
+E501 Line too long (168 > 88)
+   --> tests/tracker/test_organize_graph_writes.py:307:89
+    |
+305 | …E, "child", "peer"))
+306 | …", surfaces=surfaces, lease_seconds=321.5):
+307 | …pected=await expected(tracker), changes=changes({"kind": "parent", "parent_id": "peer"}), holder="writer")
+    |                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+308 | …"
+309 | …pected=await expected(tracker), changes=changes({"kind": "parent", "parent_id": None}), holder="writer")
+    |
+
+E501 Line too long (166 > 88)
+   --> tests/tracker/test_organize_graph_writes.py:309:89
+    |
+307 | …xpected=await expected(tracker), changes=changes({"kind": "parent", "parent_id": "peer"}), holder="writer")
+308 | …r"
+309 | …xpected=await expected(tracker), changes=changes({"kind": "parent", "parent_id": None}), holder="writer")
+    |                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+310 | …
+311 | …ve_issue"] == [{"id": "child", "parentId": "peer"}, {"id": "child", "parentId": None}]
+    |
+
+E501 Line too long (147 > 88)
+   --> tests/tracker/test_organize_graph_writes.py:311:89
+    |
+309 | …child", expected=await expected(tracker), changes=changes({"kind": "parent", "parent_id": None}), holder="writer")
+310 | … None
+311 | …me == "save_issue"] == [{"id": "child", "parentId": "peer"}, {"id": "child", "parentId": None}]
+    |                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+
+E501 Line too long (92 > 88)
+   --> tests/tracker/test_organize_graph_writes.py:315:89
+    |
+314 | @pytest.mark.parametrize("milestone", ["new-native-milestone", "milestone-two", None])
+315 | async def test_milestone_assignment_requires_actual_current_project(monkeypatch, milestone):
+    |                                                                                         ^^^^
+316 |     from tests.tracker.test_scope_reads import ScopeMcpServer, PROJECT, ROOT, _milestone
+317 |     from tests.tracker.conftest import linear_over_fake_mcp
+    |
+
+I001 [*] Import block is un-sorted or un-formatted
+   --> tests/tracker/test_organize_graph_writes.py:316:5
+    |
+314 |   @pytest.mark.parametrize("milestone", ["new-native-milestone", "milestone-two", None])
+315 |   async def test_milestone_assignment_requires_actual_current_project(monkeypatch, milestone):
+316 | /     from tests.tracker.test_scope_reads import ScopeMcpServer, PROJECT, ROOT, _milestone
+317 | |     from tests.tracker.conftest import linear_over_fake_mcp
+    | |___________________________________________________________^
+318 |       server = ScopeMcpServer()
+319 |       from tests.tracker.conftest import FIXTURE_NOW
+    |
+help: Organize imports
+
+E501 Line too long (104 > 88)
+   --> tests/tracker/test_organize_graph_writes.py:333:89
+    |
+331 |     monkeypatch.setattr(server, "_tool_save_issue", save)
+332 |     tracker = linear_over_fake_mcp(server)
+333 |     snapshot = tuple([graph_snapshot(await tracker.read_issue(issue_key=key)) for key in server.issues])
+    |                                                                                         ^^^^^^^^^^^^^^^^
+334 |     async with RunSurfaceLease(tracker=tracker, job_id="writer", surfaces=frozenset({address(ROOT.key)}), lease_seconds=321.5):
+335 |         proposal = changes({"kind": "milestone", "milestone_id": milestone})
+    |
+
+E501 Line too long (127 > 88)
+   --> tests/tracker/test_organize_graph_writes.py:334:89
+    |
+332 |     tracker = linear_over_fake_mcp(server)
+333 |     snapshot = tuple([graph_snapshot(await tracker.read_issue(issue_key=key)) for key in server.issues])
+334 |     async with RunSurfaceLease(tracker=tracker, job_id="writer", surfaces=frozenset({address(ROOT.key)}), lease_seconds=321.5):
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+335 |         proposal = changes({"kind": "milestone", "milestone_id": milestone})
+336 |         if milestone == "new-native-milestone":
+    |
+
+E501 Line too long (127 > 88)
+   --> tests/tracker/test_organize_graph_writes.py:337:89
+    |
+335 |         proposal = changes({"kind": "milestone", "milestone_id": milestone})
+336 |         if milestone == "new-native-milestone":
+337 |             actual = await tracker.update_issue_graph(issue_key=ROOT.key, expected=snapshot, changes=proposal, holder="writer")
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+338 |             assert actual.milestone_key == milestone
+339 |             assert writes == [{"id": ROOT.key, "milestone": milestone}]
+    |
+
+E501 Line too long (122 > 88)
+   --> tests/tracker/test_organize_graph_writes.py:342:89
+    |
+340 |         else:
+341 |             with pytest.raises(OrganizeWriteRefusalError):
+342 |                 await tracker.update_issue_graph(issue_key=ROOT.key, expected=snapshot, changes=proposal, holder="writer")
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+343 |             assert writes == []
+    |
+
+E501 Line too long (161 > 88)
+   --> tests/tracker/test_organize_graph_writes.py:349:89
+    |
+347 | …_or_overwrites(fault):
+348 | …
+349 | …ter", surfaces=frozenset({address(CLAIMED_ISSUE, SurfaceKind.ISSUE_SPLIT_SET)}), lease_seconds=321.5):
+    |                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+350 | …_key=CLAIMED_ISSUE, deliverable_key="stable", title="Child", body="Original specification", holder="writer", expected=await expected…
+351 | …
+    |
+
+E501 Line too long (201 > 88)
+   --> tests/tracker/test_organize_graph_writes.py:350:89
+    |
+348 | …
+349 | …nset({address(CLAIMED_ISSUE, SurfaceKind.ISSUE_SPLIT_SET)}), lease_seconds=321.5):
+350 | …deliverable_key="stable", title="Child", body="Original specification", holder="writer", expected=await expected(tracker))
+    |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+351 | …
+352 | …
+    |
+
+E501 Line too long (132 > 88)
+   --> tests/tracker/test_organize_graph_writes.py:353:89
+    |
+351 |         native = board.server.issues[first.issue_key]
+352 |         if fault == "duplicate":
+353 |             board.server.issues["duplicate"] = FakeMcpIssue(id="duplicate", parent_id=CLAIMED_ISSUE, description=native.description)
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+354 |         elif fault == "wrong_parent":
+355 |             native.parent_id = "peer"
+    |
+
+E501 Line too long (184 > 88)
+   --> tests/tracker/test_organize_graph_writes.py:361:89
+    |
+359 | …
+360 | …dentityError)):
+361 | …SUE, deliverable_key="stable", title="Overwrite", body="Wrong", holder="writer", expected=await expected(tracker))
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+362 | …f name == "save_issue"]
+    |
+
+E501 Line too long (93 > 88)
+   --> tests/tracker/test_organize_graph_writes.py:362:89
+    |
+360 | …     with pytest.raises((OrganizeWriteRefusalError, DuplicateIssueIdentityError)):
+361 | …         await tracker.create_split_if_absent(source_key=CLAIMED_ISSUE, deliverable_key="stable", title="Overwrite", body="Wrong", h…
+362 | …     assert not [args for name, args in board.calls[len(before):] if name == "save_issue"]
+    |                                                                                       ^^^^^
+    |
+
+Found 32 errors.
+[*] 3 fixable with the `--fix` option.

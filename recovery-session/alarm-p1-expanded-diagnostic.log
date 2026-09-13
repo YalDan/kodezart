@@ -1,0 +1,138 @@
+..F.....................................F..                              [100%]
+=================================== FAILURES ===================================
+_____ test_every_evidence_arm_roundtrips_without_reparsing_domain_payloads _____
+
+    def test_every_evidence_arm_roundtrips_without_reparsing_domain_payloads():
+        from kodezart.types.domain.escalation import (
+            EscalationResolution,
+            EscalationResolutionState,
+        )
+        from kodezart.types.domain.mandate_graph import (
+            LaneGraphSnapshot,
+            LaneRulingSnapshot,
+        )
+        from kodezart.types.domain.run_alarm import (
+            AlarmEvidence,
+            CommitsEvidence,
+            CountEvidence,
+            EscalationEvidence,
+            GraphEvidence,
+            LabelsEvidence,
+            LaneFieldEvidence,
+            LaneFieldValue,
+            PresenceEvidence,
+            ReferencesEvidence,
+            ResolutionEvidence,
+            RulingsEvidence,
+            ScopeEvidence,
+            SurfaceEvidence,
+            TextEvidence,
+        )
+        from kodezart.types.domain.run_state import LaneCommit, LaneEscalation
+        from kodezart.types.domain.scope import ScopeKind, ScopeRef
+        from kodezart.types.domain.surface import SurfaceKind, WritableSurface
+    
+        scope = ScopeRef(kind=ScopeKind.MILESTONE, key="actual-milestone")
+        values = (
+            TextEvidence(value=" untouched\n"),
+            CountEvidence(value=7),
+            PresenceEvidence(value=False),
+            ReferencesEvidence(value=("a", "b")),
+            LabelsEvidence(value=None),
+            SurfaceEvidence(
+                value=WritableSurface(kind=SurfaceKind.CONTAINER_DESCRIPTION, ref=scope)
+            ),
+            EscalationEvidence(
+                value=LaneEscalation(
+                    issue_id="issue",
+                    escalation_key="question",
+                    raised_by="job",
+                    question="Which source?",
+                    interim_reading="Keep current behavior",
+                    interim_basis="Current approved requirement",
+                    raised_at_sha="head",
+                )
+            ),
+            ResolutionEvidence(
+>               value=EscalationResolution(state=EscalationResolutionState.UNRESOLVED)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            ),
+            CommitsEvidence(value=(LaneCommit(sha="head", subject="", issue_id="issue"),)),
+            LaneFieldEvidence(
+                value=LaneFieldValue(lane_key="lane", field_key="quality", value="red")
+            ),
+            ScopeEvidence(value=scope),
+            RulingsEvidence(
+                value=LaneRulingSnapshot(lane_key="lane", issue_keys=("issue",), rulings=())
+            ),
+            GraphEvidence(
+                value=LaneGraphSnapshot(
+                    lane_key="lane",
+                    fire_key="issue",
+                    milestone=scope,
+                    subtree=(),
+                    milestone_members=(),
+                    supersessions=(),
+                )
+            ),
+        )
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for EscalationResolution
+E       decisionRef
+E         Field required [type=missing, input_value={'state': <EscalationReso...RESOLVED: 'unresolved'>}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.12/v/missing
+
+tests/domain/test_alarm_typed_evidence.py:78: ValidationError
+____ test_in_flight_backend_write_is_explicitly_not_fenced_by_lease_expiry _____
+
+    async def test_in_flight_backend_write_is_explicitly_not_fenced_by_lease_expiry():
+        boundary = Boundary()
+        port = boundary.adapter()
+        value = alarm()
+        surface_set = frozenset({address(value)})
+        boundary.pause = lambda name, args: (
+            name == "save_comment"
+            and str(args.get("body", "")).startswith("[fixture-alarm:")
+        )
+        task = asyncio.create_task(store(port, value))
+        await asyncio.wait_for(boundary.reached.wait(), timeout=2)
+        boundary.clock.advance(seconds=DURATION + 1)
+>       await port.acquire_surfaces(
+            surfaces=surface_set, holder="next-real-job", lease_seconds=DURATION
+        )
+
+tests/tracker/test_run_alarm_records.py:376: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10a3b23f0>
+
+    async def acquire_surfaces(
+        self,
+        *,
+        surfaces: frozenset[WritableSurface],
+        holder: str,
+        lease_seconds: float,
+    ) -> SurfaceLease:
+        """Take the WHOLE set for *holder*, or take nothing and name the owner."""
+        outcome = await self._grant(
+            addressing=_LEASE_ADDRESSING,
+            addresses=surfaces,
+            holder=holder,
+            lease_seconds=lease_seconds,
+        )
+        if isinstance(outcome, _Refused):
+>           raise SurfaceLeaseError(
+                (
+                    "surface set intersects a live lease"
+                    if outcome.settled
+                    else "surface set meets a race the backend has not settled"
+                ),
+                surface=outcome.address,
+                current_holder=outcome.holder,
+            )
+E           kodezart.domain.errors.SurfaceLeaseError: surface set intersects a live lease (surface: marker_comment:issue:FIX-2 (marker: [fixture-alarm:%7B%22scope_key%22%3A%22scope%2Fopaque%22%2C%22kind%22%3A%22surface%22%2C%22surface%22%3A%7B%22kind%22%3A%22marker_comment%22%2C%22ref%22%3A%7B%22kind%22%3A%22issue%22%2C%22key%22%3A%22observed-native-issue%22%7D%2C%22marker%22%3A%22record%3Aa%22%7D%2C%22lane_key%22%3A%22lane%2Fopaque%22%2C%22issue_id%22%3Anull%7D:surface_contended]); current holder: actual-job-77)
+
+src/kodezart/adapters/linear_mcp_tracker.py:1997: SurfaceLeaseError
+=========================== short test summary info ============================
+FAILED tests/domain/test_alarm_typed_evidence.py::test_every_evidence_arm_roundtrips_without_reparsing_domain_payloads
+FAILED tests/tracker/test_run_alarm_records.py::test_in_flight_backend_write_is_explicitly_not_fenced_by_lease_expiry
+2 failed, 41 passed in 0.91s

@@ -1,0 +1,4 @@
+uv run ruff format --check src/ tests/
+Would reformat: tests/fakes.py
+1 file would be reformatted, 393 files already formatted
+make: *** [format-check] Error 1

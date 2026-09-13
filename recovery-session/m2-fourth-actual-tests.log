@@ -1,0 +1,5 @@
+ImportError while loading conftest '/private/tmp/kodezart-v03-m2-organize/tests/tracker/conftest.py'.
+tests/tracker/conftest.py:424: in <module>
+    FIRE_ENTRY_LABELS = [FIRE_SCOPE_LABEL, FIRE_STAGE_LABEL]
+                         ^^^^^^^^^^^^^^^^
+E   NameError: name 'FIRE_SCOPE_LABEL' is not defined

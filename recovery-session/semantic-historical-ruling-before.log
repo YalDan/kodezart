@@ -1,0 +1,72 @@
+.F                                                                       [100%]
+=================================== FAILURES ===================================
+_ test_ruling_departure_uses_exact_readback_and_stays_not_actioned[historical-scope-lane] _
+
+repository = (PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1777/test_ruling_departure_uses_exa1/repo'), '35a76c875a5d865d23ec0809ab65903cae9e4900')
+marker_lane = 'historical-scope-lane'
+
+    @pytest.mark.parametrize("marker_lane", [SUBJECT, "historical-scope-lane"])
+    async def test_ruling_departure_uses_exact_readback_and_stays_not_actioned(
+        repository, marker_lane
+    ):
+        port = tracker()
+        ruling = Ruling.model_validate(ruling_data(issue_ref=SUBJECT))
+        await port.post_comment(
+            issue_key=SUBJECT,
+            body=render_ruling(
+                ruling=ruling,
+                lane_key=marker_lane,
+                marker_prefixes={"ruling": "fixture-pinned"},
+            ),
+        )
+        executor = Executor(subject={"kind": "ruling", "id": ruling.ruling_id})
+        service, guard, _, _ = await build(repository, executor, port=port)
+>       events = await drive(service, guard, repository)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/services/test_native_amendments.py:406: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/services/test_native_amendments.py:200: in drive
+    return [
+src/kodezart/services/agent_service.py:156: in stream_workflow
+    async for event in self._run_in_workspace(
+src/kodezart/services/agent_service.py:300: in _run_in_workspace
+    report = await native_guard.judge(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.services.native_amendments._NativeWriterGuard object at 0x10e463f80>
+
+    async def judge(
+        self,
+        *,
+        workspace_path: str,
+        start: NativeWriterStart,
+        output: NativeWriterOutput,
+    ) -> AmendmentReport:
+        await self.require_current(workspace_path=workspace_path, start=start)
+        if self._rulings is None:
+            raise NativeWriteRefusalError("The ruling registry has not been read")
+        criterion_ids = {item.id for item in self._criteria.criteria}
+        ruling_ids = {ruling.ruling_id for ruling in self._rulings}
+        upheld = []
+        for claim in output.claims:
+            roster = (
+                criterion_ids
+                if isinstance(claim.subject, CriterionSubject)
+                else ruling_ids
+            )
+            if claim.subject.id not in roster:
+>               raise NativeWriteRefusalError("A claim names no current native subject")
+E               kodezart.domain.amendment.NativeWriteRefusalError: A claim names no current native subject
+
+src/kodezart/services/native_amendments.py:316: NativeWriteRefusalError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 17:58:20 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 17:58:21 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-e7e8486fbe774f29a0b296e2044aaaac workspace_id=e7e8486fbe774f29a0b296e2044aaaac
+2026-09-12 17:58:21 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 17:58:21 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 17:58:21 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 17:58:22 [warning  ] native_writer_workspace_retained workspace_path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-e7e8486fbe774f29a0b296e2044aaaac
+=========================== short test summary info ============================
+FAILED tests/services/test_native_amendments.py::test_ruling_departure_uses_exact_readback_and_stays_not_actioned[historical-scope-lane]
+1 failed, 1 passed, 20 deselected in 7.35s

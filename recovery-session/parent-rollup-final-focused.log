@@ -1,0 +1,80 @@
+.................................F......F..........................      [100%]
+=================================== FAILURES ===================================
+_ TestTheTransitionsAJobStreamProduces.test_in_progress_is_written_once_however_many_frames_arrive _
+
+self = <tests.services.test_lifecycle_watcher.TestTheTransitionsAJobStreamProduces object at 0x10a750f20>
+
+    async def test_in_progress_is_written_once_however_many_frames_arrive(
+        self,
+    ) -> None:
+        watch, tracker, _ = watcher(
+            AssistantTextEvent(text="one", model=MODEL),
+            AssistantTextEvent(text="two", model=MODEL),
+            AssistantTextEvent(text="three", model=MODEL),
+        )
+    
+        await watch.watch(
+            issue_key=ISSUE,
+            job_id="job-0001",
+            pre_claim_state=PRE_CLAIM_STATE,
+        )
+    
+>       assert tracker.workflow_writes == [
+            (ISSUE, LifecycleStage.IN_PROGRESS),
+            (ISSUE, LifecycleStage.IN_REVIEW),
+        ]
+E       AssertionError: assert [('K-1', <Lif...n_progress'>)] == [('K-1', <Lif...'in_review'>)]
+E         
+E         Right contains one more item: ('K-1', <LifecycleStage.IN_REVIEW: 'in_review'>)
+E         Use -v to get more diff
+
+tests/services/test_lifecycle_watcher.py:336: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 15:26:59 [info     ] lifecycle_in_progress          issue_key=K-1
+2026-09-12 15:26:59 [info     ] outbound_content_gated         categories=[] content_digest=d82aae096665514518a21bf810caa1a8a24fa0988d6304db27117d3c3775ea42 failure=None hits=[] surface=tracker verdict=clean visibility=public writer=tracker_comment
+2026-09-12 15:26:59 [error    ] lifecycle_run_failed           failure_class=None issue_key=K-1 job_id=job-0001 restored_state=Todo step=None
+2026-09-12 15:26:59 [info     ] claim_released                 holder=pass-a issue_key=K-1
+2026-09-12 15:26:59 [info     ] lifecycle_watch_finished       issue_key=K-1 job_id=job-0001 run_started=True terminal_outcome=False
+2026-09-12 15:26:59 [error    ] finished_fire_unknown_to_registry issue_key=K-1 job_id=job-0001 outcome=failed
+_ TestGracefulShutdownHandsTheClaimBack.test_the_drain_waits_for_the_watch_rather_than_cancelling_it _
+
+self = <tests.services.test_lifecycle_watcher.TestGracefulShutdownHandsTheClaimBack object at 0x10a79a9c0>
+
+    async def test_the_drain_waits_for_the_watch_rather_than_cancelling_it(
+        self,
+    ) -> None:
+        """Cancelling is what would skip the write-back the drain exists for."""
+        watch, tracker, _ = watcher(
+            PR_EVENT,
+            complete(merged=True, outcome=WorkflowOutcome.ci_passed),
+        )
+        watch.follow(
+            issue_key=ISSUE,
+            job_id="job-0001",
+            pre_claim_state=PRE_CLAIM_STATE,
+        )
+    
+        await asyncio.wait_for(watch.drain(), timeout=5.0)
+    
+        assert not watch.following
+>       assert tracker.workflow_writes == [(ISSUE, LifecycleStage.IN_PROGRESS)]
+E       AssertionError: assert [('K-1', <Lif...'in_review'>)] == [('K-1', <Lif...n_progress'>)]
+E         
+E         Left contains one more item: ('K-1', <LifecycleStage.IN_REVIEW: 'in_review'>)
+E         Use -v to get more diff
+
+tests/services/test_lifecycle_watcher.py:649: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 15:26:59 [info     ] lifecycle_in_progress          issue_key=K-1
+2026-09-12 15:26:59 [info     ] lifecycle_deliverable_ref      branch=feature issue_key=K-1 pushed_head_sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+2026-09-12 15:26:59 [info     ] lifecycle_in_review            issue_key=K-1
+2026-09-12 15:26:59 [info     ] lifecycle_queue_finished       issue_key=K-1
+2026-09-12 15:26:59 [info     ] outbound_content_gated         categories=[] content_digest=fdfd09ada3e6d93a2f2e6c1cc13db95ffcdb0cdb1495ec29b06ab7d0a66a2f97 failure=None hits=[] surface=tracker verdict=clean visibility=public writer=tracker_comment
+2026-09-12 15:26:59 [info     ] lifecycle_outcome_comment      issue_key=K-1 job_id=job-0001 outcome=ci_passed
+2026-09-12 15:26:59 [info     ] claim_released                 holder=pass-a issue_key=K-1
+2026-09-12 15:26:59 [info     ] lifecycle_watch_finished       issue_key=K-1 job_id=job-0001 run_started=True terminal_outcome=True
+2026-09-12 15:26:59 [error    ] finished_fire_unknown_to_registry issue_key=K-1 job_id=job-0001 outcome=completed
+=========================== short test summary info ============================
+FAILED tests/services/test_lifecycle_watcher.py::TestTheTransitionsAJobStreamProduces::test_in_progress_is_written_once_however_many_frames_arrive
+FAILED tests/services/test_lifecycle_watcher.py::TestGracefulShutdownHandsTheClaimBack::test_the_drain_waits_for_the_watch_rather_than_cancelling_it
+2 failed, 65 passed in 1.11s

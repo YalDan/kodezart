@@ -1,0 +1,109 @@
+[
+  {
+    "number": 72,
+    "files": 60,
+    "hunks": 245,
+    "exact_old_files_in_donor": [
+      "src/kodezart/services/scope_resolution.py",
+      "tests/domain/test_scope_container.py",
+      "tests/domain/test_scope_label_config.py",
+      "tests/domain/test_scope_labels.py",
+      "tests/domain/test_scope_ref.py",
+      "tests/prompts/test_scope_label_bindings.py",
+      "tests/services/test_scope_resolution.py",
+      "tests/tracker/connected_app_label_contract.py",
+      "tests/tracker/test_linear_tool_roster.py"
+    ],
+    "changed_donor_files_identical_in_M1": [
+      "src/kodezart/types/domain/scope.py",
+      "tests/domain/test_scope_container.py",
+      "tests/domain/test_scope_ref.py",
+      "tests/tracker/test_scope_reads.py"
+    ],
+    "changed_donor_files_identical_in_M4": [
+      "src/kodezart/types/domain/scope.py",
+      "tests/domain/test_scope_container.py",
+      "tests/domain/test_scope_ref.py",
+      "tests/tracker/test_scope_reads.py"
+    ]
+  },
+  {
+    "number": 108,
+    "files": 42,
+    "hunks": 187,
+    "exact_old_files_in_donor": [
+      "src/kodezart/domain/criteria_feasibility.py",
+      "src/kodezart/prompts/sets/anthropic_v5/criteria_validation.md",
+      "src/kodezart/prompts/sets/anthropic_v5/evaluation.md",
+      "src/kodezart/prompts/sets/anthropic_v5/post_merge_review.md",
+      "src/kodezart/prompts/sets/anthropic_v5/pr_description.md",
+      "src/kodezart/prompts/sets/claude-opus/acceptance_criteria.md",
+      "src/kodezart/prompts/sets/claude-opus/criteria_validation.md",
+      "src/kodezart/prompts/sets/claude-opus/pr_description.md",
+      "src/kodezart/types/domain/accept.py",
+      "tests/chains/fire_spec_prompt_goldens.json",
+      "tests/chains/test_fire_extraction.py",
+      "tests/chains/test_ralph_loop.py",
+      "tests/domain/test_authored_feasibility_compatibility.py",
+      "tests/domain/test_criteria_grading.py",
+      "tests/integration/test_issue_key_carriage.py",
+      "tests/integration/test_live_criteria_probes.py",
+      "tests/prompts/test_criteria_generation_prompts.py",
+      "tests/services/test_fire_record_identity.py"
+    ],
+    "changed_donor_files_identical_in_M1": [],
+    "changed_donor_files_identical_in_M4": []
+  },
+  {
+    "number": 110,
+    "files": 3,
+    "hunks": 13,
+    "exact_old_files_in_donor": [],
+    "changed_donor_files_identical_in_M1": [],
+    "changed_donor_files_identical_in_M4": []
+  },
+  {
+    "number": 112,
+    "files": 3,
+    "hunks": 3,
+    "exact_old_files_in_donor": [],
+    "changed_donor_files_identical_in_M1": [],
+    "changed_donor_files_identical_in_M4": []
+  },
+  {
+    "number": 114,
+    "files": 2,
+    "hunks": 17,
+    "exact_old_files_in_donor": [],
+    "changed_donor_files_identical_in_M1": [],
+    "changed_donor_files_identical_in_M4": []
+  },
+  {
+    "number": 115,
+    "files": 7,
+    "hunks": 14,
+    "exact_old_files_in_donor": [],
+    "changed_donor_files_identical_in_M1": [],
+    "changed_donor_files_identical_in_M4": []
+  },
+  {
+    "number": 116,
+    "files": 15,
+    "hunks": 29,
+    "exact_old_files_in_donor": [],
+    "changed_donor_files_identical_in_M1": [
+      "tests/tracker/marker_config.py"
+    ],
+    "changed_donor_files_identical_in_M4": [
+      "tests/tracker/marker_config.py"
+    ]
+  },
+  {
+    "number": 117,
+    "files": 1,
+    "hunks": 1,
+    "exact_old_files_in_donor": [],
+    "changed_donor_files_identical_in_M1": [],
+    "changed_donor_files_identical_in_M4": []
+  }
+]

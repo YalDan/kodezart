@@ -1,0 +1,9 @@
+   Building kodezart @ file:///private/tmp/kodezart-v03-m4-native-read-extension
+warning: `build_system.requires = ["uv-build>=0.10.9,<0.11.0"]` does not contain the current uv version 0.11.6
+      Built kodezart @ file:///private/tmp/kodezart-v03-m4-native-read-extension
+Uninstalled 1 package in 3ms
+Installed 1 package in 16ms
+........................................................................ [ 39%]
+........................................................................ [ 79%]
+......................................                                   [100%]
+182 passed in 72.20s (0:01:12)

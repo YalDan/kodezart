@@ -1,0 +1,1 @@
+Initial external census failed before metadata write: TypeError: Object of type Name is not JSON serializable. PEP695 ast.TypeAlias.name is ast.Name; corrected analyzer serializes its spelling. No source changes and no runtime pass claimed.

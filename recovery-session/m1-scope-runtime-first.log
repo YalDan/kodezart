@@ -1,0 +1,604 @@
+...F...........................F..........FF......FFFFF................. [ 87%]
+..........                                                               [100%]
+=================================== FAILURES ===================================
+_ test_container_membership_is_independent_of_issue_parent_edges[linear-ref1-expected1] _
+
+scope_fixture = ScopeFixture(tracker=<kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10a3ae630>, server=<tests.tracker.test_scope_reads.ScopeMcpServer object at 0x10a3ae780>, fake=<tests.fakes.FakeTrackerPort object at 0x10a3ae900>)
+ref = ScopeRef(kind=<ScopeKind.MILESTONE: 'milestone'>, key='milestone-one')
+expected = {'FIX-1', 'FIX-2'}
+
+    @pytest.mark.parametrize(
+        ("ref", "expected"),
+        [
+            (PROJECT, {ROOT.key, "FIX-2", "FIX-4"}),
+            (MILESTONE, {ROOT.key, "FIX-2"}),
+            (INITIATIVE, {ROOT.key, "FIX-2", "FIX-3", "FIX-4", "FIX-5"}),
+        ],
+    )
+    async def test_container_membership_is_independent_of_issue_parent_edges(
+        scope_fixture: ScopeFixture, ref: ScopeRef, expected: set[str]
+    ) -> None:
+>       issues = await scope_fixture.tracker.scope_issues(ref=ref)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/tracker/test_scope_reads.py:340: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/adapters/linear_mcp_tracker.py:1764: in scope_issues
+    return await LinearScopeReader(
+src/kodezart/adapters/linear_scope_reader.py:74: in scope_issues
+    issues = await self._project_issues(
+src/kodezart/adapters/linear_scope_reader.py:260: in _project_issues
+    if hydrated.milestone_key != listed_milestone:
+       ^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = TrackerIssue(issue_key='FIX-1', title='fixture issue', body='The complete root body', priority=<IssuePriority.NONE: 'n...zInfo(0)), updated_at=datetime.datetime(2026, 1, 1, 0, 0, tzinfo=TzInfo(0)), url='https://tracker.invalid/issue/FIX-1')
+item = 'milestone_key'
+
+    def __getattr__(self, item: str) -> Any:
+        private_attributes = object.__getattribute__(self, '__private_attributes__')
+        if item in private_attributes:
+            attribute = private_attributes[item]
+            if hasattr(attribute, '__get__'):
+                return attribute.__get__(self, type(self))  # type: ignore
+    
+            try:
+                # Note: self.__pydantic_private__ cannot be None if self.__private_attributes__ has items
+                return self.__pydantic_private__[item]  # type: ignore
+            except KeyError as exc:
+                raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}') from exc
+        else:
+            # `__pydantic_extra__` can fail to be set if the model is not yet fully initialized.
+            # See `BaseModel.__repr_args__` for more details
+            try:
+                pydantic_extra = object.__getattribute__(self, '__pydantic_extra__')
+            except AttributeError:
+                pydantic_extra = None
+    
+            if pydantic_extra and item in pydantic_extra:
+                return pydantic_extra[item]
+            else:
+                if hasattr(self.__class__, item):
+                    return super().__getattribute__(item)  # Raises AttributeError if appropriate
+                else:
+                    # this is the current error
+>                   raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}')
+E                   AttributeError: 'TrackerIssue' object has no attribute 'milestone_key'
+
+.venv/lib/python3.12/site-packages/pydantic/main.py:1026: AttributeError
+____ test_linear_exhausts_pages_deduplicates_and_hydrates_each_issue[ref1] _____
+
+ref = ScopeRef(kind=<ScopeKind.MILESTONE: 'milestone'>, key='milestone-one')
+
+    @pytest.mark.parametrize("ref", [PROJECT, MILESTONE])
+    async def test_linear_exhausts_pages_deduplicates_and_hydrates_each_issue(
+        ref: ScopeRef,
+    ) -> None:
+        server = ScopeMcpServer()
+        server.overlap_pages = True
+    
+>       issues = await linear_over_fake_mcp(server).scope_issues(ref=ref)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/tracker/test_scope_reads.py:428: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/adapters/linear_mcp_tracker.py:1764: in scope_issues
+    return await LinearScopeReader(
+src/kodezart/adapters/linear_scope_reader.py:74: in scope_issues
+    issues = await self._project_issues(
+src/kodezart/adapters/linear_scope_reader.py:260: in _project_issues
+    if hydrated.milestone_key != listed_milestone:
+       ^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = TrackerIssue(issue_key='FIX-1', title='fixture issue', body='The complete root body', priority=<IssuePriority.NONE: 'n...zInfo(0)), updated_at=datetime.datetime(2026, 1, 1, 0, 0, tzinfo=TzInfo(0)), url='https://tracker.invalid/issue/FIX-1')
+item = 'milestone_key'
+
+    def __getattr__(self, item: str) -> Any:
+        private_attributes = object.__getattribute__(self, '__private_attributes__')
+        if item in private_attributes:
+            attribute = private_attributes[item]
+            if hasattr(attribute, '__get__'):
+                return attribute.__get__(self, type(self))  # type: ignore
+    
+            try:
+                # Note: self.__pydantic_private__ cannot be None if self.__private_attributes__ has items
+                return self.__pydantic_private__[item]  # type: ignore
+            except KeyError as exc:
+                raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}') from exc
+        else:
+            # `__pydantic_extra__` can fail to be set if the model is not yet fully initialized.
+            # See `BaseModel.__repr_args__` for more details
+            try:
+                pydantic_extra = object.__getattribute__(self, '__pydantic_extra__')
+            except AttributeError:
+                pydantic_extra = None
+    
+            if pydantic_extra and item in pydantic_extra:
+                return pydantic_extra[item]
+            else:
+                if hasattr(self.__class__, item):
+                    return super().__getattribute__(item)  # Raises AttributeError if appropriate
+                else:
+                    # this is the current error
+>                   raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}')
+E                   AttributeError: 'TrackerIssue' object has no attribute 'milestone_key'
+
+.venv/lib/python3.12/site-packages/pydantic/main.py:1026: AttributeError
+________ test_linear_resolves_milestones_beyond_the_first_project_page _________
+
+    async def test_linear_resolves_milestones_beyond_the_first_project_page() -> None:
+        server = ScopeMcpServer()
+        server.milestones[PROJECT.key] = []
+        server.milestones[EMPTY_PROJECT.key] = [_milestone(MILESTONE.key)]
+        server.issues["FIX-4"] = ScopeMcpIssue(
+            id="FIX-4", project_key=EMPTY_PROJECT.key, milestone_key=MILESTONE.key
+        )
+    
+>       issues = await linear_over_fake_mcp(server).scope_issues(ref=MILESTONE)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/tracker/test_scope_reads.py:502: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/adapters/linear_mcp_tracker.py:1764: in scope_issues
+    return await LinearScopeReader(
+src/kodezart/adapters/linear_scope_reader.py:74: in scope_issues
+    issues = await self._project_issues(
+src/kodezart/adapters/linear_scope_reader.py:260: in _project_issues
+    if hydrated.milestone_key != listed_milestone:
+       ^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = TrackerIssue(issue_key='FIX-4', title='fixture issue', body='', priority=<IssuePriority.NONE: 'none'>, state_name='Bac...zInfo(0)), updated_at=datetime.datetime(2026, 1, 1, 0, 0, tzinfo=TzInfo(0)), url='https://tracker.invalid/issue/FIX-4')
+item = 'milestone_key'
+
+    def __getattr__(self, item: str) -> Any:
+        private_attributes = object.__getattribute__(self, '__private_attributes__')
+        if item in private_attributes:
+            attribute = private_attributes[item]
+            if hasattr(attribute, '__get__'):
+                return attribute.__get__(self, type(self))  # type: ignore
+    
+            try:
+                # Note: self.__pydantic_private__ cannot be None if self.__private_attributes__ has items
+                return self.__pydantic_private__[item]  # type: ignore
+            except KeyError as exc:
+                raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}') from exc
+        else:
+            # `__pydantic_extra__` can fail to be set if the model is not yet fully initialized.
+            # See `BaseModel.__repr_args__` for more details
+            try:
+                pydantic_extra = object.__getattribute__(self, '__pydantic_extra__')
+            except AttributeError:
+                pydantic_extra = None
+    
+            if pydantic_extra and item in pydantic_extra:
+                return pydantic_extra[item]
+            else:
+                if hasattr(self.__class__, item):
+                    return super().__getattribute__(item)  # Raises AttributeError if appropriate
+                else:
+                    # this is the current error
+>                   raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}')
+E                   AttributeError: 'TrackerIssue' object has no attribute 'milestone_key'
+
+.venv/lib/python3.12/site-packages/pydantic/main.py:1026: AttributeError
+________ test_linear_resolves_changed_milestone_membership_on_each_call ________
+
+    async def test_linear_resolves_changed_milestone_membership_on_each_call() -> None:
+        server = ScopeMcpServer()
+        tracker = linear_over_fake_mcp(server)
+>       assert {issue.issue_key for issue in await tracker.scope_issues(ref=MILESTONE)} == {
+                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            ROOT.key,
+            "FIX-2",
+        }
+
+tests/tracker/test_scope_reads.py:516: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/adapters/linear_mcp_tracker.py:1764: in scope_issues
+    return await LinearScopeReader(
+src/kodezart/adapters/linear_scope_reader.py:74: in scope_issues
+    issues = await self._project_issues(
+src/kodezart/adapters/linear_scope_reader.py:260: in _project_issues
+    if hydrated.milestone_key != listed_milestone:
+       ^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = TrackerIssue(issue_key='FIX-1', title='fixture issue', body='The complete root body', priority=<IssuePriority.NONE: 'n...zInfo(0)), updated_at=datetime.datetime(2026, 1, 1, 0, 0, tzinfo=TzInfo(0)), url='https://tracker.invalid/issue/FIX-1')
+item = 'milestone_key'
+
+    def __getattr__(self, item: str) -> Any:
+        private_attributes = object.__getattribute__(self, '__private_attributes__')
+        if item in private_attributes:
+            attribute = private_attributes[item]
+            if hasattr(attribute, '__get__'):
+                return attribute.__get__(self, type(self))  # type: ignore
+    
+            try:
+                # Note: self.__pydantic_private__ cannot be None if self.__private_attributes__ has items
+                return self.__pydantic_private__[item]  # type: ignore
+            except KeyError as exc:
+                raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}') from exc
+        else:
+            # `__pydantic_extra__` can fail to be set if the model is not yet fully initialized.
+            # See `BaseModel.__repr_args__` for more details
+            try:
+                pydantic_extra = object.__getattribute__(self, '__pydantic_extra__')
+            except AttributeError:
+                pydantic_extra = None
+    
+            if pydantic_extra and item in pydantic_extra:
+                return pydantic_extra[item]
+            else:
+                if hasattr(self.__class__, item):
+                    return super().__getattribute__(item)  # Raises AttributeError if appropriate
+                else:
+                    # this is the current error
+>                   raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}')
+E                   AttributeError: 'TrackerIssue' object has no attribute 'milestone_key'
+
+.venv/lib/python3.12/site-packages/pydantic/main.py:1026: AttributeError
+_ test_linear_refuses_milestone_membership_changes_between_list_and_detail[milestone-one-None] _
+
+listed_milestone = 'milestone-one', detail_milestone = None
+
+    @pytest.mark.parametrize(
+        ("listed_milestone", "detail_milestone"),
+        [
+            (MILESTONE.key, None),
+            (MILESTONE.key, "milestone-two"),
+            (None, MILESTONE.key),
+            ("milestone-two", MILESTONE.key),
+        ],
+    )
+    async def test_linear_refuses_milestone_membership_changes_between_list_and_detail(
+        listed_milestone: str | None, detail_milestone: str | None
+    ) -> None:
+        server = ScopeMcpServer()
+        root = server.issues[ROOT.key]
+        assert isinstance(root, ScopeMcpIssue)
+        root.milestone_key = listed_milestone
+        server.issue_detail_updates[ROOT.key] = {
+            "projectMilestone": (
+                None if detail_milestone is None else {"id": detail_milestone}
+            ),
+        }
+    
+        with pytest.raises(ScopeReadError, match="milestone") as caught:
+>           await linear_over_fake_mcp(server).scope_issues(ref=MILESTONE)
+
+tests/tracker/test_scope_reads.py:568: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/adapters/linear_mcp_tracker.py:1764: in scope_issues
+    return await LinearScopeReader(
+src/kodezart/adapters/linear_scope_reader.py:74: in scope_issues
+    issues = await self._project_issues(
+src/kodezart/adapters/linear_scope_reader.py:260: in _project_issues
+    if hydrated.milestone_key != listed_milestone:
+       ^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = TrackerIssue(issue_key='FIX-1', title='fixture issue', body='The complete root body', priority=<IssuePriority.NONE: 'n...zInfo(0)), updated_at=datetime.datetime(2026, 1, 1, 0, 0, tzinfo=TzInfo(0)), url='https://tracker.invalid/issue/FIX-1')
+item = 'milestone_key'
+
+    def __getattr__(self, item: str) -> Any:
+        private_attributes = object.__getattribute__(self, '__private_attributes__')
+        if item in private_attributes:
+            attribute = private_attributes[item]
+            if hasattr(attribute, '__get__'):
+                return attribute.__get__(self, type(self))  # type: ignore
+    
+            try:
+                # Note: self.__pydantic_private__ cannot be None if self.__private_attributes__ has items
+                return self.__pydantic_private__[item]  # type: ignore
+            except KeyError as exc:
+                raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}') from exc
+        else:
+            # `__pydantic_extra__` can fail to be set if the model is not yet fully initialized.
+            # See `BaseModel.__repr_args__` for more details
+            try:
+                pydantic_extra = object.__getattribute__(self, '__pydantic_extra__')
+            except AttributeError:
+                pydantic_extra = None
+    
+            if pydantic_extra and item in pydantic_extra:
+                return pydantic_extra[item]
+            else:
+                if hasattr(self.__class__, item):
+                    return super().__getattribute__(item)  # Raises AttributeError if appropriate
+                else:
+                    # this is the current error
+>                   raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}')
+E                   AttributeError: 'TrackerIssue' object has no attribute 'milestone_key'
+
+.venv/lib/python3.12/site-packages/pydantic/main.py:1026: AttributeError
+_ test_linear_refuses_milestone_membership_changes_between_list_and_detail[milestone-one-milestone-two] _
+
+listed_milestone = 'milestone-one', detail_milestone = 'milestone-two'
+
+    @pytest.mark.parametrize(
+        ("listed_milestone", "detail_milestone"),
+        [
+            (MILESTONE.key, None),
+            (MILESTONE.key, "milestone-two"),
+            (None, MILESTONE.key),
+            ("milestone-two", MILESTONE.key),
+        ],
+    )
+    async def test_linear_refuses_milestone_membership_changes_between_list_and_detail(
+        listed_milestone: str | None, detail_milestone: str | None
+    ) -> None:
+        server = ScopeMcpServer()
+        root = server.issues[ROOT.key]
+        assert isinstance(root, ScopeMcpIssue)
+        root.milestone_key = listed_milestone
+        server.issue_detail_updates[ROOT.key] = {
+            "projectMilestone": (
+                None if detail_milestone is None else {"id": detail_milestone}
+            ),
+        }
+    
+        with pytest.raises(ScopeReadError, match="milestone") as caught:
+>           await linear_over_fake_mcp(server).scope_issues(ref=MILESTONE)
+
+tests/tracker/test_scope_reads.py:568: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/adapters/linear_mcp_tracker.py:1764: in scope_issues
+    return await LinearScopeReader(
+src/kodezart/adapters/linear_scope_reader.py:74: in scope_issues
+    issues = await self._project_issues(
+src/kodezart/adapters/linear_scope_reader.py:260: in _project_issues
+    if hydrated.milestone_key != listed_milestone:
+       ^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = TrackerIssue(issue_key='FIX-1', title='fixture issue', body='The complete root body', priority=<IssuePriority.NONE: 'n...zInfo(0)), updated_at=datetime.datetime(2026, 1, 1, 0, 0, tzinfo=TzInfo(0)), url='https://tracker.invalid/issue/FIX-1')
+item = 'milestone_key'
+
+    def __getattr__(self, item: str) -> Any:
+        private_attributes = object.__getattribute__(self, '__private_attributes__')
+        if item in private_attributes:
+            attribute = private_attributes[item]
+            if hasattr(attribute, '__get__'):
+                return attribute.__get__(self, type(self))  # type: ignore
+    
+            try:
+                # Note: self.__pydantic_private__ cannot be None if self.__private_attributes__ has items
+                return self.__pydantic_private__[item]  # type: ignore
+            except KeyError as exc:
+                raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}') from exc
+        else:
+            # `__pydantic_extra__` can fail to be set if the model is not yet fully initialized.
+            # See `BaseModel.__repr_args__` for more details
+            try:
+                pydantic_extra = object.__getattribute__(self, '__pydantic_extra__')
+            except AttributeError:
+                pydantic_extra = None
+    
+            if pydantic_extra and item in pydantic_extra:
+                return pydantic_extra[item]
+            else:
+                if hasattr(self.__class__, item):
+                    return super().__getattribute__(item)  # Raises AttributeError if appropriate
+                else:
+                    # this is the current error
+>                   raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}')
+E                   AttributeError: 'TrackerIssue' object has no attribute 'milestone_key'
+
+.venv/lib/python3.12/site-packages/pydantic/main.py:1026: AttributeError
+_ test_linear_refuses_milestone_membership_changes_between_list_and_detail[None-milestone-one] _
+
+listed_milestone = None, detail_milestone = 'milestone-one'
+
+    @pytest.mark.parametrize(
+        ("listed_milestone", "detail_milestone"),
+        [
+            (MILESTONE.key, None),
+            (MILESTONE.key, "milestone-two"),
+            (None, MILESTONE.key),
+            ("milestone-two", MILESTONE.key),
+        ],
+    )
+    async def test_linear_refuses_milestone_membership_changes_between_list_and_detail(
+        listed_milestone: str | None, detail_milestone: str | None
+    ) -> None:
+        server = ScopeMcpServer()
+        root = server.issues[ROOT.key]
+        assert isinstance(root, ScopeMcpIssue)
+        root.milestone_key = listed_milestone
+        server.issue_detail_updates[ROOT.key] = {
+            "projectMilestone": (
+                None if detail_milestone is None else {"id": detail_milestone}
+            ),
+        }
+    
+        with pytest.raises(ScopeReadError, match="milestone") as caught:
+>           await linear_over_fake_mcp(server).scope_issues(ref=MILESTONE)
+
+tests/tracker/test_scope_reads.py:568: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/adapters/linear_mcp_tracker.py:1764: in scope_issues
+    return await LinearScopeReader(
+src/kodezart/adapters/linear_scope_reader.py:74: in scope_issues
+    issues = await self._project_issues(
+src/kodezart/adapters/linear_scope_reader.py:260: in _project_issues
+    if hydrated.milestone_key != listed_milestone:
+       ^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = TrackerIssue(issue_key='FIX-1', title='fixture issue', body='The complete root body', priority=<IssuePriority.NONE: 'n...zInfo(0)), updated_at=datetime.datetime(2026, 1, 1, 0, 0, tzinfo=TzInfo(0)), url='https://tracker.invalid/issue/FIX-1')
+item = 'milestone_key'
+
+    def __getattr__(self, item: str) -> Any:
+        private_attributes = object.__getattribute__(self, '__private_attributes__')
+        if item in private_attributes:
+            attribute = private_attributes[item]
+            if hasattr(attribute, '__get__'):
+                return attribute.__get__(self, type(self))  # type: ignore
+    
+            try:
+                # Note: self.__pydantic_private__ cannot be None if self.__private_attributes__ has items
+                return self.__pydantic_private__[item]  # type: ignore
+            except KeyError as exc:
+                raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}') from exc
+        else:
+            # `__pydantic_extra__` can fail to be set if the model is not yet fully initialized.
+            # See `BaseModel.__repr_args__` for more details
+            try:
+                pydantic_extra = object.__getattribute__(self, '__pydantic_extra__')
+            except AttributeError:
+                pydantic_extra = None
+    
+            if pydantic_extra and item in pydantic_extra:
+                return pydantic_extra[item]
+            else:
+                if hasattr(self.__class__, item):
+                    return super().__getattribute__(item)  # Raises AttributeError if appropriate
+                else:
+                    # this is the current error
+>                   raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}')
+E                   AttributeError: 'TrackerIssue' object has no attribute 'milestone_key'
+
+.venv/lib/python3.12/site-packages/pydantic/main.py:1026: AttributeError
+_ test_linear_refuses_milestone_membership_changes_between_list_and_detail[milestone-two-milestone-one] _
+
+listed_milestone = 'milestone-two', detail_milestone = 'milestone-one'
+
+    @pytest.mark.parametrize(
+        ("listed_milestone", "detail_milestone"),
+        [
+            (MILESTONE.key, None),
+            (MILESTONE.key, "milestone-two"),
+            (None, MILESTONE.key),
+            ("milestone-two", MILESTONE.key),
+        ],
+    )
+    async def test_linear_refuses_milestone_membership_changes_between_list_and_detail(
+        listed_milestone: str | None, detail_milestone: str | None
+    ) -> None:
+        server = ScopeMcpServer()
+        root = server.issues[ROOT.key]
+        assert isinstance(root, ScopeMcpIssue)
+        root.milestone_key = listed_milestone
+        server.issue_detail_updates[ROOT.key] = {
+            "projectMilestone": (
+                None if detail_milestone is None else {"id": detail_milestone}
+            ),
+        }
+    
+        with pytest.raises(ScopeReadError, match="milestone") as caught:
+>           await linear_over_fake_mcp(server).scope_issues(ref=MILESTONE)
+
+tests/tracker/test_scope_reads.py:568: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/adapters/linear_mcp_tracker.py:1764: in scope_issues
+    return await LinearScopeReader(
+src/kodezart/adapters/linear_scope_reader.py:74: in scope_issues
+    issues = await self._project_issues(
+src/kodezart/adapters/linear_scope_reader.py:260: in _project_issues
+    if hydrated.milestone_key != listed_milestone:
+       ^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = TrackerIssue(issue_key='FIX-1', title='fixture issue', body='The complete root body', priority=<IssuePriority.NONE: 'n...zInfo(0)), updated_at=datetime.datetime(2026, 1, 1, 0, 0, tzinfo=TzInfo(0)), url='https://tracker.invalid/issue/FIX-1')
+item = 'milestone_key'
+
+    def __getattr__(self, item: str) -> Any:
+        private_attributes = object.__getattribute__(self, '__private_attributes__')
+        if item in private_attributes:
+            attribute = private_attributes[item]
+            if hasattr(attribute, '__get__'):
+                return attribute.__get__(self, type(self))  # type: ignore
+    
+            try:
+                # Note: self.__pydantic_private__ cannot be None if self.__private_attributes__ has items
+                return self.__pydantic_private__[item]  # type: ignore
+            except KeyError as exc:
+                raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}') from exc
+        else:
+            # `__pydantic_extra__` can fail to be set if the model is not yet fully initialized.
+            # See `BaseModel.__repr_args__` for more details
+            try:
+                pydantic_extra = object.__getattribute__(self, '__pydantic_extra__')
+            except AttributeError:
+                pydantic_extra = None
+    
+            if pydantic_extra and item in pydantic_extra:
+                return pydantic_extra[item]
+            else:
+                if hasattr(self.__class__, item):
+                    return super().__getattribute__(item)  # Raises AttributeError if appropriate
+                else:
+                    # this is the current error
+>                   raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}')
+E                   AttributeError: 'TrackerIssue' object has no attribute 'milestone_key'
+
+.venv/lib/python3.12/site-packages/pydantic/main.py:1026: AttributeError
+________ test_linear_empty_milestone_verifies_the_project_issue_details ________
+
+    async def test_linear_empty_milestone_verifies_the_project_issue_details() -> None:
+        server = ScopeMcpServer()
+        for issue in server.issues.values():
+            assert isinstance(issue, ScopeMcpIssue)
+            issue.milestone_key = None
+    
+>       assert tuple(await linear_over_fake_mcp(server).scope_issues(ref=MILESTONE)) == ()
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/tracker/test_scope_reads.py:579: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/kodezart/adapters/linear_mcp_tracker.py:1764: in scope_issues
+    return await LinearScopeReader(
+src/kodezart/adapters/linear_scope_reader.py:74: in scope_issues
+    issues = await self._project_issues(
+src/kodezart/adapters/linear_scope_reader.py:260: in _project_issues
+    if hydrated.milestone_key != listed_milestone:
+       ^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = TrackerIssue(issue_key='FIX-1', title='fixture issue', body='The complete root body', priority=<IssuePriority.NONE: 'n...zInfo(0)), updated_at=datetime.datetime(2026, 1, 1, 0, 0, tzinfo=TzInfo(0)), url='https://tracker.invalid/issue/FIX-1')
+item = 'milestone_key'
+
+    def __getattr__(self, item: str) -> Any:
+        private_attributes = object.__getattribute__(self, '__private_attributes__')
+        if item in private_attributes:
+            attribute = private_attributes[item]
+            if hasattr(attribute, '__get__'):
+                return attribute.__get__(self, type(self))  # type: ignore
+    
+            try:
+                # Note: self.__pydantic_private__ cannot be None if self.__private_attributes__ has items
+                return self.__pydantic_private__[item]  # type: ignore
+            except KeyError as exc:
+                raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}') from exc
+        else:
+            # `__pydantic_extra__` can fail to be set if the model is not yet fully initialized.
+            # See `BaseModel.__repr_args__` for more details
+            try:
+                pydantic_extra = object.__getattribute__(self, '__pydantic_extra__')
+            except AttributeError:
+                pydantic_extra = None
+    
+            if pydantic_extra and item in pydantic_extra:
+                return pydantic_extra[item]
+            else:
+                if hasattr(self.__class__, item):
+                    return super().__getattribute__(item)  # Raises AttributeError if appropriate
+                else:
+                    # this is the current error
+>                   raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}')
+E                   AttributeError: 'TrackerIssue' object has no attribute 'milestone_key'
+
+.venv/lib/python3.12/site-packages/pydantic/main.py:1026: AttributeError
+=========================== short test summary info ============================
+FAILED tests/tracker/test_scope_reads.py::test_container_membership_is_independent_of_issue_parent_edges[linear-ref1-expected1]
+FAILED tests/tracker/test_scope_reads.py::test_linear_exhausts_pages_deduplicates_and_hydrates_each_issue[ref1]
+FAILED tests/tracker/test_scope_reads.py::test_linear_resolves_milestones_beyond_the_first_project_page
+FAILED tests/tracker/test_scope_reads.py::test_linear_resolves_changed_milestone_membership_on_each_call
+FAILED tests/tracker/test_scope_reads.py::test_linear_refuses_milestone_membership_changes_between_list_and_detail[milestone-one-None]
+FAILED tests/tracker/test_scope_reads.py::test_linear_refuses_milestone_membership_changes_between_list_and_detail[milestone-one-milestone-two]
+FAILED tests/tracker/test_scope_reads.py::test_linear_refuses_milestone_membership_changes_between_list_and_detail[None-milestone-one]
+FAILED tests/tracker/test_scope_reads.py::test_linear_refuses_milestone_membership_changes_between_list_and_detail[milestone-two-milestone-one]
+FAILED tests/tracker/test_scope_reads.py::test_linear_empty_milestone_verifies_the_project_issue_details
+9 failed, 73 passed in 2.73s

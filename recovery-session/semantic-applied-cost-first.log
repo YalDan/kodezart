@@ -1,0 +1,427 @@
+FFF                                                                      [100%]
+=================================== FAILURES ===================================
+_ test_cost_departure_is_recorded_not_actioned_and_uneconomic_is_escalated[None] _
+
+repository = (PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1827/test_cost_departure_is_recorde0/repo'), 'fb0e19a8c6620896d56d514305393713765cdbf0')
+affordable = None
+
+    @pytest.mark.parametrize("affordable", [None, True, False])
+    async def test_cost_departure_is_recorded_not_actioned_and_uneconomic_is_escalated(
+        repository, affordable
+    ):
+        async def observe(title, payload, kwargs):
+            if title == "AmendmentJudgment":
+                payload["finding"] = {
+                    "verdict": "unverifiable",
+                    "smallest_repair": "environment_supply",
+                    "cost_claim": {
+                        "assertion": "The demonstration costs too much.",
+                        "measurement": None
+                        if affordable is None
+                        else {"observed": "measured 12 minutes", "affordable": affordable},
+                    },
+                }
+                payload["measured_by"] = (
+                    None if affordable is None else "timed the actual base demonstration"
+                )
+    
+        executor = Executor(mutate=observe)
+        service, guard, workspace, port = await build(repository, executor)
+        prior = port.issues[DIRECT_OWED]
+        try:
+>           events = await drive(service, guard, repository)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/services/test_applied_native_amendments.py:184: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/services/test_native_amendments.py:227: in drive
+    return [
+src/kodezart/services/agent_service.py:156: in stream_workflow
+    async for event in self._run_in_workspace(
+src/kodezart/services/agent_service.py:300: in _run_in_workspace
+    report = await native_guard.judge(
+src/kodezart/services/native_amendments.py:469: in judge
+    return await NativeAmendmentGraph(
+src/kodezart/chains/native_amendment.py:92: in run
+    final = await self.graph.ainvoke(initial)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:3184: in ainvoke
+    async for chunk in self.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:304: in atick
+    await arun_with_retry(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/native_amendment.py:66: in _judge
+    judgment = await self._actions.judge_claim(claim)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/services/native_amendments.py:494: in judge_claim
+    return await self._guard._judge_claim(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.services.native_amendments._NativeWriterGuard object at 0x10f19eea0>
+
+    async def _judge_claim(
+        self,
+        *,
+        workspace_path: str,
+        claim: AmendmentClaim,
+    ) -> AmendmentJudgment:
+        owner = self._owner
+        if self._base_sha is None or self._rulings is None:
+            raise NativeWriteRefusalError(
+                "A judgment requires initialized base authority"
+            )
+        prompt = owner._prompts.template_for(PromptKey.AMENDMENT_JUDGE).render(
+            {
+                "claim": claim.model_dump_json(),
+                "criteria": "\n".join(
+                    issue.model_dump_json() for issue in self._criterion_issues or ()
+                ),
+                "pinned_rulings": "\n".join(r.model_dump_json() for r in self._rulings),
+                "base_sha": self._base_sha,
+            }
+        )
+        async with owned_workspace(
+            owner._workspace,
+            repo_path=workspace_path,
+            ref=self._base_sha,
+        ) as judge_workspace:
+    
+            async def require_base() -> None:
+                if (
+                    await settle(owner._git.has_replace_refs(judge_workspace))
+                    or await settle(owner._git.current_sha(judge_workspace))
+                    != self._base_sha
+                    or await settle(owner._git.has_changes(judge_workspace))
+                ):
+                    raise NativeWriteRefusalError(
+                        "The independent judgment requires a clean exact base"
+                    )
+    
+            await require_base()
+            output = await judge_in_workspace(
+                runner=owner._runner,
+                prompts=owner._prompts,
+                skills=owner._skills,
+                workspace=judge_workspace,
+                key=PromptKey.AMENDMENT_JUDGE,
+                prompt=prompt,
+                output_schema=AMENDMENT_JUDGMENT_SCHEMA,
+                site="amendment_judge",
+                session_type=SessionType.TICKET_FIRE,
+                failure_message="No independent amendment judgment was returned.",
+            )
+>           judgment = AmendmentJudgment.model_validate(output)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 1 validation error for AmendmentJudgment
+E           finding
+E             Value error, verdict unverifiable requires a missingResource [type=value_error, input_value={'verdict': 'unverifiable...', 'measurement': None}}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.12/v/value_error
+E           During task with name 'judge' and id '5dd8529a-9fc2-2dca-e23d-f55746930d66'
+
+src/kodezart/services/native_amendments.py:425: ValidationError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 19:51:22 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:51:23 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-c2baeecd605144218973a3210c0706da workspace_id=c2baeecd605144218973a3210c0706da
+2026-09-12 19:51:23 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:51:23 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:51:24 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:51:24 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:51:25 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-9ca225c2b5674c289ad90387ca71d170 workspace_id=9ca225c2b5674c289ad90387ca71d170
+2026-09-12 19:51:25 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=amendment_judge stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:51:25 [info     ] workspace_released             workspace_id=9ca225c2b5674c289ad90387ca71d170
+2026-09-12 19:51:25 [warning  ] workspace_release_unclean      branch_name=native-test path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-c2baeecd605144218973a3210c0706da workspace_id=c2baeecd605144218973a3210c0706da
+2026-09-12 19:51:26 [info     ] workspace_released             workspace_id=c2baeecd605144218973a3210c0706da
+_ test_cost_departure_is_recorded_not_actioned_and_uneconomic_is_escalated[True] _
+
+repository = (PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1827/test_cost_departure_is_recorde1/repo'), 'b741fbda11922d7d65e533aeec111f78874f1078')
+affordable = True
+
+    @pytest.mark.parametrize("affordable", [None, True, False])
+    async def test_cost_departure_is_recorded_not_actioned_and_uneconomic_is_escalated(
+        repository, affordable
+    ):
+        async def observe(title, payload, kwargs):
+            if title == "AmendmentJudgment":
+                payload["finding"] = {
+                    "verdict": "unverifiable",
+                    "smallest_repair": "environment_supply",
+                    "cost_claim": {
+                        "assertion": "The demonstration costs too much.",
+                        "measurement": None
+                        if affordable is None
+                        else {"observed": "measured 12 minutes", "affordable": affordable},
+                    },
+                }
+                payload["measured_by"] = (
+                    None if affordable is None else "timed the actual base demonstration"
+                )
+    
+        executor = Executor(mutate=observe)
+        service, guard, workspace, port = await build(repository, executor)
+        prior = port.issues[DIRECT_OWED]
+        try:
+>           events = await drive(service, guard, repository)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/services/test_applied_native_amendments.py:184: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/services/test_native_amendments.py:227: in drive
+    return [
+src/kodezart/services/agent_service.py:156: in stream_workflow
+    async for event in self._run_in_workspace(
+src/kodezart/services/agent_service.py:300: in _run_in_workspace
+    report = await native_guard.judge(
+src/kodezart/services/native_amendments.py:469: in judge
+    return await NativeAmendmentGraph(
+src/kodezart/chains/native_amendment.py:92: in run
+    final = await self.graph.ainvoke(initial)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:3184: in ainvoke
+    async for chunk in self.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:304: in atick
+    await arun_with_retry(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/native_amendment.py:66: in _judge
+    judgment = await self._actions.judge_claim(claim)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/services/native_amendments.py:494: in judge_claim
+    return await self._guard._judge_claim(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.services.native_amendments._NativeWriterGuard object at 0x10f1aa9f0>
+
+    async def _judge_claim(
+        self,
+        *,
+        workspace_path: str,
+        claim: AmendmentClaim,
+    ) -> AmendmentJudgment:
+        owner = self._owner
+        if self._base_sha is None or self._rulings is None:
+            raise NativeWriteRefusalError(
+                "A judgment requires initialized base authority"
+            )
+        prompt = owner._prompts.template_for(PromptKey.AMENDMENT_JUDGE).render(
+            {
+                "claim": claim.model_dump_json(),
+                "criteria": "\n".join(
+                    issue.model_dump_json() for issue in self._criterion_issues or ()
+                ),
+                "pinned_rulings": "\n".join(r.model_dump_json() for r in self._rulings),
+                "base_sha": self._base_sha,
+            }
+        )
+        async with owned_workspace(
+            owner._workspace,
+            repo_path=workspace_path,
+            ref=self._base_sha,
+        ) as judge_workspace:
+    
+            async def require_base() -> None:
+                if (
+                    await settle(owner._git.has_replace_refs(judge_workspace))
+                    or await settle(owner._git.current_sha(judge_workspace))
+                    != self._base_sha
+                    or await settle(owner._git.has_changes(judge_workspace))
+                ):
+                    raise NativeWriteRefusalError(
+                        "The independent judgment requires a clean exact base"
+                    )
+    
+            await require_base()
+            output = await judge_in_workspace(
+                runner=owner._runner,
+                prompts=owner._prompts,
+                skills=owner._skills,
+                workspace=judge_workspace,
+                key=PromptKey.AMENDMENT_JUDGE,
+                prompt=prompt,
+                output_schema=AMENDMENT_JUDGMENT_SCHEMA,
+                site="amendment_judge",
+                session_type=SessionType.TICKET_FIRE,
+                failure_message="No independent amendment judgment was returned.",
+            )
+>           judgment = AmendmentJudgment.model_validate(output)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 1 validation error for AmendmentJudgment
+E           finding
+E             Value error, verdict unverifiable requires a missingResource [type=value_error, input_value={'verdict': 'unverifiable...', 'affordable': True}}}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.12/v/value_error
+E           During task with name 'judge' and id 'afb63dc2-809d-dd2d-71ee-60a518e4efc1'
+
+src/kodezart/services/native_amendments.py:425: ValidationError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 19:51:27 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:51:28 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-837cef3ad9e2421eb8ca61f5c959437d workspace_id=837cef3ad9e2421eb8ca61f5c959437d
+2026-09-12 19:51:28 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:51:28 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:51:28 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:51:28 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:51:29 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-901c829aed424099b44a49961f734a20 workspace_id=901c829aed424099b44a49961f734a20
+2026-09-12 19:51:29 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=amendment_judge stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:51:29 [info     ] workspace_released             workspace_id=901c829aed424099b44a49961f734a20
+2026-09-12 19:51:29 [warning  ] workspace_release_unclean      branch_name=native-test path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-837cef3ad9e2421eb8ca61f5c959437d workspace_id=837cef3ad9e2421eb8ca61f5c959437d
+2026-09-12 19:51:29 [info     ] workspace_released             workspace_id=837cef3ad9e2421eb8ca61f5c959437d
+_ test_cost_departure_is_recorded_not_actioned_and_uneconomic_is_escalated[False] _
+
+repository = (PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1827/test_cost_departure_is_recorde2/repo'), '422eb33c27b8e793e60b06dd0370d96d5b469ef8')
+affordable = False
+
+    @pytest.mark.parametrize("affordable", [None, True, False])
+    async def test_cost_departure_is_recorded_not_actioned_and_uneconomic_is_escalated(
+        repository, affordable
+    ):
+        async def observe(title, payload, kwargs):
+            if title == "AmendmentJudgment":
+                payload["finding"] = {
+                    "verdict": "unverifiable",
+                    "smallest_repair": "environment_supply",
+                    "cost_claim": {
+                        "assertion": "The demonstration costs too much.",
+                        "measurement": None
+                        if affordable is None
+                        else {"observed": "measured 12 minutes", "affordable": affordable},
+                    },
+                }
+                payload["measured_by"] = (
+                    None if affordable is None else "timed the actual base demonstration"
+                )
+    
+        executor = Executor(mutate=observe)
+        service, guard, workspace, port = await build(repository, executor)
+        prior = port.issues[DIRECT_OWED]
+        try:
+>           events = await drive(service, guard, repository)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/services/test_applied_native_amendments.py:184: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/services/test_native_amendments.py:227: in drive
+    return [
+src/kodezart/services/agent_service.py:156: in stream_workflow
+    async for event in self._run_in_workspace(
+src/kodezart/services/agent_service.py:300: in _run_in_workspace
+    report = await native_guard.judge(
+src/kodezart/services/native_amendments.py:469: in judge
+    return await NativeAmendmentGraph(
+src/kodezart/chains/native_amendment.py:92: in run
+    final = await self.graph.ainvoke(initial)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:3184: in ainvoke
+    async for chunk in self.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:304: in atick
+    await arun_with_retry(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/native_amendment.py:66: in _judge
+    judgment = await self._actions.judge_claim(claim)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/services/native_amendments.py:494: in judge_claim
+    return await self._guard._judge_claim(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.services.native_amendments._NativeWriterGuard object at 0x10f1aea20>
+
+    async def _judge_claim(
+        self,
+        *,
+        workspace_path: str,
+        claim: AmendmentClaim,
+    ) -> AmendmentJudgment:
+        owner = self._owner
+        if self._base_sha is None or self._rulings is None:
+            raise NativeWriteRefusalError(
+                "A judgment requires initialized base authority"
+            )
+        prompt = owner._prompts.template_for(PromptKey.AMENDMENT_JUDGE).render(
+            {
+                "claim": claim.model_dump_json(),
+                "criteria": "\n".join(
+                    issue.model_dump_json() for issue in self._criterion_issues or ()
+                ),
+                "pinned_rulings": "\n".join(r.model_dump_json() for r in self._rulings),
+                "base_sha": self._base_sha,
+            }
+        )
+        async with owned_workspace(
+            owner._workspace,
+            repo_path=workspace_path,
+            ref=self._base_sha,
+        ) as judge_workspace:
+    
+            async def require_base() -> None:
+                if (
+                    await settle(owner._git.has_replace_refs(judge_workspace))
+                    or await settle(owner._git.current_sha(judge_workspace))
+                    != self._base_sha
+                    or await settle(owner._git.has_changes(judge_workspace))
+                ):
+                    raise NativeWriteRefusalError(
+                        "The independent judgment requires a clean exact base"
+                    )
+    
+            await require_base()
+            output = await judge_in_workspace(
+                runner=owner._runner,
+                prompts=owner._prompts,
+                skills=owner._skills,
+                workspace=judge_workspace,
+                key=PromptKey.AMENDMENT_JUDGE,
+                prompt=prompt,
+                output_schema=AMENDMENT_JUDGMENT_SCHEMA,
+                site="amendment_judge",
+                session_type=SessionType.TICKET_FIRE,
+                failure_message="No independent amendment judgment was returned.",
+            )
+>           judgment = AmendmentJudgment.model_validate(output)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 1 validation error for AmendmentJudgment
+E           finding
+E             Value error, verdict unverifiable requires a missingResource [type=value_error, input_value={'verdict': 'unverifiable..., 'affordable': False}}}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.12/v/value_error
+E           During task with name 'judge' and id 'fd90b93c-058d-5487-a7f7-80227dca3f45'
+
+src/kodezart/services/native_amendments.py:425: ValidationError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 19:51:31 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:51:31 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-7d67ea5073e3425e9a346b0c5e33c1a3 workspace_id=7d67ea5073e3425e9a346b0c5e33c1a3
+2026-09-12 19:51:31 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:51:31 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:51:32 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:51:32 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 19:51:32 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-6e529ec05b0241c3bdc6ad91022c7b82 workspace_id=6e529ec05b0241c3bdc6ad91022c7b82
+2026-09-12 19:51:33 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=amendment_judge stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 19:51:33 [info     ] workspace_released             workspace_id=6e529ec05b0241c3bdc6ad91022c7b82
+2026-09-12 19:51:33 [warning  ] workspace_release_unclean      branch_name=native-test path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-7d67ea5073e3425e9a346b0c5e33c1a3 workspace_id=7d67ea5073e3425e9a346b0c5e33c1a3
+2026-09-12 19:51:33 [info     ] workspace_released             workspace_id=7d67ea5073e3425e9a346b0c5e33c1a3
+=========================== short test summary info ============================
+FAILED tests/services/test_applied_native_amendments.py::test_cost_departure_is_recorded_not_actioned_and_uneconomic_is_escalated[None]
+FAILED tests/services/test_applied_native_amendments.py::test_cost_departure_is_recorded_not_actioned_and_uneconomic_is_escalated[True]
+FAILED tests/services/test_applied_native_amendments.py::test_cost_departure_is_recorded_not_actioned_and_uneconomic_is_escalated[False]
+3 failed, 3 deselected in 12.82s

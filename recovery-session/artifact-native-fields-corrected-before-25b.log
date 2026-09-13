@@ -1,0 +1,149 @@
+FFFFF..........                                                          [100%]
+=================================== FAILURES ===================================
+_ test_missing_consumed_native_facts_cannot_be_a_complete_artifact[issue_label_set-labels] _
+
+kind = <SurfaceKind.ISSUE_LABEL_SET: 'issue_label_set'>, missing = 'labels'
+
+    @pytest.mark.parametrize(
+        ("kind", "missing"),
+        [
+            (SurfaceKind.ISSUE_LABEL_SET, "labels"),
+            (SurfaceKind.ISSUE_GRAPH, "labels"),
+            (SurfaceKind.ISSUE_GRAPH, "relations"),
+            (SurfaceKind.ISSUE_SPLIT_SET, "labels"),
+            (SurfaceKind.ISSUE_SPLIT_SET, "relations"),
+            (SurfaceKind.CRITERION_SUB_ISSUE, "labels"),
+            (SurfaceKind.CRITERION_SUB_ISSUE, "parentId"),
+            (SurfaceKind.CRITERION_CHILD_SET, "labels"),
+            (SurfaceKind.CRITERION_CHILD_SET, "parentId"),
+        ],
+    )
+    async def test_missing_consumed_native_facts_cannot_be_a_complete_artifact(
+        kind, missing
+    ):
+        server = server_for(kind, missing=missing)
+        tracker = tracker_over(server, issue_labels=LABELS)
+>       with pytest.raises((TrackerProtocolError, CriterionReadError, WriteBackReadError)):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE any of (<class 'kodezart.core.errors.TrackerProtocolError'>, <class 'kodezart.domain.errors.CriterionReadError'>, <class 'kodezart.domain.errors.WriteBackReadError'>)
+
+tests/tracker/test_artifact_native_fields.py:87: Failed
+_ test_missing_consumed_native_facts_cannot_be_a_complete_artifact[issue_graph-labels] _
+
+kind = <SurfaceKind.ISSUE_GRAPH: 'issue_graph'>, missing = 'labels'
+
+    @pytest.mark.parametrize(
+        ("kind", "missing"),
+        [
+            (SurfaceKind.ISSUE_LABEL_SET, "labels"),
+            (SurfaceKind.ISSUE_GRAPH, "labels"),
+            (SurfaceKind.ISSUE_GRAPH, "relations"),
+            (SurfaceKind.ISSUE_SPLIT_SET, "labels"),
+            (SurfaceKind.ISSUE_SPLIT_SET, "relations"),
+            (SurfaceKind.CRITERION_SUB_ISSUE, "labels"),
+            (SurfaceKind.CRITERION_SUB_ISSUE, "parentId"),
+            (SurfaceKind.CRITERION_CHILD_SET, "labels"),
+            (SurfaceKind.CRITERION_CHILD_SET, "parentId"),
+        ],
+    )
+    async def test_missing_consumed_native_facts_cannot_be_a_complete_artifact(
+        kind, missing
+    ):
+        server = server_for(kind, missing=missing)
+        tracker = tracker_over(server, issue_labels=LABELS)
+>       with pytest.raises((TrackerProtocolError, CriterionReadError, WriteBackReadError)):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE any of (<class 'kodezart.core.errors.TrackerProtocolError'>, <class 'kodezart.domain.errors.CriterionReadError'>, <class 'kodezart.domain.errors.WriteBackReadError'>)
+
+tests/tracker/test_artifact_native_fields.py:87: Failed
+_ test_missing_consumed_native_facts_cannot_be_a_complete_artifact[issue_graph-relations] _
+
+kind = <SurfaceKind.ISSUE_GRAPH: 'issue_graph'>, missing = 'relations'
+
+    @pytest.mark.parametrize(
+        ("kind", "missing"),
+        [
+            (SurfaceKind.ISSUE_LABEL_SET, "labels"),
+            (SurfaceKind.ISSUE_GRAPH, "labels"),
+            (SurfaceKind.ISSUE_GRAPH, "relations"),
+            (SurfaceKind.ISSUE_SPLIT_SET, "labels"),
+            (SurfaceKind.ISSUE_SPLIT_SET, "relations"),
+            (SurfaceKind.CRITERION_SUB_ISSUE, "labels"),
+            (SurfaceKind.CRITERION_SUB_ISSUE, "parentId"),
+            (SurfaceKind.CRITERION_CHILD_SET, "labels"),
+            (SurfaceKind.CRITERION_CHILD_SET, "parentId"),
+        ],
+    )
+    async def test_missing_consumed_native_facts_cannot_be_a_complete_artifact(
+        kind, missing
+    ):
+        server = server_for(kind, missing=missing)
+        tracker = tracker_over(server, issue_labels=LABELS)
+>       with pytest.raises((TrackerProtocolError, CriterionReadError, WriteBackReadError)):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE any of (<class 'kodezart.core.errors.TrackerProtocolError'>, <class 'kodezart.domain.errors.CriterionReadError'>, <class 'kodezart.domain.errors.WriteBackReadError'>)
+
+tests/tracker/test_artifact_native_fields.py:87: Failed
+_ test_missing_consumed_native_facts_cannot_be_a_complete_artifact[issue_split_set-labels] _
+
+kind = <SurfaceKind.ISSUE_SPLIT_SET: 'issue_split_set'>, missing = 'labels'
+
+    @pytest.mark.parametrize(
+        ("kind", "missing"),
+        [
+            (SurfaceKind.ISSUE_LABEL_SET, "labels"),
+            (SurfaceKind.ISSUE_GRAPH, "labels"),
+            (SurfaceKind.ISSUE_GRAPH, "relations"),
+            (SurfaceKind.ISSUE_SPLIT_SET, "labels"),
+            (SurfaceKind.ISSUE_SPLIT_SET, "relations"),
+            (SurfaceKind.CRITERION_SUB_ISSUE, "labels"),
+            (SurfaceKind.CRITERION_SUB_ISSUE, "parentId"),
+            (SurfaceKind.CRITERION_CHILD_SET, "labels"),
+            (SurfaceKind.CRITERION_CHILD_SET, "parentId"),
+        ],
+    )
+    async def test_missing_consumed_native_facts_cannot_be_a_complete_artifact(
+        kind, missing
+    ):
+        server = server_for(kind, missing=missing)
+        tracker = tracker_over(server, issue_labels=LABELS)
+>       with pytest.raises((TrackerProtocolError, CriterionReadError, WriteBackReadError)):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE any of (<class 'kodezart.core.errors.TrackerProtocolError'>, <class 'kodezart.domain.errors.CriterionReadError'>, <class 'kodezart.domain.errors.WriteBackReadError'>)
+
+tests/tracker/test_artifact_native_fields.py:87: Failed
+_ test_missing_consumed_native_facts_cannot_be_a_complete_artifact[issue_split_set-relations] _
+
+kind = <SurfaceKind.ISSUE_SPLIT_SET: 'issue_split_set'>, missing = 'relations'
+
+    @pytest.mark.parametrize(
+        ("kind", "missing"),
+        [
+            (SurfaceKind.ISSUE_LABEL_SET, "labels"),
+            (SurfaceKind.ISSUE_GRAPH, "labels"),
+            (SurfaceKind.ISSUE_GRAPH, "relations"),
+            (SurfaceKind.ISSUE_SPLIT_SET, "labels"),
+            (SurfaceKind.ISSUE_SPLIT_SET, "relations"),
+            (SurfaceKind.CRITERION_SUB_ISSUE, "labels"),
+            (SurfaceKind.CRITERION_SUB_ISSUE, "parentId"),
+            (SurfaceKind.CRITERION_CHILD_SET, "labels"),
+            (SurfaceKind.CRITERION_CHILD_SET, "parentId"),
+        ],
+    )
+    async def test_missing_consumed_native_facts_cannot_be_a_complete_artifact(
+        kind, missing
+    ):
+        server = server_for(kind, missing=missing)
+        tracker = tracker_over(server, issue_labels=LABELS)
+>       with pytest.raises((TrackerProtocolError, CriterionReadError, WriteBackReadError)):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE any of (<class 'kodezart.core.errors.TrackerProtocolError'>, <class 'kodezart.domain.errors.CriterionReadError'>, <class 'kodezart.domain.errors.WriteBackReadError'>)
+
+tests/tracker/test_artifact_native_fields.py:87: Failed
+=========================== short test summary info ============================
+FAILED tests/tracker/test_artifact_native_fields.py::test_missing_consumed_native_facts_cannot_be_a_complete_artifact[issue_label_set-labels]
+FAILED tests/tracker/test_artifact_native_fields.py::test_missing_consumed_native_facts_cannot_be_a_complete_artifact[issue_graph-labels]
+FAILED tests/tracker/test_artifact_native_fields.py::test_missing_consumed_native_facts_cannot_be_a_complete_artifact[issue_graph-relations]
+FAILED tests/tracker/test_artifact_native_fields.py::test_missing_consumed_native_facts_cannot_be_a_complete_artifact[issue_split_set-labels]
+FAILED tests/tracker/test_artifact_native_fields.py::test_missing_consumed_native_facts_cannot_be_a_complete_artifact[issue_split_set-relations]
+5 failed, 10 passed in 0.51s

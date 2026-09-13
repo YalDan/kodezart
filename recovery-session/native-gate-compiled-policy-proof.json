@@ -1,0 +1,10 @@
+{
+  "langgraph": "1.0.10",
+  "policies": {
+    "__start__": null,
+    "judge": null,
+    "canonical_write_back": null,
+    "complete": null
+  },
+  "graph_retry_policy": []
+}

@@ -1,0 +1,861 @@
+FFFF..FF                                                                 [100%]
+=================================== FAILURES ===================================
+_ test_ruling_amendment_preserves_native_occurrence_question_and_prior_bytes[unsatisfiable_at_base] _
+
+repository = (PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1841/test_ruling_amendment_preserve0/repo'), '5214d0db3bb6d1d77d23a40152cd87fc6f07c9d2')
+ground = <AmendmentGround.UNSATISFIABLE_AT_BASE: 'unsatisfiable_at_base'>
+
+    @pytest.mark.parametrize("ground", list(__import__("kodezart.types.domain.amendment", fromlist=["AmendmentGround"]).AmendmentGround))
+    async def test_ruling_amendment_preserves_native_occurrence_question_and_prior_bytes(repository, ground):
+        from kodezart.domain.rulings import render_ruling
+        from kodezart.services.ruling_records import RulingRecordReader
+        from kodezart.types.domain.agent import Ruling
+        from tests.chains.test_native_fire import SUBJECT
+        from tests.domain.test_rulings import ruling_data
+    
+        port = tracker()
+        ruling = Ruling.model_validate(ruling_data(issue_ref=SUBJECT, authored_by="principal"))
+        body = render_ruling(ruling=ruling, lane_key="historical:café/lane", marker_prefixes={"ruling": "fixture-pinned"})
+        original = await port.post_comment(issue_key=SUBJECT, body=body)
+    
+        async def answers(title, payload, kwargs):
+            if title == "AmendmentJudgment":
+                payload["finding"]["smallest_repair"] = "ruling_text"
+            elif title == "AmendmentTextOutput":
+                payload["replacement"] = {
+                    "kind": "ruling", "subject": {"kind": "ruling", "id": ruling.ruling_id},
+                    "resolution": "The corrected answer follows the reproduced base evidence.",
+                    "rejected_alternative": "The independently refuted prior reading.",
+                    "repo_evidence": ["policy.py"],
+                }
+    
+        executor = Executor(reproduced=True, ground=ground, subject={"kind": "ruling", "id": ruling.ruling_id}, mutate=answers)
+        service, guard, workspace, _ = await build(repository, executor, port=port)
+        try:
+>           events = await drive(service, guard, repository)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/services/test_applied_native_amendments.py:265: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/services/test_native_amendments.py:227: in drive
+    return [
+src/kodezart/services/agent_service.py:156: in stream_workflow
+    async for event in self._run_in_workspace(
+src/kodezart/services/agent_service.py:300: in _run_in_workspace
+    report = await native_guard.judge(
+src/kodezart/services/native_amendments.py:447: in judge
+    return await NativeAmendmentGraph(
+src/kodezart/chains/native_amendment.py:92: in run
+    final = await self.graph.ainvoke(initial)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:3184: in ainvoke
+    async for chunk in self.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:304: in atick
+    await arun_with_retry(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/native_amendment.py:66: in _judge
+    judgment = await self._actions.judge_claim(claim)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/services/native_amendments.py:479: in judge_claim
+    return await self._guard._judge_claim(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.services.native_amendments._NativeWriterGuard object at 0x10e260ef0>
+
+    async def _judge_claim(
+        self,
+        *,
+        workspace_path: str,
+        claim: AmendmentClaim,
+    ) -> AmendmentJudgment:
+        owner = self._owner
+        if self._base_sha is None or self._rulings is None:
+            raise NativeWriteRefusalError(
+                "A judgment requires initialized base authority"
+            )
+        prompt = owner._prompts.template_for(PromptKey.AMENDMENT_JUDGE).render(
+            {
+                "claim": claim.model_dump_json(),
+                "criteria": "\n".join(
+                    issue.model_dump_json() for issue in self._criterion_issues or ()
+                ),
+                "pinned_rulings": "\n".join(r.model_dump_json() for r in self._rulings),
+                "base_sha": self._base_sha,
+            }
+        )
+        async with owned_workspace(
+            owner._workspace,
+            repo_path=workspace_path,
+            ref=self._base_sha,
+        ) as judge_workspace:
+    
+            async def require_base() -> None:
+                if (
+                    await settle(owner._git.has_replace_refs(judge_workspace))
+                    or await settle(owner._git.current_sha(judge_workspace))
+                    != self._base_sha
+                    or await settle(owner._git.has_changes(judge_workspace))
+                ):
+                    raise NativeWriteRefusalError(
+                        "The independent judgment requires a clean exact base"
+                    )
+    
+            await require_base()
+            output = await judge_in_workspace(
+                runner=owner._runner,
+                prompts=owner._prompts,
+                skills=owner._skills,
+                workspace=judge_workspace,
+                key=PromptKey.AMENDMENT_JUDGE,
+                prompt=prompt,
+                output_schema=AMENDMENT_JUDGMENT_SCHEMA,
+                site="amendment_judge",
+                session_type=SessionType.TICKET_FIRE,
+                failure_message="No independent amendment judgment was returned.",
+            )
+>           judgment = AmendmentJudgment.model_validate(output)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 1 validation error for AmendmentJudgment
+E           finding.smallest_repair
+E             Input should be 'none', 'criterion_text' or 'environment_supply' [type=enum, input_value='ruling_text', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.12/v/enum
+E           During task with name 'judge' and id '9c9b6c2f-c96f-f8ee-05eb-825f362d84a8'
+
+src/kodezart/services/native_amendments.py:403: ValidationError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 20:12:08 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:12:08 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-089840e825914c73ba4a18d29f75a836 workspace_id=089840e825914c73ba4a18d29f75a836
+2026-09-12 20:12:08 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:12:09 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:12:09 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:12:09 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:12:10 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-37d2b651e8f44cdda38c3f60455d9d68 workspace_id=37d2b651e8f44cdda38c3f60455d9d68
+2026-09-12 20:12:10 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=amendment_judge stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 20:12:10 [info     ] workspace_released             workspace_id=37d2b651e8f44cdda38c3f60455d9d68
+2026-09-12 20:12:10 [warning  ] workspace_release_unclean      branch_name=native-test path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-089840e825914c73ba4a18d29f75a836 workspace_id=089840e825914c73ba4a18d29f75a836
+2026-09-12 20:12:10 [info     ] workspace_released             workspace_id=089840e825914c73ba4a18d29f75a836
+_ test_ruling_amendment_preserves_native_occurrence_question_and_prior_bytes[mutually_unsatisfiable] _
+
+repository = (PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1841/test_ruling_amendment_preserve1/repo'), '8d0b6315d851988676e5a72409f7e76c90e60d9b')
+ground = <AmendmentGround.MUTUALLY_UNSATISFIABLE: 'mutually_unsatisfiable'>
+
+    @pytest.mark.parametrize("ground", list(__import__("kodezart.types.domain.amendment", fromlist=["AmendmentGround"]).AmendmentGround))
+    async def test_ruling_amendment_preserves_native_occurrence_question_and_prior_bytes(repository, ground):
+        from kodezart.domain.rulings import render_ruling
+        from kodezart.services.ruling_records import RulingRecordReader
+        from kodezart.types.domain.agent import Ruling
+        from tests.chains.test_native_fire import SUBJECT
+        from tests.domain.test_rulings import ruling_data
+    
+        port = tracker()
+        ruling = Ruling.model_validate(ruling_data(issue_ref=SUBJECT, authored_by="principal"))
+        body = render_ruling(ruling=ruling, lane_key="historical:café/lane", marker_prefixes={"ruling": "fixture-pinned"})
+        original = await port.post_comment(issue_key=SUBJECT, body=body)
+    
+        async def answers(title, payload, kwargs):
+            if title == "AmendmentJudgment":
+                payload["finding"]["smallest_repair"] = "ruling_text"
+            elif title == "AmendmentTextOutput":
+                payload["replacement"] = {
+                    "kind": "ruling", "subject": {"kind": "ruling", "id": ruling.ruling_id},
+                    "resolution": "The corrected answer follows the reproduced base evidence.",
+                    "rejected_alternative": "The independently refuted prior reading.",
+                    "repo_evidence": ["policy.py"],
+                }
+    
+        executor = Executor(reproduced=True, ground=ground, subject={"kind": "ruling", "id": ruling.ruling_id}, mutate=answers)
+        service, guard, workspace, _ = await build(repository, executor, port=port)
+        try:
+>           events = await drive(service, guard, repository)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/services/test_applied_native_amendments.py:265: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/services/test_native_amendments.py:227: in drive
+    return [
+src/kodezart/services/agent_service.py:156: in stream_workflow
+    async for event in self._run_in_workspace(
+src/kodezart/services/agent_service.py:300: in _run_in_workspace
+    report = await native_guard.judge(
+src/kodezart/services/native_amendments.py:447: in judge
+    return await NativeAmendmentGraph(
+src/kodezart/chains/native_amendment.py:92: in run
+    final = await self.graph.ainvoke(initial)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:3184: in ainvoke
+    async for chunk in self.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:304: in atick
+    await arun_with_retry(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/native_amendment.py:66: in _judge
+    judgment = await self._actions.judge_claim(claim)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/services/native_amendments.py:479: in judge_claim
+    return await self._guard._judge_claim(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.services.native_amendments._NativeWriterGuard object at 0x10e3dbcb0>
+
+    async def _judge_claim(
+        self,
+        *,
+        workspace_path: str,
+        claim: AmendmentClaim,
+    ) -> AmendmentJudgment:
+        owner = self._owner
+        if self._base_sha is None or self._rulings is None:
+            raise NativeWriteRefusalError(
+                "A judgment requires initialized base authority"
+            )
+        prompt = owner._prompts.template_for(PromptKey.AMENDMENT_JUDGE).render(
+            {
+                "claim": claim.model_dump_json(),
+                "criteria": "\n".join(
+                    issue.model_dump_json() for issue in self._criterion_issues or ()
+                ),
+                "pinned_rulings": "\n".join(r.model_dump_json() for r in self._rulings),
+                "base_sha": self._base_sha,
+            }
+        )
+        async with owned_workspace(
+            owner._workspace,
+            repo_path=workspace_path,
+            ref=self._base_sha,
+        ) as judge_workspace:
+    
+            async def require_base() -> None:
+                if (
+                    await settle(owner._git.has_replace_refs(judge_workspace))
+                    or await settle(owner._git.current_sha(judge_workspace))
+                    != self._base_sha
+                    or await settle(owner._git.has_changes(judge_workspace))
+                ):
+                    raise NativeWriteRefusalError(
+                        "The independent judgment requires a clean exact base"
+                    )
+    
+            await require_base()
+            output = await judge_in_workspace(
+                runner=owner._runner,
+                prompts=owner._prompts,
+                skills=owner._skills,
+                workspace=judge_workspace,
+                key=PromptKey.AMENDMENT_JUDGE,
+                prompt=prompt,
+                output_schema=AMENDMENT_JUDGMENT_SCHEMA,
+                site="amendment_judge",
+                session_type=SessionType.TICKET_FIRE,
+                failure_message="No independent amendment judgment was returned.",
+            )
+>           judgment = AmendmentJudgment.model_validate(output)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 1 validation error for AmendmentJudgment
+E           finding.smallest_repair
+E             Input should be 'none', 'criterion_text' or 'environment_supply' [type=enum, input_value='ruling_text', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.12/v/enum
+E           During task with name 'judge' and id 'dbffb924-0f9f-0b53-4f4d-f435f0afea91'
+
+src/kodezart/services/native_amendments.py:403: ValidationError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 20:12:12 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:12:12 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-95cbb0e961d54d9c9f73c2bd19a7b060 workspace_id=95cbb0e961d54d9c9f73c2bd19a7b060
+2026-09-12 20:12:12 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:12:13 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:12:13 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:12:13 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:12:14 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-327a9db106dc48ccb9a3c67b2b093191 workspace_id=327a9db106dc48ccb9a3c67b2b093191
+2026-09-12 20:12:14 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=amendment_judge stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 20:12:14 [info     ] workspace_released             workspace_id=327a9db106dc48ccb9a3c67b2b093191
+2026-09-12 20:12:14 [warning  ] workspace_release_unclean      branch_name=native-test path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-95cbb0e961d54d9c9f73c2bd19a7b060 workspace_id=95cbb0e961d54d9c9f73c2bd19a7b060
+2026-09-12 20:12:14 [info     ] workspace_released             workspace_id=95cbb0e961d54d9c9f73c2bd19a7b060
+_ test_ruling_amendment_preserves_native_occurrence_question_and_prior_bytes[premise_false_at_base] _
+
+repository = (PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1841/test_ruling_amendment_preserve2/repo'), '60409a6835ead55b63ffd49acd9518376484a020')
+ground = <AmendmentGround.PREMISE_FALSE_AT_BASE: 'premise_false_at_base'>
+
+    @pytest.mark.parametrize("ground", list(__import__("kodezart.types.domain.amendment", fromlist=["AmendmentGround"]).AmendmentGround))
+    async def test_ruling_amendment_preserves_native_occurrence_question_and_prior_bytes(repository, ground):
+        from kodezart.domain.rulings import render_ruling
+        from kodezart.services.ruling_records import RulingRecordReader
+        from kodezart.types.domain.agent import Ruling
+        from tests.chains.test_native_fire import SUBJECT
+        from tests.domain.test_rulings import ruling_data
+    
+        port = tracker()
+        ruling = Ruling.model_validate(ruling_data(issue_ref=SUBJECT, authored_by="principal"))
+        body = render_ruling(ruling=ruling, lane_key="historical:café/lane", marker_prefixes={"ruling": "fixture-pinned"})
+        original = await port.post_comment(issue_key=SUBJECT, body=body)
+    
+        async def answers(title, payload, kwargs):
+            if title == "AmendmentJudgment":
+                payload["finding"]["smallest_repair"] = "ruling_text"
+            elif title == "AmendmentTextOutput":
+                payload["replacement"] = {
+                    "kind": "ruling", "subject": {"kind": "ruling", "id": ruling.ruling_id},
+                    "resolution": "The corrected answer follows the reproduced base evidence.",
+                    "rejected_alternative": "The independently refuted prior reading.",
+                    "repo_evidence": ["policy.py"],
+                }
+    
+        executor = Executor(reproduced=True, ground=ground, subject={"kind": "ruling", "id": ruling.ruling_id}, mutate=answers)
+        service, guard, workspace, _ = await build(repository, executor, port=port)
+        try:
+>           events = await drive(service, guard, repository)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/services/test_applied_native_amendments.py:265: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/services/test_native_amendments.py:227: in drive
+    return [
+src/kodezart/services/agent_service.py:156: in stream_workflow
+    async for event in self._run_in_workspace(
+src/kodezart/services/agent_service.py:300: in _run_in_workspace
+    report = await native_guard.judge(
+src/kodezart/services/native_amendments.py:447: in judge
+    return await NativeAmendmentGraph(
+src/kodezart/chains/native_amendment.py:92: in run
+    final = await self.graph.ainvoke(initial)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:3184: in ainvoke
+    async for chunk in self.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:304: in atick
+    await arun_with_retry(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/native_amendment.py:66: in _judge
+    judgment = await self._actions.judge_claim(claim)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/services/native_amendments.py:479: in judge_claim
+    return await self._guard._judge_claim(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.services.native_amendments._NativeWriterGuard object at 0x10e3aa210>
+
+    async def _judge_claim(
+        self,
+        *,
+        workspace_path: str,
+        claim: AmendmentClaim,
+    ) -> AmendmentJudgment:
+        owner = self._owner
+        if self._base_sha is None or self._rulings is None:
+            raise NativeWriteRefusalError(
+                "A judgment requires initialized base authority"
+            )
+        prompt = owner._prompts.template_for(PromptKey.AMENDMENT_JUDGE).render(
+            {
+                "claim": claim.model_dump_json(),
+                "criteria": "\n".join(
+                    issue.model_dump_json() for issue in self._criterion_issues or ()
+                ),
+                "pinned_rulings": "\n".join(r.model_dump_json() for r in self._rulings),
+                "base_sha": self._base_sha,
+            }
+        )
+        async with owned_workspace(
+            owner._workspace,
+            repo_path=workspace_path,
+            ref=self._base_sha,
+        ) as judge_workspace:
+    
+            async def require_base() -> None:
+                if (
+                    await settle(owner._git.has_replace_refs(judge_workspace))
+                    or await settle(owner._git.current_sha(judge_workspace))
+                    != self._base_sha
+                    or await settle(owner._git.has_changes(judge_workspace))
+                ):
+                    raise NativeWriteRefusalError(
+                        "The independent judgment requires a clean exact base"
+                    )
+    
+            await require_base()
+            output = await judge_in_workspace(
+                runner=owner._runner,
+                prompts=owner._prompts,
+                skills=owner._skills,
+                workspace=judge_workspace,
+                key=PromptKey.AMENDMENT_JUDGE,
+                prompt=prompt,
+                output_schema=AMENDMENT_JUDGMENT_SCHEMA,
+                site="amendment_judge",
+                session_type=SessionType.TICKET_FIRE,
+                failure_message="No independent amendment judgment was returned.",
+            )
+>           judgment = AmendmentJudgment.model_validate(output)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 1 validation error for AmendmentJudgment
+E           finding.smallest_repair
+E             Input should be 'none', 'criterion_text' or 'environment_supply' [type=enum, input_value='ruling_text', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.12/v/enum
+E           During task with name 'judge' and id '6977dcd5-441f-d8a4-b7ae-c41f274bd153'
+
+src/kodezart/services/native_amendments.py:403: ValidationError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 20:12:16 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:12:16 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-e612454542704b13b4382478aa29b1bf workspace_id=e612454542704b13b4382478aa29b1bf
+2026-09-12 20:12:17 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:12:17 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:12:17 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:12:17 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:12:18 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-3b0ff1d5713e463798d8508cfbc9731e workspace_id=3b0ff1d5713e463798d8508cfbc9731e
+2026-09-12 20:12:18 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=amendment_judge stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 20:12:18 [info     ] workspace_released             workspace_id=3b0ff1d5713e463798d8508cfbc9731e
+2026-09-12 20:12:18 [warning  ] workspace_release_unclean      branch_name=native-test path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-e612454542704b13b4382478aa29b1bf workspace_id=e612454542704b13b4382478aa29b1bf
+2026-09-12 20:12:19 [info     ] workspace_released             workspace_id=e612454542704b13b4382478aa29b1bf
+_ test_ruling_amendment_preserves_native_occurrence_question_and_prior_bytes[requires_breaking_house_rule] _
+
+repository = (PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1841/test_ruling_amendment_preserve3/repo'), '1f15694bac43eab7e95a5d270c7f5070db2d8bfb')
+ground = <AmendmentGround.REQUIRES_BREAKING_HOUSE_RULE: 'requires_breaking_house_rule'>
+
+    @pytest.mark.parametrize("ground", list(__import__("kodezart.types.domain.amendment", fromlist=["AmendmentGround"]).AmendmentGround))
+    async def test_ruling_amendment_preserves_native_occurrence_question_and_prior_bytes(repository, ground):
+        from kodezart.domain.rulings import render_ruling
+        from kodezart.services.ruling_records import RulingRecordReader
+        from kodezart.types.domain.agent import Ruling
+        from tests.chains.test_native_fire import SUBJECT
+        from tests.domain.test_rulings import ruling_data
+    
+        port = tracker()
+        ruling = Ruling.model_validate(ruling_data(issue_ref=SUBJECT, authored_by="principal"))
+        body = render_ruling(ruling=ruling, lane_key="historical:café/lane", marker_prefixes={"ruling": "fixture-pinned"})
+        original = await port.post_comment(issue_key=SUBJECT, body=body)
+    
+        async def answers(title, payload, kwargs):
+            if title == "AmendmentJudgment":
+                payload["finding"]["smallest_repair"] = "ruling_text"
+            elif title == "AmendmentTextOutput":
+                payload["replacement"] = {
+                    "kind": "ruling", "subject": {"kind": "ruling", "id": ruling.ruling_id},
+                    "resolution": "The corrected answer follows the reproduced base evidence.",
+                    "rejected_alternative": "The independently refuted prior reading.",
+                    "repo_evidence": ["policy.py"],
+                }
+    
+        executor = Executor(reproduced=True, ground=ground, subject={"kind": "ruling", "id": ruling.ruling_id}, mutate=answers)
+        service, guard, workspace, _ = await build(repository, executor, port=port)
+        try:
+>           events = await drive(service, guard, repository)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/services/test_applied_native_amendments.py:265: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/services/test_native_amendments.py:227: in drive
+    return [
+src/kodezart/services/agent_service.py:156: in stream_workflow
+    async for event in self._run_in_workspace(
+src/kodezart/services/agent_service.py:300: in _run_in_workspace
+    report = await native_guard.judge(
+src/kodezart/services/native_amendments.py:447: in judge
+    return await NativeAmendmentGraph(
+src/kodezart/chains/native_amendment.py:92: in run
+    final = await self.graph.ainvoke(initial)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:3184: in ainvoke
+    async for chunk in self.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:304: in atick
+    await arun_with_retry(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/native_amendment.py:66: in _judge
+    judgment = await self._actions.judge_claim(claim)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/services/native_amendments.py:479: in judge_claim
+    return await self._guard._judge_claim(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <kodezart.services.native_amendments._NativeWriterGuard object at 0x10e7d6c30>
+
+    async def _judge_claim(
+        self,
+        *,
+        workspace_path: str,
+        claim: AmendmentClaim,
+    ) -> AmendmentJudgment:
+        owner = self._owner
+        if self._base_sha is None or self._rulings is None:
+            raise NativeWriteRefusalError(
+                "A judgment requires initialized base authority"
+            )
+        prompt = owner._prompts.template_for(PromptKey.AMENDMENT_JUDGE).render(
+            {
+                "claim": claim.model_dump_json(),
+                "criteria": "\n".join(
+                    issue.model_dump_json() for issue in self._criterion_issues or ()
+                ),
+                "pinned_rulings": "\n".join(r.model_dump_json() for r in self._rulings),
+                "base_sha": self._base_sha,
+            }
+        )
+        async with owned_workspace(
+            owner._workspace,
+            repo_path=workspace_path,
+            ref=self._base_sha,
+        ) as judge_workspace:
+    
+            async def require_base() -> None:
+                if (
+                    await settle(owner._git.has_replace_refs(judge_workspace))
+                    or await settle(owner._git.current_sha(judge_workspace))
+                    != self._base_sha
+                    or await settle(owner._git.has_changes(judge_workspace))
+                ):
+                    raise NativeWriteRefusalError(
+                        "The independent judgment requires a clean exact base"
+                    )
+    
+            await require_base()
+            output = await judge_in_workspace(
+                runner=owner._runner,
+                prompts=owner._prompts,
+                skills=owner._skills,
+                workspace=judge_workspace,
+                key=PromptKey.AMENDMENT_JUDGE,
+                prompt=prompt,
+                output_schema=AMENDMENT_JUDGMENT_SCHEMA,
+                site="amendment_judge",
+                session_type=SessionType.TICKET_FIRE,
+                failure_message="No independent amendment judgment was returned.",
+            )
+>           judgment = AmendmentJudgment.model_validate(output)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 1 validation error for AmendmentJudgment
+E           finding.smallest_repair
+E             Input should be 'none', 'criterion_text' or 'environment_supply' [type=enum, input_value='ruling_text', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.12/v/enum
+E           During task with name 'judge' and id 'c3c41db0-f8a5-8dcb-4c49-580d833b3296'
+
+src/kodezart/services/native_amendments.py:403: ValidationError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 20:12:20 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:12:20 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-ed0152089eca42b99a1bc3101f2f7701 workspace_id=ed0152089eca42b99a1bc3101f2f7701
+2026-09-12 20:12:21 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:12:21 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:12:21 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:12:21 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:12:22 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-d2cd92a0aaff41cba91fce647a036e72 workspace_id=d2cd92a0aaff41cba91fce647a036e72
+2026-09-12 20:12:22 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=amendment_judge stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 20:12:22 [info     ] workspace_released             workspace_id=d2cd92a0aaff41cba91fce647a036e72
+2026-09-12 20:12:22 [warning  ] workspace_release_unclean      branch_name=native-test path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-ed0152089eca42b99a1bc3101f2f7701 workspace_id=ed0152089eca42b99a1bc3101f2f7701
+2026-09-12 20:12:23 [info     ] workspace_released             workspace_id=ed0152089eca42b99a1bc3101f2f7701
+_ test_amendment_refuses_external_authority_drift_across_fresh_sessions[outage-author] _
+
+repository = (PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1841/test_amendment_refuses_externa2/repo'), 'acb4df8a4b75850f12d76a57ac75034dec74559b')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10e7e35f0>
+boundary = 'author', change = 'outage'
+
+    @pytest.mark.parametrize("boundary", ["author", "verification"])
+    @pytest.mark.parametrize("change", ["check", "outage"])
+    async def test_amendment_refuses_external_authority_drift_across_fresh_sessions(repository, monkeypatch, boundary, change):
+        from kodezart.domain.amendment import NativeWriteRefusalError
+        from kodezart.domain.errors import FireSpecEntryError
+        from tests.chains.test_native_fire import NESTED_OWED
+    
+        port = tracker()
+        verifies = 0
+    
+        async def answers(title, payload, kwargs):
+            nonlocal verifies
+            if title == "WriteBackFinding":
+                verifies += 1
+            if (boundary == "author" and title == "AmendmentTextOutput") or (boundary == "verification" and title == "WriteBackFinding" and verifies == 2):
+                if change == "check":
+                    current = port.issues[NESTED_OWED]
+                    port.issues[NESTED_OWED] = current.model_copy(update={"body": current.body.replace("the check", "a concurrent different check")})
+                else:
+                    async def unavailable(**kwargs):
+                        raise ConnectionError("tracker unavailable after awaited judgment")
+                    monkeypatch.setattr(port, "walk_scope", unavailable)
+    
+        executor = Executor(reproduced=True, mutate=answers)
+        service, guard, workspace, _ = await build(repository, executor, port=port)
+        try:
+            with pytest.raises((NativeWriteRefusalError, FireSpecEntryError)):
+>               await drive(service, guard, repository)
+
+tests/services/test_applied_native_amendments.py:315: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/services/test_native_amendments.py:227: in drive
+    return [
+src/kodezart/services/agent_service.py:156: in stream_workflow
+    async for event in self._run_in_workspace(
+src/kodezart/services/agent_service.py:300: in _run_in_workspace
+    report = await native_guard.judge(
+src/kodezart/services/native_amendments.py:447: in judge
+    return await NativeAmendmentGraph(
+src/kodezart/chains/native_amendment.py:92: in run
+    final = await self.graph.ainvoke(initial)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:3184: in ainvoke
+    async for chunk in self.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:304: in atick
+    await arun_with_retry(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/native_amendment.py:73: in _write_back
+    verdict = await self._actions.apply_judgment(claim, state["judgments"][-1])
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/services/native_amendments.py:516: in apply_judgment
+    return await self._write_back.apply(
+src/kodezart/services/amendment_writeback.py:587: in apply
+    applied = await self._verify(
+src/kodezart/services/amendment_writeback.py:285: in _verify
+    result = await self._verifier.write_back(step=step, ref=base)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/write_back_verifier.py:121: in write_back
+    await step.write(finding=finding)
+src/kodezart/services/amendment_writeback.py:157: in write
+    await self.apply(finding)
+src/kodezart/services/amendment_writeback.py:466: in amend
+    text = await self._author(
+src/kodezart/services/amendment_writeback.py:238: in _author
+    payload = await judge_in_workspace(
+src/kodezart/services/audit_sessions.py:43: in judge_in_workspace
+    result, rate_limited = await drain(
+src/kodezart/core/stream_drain.py:57: in drain
+    async for event in stream:
+src/kodezart/services/agent_service.py:117: in stream_in_workspace
+    async for event in self._executor.stream(
+tests/services/test_native_amendments.py:146: in stream
+    await self.mutate(title, payload, kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+title = 'AmendmentTextOutput'
+payload = {'explanation': 'The independently reproduced ground requires this text change.', 'replacement': {'check': 'the amende...the amended implementation guidance', 'kind': 'criterion', 'subject': {'id': 'fire/owed-direct', 'kind': 'criterion'}}}
+kwargs = {'agents': (), 'allowed_tools': <ToolPreset.EVALUATION: 'evaluation'>, 'cwd': '/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43..., 'propertyName': 'kind'}, 'oneOf': [{...}, {...}, {...}], 'title': 'Replacement'}}, ...}, 'type': 'json_schema'}, ...}
+
+    async def answers(title, payload, kwargs):
+        nonlocal verifies
+        if title == "WriteBackFinding":
+            verifies += 1
+        if (boundary == "author" and title == "AmendmentTextOutput") or (boundary == "verification" and title == "WriteBackFinding" and verifies == 2):
+            if change == "check":
+                current = port.issues[NESTED_OWED]
+                port.issues[NESTED_OWED] = current.model_copy(update={"body": current.body.replace("the check", "a concurrent different check")})
+            else:
+                async def unavailable(**kwargs):
+                    raise ConnectionError("tracker unavailable after awaited judgment")
+>               monkeypatch.setattr(port, "walk_scope", unavailable)
+E               AttributeError: <tests.fakes.FakeTrackerPort object at 0x10e7e12e0> has no attribute 'walk_scope'
+E               During task with name 'canonical_write_back' and id 'd4511d3e-32a8-2218-2ff8-2d03e843f12c'
+
+tests/services/test_applied_native_amendments.py:309: AttributeError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 20:12:44 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:12:44 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-bc506d98683347b5afd2d41554387271 workspace_id=bc506d98683347b5afd2d41554387271
+2026-09-12 20:12:45 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:12:45 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:12:46 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:12:46 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:12:46 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-7c52a9fbb274402eaada93930cfc3ce0 workspace_id=7c52a9fbb274402eaada93930cfc3ce0
+2026-09-12 20:12:47 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=amendment_judge stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 20:12:47 [info     ] workspace_released             workspace_id=7c52a9fbb274402eaada93930cfc3ce0
+2026-09-12 20:12:47 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:12:48 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:12:48 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:12:48 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:12:49 [info     ] outbound_content_gated         categories=[] content_digest=efb3156d6e1d2c183f80192ca81ce84bada0edc299988e71e61ac7d9d25dd6e0 failure=None hits=[] surface=tracker verdict=clean visibility=public writer=tracker_comment
+2026-09-12 20:12:49 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:12:49 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-1ef460e74d2e44b89c91a598bceffe67 workspace_id=1ef460e74d2e44b89c91a598bceffe67
+2026-09-12 20:12:49 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 20:12:50 [info     ] workspace_released             workspace_id=1ef460e74d2e44b89c91a598bceffe67
+2026-09-12 20:12:50 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:12:50 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:12:51 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-9a5a669a3d6d4891927bbd7356fe2c98 workspace_id=9a5a669a3d6d4891927bbd7356fe2c98
+2026-09-12 20:12:51 [info     ] workspace_released             workspace_id=9a5a669a3d6d4891927bbd7356fe2c98
+2026-09-12 20:12:51 [warning  ] workspace_release_unclean      branch_name=native-test path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-bc506d98683347b5afd2d41554387271 workspace_id=bc506d98683347b5afd2d41554387271
+2026-09-12 20:12:51 [info     ] workspace_released             workspace_id=bc506d98683347b5afd2d41554387271
+_ test_amendment_refuses_external_authority_drift_across_fresh_sessions[outage-verification] _
+
+repository = (PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1841/test_amendment_refuses_externa3/repo'), '683e3b78ae9cf1f49866630b2c9a7d270698e94b')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10e7f9580>
+boundary = 'verification', change = 'outage'
+
+    @pytest.mark.parametrize("boundary", ["author", "verification"])
+    @pytest.mark.parametrize("change", ["check", "outage"])
+    async def test_amendment_refuses_external_authority_drift_across_fresh_sessions(repository, monkeypatch, boundary, change):
+        from kodezart.domain.amendment import NativeWriteRefusalError
+        from kodezart.domain.errors import FireSpecEntryError
+        from tests.chains.test_native_fire import NESTED_OWED
+    
+        port = tracker()
+        verifies = 0
+    
+        async def answers(title, payload, kwargs):
+            nonlocal verifies
+            if title == "WriteBackFinding":
+                verifies += 1
+            if (boundary == "author" and title == "AmendmentTextOutput") or (boundary == "verification" and title == "WriteBackFinding" and verifies == 2):
+                if change == "check":
+                    current = port.issues[NESTED_OWED]
+                    port.issues[NESTED_OWED] = current.model_copy(update={"body": current.body.replace("the check", "a concurrent different check")})
+                else:
+                    async def unavailable(**kwargs):
+                        raise ConnectionError("tracker unavailable after awaited judgment")
+                    monkeypatch.setattr(port, "walk_scope", unavailable)
+    
+        executor = Executor(reproduced=True, mutate=answers)
+        service, guard, workspace, _ = await build(repository, executor, port=port)
+        try:
+            with pytest.raises((NativeWriteRefusalError, FireSpecEntryError)):
+>               await drive(service, guard, repository)
+
+tests/services/test_applied_native_amendments.py:315: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/services/test_native_amendments.py:227: in drive
+    return [
+src/kodezart/services/agent_service.py:156: in stream_workflow
+    async for event in self._run_in_workspace(
+src/kodezart/services/agent_service.py:300: in _run_in_workspace
+    report = await native_guard.judge(
+src/kodezart/services/native_amendments.py:447: in judge
+    return await NativeAmendmentGraph(
+src/kodezart/chains/native_amendment.py:92: in run
+    final = await self.graph.ainvoke(initial)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:3184: in ainvoke
+    async for chunk in self.astream(
+.venv/lib/python3.12/site-packages/langgraph/pregel/main.py:2997: in astream
+    async for _ in runner.atick(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_runner.py:304: in atick
+    await arun_with_retry(
+.venv/lib/python3.12/site-packages/langgraph/pregel/_retry.py:163: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:705: in ainvoke
+    input = await asyncio.create_task(
+.venv/lib/python3.12/site-packages/langgraph/_internal/_runnable.py:473: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/native_amendment.py:73: in _write_back
+    verdict = await self._actions.apply_judgment(claim, state["judgments"][-1])
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/services/native_amendments.py:516: in apply_judgment
+    return await self._write_back.apply(
+src/kodezart/services/amendment_writeback.py:587: in apply
+    applied = await self._verify(
+src/kodezart/services/amendment_writeback.py:285: in _verify
+    result = await self._verifier.write_back(step=step, ref=base)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/write_back_verifier.py:125: in write_back
+    finding = await self._judge.judge(artifact=artifact, ref=ref)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/kodezart/chains/write_back_verifier.py:199: in judge
+    structured = await judge_in_workspace(
+src/kodezart/services/audit_sessions.py:43: in judge_in_workspace
+    result, rate_limited = await drain(
+src/kodezart/core/stream_drain.py:57: in drain
+    async for event in stream:
+src/kodezart/services/agent_service.py:117: in stream_in_workspace
+    async for event in self._executor.stream(
+tests/services/test_native_amendments.py:146: in stream
+    await self.mutate(title, payload, kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+title = 'WriteBackFinding'
+payload = {'cited_refs': ['policy.py'], 'evidence': 'Checked the actual record at the base.', 'verdict': 'holds'}
+kwargs = {'agents': (), 'allowed_tools': <ToolPreset.EVALUATION: 'evaluation'>, 'cwd': '/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43...act's claims hold, are refuted, or remain unverifiable against checked evidence."}}, ...}, 'type': 'json_schema'}, ...}
+
+    async def answers(title, payload, kwargs):
+        nonlocal verifies
+        if title == "WriteBackFinding":
+            verifies += 1
+        if (boundary == "author" and title == "AmendmentTextOutput") or (boundary == "verification" and title == "WriteBackFinding" and verifies == 2):
+            if change == "check":
+                current = port.issues[NESTED_OWED]
+                port.issues[NESTED_OWED] = current.model_copy(update={"body": current.body.replace("the check", "a concurrent different check")})
+            else:
+                async def unavailable(**kwargs):
+                    raise ConnectionError("tracker unavailable after awaited judgment")
+>               monkeypatch.setattr(port, "walk_scope", unavailable)
+E               AttributeError: <tests.fakes.FakeTrackerPort object at 0x10e7fbda0> has no attribute 'walk_scope'
+E               During task with name 'canonical_write_back' and id 'd7ca8adf-6092-14e0-2493-db70b732ddeb'
+
+tests/services/test_applied_native_amendments.py:309: AttributeError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 20:12:53 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:12:53 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-6a1ee22eec9e468bafcbd758dcbfa793 workspace_id=6a1ee22eec9e468bafcbd758dcbfa793
+2026-09-12 20:12:54 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:12:54 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:12:54 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:12:55 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:12:55 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-9bf1d6e971914c37b8ec70f509115064 workspace_id=9bf1d6e971914c37b8ec70f509115064
+2026-09-12 20:12:55 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=amendment_judge stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 20:12:56 [info     ] workspace_released             workspace_id=9bf1d6e971914c37b8ec70f509115064
+2026-09-12 20:12:56 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:12:56 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:12:57 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:12:57 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:12:57 [info     ] outbound_content_gated         categories=[] content_digest=75cd2e28bfedde696696a63cc9f0c5a55e9881ad6a69274de2298a29cfc34a52 failure=None hits=[] surface=tracker verdict=clean visibility=public writer=tracker_comment
+2026-09-12 20:12:57 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:12:58 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-a1a04b3e77c141a4a5854db3049d9f6c workspace_id=a1a04b3e77c141a4a5854db3049d9f6c
+2026-09-12 20:12:58 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 20:12:58 [info     ] workspace_released             workspace_id=a1a04b3e77c141a4a5854db3049d9f6c
+2026-09-12 20:12:58 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:12:59 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:12:59 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-98becfa90cdc49e7b6435f4519191c19 workspace_id=98becfa90cdc49e7b6435f4519191c19
+2026-09-12 20:13:00 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=amendment_author stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 20:13:00 [info     ] workspace_released             workspace_id=98becfa90cdc49e7b6435f4519191c19
+2026-09-12 20:13:00 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:13:01 [info     ] outbound_content_gated         categories=[] content_digest=baf5973c66db324234dabeb77f92c5559cd19e4ce365ff653981893fc7df9ad8 failure=None hits=[] surface=tracker verdict=clean visibility=public writer=tracker_description
+2026-09-12 20:13:01 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:13:01 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:13:02 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:13:02 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:13:03 [info     ] outbound_content_gated         categories=[] content_digest=bcb6e622acca9bb3337f4a95be49a77a4e4e251e65feec3b009894d5c9cc9c1d failure=None hits=[] surface=tracker verdict=clean visibility=public writer=tracker_description
+2026-09-12 20:13:03 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:13:03 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 20:13:04 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-1032cee3741341a9996572d2a4f602bc workspace_id=1032cee3741341a9996572d2a4f602bc
+2026-09-12 20:13:04 [info     ] workspace_released             workspace_id=1032cee3741341a9996572d2a4f602bc
+2026-09-12 20:13:04 [warning  ] workspace_release_unclean      branch_name=native-test path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-6a1ee22eec9e468bafcbd758dcbfa793 workspace_id=6a1ee22eec9e468bafcbd758dcbfa793
+2026-09-12 20:13:04 [info     ] workspace_released             workspace_id=6a1ee22eec9e468bafcbd758dcbfa793
+=========================== short test summary info ============================
+FAILED tests/services/test_applied_native_amendments.py::test_ruling_amendment_preserves_native_occurrence_question_and_prior_bytes[unsatisfiable_at_base]
+FAILED tests/services/test_applied_native_amendments.py::test_ruling_amendment_preserves_native_occurrence_question_and_prior_bytes[mutually_unsatisfiable]
+FAILED tests/services/test_applied_native_amendments.py::test_ruling_amendment_preserves_native_occurrence_question_and_prior_bytes[premise_false_at_base]
+FAILED tests/services/test_applied_native_amendments.py::test_ruling_amendment_preserves_native_occurrence_question_and_prior_bytes[requires_breaking_house_rule]
+FAILED tests/services/test_applied_native_amendments.py::test_amendment_refuses_external_authority_drift_across_fresh_sessions[outage-author]
+FAILED tests/services/test_applied_native_amendments.py::test_amendment_refuses_external_authority_drift_across_fresh_sessions[outage-verification]
+6 failed, 2 passed, 7 deselected in 58.72s

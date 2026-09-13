@@ -1,0 +1,58 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+___ test_roster_change_during_measurement_refuses_before_return[membership] ____
+
+delivery = <tests.chains.test_delivery_coordinator.Fixture object at 0x10af6b080>
+changed = 'membership'
+
+    @pytest.mark.parametrize("changed", ["membership", "reference"])
+    async def test_roster_change_during_measurement_refuses_before_return(
+        delivery, changed
+    ):
+        class MovingRosterRunner(SubprocessCheckChainRunner):
+            async def run_chain(self, *, cwd, steps):
+                result = await super().run_chain(cwd=cwd, steps=steps)
+                if changed == "membership":
+                    delivery.tracker.scope_memberships[PROJECT] = ("z",)
+                else:
+                    delivery.tracker.recorded_work_refs["z"] = [
+                        work_ref("z", "work/a", delivery.sha("a"))
+                    ]
+                return result
+    
+        runner = MovingRosterRunner(timeout=AppConfig().union_check_step_timeout_seconds)
+>       with pytest.raises(UnionHeadReadError, match="roster changed"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'kodezart.domain.errors.UnionHeadReadError'>
+
+tests/chains/test_delivery_coordinator.py:336: Failed
+____ test_roster_change_during_measurement_refuses_before_return[reference] ____
+
+delivery = <tests.chains.test_delivery_coordinator.Fixture object at 0x10af7e000>
+changed = 'reference'
+
+    @pytest.mark.parametrize("changed", ["membership", "reference"])
+    async def test_roster_change_during_measurement_refuses_before_return(
+        delivery, changed
+    ):
+        class MovingRosterRunner(SubprocessCheckChainRunner):
+            async def run_chain(self, *, cwd, steps):
+                result = await super().run_chain(cwd=cwd, steps=steps)
+                if changed == "membership":
+                    delivery.tracker.scope_memberships[PROJECT] = ("z",)
+                else:
+                    delivery.tracker.recorded_work_refs["z"] = [
+                        work_ref("z", "work/a", delivery.sha("a"))
+                    ]
+                return result
+    
+        runner = MovingRosterRunner(timeout=AppConfig().union_check_step_timeout_seconds)
+>       with pytest.raises(UnionHeadReadError, match="roster changed"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'kodezart.domain.errors.UnionHeadReadError'>
+
+tests/chains/test_delivery_coordinator.py:336: Failed
+=========================== short test summary info ============================
+FAILED tests/chains/test_delivery_coordinator.py::test_roster_change_during_measurement_refuses_before_return[membership]
+FAILED tests/chains/test_delivery_coordinator.py::test_roster_change_during_measurement_refuses_before_return[reference]
+2 failed, 8 deselected in 12.38s

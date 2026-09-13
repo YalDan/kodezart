@@ -1,0 +1,58 @@
+FFFFFF
+=================================== FAILURES ===================================
+_____ test_actual_configured_native_prompt_boundary[declared-claude-opus] ______
+async def functions are not natively supported.
+You need to install a suitable plugin for your async framework, for example:
+  - anyio
+  - pytest-asyncio
+  - pytest-tornasync
+  - pytest-trio
+  - pytest-twisted
+_____ test_actual_configured_native_prompt_boundary[declared-anthropic_v5] _____
+async def functions are not natively supported.
+You need to install a suitable plugin for your async framework, for example:
+  - anyio
+  - pytest-asyncio
+  - pytest-tornasync
+  - pytest-trio
+  - pytest-twisted
+_ test_actual_configured_native_prompt_boundary[isolate_admission-claude-opus] _
+async def functions are not natively supported.
+You need to install a suitable plugin for your async framework, for example:
+  - anyio
+  - pytest-asyncio
+  - pytest-tornasync
+  - pytest-trio
+  - pytest-twisted
+_ test_actual_configured_native_prompt_boundary[isolate_admission-anthropic_v5] _
+async def functions are not natively supported.
+You need to install a suitable plugin for your async framework, for example:
+  - anyio
+  - pytest-asyncio
+  - pytest-tornasync
+  - pytest-trio
+  - pytest-twisted
+_ test_actual_configured_native_prompt_boundary[native_input_control-claude-opus] _
+async def functions are not natively supported.
+You need to install a suitable plugin for your async framework, for example:
+  - anyio
+  - pytest-asyncio
+  - pytest-tornasync
+  - pytest-trio
+  - pytest-twisted
+_ test_actual_configured_native_prompt_boundary[native_input_control-anthropic_v5] _
+async def functions are not natively supported.
+You need to install a suitable plugin for your async framework, for example:
+  - anyio
+  - pytest-asyncio
+  - pytest-tornasync
+  - pytest-trio
+  - pytest-twisted
+=========================== short test summary info ============================
+FAILED ../kodezart-recovery-session/test_m2_groom_configured_prompts_independent.py::test_actual_configured_native_prompt_boundary[declared-claude-opus]
+FAILED ../kodezart-recovery-session/test_m2_groom_configured_prompts_independent.py::test_actual_configured_native_prompt_boundary[declared-anthropic_v5]
+FAILED ../kodezart-recovery-session/test_m2_groom_configured_prompts_independent.py::test_actual_configured_native_prompt_boundary[isolate_admission-claude-opus]
+FAILED ../kodezart-recovery-session/test_m2_groom_configured_prompts_independent.py::test_actual_configured_native_prompt_boundary[isolate_admission-anthropic_v5]
+FAILED ../kodezart-recovery-session/test_m2_groom_configured_prompts_independent.py::test_actual_configured_native_prompt_boundary[native_input_control-claude-opus]
+FAILED ../kodezart-recovery-session/test_m2_groom_configured_prompts_independent.py::test_actual_configured_native_prompt_boundary[native_input_control-anthropic_v5]
+6 failed in 9.84s

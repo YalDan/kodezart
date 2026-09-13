@@ -1,0 +1,36 @@
+F....................................................................... [ 80%]
+..................                                                       [100%]
+=================================== FAILURES ===================================
+__ test_native_create_initializes_a_new_todo_criterion_then_replays_no_write ___
+
+    async def test_native_create_initializes_a_new_todo_criterion_then_replays_no_write():
+        board = _Board()
+        tracker = board.tracker()
+        async with RunSurfaceLease(
+            tracker=tracker, job_id=JOB, surfaces=frozenset({surface()}), lease_seconds=300
+        ):
+            created = await create(tracker)
+        assert created.parent_key == CLAIMED_ISSUE
+        assert created.state_kind is WorkflowStateKind.UNSTARTED
+        assert created.issue_labels == frozenset({"criterion"})
+        assert created.body == f"**Check:** {CHECK}\n\n**Do:** {DO}\n\n**Evidence:**\n"
+        assert len(saves(board)) == 1
+>       assert saves(board)[0] == {
+            "title": "Preserve input bytes",
+            "description": created.body,
+            "team": "fixture-team",
+            "parentId": CLAIMED_ISSUE,
+            "labels": ["acceptance-condition"],
+            "state": "Todo",
+        }
+E       AssertionError: assert {'description...Todo-id', ...} == {'description...: 'Todo', ...}
+E         
+E         Omitting 5 identical items, use -vv to show
+E         Differing items:
+E         {'state': 'fixture-team-Todo-id'} != {'state': 'Todo'}
+E         Use -v to get more diff
+
+tests/tracker/test_criterion_creation.py:55: AssertionError
+=========================== short test summary info ============================
+FAILED tests/tracker/test_criterion_creation.py::test_native_create_initializes_a_new_todo_criterion_then_replays_no_write
+1 failed, 89 passed in 2.09s

@@ -1,0 +1,146 @@
+2026-09-13 01:06:01 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-13 01:06:01 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 01:06:01 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_author stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 01:06:01 [info     ] outbound_content_gated         categories=[] content_digest=f89d1825e4481064a8b5a1ea1946290f442ebe4ad9e7445547d1046d6df1fd1c failure=None hits=[] surface=tracker verdict=clean visibility=private writer=tracker_description
+2026-09-13 01:06:01 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 01:06:01 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_verify resumed_session_id=None session_id=None
+2026-09-13 01:06:01 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 01:06:01 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_verify resumed_session_id=None session_id=None
+2026-09-13 01:06:01 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 01:06:01 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 01:06:01 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-13 01:06:01 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 01:06:01 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_verify resumed_session_id=None session_id=None
+2026-09-13 01:06:01 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 01:06:01 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=write_back_verify stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 01:06:01 [info     ] organize_admission_attempt     base_ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa issue_key=FIX-1 prompt_key=organize_assess resumed_session_id=None session_id=None
+2026-09-13 01:06:01 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_assess stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-13 01:06:01 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=organize_criteria_author stop_reason=None subtype=result total_cost_usd=None usage=None
+{
+  "claude-opus": {
+    "sha256": "4ae3417287faaae00c36a2ac60c263857118955a01fb2c228c963b211ce22bb7",
+    "advertised_capabilities": "{{skills_reference}}Author criterion sub-issue proposals for the issue under the supplied rubric.\nThis role authors criteria; it does not implement them or grade them complete.\nReturn the requested structured proposals for the caller to create through the\ntracker port. Do not write the tracker through session tools or grant approval.\n\nGive each criterion a concrete Check, an actionable Do, and an empty Evidence\nfield for the later graded commit and demonstration. Propose Todo state and the\nconfigured criterion label. Reuse an existing child when its Check already states\nthe criterion; do not duplicate it or use title numbering as identity. Existing\ncriterion bodies below are the source for that comparison.\n\nCheck individual satisfiability, joint consistency, and demonstrability in the\ndeclared grading environment before proposing a criterion. Name missing evidence\nor an unruled decision instead of inventing it. Preserve the underlying requirement\nwhen re-graining an undemonstrable check. For adoption of an existing artifact,\nrequire rendered byte identity to the recorded source/version with any explicit\nconfiguration substitutions; semantic coverage cannot establish identity.\n\nThis role returns a `criteria` proposal to create criterion children. The caller\naccepts no body, graph or split proposal from this role. Those specification and\nstructural repairs belong to the separate Organize authoring role. Do not claim\nthat criterion prose edits the addressed issue or changes its native graph.\n\nEditing an existing criterion is unavailable: when required, return `unavailable`\nwith capability `criterion_edit` and concrete evidence. This is the only declared\nunavailable capability. Reserve `unresolved` for a real unruled human decision;\na missing write capability does not grant approval or constitute that decision.\n\n"
+  },
+  "anthropic_v5": {
+    "sha256": "ba71634a2c699dea5e380f23c8aa6de7ac2d6b94d328d3111d5c5dca1f203364",
+    "advertised_capabilities": "Author criterion sub-issue proposals for the issue under the supplied rubric.\nThis role authors criteria; it does not implement them or grade them complete.\nReturn the requested structured proposals for the caller to create through the\ntracker port. Do not write the tracker through session tools or grant approval.\n\nGive each criterion a concrete Check, an actionable Do, and an empty Evidence\nfield for the later graded commit and demonstration. Propose Todo state and the\nconfigured criterion label. Reuse an existing child when its Check already states\nthe criterion; do not duplicate it or use title numbering as identity. Existing\ncriterion bodies below are the source for that comparison.\n\nCheck individual satisfiability, joint consistency, and demonstrability in the\ndeclared grading environment before proposing a criterion. Name missing evidence\nor an unruled decision instead of inventing it. Preserve the underlying requirement\nwhen re-graining an undemonstrable check. For adoption of an existing artifact,\nrequire rendered byte identity to the recorded source/version with any explicit\nconfiguration substitutions; semantic coverage cannot establish identity.\n\nThis role returns a `criteria` proposal to create criterion children. The caller\naccepts no body, graph or split proposal from this role. Those specification and\nstructural repairs belong to the separate Organize authoring role. Do not claim\nthat criterion prose edits the addressed issue or changes its native graph.\n\nEditing an existing criterion is unavailable: when required, return `unavailable`\nwith capability `criterion_edit` and concrete evidence. This is the only declared\nunavailable capability. Reserve `unresolved` for a real unruled human decision;\na missing write capability does not grant approval or constitute that decision.\n\n"
+  },
+  "unavailable_rejections": [
+    {
+      "capability": "parent",
+      "errors": [
+        {
+          "type": "literal_error",
+          "loc": [
+            "unavailable",
+            "capability"
+          ],
+          "msg": "Input should be 'criterion_edit'",
+          "input": "parent",
+          "ctx": {
+            "expected": "'criterion_edit'"
+          },
+          "url": "https://errors.pydantic.dev/2.12/v/literal_error"
+        }
+      ]
+    },
+    {
+      "capability": "blocked_by",
+      "errors": [
+        {
+          "type": "literal_error",
+          "loc": [
+            "unavailable",
+            "capability"
+          ],
+          "msg": "Input should be 'criterion_edit'",
+          "input": "blocked_by",
+          "ctx": {
+            "expected": "'criterion_edit'"
+          },
+          "url": "https://errors.pydantic.dev/2.12/v/literal_error"
+        }
+      ]
+    },
+    {
+      "capability": "related_to",
+      "errors": [
+        {
+          "type": "literal_error",
+          "loc": [
+            "unavailable",
+            "capability"
+          ],
+          "msg": "Input should be 'criterion_edit'",
+          "input": "related_to",
+          "ctx": {
+            "expected": "'criterion_edit'"
+          },
+          "url": "https://errors.pydantic.dev/2.12/v/literal_error"
+        }
+      ]
+    },
+    {
+      "capability": "priority",
+      "errors": [
+        {
+          "type": "literal_error",
+          "loc": [
+            "unavailable",
+            "capability"
+          ],
+          "msg": "Input should be 'criterion_edit'",
+          "input": "priority",
+          "ctx": {
+            "expected": "'criterion_edit'"
+          },
+          "url": "https://errors.pydantic.dev/2.12/v/literal_error"
+        }
+      ]
+    },
+    {
+      "capability": "milestone",
+      "errors": [
+        {
+          "type": "literal_error",
+          "loc": [
+            "unavailable",
+            "capability"
+          ],
+          "msg": "Input should be 'criterion_edit'",
+          "input": "milestone",
+          "ctx": {
+            "expected": "'criterion_edit'"
+          },
+          "url": "https://errors.pydantic.dev/2.12/v/literal_error"
+        }
+      ]
+    },
+    {
+      "capability": "split",
+      "errors": [
+        {
+          "type": "literal_error",
+          "loc": [
+            "unavailable",
+            "capability"
+          ],
+          "msg": "Input should be 'criterion_edit'",
+          "input": "split",
+          "ctx": {
+            "expected": "'criterion_edit'"
+          },
+          "url": "https://errors.pydantic.dev/2.12/v/literal_error"
+        }
+      ]
+    }
+  ],
+  "actual_owner_refusal": "organize write for 'FIX-1' refused: author returned another write surface",
+  "criteria_calls": [
+    {
+      "advertises_body_edit": false,
+      "body_is_in_schema": true
+    }
+  ],
+  "children_created": []
+}

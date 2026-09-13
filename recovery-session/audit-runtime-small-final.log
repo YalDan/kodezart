@@ -1,0 +1,445 @@
+....................FFF..............................                    [100%]
+=================================== FAILURES ===================================
+_______ test_actual_main_lifespan_registers_and_executes_audit[complete] _______
+
+tmp_path = PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1864/test_actual_main_lifespan_regi0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10aa9cc80>
+configuration = 'complete'
+
+    @pytest.mark.parametrize(
+        "configuration", ["complete", "missing_policy", "missing_roster"]
+    )
+    async def test_actual_main_lifespan_registers_and_executes_audit(
+        tmp_path, monkeypatch, configuration
+    ):
+        from kodezart import main
+        from kodezart.composition.records import BuiltRecorder
+        from kodezart.composition.workspace import GitStack
+        from kodezart.core.prompt_namespaces import operation_bindings
+        from tests.fakes import (
+            FakeArtifactPersister,
+            FakeBranchMerger,
+            FakeChangePersister,
+            FakeRefPublisher,
+            ManagedFakeLinearMcpServer,
+        )
+        from tests.prompts.test_organize_mandate_bindings import declared_operation
+        from tests.services.test_prompt_passes import _config
+    
+        _, _, server, tracker, _ = dependencies()
+        fields = declared_operation().model_dump()
+        fields["marker_prefixes"]["audit"] = "configured-audit-record"
+        fields["marker_prefixes"]["escalation"] = "configured-audit-escalation"
+        fields["issue_labels"]["decision"] = "needs decision"
+        fields["audit_scopes"] = [
+            {
+                "scope": EMPTY_PROJECT.model_dump(),
+                "repo_url": fields["repos"][0]["url"],
+                "report_issue_key": ROOT.key,
+            }
+        ]
+        operation = OperationConfig.model_validate(fields)
+>       config = _config(
+            tmp_path,
+            audit={"timeout_seconds": 17},
+            write_back={"max_verify_rounds": 2},
+            github_token=SecretStr("fixture-audit-token"),
+            ticket_review_mode="reviewed",
+            fire_prep_pass_gate_signals=[],
+            grooming_pass_gate_signals=[],
+        )
+
+tests/integration/test_audit_scheduler.py:257: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/services/test_prompt_passes.py:146: in _config
+    return AppConfig(**settings)  # type: ignore[arg-type]
+           ^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+__pydantic_self__ = AppConfig(), _case_sensitive = None
+_nested_model_default_partial_update = None, _env_prefix = None
+_env_prefix_target = None, _env_file = PosixPath('.'), _env_file_encoding = None
+_env_ignore_empty = None, _env_nested_delimiter = None
+_env_nested_max_split = None, _env_parse_none_str = None
+_env_parse_enums = None, _cli_prog_name = None, _cli_parse_args = None
+_cli_settings_source = None, _cli_parse_none_str = None
+_cli_hide_none_type = None, _cli_avoid_json = None, _cli_enforce_required = None
+_cli_use_class_docs_for_groups = None, _cli_exit_on_error = None
+_cli_prefix = None, _cli_flag_prefix_char = None, _cli_implicit_flags = None
+_cli_ignore_unknown_args = None, _cli_kebab_case = None, _cli_shortcuts = None
+_secrets_dir = None, _build_sources = None
+values = {'audit': {'timeout_seconds': 17}, 'fire_prep_pass_gate_signals': [], 'fire_prep_pass_interval_seconds': 613.0, 'fire_prep_pass_timeout_seconds': 401.0, ...}
+sources = (InitSettingsSource(init_kwargs={'write_back': {'max_verify_rounds': 2}, 'audit': {'timeout_seconds': 17}, 'github_tok...(init_kwargs={}), InitSettingsSource(init_kwargs={}), DefaultSettingsSource(nested_model_default_partial_update=False))
+init_kwargs = {'audit': {'timeout_seconds': 17}, 'fire_prep_pass_gate_signals': [], 'fire_prep_pass_interval_seconds': 613.0, 'fire_prep_pass_timeout_seconds': 401.0, ...}
+
+    def __init__(
+        __pydantic_self__,
+        _case_sensitive: bool | None = None,
+        _nested_model_default_partial_update: bool | None = None,
+        _env_prefix: str | None = None,
+        _env_prefix_target: EnvPrefixTarget | None = None,
+        _env_file: DotenvType | None = ENV_FILE_SENTINEL,
+        _env_file_encoding: str | None = None,
+        _env_ignore_empty: bool | None = None,
+        _env_nested_delimiter: str | None = None,
+        _env_nested_max_split: int | None = None,
+        _env_parse_none_str: str | None = None,
+        _env_parse_enums: bool | None = None,
+        _cli_prog_name: str | None = None,
+        _cli_parse_args: bool | list[str] | tuple[str, ...] | None = None,
+        _cli_settings_source: CliSettingsSource[Any] | None = None,
+        _cli_parse_none_str: str | None = None,
+        _cli_hide_none_type: bool | None = None,
+        _cli_avoid_json: bool | None = None,
+        _cli_enforce_required: bool | None = None,
+        _cli_use_class_docs_for_groups: bool | None = None,
+        _cli_exit_on_error: bool | None = None,
+        _cli_prefix: str | None = None,
+        _cli_flag_prefix_char: str | None = None,
+        _cli_implicit_flags: bool | Literal['dual', 'toggle'] | None = None,
+        _cli_ignore_unknown_args: bool | None = None,
+        _cli_kebab_case: bool | Literal['all', 'no_enums'] | None = None,
+        _cli_shortcuts: Mapping[str, str | list[str]] | None = None,
+        _secrets_dir: PathType | None = None,
+        _build_sources: tuple[tuple[PydanticBaseSettingsSource, ...], dict[str, Any]] | None = None,
+        **values: Any,
+    ) -> None:
+        sources, init_kwargs = (
+            _build_sources
+            if _build_sources is not None
+            else __pydantic_self__.__class__._settings_init_sources(
+                _case_sensitive=_case_sensitive,
+                _nested_model_default_partial_update=_nested_model_default_partial_update,
+                _env_prefix=_env_prefix,
+                _env_prefix_target=_env_prefix_target,
+                _env_file=_env_file,
+                _env_file_encoding=_env_file_encoding,
+                _env_ignore_empty=_env_ignore_empty,
+                _env_nested_delimiter=_env_nested_delimiter,
+                _env_nested_max_split=_env_nested_max_split,
+                _env_parse_none_str=_env_parse_none_str,
+                _env_parse_enums=_env_parse_enums,
+                _cli_prog_name=_cli_prog_name,
+                _cli_parse_args=_cli_parse_args,
+                _cli_settings_source=_cli_settings_source,
+                _cli_parse_none_str=_cli_parse_none_str,
+                _cli_hide_none_type=_cli_hide_none_type,
+                _cli_avoid_json=_cli_avoid_json,
+                _cli_enforce_required=_cli_enforce_required,
+                _cli_use_class_docs_for_groups=_cli_use_class_docs_for_groups,
+                _cli_exit_on_error=_cli_exit_on_error,
+                _cli_prefix=_cli_prefix,
+                _cli_flag_prefix_char=_cli_flag_prefix_char,
+                _cli_implicit_flags=_cli_implicit_flags,
+                _cli_ignore_unknown_args=_cli_ignore_unknown_args,
+                _cli_kebab_case=_cli_kebab_case,
+                _cli_shortcuts=_cli_shortcuts,
+                _secrets_dir=_secrets_dir,
+                **values,
+            )
+        )
+    
+>       super().__init__(**__pydantic_self__.__class__._settings_build_values(sources, init_kwargs))
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for AppConfig
+E       github_token
+E         Input should be a valid string [type=string_type]
+E           For further information visit https://errors.pydantic.dev/2.12/v/string_type
+
+.venv/lib/python3.12/site-packages/pydantic_settings/main.py:242: ValidationError
+____ test_actual_main_lifespan_registers_and_executes_audit[missing_policy] ____
+
+tmp_path = PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1864/test_actual_main_lifespan_regi1')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a9a3ec0>
+configuration = 'missing_policy'
+
+    @pytest.mark.parametrize(
+        "configuration", ["complete", "missing_policy", "missing_roster"]
+    )
+    async def test_actual_main_lifespan_registers_and_executes_audit(
+        tmp_path, monkeypatch, configuration
+    ):
+        from kodezart import main
+        from kodezart.composition.records import BuiltRecorder
+        from kodezart.composition.workspace import GitStack
+        from kodezart.core.prompt_namespaces import operation_bindings
+        from tests.fakes import (
+            FakeArtifactPersister,
+            FakeBranchMerger,
+            FakeChangePersister,
+            FakeRefPublisher,
+            ManagedFakeLinearMcpServer,
+        )
+        from tests.prompts.test_organize_mandate_bindings import declared_operation
+        from tests.services.test_prompt_passes import _config
+    
+        _, _, server, tracker, _ = dependencies()
+        fields = declared_operation().model_dump()
+        fields["marker_prefixes"]["audit"] = "configured-audit-record"
+        fields["marker_prefixes"]["escalation"] = "configured-audit-escalation"
+        fields["issue_labels"]["decision"] = "needs decision"
+        fields["audit_scopes"] = [
+            {
+                "scope": EMPTY_PROJECT.model_dump(),
+                "repo_url": fields["repos"][0]["url"],
+                "report_issue_key": ROOT.key,
+            }
+        ]
+        operation = OperationConfig.model_validate(fields)
+>       config = _config(
+            tmp_path,
+            audit={"timeout_seconds": 17},
+            write_back={"max_verify_rounds": 2},
+            github_token=SecretStr("fixture-audit-token"),
+            ticket_review_mode="reviewed",
+            fire_prep_pass_gate_signals=[],
+            grooming_pass_gate_signals=[],
+        )
+
+tests/integration/test_audit_scheduler.py:257: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/services/test_prompt_passes.py:146: in _config
+    return AppConfig(**settings)  # type: ignore[arg-type]
+           ^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+__pydantic_self__ = AppConfig(), _case_sensitive = None
+_nested_model_default_partial_update = None, _env_prefix = None
+_env_prefix_target = None, _env_file = PosixPath('.'), _env_file_encoding = None
+_env_ignore_empty = None, _env_nested_delimiter = None
+_env_nested_max_split = None, _env_parse_none_str = None
+_env_parse_enums = None, _cli_prog_name = None, _cli_parse_args = None
+_cli_settings_source = None, _cli_parse_none_str = None
+_cli_hide_none_type = None, _cli_avoid_json = None, _cli_enforce_required = None
+_cli_use_class_docs_for_groups = None, _cli_exit_on_error = None
+_cli_prefix = None, _cli_flag_prefix_char = None, _cli_implicit_flags = None
+_cli_ignore_unknown_args = None, _cli_kebab_case = None, _cli_shortcuts = None
+_secrets_dir = None, _build_sources = None
+values = {'audit': {'timeout_seconds': 17}, 'fire_prep_pass_gate_signals': [], 'fire_prep_pass_interval_seconds': 613.0, 'fire_prep_pass_timeout_seconds': 401.0, ...}
+sources = (InitSettingsSource(init_kwargs={'write_back': {'max_verify_rounds': 2}, 'audit': {'timeout_seconds': 17}, 'github_tok...(init_kwargs={}), InitSettingsSource(init_kwargs={}), DefaultSettingsSource(nested_model_default_partial_update=False))
+init_kwargs = {'audit': {'timeout_seconds': 17}, 'fire_prep_pass_gate_signals': [], 'fire_prep_pass_interval_seconds': 613.0, 'fire_prep_pass_timeout_seconds': 401.0, ...}
+
+    def __init__(
+        __pydantic_self__,
+        _case_sensitive: bool | None = None,
+        _nested_model_default_partial_update: bool | None = None,
+        _env_prefix: str | None = None,
+        _env_prefix_target: EnvPrefixTarget | None = None,
+        _env_file: DotenvType | None = ENV_FILE_SENTINEL,
+        _env_file_encoding: str | None = None,
+        _env_ignore_empty: bool | None = None,
+        _env_nested_delimiter: str | None = None,
+        _env_nested_max_split: int | None = None,
+        _env_parse_none_str: str | None = None,
+        _env_parse_enums: bool | None = None,
+        _cli_prog_name: str | None = None,
+        _cli_parse_args: bool | list[str] | tuple[str, ...] | None = None,
+        _cli_settings_source: CliSettingsSource[Any] | None = None,
+        _cli_parse_none_str: str | None = None,
+        _cli_hide_none_type: bool | None = None,
+        _cli_avoid_json: bool | None = None,
+        _cli_enforce_required: bool | None = None,
+        _cli_use_class_docs_for_groups: bool | None = None,
+        _cli_exit_on_error: bool | None = None,
+        _cli_prefix: str | None = None,
+        _cli_flag_prefix_char: str | None = None,
+        _cli_implicit_flags: bool | Literal['dual', 'toggle'] | None = None,
+        _cli_ignore_unknown_args: bool | None = None,
+        _cli_kebab_case: bool | Literal['all', 'no_enums'] | None = None,
+        _cli_shortcuts: Mapping[str, str | list[str]] | None = None,
+        _secrets_dir: PathType | None = None,
+        _build_sources: tuple[tuple[PydanticBaseSettingsSource, ...], dict[str, Any]] | None = None,
+        **values: Any,
+    ) -> None:
+        sources, init_kwargs = (
+            _build_sources
+            if _build_sources is not None
+            else __pydantic_self__.__class__._settings_init_sources(
+                _case_sensitive=_case_sensitive,
+                _nested_model_default_partial_update=_nested_model_default_partial_update,
+                _env_prefix=_env_prefix,
+                _env_prefix_target=_env_prefix_target,
+                _env_file=_env_file,
+                _env_file_encoding=_env_file_encoding,
+                _env_ignore_empty=_env_ignore_empty,
+                _env_nested_delimiter=_env_nested_delimiter,
+                _env_nested_max_split=_env_nested_max_split,
+                _env_parse_none_str=_env_parse_none_str,
+                _env_parse_enums=_env_parse_enums,
+                _cli_prog_name=_cli_prog_name,
+                _cli_parse_args=_cli_parse_args,
+                _cli_settings_source=_cli_settings_source,
+                _cli_parse_none_str=_cli_parse_none_str,
+                _cli_hide_none_type=_cli_hide_none_type,
+                _cli_avoid_json=_cli_avoid_json,
+                _cli_enforce_required=_cli_enforce_required,
+                _cli_use_class_docs_for_groups=_cli_use_class_docs_for_groups,
+                _cli_exit_on_error=_cli_exit_on_error,
+                _cli_prefix=_cli_prefix,
+                _cli_flag_prefix_char=_cli_flag_prefix_char,
+                _cli_implicit_flags=_cli_implicit_flags,
+                _cli_ignore_unknown_args=_cli_ignore_unknown_args,
+                _cli_kebab_case=_cli_kebab_case,
+                _cli_shortcuts=_cli_shortcuts,
+                _secrets_dir=_secrets_dir,
+                **values,
+            )
+        )
+    
+>       super().__init__(**__pydantic_self__.__class__._settings_build_values(sources, init_kwargs))
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for AppConfig
+E       github_token
+E         Input should be a valid string [type=string_type]
+E           For further information visit https://errors.pydantic.dev/2.12/v/string_type
+
+.venv/lib/python3.12/site-packages/pydantic_settings/main.py:242: ValidationError
+____ test_actual_main_lifespan_registers_and_executes_audit[missing_roster] ____
+
+tmp_path = PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1864/test_actual_main_lifespan_regi2')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a9b3890>
+configuration = 'missing_roster'
+
+    @pytest.mark.parametrize(
+        "configuration", ["complete", "missing_policy", "missing_roster"]
+    )
+    async def test_actual_main_lifespan_registers_and_executes_audit(
+        tmp_path, monkeypatch, configuration
+    ):
+        from kodezart import main
+        from kodezart.composition.records import BuiltRecorder
+        from kodezart.composition.workspace import GitStack
+        from kodezart.core.prompt_namespaces import operation_bindings
+        from tests.fakes import (
+            FakeArtifactPersister,
+            FakeBranchMerger,
+            FakeChangePersister,
+            FakeRefPublisher,
+            ManagedFakeLinearMcpServer,
+        )
+        from tests.prompts.test_organize_mandate_bindings import declared_operation
+        from tests.services.test_prompt_passes import _config
+    
+        _, _, server, tracker, _ = dependencies()
+        fields = declared_operation().model_dump()
+        fields["marker_prefixes"]["audit"] = "configured-audit-record"
+        fields["marker_prefixes"]["escalation"] = "configured-audit-escalation"
+        fields["issue_labels"]["decision"] = "needs decision"
+        fields["audit_scopes"] = [
+            {
+                "scope": EMPTY_PROJECT.model_dump(),
+                "repo_url": fields["repos"][0]["url"],
+                "report_issue_key": ROOT.key,
+            }
+        ]
+        operation = OperationConfig.model_validate(fields)
+>       config = _config(
+            tmp_path,
+            audit={"timeout_seconds": 17},
+            write_back={"max_verify_rounds": 2},
+            github_token=SecretStr("fixture-audit-token"),
+            ticket_review_mode="reviewed",
+            fire_prep_pass_gate_signals=[],
+            grooming_pass_gate_signals=[],
+        )
+
+tests/integration/test_audit_scheduler.py:257: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/services/test_prompt_passes.py:146: in _config
+    return AppConfig(**settings)  # type: ignore[arg-type]
+           ^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+__pydantic_self__ = AppConfig(), _case_sensitive = None
+_nested_model_default_partial_update = None, _env_prefix = None
+_env_prefix_target = None, _env_file = PosixPath('.'), _env_file_encoding = None
+_env_ignore_empty = None, _env_nested_delimiter = None
+_env_nested_max_split = None, _env_parse_none_str = None
+_env_parse_enums = None, _cli_prog_name = None, _cli_parse_args = None
+_cli_settings_source = None, _cli_parse_none_str = None
+_cli_hide_none_type = None, _cli_avoid_json = None, _cli_enforce_required = None
+_cli_use_class_docs_for_groups = None, _cli_exit_on_error = None
+_cli_prefix = None, _cli_flag_prefix_char = None, _cli_implicit_flags = None
+_cli_ignore_unknown_args = None, _cli_kebab_case = None, _cli_shortcuts = None
+_secrets_dir = None, _build_sources = None
+values = {'audit': {'timeout_seconds': 17}, 'fire_prep_pass_gate_signals': [], 'fire_prep_pass_interval_seconds': 613.0, 'fire_prep_pass_timeout_seconds': 401.0, ...}
+sources = (InitSettingsSource(init_kwargs={'write_back': {'max_verify_rounds': 2}, 'audit': {'timeout_seconds': 17}, 'github_tok...(init_kwargs={}), InitSettingsSource(init_kwargs={}), DefaultSettingsSource(nested_model_default_partial_update=False))
+init_kwargs = {'audit': {'timeout_seconds': 17}, 'fire_prep_pass_gate_signals': [], 'fire_prep_pass_interval_seconds': 613.0, 'fire_prep_pass_timeout_seconds': 401.0, ...}
+
+    def __init__(
+        __pydantic_self__,
+        _case_sensitive: bool | None = None,
+        _nested_model_default_partial_update: bool | None = None,
+        _env_prefix: str | None = None,
+        _env_prefix_target: EnvPrefixTarget | None = None,
+        _env_file: DotenvType | None = ENV_FILE_SENTINEL,
+        _env_file_encoding: str | None = None,
+        _env_ignore_empty: bool | None = None,
+        _env_nested_delimiter: str | None = None,
+        _env_nested_max_split: int | None = None,
+        _env_parse_none_str: str | None = None,
+        _env_parse_enums: bool | None = None,
+        _cli_prog_name: str | None = None,
+        _cli_parse_args: bool | list[str] | tuple[str, ...] | None = None,
+        _cli_settings_source: CliSettingsSource[Any] | None = None,
+        _cli_parse_none_str: str | None = None,
+        _cli_hide_none_type: bool | None = None,
+        _cli_avoid_json: bool | None = None,
+        _cli_enforce_required: bool | None = None,
+        _cli_use_class_docs_for_groups: bool | None = None,
+        _cli_exit_on_error: bool | None = None,
+        _cli_prefix: str | None = None,
+        _cli_flag_prefix_char: str | None = None,
+        _cli_implicit_flags: bool | Literal['dual', 'toggle'] | None = None,
+        _cli_ignore_unknown_args: bool | None = None,
+        _cli_kebab_case: bool | Literal['all', 'no_enums'] | None = None,
+        _cli_shortcuts: Mapping[str, str | list[str]] | None = None,
+        _secrets_dir: PathType | None = None,
+        _build_sources: tuple[tuple[PydanticBaseSettingsSource, ...], dict[str, Any]] | None = None,
+        **values: Any,
+    ) -> None:
+        sources, init_kwargs = (
+            _build_sources
+            if _build_sources is not None
+            else __pydantic_self__.__class__._settings_init_sources(
+                _case_sensitive=_case_sensitive,
+                _nested_model_default_partial_update=_nested_model_default_partial_update,
+                _env_prefix=_env_prefix,
+                _env_prefix_target=_env_prefix_target,
+                _env_file=_env_file,
+                _env_file_encoding=_env_file_encoding,
+                _env_ignore_empty=_env_ignore_empty,
+                _env_nested_delimiter=_env_nested_delimiter,
+                _env_nested_max_split=_env_nested_max_split,
+                _env_parse_none_str=_env_parse_none_str,
+                _env_parse_enums=_env_parse_enums,
+                _cli_prog_name=_cli_prog_name,
+                _cli_parse_args=_cli_parse_args,
+                _cli_settings_source=_cli_settings_source,
+                _cli_parse_none_str=_cli_parse_none_str,
+                _cli_hide_none_type=_cli_hide_none_type,
+                _cli_avoid_json=_cli_avoid_json,
+                _cli_enforce_required=_cli_enforce_required,
+                _cli_use_class_docs_for_groups=_cli_use_class_docs_for_groups,
+                _cli_exit_on_error=_cli_exit_on_error,
+                _cli_prefix=_cli_prefix,
+                _cli_flag_prefix_char=_cli_flag_prefix_char,
+                _cli_implicit_flags=_cli_implicit_flags,
+                _cli_ignore_unknown_args=_cli_ignore_unknown_args,
+                _cli_kebab_case=_cli_kebab_case,
+                _cli_shortcuts=_cli_shortcuts,
+                _secrets_dir=_secrets_dir,
+                **values,
+            )
+        )
+    
+>       super().__init__(**__pydantic_self__.__class__._settings_build_values(sources, init_kwargs))
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for AppConfig
+E       github_token
+E         Input should be a valid string [type=string_type]
+E           For further information visit https://errors.pydantic.dev/2.12/v/string_type
+
+.venv/lib/python3.12/site-packages/pydantic_settings/main.py:242: ValidationError
+=========================== short test summary info ============================
+FAILED tests/integration/test_audit_scheduler.py::test_actual_main_lifespan_registers_and_executes_audit[complete]
+FAILED tests/integration/test_audit_scheduler.py::test_actual_main_lifespan_registers_and_executes_audit[missing_policy]
+FAILED tests/integration/test_audit_scheduler.py::test_actual_main_lifespan_registers_and_executes_audit[missing_roster]
+3 failed, 50 passed in 3.29s

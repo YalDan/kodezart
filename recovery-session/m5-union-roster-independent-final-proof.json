@@ -1,0 +1,35 @@
+{
+  "accepted_source_test_commit": "1a83163ecdecf962b21d4ea029ccdd31d16a45de",
+  "tree": "92e10daa63a099577ef1fe528939708dc0bd47ff",
+  "parent": "aef9e78c34dca6897ddfcbfb439246edf76dd364",
+  "base": "da39c439898aec1233aa8b6157b35e961df1e453",
+  "PR114_source": "c17f5d71ce95a94d0fd63f74ee6aa467cce01dad",
+  "independent_actual_corrected_tests": {
+    "passed": 74,
+    "seconds": 139.45,
+    "exit_code": 0
+  },
+  "independent_actual_baseline_selection": {
+    "passed": 71,
+    "seconds": 286.76,
+    "exit_code": 0
+  },
+  "runners_settled": true,
+  "review_tree_clean": true,
+  "review_tree": "/private/tmp/kodezart-v03-m5-union-roster-independent-1a8",
+  "verdict": "accept bounded corrected union consumer; whole-M5 and runtime/terminal/777 obligations remain separate",
+  "own_linear": "https://linear.app/duckburg/issue/KOD-110#comment-d8ef99e1-0ac9-4ff0-96c6-cd87d726cfda",
+  "artifact_sha256": {
+    "m5-union-roster-independent-review.md": "c31acee1055146f854f1dfcdd1c3f2f303da641bfb87fbd663807d82b57cc4d9",
+    "m5-union-roster-independent-provenance.json": "52bc89939bcf244e5bcde2b21e3feaec09ee3d9e69bf34ccc41c2fc1b82509bd",
+    "m5-union-roster-independent-provenance-1a8.json": "c6c939fd620a15b3d1dc398fa01a17c15fafa92ce2ebd79c74886ce0c6b269e9",
+    "m5-union-roster-independent-selected-aef.log": "65f3cda01cbefe6270b79ed832ea61a704137407c2afec74086316609db7f828",
+    "m5-union-roster-independent-corrected-1a8.log": "119adf00b48131c2c498622e61e67708a4bd98501b25019842054dc5a15d733e",
+    "m5-union-roster-independent-freshness-aef.log": "96f8ad6081fb0139d040fb13d3f6a432053af098f447f4bebf92c5e587ff5304",
+    "m5-union-roster-independent-stage-aef.log": "bd3c7eafa26b53885433233071385b587a41bd1e6c82c3e9fc2dd6f69d11dabb",
+    "m5-union-roster-independent-post-composition-aef.log": "59ed26cf9d5c4c43ef2e0f5032b5e64479d40e0eef52e14dade5f78779595cb8",
+    "test_m5_union_final_freshness_independent.py": "257145bf6e7bb8cde92d272940467ea0b30ff5a61caf7feba4cb4a1db29a986e",
+    "test_m5_union_stage_independence.py": "4eb3e5ca09b4d994a944e14ed8417bb3ee29956eca6e9a51f64810a6976d30ac",
+    "test_m5_union_post_composition_freshness.py": "b97ba3de84556f6f7139ab55842a3542cb76b14257bdb961b30b83655614b532"
+  }
+}

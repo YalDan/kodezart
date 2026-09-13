@@ -1,0 +1,55 @@
+E501 Line too long (95 > 88)
+   --> tests/domain/test_barren_tick.py:128:89
+    |
+126 |     original = readings()
+127 |     altered = tuple(
+128 |         item.model_copy(update={"value": TextEvidence(value=value)}) if index == slot else item
+    |                                                                                         ^^^^^^^
+129 |         for index, item in enumerate(original)
+130 |     )
+    |
+
+E501 Line too long (98 > 88)
+   --> tests/domain/test_escalation_ageing.py:209:89
+    |
+207 |     original = readings()
+208 |     altered = tuple(
+209 |         item.model_copy(update={"value": TextEvidence(value=value)}) if position == slot else item
+    |                                                                                         ^^^^^^^^^^
+210 |         for position, item in enumerate(original)
+211 |     )
+    |
+
+E501 Line too long (99 > 88)
+   --> tests/domain/test_record_consistency.py:264:89
+    |
+262 |     [
+263 |         ([{"sha": "x", "subject": "s"}], ValidationError),
+264 |         ([{"sha": "x", "subject": "s", "issue_id": "i", "explanation": "extra"}], ValidationError),
+    |                                                                                         ^^^^^^^^^^^
+265 |         ([{"sha": 3, "subject": "s", "issue_id": "i"}], ValidationError),
+266 |         ([{"sha": " ", "subject": "s", "issue_id": "i"}], RunShapeReadError),
+    |
+
+E501 Line too long (108 > 88)
+   --> tests/domain/test_record_consistency.py:329:89
+    |
+328 | @pytest.mark.parametrize("slot", [0, 1])
+329 | @pytest.mark.parametrize("value", [CountEvidence(value=7), TextEvidence(value=""), TextEvidence(value=" ")])
+    |                                                                                         ^^^^^^^^^^^^^^^^^^^^
+330 | def test_lane_and_declared_head_require_readable_opaque_identities(slot, value):
+331 |     with pytest.raises(RunShapeReadError):
+    |
+
+E501 Line too long (101 > 88)
+   --> tests/domain/test_surface_contention.py:176:89
+    |
+174 |     original = readings(surface)
+175 |     altered = tuple(
+176 |         reading.model_copy(update={"value": TextEvidence(value=value)}) if index == slot else reading
+    |                                                                                         ^^^^^^^^^^^^^
+177 |         for index, reading in enumerate(original)
+178 |     )
+    |
+
+Found 11 errors (6 fixed, 5 remaining).

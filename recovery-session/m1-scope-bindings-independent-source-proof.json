@@ -1,0 +1,69 @@
+{
+  "candidate": "ddb8cdef33f90f30aecc4343e36c2293bdf39a27",
+  "tree": "5ed89888cb982ee2972f5a79e25da681b4323eeb",
+  "base": "2bc237577da7a3db3101e67c324eea0eaa6e6abd",
+  "requested_donor": "da39c439898aec1233aa8b6157b35e961df1e453",
+  "map_donor": "36083f83f42c03240ebb5861fe284da2c9f04180",
+  "files": {
+    "src/kodezart/domain/scope_approval.py": {
+      "candidate_equals_requested_donor": true,
+      "map_donor_equals_requested_donor": true
+    },
+    "src/kodezart/services/scope_resolution.py": {
+      "candidate_equals_requested_donor": true,
+      "map_donor_equals_requested_donor": true
+    },
+    "src/kodezart/services/tracker_boot.py": {
+      "candidate_equals_requested_donor": true,
+      "map_donor_equals_requested_donor": true
+    },
+    "src/kodezart/adapters/linear_scope_reader.py": {
+      "candidate_equals_requested_donor": true,
+      "map_donor_equals_requested_donor": true
+    },
+    "src/kodezart/adapters/linear_scope_types.py": {
+      "candidate_equals_requested_donor": true,
+      "map_donor_equals_requested_donor": true
+    }
+  },
+  "helpers": {
+    "_scope_label_members": {
+      "candidate_equals_requested_donor": true,
+      "map_donor_equals_requested_donor": true
+    },
+    "_read_scope_issue": {
+      "candidate_equals_requested_donor": true,
+      "map_donor_equals_requested_donor": true
+    },
+    "read_scope_labels": {
+      "candidate_equals_requested_donor": true,
+      "map_donor_equals_requested_donor": true
+    },
+    "execution_approved": {
+      "candidate_equals_requested_donor": true,
+      "map_donor_equals_requested_donor": true
+    },
+    "_read_execution_approval": {
+      "candidate_equals_requested_donor": true,
+      "map_donor_equals_requested_donor": true
+    },
+    "project_milestones": {
+      "candidate_equals_requested_donor": true,
+      "map_donor_equals_requested_donor": true
+    },
+    "_scope_label_definitions": {
+      "candidate_equals_requested_donor": true,
+      "map_donor_equals_requested_donor": true
+    },
+    "_ensure_scope_label": {
+      "candidate_equals_requested_donor": true,
+      "map_donor_equals_requested_donor": true
+    },
+    "_label_entries": {
+      "candidate_equals_requested_donor": true,
+      "map_donor_equals_requested_donor": true
+    }
+  },
+  "scope_labels_required": true,
+  "scope_labels_annotation": "Mapping[str, str]"
+}

@@ -1,0 +1,91 @@
+uv run --locked ruff format --check src/ tests/
+797 files already formatted
+uv run --locked ruff check src/ tests/
+All checks passed!
+uv run --locked mypy src/
+Success: no issues found in 333 source files
+uv run --locked pytest
+============================= test session starts ==============================
+platform darwin -- Python 3.12.13, pytest-9.0.2, pluggy-1.6.0
+rootdir: /private/tmp/kodezart-v03-m5-union-roster-correction
+configfile: pyproject.toml
+testpaths: tests
+plugins: anyio-4.12.1, langsmith-0.7.14, asyncio-1.3.0, logfire-4.27.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=session, asyncio_default_test_loop_scope=function
+collected 10643 items
+
+tests/adapters/test_cache_configured_remote.py ..                        [  0%]
+tests/adapters/test_check_chain_cleanup.py ....                          [  0%]
+tests/adapters/test_check_chain_runner.py ...................            [  0%]
+tests/adapters/test_ci_observation.py ................                   [  0%]
+tests/adapters/test_ci_rerun.py ........................................ [  0%]
+............                                                             [  0%]
+tests/adapters/test_ci_watch_evidence.py ...................             [  1%]
+tests/adapters/test_ci_watch_result.py ............                      [  1%]
+tests/adapters/test_claude_client_executor.py .........                  [  1%]
+tests/adapters/test_claude_executors.py ................................ [  1%]
+..................................                                       [  1%]
+tests/adapters/test_forge_query.py ..................                    [  2%]
+tests/adapters/test_git_artifact_persister.py ......                     [  2%]
+tests/adapters/test_git_branch_merger.py ..............                  [  2%]
+tests/adapters/test_git_change_persister.py ...............              [  2%]
+tests/adapters/test_git_ref_publisher.py .....                           [  2%]
+tests/adapters/test_git_worktree_provider.py ...........                 [  2%]
+tests/adapters/test_github_api.py ...................................... [  2%]
+...................................................................      [  3%]
+tests/adapters/test_host_skill_inventory.py ................             [  3%]
+tests/adapters/test_hosted_mcp_session.py .......                        [  3%]
+tests/adapters/test_http_mcp_tool_caller.py ............................ [  3%]
+..............................                                           [  4%]
+tests/adapters/test_judgment_scanner.py ................................ [  4%]
+........................                                                 [  4%]
+tests/adapters/test_knowledge_settings_delivery.py .........             [  4%]
+tests/adapters/test_knowledge_transport.py ..................            [  5%]
+tests/adapters/test_mcp_strictness.py ...................                [  5%]
+tests/adapters/test_native_identity_process_probe.py ..                  [  5%]
+tests/adapters/test_native_workspace_resume.py ...................       [  5%]
+tests/adapters/test_nested_run_progress.py ..                            [  5%]
+tests/adapters/test_no_forge_delivery.py ...                             [  5%]
+tests/adapters/test_outbound_corpus.py ....................              [  5%]
+tests/adapters/test_outbound_gate.py .............................       [  5%]
+tests/adapters/test_permission_boundary.py ............................. [  6%]
+................................................................         [  6%]
+tests/adapters/test_pr_state_reader.py ................................. [  7%]
+..................................                                       [  7%]
+tests/adapters/test_record_failure_boundary.py ......................... [  7%]
+                                                                         [  7%]
+tests/adapters/test_record_publication_failures.py ..........            [  7%]
+tests/adapters/test_scanner_sdk_failures.py ............................ [  8%]
+........................................................................ [  8%]
+...                                                                      [  8%]
+tests/adapters/test_sdk_mapping.py .......................               [  8%]
+tests/adapters/test_self_write_history_receipts.py ..................... [  9%]
+.                                                                        [  9%]
+tests/adapters/test_self_write_replay.py ............................... [  9%]
+......                                                                   [  9%]
+tests/adapters/test_shared_retry.py ...........................          [  9%]
+tests/adapters/test_stdio_mcp_tool_caller.py ..................          [  9%]
+tests/adapters/test_subprocess_git.py .................................. [ 10%]
+...........                                                              [ 10%]
+tests/adapters/test_tool_selection.py .................................. [ 10%]
+......................................                                   [ 11%]
+tests/adapters/test_tracker_self_writes.py .............                 [ 11%]
+tests/api/v1/test_agent.py ....................                          [ 11%]
+tests/api/v1/test_dependencies.py ..............                         [ 11%]
+tests/api/v1/test_health.py .....                                        [ 11%]
+tests/api/v1/test_job_acceptance.py .................................... [ 11%]
+......................................                                   [ 12%]
+tests/api/v1/test_jobs.py .............................................. [ 12%]
+..........                                                               [ 12%]
+tests/api/v1/test_scope_request_boundary.py ............................ [ 12%]
+............                                                             [ 13%]
+tests/chains/test_accept_gate.py ........................                [ 13%]
+tests/chains/test_amendment_review_reentry.py ..                         [ 13%]
+tests/chains/test_audit_pass.py ........................................ [ 13%]
+.....
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! KeyboardInterrupt !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/runners.py:123: KeyboardInterrupt
+(to show a full traceback on KeyboardInterrupt use --full-trace)
+======================= 1466 passed in 357.28s (0:05:57) =======================
+make: *** [test] Error 2

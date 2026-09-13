@@ -1,0 +1,59 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+___ test_task_cancel_during_initial_authority_read_releases_owned_workspace ____
+
+repository = (PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1981/test_task_cancel_during_initia0/repo'), '8247a4b201b7cf5d1faf6ab3436b8df5bdf2741a')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10b22f0e0>
+
+    async def test_task_cancel_during_initial_authority_read_releases_owned_workspace(
+        repository, monkeypatch
+    ):
+        port, saver = tracker(), InMemorySaver()
+        executor = Executor(claim=False)
+        fire, workspace, _, config = await prepared_parent(repository, executor, port, saver)
+        reached = asyncio.Event()
+        actual_scan = port.scope_issues
+        observed_paths = set()
+    
+        async def pause_acquired_read(**kwargs):
+            if workspace._workspaces:
+                observed_paths.update(workspace._workspaces)
+                reached.set()
+                await asyncio.Event().wait()
+            return await actual_scan(**kwargs)
+    
+        monkeypatch.setattr(port, "scope_issues", pause_acquired_read)
+        task = asyncio.create_task(fire.native_graph.ainvoke(None, config=config))
+        target = asyncio.create_task(reached.wait())
+        try:
+            done, _ = await asyncio.wait((task, target), return_when=asyncio.FIRST_COMPLETED)
+            assert target in done, "the real parent failed before the synchronization target"
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+            assert task.cancelled()
+            assert observed_paths
+            assert not executor.calls
+            assert not port.comments
+>           assert not workspace._workspaces, "pre-writer cancellation leaks acquired ownership"
+E           AssertionError: pre-writer cancellation leaks acquired ownership
+E           assert not {'/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-596b738c7c624e5b915cba4793c5a756': _WorkspaceInfo(repo_pat...981/test_task_cancel_during_initia0/repo', workspace_id='596b738c7c624e5b915cba4793c5a756', branch_name='native-loop')}
+E            +  where {'/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-596b738c7c624e5b915cba4793c5a756': _WorkspaceInfo(repo_pat...981/test_task_cancel_during_initia0/repo', workspace_id='596b738c7c624e5b915cba4793c5a756', branch_name='native-loop')} = <tests.services.test_native_amendments.Workspaces object at 0x10b22f590>._workspaces
+
+tests/chains/test_native_prepare_cancel_peer.py:46: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 23:15:02 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 23:15:03 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 23:15:03 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 23:15:03 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 23:15:03 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-596b738c7c624e5b915cba4793c5a756 workspace_id=596b738c7c624e5b915cba4793c5a756
+2026-09-12 23:15:04 [warning  ] native_writer_workspace_retained workspace_path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-596b738c7c624e5b915cba4793c5a756
+2026-09-12 23:15:04 [info     ] workspace_released             workspace_id=596b738c7c624e5b915cba4793c5a756
+------------------------------ Captured log call -------------------------------
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.fire_spec.TrackerSpec from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.fire_spec', 'TrackerSpec')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.criteria.TrackerCriterionSet from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.criteria', 'TrackerCriterionSet')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.accept.AcceptVerdict from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.accept', 'AcceptVerdict')]
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:530 Deserializing unregistered type kodezart.types.domain.gating.RepoVisibility from checkpoint. This will be blocked in a future version. Add to allowed_msgpack_modules to silence: [('kodezart.types.domain.gating', 'RepoVisibility')]
+=========================== short test summary info ============================
+FAILED tests/chains/test_native_prepare_cancel_peer.py::test_task_cancel_during_initial_authority_read_releases_owned_workspace
+1 failed in 5.50s

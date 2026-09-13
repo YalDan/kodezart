@@ -1,0 +1,12 @@
+   Building kodezart @ file:///private/tmp/kodezart-v03-m4-tracker-lifecycle
+warning: `build_system.requires = ["uv-build>=0.10.9,<0.11.0"]` does not contain the current uv version 0.11.6
+      Built kodezart @ file:///private/tmp/kodezart-v03-m4-tracker-lifecycle
+Uninstalled 1 package in 8ms
+Installed 1 package in 15ms
+ImportError while loading conftest '/private/tmp/kodezart-v03-m4-tracker-lifecycle/tests/conftest.py'.
+tests/conftest.py:11: in <module>
+    from kodezart.core.config import AppConfig
+E     File "/private/tmp/kodezart-v03-m4-tracker-lifecycle/src/kodezart/core/config.py", line 1232
+E       >>>>>>> 2bc237577da7a3db3101e67c324eea0eaa6e6abd
+E               ^
+E   SyntaxError: invalid decimal literal

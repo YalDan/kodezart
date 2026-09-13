@@ -1,0 +1,579 @@
+Using CPython 3.12.13
+Creating virtual environment at: .venv
+   Building kodezart @ file:///private/tmp/kodezart-v03-recovery-semantic-applied-current
+warning: `build_system.requires = ["uv-build>=0.10.9,<0.11.0"]` does not contain the current uv version 0.11.6
+      Built kodezart @ file:///private/tmp/kodezart-v03-recovery-semantic-applied-current
+Installed 174 packages in 1.20s
+FFFFFFFFFFFFF                                                            [100%]
+=================================== FAILURES ===================================
+_____ test_reset_uses_actual_native_unstarted_id_and_replays_without_write _____
+
+    async def test_reset_uses_actual_native_unstarted_id_and_replays_without_write():
+        board, tracker = board_and_tracker()
+        expected = await tracker.read_issue(issue_key=KEY)
+        async with lease(tracker):
+>           reset = await tracker.reset_criterion_pending(expected=expected, holder=HOLDER)
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AttributeError: 'LinearMcpTracker' object has no attribute 'reset_criterion_pending'
+
+tests/tracker/test_native_criterion_amendment.py:47: AttributeError
+____ test_final_boundary_and_retry_refuse_changed_native_source[body-reset] ____
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10ca75fa0>
+action = 'reset', drift = 'body'
+
+    @pytest.mark.parametrize("action", ["reset", "description"])
+    @pytest.mark.parametrize("drift", ["body", "parent", "class", "expiry", "retry"])
+    async def test_final_boundary_and_retry_refuse_changed_native_source(
+        monkeypatch, action, drift,
+    ):
+        board, tracker = board_and_tracker()
+        expected = await tracker.read_issue(issue_key=KEY)
+        async with lease(tracker):
+            actual = board.call_tool
+            reads = 0
+            writes = 0
+            changed = False
+    
+            async def call(*, name, arguments):
+                nonlocal reads, writes, changed
+                if name == "get_issue" and arguments.get("id") == KEY:
+                    reads += 1
+                    if reads == 2 and drift != "retry":
+                        changed = True
+                        row = board.server.issues[KEY]
+                        if drift == "body":
+                            row.description = BODY + "changed"
+                        elif drift == "parent":
+                            row.parent_id = "other-parent"
+                        elif drift == "class":
+                            row.labels.clear()
+                        else:
+                            board.now = max(c.updated_at for c in board.server.comments) + timedelta(seconds=901)
+                if name == "save_issue":
+                    writes += 1
+                    if drift == "retry" and writes == 1:
+                        changed = True
+                        board.server.issues[KEY].description = BODY + "changed on retry"
+                        raise McpTransportError("known unsent", server_name="fixture")
+                return await actual(name=name, arguments=arguments)
+    
+            monkeypatch.setattr(board, "call_tool", call)
+            with pytest.raises((CriterionReadError, StaleWriteError, SurfaceLeaseError)):
+                if action == "reset":
+>                   await tracker.reset_criterion_pending(expected=expected, holder=HOLDER)
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E                   AttributeError: 'LinearMcpTracker' object has no attribute 'reset_criterion_pending'
+
+tests/tracker/test_native_criterion_amendment.py:96: AttributeError
+_ test_final_boundary_and_retry_refuse_changed_native_source[body-description] _
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10ca65100>
+action = 'description', drift = 'body'
+
+    @pytest.mark.parametrize("action", ["reset", "description"])
+    @pytest.mark.parametrize("drift", ["body", "parent", "class", "expiry", "retry"])
+    async def test_final_boundary_and_retry_refuse_changed_native_source(
+        monkeypatch, action, drift,
+    ):
+        board, tracker = board_and_tracker()
+        expected = await tracker.read_issue(issue_key=KEY)
+        async with lease(tracker):
+            actual = board.call_tool
+            reads = 0
+            writes = 0
+            changed = False
+    
+            async def call(*, name, arguments):
+                nonlocal reads, writes, changed
+                if name == "get_issue" and arguments.get("id") == KEY:
+                    reads += 1
+                    if reads == 2 and drift != "retry":
+                        changed = True
+                        row = board.server.issues[KEY]
+                        if drift == "body":
+                            row.description = BODY + "changed"
+                        elif drift == "parent":
+                            row.parent_id = "other-parent"
+                        elif drift == "class":
+                            row.labels.clear()
+                        else:
+                            board.now = max(c.updated_at for c in board.server.comments) + timedelta(seconds=901)
+                if name == "save_issue":
+                    writes += 1
+                    if drift == "retry" and writes == 1:
+                        changed = True
+                        board.server.issues[KEY].description = BODY + "changed on retry"
+                        raise McpTransportError("known unsent", server_name="fixture")
+                return await actual(name=name, arguments=arguments)
+    
+            monkeypatch.setattr(board, "call_tool", call)
+            with pytest.raises((CriterionReadError, StaleWriteError, SurfaceLeaseError)):
+                if action == "reset":
+                    await tracker.reset_criterion_pending(expected=expected, holder=HOLDER)
+                else:
+>                   await tracker.edit_description(
+                        target=KEY, expected=BODY, replacement=BODY.replace("old predicate", "new predicate"),
+                        holder=HOLDER,
+                    )
+E                   TypeError: LinearMcpTracker.edit_description() got an unexpected keyword argument 'holder'
+
+tests/tracker/test_native_criterion_amendment.py:98: TypeError
+___ test_final_boundary_and_retry_refuse_changed_native_source[parent-reset] ___
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10ca6dd60>
+action = 'reset', drift = 'parent'
+
+    @pytest.mark.parametrize("action", ["reset", "description"])
+    @pytest.mark.parametrize("drift", ["body", "parent", "class", "expiry", "retry"])
+    async def test_final_boundary_and_retry_refuse_changed_native_source(
+        monkeypatch, action, drift,
+    ):
+        board, tracker = board_and_tracker()
+        expected = await tracker.read_issue(issue_key=KEY)
+        async with lease(tracker):
+            actual = board.call_tool
+            reads = 0
+            writes = 0
+            changed = False
+    
+            async def call(*, name, arguments):
+                nonlocal reads, writes, changed
+                if name == "get_issue" and arguments.get("id") == KEY:
+                    reads += 1
+                    if reads == 2 and drift != "retry":
+                        changed = True
+                        row = board.server.issues[KEY]
+                        if drift == "body":
+                            row.description = BODY + "changed"
+                        elif drift == "parent":
+                            row.parent_id = "other-parent"
+                        elif drift == "class":
+                            row.labels.clear()
+                        else:
+                            board.now = max(c.updated_at for c in board.server.comments) + timedelta(seconds=901)
+                if name == "save_issue":
+                    writes += 1
+                    if drift == "retry" and writes == 1:
+                        changed = True
+                        board.server.issues[KEY].description = BODY + "changed on retry"
+                        raise McpTransportError("known unsent", server_name="fixture")
+                return await actual(name=name, arguments=arguments)
+    
+            monkeypatch.setattr(board, "call_tool", call)
+            with pytest.raises((CriterionReadError, StaleWriteError, SurfaceLeaseError)):
+                if action == "reset":
+>                   await tracker.reset_criterion_pending(expected=expected, holder=HOLDER)
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E                   AttributeError: 'LinearMcpTracker' object has no attribute 'reset_criterion_pending'
+
+tests/tracker/test_native_criterion_amendment.py:96: AttributeError
+_ test_final_boundary_and_retry_refuse_changed_native_source[parent-description] _
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10cb88f80>
+action = 'description', drift = 'parent'
+
+    @pytest.mark.parametrize("action", ["reset", "description"])
+    @pytest.mark.parametrize("drift", ["body", "parent", "class", "expiry", "retry"])
+    async def test_final_boundary_and_retry_refuse_changed_native_source(
+        monkeypatch, action, drift,
+    ):
+        board, tracker = board_and_tracker()
+        expected = await tracker.read_issue(issue_key=KEY)
+        async with lease(tracker):
+            actual = board.call_tool
+            reads = 0
+            writes = 0
+            changed = False
+    
+            async def call(*, name, arguments):
+                nonlocal reads, writes, changed
+                if name == "get_issue" and arguments.get("id") == KEY:
+                    reads += 1
+                    if reads == 2 and drift != "retry":
+                        changed = True
+                        row = board.server.issues[KEY]
+                        if drift == "body":
+                            row.description = BODY + "changed"
+                        elif drift == "parent":
+                            row.parent_id = "other-parent"
+                        elif drift == "class":
+                            row.labels.clear()
+                        else:
+                            board.now = max(c.updated_at for c in board.server.comments) + timedelta(seconds=901)
+                if name == "save_issue":
+                    writes += 1
+                    if drift == "retry" and writes == 1:
+                        changed = True
+                        board.server.issues[KEY].description = BODY + "changed on retry"
+                        raise McpTransportError("known unsent", server_name="fixture")
+                return await actual(name=name, arguments=arguments)
+    
+            monkeypatch.setattr(board, "call_tool", call)
+            with pytest.raises((CriterionReadError, StaleWriteError, SurfaceLeaseError)):
+                if action == "reset":
+                    await tracker.reset_criterion_pending(expected=expected, holder=HOLDER)
+                else:
+>                   await tracker.edit_description(
+                        target=KEY, expected=BODY, replacement=BODY.replace("old predicate", "new predicate"),
+                        holder=HOLDER,
+                    )
+E                   TypeError: LinearMcpTracker.edit_description() got an unexpected keyword argument 'holder'
+
+tests/tracker/test_native_criterion_amendment.py:98: TypeError
+___ test_final_boundary_and_retry_refuse_changed_native_source[class-reset] ____
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10cb8f530>
+action = 'reset', drift = 'class'
+
+    @pytest.mark.parametrize("action", ["reset", "description"])
+    @pytest.mark.parametrize("drift", ["body", "parent", "class", "expiry", "retry"])
+    async def test_final_boundary_and_retry_refuse_changed_native_source(
+        monkeypatch, action, drift,
+    ):
+        board, tracker = board_and_tracker()
+        expected = await tracker.read_issue(issue_key=KEY)
+        async with lease(tracker):
+            actual = board.call_tool
+            reads = 0
+            writes = 0
+            changed = False
+    
+            async def call(*, name, arguments):
+                nonlocal reads, writes, changed
+                if name == "get_issue" and arguments.get("id") == KEY:
+                    reads += 1
+                    if reads == 2 and drift != "retry":
+                        changed = True
+                        row = board.server.issues[KEY]
+                        if drift == "body":
+                            row.description = BODY + "changed"
+                        elif drift == "parent":
+                            row.parent_id = "other-parent"
+                        elif drift == "class":
+                            row.labels.clear()
+                        else:
+                            board.now = max(c.updated_at for c in board.server.comments) + timedelta(seconds=901)
+                if name == "save_issue":
+                    writes += 1
+                    if drift == "retry" and writes == 1:
+                        changed = True
+                        board.server.issues[KEY].description = BODY + "changed on retry"
+                        raise McpTransportError("known unsent", server_name="fixture")
+                return await actual(name=name, arguments=arguments)
+    
+            monkeypatch.setattr(board, "call_tool", call)
+            with pytest.raises((CriterionReadError, StaleWriteError, SurfaceLeaseError)):
+                if action == "reset":
+>                   await tracker.reset_criterion_pending(expected=expected, holder=HOLDER)
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E                   AttributeError: 'LinearMcpTracker' object has no attribute 'reset_criterion_pending'
+
+tests/tracker/test_native_criterion_amendment.py:96: AttributeError
+_ test_final_boundary_and_retry_refuse_changed_native_source[class-description] _
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10cb8eb40>
+action = 'description', drift = 'class'
+
+    @pytest.mark.parametrize("action", ["reset", "description"])
+    @pytest.mark.parametrize("drift", ["body", "parent", "class", "expiry", "retry"])
+    async def test_final_boundary_and_retry_refuse_changed_native_source(
+        monkeypatch, action, drift,
+    ):
+        board, tracker = board_and_tracker()
+        expected = await tracker.read_issue(issue_key=KEY)
+        async with lease(tracker):
+            actual = board.call_tool
+            reads = 0
+            writes = 0
+            changed = False
+    
+            async def call(*, name, arguments):
+                nonlocal reads, writes, changed
+                if name == "get_issue" and arguments.get("id") == KEY:
+                    reads += 1
+                    if reads == 2 and drift != "retry":
+                        changed = True
+                        row = board.server.issues[KEY]
+                        if drift == "body":
+                            row.description = BODY + "changed"
+                        elif drift == "parent":
+                            row.parent_id = "other-parent"
+                        elif drift == "class":
+                            row.labels.clear()
+                        else:
+                            board.now = max(c.updated_at for c in board.server.comments) + timedelta(seconds=901)
+                if name == "save_issue":
+                    writes += 1
+                    if drift == "retry" and writes == 1:
+                        changed = True
+                        board.server.issues[KEY].description = BODY + "changed on retry"
+                        raise McpTransportError("known unsent", server_name="fixture")
+                return await actual(name=name, arguments=arguments)
+    
+            monkeypatch.setattr(board, "call_tool", call)
+            with pytest.raises((CriterionReadError, StaleWriteError, SurfaceLeaseError)):
+                if action == "reset":
+                    await tracker.reset_criterion_pending(expected=expected, holder=HOLDER)
+                else:
+>                   await tracker.edit_description(
+                        target=KEY, expected=BODY, replacement=BODY.replace("old predicate", "new predicate"),
+                        holder=HOLDER,
+                    )
+E                   TypeError: LinearMcpTracker.edit_description() got an unexpected keyword argument 'holder'
+
+tests/tracker/test_native_criterion_amendment.py:98: TypeError
+___ test_final_boundary_and_retry_refuse_changed_native_source[expiry-reset] ___
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10cb92db0>
+action = 'reset', drift = 'expiry'
+
+    @pytest.mark.parametrize("action", ["reset", "description"])
+    @pytest.mark.parametrize("drift", ["body", "parent", "class", "expiry", "retry"])
+    async def test_final_boundary_and_retry_refuse_changed_native_source(
+        monkeypatch, action, drift,
+    ):
+        board, tracker = board_and_tracker()
+        expected = await tracker.read_issue(issue_key=KEY)
+        async with lease(tracker):
+            actual = board.call_tool
+            reads = 0
+            writes = 0
+            changed = False
+    
+            async def call(*, name, arguments):
+                nonlocal reads, writes, changed
+                if name == "get_issue" and arguments.get("id") == KEY:
+                    reads += 1
+                    if reads == 2 and drift != "retry":
+                        changed = True
+                        row = board.server.issues[KEY]
+                        if drift == "body":
+                            row.description = BODY + "changed"
+                        elif drift == "parent":
+                            row.parent_id = "other-parent"
+                        elif drift == "class":
+                            row.labels.clear()
+                        else:
+                            board.now = max(c.updated_at for c in board.server.comments) + timedelta(seconds=901)
+                if name == "save_issue":
+                    writes += 1
+                    if drift == "retry" and writes == 1:
+                        changed = True
+                        board.server.issues[KEY].description = BODY + "changed on retry"
+                        raise McpTransportError("known unsent", server_name="fixture")
+                return await actual(name=name, arguments=arguments)
+    
+            monkeypatch.setattr(board, "call_tool", call)
+            with pytest.raises((CriterionReadError, StaleWriteError, SurfaceLeaseError)):
+                if action == "reset":
+>                   await tracker.reset_criterion_pending(expected=expected, holder=HOLDER)
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E                   AttributeError: 'LinearMcpTracker' object has no attribute 'reset_criterion_pending'
+
+tests/tracker/test_native_criterion_amendment.py:96: AttributeError
+_ test_final_boundary_and_retry_refuse_changed_native_source[expiry-description] _
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10cb91490>
+action = 'description', drift = 'expiry'
+
+    @pytest.mark.parametrize("action", ["reset", "description"])
+    @pytest.mark.parametrize("drift", ["body", "parent", "class", "expiry", "retry"])
+    async def test_final_boundary_and_retry_refuse_changed_native_source(
+        monkeypatch, action, drift,
+    ):
+        board, tracker = board_and_tracker()
+        expected = await tracker.read_issue(issue_key=KEY)
+        async with lease(tracker):
+            actual = board.call_tool
+            reads = 0
+            writes = 0
+            changed = False
+    
+            async def call(*, name, arguments):
+                nonlocal reads, writes, changed
+                if name == "get_issue" and arguments.get("id") == KEY:
+                    reads += 1
+                    if reads == 2 and drift != "retry":
+                        changed = True
+                        row = board.server.issues[KEY]
+                        if drift == "body":
+                            row.description = BODY + "changed"
+                        elif drift == "parent":
+                            row.parent_id = "other-parent"
+                        elif drift == "class":
+                            row.labels.clear()
+                        else:
+                            board.now = max(c.updated_at for c in board.server.comments) + timedelta(seconds=901)
+                if name == "save_issue":
+                    writes += 1
+                    if drift == "retry" and writes == 1:
+                        changed = True
+                        board.server.issues[KEY].description = BODY + "changed on retry"
+                        raise McpTransportError("known unsent", server_name="fixture")
+                return await actual(name=name, arguments=arguments)
+    
+            monkeypatch.setattr(board, "call_tool", call)
+            with pytest.raises((CriterionReadError, StaleWriteError, SurfaceLeaseError)):
+                if action == "reset":
+                    await tracker.reset_criterion_pending(expected=expected, holder=HOLDER)
+                else:
+>                   await tracker.edit_description(
+                        target=KEY, expected=BODY, replacement=BODY.replace("old predicate", "new predicate"),
+                        holder=HOLDER,
+                    )
+E                   TypeError: LinearMcpTracker.edit_description() got an unexpected keyword argument 'holder'
+
+tests/tracker/test_native_criterion_amendment.py:98: TypeError
+___ test_final_boundary_and_retry_refuse_changed_native_source[retry-reset] ____
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10cb93440>
+action = 'reset', drift = 'retry'
+
+    @pytest.mark.parametrize("action", ["reset", "description"])
+    @pytest.mark.parametrize("drift", ["body", "parent", "class", "expiry", "retry"])
+    async def test_final_boundary_and_retry_refuse_changed_native_source(
+        monkeypatch, action, drift,
+    ):
+        board, tracker = board_and_tracker()
+        expected = await tracker.read_issue(issue_key=KEY)
+        async with lease(tracker):
+            actual = board.call_tool
+            reads = 0
+            writes = 0
+            changed = False
+    
+            async def call(*, name, arguments):
+                nonlocal reads, writes, changed
+                if name == "get_issue" and arguments.get("id") == KEY:
+                    reads += 1
+                    if reads == 2 and drift != "retry":
+                        changed = True
+                        row = board.server.issues[KEY]
+                        if drift == "body":
+                            row.description = BODY + "changed"
+                        elif drift == "parent":
+                            row.parent_id = "other-parent"
+                        elif drift == "class":
+                            row.labels.clear()
+                        else:
+                            board.now = max(c.updated_at for c in board.server.comments) + timedelta(seconds=901)
+                if name == "save_issue":
+                    writes += 1
+                    if drift == "retry" and writes == 1:
+                        changed = True
+                        board.server.issues[KEY].description = BODY + "changed on retry"
+                        raise McpTransportError("known unsent", server_name="fixture")
+                return await actual(name=name, arguments=arguments)
+    
+            monkeypatch.setattr(board, "call_tool", call)
+            with pytest.raises((CriterionReadError, StaleWriteError, SurfaceLeaseError)):
+                if action == "reset":
+>                   await tracker.reset_criterion_pending(expected=expected, holder=HOLDER)
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E                   AttributeError: 'LinearMcpTracker' object has no attribute 'reset_criterion_pending'
+
+tests/tracker/test_native_criterion_amendment.py:96: AttributeError
+_ test_final_boundary_and_retry_refuse_changed_native_source[retry-description] _
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10cb95a30>
+action = 'description', drift = 'retry'
+
+    @pytest.mark.parametrize("action", ["reset", "description"])
+    @pytest.mark.parametrize("drift", ["body", "parent", "class", "expiry", "retry"])
+    async def test_final_boundary_and_retry_refuse_changed_native_source(
+        monkeypatch, action, drift,
+    ):
+        board, tracker = board_and_tracker()
+        expected = await tracker.read_issue(issue_key=KEY)
+        async with lease(tracker):
+            actual = board.call_tool
+            reads = 0
+            writes = 0
+            changed = False
+    
+            async def call(*, name, arguments):
+                nonlocal reads, writes, changed
+                if name == "get_issue" and arguments.get("id") == KEY:
+                    reads += 1
+                    if reads == 2 and drift != "retry":
+                        changed = True
+                        row = board.server.issues[KEY]
+                        if drift == "body":
+                            row.description = BODY + "changed"
+                        elif drift == "parent":
+                            row.parent_id = "other-parent"
+                        elif drift == "class":
+                            row.labels.clear()
+                        else:
+                            board.now = max(c.updated_at for c in board.server.comments) + timedelta(seconds=901)
+                if name == "save_issue":
+                    writes += 1
+                    if drift == "retry" and writes == 1:
+                        changed = True
+                        board.server.issues[KEY].description = BODY + "changed on retry"
+                        raise McpTransportError("known unsent", server_name="fixture")
+                return await actual(name=name, arguments=arguments)
+    
+            monkeypatch.setattr(board, "call_tool", call)
+            with pytest.raises((CriterionReadError, StaleWriteError, SurfaceLeaseError)):
+                if action == "reset":
+                    await tracker.reset_criterion_pending(expected=expected, holder=HOLDER)
+                else:
+>                   await tracker.edit_description(
+                        target=KEY, expected=BODY, replacement=BODY.replace("old predicate", "new predicate"),
+                        holder=HOLDER,
+                    )
+E                   TypeError: LinearMcpTracker.edit_description() got an unexpected keyword argument 'holder'
+
+tests/tracker/test_native_criterion_amendment.py:98: TypeError
+______ test_description_surface_does_not_grant_criterion_amendment[reset] ______
+
+action = 'reset'
+
+    @pytest.mark.parametrize("action", ["reset", "description"])
+    async def test_description_surface_does_not_grant_criterion_amendment(action):
+        board, tracker = board_and_tracker()
+        expected = await tracker.read_issue(issue_key=KEY)
+        async with lease(tracker, SurfaceKind.ISSUE_DESCRIPTION):
+            with pytest.raises(SurfaceLeaseError):
+                if action == "reset":
+>                   await tracker.reset_criterion_pending(expected=expected, holder=HOLDER)
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E                   AttributeError: 'LinearMcpTracker' object has no attribute 'reset_criterion_pending'
+
+tests/tracker/test_native_criterion_amendment.py:114: AttributeError
+___ test_description_surface_does_not_grant_criterion_amendment[description] ___
+
+action = 'description'
+
+    @pytest.mark.parametrize("action", ["reset", "description"])
+    async def test_description_surface_does_not_grant_criterion_amendment(action):
+        board, tracker = board_and_tracker()
+        expected = await tracker.read_issue(issue_key=KEY)
+        async with lease(tracker, SurfaceKind.ISSUE_DESCRIPTION):
+            with pytest.raises(SurfaceLeaseError):
+                if action == "reset":
+                    await tracker.reset_criterion_pending(expected=expected, holder=HOLDER)
+                else:
+>                   await tracker.edit_description(
+                        target=KEY, expected=BODY, replacement=BODY + "new", holder=HOLDER
+                    )
+E                   TypeError: LinearMcpTracker.edit_description() got an unexpected keyword argument 'holder'
+
+tests/tracker/test_native_criterion_amendment.py:116: TypeError
+=========================== short test summary info ============================
+FAILED tests/tracker/test_native_criterion_amendment.py::test_reset_uses_actual_native_unstarted_id_and_replays_without_write
+FAILED tests/tracker/test_native_criterion_amendment.py::test_final_boundary_and_retry_refuse_changed_native_source[body-reset]
+FAILED tests/tracker/test_native_criterion_amendment.py::test_final_boundary_and_retry_refuse_changed_native_source[body-description]
+FAILED tests/tracker/test_native_criterion_amendment.py::test_final_boundary_and_retry_refuse_changed_native_source[parent-reset]
+FAILED tests/tracker/test_native_criterion_amendment.py::test_final_boundary_and_retry_refuse_changed_native_source[parent-description]
+FAILED tests/tracker/test_native_criterion_amendment.py::test_final_boundary_and_retry_refuse_changed_native_source[class-reset]
+FAILED tests/tracker/test_native_criterion_amendment.py::test_final_boundary_and_retry_refuse_changed_native_source[class-description]
+FAILED tests/tracker/test_native_criterion_amendment.py::test_final_boundary_and_retry_refuse_changed_native_source[expiry-reset]
+FAILED tests/tracker/test_native_criterion_amendment.py::test_final_boundary_and_retry_refuse_changed_native_source[expiry-description]
+FAILED tests/tracker/test_native_criterion_amendment.py::test_final_boundary_and_retry_refuse_changed_native_source[retry-reset]
+FAILED tests/tracker/test_native_criterion_amendment.py::test_final_boundary_and_retry_refuse_changed_native_source[retry-description]
+FAILED tests/tracker/test_native_criterion_amendment.py::test_description_surface_does_not_grant_criterion_amendment[reset]
+FAILED tests/tracker/test_native_criterion_amendment.py::test_description_surface_does_not_grant_criterion_amendment[description]
+13 failed in 2.17s

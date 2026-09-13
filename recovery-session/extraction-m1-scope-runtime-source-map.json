@@ -1,0 +1,124 @@
+{
+  "source_main": "4661a24b599d75503a997f3ce122f3ad2da77048",
+  "source_donor": "d2c6fceab762191d4e40b23c8cd349ef476e4b12",
+  "destination_base": "3c477a3489bd0bf555ae7b3a08569c2c5bf049be",
+  "destination_commit": "18113978533fc1c0ed169bfc57ff3945084e48df",
+  "destination_tree": "ebdc32884db175608c0cc75e0c01d502b9fc858e",
+  "diff_sha256": "788b661e63bb41bf3c78ce8666fcb767918d91ee5487259af1f295892e924aa6",
+  "paths": [
+    {
+      "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+      "kind": "selected donor member/import/error-consumer hunk",
+      "sha256": "164603d2df8a1ee5452a7b7b7c3d6c625fbde6814fc4aa0580f261efefb96fba",
+      "whole_file_equals_donor": false
+    },
+    {
+      "path": "src/kodezart/adapters/linear_mcp_types.py",
+      "kind": "selected donor member/import/error-consumer hunk",
+      "sha256": "afcb45c63a71c37d816ef05d67074006529b88beb2b8e93cb49590e8746fc5e8",
+      "whole_file_equals_donor": false
+    },
+    {
+      "path": "src/kodezart/adapters/linear_scope_reader.py",
+      "kind": "byte-identical donor file",
+      "sha256": "79b0ed68ae35c35430f0bb3a628369895de49376bbfa59009d4c4716002c8cde",
+      "whole_file_equals_donor": true
+    },
+    {
+      "path": "src/kodezart/adapters/linear_scope_types.py",
+      "kind": "byte-identical donor file",
+      "sha256": "ef4525bea044552fb43fd1ffdffafc3aa010bf2cbdbc33acf402cc5ed48daf74",
+      "whole_file_equals_donor": true
+    },
+    {
+      "path": "src/kodezart/adapters/pagination.py",
+      "kind": "byte-identical donor file",
+      "sha256": "43d1c8625b309cb103429e0b5c24408aba3e0f109a729ddf697065aab0a6b57a",
+      "whole_file_equals_donor": true
+    },
+    {
+      "path": "src/kodezart/core/errors.py",
+      "kind": "selected donor member/import/error-consumer hunk",
+      "sha256": "e19f733c7800c54da93f450b98a4293f16119057b2c30f101e718daea341957e",
+      "whole_file_equals_donor": false
+    },
+    {
+      "path": "src/kodezart/core/protocols.py",
+      "kind": "selected donor member/import/error-consumer hunk",
+      "sha256": "48d04c6d59f0b8629d6cf7f8fb683ba041360f4a2dabc9acf385a572cbb08bcc",
+      "whole_file_equals_donor": false
+    },
+    {
+      "path": "src/kodezart/domain/errors.py",
+      "kind": "selected donor member/import/error-consumer hunk",
+      "sha256": "e7511ecfc2cb83cc70dac2fa7d8e208649d21523419a1411dab64f280a3ed71a",
+      "whole_file_equals_donor": false
+    },
+    {
+      "path": "src/kodezart/services/claim_heartbeat.py",
+      "kind": "selected donor member/import/error-consumer hunk",
+      "sha256": "ea5ee87c3eb041756ab16e8b0fcf99649cf195af5d5bc532f4f18ec7dcc0eefd",
+      "whole_file_equals_donor": false
+    },
+    {
+      "path": "src/kodezart/services/pass_gate.py",
+      "kind": "selected donor member/import/error-consumer hunk",
+      "sha256": "4b8c8ea01a07d21c2c8a2e4ec0dde97f767da963161529c2b0836f759f512ce6",
+      "whole_file_equals_donor": false
+    },
+    {
+      "path": "src/kodezart/types/domain/tracker.py",
+      "kind": "selected donor member/import/error-consumer hunk",
+      "sha256": "f9c4dad7ef10192fe820e7f6e02016dadff7c93d88054980994ef7f290ca0b31",
+      "whole_file_equals_donor": false
+    },
+    {
+      "path": "tests/domain/test_scope_container.py",
+      "kind": "byte-identical donor file",
+      "sha256": "b886ea0e069a41a4d5dbc61b026627c1ddd1037f43b2dd82dce77591e71b75ad",
+      "whole_file_equals_donor": true
+    },
+    {
+      "path": "tests/fakes.py",
+      "kind": "selected donor member/import/error-consumer hunk",
+      "sha256": "9d814d5442054df1407bd4b7ef755177e573ca939d40b74b5524324ef580544e",
+      "whole_file_equals_donor": false
+    },
+    {
+      "path": "tests/services/test_claim_heartbeat.py",
+      "kind": "selected donor member/import/error-consumer hunk",
+      "sha256": "7d7032108e85926b5b2c7755d823d122116f3497c29b9fe417043d762d5b7dd6",
+      "whole_file_equals_donor": false
+    },
+    {
+      "path": "tests/services/test_pass_gate.py",
+      "kind": "selected donor member/import/error-consumer hunk",
+      "sha256": "ce7baaa9ee250b76ba17aafd38736807377eca5f8375242af68c1d3d83325677",
+      "whole_file_equals_donor": false
+    },
+    {
+      "path": "tests/tracker/test_linear_mcp_tracker.py",
+      "kind": "selected donor member/import/error-consumer hunk",
+      "sha256": "69194b03f6a7698d130ff3286cebf343faf69dc695fbb147b50f20fbdb04bc9d",
+      "whole_file_equals_donor": false
+    },
+    {
+      "path": "tests/tracker/test_linear_wire_shapes.py",
+      "kind": "selected donor member/import/error-consumer hunk",
+      "sha256": "82f03d3400e308311010b46cd8dcc7326a39766d602f88c323da311d0b8fd89a",
+      "whole_file_equals_donor": false
+    },
+    {
+      "path": "tests/tracker/test_scope_reads.py",
+      "kind": "byte-identical donor file",
+      "sha256": "ef9949fdd35e8d6cf16de93a6064f35d3bc4e170a327760f2b8840d87bc8f934",
+      "whole_file_equals_donor": true
+    }
+  ],
+  "notes": [
+    "Supersedes initial generation ledger: wire file is base relocation plus exact final milestone shape only; remaining comment/label/history/document changes stay pending with consumers.",
+    "Scope port/fake/adapter functions extracted from actual donor AST; source placement differs until final full-file reconstruction.",
+    "Typed error boundary and heartbeat/pass-gate consumers are donor hunks; existing retry constructor/settings await later M1 tranche.",
+    "No full M1, combined milestone tree-equivalence, original unextracted tests or complete accepted proof claimed."
+  ]
+}

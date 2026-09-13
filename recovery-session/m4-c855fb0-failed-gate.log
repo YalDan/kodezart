@@ -1,0 +1,427 @@
+check	Run make check	﻿2026-09-13T00:11:52.9134295Z ##[group]Run make check
+check	Run make check	2026-09-13T00:11:52.9134608Z [36;1mmake check[0m
+check	Run make check	2026-09-13T00:11:52.9170960Z shell: /usr/bin/bash -e {0}
+check	Run make check	2026-09-13T00:11:52.9171222Z env:
+check	Run make check	2026-09-13T00:11:52.9171475Z   UV_CACHE_DIR: /home/runner/work/_temp/setup-uv-cache
+check	Run make check	2026-09-13T00:11:52.9171791Z ##[endgroup]
+check	Run make check	2026-09-13T00:11:52.9296138Z uv run ruff format --check src/ tests/
+check	Run make check	2026-09-13T00:11:53.0474321Z 428 files already formatted
+check	Run make check	2026-09-13T00:11:53.0499301Z uv run ruff check src/ tests/
+check	Run make check	2026-09-13T00:11:53.1880447Z All checks passed!
+check	Run make check	2026-09-13T00:11:53.1906816Z uv run mypy src/
+check	Run make check	2026-09-13T00:12:08.1948664Z Success: no issues found in 197 source files
+check	Run make check	2026-09-13T00:12:08.2289516Z uv run pytest
+check	Run make check	2026-09-13T00:12:17.8415977Z ============================= test session starts ==============================
+check	Run make check	2026-09-13T00:12:17.8416853Z platform linux -- Python 3.12.3, pytest-9.0.2, pluggy-1.6.0
+check	Run make check	2026-09-13T00:12:17.8417522Z rootdir: /home/runner/work/kodezart/kodezart
+check	Run make check	2026-09-13T00:12:17.8418030Z configfile: pyproject.toml
+check	Run make check	2026-09-13T00:12:17.8418469Z testpaths: tests
+check	Run make check	2026-09-13T00:12:17.8419080Z plugins: anyio-4.12.1, langsmith-0.7.14, logfire-4.27.0, asyncio-1.3.0
+check	Run make check	2026-09-13T00:12:17.8420593Z asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=session, asyncio_default_test_loop_scope=function
+check	Run make check	2026-09-13T00:12:17.8421307Z collected 4206 items
+check	Run make check	2026-09-13T00:12:17.8421474Z 
+check	Run make check	2026-09-13T00:12:17.8621805Z tests/adapters/test_claude_client_executor.py .........                  [  0%]
+check	Run make check	2026-09-13T00:12:17.9174735Z tests/adapters/test_claude_executors.py ................................ [  0%]
+check	Run make check	2026-09-13T00:12:17.9754012Z ..................................                                       [  1%]
+check	Run make check	2026-09-13T00:12:18.5132020Z tests/adapters/test_git_artifact_persister.py ......                     [  1%]
+check	Run make check	2026-09-13T00:12:19.0684639Z tests/adapters/test_git_branch_merger.py ..............                  [  2%]
+check	Run make check	2026-09-13T00:12:19.4443371Z tests/adapters/test_git_change_persister.py ...............              [  2%]
+check	Run make check	2026-09-13T00:12:19.4525200Z tests/adapters/test_git_ref_publisher.py .....                           [  2%]
+check	Run make check	2026-09-13T00:12:19.6057496Z tests/adapters/test_git_worktree_provider.py ...........                 [  2%]
+check	Run make check	2026-09-13T00:12:19.7228993Z tests/adapters/test_github_api.py ...................................... [  3%]
+check	Run make check	2026-09-13T00:12:20.0431993Z ...................................................................      [  5%]
+check	Run make check	2026-09-13T00:12:20.0749888Z tests/adapters/test_host_skill_inventory.py ................             [  5%]
+check	Run make check	2026-09-13T00:12:21.1491789Z tests/adapters/test_hosted_mcp_session.py .......                        [  6%]
+check	Run make check	2026-09-13T00:12:21.2965070Z tests/adapters/test_http_mcp_tool_caller.py ............................ [  6%]
+check	Run make check	2026-09-13T00:12:33.1664703Z ...............................                                          [  7%]
+check	Run make check	2026-09-13T00:12:33.3606833Z tests/adapters/test_judgment_scanner.py ................................ [  8%]
+check	Run make check	2026-09-13T00:12:33.4911598Z .....................                                                    [  8%]
+check	Run make check	2026-09-13T00:12:33.5325275Z tests/adapters/test_knowledge_transport.py ..................            [  9%]
+check	Run make check	2026-09-13T00:12:35.3845124Z tests/adapters/test_mcp_reopen_logging_independent.py ...                [  9%]
+check	Run make check	2026-09-13T00:12:36.9462531Z tests/adapters/test_mcp_strictness.py ...................                [  9%]
+check	Run make check	2026-09-13T00:12:36.9512815Z tests/adapters/test_no_forge_delivery.py ...                             [  9%]
+check	Run make check	2026-09-13T00:12:37.0670217Z tests/adapters/test_outbound_corpus.py ....................              [ 10%]
+check	Run make check	2026-09-13T00:12:37.1689178Z tests/adapters/test_outbound_gate.py .....................               [ 10%]
+check	Run make check	2026-09-13T00:12:37.5148827Z tests/adapters/test_permission_boundary.py ............................. [ 11%]
+check	Run make check	2026-09-13T00:12:38.0648840Z ................................................................         [ 12%]
+check	Run make check	2026-09-13T00:12:38.0838511Z tests/adapters/test_sdk_mapping.py .......................               [ 13%]
+check	Run make check	2026-09-13T00:12:38.1912027Z tests/adapters/test_self_write_replay.py ............................... [ 14%]
+check	Run make check	2026-09-13T00:12:38.5797363Z ...                                                                      [ 14%]
+check	Run make check	2026-09-13T00:12:42.8312152Z tests/adapters/test_stdio_mcp_tool_caller.py ..................          [ 14%]
+check	Run make check	2026-09-13T00:12:43.4293229Z tests/adapters/test_subprocess_git.py .................................. [ 15%]
+check	Run make check	2026-09-13T00:12:43.4817901Z .....                                                                    [ 15%]
+check	Run make check	2026-09-13T00:12:43.6574143Z tests/adapters/test_tool_selection.py .................................. [ 16%]
+check	Run make check	2026-09-13T00:12:44.0806392Z ......................................                                   [ 17%]
+check	Run make check	2026-09-13T00:12:44.1136055Z tests/adapters/test_tracker_self_writes.py .............                 [ 17%]
+check	Run make check	2026-09-13T00:12:44.3525409Z tests/api/v1/test_agent.py .........2026-09-13 00:12:44 [info     ] job_finished                   job_id=fdcde376ecfc4d1f8cbe8851b90621cb lane=workflow outcome=review_passed_no_pr_adapter
+check	Run make check	2026-09-13T00:12:44.4021506Z .2026-09-13 00:12:44 [info     ] job_finished                   job_id=8686fb3a92f04cfa931c7e82d047a372 lane=workflow outcome=review_passed_no_pr_adapter
+check	Run make check	2026-09-13T00:12:44.9230557Z .....2026-09-13 00:12:44 [info     ] job_finished                   job_id=80e8c09e43ce4bf5921128951e7fb6f3 lane=workflow outcome=ci_not_configured
+check	Run make check	2026-09-13T00:12:44.9736135Z .2026-09-13 00:12:44 [info     ] job_finished                   job_id=5140d2faf1cb413cbb59f35531017045 lane=workflow outcome=ci_not_configured
+check	Run make check	2026-09-13T00:12:45.0227517Z .2026-09-13 00:12:45 [info     ] job_finished                   job_id=fd86cfa8505d453ca15c4f0e9da3e841 lane=workflow outcome=merge_divergent
+check	Run make check	2026-09-13T00:12:45.1209926Z .2026-09-13 00:12:45 [info     ] job_finished                   job_id=ab20f216d8824a07904cf5c2de4dad02 lane=workflow outcome=merge_divergent
+check	Run make check	2026-09-13T00:12:45.1818219Z .2026-09-13 00:12:45 [info     ] job_finished                   job_id=c52e4e693cc2451db6a5c14f0e67f28e lane=workflow outcome=review_passed_no_pr_adapter
+check	Run make check	2026-09-13T00:12:45.1837764Z .                          [ 18%]
+check	Run make check	2026-09-13T00:12:45.2061787Z tests/api/v1/test_health.py .....                                        [ 18%]
+check	Run make check	2026-09-13T00:12:45.2975169Z tests/api/v1/test_jobs.py ..2026-09-13 00:12:45 [info     ] scope_base_resolved            base_branch=main base_role=None input_count=0
+check	Run make check	2026-09-13T00:12:46.8255267Z ............................................ [ 19%]
+check	Run make check	2026-09-13T00:12:46.9982655Z ..........                                                               [ 19%]
+check	Run make check	2026-09-13T00:12:47.0855888Z tests/api/v1/test_session_policy_base_boundary.py ......                 [ 19%]
+check	Run make check	2026-09-13T00:12:47.3554441Z tests/chains/test_accept_gate.py ......................                  [ 20%]
+check	Run make check	2026-09-13T00:12:48.5771610Z tests/chains/test_criteria_validation.py ..............................  [ 20%]
+check	Run make check	2026-09-13T00:12:48.6426990Z tests/chains/test_dispatch_definitions.py .............                  [ 21%]
+check	Run make check	2026-09-13T00:12:49.1311089Z tests/chains/test_fresh_write_back_judge.py .....................        [ 21%]
+check	Run make check	2026-09-13T00:12:49.2135133Z tests/chains/test_m4_local_sdk_independent.py .                          [ 21%]
+check	Run make check	2026-09-13T00:12:49.2298473Z tests/chains/test_m4_native_extension_independent.py ..........          [ 22%]
+check	Run make check	2026-09-13T00:12:49.2442481Z tests/chains/test_native_artifact_readback.py .........                  [ 22%]
+check	Run make check	2026-09-13T00:12:49.8317485Z tests/chains/test_outbound_gating.py ..............                      [ 22%]
+check	Run make check	2026-09-13T00:12:50.2148982Z tests/chains/test_ralph_loop.py ........................................ [ 23%]
+check	Run make check	2026-09-13T00:12:50.4516274Z ........                                                                 [ 23%]
+check	Run make check	2026-09-13T00:12:51.7715072Z tests/chains/test_ralph_workflow.py .................................... [ 24%]
+check	Run make check	2026-09-13T00:12:56.2701059Z ........................................................................ [ 26%]
+check	Run make check	2026-09-13T00:12:56.4904265Z ......                                                                   [ 26%]
+check	Run make check	2026-09-13T00:12:56.5245360Z tests/chains/test_remediation.py .......                                 [ 26%]
+check	Run make check	2026-09-13T00:12:56.5687710Z tests/chains/test_retry_floor_wiring.py ......                           [ 26%]
+check	Run make check	2026-09-13T00:12:57.1636562Z tests/chains/test_session_policy_composition.py ..                       [ 26%]
+check	Run make check	2026-09-13T00:12:57.2807789Z tests/chains/test_shorthand_url_resolution.py ...                        [ 26%]
+check	Run make check	2026-09-13T00:12:57.7262098Z tests/chains/test_ticket_generation.py ................................. [ 27%]
+check	Run make check	2026-09-13T00:12:57.9329467Z ....                                                                     [ 27%]
+check	Run make check	2026-09-13T00:12:57.9485780Z tests/chains/test_write_back_tracker_boundary.py .......                 [ 27%]
+check	Run make check	2026-09-13T00:12:57.9687090Z tests/chains/test_write_back_verifier.py ..............                  [ 28%]
+check	Run make check	2026-09-13T00:12:58.2592323Z tests/chains/test_write_back_workspace_ownership.py .......              [ 28%]
+check	Run make check	2026-09-13T00:12:58.3575824Z tests/core/test_bare_mode.py .                                           [ 28%]
+check	Run make check	2026-09-13T00:12:58.4949525Z tests/core/test_config.py ..........................                     [ 29%]
+check	Run make check	2026-09-13T00:12:58.5068141Z tests/core/test_config_error_redaction.py ....                           [ 29%]
+check	Run make check	2026-09-13T00:12:58.5443285Z tests/core/test_credential_shapes.py .........                           [ 29%]
+check	Run make check	2026-09-13T00:12:58.6539362Z tests/core/test_docs_prompt_knobs.py ...........                         [ 29%]
+check	Run make check	2026-09-13T00:12:58.6798997Z tests/core/test_error_egress.py ................................         [ 30%]
+check	Run make check	2026-09-13T00:12:59.5927891Z tests/core/test_git_settings.py ........................................ [ 31%]
+check	Run make check	2026-09-13T00:12:59.6203253Z ....                                                                     [ 31%]
+check	Run make check	2026-09-13T00:12:59.6640710Z tests/core/test_knowledge_connection.py ................................ [ 32%]
+check	Run make check	2026-09-13T00:12:59.9567715Z ..............................                                           [ 32%]
+check	Run make check	2026-09-13T00:13:00.0739746Z tests/core/test_knowledge_grant.py .........                             [ 33%]
+check	Run make check	2026-09-13T00:13:01.8244873Z tests/core/test_log_emitter.py .......                                   [ 33%]
+check	Run make check	2026-09-13T00:13:01.8262916Z tests/core/test_logging.py .                                             [ 33%]
+check	Run make check	2026-09-13T00:13:01.8775788Z tests/core/test_logging_chain.py .....                                   [ 33%]
+check	Run make check	2026-09-13T00:13:01.9747630Z tests/core/test_notion_credential.py ......                              [ 33%]
+check	Run make check	2026-09-13T00:13:02.2181777Z tests/core/test_prompt_boot.py ......                                    [ 33%]
+check	Run make check	2026-09-13T00:13:02.3498803Z tests/core/test_retry.py .............................                   [ 34%]
+check	Run make check	2026-09-13T00:13:02.3644343Z tests/core/test_stream_drain.py ........                                 [ 34%]
+check	Run make check	2026-09-13T00:13:02.4071335Z tests/core/test_surface_lease_config.py ........                         [ 34%]
+check	Run make check	2026-09-13T00:13:02.5091962Z tests/core/test_tracker_credential.py .......                            [ 34%]
+check	Run make check	2026-09-13T00:13:02.9691726Z tests/core/test_tracker_settings.py .................................... [ 35%]
+check	Run make check	2026-09-13T00:13:04.4220601Z ....................................................                     [ 37%]
+check	Run make check	2026-09-13T00:13:04.4648364Z tests/core/test_write_back_settings.py ........                          [ 37%]
+check	Run make check	2026-09-13T00:13:04.4694251Z tests/docs/test_api_event_reference.py ....                              [ 37%]
+check	Run make check	2026-09-13T00:13:05.0113892Z tests/docs/test_documented_surface.py ....................               [ 37%]
+check	Run make check	2026-09-13T00:13:05.0758611Z tests/docs/test_parity_checklist.py .........                            [ 37%]
+check	Run make check	2026-09-13T00:13:05.1096500Z tests/docs/test_setup_guide.py ...............                           [ 38%]
+check	Run make check	2026-09-13T00:13:05.1115813Z tests/domain/test_agent.py ..                                            [ 38%]
+check	Run make check	2026-09-13T00:13:06.2047734Z tests/domain/test_base_resolution.py ............................        [ 39%]
+check	Run make check	2026-09-13T00:13:06.2143059Z tests/domain/test_base_scope.py ...........                              [ 39%]
+check	Run make check	2026-09-13T00:13:06.2251003Z tests/domain/test_base_staleness.py ......                               [ 39%]
+check	Run make check	2026-09-13T00:13:06.2291007Z tests/domain/test_branch.py .....                                        [ 39%]
+check	Run make check	2026-09-13T00:13:06.5428792Z tests/domain/test_comment_markers.py ...............                     [ 39%]
+check	Run make check	2026-09-13T00:13:06.5698711Z tests/domain/test_criteria_feasibility.py .............................. [ 40%]
+check	Run make check	2026-09-13T00:13:06.6018030Z ......................................                                   [ 41%]
+check	Run make check	2026-09-13T00:13:06.6077505Z tests/domain/test_criteria_grading.py .......                            [ 41%]
+check	Run make check	2026-09-13T00:13:06.8494526Z tests/domain/test_criterion_identity.py ........                         [ 41%]
+check	Run make check	2026-09-13T00:13:06.8719245Z tests/domain/test_dispatch_predicate.py ................................ [ 42%]
+check	Run make check	2026-09-13T00:13:06.8745021Z ...                                                                      [ 42%]
+check	Run make check	2026-09-13T00:13:06.8921190Z tests/domain/test_git_url.py .........................                   [ 43%]
+check	Run make check	2026-09-13T00:13:07.0798388Z tests/domain/test_no_ref_parsing.py ....                                 [ 43%]
+check	Run make check	2026-09-13T00:13:07.0981738Z tests/domain/test_operation_optionality.py .......................       [ 43%]
+check	Run make check	2026-09-13T00:13:07.1126519Z tests/domain/test_outcome.py ....................                        [ 44%]
+check	Run make check	2026-09-13T00:13:07.6257798Z tests/domain/test_ruling_identity.py .........................           [ 45%]
+check	Run make check	2026-09-13T00:13:09.1344968Z tests/domain/test_ruling_protected_tests.py ...............              [ 45%]
+check	Run make check	2026-09-13T00:13:09.1726015Z tests/domain/test_rulings.py ......................................      [ 46%]
+check	Run make check	2026-09-13T00:13:09.1858148Z tests/domain/test_scope_container.py ...............                     [ 46%]
+check	Run make check	2026-09-13T00:13:09.2013387Z tests/domain/test_scope_label_config.py ..........                       [ 46%]
+check	Run make check	2026-09-13T00:13:09.2070297Z tests/domain/test_scope_labels.py .......                                [ 47%]
+check	Run make check	2026-09-13T00:13:09.2206259Z tests/domain/test_scope_ref.py .................                         [ 47%]
+check	Run make check	2026-09-13T00:13:09.3893834Z tests/domain/test_self_write_retention.py ..                             [ 47%]
+check	Run make check	2026-09-13T00:13:09.3981608Z tests/domain/test_stall_report.py .........                              [ 47%]
+check	Run make check	2026-09-13T00:13:09.4105799Z tests/domain/test_surface_lease.py .................                     [ 48%]
+check	Run make check	2026-09-13T00:13:09.4132498Z tests/domain/test_surface_lease_error.py ...                             [ 48%]
+check	Run make check	2026-09-13T00:13:09.4148178Z tests/integration/test_checkpointer_postgres.py ss                       [ 48%]
+check	Run make check	2026-09-13T00:13:09.5387069Z tests/integration/test_criteria_oracle.py ...                            [ 48%]
+check	Run make check	2026-09-13T00:13:09.5401726Z tests/integration/test_live_criteria_probes.py ss                        [ 48%]
+check	Run make check	2026-09-13T00:13:09.5874605Z tests/integration/test_self_running_chain.py ...                         [ 48%]
+check	Run make check	2026-09-13T00:13:09.5895893Z tests/integration/test_session_resume.py sss                             [ 48%]
+check	Run make check	2026-09-13T00:13:11.4459144Z tests/integration/test_stacked_scope.py .....                            [ 48%]
+check	Run make check	2026-09-13T00:13:14.4111930Z tests/integration/test_workflow_e2e.py .................                 [ 49%]
+check	Run make check	2026-09-13T00:13:14.4150607Z tests/probes/test_ab_failure_capture.py ...                              [ 49%]
+check	Run make check	2026-09-13T00:13:14.4159990Z tests/probes/test_ab_smoke.py s                                          [ 49%]
+check	Run make check	2026-09-13T00:13:14.4302303Z tests/probes/test_harness_capabilities.py .ssssss                        [ 49%]
+check	Run make check	2026-09-13T00:13:14.4369334Z tests/probes/test_strict_output_enforcement.py .s                        [ 49%]
+check	Run make check	2026-09-13T00:13:14.4378708Z tests/probes/test_v5_orchestration_live.py s                             [ 49%]
+check	Run make check	2026-09-13T00:13:14.4926761Z tests/prompts/test_absence_bindings.py ................................  [ 50%]
+check	Run make check	2026-09-13T00:13:14.5660509Z tests/prompts/test_criteria_generation_prompts.py ...............        [ 50%]
+check	Run make check	2026-09-13T00:13:14.5906188Z tests/prompts/test_initiative_target_date.py .....                       [ 50%]
+check	Run make check	2026-09-13T00:13:14.7372081Z tests/prompts/test_knowledge_map.py ..........................           [ 51%]
+check	Run make check	2026-09-13T00:13:14.7411077Z tests/prompts/test_minimal_floor.py ....                                 [ 51%]
+check	Run make check	2026-09-13T00:13:14.8752771Z tests/prompts/test_operation_config.py ................................. [ 52%]
+check	Run make check	2026-09-13T00:13:14.9523700Z .................                                                        [ 52%]
+check	Run make check	2026-09-13T00:13:15.0331969Z tests/prompts/test_pass_roster.py ...................................... [ 53%]
+check	Run make check	2026-09-13T00:13:15.5775327Z ..........................................                               [ 54%]
+check	Run make check	2026-09-13T00:13:15.6095934Z tests/prompts/test_principal_roles.py ..........                         [ 54%]
+check	Run make check	2026-09-13T00:13:15.7127358Z tests/prompts/test_prompt_wiring.py .................................... [ 55%]
+check	Run make check	2026-09-13T00:13:15.8347646Z .................                                                        [ 55%]
+check	Run make check	2026-09-13T00:13:15.9119361Z tests/prompts/test_resolvable_identifiers.py ...........                 [ 56%]
+check	Run make check	2026-09-13T00:13:16.0366515Z tests/prompts/test_rollback.py ........                                  [ 56%]
+check	Run make check	2026-09-13T00:13:16.0393391Z tests/prompts/test_scope_label_bindings.py ...                           [ 56%]
+check	Run make check	2026-09-13T00:13:16.2010936Z tests/prompts/test_session_policy.py ................................... [ 57%]
+check	Run make check	2026-09-13T00:13:29.4886525Z ..........................................                               [ 58%]
+check	Run make check	2026-09-13T00:13:29.5239179Z tests/prompts/test_set_completeness.py .........                         [ 58%]
+check	Run make check	2026-09-13T00:13:29.6446123Z tests/prompts/test_skills_loadouts.py .....................              [ 58%]
+check	Run make check	2026-09-13T00:13:29.8195732Z tests/prompts/test_v5_fragments.py .............................         [ 59%]
+check	Run make check	2026-09-13T00:13:29.8671704Z tests/prompts/test_v5_lenses.py ........                                 [ 59%]
+check	Run make check	2026-09-13T00:13:29.9833046Z tests/prompts/test_v5_orchestration.py ....................              [ 60%]
+check	Run make check	2026-09-13T00:13:30.2145330Z tests/prompts/test_v5_style_rules.py ................................... [ 61%]
+check	Run make check	2026-09-13T00:13:30.9101979Z ........................................................................ [ 62%]
+check	Run make check	2026-09-13T00:13:31.5963415Z ........................................................................ [ 64%]
+check	Run make check	2026-09-13T00:13:32.1111368Z .......................................................                  [ 65%]
+check	Run make check	2026-09-13T00:13:32.3463099Z tests/prompts/test_v5_wiring.py ........................................ [ 66%]
+check	Run make check	2026-09-13T00:13:32.5036936Z .....................                                                    [ 67%]
+check	Run make check	2026-09-13T00:13:32.5088652Z tests/services/test_agent_service.py ...                                 [ 67%]
+check	Run make check	2026-09-13T00:13:32.7346962Z tests/services/test_claim_heartbeat.py ................F....             [ 67%]
+check	Run make check	2026-09-13T00:13:32.7367955Z tests/services/test_dispatch_delta_cancel_independent.py .               [ 67%]
+check	Run make check	2026-09-13T00:13:32.7886845Z Call stack:
+check	Run make check	2026-09-13T00:13:32.7887855Z   File "/usr/lib/python3.12/threading.py", line 1030, in _bootstrap
+check	Run make check	2026-09-13T00:13:32.7888559Z     self._bootstrap_inner()
+check	Run make check	2026-09-13T00:13:32.7889039Z   File "/usr/lib/python3.12/threading.py", line 1073, in _bootstrap_inner
+check	Run make check	2026-09-13T00:13:32.7889445Z     self.run()
+check	Run make check	2026-09-13T00:13:32.7889816Z   File "/usr/lib/python3.12/threading.py", line 1010, in run
+check	Run make check	2026-09-13T00:13:32.7890215Z     self._target(*self._args, **self._kwargs)
+check	Run make check	2026-09-13T00:13:32.7890710Z   File "/usr/lib/python3.12/concurrent/futures/thread.py", line 92, in _worker
+check	Run make check	2026-09-13T00:13:32.7891426Z     work_item.run()
+check	Run make check	2026-09-13T00:13:32.7891813Z   File "/usr/lib/python3.12/concurrent/futures/thread.py", line 58, in run
+check	Run make check	2026-09-13T00:13:32.7892276Z     result = self.fn(*self.args, **self.kwargs)
+check	Run make check	2026-09-13T00:13:32.7892967Z   File "/home/runner/work/kodezart/kodezart/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+check	Run make check	2026-09-13T00:13:32.7894026Z     lambda: ctx.run(lambda: meth(event, *args, **kw)),
+check	Run make check	2026-09-13T00:13:32.7895177Z   File "/home/runner/work/kodezart/kodezart/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+check	Run make check	2026-09-13T00:13:32.7895841Z     lambda: ctx.run(lambda: meth(event, *args, **kw)),
+check	Run make check	2026-09-13T00:13:32.7896506Z   File "/home/runner/work/kodezart/kodezart/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 216, in info
+check	Run make check	2026-09-13T00:13:32.7897158Z     return self._proxy_to_logger("info", event, *args, **kw)
+check	Run make check	2026-09-13T00:13:32.7897908Z   File "/home/runner/work/kodezart/kodezart/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 280, in _proxy_to_logger
+check	Run make check	2026-09-13T00:13:32.7898874Z     return super()._proxy_to_logger(method_name, event=event, **event_kw)
+check	Run make check	2026-09-13T00:13:32.7899664Z   File "/home/runner/work/kodezart/kodezart/.venv/lib/python3.12/site-packages/structlog/_base.py", line 223, in _proxy_to_logger
+check	Run make check	2026-09-13T00:13:32.7900333Z     return getattr(self._logger, method_name)(*args, **kw)
+check	Run make check	2026-09-13T00:13:32.7901580Z Message: {'issue_key': 'K-1', 'job_id': 'job-0001', 'run_started': False, 'terminal_outcome': False, 'event': 'lifecycle_watch_finished', 'level': 'info', 'logger': 'kodezart.services.lifecycle_watcher', 'timestamp': '2026-09-13T00:13:32.787891Z'}
+check	Run make check	2026-09-13T00:13:32.7902503Z Arguments: ()
+check	Run make check	2026-09-13T00:13:32.9799840Z tests/services/test_dispatch_pass.py .............................       [ 68%]
+check	Run make check	2026-09-13T00:13:33.1164915Z tests/services/test_fire_context.py .....................                [ 69%]
+check	Run make check	2026-09-13T00:13:33.2230227Z tests/services/test_fire_dispatcher.py ................................. [ 69%]
+check	Run make check	2026-09-13T00:13:33.4167507Z ..................................................                       [ 71%]
+check	Run make check	2026-09-13T00:13:33.5731583Z tests/services/test_git_source_lookup.py ......                          [ 71%]
+check	Run make check	2026-09-13T00:13:33.7112683Z tests/services/test_lifecycle_watcher.py ............................... [ 71%]
+check	Run make check	2026-09-13T00:13:33.7190198Z Message: {'issue_key': 'K-1', 'event': 'lifecycle_in_progress', 'level': 'info', 'logger': 'kodezart.services.tracker_lifecycle', 'timestamp': '2026-09-13T00:13:33.717083Z'}
+check	Run make check	2026-09-13T00:13:33.7190954Z Arguments: ()
+check	Run make check	2026-09-13T00:13:33.7499384Z .........                                                                [ 72%]
+check	Run make check	2026-09-13T00:13:33.8106674Z tests/services/test_pass_delta_cancellation.py ........                  [ 72%]
+check	Run make check	2026-09-13T00:13:33.8968035Z tests/services/test_pass_gate.py .....................................   [ 73%]
+check	Run make check	2026-09-13T00:13:34.1614449Z tests/services/test_pass_scheduler.py ........................           [ 73%]
+check	Run make check	2026-09-13T00:13:34.1692403Z tests/services/test_prompt_delta_cancel_independent.py .                 [ 73%]
+check	Run make check	2026-09-13T00:13:34.4779834Z tests/services/test_prompt_pass.py ......................                [ 74%]
+check	Run make check	2026-09-13T00:13:34.9018564Z tests/services/test_prompt_passes.py .........................           [ 74%]
+check	Run make check	2026-09-13T00:13:34.9456556Z tests/services/test_run_recorder.py .............................        [ 75%]
+check	Run make check	2026-09-13T00:13:35.0215352Z tests/services/test_run_surface_lease.py ...................             [ 76%]
+check	Run make check	2026-09-13T00:13:35.0281749Z tests/services/test_scope_resolution.py .....                            [ 76%]
+check	Run make check	2026-09-13T00:13:35.7162590Z tests/services/test_session_grant_threading.py ...................       [ 76%]
+check	Run make check	2026-09-13T00:13:35.7818685Z tests/services/test_tracker_lifecycle.py .........................       [ 77%]
+check	Run make check	2026-09-13T00:13:35.8893961Z tests/test_composition_root.py ................                          [ 77%]
+check	Run make check	2026-09-13T00:13:36.4836213Z tests/test_forge_origin_selection.py .............                       [ 77%]
+check	Run make check	2026-09-13T00:13:36.5338224Z tests/test_lane_verification.py ......                                   [ 78%]
+check	Run make check	2026-09-13T00:13:36.6261641Z tests/test_release.py ....                                               [ 78%]
+check	Run make check	2026-09-13T00:13:36.6547783Z tests/tracker/test_classification_authority.py .......                   [ 78%]
+check	Run make check	2026-09-13T00:13:36.7139847Z tests/tracker/test_comment_expected.py ...................               [ 78%]
+check	Run make check	2026-09-13T00:13:36.7354798Z tests/tracker/test_comment_expected_independent.py ......                [ 78%]
+check	Run make check	2026-09-13T00:13:36.7412636Z tests/tracker/test_criterion_family_aliases.py ....                      [ 79%]
+check	Run make check	2026-09-13T00:13:36.7454648Z tests/tracker/test_criterion_family_identity.py ...                      [ 79%]
+check	Run make check	2026-09-13T00:13:36.7603020Z tests/tracker/test_criterion_label_independent.py ......                 [ 79%]
+check	Run make check	2026-09-13T00:13:36.7713683Z tests/tracker/test_criterion_label_surface.py ....                       [ 79%]
+check	Run make check	2026-09-13T00:13:36.7808379Z tests/tracker/test_criterion_reader.py .....                             [ 79%]
+check	Run make check	2026-09-13T00:13:36.8032759Z tests/tracker/test_criterion_reader_boundary.py ............             [ 79%]
+check	Run make check	2026-09-13T00:13:36.8384590Z tests/tracker/test_escalation_owned_boundaries.py .........              [ 80%]
+check	Run make check	2026-09-13T00:13:36.8515823Z tests/tracker/test_issue_classification_reads.py .............           [ 80%]
+check	Run make check	2026-09-13T00:13:36.8905600Z tests/tracker/test_issue_ruling_records.py ..................            [ 80%]
+check	Run make check	2026-09-13T00:13:36.9629242Z tests/tracker/test_lane_escalation.py ..............................     [ 81%]
+check	Run make check	2026-09-13T00:13:37.0107066Z tests/tracker/test_linear_mcp_tracker.py ............................... [ 82%]
+check	Run make check	2026-09-13T00:13:37.0900969Z ...............................                                          [ 82%]
+check	Run make check	2026-09-13T00:13:37.1026470Z tests/tracker/test_linear_tool_arguments.py ......                       [ 83%]
+check	Run make check	2026-09-13T00:13:37.1501487Z tests/tracker/test_linear_tool_roster.py .....                           [ 83%]
+check	Run make check	2026-09-13T00:13:37.1759733Z tests/tracker/test_linear_wire_shapes.py ............................... [ 83%]
+check	Run make check	2026-09-13T00:13:37.1787827Z ..                                                                       [ 83%]
+check	Run make check	2026-09-13T00:13:37.2032902Z tests/tracker/test_marker_configuration.py .....                         [ 84%]
+check	Run make check	2026-09-13T00:13:37.2146492Z tests/tracker/test_milestone_approval.py ......                          [ 84%]
+check	Run make check	2026-09-13T00:13:37.2204540Z tests/tracker/test_native_approval_aliases.py ....                       [ 84%]
+check	Run make check	2026-09-13T00:13:37.2382597Z tests/tracker/test_native_read_configuration.py .............            [ 84%]
+check	Run make check	2026-09-13T00:13:37.2414604Z tests/tracker/test_native_read_constructor.py ..                         [ 84%]
+check	Run make check	2026-09-13T00:13:37.3192263Z tests/tracker/test_ownership_arbitration.py ............................ [ 85%]
+check	Run make check	2026-09-13T00:13:37.3202988Z                                                                          [ 85%]
+check	Run make check	2026-09-13T00:13:37.3265232Z tests/tracker/test_project_milestones.py ....                            [ 85%]
+check	Run make check	2026-09-13T00:13:37.3606676Z tests/tracker/test_protected_comment_retry.py ..........                 [ 85%]
+check	Run make check	2026-09-13T00:13:37.3617641Z tests/tracker/test_ruling_protocol_boundary.py .                         [ 85%]
+check	Run make check	2026-09-13T00:13:37.3901869Z tests/tracker/test_ruling_reader_independent.py ..................       [ 86%]
+check	Run make check	2026-09-13T00:13:37.4999974Z tests/tracker/test_ruling_records.py ................................... [ 86%]
+check	Run make check	2026-09-13T00:13:37.5045442Z ..                                                                       [ 87%]
+check	Run make check	2026-09-13T00:13:37.5066486Z tests/tracker/test_scope_alias_identity.py .                             [ 87%]
+check	Run make check	2026-09-13T00:13:37.5142569Z tests/tracker/test_scope_ancestor_identity.py ....                       [ 87%]
+check	Run make check	2026-09-13T00:13:37.5713197Z tests/tracker/test_scope_approval.py ................................... [ 87%]
+check	Run make check	2026-09-13T00:13:37.6281470Z .................................                                        [ 88%]
+check	Run make check	2026-09-13T00:13:37.6856983Z tests/tracker/test_scope_label_mappings.py ............................. [ 89%]
+check	Run make check	2026-09-13T00:13:37.6885370Z ..                                                                       [ 89%]
+check	Run make check	2026-09-13T00:13:37.7469735Z tests/tracker/test_scope_reads.py ...................................... [ 90%]
+check	Run make check	2026-09-13T00:13:37.7963017Z .............................                                            [ 91%]
+check	Run make check	2026-09-13T00:13:37.7997417Z tests/tracker/test_scope_tool_arguments.py .                             [ 91%]
+check	Run make check	2026-09-13T00:13:37.8614712Z tests/tracker/test_tracker_boot.py ....................................  [ 91%]
+check	Run make check	2026-09-13T00:13:38.8311875Z tests/tracker/test_tracker_boot_wiring.py ..................             [ 92%]
+check	Run make check	2026-09-13T00:13:38.8918998Z tests/tracker/test_tracker_conformance.py .............................. [ 93%]
+check	Run make check	2026-09-13T00:13:39.0509302Z ........................................................................ [ 94%]
+check	Run make check	2026-09-13T00:13:39.2068757Z ........................................................................ [ 96%]
+check	Run make check	2026-09-13T00:13:39.3221540Z ...............................................                          [ 97%]
+check	Run make check	2026-09-13T00:13:39.3344099Z tests/types/test_output_descriptions.py .............                    [ 97%]
+check	Run make check	2026-09-13T00:13:39.8549661Z tests/types/test_wire_renames.py ......                                  [ 98%]
+check	Run make check	2026-09-13T00:13:40.2177386Z tests/types/test_wire_schemas.py ....................................... [ 99%]
+check	Run make check	2026-09-13T00:13:41.0098331Z ....                                                                     [ 99%]
+check	Run make check	2026-09-13T00:13:41.0313255Z tests/types/test_writable_surface.py ..........................          [ 99%]
+check	Run make check	2026-09-13T00:13:41.3895239Z tests/workflows/test_investigate_fan_in.py ...........                   [100%]
+check	Run make check	2026-09-13T00:13:41.3896411Z 
+check	Run make check	2026-09-13T00:13:41.3897204Z =================================== FAILURES ===================================
+check	Run make check	2026-09-13T00:13:41.3898745Z _ TestTheClaimIsHandedBackWhenTheJobEnds.test_a_terminal_outcome_hands_the_claim_back _
+check	Run make check	2026-09-13T00:13:41.3909680Z 
+check	Run make check	2026-09-13T00:13:41.3910511Z self = <tests.services.test_claim_heartbeat.TestTheClaimIsHandedBackWhenTheJobEnds object at 0x7f74cca4b950>
+check	Run make check	2026-09-13T00:13:41.3911124Z 
+check	Run make check	2026-09-13T00:13:41.3911467Z     async def test_a_terminal_outcome_hands_the_claim_back(self) -> None:
+check	Run make check	2026-09-13T00:13:41.3912102Z >       tracker = await watched(events=(TERMINAL_EVENT,))
+check	Run make check	2026-09-13T00:13:41.3912498Z                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+check	Run make check	2026-09-13T00:13:41.3912708Z 
+check	Run make check	2026-09-13T00:13:41.3912911Z tests/services/test_claim_heartbeat.py:549: 
+check	Run make check	2026-09-13T00:13:41.3913370Z _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+check	Run make check	2026-09-13T00:13:41.3914143Z tests/services/test_claim_heartbeat.py:215: in watched
+check	Run make check	2026-09-13T00:13:41.3914495Z     await asyncio.wait_for(
+check	Run make check	2026-09-13T00:13:41.3914888Z /usr/lib/python3.12/asyncio/tasks.py:520: in wait_for
+check	Run make check	2026-09-13T00:13:41.3915228Z     return await fut
+check	Run make check	2026-09-13T00:13:41.3915459Z            ^^^^^^^^^
+check	Run make check	2026-09-13T00:13:41.3915808Z src/kodezart/services/lifecycle_watcher.py:402: in watch
+check	Run make check	2026-09-13T00:13:41.3916149Z     await self._apply(
+check	Run make check	2026-09-13T00:13:41.3916518Z src/kodezart/services/lifecycle_watcher.py:556: in _apply
+check	Run make check	2026-09-13T00:13:41.3916902Z     await self._writer.on_terminal_outcome(
+check	Run make check	2026-09-13T00:13:41.3917390Z src/kodezart/services/tracker_lifecycle.py:268: in on_terminal_outcome
+check	Run make check	2026-09-13T00:13:41.3917790Z     await lease.renew()
+check	Run make check	2026-09-13T00:13:41.3918168Z _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+check	Run make check	2026-09-13T00:13:41.3918423Z 
+check	Run make check	2026-09-13T00:13:41.3918767Z self = <kodezart.services.run_surface_lease.RunSurfaceLease object at 0x7f74d4f34b00>
+check	Run make check	2026-09-13T00:13:41.3919126Z 
+check	Run make check	2026-09-13T00:13:41.3919259Z     async def renew(self) -> None:
+check	Run make check	2026-09-13T00:13:41.3919992Z         """Extend the whole set or permanently stop this operation's writes."""
+check	Run make check	2026-09-13T00:13:41.3920398Z         if not self._active:
+check	Run make check	2026-09-13T00:13:41.3920839Z             raise SurfaceLeaseLostError(job_id=self._job_id, surfaces=self._surfaces)
+check	Run make check	2026-09-13T00:13:41.3921267Z         self._active = False
+check	Run make check	2026-09-13T00:13:41.3921542Z         renewed = await settle(
+check	Run make check	2026-09-13T00:13:41.3921844Z             self._tracker.renew_surfaces(
+check	Run make check	2026-09-13T00:13:41.3922166Z                 surfaces=self._surfaces,
+check	Run make check	2026-09-13T00:13:41.3922464Z                 holder=self._job_id,
+check	Run make check	2026-09-13T00:13:41.3922785Z                 lease_seconds=self._lease_seconds,
+check	Run make check	2026-09-13T00:13:41.3923071Z             )
+check	Run make check	2026-09-13T00:13:41.3923264Z         )
+check	Run make check	2026-09-13T00:13:41.3923695Z         if renewed is None:
+check	Run make check	2026-09-13T00:13:41.3924084Z             # None does not identify a lost surface or its current owner.
+check	Run make check	2026-09-13T00:13:41.3924573Z             # Preserve that uncertainty rather than claiming an absence.
+check	Run make check	2026-09-13T00:13:41.3925160Z >           raise SurfaceLeaseLostError(job_id=self._job_id, surfaces=self._surfaces)
+check	Run make check	2026-09-13T00:13:41.3926147Z E           kodezart.domain.errors.SurfaceLeaseLostError: run 'job-0001' lost its declared surface lease
+check	Run make check	2026-09-13T00:13:41.3926566Z 
+check	Run make check	2026-09-13T00:13:41.3926838Z src/kodezart/services/run_surface_lease.py:81: SurfaceLeaseLostError
+check	Run make check	2026-09-13T00:13:41.3927396Z ----------------------------- Captured stderr call -----------------------------
+check	Run make check	2026-09-13T00:13:41.3927788Z --- Logging error ---
+check	Run make check	2026-09-13T00:13:41.3928072Z Traceback (most recent call last):
+check	Run make check	2026-09-13T00:13:41.3928498Z   File "/usr/lib/python3.12/logging/__init__.py", line 1163, in emit
+check	Run make check	2026-09-13T00:13:41.3928926Z     stream.write(msg + self.terminator)
+check	Run make check	2026-09-13T00:13:41.3929286Z ValueError: I/O operation on closed file.
+check	Run make check	2026-09-13T00:13:41.3929575Z Call stack:
+check	Run make check	2026-09-13T00:13:41.3929921Z   File "/usr/lib/python3.12/threading.py", line 1030, in _bootstrap
+check	Run make check	2026-09-13T00:13:41.3930293Z     self._bootstrap_inner()
+check	Run make check	2026-09-13T00:13:41.3930714Z   File "/usr/lib/python3.12/threading.py", line 1073, in _bootstrap_inner
+check	Run make check	2026-09-13T00:13:41.3931097Z     self.run()
+check	Run make check	2026-09-13T00:13:41.3931428Z   File "/usr/lib/python3.12/threading.py", line 1010, in run
+check	Run make check	2026-09-13T00:13:41.3931814Z     self._target(*self._args, **self._kwargs)
+check	Run make check	2026-09-13T00:13:41.3932303Z   File "/usr/lib/python3.12/concurrent/futures/thread.py", line 92, in _worker
+check	Run make check	2026-09-13T00:13:41.3932720Z     work_item.run()
+check	Run make check	2026-09-13T00:13:41.3933106Z   File "/usr/lib/python3.12/concurrent/futures/thread.py", line 58, in run
+check	Run make check	2026-09-13T00:13:41.3934176Z     result = self.fn(*self.args, **self.kwargs)
+check	Run make check	2026-09-13T00:13:41.3934856Z   File "/home/runner/work/kodezart/kodezart/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+check	Run make check	2026-09-13T00:13:41.3935491Z     lambda: ctx.run(lambda: meth(event, *args, **kw)),
+check	Run make check	2026-09-13T00:13:41.3936160Z   File "/home/runner/work/kodezart/kodezart/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+check	Run make check	2026-09-13T00:13:41.3936786Z     lambda: ctx.run(lambda: meth(event, *args, **kw)),
+check	Run make check	2026-09-13T00:13:41.3937466Z   File "/home/runner/work/kodezart/kodezart/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 216, in info
+check	Run make check	2026-09-13T00:13:41.3938109Z     return self._proxy_to_logger("info", event, *args, **kw)
+check	Run make check	2026-09-13T00:13:41.3938839Z   File "/home/runner/work/kodezart/kodezart/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 280, in _proxy_to_logger
+check	Run make check	2026-09-13T00:13:41.3939558Z     return super()._proxy_to_logger(method_name, event=event, **event_kw)
+check	Run make check	2026-09-13T00:13:41.3940309Z   File "/home/runner/work/kodezart/kodezart/.venv/lib/python3.12/site-packages/structlog/_base.py", line 223, in _proxy_to_logger
+check	Run make check	2026-09-13T00:13:41.3940985Z     return getattr(self._logger, method_name)(*args, **kw)
+check	Run make check	2026-09-13T00:13:41.3941915Z Message: {'issue_key': 'K-1', 'event': 'lifecycle_in_progress', 'level': 'info', 'logger': 'kodezart.services.tracker_lifecycle', 'timestamp': '2026-09-13T00:13:32.566863Z'}
+check	Run make check	2026-09-13T00:13:41.3942763Z Arguments: ()
+check	Run make check	2026-09-13T00:13:41.3942989Z --- Logging error ---
+check	Run make check	2026-09-13T00:13:41.3943277Z Traceback (most recent call last):
+check	Run make check	2026-09-13T00:13:41.3944094Z   File "/usr/lib/python3.12/logging/__init__.py", line 1163, in emit
+check	Run make check	2026-09-13T00:13:41.3944520Z     stream.write(msg + self.terminator)
+check	Run make check	2026-09-13T00:13:41.3944876Z ValueError: I/O operation on closed file.
+check	Run make check	2026-09-13T00:13:41.3945151Z Call stack:
+check	Run make check	2026-09-13T00:13:41.3945491Z   File "/usr/lib/python3.12/threading.py", line 1030, in _bootstrap
+check	Run make check	2026-09-13T00:13:41.3945859Z     self._bootstrap_inner()
+check	Run make check	2026-09-13T00:13:41.3946267Z   File "/usr/lib/python3.12/threading.py", line 1073, in _bootstrap_inner
+check	Run make check	2026-09-13T00:13:41.3946638Z     self.run()
+check	Run make check	2026-09-13T00:13:41.3946958Z   File "/usr/lib/python3.12/threading.py", line 1010, in run
+check	Run make check	2026-09-13T00:13:41.3947337Z     self._target(*self._args, **self._kwargs)
+check	Run make check	2026-09-13T00:13:41.3947807Z   File "/usr/lib/python3.12/concurrent/futures/thread.py", line 92, in _worker
+check	Run make check	2026-09-13T00:13:41.3948208Z     work_item.run()
+check	Run make check	2026-09-13T00:13:41.3948582Z   File "/usr/lib/python3.12/concurrent/futures/thread.py", line 58, in run
+check	Run make check	2026-09-13T00:13:41.3949194Z     result = self.fn(*self.args, **self.kwargs)
+check	Run make check	2026-09-13T00:13:41.3949857Z   File "/home/runner/work/kodezart/kodezart/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+check	Run make check	2026-09-13T00:13:41.3950486Z     lambda: ctx.run(lambda: meth(event, *args, **kw)),
+check	Run make check	2026-09-13T00:13:41.3951145Z   File "/home/runner/work/kodezart/kodezart/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+check	Run make check	2026-09-13T00:13:41.3951758Z     lambda: ctx.run(lambda: meth(event, *args, **kw)),
+check	Run make check	2026-09-13T00:13:41.3952406Z   File "/home/runner/work/kodezart/kodezart/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 216, in info
+check	Run make check	2026-09-13T00:13:41.3953038Z     return self._proxy_to_logger("info", event, *args, **kw)
+check	Run make check	2026-09-13T00:13:41.3953934Z   File "/home/runner/work/kodezart/kodezart/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 280, in _proxy_to_logger
+check	Run make check	2026-09-13T00:13:41.3954666Z     return super()._proxy_to_logger(method_name, event=event, **event_kw)
+check	Run make check	2026-09-13T00:13:41.3955437Z   File "/home/runner/work/kodezart/kodezart/.venv/lib/python3.12/site-packages/structlog/_base.py", line 223, in _proxy_to_logger
+check	Run make check	2026-09-13T00:13:41.3956102Z     return getattr(self._logger, method_name)(*args, **kw)
+check	Run make check	2026-09-13T00:13:41.3956995Z Message: {'issue_key': 'K-1', 'event': 'lifecycle_done', 'level': 'info', 'logger': 'kodezart.services.tracker_lifecycle', 'timestamp': '2026-09-13T00:13:32.568561Z'}
+check	Run make check	2026-09-13T00:13:41.3957652Z Arguments: ()
+check	Run make check	2026-09-13T00:13:41.3957876Z --- Logging error ---
+check	Run make check	2026-09-13T00:13:41.3958156Z Traceback (most recent call last):
+check	Run make check	2026-09-13T00:13:41.3958563Z   File "/usr/lib/python3.12/logging/__init__.py", line 1163, in emit
+check	Run make check	2026-09-13T00:13:41.3958967Z     stream.write(msg + self.terminator)
+check	Run make check	2026-09-13T00:13:41.3959318Z ValueError: I/O operation on closed file.
+check	Run make check	2026-09-13T00:13:41.3959609Z Call stack:
+check	Run make check	2026-09-13T00:13:41.3959946Z   File "/usr/lib/python3.12/threading.py", line 1030, in _bootstrap
+check	Run make check	2026-09-13T00:13:41.3960318Z     self._bootstrap_inner()
+check	Run make check	2026-09-13T00:13:41.3960733Z   File "/usr/lib/python3.12/threading.py", line 1073, in _bootstrap_inner
+check	Run make check	2026-09-13T00:13:41.3961107Z     self.run()
+check	Run make check	2026-09-13T00:13:41.3961429Z   File "/usr/lib/python3.12/threading.py", line 1010, in run
+check	Run make check	2026-09-13T00:13:41.3961811Z     self._target(*self._args, **self._kwargs)
+check	Run make check	2026-09-13T00:13:41.3962276Z   File "/usr/lib/python3.12/concurrent/futures/thread.py", line 92, in _worker
+check	Run make check	2026-09-13T00:13:41.3962679Z     work_item.run()
+check	Run make check	2026-09-13T00:13:41.3963056Z   File "/usr/lib/python3.12/concurrent/futures/thread.py", line 58, in run
+check	Run make check	2026-09-13T00:13:41.3963792Z     result = self.fn(*self.args, **self.kwargs)
+check	Run make check	2026-09-13T00:13:41.3964538Z   File "/home/runner/work/kodezart/kodezart/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+check	Run make check	2026-09-13T00:13:41.3965338Z     lambda: ctx.run(lambda: meth(event, *args, **kw)),
+check	Run make check	2026-09-13T00:13:41.3966010Z   File "/home/runner/work/kodezart/kodezart/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 432, in <lambda>
+check	Run make check	2026-09-13T00:13:41.3966636Z     lambda: ctx.run(lambda: meth(event, *args, **kw)),
+check	Run make check	2026-09-13T00:13:41.3967300Z   File "/home/runner/work/kodezart/kodezart/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 216, in info
+check	Run make check	2026-09-13T00:13:41.3967942Z     return self._proxy_to_logger("info", event, *args, **kw)
+check	Run make check	2026-09-13T00:13:41.3968674Z   File "/home/runner/work/kodezart/kodezart/.venv/lib/python3.12/site-packages/structlog/stdlib.py", line 280, in _proxy_to_logger
+check	Run make check	2026-09-13T00:13:41.3969390Z     return super()._proxy_to_logger(method_name, event=event, **event_kw)
+check	Run make check	2026-09-13T00:13:41.3970143Z   File "/home/runner/work/kodezart/kodezart/.venv/lib/python3.12/site-packages/structlog/_base.py", line 223, in _proxy_to_logger
+check	Run make check	2026-09-13T00:13:41.3970811Z     return getattr(self._logger, method_name)(*args, **kw)
+check	Run make check	2026-09-13T00:13:41.3972621Z Message: {'writer': 'tracker_comment', 'surface': 'tracker', 'verdict': 'clean', 'visibility': 'public', 'categories': [], 'failure': None, 'content_digest': 'fdfd09ada3e6d93a2f2e6c1cc13db95ffcdb0cdb1495ec29b06ab7d0a66a2f97', 'hits': [], 'event': 'outbound_content_gated', 'level': 'info', 'logger': 'kodezart.services.tracker_lifecycle', 'timestamp': '2026-09-13T00:13:32.570187Z'}
+check	Run make check	2026-09-13T00:13:41.3974258Z Arguments: ()
+check	Run make check	2026-09-13T00:13:41.3974653Z ------------------------------ Captured log call -------------------------------
+check	Run make check	2026-09-13T00:13:41.3975891Z INFO     kodezart.services.tracker_lifecycle:tracker_lifecycle.py:99 {'issue_key': 'K-1', 'event': 'lifecycle_in_progress', 'level': 'info', 'logger': 'kodezart.services.tracker_lifecycle', 'timestamp': '2026-09-13T00:13:32.566863Z'}
+check	Run make check	2026-09-13T00:13:41.3977602Z INFO     kodezart.services.tracker_lifecycle:tracker_lifecycle.py:156 {'issue_key': 'K-1', 'event': 'lifecycle_done', 'level': 'info', 'logger': 'kodezart.services.tracker_lifecycle', 'timestamp': '2026-09-13T00:13:32.568561Z'}
+check	Run make check	2026-09-13T00:13:42.1914535Z INFO     kodezart.services.tracker_lifecycle:outbound_write.py:56 {'writer': 'tracker_comment', 'surface': 'tracker', 'verdict': 'clean', 'visibility': 'public', 'categories': [], 'failure': None, 'content_digest': 'fdfd09ada3e6d93a2f2e6c1cc13db95ffcdb0cdb1495ec29b06ab7d0a66a2f97', 'hits': [], 'event': 'outbound_content_gated', 'level': 'info', 'logger': 'kodezart.services.tracker_lifecycle', 'timestamp': '2026-09-13T00:13:32.570187Z'}
+check	Run make check	2026-09-13T00:13:42.1917095Z =========================== short test summary info ============================
+check	Run make check	2026-09-13T00:13:42.1918643Z FAILED tests/services/test_claim_heartbeat.py::TestTheClaimIsHandedBackWhenTheJobEnds::test_a_terminal_outcome_hands_the_claim_back - kodezart.domain.errors.SurfaceLeaseLostError: run 'job-0001' lost its declared surface lease
+check	Run make check	2026-09-13T00:13:42.1920016Z ============ 1 failed, 4189 passed, 16 skipped in 89.20s (0:01:29) =============
+check	Run make check	2026-09-13T00:13:42.9448153Z make: *** [Makefile:34: test] Error 1
+check	Run make check	2026-09-13T00:13:42.9463353Z ##[error]Process completed with exit code 2.

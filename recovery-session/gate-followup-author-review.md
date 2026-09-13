@@ -1,0 +1,11 @@
+# Canonical full-gate follow-up
+
+Frozen clean01a62d6aa4991fdf6c916873a49940fbfb9eba5b, parent249dde2. Five files only. Exact inherited full run:249dde2,7 failed9661 passed25 skipped218.55s, GitHub34697885443. This slice repairs five; two prompt census/contract oracles are owned separately by L2.
+
+Requirements: parent completion is read, never runtime merge write; queue disposition remains; cold reads preserve attribution rather than impersonate a default writer; run-outcome marker must be explicitly configured. Source only changes the lifecycle docstring to avoid a configured state name. Test changes preserve all execution/write assertions and explicitly reject parent completion. The cold-client fixture retains the actual credential identity. The boot fixture declares the marker its real constructed writer consumes.
+
+Before selected five node IDs:5 failed9.02s, gate-followup-before.log. After full affected modules and literal/parent controls:129 passed7.97s, gate-followup-after.log. Command: uv run --locked pytest -q tests/integration/test_self_running_chain.py tests/services/test_dispatch_pass.py tests/tracker/test_barren_record_collector.py tests/tracker/test_tracker_boot_wiring.py tests/prompts/test_operation_config.py::test_no_label_or_status_literal_lives_in_source tests/services/test_parent_rollup_authority.py. Ruff lint passed; formatter initially named dispatch-pass list after deletion, then formatted only that file. No production logic/type change; classification neutral. Independent source/test-oracle review and canonical rerun remain gates.
+
+Eight lenses: SOLID/DRY—existing lifecycle owner/marker mapping remains; hexagonal—tests use existing external tracker/transport boundaries; KISS—fixture alignment and one docstring, no new abstraction; typed agent calls—not applicable, no agent semantics changed; framework—actual lifespan/boot exercised with explicit required configuration; type safety—neutral; hygiene—preserves literal guard unchanged and established test modules. These are scoped author claims for reviewer verification, not whole-lane coverage.
+
+Evidence: https://linear.app/duckburg/issue/KOD-163#comment-685f7730-8f45-4643-bf3f-7ad7431dad09 . Cherry-pick01a62d6 only after independent review; no other worktree delta required.

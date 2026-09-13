@@ -1,0 +1,48 @@
+{
+  "tests/chains/test_fire_spec_prompt_consumers.py": {
+    "donor": "da39c439898aec1233aa8b6157b35e961df1e453",
+    "byte_identical": true,
+    "sha256": "728266e1a616e52ade9b382e3204529c69d22212617b4079b26e68f1dbfac329"
+  },
+  "tests/chains/fire_spec_prompt_goldens.json": {
+    "donor": "da39c439898aec1233aa8b6157b35e961df1e453",
+    "byte_identical": true,
+    "sha256": "dca72078066089c890339e28a08d3b3d0dfd9422d8ce2ec589a62ae445d0e8f5"
+  },
+  "tests/domain/test_fire_spec_formatter.py": {
+    "donor": "da39c439898aec1233aa8b6157b35e961df1e453",
+    "byte_identical": true,
+    "sha256": "5b30361c704866241bfe70e0136faad12863d482690a918e8dd5384413fd6663"
+  },
+  "tests/chains/test_fire_extraction.py": {
+    "donor": "da39c439898aec1233aa8b6157b35e961df1e453",
+    "byte_identical": true,
+    "sha256": "aacf739da0bac0621d134c13ba18371241ae09d78a2da911e4a4fc3737e2ee64"
+  },
+  "tests/chains/test_workflow_phase_composition.py": {
+    "donor": "da39c439898aec1233aa8b6157b35e961df1e453",
+    "byte_identical": true,
+    "sha256": "b82de7eeb3a64516b822aa2db87892afe833aa6137d9cce0ba04edf0a83f28d9"
+  },
+  "lock_blobs": {
+    "fadf6efe29c7addcc608b22e8345cd9008ce4bab": "51a85eeaa79ee417b1a7b38e6914cf0dc46209a8",
+    "dad63c4f4b957323a58331e8416c2a542eb0a79c": "51a85eeaa79ee417b1a7b38e6914cf0dc46209a8",
+    "7675c0b461acb9e77aa41c9c9829f2359ebc83c0": "51a85eeaa79ee417b1a7b38e6914cf0dc46209a8",
+    "da39c439898aec1233aa8b6157b35e961df1e453": "4b364932157fa189a09f2dc876f12388b0dc84d0"
+  },
+  "commit": "cbbe5dd1d18822867c5556b6117040463681b0bc",
+  "tree": "75e873cc063090add14e4dfeea496c7a60e7ee54",
+  "parent": "7675c0b461acb9e77aa41c9c9829f2359ebc83c0",
+  "tests": {
+    "restored_original_oracles": "108 passed in82.80s",
+    "dad_controls": "266 passed;1 failed deferred lane_delivery census in306.26s",
+    "dad_mypy": "Success: no issues found in255 source files",
+    "ruff": "All checks passed",
+    "corrected_original_HTTP_and_checkpoint_boundaries": "4 passed in2.43s oncbbe5dd (source7675)"
+  },
+  "lock_difference_note": "Donor differs solely direct typing-extensions dependency declaration; resolved package versions/artifacts unchanged. No candidate source imports typing_extensions.",
+  "linear_comments": [
+    "https://linear.app/duckburg/issue/KOD-75#comment-85f646fe-1e92-4847-b2bf-9a70dbcd1df1",
+    "https://linear.app/duckburg/issue/KOD-105#comment-03b2e35c-942e-41bf-8a18-a0bb744df467"
+  ]
+}

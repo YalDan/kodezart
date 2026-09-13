@@ -1,0 +1,134 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_____ test_upheld_after_real_grade_preserves_criterion_history_and_plateau _____
+
+repository = (PosixPath('/private/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/pytest-of-kodezart/pytest-1784/test_upheld_after_real_grade_p0/repo'), '306fbeb3247742928cc3732bddf331b8645a8108')
+
+    async def test_upheld_after_real_grade_preserves_criterion_history_and_plateau(repository):
+        executor = Executor()
+        service, _, workspace, port = await build(repository, executor)
+        criteria = TrackerCriteria(tracker=port)
+        spec = await criteria.read_spec(issue_key=SUBJECT)
+        current = await criteria.read_current(spec=spec)
+        observed = native_evaluation()
+        observed["criteriaResults"][0]["passed"] = False
+        previous_grade = grade_iteration(
+            current.criteria, AcceptanceCriteriaOutput.model_validate(observed)
+        )
+        previous_record = IterationRecord(
+            iteration=1,
+            passed_count=previous_grade.passed_count,
+            failing_criterion_ids=[row.criterion_id for row in previous_grade.failures],
+            commit_sha=await git(repository[0], "rev-parse", "HEAD"),
+        )
+        previous_records = [previous_record, previous_record.model_copy(update={"iteration": 2})]
+        await git(repository[0], "branch", "native-loop", "main")
+        router = build_workflow_engine(
+            config=AppConfig(
+                ticket_review_mode=TicketReviewMode.REVIEWED,
+                max_iterations=3,
+                loop_plateau_window=2,
+                retry_max_attempts=1,
+                retry_initial_interval=0.1,
+            ),
+            operation=native_operation(),
+            scope_tracker=port,
+            criteria=criteria,
+            repositories=(RepoEntry(url=REPO_URL, trunk="main"),),
+            agent_service=service,
+            git=workspace._git,
+            cache=FakeRepoCache(str(repository[0])),
+            workspace=workspace,
+            merger=FakeBranchMerger(),
+            artifact_persister=FakeArtifactPersister(),
+            ref_publisher=FakeRefPublisher(),
+            prompts=load_registry(),
+            skills=SUPPRESS_ALL_SKILLS,
+            gate=PassThroughGate(),
+            github_api=None,
+            checkpointer=None,
+        )
+        loop = router.arm_for(None).fire.implementation._quality_gate
+        context = RalphLoopContext(
+            prompt="Implement the exact native Checks",
+            repo_path=str(repository[0]),
+            repo_url=REPO_URL,
+            cache_key="independent-upheld-history",
+            base_spec=trunk_base(repository[1]),
+            permission_mode=PermissionMode.UNATTENDED,
+            allowed_tools=ToolPreset.IMPLEMENTATION,
+            feature_branch="native-feature",
+            ralph_branch="native-loop",
+            work_base_ref="main",
+            acceptance_criteria=list(current.criteria),
+            tracker_spec=spec,
+            repo_visibility=RepoVisibility.PUBLIC,
+        )
+        state = {
+            "iteration": 2,
+            "verdict": previous_grade.verdict,
+            "pending_failures": previous_grade.failures,
+            "iteration_records": previous_records,
+        }
+        events = []
+        final = None
+        try:
+            async for mode, value in loop._compiled.astream(
+                state,
+                {"configurable": context.model_dump()},
+                stream_mode=["custom", "values"],
+            ):
+                if mode == "custom":
+                    events.append(value)
+                else:
+                    final = value
+            assert final is not None
+            assert any(isinstance(event, NativeAmendmentEvent) for event in events)
+            assert len(executor.calls) == 2
+            assert not await git(
+                repository[0], "ls-remote", "origin", "refs/heads/native-loop"
+            )
+            actual = {
+                "records": final["iteration_records"],
+                "failures": final["pending_failures"],
+                "plateaued": fold_trajectory(
+                    final["iteration_records"], plateau_window=2
+                ).plateaued,
+                "new_evaluations": [
+                    event for event in events if isinstance(event, WorkflowIterationEvent)
+                ],
+            }
+>           assert actual == {
+                "records": previous_records,
+                "failures": previous_grade.failures,
+                "plateaued": False,
+                "new_evaluations": [],
+            }
+E           AssertionError: assert {'failures': ...it_sha=None)]} == {'failures': ...902071ab5e')]}
+E             
+E             Differing items:
+E             {'plateaued': True} != {'plateaued': False}
+E             {'records': [IterationRecord(iteration=1, passed_count=2, failing_criterion_ids=['fire/owed-direct'], commit_sha='fec1...assed_count=0, failing_criterion_ids=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'], commit_sha=None)]} != {'records': [IterationRecord(iteration=1, passed_count=2, failing_criterion_ids=['fire/owed-direct'], commit_sha='fec1...2, passed_count=2, failing_criterion_ids=['fire/owed-direct'], commit_sha='fec1ac60399e30111c56cfd7d4ad66902071ab5e')]}
+E             {'failures': [CriterionFailure(cr...
+E             
+E             ...Full output truncated (3 lines hidden), use '-vv' to show
+
+tests/chains/test_native_amendment_trajectory_independent.py:136: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 18:14:31 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 18:14:31 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 18:14:32 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 18:14:32 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-17ad20359c4543abb5351a38f415aa34 workspace_id=17ad20359c4543abb5351a38f415aa34
+2026-09-12 18:14:33 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 18:14:34 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 18:14:35 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 18:14:36 [info     ] workspace_acquired             path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-0c4d46e14dfa4af1853bba634c04aba2 workspace_id=0c4d46e14dfa4af1853bba634c04aba2
+2026-09-12 18:14:36 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail='Author rationale must never be forwarded.' session_id=previous-agent-session site=amendment_judge stop_reason=None subtype=result total_cost_usd=None usage=None
+2026-09-12 18:14:38 [info     ] workspace_released             workspace_id=0c4d46e14dfa4af1853bba634c04aba2
+2026-09-12 18:14:38 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+2026-09-12 18:14:39 [warning  ] workspace_release_unclean      branch_name=native-loop path=/var/folders/lv/b1m7q5dj1yd5gn9s9rknw43h0000gq/T/kodezart-17ad20359c4543abb5351a38f415aa34 workspace_id=17ad20359c4543abb5351a38f415aa34
+2026-09-12 18:14:39 [info     ] workspace_released             workspace_id=17ad20359c4543abb5351a38f415aa34
+2026-09-12 18:14:39 [info     ] fire_criteria_read             named=3 owed=['fire/owed-direct', 'fire/owed-direct-2', 'fire/owed-nested'] read_at_version=2026-01-01T00:00:00+00:00 subject=fire/subject
+=========================== short test summary info ============================
+FAILED tests/chains/test_native_amendment_trajectory_independent.py::test_upheld_after_real_grade_preserves_criterion_history_and_plateau
+1 failed in 12.13s

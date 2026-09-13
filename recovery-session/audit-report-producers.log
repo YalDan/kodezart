@@ -1,0 +1,91 @@
+........................................................................ [ 18%]
+........................................................................ [ 37%]
+........................................................................ [ 56%]
+........................................................................ [ 75%]
+.......................................................................F [ 93%]
+F......................                                                  [100%]
+=================================== FAILURES ===================================
+____ test_a_mandate_report_cannot_replace_the_actual_forge_claim[fake-port] ____
+
+setup = (<function setup.<locals>.build at 0x10eb52200>, <tests.tracker.test_audit_sweep.Executor object at 0x10eb816a0>, <tes... <tests.fakes.FakeWorkspaceProvider object at 0x10eb821e0>, <tests.fakes.FakePRStateReader object at 0x10eb80e90>, ...)
+tracker = <tests.fakes.FakeTrackerPort object at 0x10eb818e0>
+server = <tests.fakes.FakeLinearMcpServer object at 0x10eb4fce0>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10eb672f0>
+
+    async def test_a_mandate_report_cannot_replace_the_actual_forge_claim(
+        setup, tracker, server, monkeypatch
+    ):
+        build, _, _, _, _, _, _, operation = setup
+        await completed(tracker, server)
+        op = selected_operation(operation)
+        async with forge("fake", "work") as (ci, _):
+            sweep = build(selected_op=op, selected_forge=verifier(tracker, op, ci))
+            original = sweep._mandates.complete
+    
+            async def changed(request):
+                report = await original(request)
+                if request.defect_class.startswith("forge checks"):
+                    return report.model_copy(
+                        update={
+                            "claim": report.claim.model_copy(update={"head_sha": "b" * 40})
+                        }
+                    )
+                return report
+    
+            monkeypatch.setattr(sweep._mandates, "complete", changed)
+            child = (await sweep.run()).observations[0]
+        assert child.claim is not None
+        assert child.forge.verdict is AuditVerdict.REFUTED
+        assert child.forge.recorded_evidence.graded_sha == SHA
+>       assert child.forge_report is None
+E       AssertionError: assert AuditClaimReport(root=RefutedClaimReport(claim=AuditClaimObservation[Literal[<AuditVerdict.REFUTED: 'refuted'>]](judgm...is defect in the supplied body set.', verdict=<AuditVerdict.REFUTED: 'refuted'>, finding=None, finding_surface=None)))) is None
+E        +  where AuditClaimReport(root=RefutedClaimReport(claim=AuditClaimObservation[Literal[<AuditVerdict.REFUTED: 'refuted'>]](judgm...is defect in the supplied body set.', verdict=<AuditVerdict.REFUTED: 'refuted'>, finding=None, finding_surface=None)))) = AuditReadObservation(target=AuditRequestTarget(issue=TrackerIssue(issue_key='audit/criterion', title='fixture issue', ...et.', verdict=<AuditVerdict.REFUTED: 'refuted'>, finding=None, finding_surface=None)))), forge_unavailable_reason=None).forge_report
+
+tests/tracker/test_audit_forge_sweep.py:252: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 18:34:13 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fresh-result site=audit_claim stop_reason=None subtype=success total_cost_usd=None usage=None
+2026-09-12 18:34:13 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fresh-result site=audit_mandate stop_reason=None subtype=success total_cost_usd=None usage=None
+___ test_a_mandate_report_cannot_replace_the_actual_forge_claim[linear-mcp] ____
+
+setup = (<function setup.<locals>.build at 0x10edf1300>, <tests.tracker.test_audit_sweep.Executor object at 0x10e8cb980>, <tes... <tests.fakes.FakeWorkspaceProvider object at 0x10e8c85c0>, <tests.fakes.FakePRStateReader object at 0x10e8c8c80>, ...)
+tracker = <kodezart.adapters.linear_mcp_tracker.LinearMcpTracker object at 0x10e8ca9f0>
+server = <tests.fakes.FakeLinearMcpServer object at 0x10e8cac60>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10e8cbce0>
+
+    async def test_a_mandate_report_cannot_replace_the_actual_forge_claim(
+        setup, tracker, server, monkeypatch
+    ):
+        build, _, _, _, _, _, _, operation = setup
+        await completed(tracker, server)
+        op = selected_operation(operation)
+        async with forge("fake", "work") as (ci, _):
+            sweep = build(selected_op=op, selected_forge=verifier(tracker, op, ci))
+            original = sweep._mandates.complete
+    
+            async def changed(request):
+                report = await original(request)
+                if request.defect_class.startswith("forge checks"):
+                    return report.model_copy(
+                        update={
+                            "claim": report.claim.model_copy(update={"head_sha": "b" * 40})
+                        }
+                    )
+                return report
+    
+            monkeypatch.setattr(sweep._mandates, "complete", changed)
+            child = (await sweep.run()).observations[0]
+        assert child.claim is not None
+        assert child.forge.verdict is AuditVerdict.REFUTED
+        assert child.forge.recorded_evidence.graded_sha == SHA
+>       assert child.forge_report is None
+E       AssertionError: assert AuditClaimReport(root=RefutedClaimReport(claim=AuditClaimObservation[Literal[<AuditVerdict.REFUTED: 'refuted'>]](judgm...is defect in the supplied body set.', verdict=<AuditVerdict.REFUTED: 'refuted'>, finding=None, finding_surface=None)))) is None
+E        +  where AuditClaimReport(root=RefutedClaimReport(claim=AuditClaimObservation[Literal[<AuditVerdict.REFUTED: 'refuted'>]](judgm...is defect in the supplied body set.', verdict=<AuditVerdict.REFUTED: 'refuted'>, finding=None, finding_surface=None)))) = AuditReadObservation(target=AuditRequestTarget(issue=TrackerIssue(issue_key='audit/criterion', title='fixture issue', ...et.', verdict=<AuditVerdict.REFUTED: 'refuted'>, finding=None, finding_surface=None)))), forge_unavailable_reason=None).forge_report
+
+tests/tracker/test_audit_forge_sweep.py:252: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 18:34:13 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fresh-result site=audit_claim stop_reason=None subtype=success total_cost_usd=None usage=None
+2026-09-12 18:34:13 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fresh-result site=audit_mandate stop_reason=None subtype=success total_cost_usd=None usage=None
+=========================== short test summary info ============================
+FAILED tests/tracker/test_audit_forge_sweep.py::test_a_mandate_report_cannot_replace_the_actual_forge_claim[fake-port]
+FAILED tests/tracker/test_audit_forge_sweep.py::test_a_mandate_report_cannot_replace_the_actual_forge_claim[linear-mcp]
+2 failed, 381 passed in 92.63s (0:01:32)

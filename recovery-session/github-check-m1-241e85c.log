@@ -1,0 +1,757 @@
+check	UNKNOWN STEP	﻿2026-09-12T21:19:39.1938747Z Current runner version: '2.337.0'
+check	UNKNOWN STEP	2026-09-12T21:19:39.1963376Z ##[group]Runner Image Provisioner
+check	UNKNOWN STEP	2026-09-12T21:19:39.1964355Z Hosted Compute Agent
+check	UNKNOWN STEP	2026-09-12T21:19:39.1964983Z Version: 20260828.587
+check	UNKNOWN STEP	2026-09-12T21:19:39.1965624Z Commit: abac92662cab4cc7352de4f9f9d2e2419aad9c29
+check	UNKNOWN STEP	2026-09-12T21:19:39.1966459Z Build Date: 2026-08-28T16:44:25Z
+check	UNKNOWN STEP	2026-09-12T21:19:39.1967191Z Worker ID: {54135269-3f0b-4ee3-8a68-61a81c13560f}
+check	UNKNOWN STEP	2026-09-12T21:19:39.1967979Z Azure Region: eastus
+check	UNKNOWN STEP	2026-09-12T21:19:39.1968580Z ##[endgroup]
+check	UNKNOWN STEP	2026-09-12T21:19:39.1970031Z ##[group]Operating System
+check	UNKNOWN STEP	2026-09-12T21:19:39.1971003Z Ubuntu
+check	UNKNOWN STEP	2026-09-12T21:19:39.1971597Z 24.04.5
+check	UNKNOWN STEP	2026-09-12T21:19:39.1972189Z LTS
+check	UNKNOWN STEP	2026-09-12T21:19:39.1972742Z ##[endgroup]
+check	UNKNOWN STEP	2026-09-12T21:19:39.1973323Z ##[group]Runner Image
+check	UNKNOWN STEP	2026-09-12T21:19:39.1974117Z Image: ubuntu-24.04
+check	UNKNOWN STEP	2026-09-12T21:19:39.1974744Z Version: 20260907.300.1
+check	UNKNOWN STEP	2026-09-12T21:19:39.1976070Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260907.300/images/ubuntu/Ubuntu2404-Readme.md
+check	UNKNOWN STEP	2026-09-12T21:19:39.1977670Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260907.300
+check	UNKNOWN STEP	2026-09-12T21:19:39.1978702Z ##[endgroup]
+check	UNKNOWN STEP	2026-09-12T21:19:39.1979895Z ##[group]GITHUB_TOKEN Permissions
+check	UNKNOWN STEP	2026-09-12T21:19:39.1982581Z Contents: read
+check	UNKNOWN STEP	2026-09-12T21:19:39.1983229Z Metadata: read
+check	UNKNOWN STEP	2026-09-12T21:19:39.1983800Z ##[endgroup]
+check	UNKNOWN STEP	2026-09-12T21:19:39.1985981Z Secret source: Actions
+check	UNKNOWN STEP	2026-09-12T21:19:39.1987067Z Cache mode: write
+check	UNKNOWN STEP	2026-09-12T21:19:39.1988034Z Prepare workflow directory
+check	UNKNOWN STEP	2026-09-12T21:19:39.2317304Z Prepare all required actions
+check	UNKNOWN STEP	2026-09-12T21:19:39.2365367Z Getting action download info
+check	UNKNOWN STEP	2026-09-12T21:19:39.4668802Z Download action repository 'actions/checkout@v4' (SHA:11d5960a326750d5838078e36cf38b85af677262)
+check	UNKNOWN STEP	2026-09-12T21:19:39.5670069Z Download action repository 'astral-sh/setup-uv@v6' (SHA:d0cc045d04ccac9d8b7881df0226f9e82c39688e)
+check	UNKNOWN STEP	2026-09-12T21:19:39.8044816Z Download action repository 'actions/setup-node@v4' (SHA:49933ea5288caeca8642d1e84afbd3f7d6820020)
+check	UNKNOWN STEP	2026-09-12T21:19:39.9923858Z Complete job name: check
+check	UNKNOWN STEP	2026-09-12T21:19:40.0709981Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+check	UNKNOWN STEP	2026-09-12T21:19:40.0719357Z ##[group]Run actions/checkout@v4
+check	UNKNOWN STEP	2026-09-12T21:19:40.0720228Z with:
+check	UNKNOWN STEP	2026-09-12T21:19:40.0720976Z   fetch-depth: 0
+check	UNKNOWN STEP	2026-09-12T21:19:40.0721476Z   repository: YalDan/kodezart
+check	UNKNOWN STEP	2026-09-12T21:19:40.0725293Z   token: ***
+check	UNKNOWN STEP	2026-09-12T21:19:40.0725757Z   ssh-strict: true
+check	UNKNOWN STEP	2026-09-12T21:19:40.0726219Z   ssh-user: git
+check	UNKNOWN STEP	2026-09-12T21:19:40.0726695Z   persist-credentials: true
+check	UNKNOWN STEP	2026-09-12T21:19:40.0727213Z   clean: true
+check	UNKNOWN STEP	2026-09-12T21:19:40.0727691Z   sparse-checkout-cone-mode: true
+check	UNKNOWN STEP	2026-09-12T21:19:40.0728229Z   fetch-tags: false
+check	UNKNOWN STEP	2026-09-12T21:19:40.0728694Z   show-progress: true
+check	UNKNOWN STEP	2026-09-12T21:19:40.0729164Z   lfs: false
+check	UNKNOWN STEP	2026-09-12T21:19:40.0729654Z   submodules: false
+check	UNKNOWN STEP	2026-09-12T21:19:40.0730133Z   set-safe-directory: true
+check	UNKNOWN STEP	2026-09-12T21:19:40.0730813Z   allow-unsafe-pr-checkout: false
+check	UNKNOWN STEP	2026-09-12T21:19:40.0731633Z ##[endgroup]
+check	UNKNOWN STEP	2026-09-12T21:19:40.1790231Z Syncing repository: YalDan/kodezart
+check	UNKNOWN STEP	2026-09-12T21:19:40.1793617Z ##[group]Getting Git version info
+check	UNKNOWN STEP	2026-09-12T21:19:40.1794819Z Working directory is '/home/runner/work/kodezart/kodezart'
+check	UNKNOWN STEP	2026-09-12T21:19:40.1796528Z [command]/usr/bin/git version
+check	UNKNOWN STEP	2026-09-12T21:19:40.1873934Z git version 2.55.0
+check	UNKNOWN STEP	2026-09-12T21:19:40.1904643Z ##[endgroup]
+check	UNKNOWN STEP	2026-09-12T21:19:40.1926511Z Temporarily overriding HOME='/home/runner/work/_temp/bc2fff4a-d8a0-4a36-a207-d6b9cddf01f2' before making global git config changes
+check	UNKNOWN STEP	2026-09-12T21:19:40.1929370Z Adding repository directory to the temporary git global config as a safe directory
+check	UNKNOWN STEP	2026-09-12T21:19:40.1933553Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/kodezart/kodezart
+check	UNKNOWN STEP	2026-09-12T21:19:40.1998817Z Deleting the contents of '/home/runner/work/kodezart/kodezart'
+check	UNKNOWN STEP	2026-09-12T21:19:40.2007255Z ##[group]Initializing the repository
+check	UNKNOWN STEP	2026-09-12T21:19:40.2013292Z [command]/usr/bin/git init /home/runner/work/kodezart/kodezart
+check	UNKNOWN STEP	2026-09-12T21:19:40.2180890Z hint: Using 'master' as the name for the initial branch. This default branch name
+check	UNKNOWN STEP	2026-09-12T21:19:40.2183583Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+check	UNKNOWN STEP	2026-09-12T21:19:40.2185957Z hint: to use in all of your new repositories, which will suppress this warning,
+check	UNKNOWN STEP	2026-09-12T21:19:40.2187667Z hint: call:
+check	UNKNOWN STEP	2026-09-12T21:19:40.2188654Z hint:
+check	UNKNOWN STEP	2026-09-12T21:19:40.2189818Z hint: 	git config --global init.defaultBranch <name>
+check	UNKNOWN STEP	2026-09-12T21:19:40.2191539Z hint:
+check	UNKNOWN STEP	2026-09-12T21:19:40.2192973Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+check	UNKNOWN STEP	2026-09-12T21:19:40.2195153Z hint: 'development'. The just-created branch can be renamed via this command:
+check	UNKNOWN STEP	2026-09-12T21:19:40.2196882Z hint:
+check	UNKNOWN STEP	2026-09-12T21:19:40.2197907Z hint: 	git branch -m <name>
+check	UNKNOWN STEP	2026-09-12T21:19:40.2199231Z hint:
+check	UNKNOWN STEP	2026-09-12T21:19:40.2200876Z hint: Disable this message with "git config set advice.defaultBranchName false"
+check	UNKNOWN STEP	2026-09-12T21:19:40.2203196Z Initialized empty Git repository in /home/runner/work/kodezart/kodezart/.git/
+check	UNKNOWN STEP	2026-09-12T21:19:40.2206975Z [command]/usr/bin/git remote add origin https://github.com/YalDan/kodezart
+check	UNKNOWN STEP	2026-09-12T21:19:40.2246102Z ##[endgroup]
+check	UNKNOWN STEP	2026-09-12T21:19:40.2247734Z ##[group]Disabling automatic garbage collection
+check	UNKNOWN STEP	2026-09-12T21:19:40.2251102Z [command]/usr/bin/git config --local gc.auto 0
+check	UNKNOWN STEP	2026-09-12T21:19:40.2292471Z ##[endgroup]
+check	UNKNOWN STEP	2026-09-12T21:19:40.2294159Z ##[group]Setting up auth
+check	UNKNOWN STEP	2026-09-12T21:19:40.2300720Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+check	UNKNOWN STEP	2026-09-12T21:19:40.2348220Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+check	UNKNOWN STEP	2026-09-12T21:19:40.2777513Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+check	UNKNOWN STEP	2026-09-12T21:19:40.2816983Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+check	UNKNOWN STEP	2026-09-12T21:19:40.3080084Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+check	UNKNOWN STEP	2026-09-12T21:19:40.3123387Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+check	UNKNOWN STEP	2026-09-12T21:19:40.3354487Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+check	UNKNOWN STEP	2026-09-12T21:19:40.3394654Z ##[endgroup]
+check	UNKNOWN STEP	2026-09-12T21:19:40.3396049Z ##[group]Fetching the repository
+check	UNKNOWN STEP	2026-09-12T21:19:40.3408322Z [command]/usr/bin/git -c protocol.version=2 fetch --prune --no-recurse-submodules origin +refs/heads/*:refs/remotes/origin/* +refs/tags/*:refs/tags/* +0d288a0f04db78f68a8dba54a31fc56507891612:refs/remotes/pull/119/merge
+check	UNKNOWN STEP	2026-09-12T21:19:41.6088865Z From https://github.com/YalDan/kodezart
+check	UNKNOWN STEP	2026-09-12T21:19:41.6092181Z  * [new branch]      codex/kod-73-scope-input                 -> origin/codex/kod-73-scope-input
+check	UNKNOWN STEP	2026-09-12T21:19:41.6094655Z  * [new branch]      codex/v03-audit-evidence-consumers       -> origin/codex/v03-audit-evidence-consumers
+check	UNKNOWN STEP	2026-09-12T21:19:41.6097461Z  * [new branch]      codex/v03-audit-record-pr-replay         -> origin/codex/v03-audit-record-pr-replay
+check	UNKNOWN STEP	2026-09-12T21:19:41.6099830Z  * [new branch]      codex/v03-ci-locked-uv                   -> origin/codex/v03-ci-locked-uv
+check	UNKNOWN STEP	2026-09-12T21:19:41.6102360Z  * [new branch]      codex/v03-criteria-mandates-terminal     -> origin/codex/v03-criteria-mandates-terminal
+check	UNKNOWN STEP	2026-09-12T21:19:41.6104834Z  * [new branch]      codex/v03-fire-audit-consumers           -> origin/codex/v03-fire-audit-consumers
+check	UNKNOWN STEP	2026-09-12T21:19:41.6107448Z  * [new branch]      codex/v03-fire-criterion-consumers       -> origin/codex/v03-fire-criterion-consumers
+check	UNKNOWN STEP	2026-09-12T21:19:41.6111062Z  * [new branch]      codex/v03-focused-readers-and-admission  -> origin/codex/v03-focused-readers-and-admission
+check	UNKNOWN STEP	2026-09-12T21:19:41.6113397Z  * [new branch]      codex/v03-gap-revisions-alarms           -> origin/codex/v03-gap-revisions-alarms
+check	UNKNOWN STEP	2026-09-12T21:19:41.6115797Z  * [new branch]      codex/v03-m1-scope-ports                 -> origin/codex/v03-m1-scope-ports
+check	UNKNOWN STEP	2026-09-12T21:19:41.6118142Z  * [new branch]      codex/v03-m4-tracker-lifecycle           -> origin/codex/v03-m4-tracker-lifecycle
+check	UNKNOWN STEP	2026-09-12T21:19:41.6121412Z  * [new branch]      codex/v03-mandate-evidence-terminal      -> origin/codex/v03-mandate-evidence-terminal
+check	UNKNOWN STEP	2026-09-12T21:19:41.6124386Z  * [new branch]      codex/v03-native-audit-fire-preparation  -> origin/codex/v03-native-audit-fire-preparation
+check	UNKNOWN STEP	2026-09-12T21:19:41.6126793Z  * [new branch]      codex/v03-native-ruling-consumers        -> origin/codex/v03-native-ruling-consumers
+check	UNKNOWN STEP	2026-09-12T21:19:41.6128547Z  * [new branch]      codex/v03-native-session-writeback       -> origin/codex/v03-native-session-writeback
+check	UNKNOWN STEP	2026-09-12T21:19:41.6130239Z  * [new branch]      codex/v03-native-supervisor-collectors   -> origin/codex/v03-native-supervisor-collectors
+check	UNKNOWN STEP	2026-09-12T21:19:41.6133055Z  * [new branch]      codex/v03-orchestration-foundations      -> origin/codex/v03-orchestration-foundations
+check	UNKNOWN STEP	2026-09-12T21:19:41.6135166Z  * [new branch]      codex/v03-organize-gap-lane-reports      -> origin/codex/v03-organize-gap-lane-reports
+check	UNKNOWN STEP	2026-09-12T21:19:41.6136941Z  * [new branch]      codex/v03-permissions-and-fixed-admission -> origin/codex/v03-permissions-and-fixed-admission
+check	UNKNOWN STEP	2026-09-12T21:19:41.6138651Z  * [new branch]      codex/v03-readers-prompts-fire-log       -> origin/codex/v03-readers-prompts-fire-log
+check	UNKNOWN STEP	2026-09-12T21:19:41.6140480Z  * [new branch]      codex/v03-ready-spec-escalations         -> origin/codex/v03-ready-spec-escalations
+check	UNKNOWN STEP	2026-09-12T21:19:41.6142005Z  * [new branch]      codex/v03-recovery-integration           -> origin/codex/v03-recovery-integration
+check	UNKNOWN STEP	2026-09-12T21:19:41.6143769Z  * [new branch]      codex/v03-recovery-rulings-writeback     -> origin/codex/v03-recovery-rulings-writeback
+check	UNKNOWN STEP	2026-09-12T21:19:41.6145462Z  * [new branch]      codex/v03-runtime-claims-fire-spec       -> origin/codex/v03-runtime-claims-fire-spec
+check	UNKNOWN STEP	2026-09-12T21:19:41.6146960Z  * [new branch]      codex/v03-runtime-simplification         -> origin/codex/v03-runtime-simplification
+check	UNKNOWN STEP	2026-09-12T21:19:41.6148418Z  * [new branch]      codex/v03-scope-native-consumers         -> origin/codex/v03-scope-native-consumers
+check	UNKNOWN STEP	2026-09-12T21:19:41.6150142Z  * [new branch]      codex/v03-session-admission-ci-delivery  -> origin/codex/v03-session-admission-ci-delivery
+check	UNKNOWN STEP	2026-09-12T21:19:41.6152143Z  * [new branch]      codex/v03-session-failures-and-agent-settings -> origin/codex/v03-session-failures-and-agent-settings
+check	UNKNOWN STEP	2026-09-12T21:19:41.6154072Z  * [new branch]      codex/v03-shared-policies-and-sessions   -> origin/codex/v03-shared-policies-and-sessions
+check	UNKNOWN STEP	2026-09-12T21:19:41.6155841Z  * [new branch]      codex/v03-tracker-identity-admission     -> origin/codex/v03-tracker-identity-admission
+check	UNKNOWN STEP	2026-09-12T21:19:41.6157526Z  * [new branch]      codex/v03-typed-runtime-boundaries       -> origin/codex/v03-typed-runtime-boundaries
+check	UNKNOWN STEP	2026-09-12T21:19:41.6158996Z  * [new branch]      codex/v03-union-record-delivery          -> origin/codex/v03-union-record-delivery
+check	UNKNOWN STEP	2026-09-12T21:19:41.6161027Z  * [new branch]      codex/v03-union-workspace-protection     -> origin/codex/v03-union-workspace-protection
+check	UNKNOWN STEP	2026-09-12T21:19:41.6162685Z  * [new branch]      codex/v03-workflow-phases-and-settings   -> origin/codex/v03-workflow-phases-and-settings
+check	UNKNOWN STEP	2026-09-12T21:19:41.6164110Z  * [new branch]      kodezart/kod86-probes                    -> origin/kodezart/kod86-probes
+check	UNKNOWN STEP	2026-09-12T21:19:41.6165685Z  * [new branch]      kodezart/pr1-adapter-reliability         -> origin/kodezart/pr1-adapter-reliability
+check	UNKNOWN STEP	2026-09-12T21:19:41.6167290Z  * [new branch]      kodezart/pr2-job-lifecycle               -> origin/kodezart/pr2-job-lifecycle
+check	UNKNOWN STEP	2026-09-12T21:19:41.6169902Z  * [new branch]      kodezart/pr5-orchestration-foundation    -> origin/kodezart/pr5-orchestration-foundation
+check	UNKNOWN STEP	2026-09-12T21:19:41.6172847Z  * [new branch]      kodezart/v03-integration                 -> origin/kodezart/v03-integration
+check	UNKNOWN STEP	2026-09-12T21:19:41.6175316Z  * [new branch]      kodezart/v03-kill-class                  -> origin/kodezart/v03-kill-class
+check	UNKNOWN STEP	2026-09-12T21:19:41.6177713Z  * [new branch]      kodezart/v03-lane-delivery               -> origin/kodezart/v03-lane-delivery
+check	UNKNOWN STEP	2026-09-12T21:19:41.6180265Z  * [new branch]      kodezart/v03-lane-lifecycle              -> origin/kodezart/v03-lane-lifecycle
+check	UNKNOWN STEP	2026-09-12T21:19:41.6182753Z  * [new branch]      kodezart/v03-lane-organize               -> origin/kodezart/v03-lane-organize
+check	UNKNOWN STEP	2026-09-12T21:19:41.6184525Z  * [new branch]      kodezart/v03-lane-planner                -> origin/kodezart/v03-lane-planner
+check	UNKNOWN STEP	2026-09-12T21:19:41.6185883Z  * [new branch]      kodezart/v03-lane-runshape               -> origin/kodezart/v03-lane-runshape
+check	UNKNOWN STEP	2026-09-12T21:19:41.6187286Z  * [new branch]      kodezart/v03-live-ownership              -> origin/kodezart/v03-live-ownership
+check	UNKNOWN STEP	2026-09-12T21:19:41.6188754Z  * [new branch]      kodezart/v03-r1-02                       -> origin/kodezart/v03-r1-02
+check	UNKNOWN STEP	2026-09-12T21:19:41.6189986Z  * [new branch]      kodezart/v03-r1-04                       -> origin/kodezart/v03-r1-04
+check	UNKNOWN STEP	2026-09-12T21:19:41.6191886Z  * [new branch]      kodezart/v03-r1-06                       -> origin/kodezart/v03-r1-06
+check	UNKNOWN STEP	2026-09-12T21:19:41.6193607Z  * [new branch]      kodezart/v03-r2-01                       -> origin/kodezart/v03-r2-01
+check	UNKNOWN STEP	2026-09-12T21:19:41.6275467Z  * [new branch]      kodezart/v03-trunk                       -> origin/kodezart/v03-trunk
+check	UNKNOWN STEP	2026-09-12T21:19:41.6277725Z  * [new branch]      kodezart/v03-w2-01                       -> origin/kodezart/v03-w2-01
+check	UNKNOWN STEP	2026-09-12T21:19:41.6279631Z  * [new branch]      kodezart/v03-w2-02                       -> origin/kodezart/v03-w2-02
+check	UNKNOWN STEP	2026-09-12T21:19:41.6281604Z  * [new branch]      kodezart/v03-w2-04                       -> origin/kodezart/v03-w2-04
+check	UNKNOWN STEP	2026-09-12T21:19:41.6282737Z  * [new branch]      main                                     -> origin/main
+check	UNKNOWN STEP	2026-09-12T21:19:41.6283675Z  * [new tag]         v0.1.0                                   -> v0.1.0
+check	UNKNOWN STEP	2026-09-12T21:19:41.6284554Z  * [new tag]         v0.1.1                                   -> v0.1.1
+check	UNKNOWN STEP	2026-09-12T21:19:41.6285559Z  * [new tag]         v0.1.2                                   -> v0.1.2
+check	UNKNOWN STEP	2026-09-12T21:19:41.6286419Z  * [new tag]         v0.1.3                                   -> v0.1.3
+check	UNKNOWN STEP	2026-09-12T21:19:41.6287282Z  * [new tag]         v0.1.4                                   -> v0.1.4
+check	UNKNOWN STEP	2026-09-12T21:19:41.6288152Z  * [new tag]         v0.2.0                                   -> v0.2.0
+check	UNKNOWN STEP	2026-09-12T21:19:41.6289107Z  * [new ref]         0d288a0f04db78f68a8dba54a31fc56507891612 -> pull/119/merge
+check	UNKNOWN STEP	2026-09-12T21:19:41.6291530Z ##[endgroup]
+check	UNKNOWN STEP	2026-09-12T21:19:41.6292337Z ##[group]Determining the checkout info
+check	UNKNOWN STEP	2026-09-12T21:19:41.6293313Z ##[endgroup]
+check	UNKNOWN STEP	2026-09-12T21:19:41.6293843Z [command]/usr/bin/git sparse-checkout disable
+check	UNKNOWN STEP	2026-09-12T21:19:41.6295437Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+check	UNKNOWN STEP	2026-09-12T21:19:41.6297214Z ##[group]Checking out the ref
+check	UNKNOWN STEP	2026-09-12T21:19:41.6298044Z [command]/usr/bin/git checkout --progress --force refs/remotes/pull/119/merge
+check	UNKNOWN STEP	2026-09-12T21:19:41.6715832Z Note: switching to 'refs/remotes/pull/119/merge'.
+check	UNKNOWN STEP	2026-09-12T21:19:41.6716874Z 
+check	UNKNOWN STEP	2026-09-12T21:19:41.6717452Z You are in 'detached HEAD' state. You can look around, make experimental
+check	UNKNOWN STEP	2026-09-12T21:19:41.6718685Z changes and commit them, and you can discard any commits you make in this
+check	UNKNOWN STEP	2026-09-12T21:19:41.6719771Z state without impacting any branches by switching back to a branch.
+check	UNKNOWN STEP	2026-09-12T21:19:41.6720716Z 
+check	UNKNOWN STEP	2026-09-12T21:19:41.6721158Z If you want to create a new branch to retain commits you create, you may
+check	UNKNOWN STEP	2026-09-12T21:19:41.6722192Z do so (now or later) by using -c with the switch command. Example:
+check	UNKNOWN STEP	2026-09-12T21:19:41.6723075Z 
+check	UNKNOWN STEP	2026-09-12T21:19:41.6723327Z   git switch -c <new-branch-name>
+check	UNKNOWN STEP	2026-09-12T21:19:41.6723733Z 
+check	UNKNOWN STEP	2026-09-12T21:19:41.6723976Z Or undo this operation with:
+check	UNKNOWN STEP	2026-09-12T21:19:41.6724340Z 
+check	UNKNOWN STEP	2026-09-12T21:19:41.6724555Z   git switch -
+check	UNKNOWN STEP	2026-09-12T21:19:41.6724822Z 
+check	UNKNOWN STEP	2026-09-12T21:19:41.6725306Z Turn off this advice by setting config variable advice.detachedHead to false
+check	UNKNOWN STEP	2026-09-12T21:19:41.6726000Z 
+check	UNKNOWN STEP	2026-09-12T21:19:41.6726839Z HEAD is now at 0d288a0 Merge 241e85cca03c963ec1ddd17e29f10700d499ce14 into 4661a24b599d75503a997f3ce122f3ad2da77048
+check	UNKNOWN STEP	2026-09-12T21:19:41.6730499Z ##[endgroup]
+check	UNKNOWN STEP	2026-09-12T21:19:41.6779438Z [command]/usr/bin/git log -1 --format=%H
+check	UNKNOWN STEP	2026-09-12T21:19:41.6807834Z 0d288a0f04db78f68a8dba54a31fc56507891612
+check	UNKNOWN STEP	2026-09-12T21:19:41.7142869Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+check	UNKNOWN STEP	2026-09-12T21:19:41.7146453Z ##[group]Run astral-sh/setup-uv@v6
+check	UNKNOWN STEP	2026-09-12T21:19:41.7147048Z with:
+check	UNKNOWN STEP	2026-09-12T21:19:41.7147476Z   enable-cache: true
+check	UNKNOWN STEP	2026-09-12T21:19:41.7147988Z   activate-environment: false
+check	UNKNOWN STEP	2026-09-12T21:19:41.7148671Z   working-directory: /home/runner/work/kodezart/kodezart
+check	UNKNOWN STEP	2026-09-12T21:19:41.7149447Z   server-url: https://github.com
+check	UNKNOWN STEP	2026-09-12T21:19:41.7154487Z   github-token: ***
+check	UNKNOWN STEP	2026-09-12T21:19:41.7155872Z   cache-dependency-glob: **/*requirements*.txt
+check	UNKNOWN STEP	**/*requirements*.in
+check	UNKNOWN STEP	**/*constraints*.txt
+check	UNKNOWN STEP	**/*constraints*.in
+check	UNKNOWN STEP	**/pyproject.toml
+check	UNKNOWN STEP	**/uv.lock
+check	UNKNOWN STEP	**/*.py.lock
+check	UNKNOWN STEP	
+check	UNKNOWN STEP	2026-09-12T21:19:41.7157385Z   restore-cache: true
+check	UNKNOWN STEP	2026-09-12T21:19:41.7157925Z   save-cache: true
+check	UNKNOWN STEP	2026-09-12T21:19:41.7158394Z   prune-cache: true
+check	UNKNOWN STEP	2026-09-12T21:19:41.7158887Z   ignore-nothing-to-cache: false
+check	UNKNOWN STEP	2026-09-12T21:19:41.7159483Z   ignore-empty-workdir: false
+check	UNKNOWN STEP	2026-09-12T21:19:41.7160066Z   add-problem-matchers: true
+check	UNKNOWN STEP	2026-09-12T21:19:41.7160771Z ##[endgroup]
+check	UNKNOWN STEP	2026-09-12T21:19:41.9046987Z (node:2155) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+check	UNKNOWN STEP	2026-09-12T21:19:41.9049266Z (Use `node --trace-deprecation ...` to show where the warning was created)
+check	UNKNOWN STEP	2026-09-12T21:19:41.9168383Z Trying to find version for uv in: /home/runner/work/kodezart/kodezart/uv.toml
+check	UNKNOWN STEP	2026-09-12T21:19:41.9171893Z Could not find file: /home/runner/work/kodezart/kodezart/uv.toml
+check	UNKNOWN STEP	2026-09-12T21:19:41.9174967Z Trying to find version for uv in: /home/runner/work/kodezart/kodezart/pyproject.toml
+check	UNKNOWN STEP	2026-09-12T21:19:41.9199248Z Could not determine uv version from uv.toml or pyproject.toml. Falling back to latest.
+check	UNKNOWN STEP	2026-09-12T21:19:41.9203886Z Getting latest version from GitHub API...
+check	UNKNOWN STEP	2026-09-12T21:19:42.2056424Z manifest-file not provided, reading from local file.
+check	UNKNOWN STEP	2026-09-12T21:19:42.2096371Z manifest-file does not contain version 0.12.13, arch x86_64, platform unknown-linux-gnu. Falling back to GitHub releases.
+check	UNKNOWN STEP	2026-09-12T21:19:42.2101999Z Downloading uv from "https://github.com/astral-sh/uv/releases/download/0.12.13/uv-x86_64-unknown-linux-gnu.tar.gz" ...
+check	UNKNOWN STEP	2026-09-12T21:19:42.4741757Z [command]/usr/bin/tar xz --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/81311ffa-009c-4bd7-a9ea-19aebda7d1d3 -f /home/runner/work/_temp/404ee4e2-9cb4-412e-a63d-15f3ee0c4a76
+check	UNKNOWN STEP	2026-09-12T21:19:42.8340025Z Added /home/runner/.local/bin to the path
+check	UNKNOWN STEP	2026-09-12T21:19:42.8344462Z Added /opt/hostedtoolcache/uv/0.12.13/x86_64 to the path
+check	UNKNOWN STEP	2026-09-12T21:19:42.8369657Z Set UV_CACHE_DIR to /home/runner/work/_temp/setup-uv-cache
+check	UNKNOWN STEP	2026-09-12T21:19:42.8370746Z Successfully installed uv version 0.12.13
+check	UNKNOWN STEP	2026-09-12T21:19:42.8374069Z Searching files using cache dependency glob: /home/runner/work/kodezart/kodezart/**/*requirements*.txt,/home/runner/work/kodezart/kodezart/**/*requirements*.in,/home/runner/work/kodezart/kodezart/**/*constraints*.txt,/home/runner/work/kodezart/kodezart/**/*constraints*.in,/home/runner/work/kodezart/kodezart/**/pyproject.toml,/home/runner/work/kodezart/kodezart/**/uv.lock,/home/runner/work/kodezart/kodezart/**/*.py.lock
+check	UNKNOWN STEP	2026-09-12T21:19:42.8738781Z /home/runner/work/kodezart/kodezart/pyproject.toml
+check	UNKNOWN STEP	2026-09-12T21:19:42.9368994Z /home/runner/work/kodezart/kodezart/uv.lock
+check	UNKNOWN STEP	2026-09-12T21:19:42.9392344Z Found 2 files to hash.
+check	UNKNOWN STEP	2026-09-12T21:19:43.0196599Z Trying to restore uv cache from GitHub Actions cache with key: setup-uv-1-x86_64-unknown-linux-gnu-3.12.3-pruned-e4cf1cdd917cf9b7fffa256dd7f36005e1a0bc942b3869b23ba9ff2dcec48a9d
+check	UNKNOWN STEP	2026-09-12T21:19:43.0724155Z No GitHub Actions cache found for key: setup-uv-1-x86_64-unknown-linux-gnu-3.12.3-pruned-e4cf1cdd917cf9b7fffa256dd7f36005e1a0bc942b3869b23ba9ff2dcec48a9d
+check	UNKNOWN STEP	2026-09-12T21:19:43.0948549Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+check	UNKNOWN STEP	2026-09-12T21:19:43.0949907Z ##[group]Run actions/setup-node@v4
+check	UNKNOWN STEP	2026-09-12T21:19:43.0950164Z with:
+check	UNKNOWN STEP	2026-09-12T21:19:43.0950630Z   node-version: 22
+check	UNKNOWN STEP	2026-09-12T21:19:43.0950849Z   always-auth: false
+check	UNKNOWN STEP	2026-09-12T21:19:43.0951072Z   check-latest: false
+check	UNKNOWN STEP	2026-09-12T21:19:43.0953375Z   token: ***
+check	UNKNOWN STEP	2026-09-12T21:19:43.0953573Z env:
+check	UNKNOWN STEP	2026-09-12T21:19:43.0953809Z   UV_CACHE_DIR: /home/runner/work/_temp/setup-uv-cache
+check	UNKNOWN STEP	2026-09-12T21:19:43.0954112Z ##[endgroup]
+check	UNKNOWN STEP	2026-09-12T21:19:43.2395195Z Found in cache @ /opt/hostedtoolcache/node/22.23.2/x64
+check	UNKNOWN STEP	2026-09-12T21:19:43.2398726Z (node:2180) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+check	UNKNOWN STEP	2026-09-12T21:19:43.2399469Z (Use `node --trace-deprecation ...` to show where the warning was created)
+check	UNKNOWN STEP	2026-09-12T21:19:43.2402300Z ##[group]Environment details
+check	UNKNOWN STEP	2026-09-12T21:19:43.6469158Z node: v22.23.2
+check	UNKNOWN STEP	2026-09-12T21:19:43.6469846Z npm: 10.9.8
+check	UNKNOWN STEP	2026-09-12T21:19:43.6470635Z yarn: 1.22.22
+check	UNKNOWN STEP	2026-09-12T21:19:43.6471487Z ##[endgroup]
+check	UNKNOWN STEP	2026-09-12T21:19:43.6637844Z ##[group]Run make install
+check	UNKNOWN STEP	2026-09-12T21:19:43.6638191Z [36;1mmake install[0m
+check	UNKNOWN STEP	2026-09-12T21:19:43.6688119Z shell: /usr/bin/bash -e {0}
+check	UNKNOWN STEP	2026-09-12T21:19:43.6688399Z env:
+check	UNKNOWN STEP	2026-09-12T21:19:43.6688661Z   UV_CACHE_DIR: /home/runner/work/_temp/setup-uv-cache
+check	UNKNOWN STEP	2026-09-12T21:19:43.6688974Z ##[endgroup]
+check	UNKNOWN STEP	2026-09-12T21:19:43.6805873Z uv sync --all-groups
+check	UNKNOWN STEP	2026-09-12T21:19:43.6875616Z Using CPython 3.12.3 interpreter at: /usr/bin/python3.12
+check	UNKNOWN STEP	2026-09-12T21:19:43.6876398Z Creating virtual environment at: .venv
+check	UNKNOWN STEP	2026-09-12T21:19:43.6919017Z Resolved 180 packages in 0.80ms
+check	UNKNOWN STEP	2026-09-12T21:19:43.7284083Z    Building kodezart @ file:///home/runner/work/kodezart/kodezart
+check	UNKNOWN STEP	2026-09-12T21:19:43.7315121Z warning: `build_system.requires = ["uv-build>=0.10.9,<0.11.0"]` does not contain the current uv version 0.12.13
+check	UNKNOWN STEP	2026-09-12T21:19:43.7957973Z       Built kodezart @ file:///home/runner/work/kodezart/kodezart
+check	UNKNOWN STEP	2026-09-12T21:19:43.8231660Z Downloading botocore (14.0MiB)
+check	UNKNOWN STEP	2026-09-12T21:19:43.8233507Z Downloading cryptography (4.3MiB)
+check	UNKNOWN STEP	2026-09-12T21:19:43.8234473Z Downloading uvloop (4.2MiB)
+check	UNKNOWN STEP	2026-09-12T21:19:43.8237422Z Downloading pydantic-core (2.0MiB)
+check	UNKNOWN STEP	2026-09-12T21:19:43.8499535Z Downloading hf-xet (4.0MiB)
+check	UNKNOWN STEP	2026-09-12T21:19:43.8507214Z Downloading zstandard (5.3MiB)
+check	UNKNOWN STEP	2026-09-12T21:19:43.8511026Z Downloading tokenizers (3.1MiB)
+check	UNKNOWN STEP	2026-09-12T21:19:43.8513818Z Downloading pygments (1.2MiB)
+check	UNKNOWN STEP	2026-09-12T21:19:43.8517889Z Downloading ruff (10.7MiB)
+check	UNKNOWN STEP	2026-09-12T21:19:43.8519211Z Downloading temporalio (11.6MiB)
+check	UNKNOWN STEP	2026-09-12T21:19:43.8521421Z Downloading mypy (13.0MiB)
+check	UNKNOWN STEP	2026-09-12T21:19:43.8523029Z Downloading tiktoken (1.1MiB)
+check	UNKNOWN STEP	2026-09-12T21:19:43.8525166Z Downloading openai (1.1MiB)
+check	UNKNOWN STEP	2026-09-12T21:19:43.8530860Z Downloading claude-agent-sdk (91.0MiB)
+check	UNKNOWN STEP	2026-09-12T21:19:43.8532442Z Downloading aiohttp (1.7MiB)
+check	UNKNOWN STEP	2026-09-12T21:19:43.8539559Z Downloading beartype (1.3MiB)
+check	UNKNOWN STEP	2026-09-12T21:19:43.8541453Z Downloading psycopg-binary (4.9MiB)
+check	UNKNOWN STEP	2026-09-12T21:19:43.8543787Z Downloading grpcio (6.4MiB)
+check	UNKNOWN STEP	2026-09-12T21:19:43.8545775Z Downloading fastavro (3.3MiB)
+check	UNKNOWN STEP	2026-09-12T21:19:44.2542673Z  Downloaded pygments
+check	UNKNOWN STEP	2026-09-12T21:19:44.2548749Z  Downloaded openai
+check	UNKNOWN STEP	2026-09-12T21:19:44.2551084Z  Downloaded tiktoken
+check	UNKNOWN STEP	2026-09-12T21:19:44.2770779Z  Downloaded beartype
+check	UNKNOWN STEP	2026-09-12T21:19:44.2950986Z  Downloaded aiohttp
+check	UNKNOWN STEP	2026-09-12T21:19:44.3424579Z  Downloaded pydantic-core
+check	UNKNOWN STEP	2026-09-12T21:19:44.4528593Z  Downloaded tokenizers
+check	UNKNOWN STEP	2026-09-12T21:19:44.4694797Z  Downloaded fastavro
+check	UNKNOWN STEP	2026-09-12T21:19:44.4942301Z  Downloaded hf-xet
+check	UNKNOWN STEP	2026-09-12T21:19:44.4985328Z  Downloaded uvloop
+check	UNKNOWN STEP	2026-09-12T21:19:44.4987475Z  Downloaded cryptography
+check	UNKNOWN STEP	2026-09-12T21:19:44.5032452Z  Downloaded psycopg-binary
+check	UNKNOWN STEP	2026-09-12T21:19:44.5189507Z  Downloaded zstandard
+check	UNKNOWN STEP	2026-09-12T21:19:44.5465722Z  Downloaded grpcio
+check	UNKNOWN STEP	2026-09-12T21:19:44.6288078Z  Downloaded ruff
+check	UNKNOWN STEP	2026-09-12T21:19:44.6752992Z  Downloaded botocore
+check	UNKNOWN STEP	2026-09-12T21:19:44.7345649Z  Downloaded temporalio
+check	UNKNOWN STEP	2026-09-12T21:19:44.7761362Z  Downloaded mypy
+check	UNKNOWN STEP	2026-09-12T21:19:45.2899587Z  Downloaded claude-agent-sdk
+check	UNKNOWN STEP	2026-09-12T21:19:45.3519416Z Prepared 176 packages in 1.65s
+check	UNKNOWN STEP	2026-09-12T21:19:45.8757177Z Installed 176 packages in 523ms
+check	UNKNOWN STEP	2026-09-12T21:19:45.8758090Z  + ag-ui-protocol==0.1.13
+check	UNKNOWN STEP	2026-09-12T21:19:45.8758551Z  + aiofile==3.9.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8758950Z  + aiohappyeyeballs==2.6.1
+check	UNKNOWN STEP	2026-09-12T21:19:45.8759372Z  + aiohttp==3.13.3
+check	UNKNOWN STEP	2026-09-12T21:19:45.8759737Z  + aiosignal==1.4.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8760119Z  + annotated-doc==0.0.4
+check	UNKNOWN STEP	2026-09-12T21:19:45.8760836Z  + annotated-types==0.7.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8761292Z  + anthropic==0.84.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8761760Z  + anyio==4.12.1
+check	UNKNOWN STEP	2026-09-12T21:19:45.8762235Z  + argcomplete==3.6.3
+check	UNKNOWN STEP	2026-09-12T21:19:45.8762630Z  + attrs==25.4.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8762997Z  + authlib==1.6.9
+check	UNKNOWN STEP	2026-09-12T21:19:45.8763373Z  + beartype==0.22.9
+check	UNKNOWN STEP	2026-09-12T21:19:45.8763739Z  + boto3==1.42.63
+check	UNKNOWN STEP	2026-09-12T21:19:45.8764091Z  + botocore==1.42.63
+check	UNKNOWN STEP	2026-09-12T21:19:45.8764761Z  + cachetools==7.0.4
+check	UNKNOWN STEP	2026-09-12T21:19:45.8765500Z  + caio==0.9.25
+check	UNKNOWN STEP	2026-09-12T21:19:45.8766160Z  + certifi==2026.2.25
+check	UNKNOWN STEP	2026-09-12T21:19:45.8766787Z  + cffi==2.0.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8767865Z  + charset-normalizer==3.4.5
+check	UNKNOWN STEP	2026-09-12T21:19:45.8768639Z  + claude-agent-sdk==0.2.151
+check	UNKNOWN STEP	2026-09-12T21:19:45.8769308Z  + click==8.3.1
+check	UNKNOWN STEP	2026-09-12T21:19:45.8769852Z  + cohere==5.20.7
+check	UNKNOWN STEP	2026-09-12T21:19:45.8770674Z  + cryptography==46.0.5
+check	UNKNOWN STEP	2026-09-12T21:19:45.8771283Z  + cyclopts==4.8.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8771689Z  + distro==1.9.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8772081Z  + dnspython==2.8.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8772473Z  + docstring-parser==0.17.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8772885Z  + docutils==0.22.4
+check	UNKNOWN STEP	2026-09-12T21:19:45.8773412Z  + email-validator==2.3.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8773831Z  + eval-type-backport==0.3.1
+check	UNKNOWN STEP	2026-09-12T21:19:45.8774262Z  + exceptiongroup==1.3.1
+check	UNKNOWN STEP	2026-09-12T21:19:45.8774660Z  + executing==2.2.1
+check	UNKNOWN STEP	2026-09-12T21:19:45.8775008Z  + fastapi==0.135.1
+check	UNKNOWN STEP	2026-09-12T21:19:45.8775355Z  + fastavro==1.12.1
+check	UNKNOWN STEP	2026-09-12T21:19:45.8775702Z  + fastmcp==3.1.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8776048Z  + filelock==3.25.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8776413Z  + frozenlist==1.8.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8776788Z  + fsspec==2026.2.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8777181Z  + genai-prices==0.0.55
+check	UNKNOWN STEP	2026-09-12T21:19:45.8777596Z  + google-auth==2.49.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8777985Z  + google-genai==1.66.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8778449Z  + googleapis-common-protos==1.73.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8779016Z  + griffelib==2.0.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8779384Z  + groq==1.1.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8779721Z  + grpcio==1.78.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8780065Z  + h11==0.16.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8780575Z  + hf-xet==1.3.2
+check	UNKNOWN STEP	2026-09-12T21:19:45.8780934Z  + httpcore==1.0.9
+check	UNKNOWN STEP	2026-09-12T21:19:45.8781291Z  + httptools==0.7.1
+check	UNKNOWN STEP	2026-09-12T21:19:45.8781658Z  + httpx==0.28.1
+check	UNKNOWN STEP	2026-09-12T21:19:45.8782005Z  + httpx-sse==0.4.3
+check	UNKNOWN STEP	2026-09-12T21:19:45.8782376Z  + huggingface-hub==1.6.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8782760Z  + idna==3.11
+check	UNKNOWN STEP	2026-09-12T21:19:45.8783139Z  + importlib-metadata==8.7.1
+check	UNKNOWN STEP	2026-09-12T21:19:45.8783550Z  + iniconfig==2.3.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8783909Z  + invoke==2.2.1
+check	UNKNOWN STEP	2026-09-12T21:19:45.8784297Z  + jaraco-classes==3.4.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8784721Z  + jaraco-context==6.1.1
+check	UNKNOWN STEP	2026-09-12T21:19:45.8785135Z  + jaraco-functools==4.4.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8785797Z  + jeepney==0.9.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8786136Z  + jiter==0.13.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8814254Z  + jmespath==1.1.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8814759Z  + jsonpatch==1.33
+check	UNKNOWN STEP	2026-09-12T21:19:45.8815148Z  + jsonpointer==3.0.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8815517Z  + jsonref==1.1.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8816026Z  + jsonschema==4.26.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8816584Z  + jsonschema-path==0.4.5
+check	UNKNOWN STEP	2026-09-12T21:19:45.8817062Z  + jsonschema-specifications==2025.9.1
+check	UNKNOWN STEP	2026-09-12T21:19:45.8817512Z  + keyring==25.7.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8818080Z  + kodezart==0.2.0 (from file:///home/runner/work/kodezart/kodezart)
+check	UNKNOWN STEP	2026-09-12T21:19:45.8818674Z  + langchain==1.2.10
+check	UNKNOWN STEP	2026-09-12T21:19:45.8819035Z  + langchain-core==1.2.17
+check	UNKNOWN STEP	2026-09-12T21:19:45.8819428Z  + langgraph==1.0.10
+check	UNKNOWN STEP	2026-09-12T21:19:45.8819838Z  + langgraph-checkpoint==4.0.1
+check	UNKNOWN STEP	2026-09-12T21:19:45.8820584Z  + langgraph-checkpoint-postgres==3.0.5
+check	UNKNOWN STEP	2026-09-12T21:19:45.8821035Z  + langgraph-prebuilt==1.0.8
+check	UNKNOWN STEP	2026-09-12T21:19:45.8821469Z  + langgraph-sdk==0.3.9
+check	UNKNOWN STEP	2026-09-12T21:19:45.8821853Z  + langsmith==0.7.14
+check	UNKNOWN STEP	2026-09-12T21:19:45.8822192Z  + librt==0.8.1
+check	UNKNOWN STEP	2026-09-12T21:19:45.8822591Z  + logfire==4.27.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8822971Z  + logfire-api==4.27.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8823375Z  + markdown-it-py==4.0.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8823763Z  + mcp==1.26.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8824083Z  + mdurl==0.1.2
+check	UNKNOWN STEP	2026-09-12T21:19:45.8824402Z  + mistralai==1.12.4
+check	UNKNOWN STEP	2026-09-12T21:19:45.8824760Z  + more-itertools==10.8.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8825142Z  + multidict==6.7.1
+check	UNKNOWN STEP	2026-09-12T21:19:45.8825476Z  + mypy==1.19.1
+check	UNKNOWN STEP	2026-09-12T21:19:45.8825842Z  + mypy-extensions==1.1.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8826226Z  + nexus-rpc==1.2.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8826582Z  + openai==2.26.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8827111Z  + openapi-pydantic==0.5.1
+check	UNKNOWN STEP	2026-09-12T21:19:45.8827838Z  + opentelemetry-api==1.39.1
+check	UNKNOWN STEP	2026-09-12T21:19:45.8828578Z  + opentelemetry-exporter-otlp-proto-common==1.39.1
+check	UNKNOWN STEP	2026-09-12T21:19:45.8829420Z  + opentelemetry-exporter-otlp-proto-http==1.39.1
+check	UNKNOWN STEP	2026-09-12T21:19:45.8830226Z  + opentelemetry-instrumentation==0.60b1
+check	UNKNOWN STEP	2026-09-12T21:19:45.8834839Z  + opentelemetry-instrumentation-httpx==0.60b1
+check	UNKNOWN STEP	2026-09-12T21:19:45.8835474Z  + opentelemetry-proto==1.39.1
+check	UNKNOWN STEP	2026-09-12T21:19:45.8835913Z  + opentelemetry-sdk==1.39.1
+check	UNKNOWN STEP	2026-09-12T21:19:45.8836425Z  + opentelemetry-semantic-conventions==0.60b1
+check	UNKNOWN STEP	2026-09-12T21:19:45.8837013Z  + opentelemetry-util-http==0.60b1
+check	UNKNOWN STEP	2026-09-12T21:19:45.8837450Z  + orjson==3.11.7
+check	UNKNOWN STEP	2026-09-12T21:19:45.8837794Z  + ormsgpack==1.12.2
+check	UNKNOWN STEP	2026-09-12T21:19:45.8838178Z  + packaging==25.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8838518Z  + pathable==0.5.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8838846Z  + pathspec==1.0.4
+check	UNKNOWN STEP	2026-09-12T21:19:45.8839205Z  + platformdirs==4.9.4
+check	UNKNOWN STEP	2026-09-12T21:19:45.8839569Z  + pluggy==1.6.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8839922Z  + prompt-toolkit==3.0.52
+check	UNKNOWN STEP	2026-09-12T21:19:45.8840525Z  + propcache==0.4.1
+check	UNKNOWN STEP	2026-09-12T21:19:45.8840887Z  + protobuf==6.33.5
+check	UNKNOWN STEP	2026-09-12T21:19:45.8841216Z  + psycopg==3.3.3
+check	UNKNOWN STEP	2026-09-12T21:19:45.8841562Z  + psycopg-binary==3.3.3
+check	UNKNOWN STEP	2026-09-12T21:19:45.8841937Z  + psycopg-pool==3.3.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8842330Z  + py-key-value-aio==0.4.4
+check	UNKNOWN STEP	2026-09-12T21:19:45.8842725Z  + pyasn1==0.6.2
+check	UNKNOWN STEP	2026-09-12T21:19:45.8843055Z  + pyasn1-modules==0.4.2
+check	UNKNOWN STEP	2026-09-12T21:19:45.8843414Z  + pycparser==3.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8843748Z  + pydantic==2.12.5
+check	UNKNOWN STEP	2026-09-12T21:19:45.8844079Z  + pydantic-ai==1.67.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8844453Z  + pydantic-ai-slim==1.67.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8844843Z  + pydantic-core==2.41.5
+check	UNKNOWN STEP	2026-09-12T21:19:45.8845215Z  + pydantic-evals==1.67.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8845591Z  + pydantic-graph==1.67.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8845986Z  + pydantic-settings==2.13.1
+check	UNKNOWN STEP	2026-09-12T21:19:45.8846381Z  + pygments==2.19.2
+check	UNKNOWN STEP	2026-09-12T21:19:45.8846712Z  + pyjwt==2.11.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8847061Z  + pyperclip==1.11.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8847479Z  + pytest==9.0.2
+check	UNKNOWN STEP	2026-09-12T21:19:45.8847837Z  + pytest-asyncio==1.3.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8848269Z  + python-dateutil==2.9.0.post0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8848679Z  + python-dotenv==1.2.2
+check	UNKNOWN STEP	2026-09-12T21:19:45.8849059Z  + python-multipart==0.0.22
+check	UNKNOWN STEP	2026-09-12T21:19:45.8849439Z  + pyyaml==6.0.3
+check	UNKNOWN STEP	2026-09-12T21:19:45.8849791Z  + referencing==0.37.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8850545Z  + regex==2026.2.28
+check	UNKNOWN STEP	2026-09-12T21:19:45.8850892Z  + requests==2.32.5
+check	UNKNOWN STEP	2026-09-12T21:19:45.8851232Z  + requests-toolbelt==1.0.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8851599Z  + rich==14.3.3
+check	UNKNOWN STEP	2026-09-12T21:19:45.8851919Z  + rich-rst==1.3.2
+check	UNKNOWN STEP	2026-09-12T21:19:45.8852251Z  + rpds-py==0.30.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8852580Z  + rsa==4.9.1
+check	UNKNOWN STEP	2026-09-12T21:19:45.8852918Z  + ruff==0.15.5
+check	UNKNOWN STEP	2026-09-12T21:19:45.8853252Z  + s3transfer==0.16.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8853608Z  + secretstorage==3.5.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8853988Z  + shellingham==1.5.4
+check	UNKNOWN STEP	2026-09-12T21:19:45.8854328Z  + six==1.17.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8854644Z  + sniffio==1.3.1
+check	UNKNOWN STEP	2026-09-12T21:19:45.8854981Z  + sse-starlette==3.3.2
+check	UNKNOWN STEP	2026-09-12T21:19:45.8855330Z  + starlette==0.52.1
+check	UNKNOWN STEP	2026-09-12T21:19:45.8855658Z  + structlog==25.5.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8856040Z  + temporalio==1.20.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8856402Z  + tenacity==9.1.4
+check	UNKNOWN STEP	2026-09-12T21:19:45.8856758Z  + tiktoken==0.12.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8857101Z  + tokenizers==0.22.2
+check	UNKNOWN STEP	2026-09-12T21:19:45.8857449Z  + tqdm==4.67.3
+check	UNKNOWN STEP	2026-09-12T21:19:45.8857783Z  + typer==0.24.1
+check	UNKNOWN STEP	2026-09-12T21:19:45.8858200Z  + types-protobuf==6.32.1.20260221
+check	UNKNOWN STEP	2026-09-12T21:19:45.8858678Z  + types-requests==2.32.4.20260107
+check	UNKNOWN STEP	2026-09-12T21:19:45.8859118Z  + typing-extensions==4.15.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8859535Z  + typing-inspection==0.4.2
+check	UNKNOWN STEP	2026-09-12T21:19:45.8859937Z  + uncalled-for==0.2.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8860484Z  + urllib3==2.6.3
+check	UNKNOWN STEP	2026-09-12T21:19:45.8860840Z  + uuid-utils==0.14.1
+check	UNKNOWN STEP	2026-09-12T21:19:45.8861189Z  + uvicorn==0.41.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8861527Z  + uvloop==0.22.1
+check	UNKNOWN STEP	2026-09-12T21:19:45.8861870Z  + watchfiles==1.1.1
+check	UNKNOWN STEP	2026-09-12T21:19:45.8862288Z  + wcwidth==0.6.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8862633Z  + websockets==16.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8862973Z  + wrapt==1.17.3
+check	UNKNOWN STEP	2026-09-12T21:19:45.8863307Z  + xai-sdk==1.8.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8863630Z  + xxhash==3.6.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8863950Z  + yarl==1.23.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8864272Z  + zipp==3.23.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8864600Z  + zstandard==0.25.0
+check	UNKNOWN STEP	2026-09-12T21:19:45.8929619Z ##[group]Run make check
+check	UNKNOWN STEP	2026-09-12T21:19:45.8929912Z [36;1mmake check[0m
+check	UNKNOWN STEP	2026-09-12T21:19:45.8968317Z shell: /usr/bin/bash -e {0}
+check	UNKNOWN STEP	2026-09-12T21:19:45.8968578Z env:
+check	UNKNOWN STEP	2026-09-12T21:19:45.8968821Z   UV_CACHE_DIR: /home/runner/work/_temp/setup-uv-cache
+check	UNKNOWN STEP	2026-09-12T21:19:45.8969129Z ##[endgroup]
+check	UNKNOWN STEP	2026-09-12T21:19:45.9095373Z uv run ruff format --check src/ tests/
+check	UNKNOWN STEP	2026-09-12T21:19:46.0667739Z 371 files already formatted
+check	UNKNOWN STEP	2026-09-12T21:19:46.0694819Z uv run ruff check src/ tests/
+check	UNKNOWN STEP	2026-09-12T21:19:46.2024987Z All checks passed!
+check	UNKNOWN STEP	2026-09-12T21:19:46.2050099Z uv run mypy src/
+check	UNKNOWN STEP	2026-09-12T21:20:01.0238857Z Success: no issues found in 178 source files
+check	UNKNOWN STEP	2026-09-12T21:20:01.0584172Z uv run pytest
+check	UNKNOWN STEP	2026-09-12T21:20:10.2535014Z ============================= test session starts ==============================
+check	UNKNOWN STEP	2026-09-12T21:20:10.2535866Z platform linux -- Python 3.12.3, pytest-9.0.2, pluggy-1.6.0
+check	UNKNOWN STEP	2026-09-12T21:20:10.2536550Z rootdir: /home/runner/work/kodezart/kodezart
+check	UNKNOWN STEP	2026-09-12T21:20:10.2537279Z configfile: pyproject.toml
+check	UNKNOWN STEP	2026-09-12T21:20:10.2537706Z testpaths: tests
+check	UNKNOWN STEP	2026-09-12T21:20:10.2538281Z plugins: anyio-4.12.1, langsmith-0.7.14, logfire-4.27.0, asyncio-1.3.0
+check	UNKNOWN STEP	2026-09-12T21:20:10.2539176Z asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=session, asyncio_default_test_loop_scope=function
+check	UNKNOWN STEP	2026-09-12T21:20:10.2539819Z collected 3697 items
+check	UNKNOWN STEP	2026-09-12T21:20:10.2539963Z 
+check	UNKNOWN STEP	2026-09-12T21:20:10.2747581Z tests/adapters/test_claude_client_executor.py .........                  [  0%]
+check	UNKNOWN STEP	2026-09-12T21:20:10.3296366Z tests/adapters/test_claude_executors.py ................................ [  1%]
+check	UNKNOWN STEP	2026-09-12T21:20:10.3869216Z ..................................                                       [  2%]
+check	UNKNOWN STEP	2026-09-12T21:20:10.9271904Z tests/adapters/test_git_artifact_persister.py ......                     [  2%]
+check	UNKNOWN STEP	2026-09-12T21:20:11.4772100Z tests/adapters/test_git_branch_merger.py ..............                  [  2%]
+check	UNKNOWN STEP	2026-09-12T21:20:11.8292256Z tests/adapters/test_git_change_persister.py ...............              [  2%]
+check	UNKNOWN STEP	2026-09-12T21:20:11.8356720Z tests/adapters/test_git_ref_publisher.py .....                           [  3%]
+check	UNKNOWN STEP	2026-09-12T21:20:11.9691530Z tests/adapters/test_git_worktree_provider.py ...........                 [  3%]
+check	UNKNOWN STEP	2026-09-12T21:20:12.0806557Z tests/adapters/test_github_api.py ...................................... [  4%]
+check	UNKNOWN STEP	2026-09-12T21:20:12.3904232Z ...................................................................      [  6%]
+check	UNKNOWN STEP	2026-09-12T21:20:12.4210218Z tests/adapters/test_host_skill_inventory.py ................             [  6%]
+check	UNKNOWN STEP	2026-09-12T21:20:13.4949326Z tests/adapters/test_hosted_mcp_session.py .......                        [  6%]
+check	UNKNOWN STEP	2026-09-12T21:20:13.6406078Z tests/adapters/test_http_mcp_tool_caller.py ............................ [  7%]
+check	UNKNOWN STEP	2026-09-12T21:20:25.6523510Z ...............................                                          [  8%]
+check	UNKNOWN STEP	2026-09-12T21:20:25.8434672Z tests/adapters/test_judgment_scanner.py ................................ [  9%]
+check	UNKNOWN STEP	2026-09-12T21:20:25.9700641Z .....................                                                    [  9%]
+check	UNKNOWN STEP	2026-09-12T21:20:26.0107871Z tests/adapters/test_knowledge_transport.py ..................            [ 10%]
+check	UNKNOWN STEP	2026-09-12T21:20:27.7688831Z tests/adapters/test_mcp_reopen_logging_independent.py ...                [ 10%]
+check	UNKNOWN STEP	2026-09-12T21:20:29.1515945Z tests/adapters/test_mcp_strictness.py ...................                [ 10%]
+check	UNKNOWN STEP	2026-09-12T21:20:29.1564572Z tests/adapters/test_no_forge_delivery.py ...                             [ 11%]
+check	UNKNOWN STEP	2026-09-12T21:20:29.2680123Z tests/adapters/test_outbound_corpus.py ....................              [ 11%]
+check	UNKNOWN STEP	2026-09-12T21:20:29.3663054Z tests/adapters/test_outbound_gate.py .....................               [ 12%]
+check	UNKNOWN STEP	2026-09-12T21:20:29.6741846Z tests/adapters/test_permission_boundary.py ............................. [ 12%]
+check	UNKNOWN STEP	2026-09-12T21:20:30.1743694Z ................................................................         [ 14%]
+check	UNKNOWN STEP	2026-09-12T21:20:30.1934951Z tests/adapters/test_sdk_mapping.py .......................               [ 15%]
+check	UNKNOWN STEP	2026-09-12T21:20:30.2994812Z tests/adapters/test_self_write_replay.py ............................... [ 16%]
+check	UNKNOWN STEP	2026-09-12T21:20:30.6642427Z ...                                                                      [ 16%]
+check	UNKNOWN STEP	2026-09-12T21:20:35.0876596Z tests/adapters/test_stdio_mcp_tool_caller.py ..................          [ 16%]
+check	UNKNOWN STEP	2026-09-12T21:20:35.6922708Z tests/adapters/test_subprocess_git.py .................................. [ 17%]
+check	UNKNOWN STEP	2026-09-12T21:20:35.7444429Z .....                                                                    [ 17%]
+check	UNKNOWN STEP	2026-09-12T21:20:35.8071407Z tests/adapters/test_tool_selection.py .................................. [ 18%]
+check	UNKNOWN STEP	2026-09-12T21:20:36.2296463Z ......................................                                   [ 19%]
+check	UNKNOWN STEP	2026-09-12T21:20:36.2652880Z tests/adapters/test_tracker_self_writes.py .............                 [ 20%]
+check	UNKNOWN STEP	2026-09-12T21:20:36.5030228Z tests/api/v1/test_agent.py .........2026-09-12 21:20:36 [info     ] job_finished                   job_id=ce075801950343b7a6dcfa6b06fdeefc lane=workflow outcome=review_passed_no_pr_adapter
+check	UNKNOWN STEP	2026-09-12T21:20:36.5514174Z .2026-09-12 21:20:36 [info     ] job_finished                   job_id=7639eae782dd4f15ba70caa9051c2a61 lane=workflow outcome=review_passed_no_pr_adapter
+check	UNKNOWN STEP	2026-09-12T21:20:37.1978823Z .....2026-09-12 21:20:37 [info     ] job_finished                   job_id=868dbfe313794bbc938599c3dcdc736a lane=workflow outcome=ci_not_configured
+check	UNKNOWN STEP	2026-09-12T21:20:37.2489734Z .2026-09-12 21:20:37 [info     ] job_finished                   job_id=526568775cdc4e469c5acfaf5b142c6b lane=workflow outcome=ci_not_configured
+check	UNKNOWN STEP	2026-09-12T21:20:37.2975920Z .2026-09-12 21:20:37 [info     ] job_finished                   job_id=0a52f896451c4973b431ee48486b9f03 lane=workflow outcome=merge_divergent
+check	UNKNOWN STEP	2026-09-12T21:20:37.3939774Z .2026-09-12 21:20:37 [info     ] job_finished                   job_id=8913e34f6fec4cd1a386e5560502bfe5 lane=workflow outcome=merge_divergent
+check	UNKNOWN STEP	2026-09-12T21:20:37.4551547Z .2026-09-12 21:20:37 [info     ] job_finished                   job_id=44b4aeb8fda8435580b00e3429436f80 lane=workflow outcome=review_passed_no_pr_adapter
+check	UNKNOWN STEP	2026-09-12T21:20:37.4569518Z .                          [ 20%]
+check	UNKNOWN STEP	2026-09-12T21:20:37.4793606Z tests/api/v1/test_health.py .....                                        [ 20%]
+check	UNKNOWN STEP	2026-09-12T21:20:39.0667275Z tests/api/v1/test_jobs.py .............................................. [ 21%]
+check	UNKNOWN STEP	2026-09-12T21:20:39.2227593Z ..........                                                               [ 22%]
+check	UNKNOWN STEP	2026-09-12T21:20:39.3048329Z tests/api/v1/test_session_policy_base_boundary.py ......                 [ 22%]
+check	UNKNOWN STEP	2026-09-12T21:20:39.5673387Z tests/chains/test_accept_gate.py ......................                  [ 23%]
+check	UNKNOWN STEP	2026-09-12T21:20:40.7394393Z tests/chains/test_criteria_validation.py ..............................  [ 23%]
+check	UNKNOWN STEP	2026-09-12T21:20:40.8007247Z tests/chains/test_dispatch_definitions.py .............                  [ 24%]
+check	UNKNOWN STEP	2026-09-12T21:20:41.3732672Z tests/chains/test_outbound_gating.py ..............                      [ 24%]
+check	UNKNOWN STEP	2026-09-12T21:20:41.7529568Z tests/chains/test_ralph_loop.py ........................................ [ 25%]
+check	UNKNOWN STEP	2026-09-12T21:20:41.9964048Z ........                                                                 [ 25%]
+check	UNKNOWN STEP	2026-09-12T21:20:43.3058471Z tests/chains/test_ralph_workflow.py .................................... [ 26%]
+check	UNKNOWN STEP	2026-09-12T21:20:47.6163797Z ........................................................................ [ 28%]
+check	UNKNOWN STEP	2026-09-12T21:20:47.8370861Z ......                                                                   [ 28%]
+check	UNKNOWN STEP	2026-09-12T21:20:47.8699929Z tests/chains/test_remediation.py .......                                 [ 29%]
+check	UNKNOWN STEP	2026-09-12T21:20:47.9133094Z tests/chains/test_retry_floor_wiring.py ......                           [ 29%]
+check	UNKNOWN STEP	2026-09-12T21:20:48.5227663Z tests/chains/test_session_policy_composition.py ..                       [ 29%]
+check	UNKNOWN STEP	2026-09-12T21:20:48.6401812Z tests/chains/test_shorthand_url_resolution.py ...                        [ 29%]
+check	UNKNOWN STEP	2026-09-12T21:20:49.0738973Z tests/chains/test_ticket_generation.py ................................. [ 30%]
+check	UNKNOWN STEP	2026-09-12T21:20:49.2772635Z ....                                                                     [ 30%]
+check	UNKNOWN STEP	2026-09-12T21:20:49.3727668Z tests/core/test_bare_mode.py .                                           [ 30%]
+check	UNKNOWN STEP	2026-09-12T21:20:49.5058516Z tests/core/test_config.py ..........................                     [ 31%]
+check	UNKNOWN STEP	2026-09-12T21:20:49.5177244Z tests/core/test_config_error_redaction.py ....                           [ 31%]
+check	UNKNOWN STEP	2026-09-12T21:20:49.5540933Z tests/core/test_credential_shapes.py .........                           [ 31%]
+check	UNKNOWN STEP	2026-09-12T21:20:49.6619497Z tests/core/test_docs_prompt_knobs.py ...........                         [ 31%]
+check	UNKNOWN STEP	2026-09-12T21:20:49.6872712Z tests/core/test_error_egress.py ................................         [ 32%]
+check	UNKNOWN STEP	2026-09-12T21:20:49.7312664Z tests/core/test_knowledge_connection.py ................................ [ 33%]
+check	UNKNOWN STEP	2026-09-12T21:20:50.0185755Z ..............................                                           [ 34%]
+check	UNKNOWN STEP	2026-09-12T21:20:50.1335312Z tests/core/test_knowledge_grant.py .........                             [ 34%]
+check	UNKNOWN STEP	2026-09-12T21:20:51.7358563Z tests/core/test_log_emitter.py .......                                   [ 34%]
+check	UNKNOWN STEP	2026-09-12T21:20:51.7378007Z tests/core/test_logging.py .                                             [ 34%]
+check	UNKNOWN STEP	2026-09-12T21:20:51.7892826Z tests/core/test_logging_chain.py .....                                   [ 34%]
+check	UNKNOWN STEP	2026-09-12T21:20:51.8834829Z tests/core/test_notion_credential.py ......                              [ 35%]
+check	UNKNOWN STEP	2026-09-12T21:20:52.1202765Z tests/core/test_prompt_boot.py ......                                    [ 35%]
+check	UNKNOWN STEP	2026-09-12T21:20:52.2494542Z tests/core/test_retry.py .............................                   [ 36%]
+check	UNKNOWN STEP	2026-09-12T21:20:52.2641180Z tests/core/test_stream_drain.py ........                                 [ 36%]
+check	UNKNOWN STEP	2026-09-12T21:20:52.3055000Z tests/core/test_surface_lease_config.py ........                         [ 36%]
+check	UNKNOWN STEP	2026-09-12T21:20:52.4090883Z tests/core/test_tracker_credential.py .......                            [ 36%]
+check	UNKNOWN STEP	2026-09-12T21:20:52.8979899Z tests/core/test_tracker_settings.py .................................... [ 37%]
+check	UNKNOWN STEP	2026-09-12T21:20:54.3466063Z ....................................................                     [ 39%]
+check	UNKNOWN STEP	2026-09-12T21:20:54.3514670Z tests/docs/test_api_event_reference.py ....                              [ 39%]
+check	UNKNOWN STEP	2026-09-12T21:20:54.8779957Z tests/docs/test_documented_surface.py ....................               [ 39%]
+check	UNKNOWN STEP	2026-09-12T21:20:54.9439233Z tests/docs/test_parity_checklist.py .........                            [ 39%]
+check	UNKNOWN STEP	2026-09-12T21:20:54.9768439Z tests/docs/test_setup_guide.py ...............                           [ 40%]
+check	UNKNOWN STEP	2026-09-12T21:20:54.9786821Z tests/domain/test_agent.py ..                                            [ 40%]
+check	UNKNOWN STEP	2026-09-12T21:20:56.0209375Z tests/domain/test_base_resolution.py ............................        [ 41%]
+check	UNKNOWN STEP	2026-09-12T21:20:56.0301415Z tests/domain/test_base_scope.py ...........                              [ 41%]
+check	UNKNOWN STEP	2026-09-12T21:20:56.0408005Z tests/domain/test_base_staleness.py ......                               [ 41%]
+check	UNKNOWN STEP	2026-09-12T21:20:56.0448137Z tests/domain/test_branch.py .....                                        [ 41%]
+check	UNKNOWN STEP	2026-09-12T21:20:56.3437409Z tests/domain/test_comment_markers.py ...............                     [ 42%]
+check	UNKNOWN STEP	2026-09-12T21:20:56.3694690Z tests/domain/test_criteria_feasibility.py .............................. [ 42%]
+check	UNKNOWN STEP	2026-09-12T21:20:56.4002405Z ......................................                                   [ 44%]
+check	UNKNOWN STEP	2026-09-12T21:20:56.4059709Z tests/domain/test_criteria_grading.py .......                            [ 44%]
+check	UNKNOWN STEP	2026-09-12T21:20:56.7855893Z tests/domain/test_criterion_identity.py ........                         [ 44%]
+check	UNKNOWN STEP	2026-09-12T21:20:56.8096837Z tests/domain/test_dispatch_predicate.py ................................ [ 45%]
+check	UNKNOWN STEP	2026-09-12T21:20:56.8124301Z ...                                                                      [ 45%]
+check	UNKNOWN STEP	2026-09-12T21:20:56.8302525Z tests/domain/test_git_url.py .........................                   [ 46%]
+check	UNKNOWN STEP	2026-09-12T21:20:57.0173701Z tests/domain/test_no_ref_parsing.py ....                                 [ 46%]
+check	UNKNOWN STEP	2026-09-12T21:20:57.0357829Z tests/domain/test_operation_optionality.py .......................       [ 46%]
+check	UNKNOWN STEP	2026-09-12T21:20:57.0504692Z tests/domain/test_outcome.py ....................                        [ 47%]
+check	UNKNOWN STEP	2026-09-12T21:20:57.0633082Z tests/domain/test_scope_container.py ...............                     [ 47%]
+check	UNKNOWN STEP	2026-09-12T21:20:57.0769185Z tests/domain/test_scope_ref.py .................                         [ 48%]
+check	UNKNOWN STEP	2026-09-12T21:20:57.2336559Z tests/domain/test_self_write_retention.py ..                             [ 48%]
+check	UNKNOWN STEP	2026-09-12T21:20:57.2427315Z tests/domain/test_stall_report.py .........                              [ 48%]
+check	UNKNOWN STEP	2026-09-12T21:20:57.2550906Z tests/domain/test_surface_lease.py .................                     [ 48%]
+check	UNKNOWN STEP	2026-09-12T21:20:57.2577391Z tests/domain/test_surface_lease_error.py ...                             [ 49%]
+check	UNKNOWN STEP	2026-09-12T21:20:57.2593007Z tests/integration/test_checkpointer_postgres.py ss                       [ 49%]
+check	UNKNOWN STEP	2026-09-12T21:20:57.3864610Z tests/integration/test_criteria_oracle.py ...                            [ 49%]
+check	UNKNOWN STEP	2026-09-12T21:20:57.3879383Z tests/integration/test_live_criteria_probes.py ss                        [ 49%]
+check	UNKNOWN STEP	2026-09-12T21:20:57.4335321Z Call stack:
+check	UNKNOWN STEP	2026-09-12T21:20:57.4341739Z   File "/usr/lib/python3.12/threading.py", line 1030, in _bootstrap
+check	UNKNOWN STEP	2026-09-12T21:20:57.4342630Z     self._bootstrap_inner()
+check	UNKNOWN STEP	2026-09-12T21:20:57.4343500Z   File "/usr/lib/python3.12/threading.py", line 1073, in _bootstrap_inner
+check	UNKNOWN STEP	2026-09-12T21:20:57.4344226Z     self.run()
+check	UNKNOWN STEP	2026-09-12T21:20:57.4344881Z   File "/usr/lib/python3.12/threading.py", line 1010, in run
+check	UNKNOWN STEP	2026-09-12T21:20:57.4345643Z     self._target(*self._args, **self._kwargs)
+check	UNKNOWN STEP	2026-09-12T21:20:57.4346259Z   File "/usr/lib/python3.12/concurrent/futures/thread.py", line 92, in _worker
+check	UNKNOWN STEP	2026-09-12T21:20:57.4346952Z     work_item.run()
+check	UNKNOWN STEP	2026-09-12T21:20:57.4347346Z   File "/usr/lib/python3.12/concurrent/futures/thread.py", line 58, in run
+check	UNKNOWN STEP	2026-09-12T21:20:57.4347799Z     result = self.fn(*self.args, **self.kwargs)
+check	UNKNOWN STEP	2026-09-12T21:20:57.4354635Z tests/integration/test_self_running_chain.py ...                         [ 49%]
+check	UNKNOWN STEP	2026-09-12T21:20:57.4376406Z tests/integration/test_session_resume.py sss                             [ 49%]
+check	UNKNOWN STEP	2026-09-12T21:20:59.3281778Z tests/integration/test_stacked_scope.py .....                            [ 49%]
+check	UNKNOWN STEP	2026-09-12T21:21:02.3451138Z tests/integration/test_workflow_e2e.py .................                 [ 49%]
+check	UNKNOWN STEP	2026-09-12T21:21:02.3489547Z tests/probes/test_ab_failure_capture.py ...                              [ 50%]
+check	UNKNOWN STEP	2026-09-12T21:21:02.3498451Z tests/probes/test_ab_smoke.py s                                          [ 50%]
+check	UNKNOWN STEP	2026-09-12T21:21:02.3643656Z tests/probes/test_harness_capabilities.py .ssssss                        [ 50%]
+check	UNKNOWN STEP	2026-09-12T21:21:02.3709051Z tests/probes/test_strict_output_enforcement.py .s                        [ 50%]
+check	UNKNOWN STEP	2026-09-12T21:21:02.3717647Z tests/probes/test_v5_orchestration_live.py s                             [ 50%]
+check	UNKNOWN STEP	2026-09-12T21:21:02.4237693Z tests/prompts/test_absence_bindings.py ................................  [ 51%]
+check	UNKNOWN STEP	2026-09-12T21:21:02.4946578Z tests/prompts/test_criteria_generation_prompts.py ...............        [ 51%]
+check	UNKNOWN STEP	2026-09-12T21:21:02.5182639Z tests/prompts/test_initiative_target_date.py .....                       [ 51%]
+check	UNKNOWN STEP	2026-09-12T21:21:02.6579250Z tests/prompts/test_knowledge_map.py ..........................           [ 52%]
+check	UNKNOWN STEP	2026-09-12T21:21:02.6616675Z tests/prompts/test_minimal_floor.py ....                                 [ 52%]
+check	UNKNOWN STEP	2026-09-12T21:21:02.7874445Z tests/prompts/test_operation_config.py ................................. [ 53%]
+check	UNKNOWN STEP	2026-09-12T21:21:02.8633818Z .................                                                        [ 53%]
+check	UNKNOWN STEP	2026-09-12T21:21:02.9538914Z tests/prompts/test_pass_roster.py ...................................... [ 54%]
+check	UNKNOWN STEP	2026-09-12T21:21:03.4555236Z ........................................                                 [ 56%]
+check	UNKNOWN STEP	2026-09-12T21:21:03.4805822Z tests/prompts/test_principal_roles.py ..........                         [ 56%]
+check	UNKNOWN STEP	2026-09-12T21:21:03.5801311Z tests/prompts/test_prompt_wiring.py .................................... [ 57%]
+check	UNKNOWN STEP	2026-09-12T21:21:03.6937488Z .................                                                        [ 57%]
+check	UNKNOWN STEP	2026-09-12T21:21:03.7677366Z tests/prompts/test_resolvable_identifiers.py ...........                 [ 58%]
+check	UNKNOWN STEP	2026-09-12T21:21:03.8896341Z tests/prompts/test_rollback.py ........                                  [ 58%]
+check	UNKNOWN STEP	2026-09-12T21:21:04.0437408Z tests/prompts/test_session_policy.py ................................... [ 59%]
+check	UNKNOWN STEP	2026-09-12T21:21:15.9963536Z .......................................                                  [ 60%]
+check	UNKNOWN STEP	2026-09-12T21:21:16.0305831Z tests/prompts/test_set_completeness.py .........                         [ 60%]
+check	UNKNOWN STEP	2026-09-12T21:21:16.1516102Z tests/prompts/test_skills_loadouts.py .....................              [ 61%]
+check	UNKNOWN STEP	2026-09-12T21:21:16.3138587Z tests/prompts/test_v5_fragments.py ............................          [ 61%]
+check	UNKNOWN STEP	2026-09-12T21:21:16.3601727Z tests/prompts/test_v5_lenses.py ........                                 [ 62%]
+check	UNKNOWN STEP	2026-09-12T21:21:16.4707518Z tests/prompts/test_v5_orchestration.py ....................              [ 62%]
+check	UNKNOWN STEP	2026-09-12T21:21:16.6930875Z tests/prompts/test_v5_style_rules.py ................................... [ 63%]
+check	UNKNOWN STEP	2026-09-12T21:21:17.3616266Z ........................................................................ [ 65%]
+check	UNKNOWN STEP	2026-09-12T21:21:18.0379631Z ........................................................................ [ 67%]
+check	UNKNOWN STEP	2026-09-12T21:21:18.4413049Z ............................................                             [ 68%]
+check	UNKNOWN STEP	2026-09-12T21:21:18.6690956Z tests/prompts/test_v5_wiring.py ........................................ [ 69%]
+check	UNKNOWN STEP	2026-09-12T21:21:18.8195403Z .....................                                                    [ 70%]
+check	UNKNOWN STEP	2026-09-12T21:21:18.8247189Z tests/services/test_agent_service.py ...                                 [ 70%]
+check	UNKNOWN STEP	2026-09-12T21:21:18.9256797Z tests/services/test_claim_heartbeat.py .....................             [ 70%]
+check	UNKNOWN STEP	2026-09-12T21:21:18.9276861Z tests/services/test_dispatch_delta_cancel_independent.py .               [ 70%]
+check	UNKNOWN STEP	2026-09-12T21:21:18.9568516Z Call stack:
+check	UNKNOWN STEP	2026-09-12T21:21:18.9570620Z   File "/usr/lib/python3.12/threading.py", line 1030, in _bootstrap
+check	UNKNOWN STEP	2026-09-12T21:21:18.9571055Z     self._bootstrap_inner()
+check	UNKNOWN STEP	2026-09-12T21:21:18.9571719Z   File "/usr/lib/python3.12/threading.py", line 1073, in _bootstrap_inner
+check	UNKNOWN STEP	2026-09-12T21:21:18.9572201Z     self.run()
+check	UNKNOWN STEP	2026-09-12T21:21:18.9572544Z   File "/usr/lib/python3.12/threading.py", line 1010, in run
+check	UNKNOWN STEP	2026-09-12T21:21:18.9573086Z     self._target(*self._args, **self._kwargs)
+check	UNKNOWN STEP	2026-09-12T21:21:18.9573944Z   File "/usr/lib/python3.12/concurrent/futures/thread.py", line 92, in _worker
+check	UNKNOWN STEP	2026-09-12T21:21:18.9574355Z     work_item.run()
+check	UNKNOWN STEP	2026-09-12T21:21:19.1506173Z tests/services/test_dispatch_pass.py .............................       [ 71%]
+check	UNKNOWN STEP	2026-09-12T21:21:19.2757880Z tests/services/test_fire_context.py .....................                [ 72%]
+check	UNKNOWN STEP	2026-09-12T21:21:19.3759585Z tests/services/test_fire_dispatcher.py ................................. [ 73%]
+check	UNKNOWN STEP	2026-09-12T21:21:19.5667692Z ..................................................                       [ 74%]
+check	UNKNOWN STEP	2026-09-12T21:21:19.7285397Z tests/services/test_lifecycle_watcher.py ............................... [ 75%]
+check	UNKNOWN STEP	2026-09-12T21:21:19.7362323Z Message: {'issue_key': 'K-1', 'event': 'lifecycle_in_progress', 'level': 'info', 'logger': 'kodezart.services.tracker_lifecycle', 'timestamp': '2026-09-12T21:21:19.734309Z'}
+check	UNKNOWN STEP	2026-09-12T21:21:19.7363061Z Arguments: ()
+check	UNKNOWN STEP	2026-09-12T21:21:19.7670532Z .........                                                                [ 75%]
+check	UNKNOWN STEP	2026-09-12T21:21:19.8272092Z tests/services/test_pass_delta_cancellation.py ........                  [ 75%]
+check	UNKNOWN STEP	2026-09-12T21:21:19.9126255Z tests/services/test_pass_gate.py .....................................   [ 76%]
+check	UNKNOWN STEP	2026-09-12T21:21:20.1747476Z tests/services/test_pass_scheduler.py ........................           [ 77%]
+check	UNKNOWN STEP	2026-09-12T21:21:20.1822557Z tests/services/test_prompt_delta_cancel_independent.py .                 [ 77%]
+check	UNKNOWN STEP	2026-09-12T21:21:20.4781649Z tests/services/test_prompt_pass.py ......................                [ 78%]
+check	UNKNOWN STEP	2026-09-12T21:21:20.8759512Z tests/services/test_prompt_passes.py .........................           [ 78%]
+check	UNKNOWN STEP	2026-09-12T21:21:20.9178625Z tests/services/test_run_recorder.py .............................        [ 79%]
+check	UNKNOWN STEP	2026-09-12T21:21:20.9911396Z tests/services/test_run_surface_lease.py ...................             [ 80%]
+check	UNKNOWN STEP	2026-09-12T21:21:21.5664765Z tests/services/test_session_grant_threading.py ...................       [ 80%]
+check	UNKNOWN STEP	2026-09-12T21:21:21.6301590Z tests/services/test_tracker_lifecycle.py .........................       [ 81%]
+check	UNKNOWN STEP	2026-09-12T21:21:21.7319999Z tests/test_composition_root.py ................                          [ 81%]
+check	UNKNOWN STEP	2026-09-12T21:21:22.3191972Z tests/test_forge_origin_selection.py .............                       [ 82%]
+check	UNKNOWN STEP	2026-09-12T21:21:22.3671379Z tests/test_lane_verification.py ......                                   [ 82%]
+check	UNKNOWN STEP	2026-09-12T21:21:22.4588868Z tests/test_release.py ....                                               [ 82%]
+check	UNKNOWN STEP	2026-09-12T21:21:22.5197370Z tests/tracker/test_comment_expected.py ...................               [ 82%]
+check	UNKNOWN STEP	2026-09-12T21:21:22.5414468Z tests/tracker/test_comment_expected_independent.py ......                [ 82%]
+check	UNKNOWN STEP	2026-09-12T21:21:22.5473166Z tests/tracker/test_criterion_family_aliases.py ....                      [ 83%]
+check	UNKNOWN STEP	2026-09-12T21:21:22.5516630Z tests/tracker/test_criterion_family_identity.py ...                      [ 83%]
+check	UNKNOWN STEP	2026-09-12T21:21:22.5616212Z tests/tracker/test_criterion_reader.py .....                             [ 83%]
+check	UNKNOWN STEP	2026-09-12T21:21:22.5838135Z tests/tracker/test_criterion_reader_boundary.py ............             [ 83%]
+check	UNKNOWN STEP	2026-09-12T21:21:22.5966164Z tests/tracker/test_issue_classification_reads.py .............           [ 83%]
+check	UNKNOWN STEP	2026-09-12T21:21:22.6448319Z tests/tracker/test_linear_mcp_tracker.py ............................... [ 84%]
+check	UNKNOWN STEP	2026-09-12T21:21:22.7229331Z ...............................                                          [ 85%]
+check	UNKNOWN STEP	2026-09-12T21:21:22.7354429Z tests/tracker/test_linear_tool_arguments.py ......                       [ 85%]
+check	UNKNOWN STEP	2026-09-12T21:21:22.7815861Z tests/tracker/test_linear_tool_roster.py .....                           [ 85%]
+check	UNKNOWN STEP	2026-09-12T21:21:22.8067973Z tests/tracker/test_linear_wire_shapes.py ............................... [ 86%]
+check	UNKNOWN STEP	2026-09-12T21:21:22.8095592Z ..                                                                       [ 86%]
+check	UNKNOWN STEP	2026-09-12T21:21:22.8338500Z tests/tracker/test_marker_configuration.py .....                         [ 86%]
+check	UNKNOWN STEP	2026-09-12T21:21:22.8515733Z tests/tracker/test_native_read_configuration.py .............            [ 87%]
+check	UNKNOWN STEP	2026-09-12T21:21:22.8545802Z tests/tracker/test_native_read_constructor.py ..                         [ 87%]
+check	UNKNOWN STEP	2026-09-12T21:21:22.9311071Z tests/tracker/test_ownership_arbitration.py ............................ [ 88%]
+check	UNKNOWN STEP	2026-09-12T21:21:22.9321118Z                                                                          [ 88%]
+check	UNKNOWN STEP	2026-09-12T21:21:22.9652959Z tests/tracker/test_protected_comment_retry.py ..........                 [ 88%]
+check	UNKNOWN STEP	2026-09-12T21:21:22.9673507Z tests/tracker/test_scope_alias_identity.py .                             [ 88%]
+check	UNKNOWN STEP	2026-09-12T21:21:22.9745785Z tests/tracker/test_scope_ancestor_identity.py ....                       [ 88%]
+check	UNKNOWN STEP	2026-09-12T21:21:23.0337335Z tests/tracker/test_scope_reads.py ...................................... [ 89%]
+check	UNKNOWN STEP	2026-09-12T21:21:23.0832083Z .............................                                            [ 90%]
+check	UNKNOWN STEP	2026-09-12T21:21:23.1478811Z tests/tracker/test_tracker_boot.py ....................................  [ 91%]
+check	UNKNOWN STEP	2026-09-12T21:21:24.1383915Z tests/tracker/test_tracker_boot_wiring.py ..................             [ 91%]
+check	UNKNOWN STEP	2026-09-12T21:21:24.1988169Z tests/tracker/test_tracker_conformance.py .............................. [ 92%]
+check	UNKNOWN STEP	2026-09-12T21:21:24.3583707Z ........................................................................ [ 94%]
+check	UNKNOWN STEP	2026-09-12T21:21:24.5136769Z ........................................................................ [ 96%]
+check	UNKNOWN STEP	2026-09-12T21:21:24.6258655Z .............................................                            [ 97%]
+check	UNKNOWN STEP	2026-09-12T21:21:24.6375521Z tests/types/test_output_descriptions.py ............                     [ 98%]
+check	UNKNOWN STEP	2026-09-12T21:21:25.1315873Z tests/types/test_wire_renames.py ......                                  [ 98%]
+check	UNKNOWN STEP	2026-09-12T21:21:25.1862333Z tests/types/test_wire_schemas.py ............................            [ 98%]
+check	UNKNOWN STEP	2026-09-12T21:21:25.2082437Z tests/types/test_writable_surface.py ..........................          [ 99%]
+check	UNKNOWN STEP	2026-09-12T21:21:26.3068474Z tests/workflows/test_investigate_fan_in.py ...........                   [100%]
+check	UNKNOWN STEP	2026-09-12T21:21:26.3068993Z 
+check	UNKNOWN STEP	2026-09-12T21:21:26.3069410Z ================= 3681 passed, 16 skipped in 80.57s (0:01:20) ==================
+check	UNKNOWN STEP	2026-09-12T21:21:26.9980743Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+check	UNKNOWN STEP	2026-09-12T21:21:26.9982029Z Post job cleanup.
+check	UNKNOWN STEP	2026-09-12T21:21:27.1254386Z (node:8316) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+check	UNKNOWN STEP	2026-09-12T21:21:27.1255310Z (Use `node --trace-deprecation ...` to show where the warning was created)
+check	UNKNOWN STEP	2026-09-12T21:21:27.1440999Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+check	UNKNOWN STEP	2026-09-12T21:21:27.1442452Z Post job cleanup.
+check	UNKNOWN STEP	2026-09-12T21:21:27.2801605Z Pruning cache...
+check	UNKNOWN STEP	2026-09-12T21:21:27.2817171Z (node:8324) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+check	UNKNOWN STEP	2026-09-12T21:21:27.2819059Z (Use `node --trace-deprecation ...` to show where the warning was created)
+check	UNKNOWN STEP	2026-09-12T21:21:27.2893405Z [command]/opt/hostedtoolcache/uv/0.12.13/x86_64/uv cache prune --ci
+check	UNKNOWN STEP	2026-09-12T21:21:27.2982321Z Pruning cache at: /home/runner/work/_temp/setup-uv-cache
+check	UNKNOWN STEP	2026-09-12T21:21:27.6170856Z Removed 14820 files (2.4MiB)
+check	UNKNOWN STEP	2026-09-12T21:21:27.6199853Z Saving cache path: /home/runner/work/_temp/setup-uv-cache
+check	UNKNOWN STEP	2026-09-12T21:21:27.6365997Z [command]/usr/bin/tar --posix -cf cache.tzst --exclude cache.tzst -P -C /home/runner/work/kodezart/kodezart --files-from manifest.txt --use-compress-program zstdmt
+check	UNKNOWN STEP	2026-09-12T21:21:27.7501126Z (node:8324) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+check	UNKNOWN STEP	2026-09-12T21:21:27.7822444Z Sent 21744 of 21744 (100.0%), 0.5 MBs/sec
+check	UNKNOWN STEP	2026-09-12T21:21:27.8821498Z cache saved with the key: setup-uv-1-x86_64-unknown-linux-gnu-3.12.3-pruned-e4cf1cdd917cf9b7fffa256dd7f36005e1a0bc942b3869b23ba9ff2dcec48a9d
+check	UNKNOWN STEP	2026-09-12T21:21:27.8989158Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+check	UNKNOWN STEP	2026-09-12T21:21:27.8990694Z Post job cleanup.
+check	UNKNOWN STEP	2026-09-12T21:21:27.9861858Z [command]/usr/bin/git version
+check	UNKNOWN STEP	2026-09-12T21:21:27.9908549Z git version 2.55.0
+check	UNKNOWN STEP	2026-09-12T21:21:27.9955740Z Temporarily overriding HOME='/home/runner/work/_temp/148df52c-1daf-4878-bbb1-37bc26742a32' before making global git config changes
+check	UNKNOWN STEP	2026-09-12T21:21:27.9958297Z Adding repository directory to the temporary git global config as a safe directory
+check	UNKNOWN STEP	2026-09-12T21:21:27.9962442Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/kodezart/kodezart
+check	UNKNOWN STEP	2026-09-12T21:21:28.0005080Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+check	UNKNOWN STEP	2026-09-12T21:21:28.0042926Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+check	UNKNOWN STEP	2026-09-12T21:21:28.0301273Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+check	UNKNOWN STEP	2026-09-12T21:21:28.0329536Z http.https://github.com/.extraheader
+check	UNKNOWN STEP	2026-09-12T21:21:28.0342720Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
+check	UNKNOWN STEP	2026-09-12T21:21:28.0377562Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+check	UNKNOWN STEP	2026-09-12T21:21:28.0655493Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+check	UNKNOWN STEP	2026-09-12T21:21:28.0700170Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+check	UNKNOWN STEP	2026-09-12T21:21:28.1137147Z Cleaning up orphan processes
+check	UNKNOWN STEP	2026-09-12T21:21:28.1523576Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-node@v4, astral-sh/setup-uv@v6. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/

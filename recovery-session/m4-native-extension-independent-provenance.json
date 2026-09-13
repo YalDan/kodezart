@@ -1,0 +1,27 @@
+{
+  "pins": {
+    "target": "8930fcb239b5f41d486b515451301851b5be6bcc",
+    "canonical": "390a2692237f30e0e16b59ddf402cbd6179cd810",
+    "audit": "47af373d8006849cbf773ab3cd3f5ebf5910e297",
+    "address": "7f76e464e30b5804c34e1d3e2761d991837dad78",
+    "base": "340ad8df3bcbf23882f930cd200ce3d8cf627753"
+  },
+  "checks": {
+    "loop_unchanged_from_M4_base": true,
+    "fresh_judge_exact_canonical": true,
+    "fresh_judge_exact_audit": true,
+    "generic_session_exact_canonical": true,
+    "native_arm_exact_canonical": true,
+    "native_arm_exact_address": false
+  },
+  "sha256": {
+    "src/kodezart/chains/write_back_verifier.py": "737c3c7fd66caf3663b2ee1bed0323ef9a01567a73aa7cb97af23ee0d7948d06",
+    "src/kodezart/services/tracker_artifacts.py": "2454911d6b358a1feb1baf8897b219ddd526cb71d5bf323f0a68e389d8020cc0",
+    "src/kodezart/services/audit_sessions.py": "c103082124dda2e039db99638e3c69c75246cc622fc8d64d2e28f95676c300d0",
+    "tests/chains/test_m4_native_extension_independent.py": "bca95d5335d06c5a68909c3eb8674726f10d58a42bc4c4bba7bd76875b511590",
+    "tests/chains/test_m4_local_sdk_independent.py": "fa5c232d0be78f85eb3d75625d00bdcf7130f53b89a03422c99a04a5b8b558d1"
+  },
+  "explained_differences": {
+    "native_arm_exact_address": "The sole 7f76e464 native-arm difference is read_issue -> read_planning_issue, the subsequently accepted strict-field correction. The arm is AST-identical to current canonical390 after excluding its graph surface membership."
+  }
+}

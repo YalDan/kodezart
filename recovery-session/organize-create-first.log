@@ -1,0 +1,20 @@
+F.............                                                           [100%]
+=================================== FAILURES ===================================
+_ test_native_create_initializes_only_a_new_todo_criterion_then_replays_no_write _
+
+    async def test_native_create_initializes_only_a_new_todo_criterion_then_replays_no_write():
+        board = _Board()
+        tracker = board.tracker()
+        async with RunSurfaceLease(tracker=tracker, job_id=JOB, surfaces=frozenset({surface()}), lease_seconds=300):
+            created = await create(tracker)
+        assert created.parent_key == CLAIMED_ISSUE
+        assert created.state_kind is WorkflowStateKind.UNSTARTED
+>       assert created.issue_labels == ["criterion"]
+E       AssertionError: assert frozenset({'criterion'}) == ['criterion']
+E         
+E         Use -v to get more diff
+
+tests/tracker/test_criterion_creation.py:42: AssertionError
+=========================== short test summary info ============================
+FAILED tests/tracker/test_criterion_creation.py::test_native_create_initializes_only_a_new_todo_criterion_then_replays_no_write
+1 failed, 13 passed in 0.87s

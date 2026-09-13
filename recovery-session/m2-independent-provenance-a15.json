@@ -1,0 +1,83 @@
+{
+  "candidate": "a15b33484bc0f88975c910c1706edf20805d98f8",
+  "candidate_tree": "c756178d9dc8cb4fd80c9b0eaa6b69343c51590b",
+  "comparison_base": "73cc5def12a2daa4e0ba319660db76cdad781882",
+  "donor": "36083f83f42c03240ebb5861fe284da2c9f04180",
+  "changed_file_count": 5,
+  "rows": [
+    {
+      "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+      "candidate_sha256": "268b81165ad1b28d602279ddca4b09ebc7b7f488b260ecad7b0b67eb66bd27a2",
+      "donor_sha256": "0128d16fa203cac45809f7b2f05145b569fca0b39a6028440eda2a928ad3a590",
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": [
+        "_label_arguments",
+        "_without_mention_syntax",
+        "is_long_lived_credential",
+        "_LabelListings",
+        "_CriterionCreation",
+        "LinearMcpTracker",
+        "LinearMcpTracker.__init__",
+        "LinearMcpTracker.scan_issues",
+        "LinearMcpTracker._wrote",
+        "LinearMcpTracker.create_issue",
+        "LinearMcpTracker.update_issue",
+        "LinearMcpTracker._save_state",
+        "LinearMcpTracker.set_queue_state",
+        "LinearMcpTracker.list_issue_assets",
+        "LinearMcpTracker.work_refs",
+        "LinearMcpTracker.recorded_repository",
+        "LinearMcpTracker.initiative_identifiers",
+        "LinearMcpTracker.resolve_mappings",
+        "LinearMcpTracker.ensure_mappings",
+        "LinearMcpTracker._ensure_document",
+        "LinearMcpTracker._label_definitions",
+        "LinearMcpTracker._label_entries",
+        "LinearMcpTracker._identifiers_of",
+        "LinearMcpTracker.create_criterion_if_absent"
+      ]
+    },
+    {
+      "path": "src/kodezart/prompts/sets/anthropic_v5/organize_criteria_author.md",
+      "candidate_sha256": "ba71634a2c699dea5e380f23c8aa6de7ac2d6b94d328d3111d5c5dca1f203364",
+      "donor_sha256": "9d7207c392649d16f0c55231e6d4fe4111b556b220bc86d818ade3fdfd1e1b2d",
+      "byte_equal_donor": false
+    },
+    {
+      "path": "src/kodezart/prompts/sets/claude-opus/organize_criteria_author.md",
+      "candidate_sha256": "4ae3417287faaae00c36a2ac60c263857118955a01fb2c228c963b211ce22bb7",
+      "donor_sha256": "ad5ea987bf60f1f8f087279cb78d185d1534c0589a137aa7da968ea3aa948412",
+      "byte_equal_donor": false
+    },
+    {
+      "path": "tests/tracker/test_criterion_receipt_boundary.py",
+      "candidate_sha256": "520cb429930927fdf6bfdf0dcc00e23c6751b02f425053ac2276609d72965212",
+      "donor_sha256": null,
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": [
+        "test_criterion_completed_save_readback_failure_does_not_resend"
+      ],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 1,
+      "added_tests_exact_donor": [],
+      "added_tests_different_or_not_in_donor_module": [
+        "test_criterion_completed_save_readback_failure_does_not_resend"
+      ]
+    },
+    {
+      "path": "tests/tracker/test_criterion_retry_independent.py",
+      "candidate_sha256": "10a31bd94dafc20a8b3ff45cacc5256c25df0e8ac55668be0b0e40ea40cedbe5",
+      "donor_sha256": null,
+      "byte_equal_donor": false,
+      "candidate_definitions_different_from_donor": [
+        "test_criterion_unsent_retry_rechecks_surface_ownership"
+      ],
+      "baseline_test_oracles_changed_or_removed": [],
+      "added_test_count": 1,
+      "added_tests_exact_donor": [],
+      "added_tests_different_or_not_in_donor_module": [
+        "test_criterion_unsent_retry_rechecks_surface_ownership"
+      ]
+    }
+  ]
+}

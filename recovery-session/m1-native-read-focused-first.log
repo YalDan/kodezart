@@ -1,0 +1,16 @@
+
+==================================== ERRORS ====================================
+___________ ERROR collecting tests/tracker/test_criterion_reader.py ____________
+ImportError while importing test module '/private/tmp/kodezart-v03-m1-native-read-extraction/tests/tracker/test_criterion_reader.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/Users/kodezart/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/tracker/test_criterion_reader.py:7: in <module>
+    from kodezart.types.domain.tracker_writes import DescriptionEditResult
+E   ModuleNotFoundError: No module named 'kodezart.types.domain.tracker_writes'
+=========================== short test summary info ============================
+ERROR tests/tracker/test_criterion_reader.py
+!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+1 error in 2.77s

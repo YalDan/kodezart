@@ -1,0 +1,1181 @@
+diff --git a/src/kodezart/chains/amendment_reconciler.py b/src/kodezart/chains/amendment_reconciler.py
+new file mode 100644
+index 00000000..6fb1c214
+--- /dev/null
++++ b/src/kodezart/chains/amendment_reconciler.py
+@@ -0,0 +1,141 @@
++"""Rule on a deviating writer's claim from the repository, not from the claim.
++
++The reconciler answers one question: does the repository at the resolved
++base itself bear out the evidence this claim offers?  It holds a criteria
++READ and an immutable source read and nothing else — no write reaches the
++tracker from here, so a criterion's text is what it was however the claim
++is ruled.
++"""
++
++from collections.abc import Sequence
++
++from kodezart.core.logging import BoundLogger, get_logger
++from kodezart.core.protocols import GitSourceReader, TrackerCriteriaReader
++from kodezart.types.domain.amendment import (
++    QUOTE_CARRIED_AT_BASE,
++    AmendmentClaim,
++    AmendmentDecision,
++    AmendmentVerdict,
++    GroundEvidence,
++)
++from kodezart.types.domain.tracker import TrackerIssue
++
++
++class AmendmentReconciler:
++    """Reproduce a claim's evidence at the resolved base, then rule on it.
++
++    ``UPHELD`` needs no proof and is what every path that fails to
++    reproduce arrives at.  ``AMENDED`` is reached only when the
++    reconciler read every address the claim offered at the resolved base
++    and found the quoted text in the bytes it read back.  A read that
++    FAILED is never one of these outcomes: it raises, because a claim
++    nobody could read the evidence for has not been ruled on at all.
++    """
++
++    def __init__(
++        self,
++        *,
++        tracker: TrackerCriteriaReader,
++        source: GitSourceReader,
++    ) -> None:
++        self._tracker = tracker
++        self._source = source
++        self._log: BoundLogger = get_logger(__name__)
++
++    async def reconcile(
++        self,
++        claim: AmendmentClaim,
++        *,
++        issue_key: str,
++        repository: str,
++        base_ref: str,
++    ) -> AmendmentVerdict:
++        """The verdict on *claim*, measured against *base_ref*'s own commit."""
++        criteria = await self._tracker.read_criteria(issue_key=issue_key)
++        self._require_subject(claim, criteria)
++        base_sha = await self._source.resolve_commit(cwd=repository, ref=base_ref)
++        reproduced = await self._reproduce(
++            claim,
++            criteria=criteria,
++            repository=repository,
++            base_sha=base_sha,
++        )
++        if reproduced is None:
++            await self._log.ainfo(
++                "amendment_upheld",
++                subject_id=str(claim.subject_id),
++                asserted_ground=claim.asserted_ground.value,
++                base_sha=base_sha,
++            )
++            return AmendmentVerdict(
++                subject_id=claim.subject_id,
++                decision=AmendmentDecision.UPHELD,
++            )
++        await self._log.ainfo(
++            "amendment_amended",
++            subject_id=str(claim.subject_id),
++            ground=claim.asserted_ground.value,
++            base_sha=base_sha,
++        )
++        return AmendmentVerdict(
++            subject_id=claim.subject_id,
++            decision=AmendmentDecision.AMENDED,
++            ground=claim.asserted_ground,
++            reproduced=reproduced,
++        )
++
++    def _require_subject(
++        self,
++        claim: AmendmentClaim,
++        criteria: Sequence[TrackerIssue],
++    ) -> None:
++        """Refuse a claim whose subject is not one of the issue's criteria.
++
++        A subject the issue does not own is not an amendment this
++        reconciler can rule on either way, so it is neither upheld nor
++        amended: it refuses.
++        """
++        if not any(criterion.issue_key == claim.subject_id for criterion in criteria):
++            msg = "the claimed subject is not a criterion sub-issue of the issue"
++            raise ValueError(msg)
++
++    async def _reproduce(
++        self,
++        claim: AmendmentClaim,
++        *,
++        criteria: Sequence[TrackerIssue],
++        repository: str,
++        base_sha: str,
++    ) -> tuple[GroundEvidence, ...] | None:
++        """The claim's evidence re-read for ITS ground, or ``None``.
++
++        The asserted ground selects which reading is performed and is
++        never itself the answer: the reconciler runs that ground's
++        reproduction against the repository at *base_sha* and reports
++        what it read.  It does not go looking for some other ground the
++        same evidence would have supported — a claim that named the wrong
++        one is a claim that did not reproduce.
++
++        Every address has to hold.  Offering five addresses of which one
++        bears out is not four fifths of a ground; and offering none is
++        nothing to reproduce, which is why the empty claim lands here
++        rather than in a vacuous truth.
++        """
++        if not claim.asserted_evidence:
++            return None
++        if claim.counter_subject is not None and not any(
++            criterion.issue_key == claim.counter_subject for criterion in criteria
++        ):
++            return None
++        carried = QUOTE_CARRIED_AT_BASE[claim.asserted_ground]
++        for item in claim.asserted_evidence:
++            blob = await self._source.find_source(
++                cwd=repository,
++                commit_sha=base_sha,
++                path=item.path,
++            )
++            if blob is None:
++                return None
++            if (item.quote.encode("utf-8") in blob.content) is not carried:
++                return None
++        return tuple(claim.asserted_evidence)
+diff --git a/src/kodezart/chains/ralph_loop.py b/src/kodezart/chains/ralph_loop.py
+index 2af34f3e..bb909b04 100644
+--- a/src/kodezart/chains/ralph_loop.py
++++ b/src/kodezart/chains/ralph_loop.py
+@@ -37,6 +37,7 @@
+     ResultEvent,
+     WorkflowIterationEvent,
+ )
++from kodezart.types.domain.amendment import repeat_upheld
+ from kodezart.types.domain.branch import BaseSpec
+ from kodezart.types.domain.criteria import FanInReport, ValidatedCriterion
+ from kodezart.types.domain.gating import RepoVisibility
+@@ -149,6 +150,7 @@ async def run(
+             "verdict": AcceptVerdict.rejected,
+             "pending_failures": [],
+             "iteration_records": [],
++            "amendment_verdicts": [],
+         }
+ 
+         # TODO(time-travel): For E2E checkpoint resume, two changes needed:
+@@ -387,6 +389,25 @@ async def evaluate() -> AcceptanceCriteriaOutput:
+             ),
+         ]
+         trajectory = fold_trajectory(records, plateau_window=self._plateau_window)
++        # The iteration's own report: what is still failing, and beside it
++        # how often a subject's amendment claim has already been refused.
++        # The two belong in one record because they answer one question —
++        # is this loop converging? — and a repeat refusal is the shape a
++        # writer arguing with a criterion leaves instead of progress. The
++        # count is taken from the retained verdicts by a pure fold at the
++        # moment of reporting, never accumulated alongside them.
++        await self._log.ainfo(
++            "iteration_report",
++            iteration=state["iteration"],
++            branch=ctx.ralph_branch,
++            failing_criterion_ids=[
++                failure.criterion_id for failure in pending_failures
++            ],
++            repeat_upheld=[
++                repeat.model_dump(mode="json")
++                for repeat in repeat_upheld(state["amendment_verdicts"])
++            ],
++        )
+         writer(
+             WorkflowIterationEvent(
+                 iteration=state["iteration"],
+diff --git a/src/kodezart/types/domain/amendment.py b/src/kodezart/types/domain/amendment.py
+new file mode 100644
+index 00000000..c88d1f96
+--- /dev/null
++++ b/src/kodezart/types/domain/amendment.py
+@@ -0,0 +1,208 @@
++"""The vocabulary a criterion amendment is claimed, ruled and recorded in.
++
++A writer that deviates from a criterion does not get to rule on its own
++claim.  What it says is a CLAIM: the subject it departed from, what the
++departure was, the ground it says excuses it, and the repository
++addresses it offers as evidence.  What comes back is a VERDICT, and the
++verdict rests only on what the reconciler read back for itself at the
++resolved base.
++
++The decision domain has exactly two arms.  ``UPHELD`` is the resting
++state — the criterion stands — and it needs no proof; ``AMENDED`` is
++reachable only through a ground whose evidence the reconciler
++reproduced.  There is deliberately no third "unclear, proceed anyway"
++arm: a claim nobody could substantiate is a claim that did not
++substantiate, and that is already one of the two.
++"""
++
++from collections import Counter
++from collections.abc import Mapping, Sequence
++from enum import StrEnum
++from types import MappingProxyType
++from typing import Self
++
++from pydantic import ConfigDict, Field, model_validator
++
++from kodezart.types.base import CamelCaseModel
++from kodezart.types.domain.criterion_ref import CriterionRef
++
++
++class AmendmentGround(StrEnum):
++    """Every ground an amendment may rest on, and there is no other.
++
++    An enumeration rather than free text because the set is the whole
++    point: a ground outside these four is not a weaker ground, it is not
++    a ground, and a string field would let one in by being spelled.
++    """
++
++    #: No change to the repository at the resolved base can satisfy the
++    #: criterion as written.
++    UNSATISFIABLE_AT_BASE = "unsatisfiable_at_base"
++    #: The criterion and another criterion of the same issue cannot both
++    #: be satisfied.
++    MUTUALLY_UNSATISFIABLE = "mutually_unsatisfiable"
++    #: The criterion states something about the repository at the
++    #: resolved base that is not so.
++    PREMISE_FALSE_AT_BASE = "premise_false_at_base"
++    #: The criterion can be satisfied only by breaking a house rule the
++    #: repository states.
++    REQUIRES_BREAKING_HOUSE_RULE = "requires_breaking_house_rule"
++
++
++#: How each ground is reproduced at the resolved base: whether the
++#: repository has to CARRY the quoted text there, or whether the ground is
++#: exactly the measured absence of it at a readable address.
++#:
++#: Three grounds are claims ABOUT something the repository states, so the
++#: statement has to be found.  ``PREMISE_FALSE_AT_BASE`` is the one claim
++#: about what the repository does NOT state, and reproducing it is reading
++#: the blob the premise points at and not finding what the premise says is
++#: there.  A read that fails reproduces nothing either way — absence is a
++#: measurement, and a measurement needs a blob that was read.
++#:
++#: Total over the enum by construction, and asserted so: a fifth ground
++#: cannot be added without deciding how it is reproduced.
++QUOTE_CARRIED_AT_BASE: Mapping[AmendmentGround, bool] = MappingProxyType(
++    {
++        AmendmentGround.UNSATISFIABLE_AT_BASE: True,
++        AmendmentGround.MUTUALLY_UNSATISFIABLE: True,
++        AmendmentGround.PREMISE_FALSE_AT_BASE: False,
++        AmendmentGround.REQUIRES_BREAKING_HOUSE_RULE: True,
++    }
++)
++
++
++class AmendmentDecision(StrEnum):
++    """The two arms a reconciled claim can end in."""
++
++    #: The criterion stands exactly as written.
++    UPHELD = "upheld"
++    #: The criterion is to be amended on a reproduced ground.
++    AMENDED = "amended"
++
++
++class GroundEvidence(CamelCaseModel):
++    """One address in the repository, and the text expected to be at it.
++
++    An ADDRESS, never a conclusion: a claimant offering this says "read
++    here", and the reconciler is the one that reads.  The pair is what
++    makes reproduction mechanical — the path selects the blob at the
++    resolved base and the quote is looked for in that blob's own bytes.
++    """
++
++    model_config = ConfigDict(frozen=True)
++
++    path: str = Field(min_length=1)
++    quote: str = Field(min_length=1)
++
++
++class AmendmentClaim(CamelCaseModel):
++    """A writer's assertion that a criterion cannot stand as written.
++
++    Everything here is an INPUT.  ``asserted_ground`` says which of the
++    four the claimant believes it is and ``asserted_evidence`` says where
++    to look; neither is a finding, and no field carries the claimant's
++    reasoning or the transcript of the session that produced it.  A claim
++    offering no address at all is a legal claim — it is simply one
++    nothing can reproduce.
++
++    ``counter_subject`` belongs to exactly one ground.  A mutual
++    unsatisfiability is a claim about a PAIR, so the claim has to say
++    which pair; every other ground is about the subject alone, and naming
++    a second criterion there would be a field with no meaning rather than
++    an ignored one.
++    """
++
++    model_config = ConfigDict(frozen=True)
++
++    subject_id: CriterionRef
++    deviation: str = Field(min_length=1)
++    asserted_ground: AmendmentGround
++    asserted_evidence: tuple[GroundEvidence, ...] = ()
++    counter_subject: CriterionRef | None = None
++
++    @model_validator(mode="after")
++    def _only_a_mutual_claim_names_a_pair(self) -> Self:
++        mutual = self.asserted_ground is AmendmentGround.MUTUALLY_UNSATISFIABLE
++        if mutual and self.counter_subject is None:
++            msg = "a mutually unsatisfiable claim names the other criterion"
++            raise ValueError(msg)
++        if not mutual and self.counter_subject is not None:
++            msg = "only a mutually unsatisfiable claim names a counter subject"
++            raise ValueError(msg)
++        return self
++
++
++class AmendmentVerdict(CamelCaseModel):
++    """What the reconciler ruled, recorded against the subject's identity.
++
++    ``subject_id`` is required in both arms: a refusal that cannot say
++    what it refused is not a record of anything, and the repeat count a
++    loop reports is a count PER SUBJECT.
++
++    The two arms carry different fields and the model refuses the
++    mixtures: ``AMENDED`` names its ground and the evidence reproduced
++    for it, ``UPHELD`` names neither.  An amendment whose ground went
++    missing, or a refusal that somehow carries reproduced evidence,
++    cannot be constructed at all.
++    """
++
++    model_config = ConfigDict(frozen=True)
++
++    subject_id: CriterionRef
++    decision: AmendmentDecision
++    ground: AmendmentGround | None = None
++    reproduced: tuple[GroundEvidence, ...] = ()
++
++    @model_validator(mode="after")
++    def _each_arm_carries_exactly_its_own_grounds(self) -> Self:
++        amended = self.decision is AmendmentDecision.AMENDED
++        if amended and (self.ground is None or not self.reproduced):
++            msg = "an amended verdict names its ground and the evidence for it"
++            raise ValueError(msg)
++        if not amended and (self.ground is not None or self.reproduced):
++            msg = "an upheld verdict rests on no ground and no evidence"
++            raise ValueError(msg)
++        return self
++
++
++class UpheldRepeat(CamelCaseModel):
++    """One subject whose claims have been refused more than once.
++
++    A single refusal is an ordinary outcome and carries no signal.  The
++    same subject refused again is the shape worth reporting: a writer
++    that keeps re-asserting a ground the base never bears out is not
++    converging, and the loop is the only place that can see it happening
++    across iterations.  ``count`` therefore starts at two — a one is not
++    a repeat, and a model that could hold one would need every reader to
++    remember to filter it.
++    """
++
++    model_config = ConfigDict(frozen=True)
++
++    subject_id: CriterionRef
++    count: int = Field(ge=2)
++
++
++def repeat_upheld(verdicts: Sequence[AmendmentVerdict]) -> tuple[UpheldRepeat, ...]:
++    """Every subject upheld more than once in *verdicts*, in subject order.
++
++    Pure: a fold over the verdicts a run has retained and nothing else —
++    no clock, no tracker read, no loop state beyond the list itself, so
++    the same list always counts the same and the count can be taken
++    wherever the list is.
++
++    Amended verdicts are not counted.  The question this answers is how
++    often a subject's claim was REFUSED, and an amendment is the arm
++    where it was not.
++    """
++    counts = Counter(
++        verdict.subject_id
++        for verdict in verdicts
++        if verdict.decision is AmendmentDecision.UPHELD
++    )
++    return tuple(
++        UpheldRepeat(subject_id=subject, count=count)
++        for subject, count in sorted(counts.items())
++        if count > 1
++    )
+diff --git a/src/kodezart/types/domain/workflow.py b/src/kodezart/types/domain/workflow.py
+index 52bb8beb..ff034ada 100644
+--- a/src/kodezart/types/domain/workflow.py
++++ b/src/kodezart/types/domain/workflow.py
+@@ -8,6 +8,7 @@
+ from kodezart.types.base import CamelCaseModel
+ from kodezart.types.domain.accept import AcceptVerdict, FlaggedItem
+ from kodezart.types.domain.agent import TicketDraftOutput
++from kodezart.types.domain.amendment import AmendmentVerdict
+ from kodezart.types.domain.branch import BaseSpec
+ from kodezart.types.domain.ci import CIStatus
+ from kodezart.types.domain.criteria import (
+@@ -183,12 +184,20 @@ class RalphLoopState(TypedDict):
+     ``_evaluate_node`` reads it via ``state.get(...)``.  There is no
+     cumulative iteration SHA field — that would clobber the per-iter
+     semantic of the SSE event.
++
++    ``amendment_verdicts`` is the run's retained ruling history — every
++    verdict the reconciler returned on a claim raised against one of this
++    run's criteria.  Retained rather than folded: the repeat count the
++    iteration report names is taken from this list by a pure function,
++    and a running total kept beside it would be a second answer that
++    could disagree with the first.
+     """
+ 
+     iteration: int
+     verdict: AcceptVerdict
+     pending_failures: list[CriterionFailure]
+     iteration_records: list[IterationRecord]
++    amendment_verdicts: list[AmendmentVerdict]
+     iteration_commit_sha: NotRequired[str | None]
+ 
+ 
+diff --git a/tests/chains/amendment_fixtures.py b/tests/chains/amendment_fixtures.py
+new file mode 100644
+index 00000000..2f3b048e
+--- /dev/null
++++ b/tests/chains/amendment_fixtures.py
+@@ -0,0 +1,143 @@
++"""A real two-commit repository and a criterion family, shared by the suites.
++
++The repository is the point: the reconciler's verdict has to come from
++what is committed at the pinned base, so the fixture commits one line
++before that base and one after it, and every case addresses one of them.
++"""
++
++import subprocess
++from collections.abc import Sequence
++from datetime import UTC, datetime
++from pathlib import Path
++
++import pytest
++
++from kodezart.adapters.subprocess_git_source_reader import SubprocessGitSourceReader
++from kodezart.chains.amendment_reconciler import AmendmentReconciler
++from kodezart.types.domain.amendment import (
++    AmendmentClaim,
++    AmendmentGround,
++    GroundEvidence,
++)
++from kodezart.types.domain.criterion_ref import CriterionRef
++from kodezart.types.domain.tracker import (
++    IssuePriority,
++    TrackerIssue,
++    WorkflowStateKind,
++)
++from tests.fakes import FakeTrackerPort
++
++HOUSE_PATH = "src/house.py"
++LATER_PATH = "src/later.py"
++RULES_PATH = "docs/house_rules.md"
++HOUSE_RULE = "Never weaken a test to reach a green gate."
++AT_BASE = "the base bears this out"
++ONLY_AFTER_BASE = "this line arrives after the base"
++BASE_REF = "fixture-base"
++ISSUE = "issue/1"
++SUBJECT = CriterionRef("criterion/a")
++SIBLING = CriterionRef("criterion/b")
++
++
++def git(cwd: Path, *args: str) -> str:
++    """Run one Git command in *cwd* and return its trimmed stdout."""
++    return (
++        subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True)
++        .stdout.decode()
++        .strip()
++    )
++
++
++@pytest.fixture
++def repo(tmp_path: Path) -> Path:
++    """Two commits, with ``fixture-base`` pinned at the first of them."""
++    repo = tmp_path / "repo"
++    (repo / "src").mkdir(parents=True)
++    (repo / "docs").mkdir(parents=True)
++    git(repo, "init", "-q")
++    git(repo, "config", "user.name", "Fixture")
++    git(repo, "config", "user.email", "fixture@example.invalid")
++    (repo / HOUSE_PATH).write_text(
++        f"# {AT_BASE}\n\n\ndef implementation() -> int:\n    return 1\n",
++        encoding="utf-8",
++    )
++    (repo / RULES_PATH).write_text(f"# House rules\n\n{HOUSE_RULE}\n", encoding="utf-8")
++    git(repo, "add", "--all")
++    git(repo, "commit", "-qm", "fixture base")
++    git(repo, "branch", BASE_REF)
++    (repo / HOUSE_PATH).write_text(
++        f"# {AT_BASE}\n# {ONLY_AFTER_BASE}\n\n\ndef implementation() -> int:\n"
++        "    return 2\n",
++        encoding="utf-8",
++    )
++    (repo / LATER_PATH).write_text(f"# {ONLY_AFTER_BASE}\n", encoding="utf-8")
++    git(repo, "add", "--all")
++    git(repo, "commit", "-qm", "fixture tip")
++    return repo
++
++
++def issue(key: str, body: str, **changes: object) -> TrackerIssue:
++    """One tracker issue in the vocabulary the port hands its consumers."""
++    return TrackerIssue.model_validate(
++        {
++            "issue_key": key,
++            "title": f"Title for {key}",
++            "body": body,
++            "priority": IssuePriority.NONE,
++            "state_name": "Todo",
++            "state_kind": WorkflowStateKind.UNSTARTED,
++            "queue_states": [],
++            "team_key": "engineering",
++            "created_at": datetime(2026, 1, 1, tzinfo=UTC),
++            "updated_at": datetime(2026, 1, 1, tzinfo=UTC),
++            "url": f"https://tracker.invalid/{key}",
++            **changes,
++        }
++    )
++
++
++def tracker() -> FakeTrackerPort:
++    """An issue with two criterion sub-issues and one unlabelled child."""
++    return FakeTrackerPort(
++        issues=[
++            issue(ISSUE, "The deliverable body."),
++            issue(
++                SUBJECT,
++                "**Check:** the first criterion, verbatim.\n**Class:** hard",
++                parent_key=ISSUE,
++                issue_labels=["criterion"],
++            ),
++            issue(
++                SIBLING,
++                "**Check:** the second criterion, verbatim.\n**Class:** hard",
++                parent_key=ISSUE,
++                issue_labels=["criterion"],
++            ),
++            issue("ordinary/child", "Unlabelled child.", parent_key=ISSUE),
++        ]
++    )
++
++
++def reconciler(port: FakeTrackerPort | None = None) -> AmendmentReconciler:
++    """The reconciler under test, reading repositories through the real port."""
++    return AmendmentReconciler(
++        tracker=tracker() if port is None else port,
++        source=SubprocessGitSourceReader(),
++    )
++
++
++def claim(
++    *,
++    evidence: Sequence[GroundEvidence],
++    subject: CriterionRef = SUBJECT,
++    ground: AmendmentGround = AmendmentGround.UNSATISFIABLE_AT_BASE,
++    counter_subject: CriterionRef | None = None,
++) -> AmendmentClaim:
++    """A claim in the shape a deviating writer submits one."""
++    return AmendmentClaim(
++        subject_id=subject,
++        deviation="the criterion could not be met as written",
++        asserted_ground=ground,
++        asserted_evidence=tuple(evidence),
++        counter_subject=counter_subject,
++    )
+diff --git a/tests/chains/test_amendment_reconciler.py b/tests/chains/test_amendment_reconciler.py
+new file mode 100644
+index 00000000..1ace837c
+--- /dev/null
++++ b/tests/chains/test_amendment_reconciler.py
+@@ -0,0 +1,405 @@
++"""KOD-97 — a deviating writer's claim is ruled from the repository itself.
++
++Every case here runs against a REAL repository: two commits, a branch
++pinned at the first one, and a reconciler that must read the first one.
++The fixture is what decides the verdict, so an implementation that
++believed the claimant — or that resolved the wrong commit — fails these
++rather than passing them differently.
++"""
++
++import subprocess
++
++import pytest
++import structlog.testing
++from pydantic import ValidationError
++
++from kodezart.adapters.subprocess_git_source_reader import SubprocessGitSourceReader
++from kodezart.chains.amendment_reconciler import AmendmentReconciler
++from kodezart.types.domain.amendment import (
++    QUOTE_CARRIED_AT_BASE,
++    AmendmentClaim,
++    AmendmentDecision,
++    AmendmentGround,
++    AmendmentVerdict,
++    GroundEvidence,
++)
++from kodezart.types.domain.criterion_ref import CriterionRef
++from tests.chains.amendment_fixtures import (
++    AT_BASE,
++    BASE_REF,
++    HOUSE_PATH,
++    HOUSE_RULE,
++    ISSUE,
++    LATER_PATH,
++    ONLY_AFTER_BASE,
++    RULES_PATH,
++    SIBLING,
++    SUBJECT,
++    claim,
++    reconciler,
++    tracker,
++)
++from tests.chains.amendment_fixtures import repo as repo
++
++# ---------------------------------------------------------------------------
++# AC-1 — the resting state
++# ---------------------------------------------------------------------------
++
++
++async def test_the_decision_domain_is_exactly_two_arms() -> None:
++    """No third "unclear, proceed anyway" arm exists to be reached."""
++    assert [member.value for member in AmendmentDecision] == ["upheld", "amended"]
++
++
++async def test_a_quote_absent_from_the_cited_file_is_upheld(repo) -> None:
++    """The path resolves at base; the text the claim quotes is not in it."""
++    verdict = await reconciler().reconcile(
++        claim(evidence=[GroundEvidence(path=HOUSE_PATH, quote="never written here")]),
++        issue_key=ISSUE,
++        repository=str(repo),
++        base_ref=BASE_REF,
++    )
++    assert verdict.decision is AmendmentDecision.UPHELD
++    assert verdict.ground is None
++    assert verdict.reproduced == ()
++
++
++async def test_a_path_absent_at_the_base_is_upheld(repo) -> None:
++    """A file that exists only after the base substantiates nothing at it."""
++    verdict = await reconciler().reconcile(
++        claim(evidence=[GroundEvidence(path=LATER_PATH, quote=ONLY_AFTER_BASE)]),
++        issue_key=ISSUE,
++        repository=str(repo),
++        base_ref=BASE_REF,
++    )
++    assert verdict.decision is AmendmentDecision.UPHELD
++
++
++async def test_text_added_after_the_base_is_not_reproduced_at_it(repo) -> None:
++    """The quote is in the working tree and in HEAD, and not at the base.
++
++    A reconciler reading the tip instead of the resolved base amends here;
++    the base is a different commit and does not carry the line.
++    """
++    assert ONLY_AFTER_BASE in (repo / HOUSE_PATH).read_text(encoding="utf-8")
++    verdict = await reconciler().reconcile(
++        claim(evidence=[GroundEvidence(path=HOUSE_PATH, quote=ONLY_AFTER_BASE)]),
++        issue_key=ISSUE,
++        repository=str(repo),
++        base_ref=BASE_REF,
++    )
++    assert verdict.decision is AmendmentDecision.UPHELD
++
++
++async def test_a_claim_offering_no_address_is_upheld(repo) -> None:
++    """Nothing to reproduce is not a ground proved by having no counter."""
++    verdict = await reconciler().reconcile(
++        claim(evidence=[]),
++        issue_key=ISSUE,
++        repository=str(repo),
++        base_ref=BASE_REF,
++    )
++    assert verdict.decision is AmendmentDecision.UPHELD
++
++
++async def test_one_failing_address_among_several_upholds(repo) -> None:
++    """A part of a ground is not a ground: every address has to hold."""
++    verdict = await reconciler().reconcile(
++        claim(
++            evidence=[
++                GroundEvidence(path=HOUSE_PATH, quote=AT_BASE),
++                GroundEvidence(path=LATER_PATH, quote=ONLY_AFTER_BASE),
++            ]
++        ),
++        issue_key=ISSUE,
++        repository=str(repo),
++        base_ref=BASE_REF,
++    )
++    assert verdict.decision is AmendmentDecision.UPHELD
++
++
++async def test_the_same_shape_of_claim_amends_when_the_base_bears_it_out(repo) -> None:
++    """The control: the refusals above are not a reconciler that never amends."""
++    verdict = await reconciler().reconcile(
++        claim(evidence=[GroundEvidence(path=HOUSE_PATH, quote=AT_BASE)]),
++        issue_key=ISSUE,
++        repository=str(repo),
++        base_ref=BASE_REF,
++    )
++    assert verdict.decision is AmendmentDecision.AMENDED
++    assert verdict.reproduced == (GroundEvidence(path=HOUSE_PATH, quote=AT_BASE),)
++
++
++# ---------------------------------------------------------------------------
++# AC-1 — the refusal is recorded against the criterion identity
++# ---------------------------------------------------------------------------
++
++
++async def test_the_refusal_names_the_criterion_it_refused(repo) -> None:
++    """Both the returned verdict and the emitted record carry the subject."""
++    with structlog.testing.capture_logs() as logs:
++        verdict = await reconciler().reconcile(
++            claim(evidence=[]),
++            issue_key=ISSUE,
++            repository=str(repo),
++            base_ref=BASE_REF,
++        )
++    assert verdict.subject_id == SUBJECT
++    recorded = [entry for entry in logs if entry["event"] == "amendment_upheld"]
++    assert [entry["subject_id"] for entry in recorded] == [SUBJECT]
++
++
++async def test_a_subject_outside_the_issues_criteria_is_refused(repo) -> None:
++    """A claim about something the issue does not own is ruled on neither way."""
++    with pytest.raises(ValueError, match="criterion sub-issue"):
++        await reconciler().reconcile(
++            claim(subject=CriterionRef("criterion/elsewhere"), evidence=[]),
++            issue_key=ISSUE,
++            repository=str(repo),
++            base_ref=BASE_REF,
++        )
++
++
++# ---------------------------------------------------------------------------
++# AC-1 — the criterion text survives the refusal byte for byte
++# ---------------------------------------------------------------------------
++
++
++async def test_a_refusal_leaves_every_criterion_body_byte_identical(repo) -> None:
++    """Read the family before and after; compare the bytes, not a digest."""
++    port = tracker()
++    before = {
++        issue.issue_key: issue.body.encode("utf-8")
++        for issue in await port.read_criteria(issue_key=ISSUE)
++    }
++    verdict = await AmendmentReconciler(
++        tracker=port, source=SubprocessGitSourceReader()
++    ).reconcile(
++        claim(evidence=[GroundEvidence(path=HOUSE_PATH, quote="never written here")]),
++        issue_key=ISSUE,
++        repository=str(repo),
++        base_ref=BASE_REF,
++    )
++    after = {
++        issue.issue_key: issue.body.encode("utf-8")
++        for issue in await port.read_criteria(issue_key=ISSUE)
++    }
++    assert verdict.decision is AmendmentDecision.UPHELD
++    assert after == before
++    assert port.issue_writes == []
++
++
++# ---------------------------------------------------------------------------
++# AC-1 — the two arms cannot be mixed
++# ---------------------------------------------------------------------------
++
++
++def test_an_upheld_verdict_cannot_carry_a_ground() -> None:
++    """A refusal that names a ground would be an amendment in disguise."""
++    with pytest.raises(ValidationError, match="rests on no ground"):
++        AmendmentVerdict(
++            subject_id=SUBJECT,
++            decision=AmendmentDecision.UPHELD,
++            ground=AmendmentGround.UNSATISFIABLE_AT_BASE,
++            reproduced=(GroundEvidence(path=HOUSE_PATH, quote=AT_BASE),),
++        )
++
++
++def test_an_amended_verdict_cannot_be_built_without_reproduced_evidence() -> None:
++    """The amending arm carries what it rests on or does not exist."""
++    with pytest.raises(ValidationError, match="names its ground"):
++        AmendmentVerdict(
++            subject_id=SUBJECT,
++            decision=AmendmentDecision.AMENDED,
++            ground=AmendmentGround.UNSATISFIABLE_AT_BASE,
++        )
++
++
++def test_a_claim_carries_no_reasoning_of_its_own() -> None:
++    """The claimant's rationale is not one of the claim's fields."""
++    with pytest.raises(ValidationError):
++        AmendmentClaim(
++            subject_id=SUBJECT,
++            deviation="the criterion could not be met",
++            asserted_ground=AmendmentGround.UNSATISFIABLE_AT_BASE,
++            reasoning="because I decided so",
++        )
++
++
++def test_the_fixture_repository_actually_separates_its_two_commits(repo) -> None:
++    """Non-vacuity: base and tip differ, and only the tip carries the later line."""
++    base = subprocess.run(
++        ["git", "rev-parse", BASE_REF],
++        cwd=repo,
++        check=True,
++        capture_output=True,
++    ).stdout.decode()
++    head = subprocess.run(
++        ["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True
++    ).stdout.decode()
++    assert base != head
++
++
++# ---------------------------------------------------------------------------
++# AC-2 — one amending case and one paired negative per ground
++# ---------------------------------------------------------------------------
++
++UNWRITTEN = "never written into this repository"
++NO_SUCH_RULE = "a house rule nobody ever wrote down"
++
++#: Eight fixtures: each ground reproduced against the base, and each
++#: ground asserted by the claimant over a fixture that does not bear it.
++#: The pairs differ ONLY in what the repository carries at the base, so a
++#: reconciler that answered from the claim would answer both alike.
++GROUND_CASES: tuple[
++    tuple[str, AmendmentGround, list[GroundEvidence], CriterionRef | None, bool], ...
++] = (
++    (
++        "unsatisfiable-reproduced",
++        AmendmentGround.UNSATISFIABLE_AT_BASE,
++        [GroundEvidence(path=HOUSE_PATH, quote=AT_BASE)],
++        None,
++        True,
++    ),
++    (
++        "unsatisfiable-unsupported",
++        AmendmentGround.UNSATISFIABLE_AT_BASE,
++        [GroundEvidence(path=HOUSE_PATH, quote=UNWRITTEN)],
++        None,
++        False,
++    ),
++    (
++        "mutual-reproduced",
++        AmendmentGround.MUTUALLY_UNSATISFIABLE,
++        [GroundEvidence(path=HOUSE_PATH, quote=AT_BASE)],
++        SIBLING,
++        True,
++    ),
++    (
++        "mutual-unsupported",
++        AmendmentGround.MUTUALLY_UNSATISFIABLE,
++        [GroundEvidence(path=HOUSE_PATH, quote=AT_BASE)],
++        CriterionRef("ordinary/child"),
++        False,
++    ),
++    (
++        "premise-false-reproduced",
++        AmendmentGround.PREMISE_FALSE_AT_BASE,
++        [GroundEvidence(path=HOUSE_PATH, quote=ONLY_AFTER_BASE)],
++        None,
++        True,
++    ),
++    (
++        "premise-false-unsupported",
++        AmendmentGround.PREMISE_FALSE_AT_BASE,
++        [GroundEvidence(path=HOUSE_PATH, quote=AT_BASE)],
++        None,
++        False,
++    ),
++    (
++        "house-rule-reproduced",
++        AmendmentGround.REQUIRES_BREAKING_HOUSE_RULE,
++        [GroundEvidence(path=RULES_PATH, quote=HOUSE_RULE)],
++        None,
++        True,
++    ),
++    (
++        "house-rule-unsupported",
++        AmendmentGround.REQUIRES_BREAKING_HOUSE_RULE,
++        [GroundEvidence(path=RULES_PATH, quote=NO_SUCH_RULE)],
++        None,
++        False,
++    ),
++)
++
++
++def test_the_ground_vocabulary_is_exactly_the_four_and_no_fifth() -> None:
++    """The wire spellings, verbatim, in declaration order."""
++    assert [member.value for member in AmendmentGround] == [
++        "unsatisfiable_at_base",
++        "mutually_unsatisfiable",
++        "premise_false_at_base",
++        "requires_breaking_house_rule",
++    ]
++
++
++def test_every_ground_declares_how_it_is_reproduced() -> None:
++    """A ground with no reproduction rule could never be added silently."""
++    assert set(QUOTE_CARRIED_AT_BASE) == set(AmendmentGround)
++
++
++def test_the_eight_fixtures_pair_every_ground_both_ways() -> None:
++    """Non-vacuity: four grounds, each with one amending and one upholding case."""
++    assert len(GROUND_CASES) == 8
++    assert {(case[1], case[4]) for case in GROUND_CASES} == {
++        (ground, amends) for ground in AmendmentGround for amends in (True, False)
++    }
++
++
++@pytest.mark.parametrize(
++    ("ground", "evidence", "counter_subject", "amends"),
++    [case[1:] for case in GROUND_CASES],
++    ids=[case[0] for case in GROUND_CASES],
++)
++async def test_each_ground_amends_only_where_the_base_reproduces_it(
++    repo,
++    ground: AmendmentGround,
++    evidence: list[GroundEvidence],
++    counter_subject: CriterionRef | None,
++    amends: bool,
++) -> None:
++    """The fixture decides: the claim's own wording is identical in each pair."""
++    verdict = await reconciler().reconcile(
++        claim(evidence=evidence, ground=ground, counter_subject=counter_subject),
++        issue_key=ISSUE,
++        repository=str(repo),
++        base_ref=BASE_REF,
++    )
++    if amends:
++        assert verdict.decision is AmendmentDecision.AMENDED
++        assert verdict.ground is ground
++        assert verdict.reproduced == tuple(evidence)
++    else:
++        assert verdict.decision is AmendmentDecision.UPHELD
++        assert verdict.ground is None
++        assert verdict.reproduced == ()
++
++
++async def test_the_reconciler_does_not_shop_for_a_ground_that_would_fit(repo) -> None:
++    """One address, two grounds: it runs the asserted one and no other.
++
++    The same evidence reproduces ``UNSATISFIABLE_AT_BASE`` and refutes
++    ``PREMISE_FALSE_AT_BASE``. A reconciler that tried the four until one
++    stuck would amend both times.
++    """
++    evidence = [GroundEvidence(path=HOUSE_PATH, quote=AT_BASE)]
++    fitting = await reconciler().reconcile(
++        claim(evidence=evidence, ground=AmendmentGround.UNSATISFIABLE_AT_BASE),
++        issue_key=ISSUE,
++        repository=str(repo),
++        base_ref=BASE_REF,
++    )
++    misasserted = await reconciler().reconcile(
++        claim(evidence=evidence, ground=AmendmentGround.PREMISE_FALSE_AT_BASE),
++        issue_key=ISSUE,
++        repository=str(repo),
++        base_ref=BASE_REF,
++    )
++    assert fitting.decision is AmendmentDecision.AMENDED
++    assert misasserted.decision is AmendmentDecision.UPHELD
++
++
++def test_a_mutual_claim_has_to_name_the_other_criterion() -> None:
++    """A claim about a pair that names one of them is not about a pair."""
++    with pytest.raises(ValidationError, match="names the other criterion"):
++        claim(evidence=[], ground=AmendmentGround.MUTUALLY_UNSATISFIABLE)
++
++
++def test_no_other_ground_may_name_a_counter_subject() -> None:
++    """A second criterion means nothing to the three single-subject grounds."""
++    with pytest.raises(ValidationError, match="names a counter subject"):
++        claim(
++            evidence=[],
++            ground=AmendmentGround.UNSATISFIABLE_AT_BASE,
++            counter_subject=SIBLING,
++        )
+diff --git a/tests/chains/test_ralph_loop.py b/tests/chains/test_ralph_loop.py
+index 55168295..53fee991 100644
+--- a/tests/chains/test_ralph_loop.py
++++ b/tests/chains/test_ralph_loop.py
+@@ -7,9 +7,10 @@
+ from collections.abc import AsyncGenerator, Sequence
+ from itertools import pairwise
+ from pathlib import Path
+-from typing import TypedDict
++from typing import TypedDict, get_type_hints
+ 
+ import pytest
++import structlog.testing
+ from pydantic import ValidationError
+ 
+ from kodezart.chains.authored_delivery import AuthoredDeliveryCoordinator
+@@ -34,6 +35,14 @@
+     WorkflowCompleteEvent,
+     WorkflowIterationEvent,
+ )
++from kodezart.types.domain.amendment import (
++    AmendmentDecision,
++    AmendmentGround,
++    AmendmentVerdict,
++    GroundEvidence,
++    UpheldRepeat,
++    repeat_upheld,
++)
+ from kodezart.types.domain.branch import (
+     BaseInput,
+     BaseSpec,
+@@ -41,6 +50,7 @@
+     trunk_base,
+ )
+ from kodezart.types.domain.criteria import CriterionVerdict, ValidatedCriterion
++from kodezart.types.domain.criterion_ref import CriterionRef
+ from kodezart.types.domain.gating import RepoVisibility
+ from kodezart.types.domain.persist import PersistResult, PersistSource
+ from kodezart.types.domain.prompts import PromptKey
+@@ -53,7 +63,8 @@
+     AgentDefinition,
+     SessionPolicy,
+ )
+-from kodezart.types.domain.trajectory import IterationRecord
++from kodezart.types.domain.trajectory import IterationRecord, LoopTrajectory
++from kodezart.types.domain.workflow import RalphLoopState
+ from tests.chains.test_dispatch_definitions import chain_source, dispatch_block
+ from tests.fakes import (
+     FAKE_SESSION_TYPE,
+@@ -2050,3 +2061,131 @@ async def test_a_rate_limited_evaluation_waits_the_floor_before_its_next_attempt
+     assert second_attempt - first_attempt >= RATE_LIMIT_FLOOR_SECONDS
+     iterations = [e for e in events if isinstance(e, WorkflowIterationEvent)]
+     assert len(iterations) == 1, "the retried attempt finished the iteration"
++
++
++# ---------------------------------------------------------------------------
++# KOD-97-AC-6 — repeat UPHELD verdicts, counted purely and reported
++# ---------------------------------------------------------------------------
++
++
++def _upheld(subject: str) -> AmendmentVerdict:
++    return AmendmentVerdict(
++        subject_id=CriterionRef(subject), decision=AmendmentDecision.UPHELD
++    )
++
++
++def _amended(subject: str) -> AmendmentVerdict:
++    return AmendmentVerdict(
++        subject_id=CriterionRef(subject),
++        decision=AmendmentDecision.AMENDED,
++        ground=AmendmentGround.UNSATISFIABLE_AT_BASE,
++        reproduced=(GroundEvidence(path="src/house.py", quote="a committed line"),),
++    )
++
++
++def test_a_single_upheld_verdict_is_not_a_repeat() -> None:
++    """One refusal per subject is the ordinary shape and reports nothing."""
++    assert repeat_upheld([_upheld("criterion/a"), _upheld("criterion/b")]) == ()
++
++
++def test_a_subject_upheld_again_is_counted_with_its_total() -> None:
++    """The count is how many times THAT subject was refused, not how many ran."""
++    verdicts = [
++        _upheld("criterion/a"),
++        _upheld("criterion/b"),
++        _upheld("criterion/a"),
++        _upheld("criterion/a"),
++    ]
++    assert repeat_upheld(verdicts) == (
++        UpheldRepeat(subject_id=CriterionRef("criterion/a"), count=3),
++    )
++
++
++def test_amended_verdicts_are_not_counted_as_refusals() -> None:
++    """An amendment is the arm where the claim was NOT refused."""
++    verdicts = [
++        _amended("criterion/a"),
++        _amended("criterion/a"),
++        _upheld("criterion/a"),
++    ]
++    assert repeat_upheld(verdicts) == ()
++
++
++def test_repeat_counts_are_ordered_by_subject_and_pure_over_the_list() -> None:
++    """Same list, same answer, in subject order and with no other input."""
++    verdicts = [
++        _upheld("criterion/z"),
++        _upheld("criterion/a"),
++        _upheld("criterion/z"),
++        _upheld("criterion/a"),
++    ]
++    expected = (
++        UpheldRepeat(subject_id=CriterionRef("criterion/a"), count=2),
++        UpheldRepeat(subject_id=CriterionRef("criterion/z"), count=2),
++    )
++    assert repeat_upheld(verdicts) == expected
++    assert repeat_upheld(verdicts) == expected
++    assert repeat_upheld(list(reversed(verdicts))) == expected
++    assert repeat_upheld([]) == ()
++
++
++def test_a_repeat_cannot_be_constructed_from_a_single_refusal() -> None:
++    """The model itself refuses a count of one, so no reader has to filter it."""
++    with pytest.raises(ValidationError):
++        UpheldRepeat(subject_id=CriterionRef("criterion/a"), count=1)
++
++
++def test_the_loop_retains_the_verdicts_the_count_is_taken_from() -> None:
++    """The ruling history is a channel on the loop's own state."""
++    assert (
++        get_type_hints(RalphLoopState)["amendment_verdicts"] == list[AmendmentVerdict]
++    )
++
++
++async def test_the_iteration_report_names_the_repeat_count_beside_the_failures() -> (
++    None
++):
++    """One record per iteration carrying both, from the state the loop retained."""
++    executor = _ScriptedLoopExecutor(_THREE_CRITERIA, _PLATEAU_MASKS)
++    loop = _make_loop(executor=executor, max_iterations=3, plateau_window=2)
++
++    with structlog.testing.capture_logs() as logs:
++        events = [
++            e
++            async for e in loop.run(**_run_kwargs(acceptance_criteria=_THREE_CRITERIA))
++        ]
++
++    iteration_events = [e for e in events if isinstance(e, WorkflowIterationEvent)]
++    reports = [entry for entry in logs if entry["event"] == "iteration_report"]
++    assert len(reports) == len(iteration_events)
++    for report, event in zip(reports, iteration_events, strict=True):
++        assert report["iteration"] == event.iteration
++        assert report["failing_criterion_ids"] == [
++            result.criterion_id
++            for result in event.evaluation.criteria_results
++            if not result.passed
++        ]
++        assert report["repeat_upheld"] == []
++    assert any(report["failing_criterion_ids"] for report in reports)
++
++
++def test_the_loop_trajectory_shape_is_unchanged() -> None:
++    """AC-6 leaves the fold and its two types exactly as they were."""
++    assert list(IterationRecord.model_fields) == [
++        "iteration",
++        "passed_count",
++        "failing_criterion_ids",
++        "commit_sha",
++    ]
++    assert list(LoopTrajectory.model_fields) == [
++        "records",
++        "never_passed_ids",
++        "best_passed_count",
++        "best_iteration",
++        "best_commit_sha",
++        "plateaued",
++    ]
++    assert [
++        (name, parameter.kind.name)
++        for name, parameter in inspect.signature(fold_trajectory).parameters.items()
++    ] == [("records", "POSITIONAL_OR_KEYWORD"), ("plateau_window", "KEYWORD_ONLY")]

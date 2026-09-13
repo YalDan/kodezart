@@ -1,0 +1,95 @@
+....................................................F.FFF.FFFFFF
+=================================== FAILURES ===================================
+____ test_the_native_fire_graph_holds_no_ticket_or_criteria_generation_node ____
+tests/chains/test_native_fire.py:339: in test_the_native_fire_graph_holds_no_ticket_or_criteria_generation_node
+    fire = engine(criteria=TrackerCriteria(tracker=tracker()))
+                                                   ^^^^^^^^^
+tests/chains/test_native_fire.py:121: in tracker
+    make_tracker_issue(SUBJECT, issue_labels=labels, body="the subject's own text"),
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: make_tracker_issue() got an unexpected keyword argument 'issue_labels'
+____________ test_the_loop_is_unreachable_without_the_pre_loop_step ____________
+tests/chains/test_native_fire.py:364: in test_the_loop_is_unreachable_without_the_pre_loop_step
+    fire = engine(criteria=TrackerCriteria(tracker=tracker()))
+                                                   ^^^^^^^^^
+tests/chains/test_native_fire.py:121: in tracker
+    make_tracker_issue(SUBJECT, issue_labels=labels, body="the subject's own text"),
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: make_tracker_issue() got an unexpected keyword argument 'issue_labels'
+_____ test_a_criterion_that_lost_its_check_stops_the_fire_before_the_loop ______
+tests/chains/test_native_fire.py:384: in test_a_criterion_that_lost_its_check_stops_the_fire_before_the_loop
+    port = tracker(bodies={NESTED_OWED: "**Do:** a body that states no check"})
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/chains/test_native_fire.py:121: in tracker
+    make_tracker_issue(SUBJECT, issue_labels=labels, body="the subject's own text"),
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: make_tracker_issue() got an unexpected keyword argument 'issue_labels'
+_____ test_valid_native_fire_reaches_shared_execution_with_tracker_checks ______
+tests/chains/test_native_fire.py:404: in test_valid_native_fire_reaches_shared_execution_with_tracker_checks
+    fire = engine(criteria=TrackerCriteria(tracker=tracker()), quality_gate=gate)
+                                                   ^^^^^^^^^
+tests/chains/test_native_fire.py:121: in tracker
+    make_tracker_issue(SUBJECT, issue_labels=labels, body="the subject's own text"),
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: make_tracker_issue() got an unexpected keyword argument 'issue_labels'
+____________________ test_a_container_address_is_not_a_fire ____________________
+tests/chains/test_native_fire.py:423: in test_a_container_address_is_not_a_fire
+    fire = engine(criteria=TrackerCriteria(tracker=tracker()))
+                                                   ^^^^^^^^^
+tests/chains/test_native_fire.py:121: in tracker
+    make_tracker_issue(SUBJECT, issue_labels=labels, body="the subject's own text"),
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: make_tracker_issue() got an unexpected keyword argument 'issue_labels'
+___________ test_the_addressed_issue_is_the_subject_the_run_carries ____________
+tests/chains/test_native_fire.py:429: in test_the_addressed_issue_is_the_subject_the_run_carries
+    fire = engine(criteria=TrackerCriteria(tracker=tracker()))
+                                                   ^^^^^^^^^
+tests/chains/test_native_fire.py:121: in tracker
+    make_tracker_issue(SUBJECT, issue_labels=labels, body="the subject's own text"),
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: make_tracker_issue() got an unexpected keyword argument 'issue_labels'
+_________ test_the_criteria_a_fire_owes_are_its_subtrees_todo_criteria _________
+tests/chains/test_native_fire.py:464: in test_the_criteria_a_fire_owes_are_its_subtrees_todo_criteria
+    stage = TrackerCriteria(tracker=tracker())
+                                    ^^^^^^^^^
+tests/chains/test_native_fire.py:121: in tracker
+    make_tracker_issue(SUBJECT, issue_labels=labels, body="the subject's own text"),
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: make_tracker_issue() got an unexpected keyword argument 'issue_labels'
+_______ test_only_the_check_reaches_the_fire_never_the_recorded_evidence _______
+tests/chains/test_native_fire.py:476: in test_only_the_check_reaches_the_fire_never_the_recorded_evidence
+    stage = TrackerCriteria(tracker=tracker())
+                                    ^^^^^^^^^
+tests/chains/test_native_fire.py:121: in tracker
+    make_tracker_issue(SUBJECT, issue_labels=labels, body="the subject's own text"),
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: make_tracker_issue() got an unexpected keyword argument 'issue_labels'
+__ test_a_refused_spec_read_refuses_the_fire_though_the_subtree_reads[stage] ___
+tests/chains/test_native_fire.py:490: in test_a_refused_spec_read_refuses_the_fire_though_the_subtree_reads
+    port = tracker(staged=absent != "stage", approved=absent != "approval")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/chains/test_native_fire.py:121: in tracker
+    make_tracker_issue(SUBJECT, issue_labels=labels, body="the subject's own text"),
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: make_tracker_issue() got an unexpected keyword argument 'issue_labels'
+_ test_a_refused_spec_read_refuses_the_fire_though_the_subtree_reads[approval] _
+tests/chains/test_native_fire.py:490: in test_a_refused_spec_read_refuses_the_fire_though_the_subtree_reads
+    port = tracker(staged=absent != "stage", approved=absent != "approval")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/chains/test_native_fire.py:121: in tracker
+    make_tracker_issue(SUBJECT, issue_labels=labels, body="the subject's own text"),
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: make_tracker_issue() got an unexpected keyword argument 'issue_labels'
+=========================== short test summary info ============================
+FAILED tests/chains/test_native_fire.py::test_the_native_fire_graph_holds_no_ticket_or_criteria_generation_node
+FAILED tests/chains/test_native_fire.py::test_the_loop_is_unreachable_without_the_pre_loop_step
+FAILED tests/chains/test_native_fire.py::test_a_criterion_that_lost_its_check_stops_the_fire_before_the_loop
+FAILED tests/chains/test_native_fire.py::test_valid_native_fire_reaches_shared_execution_with_tracker_checks
+FAILED tests/chains/test_native_fire.py::test_a_container_address_is_not_a_fire
+FAILED tests/chains/test_native_fire.py::test_the_addressed_issue_is_the_subject_the_run_carries
+FAILED tests/chains/test_native_fire.py::test_the_criteria_a_fire_owes_are_its_subtrees_todo_criteria
+FAILED tests/chains/test_native_fire.py::test_only_the_check_reaches_the_fire_never_the_recorded_evidence
+FAILED tests/chains/test_native_fire.py::test_a_refused_spec_read_refuses_the_fire_though_the_subtree_reads[stage]
+FAILED tests/chains/test_native_fire.py::test_a_refused_spec_read_refuses_the_fire_though_the_subtree_reads[approval]
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 10 failures !!!!!!!!!!!!!!!!!!!!!!!!!!
+10 failed, 54 passed in 3.16s

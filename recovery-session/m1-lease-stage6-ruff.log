@@ -1,0 +1,434 @@
+E501 Line too long (99 > 88)
+    --> src/kodezart/adapters/linear_mcp_tracker.py:1064:89
+     |
+1062 |             {"id": issue_key, "labels": [*preserved, self._label_for(state)]},
+1063 |         )
+1064 |         return self._saved_issue(payload, written={"labels": [*preserved, self._label_for(state)]})
+     |                                                                                         ^^^^^^^^^^^
+1065 |
+1066 |     async def post_comment(self, *, issue_key: str, body: str) -> TrackerComment:
+     |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_linear_wire_shapes.py:34:1
+   |
+32 | """
+33 |
+34 | from collections.abc import Mapping, Sequence
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+35 | from datetime import UTC, datetime
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_linear_wire_shapes.py:35:1
+   |
+34 | from collections.abc import Mapping, Sequence
+35 | from datetime import UTC, datetime
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+36 |
+37 | import pytest
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_linear_wire_shapes.py:37:1
+   |
+35 | from datetime import UTC, datetime
+36 |
+37 | import pytest
+   | ^^^^^^^^^^^^^
+38 | from pydantic import ValidationError
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_linear_wire_shapes.py:38:1
+   |
+37 | import pytest
+38 | from pydantic import ValidationError
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+39 |
+40 | from kodezart.adapters.linear_mcp_tracker import LinearMcpTracker
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_linear_wire_shapes.py:40:1
+   |
+38 | from pydantic import ValidationError
+39 |
+40 | from kodezart.adapters.linear_mcp_tracker import LinearMcpTracker
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+41 | from kodezart.adapters.linear_mcp_types import (
+42 |     LINEAR_NAMED_ARRAY,
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_linear_wire_shapes.py:41:1
+   |
+40 |   from kodezart.adapters.linear_mcp_tracker import LinearMcpTracker
+41 | / from kodezart.adapters.linear_mcp_types import (
+42 | |     LINEAR_NAMED_ARRAY,
+43 | |     LinearCommentListWire,
+44 | |     LinearCommentWire,
+45 | |     LinearDocumentListWire,
+46 | |     LinearDocumentWire,
+47 | |     LinearIssueDetailWire,
+48 | |     LinearIssueListWire,
+49 | |     LinearIssueWire,
+50 | |     LinearLabelListWire,
+51 | |     LinearTeamListWire,
+52 | |     LinearUserListWire,
+53 | | )
+   | |_^
+54 |   from kodezart.core.errors import TrackerProtocolError
+55 |   from kodezart.core.protocols import McpToolResult
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_linear_wire_shapes.py:54:1
+   |
+52 |     LinearUserListWire,
+53 | )
+54 | from kodezart.core.errors import TrackerProtocolError
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+55 | from kodezart.core.protocols import McpToolResult
+56 | from kodezart.types.domain.dispatch import SelfWriteLedger
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_linear_wire_shapes.py:55:1
+   |
+53 | )
+54 | from kodezart.core.errors import TrackerProtocolError
+55 | from kodezart.core.protocols import McpToolResult
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+56 | from kodezart.types.domain.dispatch import SelfWriteLedger
+57 | from kodezart.types.domain.operation import LifecycleStage, QueueState
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_linear_wire_shapes.py:56:1
+   |
+54 | from kodezart.core.errors import TrackerProtocolError
+55 | from kodezart.core.protocols import McpToolResult
+56 | from kodezart.types.domain.dispatch import SelfWriteLedger
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+57 | from kodezart.types.domain.operation import LifecycleStage, QueueState
+58 | from kodezart.types.domain.tracker import (
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_linear_wire_shapes.py:57:1
+   |
+55 | from kodezart.core.protocols import McpToolResult
+56 | from kodezart.types.domain.dispatch import SelfWriteLedger
+57 | from kodezart.types.domain.operation import LifecycleStage, QueueState
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+58 | from kodezart.types.domain.tracker import (
+59 |     IssueQuery,
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_linear_wire_shapes.py:58:1
+   |
+56 |   from kodezart.types.domain.dispatch import SelfWriteLedger
+57 |   from kodezart.types.domain.operation import LifecycleStage, QueueState
+58 | / from kodezart.types.domain.tracker import (
+59 | |     IssueQuery,
+60 | |     IssueRelationKind,
+61 | |     MappingKind,
+62 | |     MappingRef,
+63 | | )
+   | |_^
+64 |
+65 |   # --------------------------------------------------------------------------
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_tracker_boot.py:8:1
+   |
+ 6 | """Boot validation: one bad mapping aborts startup naming exactly that entry."""
+ 7 |
+ 8 | from collections.abc import Mapping, Sequence
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ 9 | from http import HTTPStatus
+10 | from pathlib import Path
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_tracker_boot.py:9:1
+   |
+ 8 | from collections.abc import Mapping, Sequence
+ 9 | from http import HTTPStatus
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+10 | from pathlib import Path
+11 | from typing import ClassVar
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_tracker_boot.py:10:1
+   |
+ 8 | from collections.abc import Mapping, Sequence
+ 9 | from http import HTTPStatus
+10 | from pathlib import Path
+   | ^^^^^^^^^^^^^^^^^^^^^^^^
+11 | from typing import ClassVar
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_tracker_boot.py:11:1
+   |
+ 9 | from http import HTTPStatus
+10 | from pathlib import Path
+11 | from typing import ClassVar
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+12 |
+13 | import httpx
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_tracker_boot.py:13:1
+   |
+11 | from typing import ClassVar
+12 |
+13 | import httpx
+   | ^^^^^^^^^^^^
+14 | import pytest
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_tracker_boot.py:14:1
+   |
+13 | import httpx
+14 | import pytest
+   | ^^^^^^^^^^^^^
+15 |
+16 | from kodezart.adapters.http_mcp_tool_caller import HttpMcpToolCaller
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_tracker_boot.py:16:1
+   |
+14 | import pytest
+15 |
+16 | from kodezart.adapters.http_mcp_tool_caller import HttpMcpToolCaller
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+17 | from kodezart.adapters.linear_mcp_tracker import (
+18 |     ACCEPTED_CREDENTIAL_SHAPE,
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_tracker_boot.py:17:1
+   |
+16 |   from kodezart.adapters.http_mcp_tool_caller import HttpMcpToolCaller
+17 | / from kodezart.adapters.linear_mcp_tracker import (
+18 | |     ACCEPTED_CREDENTIAL_SHAPE,
+19 | |     LinearMcpTracker,
+20 | | )
+   | |_^
+21 |   from kodezart.adapters.toml_operation_config import load_operation_config
+22 |   from kodezart.composition.tracker import boot_tracker, refuse_foreign_credential
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_tracker_boot.py:21:1
+   |
+19 |     LinearMcpTracker,
+20 | )
+21 | from kodezart.adapters.toml_operation_config import load_operation_config
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+22 | from kodezart.composition.tracker import boot_tracker, refuse_foreign_credential
+23 | from kodezart.core.config import AppConfig
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_tracker_boot.py:22:1
+   |
+20 | )
+21 | from kodezart.adapters.toml_operation_config import load_operation_config
+22 | from kodezart.composition.tracker import boot_tracker, refuse_foreign_credential
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+23 | from kodezart.core.config import AppConfig
+24 | from kodezart.core.errors import (
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_tracker_boot.py:23:1
+   |
+21 | from kodezart.adapters.toml_operation_config import load_operation_config
+22 | from kodezart.composition.tracker import boot_tracker, refuse_foreign_credential
+23 | from kodezart.core.config import AppConfig
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+24 | from kodezart.core.errors import (
+25 |     McpCredentialRefusedError,
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_tracker_boot.py:24:1
+   |
+22 |   from kodezart.composition.tracker import boot_tracker, refuse_foreign_credential
+23 |   from kodezart.core.config import AppConfig
+24 | / from kodezart.core.errors import (
+25 | |     McpCredentialRefusedError,
+26 | |     TrackerBootValidationError,
+27 | |     TrackerCredentialShapeError,
+28 | |     TrackerEnsureConflictError,
+29 | | )
+   | |_^
+30 |   from kodezart.core.logging import get_logger
+31 |   from kodezart.core.protocols import (
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_tracker_boot.py:30:1
+   |
+28 |     TrackerEnsureConflictError,
+29 | )
+30 | from kodezart.core.logging import get_logger
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+31 | from kodezart.core.protocols import (
+32 |     ManagedMcpToolCaller,
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_tracker_boot.py:31:1
+   |
+29 |   )
+30 |   from kodezart.core.logging import get_logger
+31 | / from kodezart.core.protocols import (
+32 | |     ManagedMcpToolCaller,
+33 | |     McpToolResult,
+34 | |     TrackerPort,
+35 | | )
+   | |_^
+36 |   from kodezart.services.tracker_boot import (
+37 |       OWNED_REF_BUILDERS,
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_tracker_boot.py:36:1
+   |
+34 |       TrackerPort,
+35 |   )
+36 | / from kodezart.services.tracker_boot import (
+37 | |     OWNED_REF_BUILDERS,
+38 | |     configured_mappings,
+39 | |     owned_mappings,
+40 | |     reconcile_tracker_mappings,
+41 | |     validate_tracker_mappings,
+42 | | )
+   | |_^
+43 |   from kodezart.types.domain.dispatch import SelfWriteLedger
+44 |   from kodezart.types.domain.operation import (
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_tracker_boot.py:43:1
+   |
+41 |     validate_tracker_mappings,
+42 | )
+43 | from kodezart.types.domain.dispatch import SelfWriteLedger
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+44 | from kodezart.types.domain.operation import (
+45 |     CHECKPOINT_DOCUMENT_KEY,
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_tracker_boot.py:44:1
+   |
+42 |   )
+43 |   from kodezart.types.domain.dispatch import SelfWriteLedger
+44 | / from kodezart.types.domain.operation import (
+45 | |     CHECKPOINT_DOCUMENT_KEY,
+46 | |     FIELD_OWNERSHIP,
+47 | |     CheckStep,
+48 | |     ConfigOwnership,
+49 | |     DocumentEntry,
+50 | |     DocumentSystem,
+51 | |     Initiative,
+52 | |     LifecycleStage,
+53 | |     OperationConfig,
+54 | |     Principal,
+55 | |     PrincipalRole,
+56 | |     RecordDestination,
+57 | |     RepoEntry,
+58 | |     TeamEntry,
+59 | | )
+   | |_^
+60 |   from kodezart.types.domain.tracker import (
+61 |       INSTATABLE_MAPPING_KINDS,
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_tracker_boot.py:60:1
+   |
+58 |       TeamEntry,
+59 |   )
+60 | / from kodezart.types.domain.tracker import (
+61 | |     INSTATABLE_MAPPING_KINDS,
+62 | |     MappingKind,
+63 | |     MappingRef,
+64 | |     TrackerBackend,
+65 | | )
+   | |_^
+66 |   from tests.adapters.test_http_mcp_tool_caller import client_over
+67 |   from tests.fakes import (
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_tracker_boot.py:66:1
+   |
+64 |     TrackerBackend,
+65 | )
+66 | from tests.adapters.test_http_mcp_tool_caller import client_over
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+67 | from tests.fakes import (
+68 |     FakeLinearMcpServer,
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_tracker_boot.py:67:1
+   |
+65 |   )
+66 |   from tests.adapters.test_http_mcp_tool_caller import client_over
+67 | / from tests.fakes import (
+68 | |     FakeLinearMcpServer,
+69 | |     FakeMcpDocument,
+70 | |     FakeTrackerPort,
+71 | |     ManagedFakeLinearMcpServer,
+72 | | )
+   | |_^
+73 |   from tests.tracker.conftest import (
+74 |       APPROVER,
+   |
+
+E402 Module level import not at top of file
+  --> tests/tracker/test_tracker_boot.py:73:1
+   |
+71 |       ManagedFakeLinearMcpServer,
+72 |   )
+73 | / from tests.tracker.conftest import (
+74 | |     APPROVER,
+75 | |     BYSTANDER,
+76 | |     QUEUE_STATE_LABELS,
+77 | |     STATE_TYPES,
+78 | |     TEAM_IDENTIFIERS,
+79 | |     WORKFLOW_STATE_NAMES,
+80 | |     fixture_server,
+81 | |     linear_over_fake_mcp,
+82 | | )
+   | |_^
+83 |
+84 |   EXAMPLE_CONFIG = Path(__file__).resolve().parents[2] / "docs" / "operation.example.toml"
+   |
+
+E501 Line too long (173 > 88)
+   --> tests/tracker/test_tracker_boot_wiring.py:116:89
+    |
+114 | …
+115 | …
+116 | …ezart-claim", work_ref = "kodezart-workref", base_spec = "kodezart-basespec", repository = "kodezart-repo"}}
+    |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+117 | …
+118 | …
+    |
+
+Found 39 errors (5 fixed, 34 remaining).

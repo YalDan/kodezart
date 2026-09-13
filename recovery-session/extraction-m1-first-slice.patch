@@ -1,0 +1,817 @@
+diff --git a/src/kodezart/domain/surface_lease.py b/src/kodezart/domain/surface_lease.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..ef6873b2051b57f37d9d39b757a2eb7609408763
+--- /dev/null
++++ b/src/kodezart/domain/surface_lease.py
+@@ -0,0 +1,145 @@
++"""The all-or-nothing arithmetic every ownership implementation shares."""
++
++from collections.abc import Callable, Hashable, Iterable, Mapping
++from datetime import datetime, timedelta
++from typing import Protocol
++
++from kodezart.types.domain.surface import WritableSurface
++
++
++class LiveGrant(Protocol):
++    """What the arithmetic needs of a grant: whose it is, and until when.
++
++    A surface lease satisfies it, and so does an adapter's own record of
++    one holder's marker, so a backend that stores ownership as comments
++    and a registry that stores it in memory decide contention by the same
++    function rather than by two statements of one rule.
++    """
++
++    @property
++    def holder(self) -> str: ...
++
++    @property
++    def expires_at(self) -> datetime: ...
++
++
++def surface_address(surface: WritableSurface) -> tuple[str, str, str, str]:
++    """A total order over surfaces, so every holder names the same conflict."""
++    return (
++        surface.kind.value,
++        surface.ref.kind.value,
++        surface.ref.key,
++        surface.marker or "",
++    )
++
++
++def renews(*, published_at: datetime, since: datetime) -> bool:
++    """Whether a write the backend stamped at ``published_at`` renewed anything.
++
++    The one statement of the fence: a renewal counts when the backend
++    accepted it strictly before the deadline it was published against.
++    The deadline is the first instant the address is free for the next
++    holder, so a renewal sharing that instant is already late — there is
++    no instant at which both this holder may renew and another may take
++    the address.
++    """
++    return published_at < since
++
++
++def renewed_deadline(
++    *,
++    published_at: datetime,
++    lease: timedelta,
++    since: datetime,
++) -> datetime:
++    """The deadline one renewal puts in force, decided in the backend's clock.
++
++    A backend that offers no conditional write still stamps every write it
++    accepts, and that stamp is the only reading of "when" every party
++    agrees on.  So a renewal is weighed against the deadline it was
++    published against — ``since``, itself a stamp the backend assigned to
++    the write before it plus the duration that write bought — and against
++    nothing either holder's own clock has ever touched.  A renewal the
++    backend stamped at or after that deadline arrives too late to renew
++    anything: the record keeps the deadline it had, so the holder that
++    took the address meanwhile is the only owner, whether or not the late
++    holder's withdrawal ever reaches the backend.
++
++    Latency cannot buy immunity here, because the same stamp that a slow
++    write moves later is the one every other holder is weighed against:
++    there is no instant at which the address is free for a newcomer and
++    still renewable by the holder it lapsed from.
++    """
++    if not renews(published_at=published_at, since=since):
++        return since
++    return published_at + lease
++
++
++class OrderedGrant(Protocol):
++    """What the self-arbitration needs of a grant: where it sits, and until when.
++
++    ``order`` is the backend's own placement of the grant against every
++    other — its earliest creation, and an identity to settle an instant
++    two creations shared — so two parties reading one log reach one
++    answer.
++    """
++
++    @property
++    def order(self) -> tuple[datetime, str]: ...
++
++    @property
++    def expires_at(self) -> datetime: ...
++
++
++def one_ownership[GrantT: OrderedGrant](
++    *, mine: GrantT, siblings: Iterable[GrantT], now: datetime
++) -> GrantT:
++    """Which of one holder's several grants over one set IS its ownership.
++
++    A holder identity is exactly what the arbitration is over, so a second
++    grant to the same identity is not a conflict to break but the same
++    ownership observed twice: the grant the backend ordered FIRST stands
++    for both, and every later one withdraws into it rather than against
++    it, which is what leaves a holder contending with itself holding one
++    grant and never none.
++
++    Earliest and not latest, because the two sides do not see the same
++    log: the earlier grant's marker is already there when the later one
++    reads back, while the later one's may not yet be there when the
++    earlier reads.  The earliest is therefore the only choice both sides
++    reach from what each can see, and a rule picking the latest would let
++    the party that stood down be the one whose marker survived.
++
++    A grant of the holder's that has LAPSED is not ownership and never
++    stands here, so a restart cleans its predecessor's marker up instead
++    of inheriting it, and no restart can hand an expired grant a life it
++    had already run out of.
++    """
++    standing = mine
++    for sibling in siblings:
++        if sibling.expires_at > now and sibling.order < standing.order:
++            standing = sibling
++    return standing
++
++
++def live_conflict[AddressT: Hashable](
++    *,
++    requested: frozenset[AddressT],
++    held: Mapping[AddressT, LiveGrant],
++    holder: str,
++    now: datetime,
++    order: Callable[[AddressT], tuple[str, ...]],
++) -> tuple[AddressT, str] | None:
++    """The first requested address another holder still holds, and who holds it.
++
++    ``None`` when every requested address is free, expired, or already held
++    by *holder* itself: re-acquisition by the same holder is not contention.
++    *order* makes the answer deterministic across holders, which is what
++    lets two of them name the same conflict from the same state.
++    """
++    for address in sorted(requested, key=order):
++        grant = held.get(address)
++        if grant is None or grant.expires_at <= now or grant.holder == holder:
++            continue
++        return address, grant.holder
++    return None
+diff --git a/src/kodezart/types/domain/scope.py b/src/kodezart/types/domain/scope.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..c659473c7355e2d5a4d0258c736314a6f0a3a948
+--- /dev/null
++++ b/src/kodezart/types/domain/scope.py
+@@ -0,0 +1,42 @@
++"""Vendor-neutral addresses for scopes the tracker resolves."""
++
++from pydantic import ConfigDict
++
++from kodezart.types.base import CamelCaseModel
++from kodezart.types.domain.scope_address import (
++    ScopeKind as ScopeKind,
++)
++from kodezart.types.domain.scope_address import (
++    ScopeRef as ScopeRef,
++)
++from kodezart.types.domain.tracker import TrackerIssue
++
++
++class ScopeContainer(CamelCaseModel):
++    """A container's own metadata and optional containing scope."""
++
++    model_config = ConfigDict(frozen=True)
++
++    ref: ScopeRef
++    name: str
++    description: str
++    url: str | None
++    parent: ScopeRef | None = None
++
++
++class ResolvedScope(CamelCaseModel):
++    """A resolved reference and the issues whose own fields describe its graph."""
++
++    model_config = ConfigDict(frozen=True)
++
++    ref: ScopeRef
++    issues: tuple[TrackerIssue, ...]
++
++
++class ScopePlanSnapshot(CamelCaseModel):
++    """A coherent scope family and the outside dependency facts it consulted."""
++
++    model_config = ConfigDict(frozen=True, extra="forbid")
++
++    scope: ResolvedScope
++    dependencies: tuple[TrackerIssue, ...]
+diff --git a/src/kodezart/types/domain/scope_address.py b/src/kodezart/types/domain/scope_address.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..1b17942cd6ff70812d20e3ae8e5095cc4b0d44c0
+--- /dev/null
++++ b/src/kodezart/types/domain/scope_address.py
+@@ -0,0 +1,25 @@
++"""Leaf addresses shared by operation configuration and resolved tracker scopes."""
++
++from enum import StrEnum
++
++from pydantic import ConfigDict, Field
++
++from kodezart.types.base import CamelCaseModel
++
++
++class ScopeKind(StrEnum):
++    """The four kinds of scope an operation can address."""
++
++    INITIATIVE = "initiative"
++    PROJECT = "project"
++    MILESTONE = "milestone"
++    ISSUE = "issue"
++
++
++class ScopeRef(CamelCaseModel):
++    """A scope's kind and opaque key; the adapter resolves its address."""
++
++    model_config = ConfigDict(frozen=True)
++
++    kind: ScopeKind
++    key: str = Field(min_length=1)
+diff --git a/src/kodezart/types/domain/surface.py b/src/kodezart/types/domain/surface.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..66cacb1f739bff4174c3b9aab79eec67d577d3a4
+--- /dev/null
++++ b/src/kodezart/types/domain/surface.py
+@@ -0,0 +1,82 @@
++"""Vendor-neutral addresses for independently leased tracker write surfaces."""
++
++from dataclasses import dataclass
++from datetime import datetime
++from enum import StrEnum
++
++from kodezart.types.domain.scope import ScopeKind, ScopeRef
++
++
++class SurfaceKind(StrEnum):
++    """The complete writable-surface vocabulary.
++
++    A criterion sub-issue is one surface covering its body, state and labels.
++    Its parentage determines which fire declares it in its surface set; the
++    address remains the criterion's own tracker-minted issue key.
++
++    Creating a criterion has no child key yet. The parent's criterion-child
++    set is the separate address for that membership-creation operation; it
++    does not authorize modifying any existing child's body, state or labels.
++    """
++
++    ISSUE_DESCRIPTION = "issue_description"
++    MARKER_COMMENT = "marker_comment"
++    CONTAINER_DESCRIPTION = "container_description"
++    CONTAINER_STATUS_UPDATE = "container_status_update"
++    ISSUE_LABEL_SET = "issue_label_set"
++    CRITERION_SUB_ISSUE = "criterion_sub_issue"
++    CRITERION_CHILD_SET = "criterion_child_set"
++
++
++_CONTAINER_KINDS: frozenset[SurfaceKind] = frozenset(
++    {SurfaceKind.CONTAINER_DESCRIPTION, SurfaceKind.CONTAINER_STATUS_UPDATE},
++)
++
++
++@dataclass(frozen=True, slots=True, kw_only=True)
++class WritableSurface:
++    """One immutable address, suitable for membership in a declared set.
++
++    ``ref`` identifies the issue or container using the same neutral address
++    as scope resolution. ``marker`` is part of the address only for a comment:
++    two markers on an issue and its description are independent surfaces.
++    Marker contents are opaque; adapters own their storage encoding.
++    """
++
++    kind: SurfaceKind
++    ref: ScopeRef
++    marker: str | None = None
++
++    def __post_init__(self) -> None:
++        if not self.ref.key.strip():
++            raise ValueError("a writable surface requires a nonblank scope key")
++        if self.kind in _CONTAINER_KINDS:
++            if self.ref.kind is ScopeKind.ISSUE:
++                raise ValueError("a container surface requires a container reference")
++        elif self.ref.kind is not ScopeKind.ISSUE:
++            raise ValueError("an issue surface requires an issue reference")
++        if self.kind is SurfaceKind.MARKER_COMMENT:
++            if self.marker is None or not self.marker.strip():
++                raise ValueError("a marker-keyed comment requires a nonblank marker")
++        elif self.marker is not None:
++            raise ValueError("only a marker-keyed comment may carry a marker")
++
++
++@dataclass(frozen=True, slots=True, kw_only=True)
++class SurfaceLease:
++    """One holder's exclusive grant over a whole declared surface set.
++
++    The set is the unit: a lease covers every surface it names and expires
++    for all of them at once, so a holder never owns half of what it asked
++    for. ``holder`` is the writing run's identity, opaque to this value.
++    """
++
++    holder: str
++    surfaces: frozenset[WritableSurface]
++    expires_at: datetime
++
++    def __post_init__(self) -> None:
++        if not self.holder.strip():
++            raise ValueError("a surface lease requires a nonblank holder")
++        if not self.surfaces:
++            raise ValueError("a surface lease requires at least one surface")
+diff --git a/tests/domain/test_scope_ref.py b/tests/domain/test_scope_ref.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..f450ecb2cb957b562680db5529fb8e97a014a684
+--- /dev/null
++++ b/tests/domain/test_scope_ref.py
+@@ -0,0 +1,98 @@
++"""Scope addresses preserve opaque keys and reject invalid or mutable values."""
++
++from enum import StrEnum
++
++import pytest
++from pydantic import ValidationError
++
++from kodezart.types.domain.scope import ScopeKind, ScopeRef
++
++
++def test_scope_kind_has_exactly_the_four_supported_members() -> None:
++    assert issubclass(ScopeKind, StrEnum)
++    assert {name: member.value for name, member in ScopeKind.__members__.items()} == {
++        "INITIATIVE": "initiative",
++        "PROJECT": "project",
++        "MILESTONE": "milestone",
++        "ISSUE": "issue",
++    }
++
++
++@pytest.mark.parametrize("kind", ["initiative", "project", "milestone", "issue"])
++def test_each_scope_kind_round_trips_as_a_kind_and_key(kind: str) -> None:
++    payload = {"kind": kind, "key": "scope-address"}
++
++    ref = ScopeRef.model_validate(payload)
++
++    assert ref.kind is ScopeKind(kind)
++    assert ref.key == payload["key"]
++    assert ref.model_dump(mode="json", by_alias=True) == payload
++    assert ScopeRef.model_validate_json(ref.model_dump_json(by_alias=True)) == ref
++
++
++@pytest.mark.parametrize("key", ["7", "roadmap/launch", "  opaque address  ", "λ"])
++def test_keys_are_opaque_and_preserved_without_vendor_formatting(key: str) -> None:
++    ref = ScopeRef(kind=ScopeKind.PROJECT, key=key)
++
++    assert ScopeRef.model_validate_json(ref.model_dump_json()).key == key
++
++
++def test_empty_key_is_rejected() -> None:
++    with pytest.raises(ValidationError) as caught:
++        ScopeRef(kind=ScopeKind.ISSUE, key="")
++
++    assert [(error["loc"], error["type"]) for error in caught.value.errors()] == [
++        (("key",), "string_too_short"),
++    ]
++
++
++@pytest.mark.parametrize("missing", ["kind", "key"])
++def test_both_address_fields_are_required(missing: str) -> None:
++    payload = {"kind": "issue", "key": "scope-address"}
++    del payload[missing]
++
++    with pytest.raises(ValidationError) as caught:
++        ScopeRef.model_validate(payload)
++
++    assert [(error["loc"], error["type"]) for error in caught.value.errors()] == [
++        ((missing,), "missing"),
++    ]
++
++
++def test_unknown_scope_kind_is_rejected() -> None:
++    with pytest.raises(ValidationError) as caught:
++        ScopeRef.model_validate({"kind": "cycle", "key": "scope-address"})
++
++    assert [(error["loc"], error["type"]) for error in caught.value.errors()] == [
++        (("kind",), "enum"),
++    ]
++
++
++@pytest.mark.parametrize("extra_field", ["vendor_id", "id"])
++def test_no_vendor_field_or_second_address_is_accepted(extra_field: str) -> None:
++    assert set(ScopeRef.model_fields) == {"kind", "key"}
++
++    with pytest.raises(ValidationError) as caught:
++        ScopeRef.model_validate(
++            {"kind": "issue", "key": "scope-address", extra_field: "other-address"},
++        )
++
++    assert [(error["loc"], error["type"]) for error in caught.value.errors()] == [
++        ((extra_field,), "extra_forbidden"),
++    ]
++
++
++@pytest.mark.parametrize(
++    ("field", "replacement"),
++    [("kind", ScopeKind.PROJECT), ("key", "another-address")],
++)
++def test_neither_address_field_can_be_changed(field: str, replacement: str) -> None:
++    ref = ScopeRef(kind=ScopeKind.ISSUE, key="scope-address")
++
++    with pytest.raises(ValidationError) as caught:
++        setattr(ref, field, replacement)
++
++    assert [(error["loc"], error["type"]) for error in caught.value.errors()] == [
++        ((field,), "frozen_instance"),
++    ]
++    assert ref == ScopeRef(kind=ScopeKind.ISSUE, key="scope-address")
+diff --git a/tests/domain/test_surface_lease.py b/tests/domain/test_surface_lease.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..195c8af24d70773ac9649f7be6606bb44f3b2b0a
+--- /dev/null
++++ b/tests/domain/test_surface_lease.py
+@@ -0,0 +1,244 @@
++"""The all-or-nothing arithmetic a surface-lease implementation shares."""
++
++from dataclasses import dataclass
++from datetime import UTC, datetime, timedelta
++
++import pytest
++
++from kodezart.domain.surface_lease import (
++    live_conflict,
++    one_ownership,
++    renewed_deadline,
++    surface_address,
++)
++from kodezart.types.domain.scope import ScopeKind, ScopeRef
++from kodezart.types.domain.surface import SurfaceKind, SurfaceLease, WritableSurface
++
++NOW = datetime(2026, 3, 1, 12, 0, tzinfo=UTC)
++REF = ScopeRef(kind=ScopeKind.ISSUE, key="lane-1")
++DESCRIPTION = WritableSurface(kind=SurfaceKind.ISSUE_DESCRIPTION, ref=REF)
++MARKER_A = WritableSurface(kind=SurfaceKind.MARKER_COMMENT, ref=REF, marker="A")
++MARKER_B = WritableSurface(kind=SurfaceKind.MARKER_COMMENT, ref=REF, marker="B")
++
++
++def lease(
++    holder: str,
++    *,
++    surfaces: frozenset[WritableSurface],
++    seconds: float,
++) -> SurfaceLease:
++    return SurfaceLease(
++        holder=holder,
++        surfaces=surfaces,
++        expires_at=NOW + timedelta(seconds=seconds),
++    )
++
++
++def test_a_free_set_has_no_conflict() -> None:
++    assert (
++        live_conflict(
++            requested=frozenset({DESCRIPTION, MARKER_A}),
++            held={},
++            holder="job-a",
++            now=NOW,
++            order=surface_address,
++        )
++        is None
++    )
++
++
++def test_another_holders_live_lease_is_the_conflict() -> None:
++    held = lease("job-b", surfaces=frozenset({MARKER_A}), seconds=60)
++
++    assert live_conflict(
++        requested=frozenset({DESCRIPTION, MARKER_A}),
++        held={MARKER_A: held},
++        holder="job-a",
++        now=NOW,
++        order=surface_address,
++    ) == (MARKER_A, "job-b")
++
++
++def test_an_expired_lease_is_no_conflict() -> None:
++    held = lease("job-b", surfaces=frozenset({MARKER_A}), seconds=0)
++
++    assert (
++        live_conflict(
++            requested=frozenset({MARKER_A}),
++            held={MARKER_A: held},
++            holder="job-a",
++            now=NOW,
++            order=surface_address,
++        )
++        is None
++    )
++
++
++def test_the_same_holders_live_lease_is_no_conflict() -> None:
++    held = lease("job-a", surfaces=frozenset({MARKER_A}), seconds=60)
++
++    assert (
++        live_conflict(
++            requested=frozenset({MARKER_A}),
++            held={MARKER_A: held},
++            holder="job-a",
++            now=NOW,
++            order=surface_address,
++        )
++        is None
++    )
++
++
++def test_the_first_conflict_in_address_order_is_named() -> None:
++    """Every holder computes the same conflict from the same held state."""
++    held = {
++        MARKER_A: lease("job-b", surfaces=frozenset({MARKER_A}), seconds=60),
++        MARKER_B: lease("job-c", surfaces=frozenset({MARKER_B}), seconds=60),
++    }
++
++    assert live_conflict(
++        requested=frozenset({MARKER_B, MARKER_A}),
++        held=held,
++        holder="job-a",
++        now=NOW,
++        order=surface_address,
++    ) == (MARKER_A, "job-b")
++
++
++@pytest.mark.parametrize(
++    ("holder", "surfaces"),
++    [("  ", frozenset({DESCRIPTION})), ("job-a", frozenset())],
++)
++def test_a_lease_requires_a_holder_and_a_nonempty_set(holder, surfaces) -> None:
++    with pytest.raises(ValueError):
++        SurfaceLease(holder=holder, surfaces=surfaces, expires_at=NOW)
++
++
++#: What the backend's stamp on a write ran ahead of the writing holder's
++#: clock, measured on the real board.  Both readings of one instant are on
++#: the record itself, which is what makes the two clocks comparable.
++SKEW = timedelta(seconds=0.5)
++
++
++def test_a_renewal_the_backend_stamped_in_time_moves_the_deadline() -> None:
++    assert renewed_deadline(
++        published_at=NOW + timedelta(seconds=30),
++        lease=timedelta(seconds=60),
++        since=NOW + timedelta(seconds=60),
++    ) == NOW + timedelta(seconds=90)
++
++
++def test_a_renewal_stamped_after_the_deadline_renews_nothing() -> None:
++    """The grant keeps the deadline it had; a lapsed order does not return."""
++    assert renewed_deadline(
++        published_at=NOW + timedelta(seconds=62),
++        lease=timedelta(seconds=60),
++        since=NOW + timedelta(seconds=60),
++    ) == NOW + timedelta(seconds=60)
++
++
++def test_a_renewal_stamped_exactly_at_the_deadline_renews_nothing() -> None:
++    """The deadline is the first instant the address is free for the next
++    holder, so a renewal sharing it is already late."""
++    assert renewed_deadline(
++        published_at=NOW + timedelta(seconds=60),
++        lease=timedelta(seconds=60),
++        since=NOW + timedelta(seconds=60),
++    ) == NOW + timedelta(seconds=60)
++
++
++def test_how_long_the_write_took_to_land_cannot_move_the_fence() -> None:
++    """The refutation this arithmetic replaces, stated as a property.
++
++    Every quantity here is one the backend assigned or a duration, so a
++    grant whose creation took seconds to land buys its holder nothing:
++    the deadline moves with the stamp, and the newcomer that is weighed
++    against the SAME deadline cannot be granted the address before it.
++    """
++    lease = timedelta(seconds=60)
++    for latency in (timedelta(0), timedelta(seconds=5), timedelta(minutes=3)):
++        stamped = NOW + latency
++        deadline = stamped + lease
++        assert (
++            renewed_deadline(
++                published_at=deadline - timedelta(microseconds=1),
++                lease=lease,
++                since=deadline,
++            )
++            > deadline
++        )
++        assert (
++            renewed_deadline(published_at=deadline, lease=lease, since=deadline)
++            == deadline
++        )
++
++
++@dataclass(frozen=True)
++class Grant:
++    """A grant as the self-arbitration reads it: where it sits, until when."""
++
++    order: tuple[datetime, str]
++    expires_at: datetime
++
++
++def grant(*, at: float, key: str, seconds: float) -> Grant:
++    return Grant(
++        order=(NOW + timedelta(seconds=at), key),
++        expires_at=NOW + timedelta(seconds=seconds),
++    )
++
++
++def test_a_holder_alone_over_a_set_is_its_own_ownership() -> None:
++    mine = grant(at=0, key="c1", seconds=60)
++
++    assert one_ownership(mine=mine, siblings=(), now=NOW) is mine
++
++
++def test_the_earlier_of_one_holders_two_live_grants_stands_for_both() -> None:
++    """The rule both sides reach: whoever asks, the same grant answers."""
++    earlier = grant(at=0, key="c1", seconds=60)
++    later = grant(at=1, key="c2", seconds=90)
++
++    assert one_ownership(mine=later, siblings=(earlier,), now=NOW) is earlier
++    assert one_ownership(mine=earlier, siblings=(later,), now=NOW) is earlier
++
++
++def test_a_lapsed_grant_of_the_holders_own_never_stands() -> None:
++    """A restart cleans its predecessor up rather than inheriting it."""
++    lapsed = grant(at=0, key="c1", seconds=30)
++    mine = grant(at=60, key="c2", seconds=120)
++
++    assert (
++        one_ownership(mine=mine, siblings=(lapsed,), now=NOW + timedelta(seconds=60))
++        is mine
++    )
++
++
++def test_a_grant_expiring_at_the_instant_asked_about_is_already_gone() -> None:
++    """The deadline is the first instant the set is free, here as everywhere."""
++    lapsing = grant(at=0, key="c1", seconds=30)
++    mine = grant(at=10, key="c2", seconds=120)
++
++    assert (
++        one_ownership(mine=mine, siblings=(lapsing,), now=NOW + timedelta(seconds=30))
++        is mine
++    )
++
++
++def test_the_earliest_of_several_live_grants_is_the_one_all_reach() -> None:
++    """Three attempts of one holder converge on one, not on a chain of two."""
++    earliest = grant(at=0, key="c1", seconds=60)
++    middle = grant(at=1, key="c2", seconds=60)
++    mine = grant(at=2, key="c3", seconds=60)
++
++    assert one_ownership(mine=mine, siblings=(middle, earliest), now=NOW) is earliest
++    assert one_ownership(mine=middle, siblings=(mine, earliest), now=NOW) is earliest
++
++
++def test_an_instant_two_creations_shared_is_settled_by_identity() -> None:
++    """Both sides order the pair the same way round, so both name one."""
++    first = Grant(order=(NOW, "c1"), expires_at=NOW + timedelta(seconds=60))
++    second = Grant(order=(NOW, "c2"), expires_at=NOW + timedelta(seconds=60))
++
++    assert one_ownership(mine=second, siblings=(first,), now=NOW) is first
++    assert one_ownership(mine=first, siblings=(second,), now=NOW) is first
+diff --git a/tests/types/test_writable_surface.py b/tests/types/test_writable_surface.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..e89a585d9fa0af0abcf7999d6cd3f674713970e4
+--- /dev/null
++++ b/tests/types/test_writable_surface.py
+@@ -0,0 +1,139 @@
++"""Writable addresses preserve the tracker surface's full identity.
++
++These are value-contract cases. Acquisition and write enforcement require
++adapter conformance; equality of addresses alone does not demonstrate them.
++"""
++
++from dataclasses import FrozenInstanceError
++
++import pytest
++
++from kodezart.types.domain.scope import ScopeKind, ScopeRef
++from kodezart.types.domain.surface import SurfaceKind, WritableSurface
++
++
++def test_an_issue_description_and_two_comment_markers_are_distinct() -> None:
++    ref = ScopeRef(kind=ScopeKind.ISSUE, key="lane-1")
++    description = WritableSurface(kind=SurfaceKind.ISSUE_DESCRIPTION, ref=ref)
++    marker_a = WritableSurface(kind=SurfaceKind.MARKER_COMMENT, ref=ref, marker="A")
++    marker_b = WritableSurface(kind=SurfaceKind.MARKER_COMMENT, ref=ref, marker="B")
++
++    assert {description, marker_a, marker_b} == frozenset(
++        (
++            WritableSurface(kind=SurfaceKind.ISSUE_DESCRIPTION, ref=ref),
++            WritableSurface(kind=SurfaceKind.MARKER_COMMENT, ref=ref, marker="A"),
++            WritableSurface(kind=SurfaceKind.MARKER_COMMENT, ref=ref, marker="B"),
++        ),
++    )
++    assert description != marker_a != marker_b != description
++
++
++def test_the_same_marker_on_distinct_issues_addresses_distinct_surfaces() -> None:
++    first = WritableSurface(
++        kind=SurfaceKind.MARKER_COMMENT,
++        ref=ScopeRef(kind=ScopeKind.ISSUE, key="lane-1"),
++        marker="review",
++    )
++    second = WritableSurface(
++        kind=SurfaceKind.MARKER_COMMENT,
++        ref=ScopeRef(kind=ScopeKind.ISSUE, key="lane-2"),
++        marker="review",
++    )
++    assert first != second
++
++
++def test_a_criterion_is_addressed_by_its_own_key() -> None:
++    parent = ScopeRef(kind=ScopeKind.ISSUE, key="lane-1")
++    criterion = ScopeRef(kind=ScopeKind.ISSUE, key="criterion-1")
++    assert WritableSurface(kind=SurfaceKind.CRITERION_SUB_ISSUE, ref=criterion) != (
++        WritableSurface(kind=SurfaceKind.ISSUE_DESCRIPTION, ref=parent)
++    )
++
++
++def test_surface_vocabulary_is_closed() -> None:
++    assert {kind.value for kind in SurfaceKind} == {
++        "issue_description",
++        "marker_comment",
++        "container_description",
++        "container_status_update",
++        "issue_label_set",
++        "criterion_sub_issue",
++        "criterion_child_set",
++    }
++    with pytest.raises(ValueError):
++        SurfaceKind("issue")
++
++
++def test_a_surface_is_frozen() -> None:
++    surface = WritableSurface(
++        kind=SurfaceKind.ISSUE_LABEL_SET,
++        ref=ScopeRef(kind=ScopeKind.ISSUE, key="lane-1"),
++    )
++    with pytest.raises(FrozenInstanceError):
++        surface.marker = "changed"
++
++
++@pytest.mark.parametrize("scope_kind", [ScopeKind.INITIATIVE, ScopeKind.PROJECT])
++@pytest.mark.parametrize(
++    "surface_kind",
++    [SurfaceKind.CONTAINER_DESCRIPTION, SurfaceKind.CONTAINER_STATUS_UPDATE],
++)
++def test_container_addresses_retain_their_kind(scope_kind, surface_kind) -> None:
++    surface = WritableSurface(
++        kind=surface_kind,
++        ref=ScopeRef(kind=scope_kind, key="shared-key"),
++    )
++    assert surface.ref.kind is scope_kind
++
++
++@pytest.mark.parametrize("surface_kind", list(SurfaceKind))
++def test_surface_address_must_match_its_kind(surface_kind) -> None:
++    container_kinds = {
++        SurfaceKind.CONTAINER_DESCRIPTION,
++        SurfaceKind.CONTAINER_STATUS_UPDATE,
++    }
++    wrong_ref_kind = (
++        ScopeKind.ISSUE if surface_kind in container_kinds else ScopeKind.PROJECT
++    )
++    with pytest.raises(ValueError, match="reference"):
++        WritableSurface(
++            kind=surface_kind,
++            ref=ScopeRef(kind=wrong_ref_kind, key="key"),
++            marker="marker" if surface_kind is SurfaceKind.MARKER_COMMENT else None,
++        )
++
++
++@pytest.mark.parametrize("marker", [None, "", "  "])
++def test_a_comment_without_a_marker_is_not_an_address(marker) -> None:
++    with pytest.raises(ValueError, match="nonblank marker"):
++        WritableSurface(
++            kind=SurfaceKind.MARKER_COMMENT,
++            ref=ScopeRef(kind=ScopeKind.ISSUE, key="issue"),
++            marker=marker,
++        )
++
++
++@pytest.mark.parametrize(
++    "kind", [kind for kind in SurfaceKind if kind is not SurfaceKind.MARKER_COMMENT]
++)
++def test_a_non_comment_surface_rejects_a_marker(kind) -> None:
++    scope_kind = (
++        ScopeKind.PROJECT
++        if kind
++        in {SurfaceKind.CONTAINER_DESCRIPTION, SurfaceKind.CONTAINER_STATUS_UPDATE}
++        else ScopeKind.ISSUE
++    )
++    with pytest.raises(ValueError, match="only a marker-keyed comment"):
++        WritableSurface(
++            kind=kind,
++            ref=ScopeRef(kind=scope_kind, key="key"),
++            marker="marker",
++        )
++
++
++def test_a_whitespace_only_key_is_not_an_address() -> None:
++    with pytest.raises(ValueError, match="nonblank scope key"):
++        WritableSurface(
++            kind=SurfaceKind.ISSUE_DESCRIPTION,
++            ref=ScopeRef(kind=ScopeKind.ISSUE, key=" "),
++        )

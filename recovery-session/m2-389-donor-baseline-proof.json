@@ -1,0 +1,62 @@
+[
+  {
+    "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker._retry_call",
+    "baseline_equal": true
+  },
+  {
+    "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker.update_issue_graph",
+    "baseline_equal": true
+  },
+  {
+    "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker.create_split_if_absent",
+    "baseline_equal": true
+  },
+  {
+    "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker.create_criterion_if_absent",
+    "baseline_equal": true
+  },
+  {
+    "path": "src/kodezart/adapters/linear_mcp_tracker.py",
+    "symbol": "LinearMcpTracker.edit_description",
+    "baseline_equal": true
+  },
+  {
+    "path": "src/kodezart/core/protocols.py",
+    "symbol": "TrackerPort.update_issue_graph",
+    "baseline_equal": true
+  },
+  {
+    "path": "src/kodezart/core/protocols.py",
+    "symbol": "TrackerPort.create_split_if_absent",
+    "baseline_equal": true
+  },
+  {
+    "path": "src/kodezart/core/protocols.py",
+    "symbol": "TrackerPort.create_criterion_if_absent",
+    "baseline_equal": true
+  },
+  {
+    "path": "tests/fakes.py",
+    "symbol": "FakeTrackerPort.update_issue_graph",
+    "baseline_equal": true
+  },
+  {
+    "path": "tests/fakes.py",
+    "symbol": "FakeTrackerPort.create_split_if_absent",
+    "baseline_equal": true
+  },
+  {
+    "path": "tests/fakes.py",
+    "symbol": "FakeTrackerPort.create_criterion_if_absent",
+    "baseline_equal": true
+  },
+  {
+    "path": "tests/fakes.py",
+    "symbol": "FakeTrackerPort.edit_description",
+    "baseline_equal": true
+  }
+]

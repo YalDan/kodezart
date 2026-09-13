@@ -1,0 +1,191 @@
+FF...FFFF............................................................... [ 56%]
+..............................................FF....F..                  [100%]
+=================================== FAILURES ===================================
+__ test_mandate_schema_discriminates_payload_by_verdict[AuditMandateJudgment] __
+
+model = <class 'kodezart.types.domain.audit.AuditMandateJudgment'>
+
+    @pytest.mark.parametrize("model", [AuditMandateJudgment, AuditMandateObservation])
+    def test_mandate_schema_discriminates_payload_by_verdict(model):
+        schema = model.model_json_schema()
+        discriminator = schema.get("discriminator")
+>       assert discriminator is not None
+E       assert None is not None
+
+tests/types/test_audit_union_contracts.py:13: AssertionError
+_ test_mandate_schema_discriminates_payload_by_verdict[AuditMandateObservation] _
+
+model = <class 'kodezart.types.domain.audit.AuditMandateObservation'>
+
+    @pytest.mark.parametrize("model", [AuditMandateJudgment, AuditMandateObservation])
+    def test_mandate_schema_discriminates_payload_by_verdict(model):
+        schema = model.model_json_schema()
+        discriminator = schema.get("discriminator")
+>       assert discriminator is not None
+E       assert None is not None
+
+tests/types/test_audit_union_contracts.py:13: AssertionError
+_ test_actual_source_instruction_is_quoted_without_writes[fake-port-claude-opus] _
+
+setup = (<function setup.<locals>.build at 0x10ad1a480>, <tests.tracker.test_audit_claim.Runner object at 0x10ad38b60>, <tests.fakes.FakeGitService object at 0x10ad38a10>, <tests.fakes.FakeWorkspaceProvider object at 0x10ad38c80>)
+tracker_writes = <function tracker_writes.<locals>.<lambda> at 0x10ad19260>
+set_name = 'claude-opus'
+
+    @pytest.mark.parametrize("set_name", [OPUS_SET, V5_SET])
+    async def test_actual_source_instruction_is_quoted_without_writes(
+        setup, tracker_writes, set_name
+    ):
+        build, runner, _, workspace = setup
+        before = tracker_writes()
+        report = await build(set_name).complete(REQUEST)
+        assert report.claim == CLAIM
+        assert report.mandate.verdict is AuditVerdict.HOLDS
+>       assert type(report.mandate.finding) is SpecFinding
+E       AssertionError: assert <class 'kodezart.types.domain.audit.MandateFinding'> is SpecFinding
+E        +  where <class 'kodezart.types.domain.audit.MandateFinding'> = type(MandateFinding(issue_id='mandate/source', defect_class='duplicate central gate', evidence='The source explicitly instr....', role=<DefectRole.MANDATE: 'mandate'>, mandate_text='Each writer must copy the global gate into its own container.'))
+E        +    where MandateFinding(issue_id='mandate/source', defect_class='duplicate central gate', evidence='The source explicitly instr....', role=<DefectRole.MANDATE: 'mandate'>, mandate_text='Each writer must copy the global gate into its own container.') = AuditMandateObservation(root=InstructedMandateObservation(covered=(TrackerArtifact(surface=WritableSurface(kind=<Surfa..._DESCRIPTION: 'issue_description'>, ref=ScopeRef(kind=<ScopeKind.ISSUE: 'issue'>, key='mandate/source'), marker=None))).finding
+E        +      where AuditMandateObservation(root=InstructedMandateObservation(covered=(TrackerArtifact(surface=WritableSurface(kind=<Surfa..._DESCRIPTION: 'issue_description'>, ref=ScopeRef(kind=<ScopeKind.ISSUE: 'issue'>, key='mandate/source'), marker=None))) = AuditClaimReport(claim=AuditClaimObservation(judgment=AuditClaimJudgment(criterion_key='claim/check', verdict=<AuditVe...DESCRIPTION: 'issue_description'>, ref=ScopeRef(kind=<ScopeKind.ISSUE: 'issue'>, key='mandate/source'), marker=None)))).mandate
+
+tests/tracker/test_audit_mandate.py:120: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 17:34:31 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fresh-result site=audit_mandate stop_reason=None subtype=success total_cost_usd=None usage=None
+_ test_actual_source_instruction_is_quoted_without_writes[fake-port-anthropic_v5] _
+
+setup = (<function setup.<locals>.build at 0x10ad19a80>, <tests.tracker.test_audit_claim.Runner object at 0x10ad3bfe0>, <tests.fakes.FakeGitService object at 0x10ad39f40>, <tests.fakes.FakeWorkspaceProvider object at 0x10ad3bad0>)
+tracker_writes = <function tracker_writes.<locals>.<lambda> at 0x10ad18fe0>
+set_name = 'anthropic_v5'
+
+    @pytest.mark.parametrize("set_name", [OPUS_SET, V5_SET])
+    async def test_actual_source_instruction_is_quoted_without_writes(
+        setup, tracker_writes, set_name
+    ):
+        build, runner, _, workspace = setup
+        before = tracker_writes()
+        report = await build(set_name).complete(REQUEST)
+        assert report.claim == CLAIM
+        assert report.mandate.verdict is AuditVerdict.HOLDS
+>       assert type(report.mandate.finding) is SpecFinding
+E       AssertionError: assert <class 'kodezart.types.domain.audit.MandateFinding'> is SpecFinding
+E        +  where <class 'kodezart.types.domain.audit.MandateFinding'> = type(MandateFinding(issue_id='mandate/source', defect_class='duplicate central gate', evidence='The source explicitly instr....', role=<DefectRole.MANDATE: 'mandate'>, mandate_text='Each writer must copy the global gate into its own container.'))
+E        +    where MandateFinding(issue_id='mandate/source', defect_class='duplicate central gate', evidence='The source explicitly instr....', role=<DefectRole.MANDATE: 'mandate'>, mandate_text='Each writer must copy the global gate into its own container.') = AuditMandateObservation(root=InstructedMandateObservation(covered=(TrackerArtifact(surface=WritableSurface(kind=<Surfa..._DESCRIPTION: 'issue_description'>, ref=ScopeRef(kind=<ScopeKind.ISSUE: 'issue'>, key='mandate/source'), marker=None))).finding
+E        +      where AuditMandateObservation(root=InstructedMandateObservation(covered=(TrackerArtifact(surface=WritableSurface(kind=<Surfa..._DESCRIPTION: 'issue_description'>, ref=ScopeRef(kind=<ScopeKind.ISSUE: 'issue'>, key='mandate/source'), marker=None))) = AuditClaimReport(claim=AuditClaimObservation(judgment=AuditClaimJudgment(criterion_key='claim/check', verdict=<AuditVe...DESCRIPTION: 'issue_description'>, ref=ScopeRef(kind=<ScopeKind.ISSUE: 'issue'>, key='mandate/source'), marker=None)))).mandate
+
+tests/tracker/test_audit_mandate.py:120: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 17:34:31 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fresh-result site=audit_mandate stop_reason=None subtype=success total_cost_usd=None usage=None
+_ test_actual_source_instruction_is_quoted_without_writes[linear-mcp-claude-opus] _
+
+setup = (<function setup.<locals>.build at 0x10ad194e0>, <tests.tracker.test_audit_claim.Runner object at 0x10ad247a0>, <tests.fakes.FakeGitService object at 0x10ad24950>, <tests.fakes.FakeWorkspaceProvider object at 0x10ad249b0>)
+tracker_writes = <function tracker_writes.<locals>.<lambda> at 0x10ad19ee0>
+set_name = 'claude-opus'
+
+    @pytest.mark.parametrize("set_name", [OPUS_SET, V5_SET])
+    async def test_actual_source_instruction_is_quoted_without_writes(
+        setup, tracker_writes, set_name
+    ):
+        build, runner, _, workspace = setup
+        before = tracker_writes()
+        report = await build(set_name).complete(REQUEST)
+        assert report.claim == CLAIM
+        assert report.mandate.verdict is AuditVerdict.HOLDS
+>       assert type(report.mandate.finding) is SpecFinding
+E       AssertionError: assert <class 'kodezart.types.domain.audit.MandateFinding'> is SpecFinding
+E        +  where <class 'kodezart.types.domain.audit.MandateFinding'> = type(MandateFinding(issue_id='mandate/source', defect_class='duplicate central gate', evidence='The source explicitly instr....', role=<DefectRole.MANDATE: 'mandate'>, mandate_text='Each writer must copy the global gate into its own container.'))
+E        +    where MandateFinding(issue_id='mandate/source', defect_class='duplicate central gate', evidence='The source explicitly instr....', role=<DefectRole.MANDATE: 'mandate'>, mandate_text='Each writer must copy the global gate into its own container.') = AuditMandateObservation(root=InstructedMandateObservation(covered=(TrackerArtifact(surface=WritableSurface(kind=<Surfa..._DESCRIPTION: 'issue_description'>, ref=ScopeRef(kind=<ScopeKind.ISSUE: 'issue'>, key='mandate/source'), marker=None))).finding
+E        +      where AuditMandateObservation(root=InstructedMandateObservation(covered=(TrackerArtifact(surface=WritableSurface(kind=<Surfa..._DESCRIPTION: 'issue_description'>, ref=ScopeRef(kind=<ScopeKind.ISSUE: 'issue'>, key='mandate/source'), marker=None))) = AuditClaimReport(claim=AuditClaimObservation(judgment=AuditClaimJudgment(criterion_key='claim/check', verdict=<AuditVe...DESCRIPTION: 'issue_description'>, ref=ScopeRef(kind=<ScopeKind.ISSUE: 'issue'>, key='mandate/source'), marker=None)))).mandate
+
+tests/tracker/test_audit_mandate.py:120: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 17:34:31 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fresh-result site=audit_mandate stop_reason=None subtype=success total_cost_usd=None usage=None
+_ test_actual_source_instruction_is_quoted_without_writes[linear-mcp-anthropic_v5] _
+
+setup = (<function setup.<locals>.build at 0x10ad1a8e0>, <tests.tracker.test_audit_claim.Runner object at 0x10ad3a5d0>, <tests.fakes.FakeGitService object at 0x10ad3a630>, <tests.fakes.FakeWorkspaceProvider object at 0x10ad3bd70>)
+tracker_writes = <function tracker_writes.<locals>.<lambda> at 0x10ad18f40>
+set_name = 'anthropic_v5'
+
+    @pytest.mark.parametrize("set_name", [OPUS_SET, V5_SET])
+    async def test_actual_source_instruction_is_quoted_without_writes(
+        setup, tracker_writes, set_name
+    ):
+        build, runner, _, workspace = setup
+        before = tracker_writes()
+        report = await build(set_name).complete(REQUEST)
+        assert report.claim == CLAIM
+        assert report.mandate.verdict is AuditVerdict.HOLDS
+>       assert type(report.mandate.finding) is SpecFinding
+E       AssertionError: assert <class 'kodezart.types.domain.audit.MandateFinding'> is SpecFinding
+E        +  where <class 'kodezart.types.domain.audit.MandateFinding'> = type(MandateFinding(issue_id='mandate/source', defect_class='duplicate central gate', evidence='The source explicitly instr....', role=<DefectRole.MANDATE: 'mandate'>, mandate_text='Each writer must copy the global gate into its own container.'))
+E        +    where MandateFinding(issue_id='mandate/source', defect_class='duplicate central gate', evidence='The source explicitly instr....', role=<DefectRole.MANDATE: 'mandate'>, mandate_text='Each writer must copy the global gate into its own container.') = AuditMandateObservation(root=InstructedMandateObservation(covered=(TrackerArtifact(surface=WritableSurface(kind=<Surfa..._DESCRIPTION: 'issue_description'>, ref=ScopeRef(kind=<ScopeKind.ISSUE: 'issue'>, key='mandate/source'), marker=None))).finding
+E        +      where AuditMandateObservation(root=InstructedMandateObservation(covered=(TrackerArtifact(surface=WritableSurface(kind=<Surfa..._DESCRIPTION: 'issue_description'>, ref=ScopeRef(kind=<ScopeKind.ISSUE: 'issue'>, key='mandate/source'), marker=None))) = AuditClaimReport(claim=AuditClaimObservation(judgment=AuditClaimJudgment(criterion_key='claim/check', verdict=<AuditVe...DESCRIPTION: 'issue_description'>, ref=ScopeRef(kind=<ScopeKind.ISSUE: 'issue'>, key='mandate/source'), marker=None)))).mandate
+
+tests/tracker/test_audit_mandate.py:120: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-09-12 17:34:31 [info     ] stream_drained                 duration_api_ms=1 duration_ms=1 event_count=1 events={'result': 1} has_structured_output=True is_error=False num_turns=1 rate_limit_rejected=False result_event_observed=True result_tail=None session_id=fresh-result site=audit_mandate stop_reason=None subtype=success total_cost_usd=None usage=None
+_ test_every_field_on_every_output_model_has_a_description[ORGANIZE_ADMISSION_SCHEMA] _
+
+name = 'ORGANIZE_ADMISSION_SCHEMA'
+
+    @pytest.mark.parametrize("name", sorted(WIRE_SCHEMAS))
+    def test_every_field_on_every_output_model_has_a_description(name: str) -> None:
+        """Including nested models: the session reads the whole schema, not the root."""
+        undescribed = [
+            path
+            for path, described in described_fields(WIRE_SCHEMAS[name], name)
+            if not described
+        ]
+>       assert undescribed == []
+E       AssertionError: assert ['ORGANIZE_AD...issueId', ...] == []
+E         
+E         Left contains 16 more items, first extra item: 'ORGANIZE_ADMISSION_SCHEMA.$defs.BuildableAdmission.verdict'
+E         Use -v to get more diff
+
+tests/types/test_output_descriptions.py:37: AssertionError
+_ test_every_field_on_every_output_model_has_a_description[ORGANIZE_PROPOSAL_SCHEMA] _
+
+name = 'ORGANIZE_PROPOSAL_SCHEMA'
+
+    @pytest.mark.parametrize("name", sorted(WIRE_SCHEMAS))
+    def test_every_field_on_every_output_model_has_a_description(name: str) -> None:
+        """Including nested models: the session reads the whole schema, not the root."""
+        undescribed = [
+            path
+            for path, described in described_fields(WIRE_SCHEMAS[name], name)
+            if not described
+        ]
+>       assert undescribed == []
+E       AssertionError: assert ['ORGANIZE_PR...riteria', ...] == []
+E         
+E         Left contains 17 more items, first extra item: 'ORGANIZE_PROPOSAL_SCHEMA.$defs.BodyProposal.kind'
+E         Use -v to get more diff
+
+tests/types/test_output_descriptions.py:37: AssertionError
+_ test_every_field_on_every_output_model_has_a_description[WRITE_BACK_SCHEMA] __
+
+name = 'WRITE_BACK_SCHEMA'
+
+    @pytest.mark.parametrize("name", sorted(WIRE_SCHEMAS))
+    def test_every_field_on_every_output_model_has_a_description(name: str) -> None:
+        """Including nested models: the session reads the whole schema, not the root."""
+        undescribed = [
+            path
+            for path, described in described_fields(WIRE_SCHEMAS[name], name)
+            if not described
+        ]
+>       assert undescribed == []
+E       AssertionError: assert ['WRITE_BACK_...MA.citedRefs'] == []
+E         
+E         Left contains 3 more items, first extra item: 'WRITE_BACK_SCHEMA.verdict'
+E         Use -v to get more diff
+
+tests/types/test_output_descriptions.py:37: AssertionError
+=========================== short test summary info ============================
+FAILED tests/types/test_audit_union_contracts.py::test_mandate_schema_discriminates_payload_by_verdict[AuditMandateJudgment]
+FAILED tests/types/test_audit_union_contracts.py::test_mandate_schema_discriminates_payload_by_verdict[AuditMandateObservation]
+FAILED tests/tracker/test_audit_mandate.py::test_actual_source_instruction_is_quoted_without_writes[fake-port-claude-opus]
+FAILED tests/tracker/test_audit_mandate.py::test_actual_source_instruction_is_quoted_without_writes[fake-port-anthropic_v5]
+FAILED tests/tracker/test_audit_mandate.py::test_actual_source_instruction_is_quoted_without_writes[linear-mcp-claude-opus]
+FAILED tests/tracker/test_audit_mandate.py::test_actual_source_instruction_is_quoted_without_writes[linear-mcp-anthropic_v5]
+FAILED tests/types/test_output_descriptions.py::test_every_field_on_every_output_model_has_a_description[ORGANIZE_ADMISSION_SCHEMA]
+FAILED tests/types/test_output_descriptions.py::test_every_field_on_every_output_model_has_a_description[ORGANIZE_PROPOSAL_SCHEMA]
+FAILED tests/types/test_output_descriptions.py::test_every_field_on_every_output_model_has_a_description[WRITE_BACK_SCHEMA]
+9 failed, 118 passed in 5.26s

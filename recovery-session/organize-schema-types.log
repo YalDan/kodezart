@@ -1,0 +1,2 @@
+src/kodezart/chains/organize.py:136: error: Unexpected keyword argument "admitted_body_digest" for "AdmissionResult"  [call-arg]
+Found 1 error in 1 file (checked 3 source files)

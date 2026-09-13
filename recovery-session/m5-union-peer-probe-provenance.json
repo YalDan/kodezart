@@ -1,0 +1,18 @@
+[
+  {
+    "original": "/private/tmp/kodezart-recovery-session/test_m5_union_final_freshness_independent.py",
+    "candidate_path": "tests/chains/test_union_final_freshness.py",
+    "original_sha256": "257145bf6e7bb8cde92d272940467ea0b30ff5a61caf7feba4cb4a1db29a986e",
+    "candidate_sha256": "db6f5cef8206710fc48a1300e89898322e332a50321e2921f3bd6f04c9c0a429",
+    "same_ast": true,
+    "delta": "Ruff formatting only"
+  },
+  {
+    "original": "/private/tmp/kodezart-recovery-session/test_m5_union_stage_independence.py",
+    "candidate_path": "tests/chains/test_union_stage_independence.py",
+    "original_sha256": "4eb3e5ca09b4d994a944e14ed8417bb3ee29956eca6e9a51f64810a6976d30ac",
+    "candidate_sha256": "41c615b7a7cca074be78e2d688efdc82a70adab56a5fc4b9d15ca9d35abe4b25",
+    "same_ast": true,
+    "delta": "Ruff formatting only"
+  }
+]
