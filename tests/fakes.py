@@ -4194,6 +4194,20 @@ class FakeTrackerPort:
         self._wrote(issue_key)
         return comment
 
+    async def upsert_comment(
+        self,
+        *,
+        target: str,
+        marker: str,
+        body: str,
+        holder: str | None = None,
+        expected: TrackerComment | None = None,
+    ) -> TrackerComment:
+        """Resolve the marker through the single attributed, leased writer."""
+        return await self._upsert_comment(
+            target=target, marker=marker, body=body, holder=holder, expected=expected
+        )
+
     async def _upsert_comment(
         self,
         *,
@@ -4271,6 +4285,46 @@ class FakeTrackerPort:
 
     async def list_comments(self, *, issue_key: str) -> Sequence[TrackerComment]:
         return tuple(c for c in self.comments if c.issue_key == issue_key)
+
+    async def record_run_alarm(
+        self, *, issue_key: str, alarm: RunAlarm, holder: str
+    ) -> None:
+        """Keep one whole-subject record under the existing leased upsert policy."""
+        await self.read_run_alarm(
+            issue_key=issue_key, subject=alarm.subject, signal=alarm.signal
+        )
+
+        def validate_existing(stored: TrackerComment) -> None:
+            self._parse_alarm_comment(
+                stored=stored, subject=alarm.subject, signal=alarm.signal
+            )
+
+        await self._upsert_comment(
+            target=issue_key,
+            marker=run_alarm_marker(
+                subject=alarm.subject,
+                signal=alarm.signal,
+                marker_prefixes=self.marker_prefixes,
+            ),
+            body=render_run_alarm(alarm=alarm),
+            holder=holder,
+            validate_existing=validate_existing,
+        )
+    async def read_run_alarm(
+        self, *, issue_key: str, subject: AlarmSubject, signal: AlarmSignal
+    ) -> RunAlarm | None:
+        """Resolve the full subject and signal across the native comment log."""
+        marker = run_alarm_marker(
+            subject=subject, signal=signal, marker_prefixes=self.marker_prefixes
+        )
+        stored = comment_under_marker(
+            target=issue_key,
+            marker=marker,
+            comments=await self.list_comments(issue_key=issue_key),
+        )
+        if stored is None:
+            return None
+        return self._parse_alarm_comment(stored=stored, subject=subject, signal=signal)
 
     def _parse_alarm_comment(
         self, *, stored: TrackerComment, subject: AlarmSubject, signal: AlarmSignal
@@ -4399,6 +4453,41 @@ class FakeTrackerPort:
         if held is not None and held.holder == holder:
             del self.claims[issue_key]
             self._wrote(issue_key)
+
+    async def acquire_surfaces(
+        self,
+        *,
+        surfaces: frozenset[WritableSurface],
+        holder: str,
+        lease_seconds: float,
+    ) -> SurfaceLease:
+        # The scheduling point is BEFORE the check-and-set, never inside it:
+        # a fake whose acquisition is not genuinely atomic proves nothing
+        # about the all-or-nothing contract.
+        await asyncio.sleep(0)
+        now = self._clock()
+        conflict = live_conflict(
+            requested=surfaces,
+            held=self.leases,
+            holder=holder,
+            now=now,
+            order=surface_address,
+        )
+        if conflict is not None:
+            raise SurfaceLeaseError(
+                "surface set intersects a live lease",
+                surface=conflict[0],
+                current_holder=conflict[1],
+            )
+        granted = SurfaceLease(
+            holder=holder,
+            surfaces=surfaces,
+            expires_at=now + timedelta(seconds=lease_seconds),
+        )
+        for surface in surfaces:
+            self.leases[surface] = granted
+        self.lease_writes.append(granted)
+        return granted
 
     async def renew_surfaces(
         self,

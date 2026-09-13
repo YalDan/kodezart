@@ -156,10 +156,6 @@ class AppConfig(BaseSettings):
         description="Logging severity and output format.",
     )
 
-    log_level: str = Field(
-        default="INFO",
-        description="Logging level (DEBUG, INFO, WARNING, ERROR).",
-    )
     github_token: str | None = Field(
         default=None,
         min_length=1,
@@ -189,6 +185,54 @@ class AppConfig(BaseSettings):
         ge=1,
         le=10,
         description="Maximum ticket review rounds before accepting.",
+    )
+    run_alarm_escalation_age_max_commits: int = Field(
+        default=5,
+        ge=0,
+        description=(
+            "Recorded lane commits allowed after an unanswered escalation's "
+            "raise SHA before an ageing observation fires."
+        ),
+    )
+    run_alarm_escalation_age_max_ticks: int = Field(
+        default=10,
+        ge=0,
+        description=(
+            "Recorded walker ticks allowed after an unanswered escalation "
+            "before an ageing observation fires."
+        ),
+    )
+    run_alarm_barren_tick_max_files_changed: int = Field(
+        default=10,
+        ge=0,
+        description=(
+            "Recorded files changed against the lane base allowed on a tick "
+            "that closes no previously-open reference."
+        ),
+    )
+    run_alarm_barren_tick_max_commits_ahead: int = Field(
+        default=5,
+        ge=0,
+        description=(
+            "Recorded commits ahead of the lane base allowed on a tick "
+            "that closes no previously-open reference."
+        ),
+    )
+    run_alarm_max_surface_holders: int = Field(
+        default=1,
+        ge=0,
+        description=(
+            "Distinct recorded run holders allowed on one writable surface "
+            "before a contention observation fires."
+        ),
+    )
+    run_alarm_max_rulings_without_closure: int = Field(
+        default=5,
+        ge=0,
+        description=(
+            "Distinct machine-authored rulings allowed since a lane last "
+            "closed a previously-open obligation reference."
+        ),
     )
     ticket_review_mode: TicketReviewMode = Field(
         default=TicketReviewMode.CREATE_ONLY,
@@ -712,46 +756,6 @@ class AppConfig(BaseSettings):
                 "audit_sweep_interval_seconds"
             )
         return self
-    queue_max_concurrent_runs_per_lane: int = Field(
-        default=1,
-        ge=1,
-        le=16,
-        description="Dispatcher worker tasks per lane. 1 makes runs serial.",
-    )
-    queue_max_depth_per_lane: int = Field(
-        default=64,
-        ge=1,
-        le=1024,
-        description="Queued submissions a lane accepts before rejecting.",
-    )
-    queue_terminal_retention_seconds: float = Field(
-        default=86400.0,
-        ge=60.0,
-        le=604800.0,
-        description=(
-            "Seconds the terminal JOB RECORD is retained in the registry. "
-            "Governs the record only — a record is 1-2 KB, so a long window "
-            "is cheap. The replay buffer has its own, shorter window."
-        ),
-    )
-    queue_event_buffer_retention_seconds: float = Field(
-        default=900.0,
-        ge=0.0,
-        le=86400.0,
-        description=(
-            "Seconds a terminal job's REPLAY BUFFER is retained, independently "
-            "of its record. Governs the buffer only — buffered events run to "
-            "megabytes per job, so this window is short: long enough for a "
-            "disconnected client to reconnect and replay. 0 drops the buffer "
-            "as soon as the job goes terminal."
-        ),
-    )
-    queue_event_buffer_capacity: int = Field(
-        default=512,
-        ge=1,
-        le=10000,
-        description="Events retained per job for replay on attach.",
-    )
 
 
 
