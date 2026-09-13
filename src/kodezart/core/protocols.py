@@ -1216,9 +1216,6 @@ class TrackerPort(
         """
         ...
 
-    async def list_comments(self, *, issue_key: str) -> Sequence[TrackerComment]:
-        """Every comment on the issue, oldest first."""
-        ...
 
     async def claim_issue(
         self,
@@ -1328,13 +1325,7 @@ class TrackerPort(
         """
         ...
 
-    async def list_issue_assets(self, *, issue_key: str) -> Sequence[TrackerAsset]:
-        """Attachment and document metadata referenced by the issue."""
-        ...
 
-    async def read_document(self, *, document_key: str) -> str:
-        """The document's text content."""
-        ...
 
     async def record_work_ref(self, *, ref: WorkRef) -> None:
         """Record *ref* against its issue; ``work_refs`` is the read.
