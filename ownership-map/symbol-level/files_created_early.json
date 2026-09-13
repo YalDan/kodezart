@@ -1,0 +1,6 @@
+[
+ "src/kodezart/domain/fire_spec.py",
+ "src/kodezart/types/domain/audit.py",
+ "src/kodezart/types/domain/fire_spec.py",
+ "src/kodezart/types/domain/native_execution.py"
+]

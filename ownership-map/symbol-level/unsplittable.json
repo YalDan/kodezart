@@ -1,0 +1,2107 @@
+[
+ {
+  "file": "CHANGELOG.md",
+  "symbol": "H2:[Unreleased]",
+  "leaf": false,
+  "sym_kind": "md_h2",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5"
+  ],
+  "n_consumers": 18,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "README.md",
+  "symbol": "H2:Configuration",
+  "leaf": false,
+  "sym_kind": "md_h2",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5",
+   "M6",
+   "M7"
+  ],
+  "n_consumers": 238,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "README.md",
+  "symbol": "H2:For AI Agents",
+  "leaf": false,
+  "sym_kind": "md_h2",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5",
+   "M6",
+   "M7"
+  ],
+  "n_consumers": 78,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "README.md",
+  "symbol": "H3:Operation config",
+  "leaf": false,
+  "sym_kind": "md_h3",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5",
+   "M6",
+   "M7"
+  ],
+  "n_consumers": 111,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "README.md",
+  "symbol": "H3:Operational notes",
+  "leaf": false,
+  "sym_kind": "md_h3",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5",
+   "M6"
+  ],
+  "n_consumers": 51,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5', 'M6'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "README.md",
+  "symbol": "H3:Outbound content gate",
+  "leaf": false,
+  "sym_kind": "md_h3",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5",
+   "M6",
+   "M7"
+  ],
+  "n_consumers": 68,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "README.md",
+  "symbol": "H3:Setting up the self-running service",
+  "leaf": false,
+  "sym_kind": "md_h3",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5",
+   "M6",
+   "M7"
+  ],
+  "n_consumers": 110,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "README.md",
+  "symbol": "H3:Skills",
+  "leaf": false,
+  "sym_kind": "md_h3",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5"
+  ],
+  "n_consumers": 23,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "docs/api.md",
+  "symbol": "H2:POST /api/v1/agent/workflow",
+  "leaf": false,
+  "sym_kind": "md_h2",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5",
+   "M6",
+   "M7"
+  ],
+  "n_consumers": 65,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "docs/api.md",
+  "symbol": "H2:SSE Event Types",
+  "leaf": false,
+  "sym_kind": "md_h2",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5",
+   "M6",
+   "M7"
+  ],
+  "n_consumers": 90,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "docs/api.md",
+  "symbol": "H3:Request Body (`WorkflowRequest`)",
+  "leaf": false,
+  "sym_kind": "md_h3",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5",
+   "M6",
+   "M7"
+  ],
+  "n_consumers": 49,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "docs/architecture.md",
+  "symbol": "H2:Claude Agent SDK Integration",
+  "leaf": false,
+  "sym_kind": "md_h2",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5",
+   "M6",
+   "M7"
+  ],
+  "n_consumers": 61,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "docs/architecture.md",
+  "symbol": "H2:Protocol Map",
+  "leaf": false,
+  "sym_kind": "md_h2",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5",
+   "M6",
+   "M7"
+  ],
+  "n_consumers": 265,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "docs/architecture.md",
+  "symbol": "H2:Workflow Pipeline",
+  "leaf": false,
+  "sym_kind": "md_h2",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5",
+   "M7"
+  ],
+  "n_consumers": 67,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5', 'M7'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "docs/architecture.md",
+  "symbol": "H3:Permission Modes",
+  "leaf": false,
+  "sym_kind": "md_h3",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M7"
+  ],
+  "n_consumers": 19,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M7'] which sit on divergent branches (M2 vs M7); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "docs/configuration.md",
+  "symbol": "H2:Checkpointing",
+  "leaf": false,
+  "sym_kind": "md_h2",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5",
+   "M6",
+   "M7"
+  ],
+  "n_consumers": 72,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "docs/configuration.md",
+  "symbol": "H2:Overview",
+  "leaf": false,
+  "sym_kind": "md_h2",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M6"
+  ],
+  "n_consumers": 18,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M6'] which sit on divergent branches (M2 vs M6); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "docs/configuration.md",
+  "symbol": "H2:Settings Reference",
+  "leaf": false,
+  "sym_kind": "md_h2",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5",
+   "M6",
+   "M7"
+  ],
+  "n_consumers": 148,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "docs/cutover_mapping.md",
+  "symbol": "H2:Placeholder \u2192 OperationConfig field",
+  "leaf": false,
+  "sym_kind": "md_h2",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M6",
+   "M7"
+  ],
+  "n_consumers": 25,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M6', 'M7'] which sit on divergent branches (M2 vs M6); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "docs/cutover_mapping.md",
+  "symbol": "H2:What this lane does not claim",
+  "leaf": false,
+  "sym_kind": "md_h2",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5"
+  ],
+  "n_consumers": 6,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "docs/parity_checklist.md",
+  "symbol": "H2:The checklist",
+  "leaf": false,
+  "sym_kind": "md_h2",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5",
+   "M6",
+   "M7"
+  ],
+  "n_consumers": 70,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "src/kodezart/adapters/git_change_persister.py",
+  "symbol": "GitChangePersister",
+  "leaf": false,
+  "sym_kind": "class",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M6"
+  ],
+  "n_consumers": 7,
+  "interface_change": false,
+  "why": "modified body is consumed by ['M1', 'M2', 'M6'] which sit on divergent branches (M2 vs M6); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "src/kodezart/adapters/git_worktree_provider.py",
+  "symbol": "GitWorktreeProvider",
+  "leaf": false,
+  "sym_kind": "class",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M4",
+   "M6"
+  ],
+  "n_consumers": 20,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M4', 'M6'] which sit on divergent branches (M2 vs M6); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "src/kodezart/adapters/git_worktree_provider.py",
+  "symbol": "GitWorktreeProvider.__init__",
+  "leaf": true,
+  "sym_kind": "method",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M4",
+   "M6"
+  ],
+  "n_consumers": 6,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M4', 'M6'] which sit on divergent branches (M2 vs M6); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split"
+ },
+ {
+  "file": "src/kodezart/adapters/subprocess_git_service.py",
+  "symbol": "SubprocessGitService",
+  "leaf": false,
+  "sym_kind": "class",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5",
+   "M6",
+   "M7"
+  ],
+  "n_consumers": 35,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "src/kodezart/adapters/subprocess_git_service.py",
+  "symbol": "SubprocessGitService.remote_branch_sha",
+  "leaf": true,
+  "sym_kind": "method",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M6"
+  ],
+  "n_consumers": 8,
+  "interface_change": false,
+  "why": "modified body is consumed by ['M1', 'M2', 'M6'] which sit on divergent branches (M2 vs M6); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split"
+ },
+ {
+  "file": "src/kodezart/api/v1/endpoints/agent.py",
+  "symbol": "stream_workflow",
+  "leaf": true,
+  "sym_kind": "function",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5",
+   "M6"
+  ],
+  "n_consumers": 17,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5', 'M6'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split"
+ },
+ {
+  "file": "src/kodezart/chains/ralph_loop.py",
+  "symbol": "RalphLoop",
+  "leaf": false,
+  "sym_kind": "class",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5"
+  ],
+  "n_consumers": 10,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "src/kodezart/chains/ralph_loop.py",
+  "symbol": "RalphLoop.__init__",
+  "leaf": true,
+  "sym_kind": "method",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M5"
+  ],
+  "n_consumers": 7,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M5'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split"
+ },
+ {
+  "file": "src/kodezart/chains/ralph_loop.py",
+  "symbol": "RalphLoop.run",
+  "leaf": true,
+  "sym_kind": "method",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M5"
+  ],
+  "n_consumers": 9,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M5'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split"
+ },
+ {
+  "file": "src/kodezart/chains/ralph_workflow.py",
+  "symbol": "RalphWorkflowEngine",
+  "leaf": false,
+  "sym_kind": "class",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M5"
+  ],
+  "n_consumers": 8,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M5'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "src/kodezart/chains/ralph_workflow.py",
+  "symbol": "RalphWorkflowEngine.__init__",
+  "leaf": true,
+  "sym_kind": "method",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M5"
+  ],
+  "n_consumers": 5,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M5'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split"
+ },
+ {
+  "file": "src/kodezart/chains/ralph_workflow.py",
+  "symbol": "RalphWorkflowEngine.run",
+  "leaf": true,
+  "sym_kind": "method",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M5"
+  ],
+  "n_consumers": 4,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M5'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split"
+ },
+ {
+  "file": "src/kodezart/composition/prompts.py",
+  "symbol": "boot_prompts",
+  "leaf": true,
+  "sym_kind": "function",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M6"
+  ],
+  "n_consumers": 13,
+  "interface_change": false,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M6'] which sit on divergent branches (M2 vs M6); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split"
+ },
+ {
+  "file": "src/kodezart/core/config.py",
+  "symbol": "AppConfig",
+  "leaf": false,
+  "sym_kind": "class",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5",
+   "M6",
+   "M7"
+  ],
+  "n_consumers": 127,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "src/kodezart/core/config.py",
+  "symbol": "AppConfig.tracker",
+  "leaf": true,
+  "sym_kind": "class_attr",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5",
+   "M6",
+   "M7"
+  ],
+  "n_consumers": 73,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split"
+ },
+ {
+  "file": "src/kodezart/core/constants.py",
+  "symbol": "EVAL_PERMISSION_MODE",
+  "leaf": true,
+  "sym_kind": "assignment",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5",
+   "M6"
+  ],
+  "n_consumers": 16,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5', 'M6'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split"
+ },
+ {
+  "file": "src/kodezart/core/errors.py",
+  "symbol": "McpCallUnansweredError",
+  "leaf": false,
+  "sym_kind": "class",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M4",
+   "M5"
+  ],
+  "n_consumers": 15,
+  "interface_change": false,
+  "why": "modified body is consumed by ['M1', 'M2', 'M4', 'M5'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "src/kodezart/core/prompt_namespaces.py",
+  "symbol": "operation_bindings",
+  "leaf": true,
+  "sym_kind": "function",
+  "owner": "M4",
+  "consumer_owners": [
+   "M2",
+   "M3",
+   "M4",
+   "M6"
+  ],
+  "n_consumers": 13,
+  "interface_change": false,
+  "why": "modified body is consumed by ['M2', 'M3', 'M4', 'M6'] which sit on divergent branches (M2 vs M6); whole donor body lands at LCA M4, branch-specific hunks cannot be separated without an intra-symbol split"
+ },
+ {
+  "file": "src/kodezart/core/protocols.py",
+  "symbol": "AgentExecutor",
+  "leaf": false,
+  "sym_kind": "class",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M5"
+  ],
+  "n_consumers": 11,
+  "interface_change": false,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M5'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "src/kodezart/core/protocols.py",
+  "symbol": "AgentExecutor.stream",
+  "leaf": true,
+  "sym_kind": "method",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M5"
+  ],
+  "n_consumers": 9,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M5'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split"
+ },
+ {
+  "file": "src/kodezart/core/protocols.py",
+  "symbol": "AgentRunner",
+  "leaf": false,
+  "sym_kind": "class",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5",
+   "M6"
+  ],
+  "n_consumers": 28,
+  "interface_change": false,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5', 'M6'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "src/kodezart/core/protocols.py",
+  "symbol": "AgentRunner.stream",
+  "leaf": true,
+  "sym_kind": "method",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M5"
+  ],
+  "n_consumers": 15,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M5'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split"
+ },
+ {
+  "file": "src/kodezart/core/protocols.py",
+  "symbol": "GitService",
+  "leaf": false,
+  "sym_kind": "class",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5",
+   "M6"
+  ],
+  "n_consumers": 36,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5', 'M6'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "src/kodezart/core/protocols.py",
+  "symbol": "TrackerPort",
+  "leaf": false,
+  "sym_kind": "class",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5",
+   "M6",
+   "M7"
+  ],
+  "n_consumers": 71,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "src/kodezart/core/protocols.py",
+  "symbol": "WorkspaceProvider",
+  "leaf": false,
+  "sym_kind": "class",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M6"
+  ],
+  "n_consumers": 21,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M6'] which sit on divergent branches (M2 vs M6); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "src/kodezart/core/stream_drain.py",
+  "symbol": "drain",
+  "leaf": true,
+  "sym_kind": "function",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5"
+  ],
+  "n_consumers": 11,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split"
+ },
+ {
+  "file": "src/kodezart/domain/errors.py",
+  "symbol": "OutboundContentBlockedError",
+  "leaf": false,
+  "sym_kind": "class",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5",
+   "M6"
+  ],
+  "n_consumers": 13,
+  "interface_change": false,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5', 'M6'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "src/kodezart/main.py",
+  "symbol": "create_app",
+  "leaf": true,
+  "sym_kind": "function",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M6",
+   "M7"
+  ],
+  "n_consumers": 20,
+  "interface_change": false,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M6', 'M7'] which sit on divergent branches (M2 vs M6); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split"
+ },
+ {
+  "file": "src/kodezart/main.py",
+  "symbol": "lifespan",
+  "leaf": true,
+  "sym_kind": "function",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M7"
+  ],
+  "n_consumers": 12,
+  "interface_change": false,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M7'] which sit on divergent branches (M2 vs M7); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split"
+ },
+ {
+  "file": "src/kodezart/prompts/sets/anthropic_v5/set.toml",
+  "symbol": "session_roles.evaluative.keys",
+  "leaf": true,
+  "sym_kind": "toml_key",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5",
+   "M6",
+   "M7"
+  ],
+  "n_consumers": 86,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split"
+ },
+ {
+  "file": "src/kodezart/prompts/sets/anthropic_v5/set.toml",
+  "symbol": "session_roles.generative.keys",
+  "leaf": true,
+  "sym_kind": "toml_key",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5",
+   "M6",
+   "M7"
+  ],
+  "n_consumers": 86,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split"
+ },
+ {
+  "file": "src/kodezart/prompts/sets/anthropic_v5/set.toml",
+  "symbol": "session_roles.utility.keys",
+  "leaf": true,
+  "sym_kind": "toml_key",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5",
+   "M6",
+   "M7"
+  ],
+  "n_consumers": 86,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split"
+ },
+ {
+  "file": "src/kodezart/prompts/sets/anthropic_v5/set.toml",
+  "symbol": "table:session_roles.evaluative",
+  "leaf": false,
+  "sym_kind": "toml_table",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M5"
+  ],
+  "n_consumers": 5,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M5'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "src/kodezart/prompts/sets/claude-opus/set.toml",
+  "symbol": "table:skills",
+  "leaf": false,
+  "sym_kind": "toml_table",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5",
+   "M6",
+   "M7"
+  ],
+  "n_consumers": 111,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "src/kodezart/services/agent_service.py",
+  "symbol": "AgentService",
+  "leaf": false,
+  "sym_kind": "class",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5",
+   "M6",
+   "M7"
+  ],
+  "n_consumers": 43,
+  "interface_change": false,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "src/kodezart/services/agent_service.py",
+  "symbol": "AgentService.stream",
+  "leaf": true,
+  "sym_kind": "method",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5",
+   "M6",
+   "M7"
+  ],
+  "n_consumers": 24,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split"
+ },
+ {
+  "file": "src/kodezart/services/agent_service.py",
+  "symbol": "AgentService.stream_in_workspace",
+  "leaf": true,
+  "sym_kind": "method",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M5",
+   "M6"
+  ],
+  "n_consumers": 4,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M5', 'M6'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split"
+ },
+ {
+  "file": "src/kodezart/services/agent_service.py",
+  "symbol": "AgentService.stream_workflow",
+  "leaf": true,
+  "sym_kind": "method",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M5",
+   "M6"
+  ],
+  "n_consumers": 8,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M5', 'M6'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split"
+ },
+ {
+  "file": "src/kodezart/types/domain/agent.py",
+  "symbol": "ResultEvent",
+  "leaf": false,
+  "sym_kind": "class",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5",
+   "M6"
+  ],
+  "n_consumers": 43,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5', 'M6'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "src/kodezart/types/domain/agent.py",
+  "symbol": "WorkflowCompleteEvent",
+  "leaf": false,
+  "sym_kind": "class",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5",
+   "M7"
+  ],
+  "n_consumers": 34,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5', 'M7'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "src/kodezart/types/domain/agent.py",
+  "symbol": "WorkflowIterationEvent",
+  "leaf": false,
+  "sym_kind": "class",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5"
+  ],
+  "n_consumers": 19,
+  "interface_change": false,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "src/kodezart/types/domain/criteria.py",
+  "symbol": "ValidatedCriterion",
+  "leaf": false,
+  "sym_kind": "class",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5"
+  ],
+  "n_consumers": 8,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "src/kodezart/types/domain/criteria.py",
+  "symbol": "ValidatedCriterion.id",
+  "leaf": true,
+  "sym_kind": "class_attr",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5"
+  ],
+  "n_consumers": 8,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split"
+ },
+ {
+  "file": "src/kodezart/types/domain/dispatch.py",
+  "symbol": "PassRun",
+  "leaf": false,
+  "sym_kind": "class",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M6"
+  ],
+  "n_consumers": 14,
+  "interface_change": false,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M6'] which sit on divergent branches (M2 vs M6); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "src/kodezart/types/domain/gating.py",
+  "symbol": "OutboundDestination",
+  "leaf": false,
+  "sym_kind": "class",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5",
+   "M6"
+  ],
+  "n_consumers": 36,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5', 'M6'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "src/kodezart/types/domain/operation.py",
+  "symbol": "OperationConfig",
+  "leaf": false,
+  "sym_kind": "class",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5",
+   "M6",
+   "M7"
+  ],
+  "n_consumers": 91,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "src/kodezart/types/domain/operation.py",
+  "symbol": "RepoEntry",
+  "leaf": false,
+  "sym_kind": "class",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5",
+   "M6"
+  ],
+  "n_consumers": 30,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5', 'M6'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "src/kodezart/types/domain/operation.py",
+  "symbol": "RunKind",
+  "leaf": false,
+  "sym_kind": "class",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M6"
+  ],
+  "n_consumers": 38,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M6'] which sit on divergent branches (M2 vs M6); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "src/kodezart/types/domain/prompts.py",
+  "symbol": "PromptKey",
+  "leaf": false,
+  "sym_kind": "class",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5",
+   "M6"
+  ],
+  "n_consumers": 62,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5', 'M6'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "src/kodezart/types/domain/run_records.py",
+  "symbol": "RunIdentity",
+  "leaf": false,
+  "sym_kind": "class",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5",
+   "M6",
+   "M7"
+  ],
+  "n_consumers": 49,
+  "interface_change": false,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "src/kodezart/types/domain/run_records.py",
+  "symbol": "RunIdentity.started_at",
+  "leaf": true,
+  "sym_kind": "class_attr",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M6"
+  ],
+  "n_consumers": 20,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M6'] which sit on divergent branches (M2 vs M6); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split"
+ },
+ {
+  "file": "src/kodezart/types/domain/run_records.py",
+  "symbol": "RunIdentity.title",
+  "leaf": true,
+  "sym_kind": "method",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5",
+   "M6"
+  ],
+  "n_consumers": 23,
+  "interface_change": false,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5', 'M6'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split"
+ },
+ {
+  "file": "src/kodezart/types/domain/session.py",
+  "symbol": "SessionType",
+  "leaf": false,
+  "sym_kind": "class",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5",
+   "M6"
+  ],
+  "n_consumers": 58,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5', 'M6'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "src/kodezart/types/domain/tracker.py",
+  "symbol": "IssueRelationKind",
+  "leaf": false,
+  "sym_kind": "class",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M5",
+   "M7"
+  ],
+  "n_consumers": 15,
+  "interface_change": false,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M5', 'M7'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "src/kodezart/types/domain/tracker.py",
+  "symbol": "TrackerComment",
+  "leaf": false,
+  "sym_kind": "class",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M4",
+   "M5",
+   "M6",
+   "M7"
+  ],
+  "n_consumers": 26,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M4', 'M5', 'M6', 'M7'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "src/kodezart/types/domain/tracker.py",
+  "symbol": "TrackerIssue",
+  "leaf": false,
+  "sym_kind": "class",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5",
+   "M6",
+   "M7"
+  ],
+  "n_consumers": 67,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "src/kodezart/types/domain/trajectory.py",
+  "symbol": "IterationRecord",
+  "leaf": false,
+  "sym_kind": "class",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M5"
+  ],
+  "n_consumers": 9,
+  "interface_change": false,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M5'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "tests/core/test_credential_shapes.py",
+  "symbol": "_gate",
+  "leaf": true,
+  "sym_kind": "function",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5",
+   "M6"
+  ],
+  "n_consumers": 19,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5', 'M6'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split"
+ },
+ {
+  "file": "tests/domain/test_base_resolution.py",
+  "symbol": "lifecycle",
+  "leaf": true,
+  "sym_kind": "function",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5",
+   "M6",
+   "M7"
+  ],
+  "n_consumers": 54,
+  "interface_change": false,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split"
+ },
+ {
+  "file": "tests/domain/test_base_scope.py",
+  "symbol": "_context",
+  "leaf": true,
+  "sym_kind": "function",
+  "owner": "M3",
+  "consumer_owners": [
+   "M2",
+   "M5"
+  ],
+  "n_consumers": 4,
+  "interface_change": false,
+  "why": "modified body is consumed by ['M2', 'M5'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M3, branch-specific hunks cannot be separated without an intra-symbol split"
+ },
+ {
+  "file": "tests/domain/test_criteria_grading.py",
+  "symbol": "_criteria",
+  "leaf": true,
+  "sym_kind": "function",
+  "owner": "M4",
+  "consumer_owners": [
+   "M2",
+   "M4",
+   "M6"
+  ],
+  "n_consumers": 3,
+  "interface_change": false,
+  "why": "modified body is consumed by ['M2', 'M4', 'M6'] which sit on divergent branches (M2 vs M6); whole donor body lands at LCA M4, branch-specific hunks cannot be separated without an intra-symbol split"
+ },
+ {
+  "file": "tests/fakes.py",
+  "symbol": "FakeAgentExecutor",
+  "leaf": false,
+  "sym_kind": "class",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5",
+   "M6",
+   "M7"
+  ],
+  "n_consumers": 29,
+  "interface_change": false,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "tests/fakes.py",
+  "symbol": "FakeAgentExecutor.stream",
+  "leaf": true,
+  "sym_kind": "method",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5",
+   "M6",
+   "M7"
+  ],
+  "n_consumers": 17,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split"
+ },
+ {
+  "file": "tests/fakes.py",
+  "symbol": "FakeAgentRunner",
+  "leaf": false,
+  "sym_kind": "class",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M6"
+  ],
+  "n_consumers": 14,
+  "interface_change": false,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M6'] which sit on divergent branches (M2 vs M6); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "tests/fakes.py",
+  "symbol": "FakeAgentRunner.stream",
+  "leaf": true,
+  "sym_kind": "method",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M6"
+  ],
+  "n_consumers": 7,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M6'] which sit on divergent branches (M2 vs M6); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split"
+ },
+ {
+  "file": "tests/fakes.py",
+  "symbol": "FakeCIMonitor",
+  "leaf": false,
+  "sym_kind": "class",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M5",
+   "M6"
+  ],
+  "n_consumers": 15,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M5', 'M6'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "tests/fakes.py",
+  "symbol": "FakeChangePersister",
+  "leaf": false,
+  "sym_kind": "class",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5",
+   "M6",
+   "M7"
+  ],
+  "n_consumers": 21,
+  "interface_change": false,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "tests/fakes.py",
+  "symbol": "FakeChangePersister.persist",
+  "leaf": true,
+  "sym_kind": "method",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M5"
+  ],
+  "n_consumers": 4,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M5'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split"
+ },
+ {
+  "file": "tests/fakes.py",
+  "symbol": "FakeGitService",
+  "leaf": false,
+  "sym_kind": "class",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5",
+   "M6",
+   "M7"
+  ],
+  "n_consumers": 46,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "tests/fakes.py",
+  "symbol": "FakeGitService.__init__",
+  "leaf": true,
+  "sym_kind": "method",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M5",
+   "M6",
+   "M7"
+  ],
+  "n_consumers": 22,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M5', 'M6', 'M7'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split"
+ },
+ {
+  "file": "tests/fakes.py",
+  "symbol": "FakeLinearMcpServer",
+  "leaf": false,
+  "sym_kind": "class",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5",
+   "M7"
+  ],
+  "n_consumers": 29,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5', 'M7'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "tests/fakes.py",
+  "symbol": "FakeLinearMcpServer.__init__",
+  "leaf": true,
+  "sym_kind": "method",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5"
+  ],
+  "n_consumers": 17,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split"
+ },
+ {
+  "file": "tests/fakes.py",
+  "symbol": "FakeMcpIssue",
+  "leaf": false,
+  "sym_kind": "class",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5",
+   "M6",
+   "M7"
+  ],
+  "n_consumers": 43,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "tests/fakes.py",
+  "symbol": "FakeMcpIssue.wire",
+  "leaf": true,
+  "sym_kind": "method",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M6"
+  ],
+  "n_consumers": 5,
+  "interface_change": false,
+  "why": "modified body is consumed by ['M1', 'M2', 'M6'] which sit on divergent branches (M2 vs M6); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split"
+ },
+ {
+  "file": "tests/fakes.py",
+  "symbol": "FakePRCreator",
+  "leaf": false,
+  "sym_kind": "class",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5"
+  ],
+  "n_consumers": 18,
+  "interface_change": false,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "tests/fakes.py",
+  "symbol": "FakeQualityGate",
+  "leaf": false,
+  "sym_kind": "class",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M5",
+   "M7"
+  ],
+  "n_consumers": 16,
+  "interface_change": false,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M5', 'M7'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "tests/fakes.py",
+  "symbol": "FakeQualityGate.run",
+  "leaf": true,
+  "sym_kind": "method",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M5",
+   "M7"
+  ],
+  "n_consumers": 16,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M5', 'M7'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split"
+ },
+ {
+  "file": "tests/fakes.py",
+  "symbol": "FakeRemediator",
+  "leaf": false,
+  "sym_kind": "class",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M5",
+   "M7"
+  ],
+  "n_consumers": 5,
+  "interface_change": false,
+  "why": "modified body is consumed by ['M1', 'M2', 'M5', 'M7'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "tests/fakes.py",
+  "symbol": "FakeRemediator.run",
+  "leaf": true,
+  "sym_kind": "method",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M5",
+   "M7"
+  ],
+  "n_consumers": 5,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M5', 'M7'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split"
+ },
+ {
+  "file": "tests/fakes.py",
+  "symbol": "FakeTicketGenerator",
+  "leaf": false,
+  "sym_kind": "class",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5",
+   "M7"
+  ],
+  "n_consumers": 15,
+  "interface_change": false,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5', 'M7'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "tests/fakes.py",
+  "symbol": "FakeTicketGenerator.run",
+  "leaf": true,
+  "sym_kind": "method",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M5",
+   "M7"
+  ],
+  "n_consumers": 14,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M5', 'M7'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split"
+ },
+ {
+  "file": "tests/fakes.py",
+  "symbol": "FakeTrackerPort",
+  "leaf": false,
+  "sym_kind": "class",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5",
+   "M6",
+   "M7"
+  ],
+  "n_consumers": 65,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "tests/fakes.py",
+  "symbol": "FakeTrackerPort.__init__",
+  "leaf": true,
+  "sym_kind": "method",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5",
+   "M6",
+   "M7"
+  ],
+  "n_consumers": 23,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split"
+ },
+ {
+  "file": "tests/fakes.py",
+  "symbol": "FakeTrackerPort.post_comment",
+  "leaf": true,
+  "sym_kind": "method",
+  "owner": "M4",
+  "consumer_owners": [
+   "M2",
+   "M3",
+   "M4",
+   "M5",
+   "M6",
+   "M7"
+  ],
+  "n_consumers": 13,
+  "interface_change": false,
+  "why": "modified body is consumed by ['M2', 'M3', 'M4', 'M5', 'M6', 'M7'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M4, branch-specific hunks cannot be separated without an intra-symbol split"
+ },
+ {
+  "file": "tests/fakes.py",
+  "symbol": "FakeTrackerPort.restore_workflow_state",
+  "leaf": true,
+  "sym_kind": "method",
+  "owner": "M4",
+  "consumer_owners": [
+   "M2",
+   "M3",
+   "M4",
+   "M6",
+   "M7"
+  ],
+  "n_consumers": 8,
+  "interface_change": false,
+  "why": "modified body is consumed by ['M2', 'M3', 'M4', 'M6', 'M7'] which sit on divergent branches (M2 vs M6); whole donor body lands at LCA M4, branch-specific hunks cannot be separated without an intra-symbol split"
+ },
+ {
+  "file": "tests/fakes.py",
+  "symbol": "FakeTrackerPort.update_issue",
+  "leaf": true,
+  "sym_kind": "method",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M4",
+   "M6"
+  ],
+  "n_consumers": 9,
+  "interface_change": false,
+  "why": "modified body is consumed by ['M1', 'M2', 'M4', 'M6'] which sit on divergent branches (M2 vs M6); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split"
+ },
+ {
+  "file": "tests/fakes.py",
+  "symbol": "FakeWorkspaceProvider",
+  "leaf": false,
+  "sym_kind": "class",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5",
+   "M6",
+   "M7"
+  ],
+  "n_consumers": 41,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "tests/fakes.py",
+  "symbol": "FakeWorkspaceProvider.__init__",
+  "leaf": true,
+  "sym_kind": "method",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M5",
+   "M6",
+   "M7"
+  ],
+  "n_consumers": 24,
+  "interface_change": false,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M5', 'M6', 'M7'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split"
+ },
+ {
+  "file": "tests/fakes.py",
+  "symbol": "FakeWorkspaceProvider.acquire",
+  "leaf": true,
+  "sym_kind": "method",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5",
+   "M6"
+  ],
+  "n_consumers": 12,
+  "interface_change": false,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5', 'M6'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split"
+ },
+ {
+  "file": "tests/fakes.py",
+  "symbol": "ScriptedFakeExecutor",
+  "leaf": false,
+  "sym_kind": "class",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M7"
+  ],
+  "n_consumers": 4,
+  "interface_change": false,
+  "why": "modified body is consumed by ['M1', 'M2', 'M7'] which sit on divergent branches (M2 vs M7); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split (container: its members carry their own owners, so the shell can land at the LCA and the members can still be split)"
+ },
+ {
+  "file": "tests/fakes.py",
+  "symbol": "ScriptedFakeExecutor.stream",
+  "leaf": true,
+  "sym_kind": "method",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M7"
+  ],
+  "n_consumers": 3,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M7'] which sit on divergent branches (M2 vs M7); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split"
+ },
+ {
+  "file": "tests/fakes.py",
+  "symbol": "make_criteria",
+  "leaf": true,
+  "sym_kind": "function",
+  "owner": "M3",
+  "consumer_owners": [
+   "M2",
+   "M3",
+   "M5"
+  ],
+  "n_consumers": 7,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M2', 'M3', 'M5'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M3, branch-specific hunks cannot be separated without an intra-symbol split"
+ },
+ {
+  "file": "tests/tracker/conftest.py",
+  "symbol": "adapter",
+  "leaf": true,
+  "sym_kind": "function",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5",
+   "M7"
+  ],
+  "n_consumers": 22,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5', 'M7'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split"
+ },
+ {
+  "file": "tests/tracker/conftest.py",
+  "symbol": "fixture_server",
+  "leaf": true,
+  "sym_kind": "function",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M3",
+   "M4",
+   "M5",
+   "M6",
+   "M7"
+  ],
+  "n_consumers": 30,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M3', 'M4', 'M5', 'M6', 'M7'] which sit on divergent branches (M6 vs M7); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split"
+ },
+ {
+  "file": "tests/tracker/conftest.py",
+  "symbol": "linear_over_fake_mcp",
+  "leaf": true,
+  "sym_kind": "function",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5",
+   "M6",
+   "M7"
+  ],
+  "n_consumers": 29,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split"
+ },
+ {
+  "file": "tests/tracker/conftest.py",
+  "symbol": "server",
+  "leaf": true,
+  "sym_kind": "function",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5",
+   "M6",
+   "M7"
+  ],
+  "n_consumers": 108,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split"
+ },
+ {
+  "file": "tests/tracker/conftest.py",
+  "symbol": "tracker",
+  "leaf": true,
+  "sym_kind": "function",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5",
+   "M6",
+   "M7"
+  ],
+  "n_consumers": 115,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split"
+ },
+ {
+  "file": "tests/tracker/test_linear_mcp_tracker.py",
+  "symbol": "tracker_over",
+  "leaf": true,
+  "sym_kind": "function",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5",
+   "M6",
+   "M7"
+  ],
+  "n_consumers": 36,
+  "interface_change": true,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split"
+ },
+ {
+  "file": "tests/tracker/test_linear_wire_shapes.py",
+  "symbol": "tracker_over",
+  "leaf": true,
+  "sym_kind": "function",
+  "owner": "M1",
+  "consumer_owners": [
+   "M1",
+   "M2",
+   "M3",
+   "M4",
+   "M5",
+   "M6",
+   "M7"
+  ],
+  "n_consumers": 40,
+  "interface_change": false,
+  "why": "modified body is consumed by ['M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7'] which sit on divergent branches (M2 vs M5); whole donor body lands at LCA M1, branch-specific hunks cannot be separated without an intra-symbol split"
+ }
+]

@@ -1,0 +1,67 @@
+uv run --locked ruff format --check src/ tests/
+463 files already formatted
+uv run --locked ruff check src/ tests/
+All checks passed!
+uv run --locked mypy src/
+src/kodezart/types/domain/operation.py:33: error: Skipping analyzing "kodezart.types.domain.run_event": module is installed, but missing library stubs or py.typed marker  [import-untyped]
+src/kodezart/types/domain/operation.py:33: note: See https://mypy.readthedocs.io/en/stable/running_mypy.html#missing-imports
+src/kodezart/core/protocols.py:14: error: Module "kodezart.types.domain.criteria" has no attribute "ExecutionCriterion"  [attr-defined]
+src/kodezart/core/protocols.py:66: error: Module "kodezart.types.domain.workflow" has no attribute "WorkflowSubmission"  [attr-defined]
+src/kodezart/handlers/agent_handler.py:94: error: Argument "permission_mode" to "stream" of "AgentRunner" has incompatible type "Literal['plan', 'bypassPermissions']"; expected "PermissionMode"  [arg-type]
+src/kodezart/adapters/asyncio_job_queue.py:291: error: Missing named argument "scope" for "run" of "WorkflowEngine"  [call-arg]
+src/kodezart/adapters/asyncio_job_queue.py:301: error: Argument "permission_mode" to "run" of "WorkflowEngine" has incompatible type "Literal['plan', 'bypassPermissions']"; expected "PermissionMode"  [arg-type]
+src/kodezart/services/prompt_pass.py:137: error: Argument "permission_mode" to "stream_in_workspace" of "AgentRunner" has incompatible type "str"; expected "PermissionMode"  [arg-type]
+src/kodezart/chains/remediation.py:13: error: Module "kodezart.core.constants" has no attribute "EVAL_TOOLS_WITH_AGENT"  [attr-defined]
+src/kodezart/chains/ticket_generation.py:12: error: Module "kodezart.core.constants" has no attribute "TICKET_TOOLS"  [attr-defined]
+src/kodezart/chains/ralph_workflow.py:14: error: Module "kodezart.core.constants" has no attribute "EVAL_TOOLS"  [attr-defined]
+src/kodezart/chains/ralph_workflow.py:14: error: Module "kodezart.core.constants" has no attribute "EVAL_TOOLS_WITH_AGENT"  [attr-defined]
+src/kodezart/chains/ralph_workflow.py:864: error: Argument "permission_mode" to "run" of "QualityGate" has incompatible type "str"; expected "PermissionMode"  [arg-type]
+src/kodezart/chains/ralph_workflow.py:1735: error: Argument 1 to "ci_status_of" has incompatible type "tuple[str, Any]"; expected "bool | None"  [arg-type]
+src/kodezart/chains/ralph_workflow.py:1740: error: Argument "summary" to "WorkflowCIEvent" has incompatible type "tuple[str, Any]"; expected "str"  [arg-type]
+src/kodezart/chains/ralph_workflow.py:1842: error: Unexpected keyword argument "pr_url" for "WorkflowCompleteEvent"  [call-arg]
+src/kodezart/chains/ralph_workflow.py:1842: error: Unexpected keyword argument "pr_number" for "WorkflowCompleteEvent"  [call-arg]
+src/kodezart/chains/ralph_workflow.py:1842: error: Unexpected keyword argument "ci_status" for "WorkflowCompleteEvent"  [call-arg]
+src/kodezart/chains/ralph_loop.py:11: error: Module "kodezart.core.constants" has no attribute "EVAL_TOOLS"  [attr-defined]
+src/kodezart/chains/ralph_loop.py:216: error: Argument "permission_mode" to "stream_workflow" of "AgentRunner" has incompatible type "str"; expected "PermissionMode"  [arg-type]
+src/kodezart/composition/engine.py:105: error: Missing named argument "scope" for "run" of "WorkflowEngine"  [call-arg]
+src/kodezart/composition/engine.py:111: error: Argument "permission_mode" to "run" of "WorkflowEngine" has incompatible type "str"; expected "PermissionMode"  [arg-type]
+src/kodezart/composition/engine.py:207: error: Argument "quality_gate" to "RalphWorkflowEngine" has incompatible type "RalphLoop"; expected "QualityGate"  [arg-type]
+src/kodezart/composition/engine.py:207: note: Following member(s) of "RalphLoop" have conflicts:
+src/kodezart/composition/engine.py:207: note:     Expected:
+src/kodezart/composition/engine.py:207: note:         def run(self, *, prompt: str, repo_path: str | None, repo_url: str | None, feature_branch: str, ralph_branch: str, base_spec: BaseSpec, work_base_ref: str, permission_mode: PermissionMode, allowed_tools: ToolPreset | list[str], acceptance_criteria: list[Any], cache_key: str, run_identity: RunIdentity | None = ..., surface_holder: str | None = ..., repo_visibility: RepoVisibility) -> AsyncIterator[AgentEvent]
+src/kodezart/composition/engine.py:207: note:     Got:
+src/kodezart/composition/engine.py:207: note:         def run(self, *, prompt: str, repo_path: str | None, repo_url: str | None, feature_branch: str, ralph_branch: str, base_spec: BaseSpec, work_base_ref: str, permission_mode: str, allowed_tools: list[str], acceptance_criteria: list[ValidatedCriterion], cache_key: str, repo_visibility: RepoVisibility) -> AsyncIterator[AgentEvent]
+src/kodezart/composition/engine.py:208: error: Argument "ticket_generator" to "RalphWorkflowEngine" has incompatible type "TicketGenerationLoop"; expected "TicketGenerator"  [arg-type]
+src/kodezart/composition/engine.py:208: note: Following member(s) of "TicketGenerationLoop" have conflicts:
+src/kodezart/composition/engine.py:208: note:     Expected:
+src/kodezart/composition/engine.py:208: note:         def run(self, *, prompt: str, repo_path: str | None, repo_url: str | None, cache_key: str, run_identity: RunIdentity | None = ..., base_branch: str) -> AsyncIterator[AgentEvent]
+src/kodezart/composition/engine.py:208: note:     Got:
+src/kodezart/composition/engine.py:208: note:         def run(self, *, prompt: str, repo_path: str | None, repo_url: str | None, cache_key: str, base_branch: str) -> AsyncIterator[AgentEvent]
+src/kodezart/composition/engine.py:223: error: Argument "ci_monitor" to "RalphWorkflowEngine" has incompatible type "GitHubAPIClient | None"; expected "CIMonitor | None"  [arg-type]
+src/kodezart/composition/engine.py:225: error: Argument "remediator" to "RalphWorkflowEngine" has incompatible type "RemediationChain"; expected "Remediator | None"  [arg-type]
+src/kodezart/composition/engine.py:225: note: Following member(s) of "RemediationChain" have conflicts:
+src/kodezart/composition/engine.py:225: note:     Expected:
+src/kodezart/composition/engine.py:225: note:         def run(self, request: RemediationRequest, *, repo_path: str | None, repo_url: str | None, cache_key: str, run_identity: RunIdentity | None = ...) -> AsyncIterator[AgentEvent]
+src/kodezart/composition/engine.py:225: note:     Got:
+src/kodezart/composition/engine.py:225: note:         def run(self, request: RemediationRequest, *, repo_path: str | None, repo_url: str | None, cache_key: str) -> AsyncIterator[AgentEvent]
+src/kodezart/composition/engine.py:233: error: Argument "forge_arm" to "OriginRoutedWorkflowEngine" has incompatible type "RalphWorkflowEngine"; expected "WorkflowEngine"  [arg-type]
+src/kodezart/composition/engine.py:233: note: Following member(s) of "RalphWorkflowEngine" have conflicts:
+src/kodezart/composition/engine.py:233: note:     Expected:
+src/kodezart/composition/engine.py:233: note:         def run(self, *, prompt: str, issue_key: str | None = ..., run_identity: RunIdentity | None = ..., repo_path: str | None, repo_url: str | None, base_spec: BaseSpec, scope: ScopeRef | None, implied_base: BaseSpec | None = ..., permission_mode: PermissionMode, allowed_tools: ToolPreset | list[str], cache_key: str) -> AsyncIterator[AgentEvent]
+src/kodezart/composition/engine.py:233: note:     Got:
+src/kodezart/composition/engine.py:233: note:         def run(self, *, prompt: str, repo_path: str | None, repo_url: str | None, base_spec: BaseSpec, implied_base: BaseSpec | None = ..., permission_mode: str, allowed_tools: list[str], cache_key: str) -> AsyncIterator[AgentEvent]
+src/kodezart/composition/engine.py:234: error: Argument "forge_less_arm" to "OriginRoutedWorkflowEngine" has incompatible type "RalphWorkflowEngine"; expected "WorkflowEngine"  [arg-type]
+src/kodezart/composition/engine.py:234: note: Following member(s) of "RalphWorkflowEngine" have conflicts:
+src/kodezart/composition/engine.py:234: note:     Expected:
+src/kodezart/composition/engine.py:234: note:         def run(self, *, prompt: str, issue_key: str | None = ..., run_identity: RunIdentity | None = ..., repo_path: str | None, repo_url: str | None, base_spec: BaseSpec, scope: ScopeRef | None, implied_base: BaseSpec | None = ..., permission_mode: PermissionMode, allowed_tools: ToolPreset | list[str], cache_key: str) -> AsyncIterator[AgentEvent]
+src/kodezart/composition/engine.py:234: note:     Got:
+src/kodezart/composition/engine.py:234: note:         def run(self, *, prompt: str, repo_path: str | None, repo_url: str | None, base_spec: BaseSpec, implied_base: BaseSpec | None = ..., permission_mode: str, allowed_tools: list[str], cache_key: str) -> AsyncIterator[AgentEvent]
+src/kodezart/main.py:183: error: Argument "workflow_engine" to "build_job_queue" has incompatible type "OriginRoutedWorkflowEngine"; expected "WorkflowEngine"  [arg-type]
+src/kodezart/main.py:183: note: Following member(s) of "OriginRoutedWorkflowEngine" have conflicts:
+src/kodezart/main.py:183: note:     Expected:
+src/kodezart/main.py:183: note:         def run(self, *, prompt: str, issue_key: str | None = ..., run_identity: RunIdentity | None = ..., repo_path: str | None, repo_url: str | None, base_spec: BaseSpec, scope: ScopeRef | None, implied_base: BaseSpec | None = ..., permission_mode: PermissionMode, allowed_tools: ToolPreset | list[str], cache_key: str) -> AsyncIterator[AgentEvent]
+src/kodezart/main.py:183: note:     Got:
+src/kodezart/main.py:183: note:         def run(self, *, prompt: str, repo_path: str | None, repo_url: str | None, base_spec: BaseSpec, implied_base: BaseSpec | None = ..., permission_mode: str, allowed_tools: list[str], cache_key: str) -> AsyncIterator[AgentEvent]
+Found 28 errors in 11 files (checked 203 source files)
+make: *** [type-check] Error 1
+MAKE_EXIT=2
