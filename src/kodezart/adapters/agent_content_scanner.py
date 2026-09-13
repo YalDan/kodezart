@@ -1,12 +1,9 @@
 """The judgment half of the outbound gate — a scanner backed by a session.
 
-One implementation of ``ContentScanner`` alongside ``RegexContentScanner``,
-registered AFTER it in the gate's ordered list.  A credential is arithmetic
-and stays with the patterns; "would a stranger learn something from this
-that this organisation did not choose to publish" is irreducibly semantic,
-and no pattern set can answer it — the set of private things is open-ended,
-writing the deny pattern publishes the string it protects, and the same
-string can be fine or not depending on where it is going.
+The same fresh session judges mandatory authored tracker aggregates and optional
+organization-privacy disclosures. Credentials remain local and run first. Durable
+authored text includes artifact leaves; a zero-reference claim can still describe
+the tracker's changing state, and ordinary repository counts are not such claims.
 
 The session is deliberately a DIFFERENT one from the writer whose output it
 grades: no shared context, ``allowed_tools=[]``, and a neutral working
@@ -21,27 +18,38 @@ did not happen.
 
 import asyncio
 
+from claude_agent_sdk import CLIConnectionError, CLINotFoundError, ResultError
 from pydantic import ValidationError
 
+from kodezart.adapters._sdk_mapping import result_failure
+from kodezart.core.backoff import RetryPolicy
 from kodezart.core.errors import PromptRenderError
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import AgentExecutor, PromptSetProvider
 from kodezart.core.stream_drain import drain
+from kodezart.domain.errors import AgentSDKError
 from kodezart.types.domain.agent import CONTENT_AUDIT_SCHEMA, ContentAuditOutput
 from kodezart.types.domain.gating import (
-    JUDGMENT_ROUTING,
+    TRACKER_ROSTER_MIN_REFERENCES,
+    DurabilityCategory,
     OutboundDestination,
-    RedactionCategory,
+    OutboundSurface,
     ScanFailureKind,
     ScanHit,
-    ScannerRouting,
     ScanResult,
+    SurfaceDurability,
+    durability_of,
+    surface_of,
 )
 from kodezart.types.domain.prompts import PromptKey
-from kodezart.types.domain.session import SessionType
+from kodezart.types.domain.session import (
+    PermissionMode,
+    SessionFailureKind,
+    SessionType,
+)
 from kodezart.types.domain.skills import SkillsSelection
 
-_AUDIT_PERMISSION_MODE = "default"
+_AUDIT_PERMISSION_MODE = PermissionMode.INTERACTIVE
 
 #: Failure kinds a retry can plausibly change. Anything else is a settled
 #: answer of "no answer" and retrying it only spends money.
@@ -54,8 +62,19 @@ _RETRYABLE: frozenset[ScanFailureKind] = frozenset(
 )
 
 
+_SCAN_FAILURES = {
+    SessionFailureKind.TIMEOUT: ScanFailureKind.TIMEOUT,
+    SessionFailureKind.REFUSAL: ScanFailureKind.REFUSAL,
+    SessionFailureKind.RATE_LIMITED: ScanFailureKind.RATE_LIMITED,
+    SessionFailureKind.TRANSPORT_ERROR: ScanFailureKind.TRANSPORT_ERROR,
+    SessionFailureKind.BUDGET_EXHAUSTED: ScanFailureKind.BUDGET_EXHAUSTED,
+    SessionFailureKind.MALFORMED_OUTPUT: ScanFailureKind.MALFORMED_VERDICT,
+    SessionFailureKind.EXECUTION_ERROR: ScanFailureKind.EXECUTION_ERROR,
+}
+
+
 class AgentContentScanner:
-    """``ContentScanner`` that dispatches an adversarial audit session."""
+    """``ContentJudgment`` that dispatches an adversarial audit session."""
 
     def __init__(
         self,
@@ -64,23 +83,18 @@ class AgentContentScanner:
         prompts: PromptSetProvider,
         neutral_cwd: str,
         skills: SkillsSelection,
-        retry_max_attempts: int,
-        retry_initial_interval: float,
+        retry: RetryPolicy,
         timeout_seconds: float,
+        inspect_privacy: bool = True,
     ) -> None:
         self._executor = executor
         self._prompts = prompts
         self._neutral_cwd = neutral_cwd
         self._skills = skills
-        self._retry_max_attempts = retry_max_attempts
-        self._retry_initial_interval = retry_initial_interval
+        self._retry = retry
         self._timeout_seconds = timeout_seconds
+        self._inspect_privacy = inspect_privacy
         self._log: BoundLogger = get_logger(__name__)
-
-    @property
-    def routing(self) -> ScannerRouting:
-        """Authored prose on a publication or tracker surface, plus the ref."""
-        return JUDGMENT_ROUTING
 
     async def scan(
         self,
@@ -89,30 +103,60 @@ class AgentContentScanner:
         destination: OutboundDestination,
     ) -> ScanResult:
         """Audit *content* for *destination*, or say why there is no answer."""
+        aggregates = durability_of(destination) is SurfaceDurability.DURABLE
+        privacy = (
+            self._inspect_privacy
+            and surface_of(destination) is not OutboundSurface.REPOSITORY
+        )
+        if not aggregates and not privacy:
+            return ScanResult()
         try:
             prompt = self._prompts.template_for(PromptKey.CONTENT_AUDIT).render(
-                {"content": content, "destination": destination.value},
+                {
+                    "content": content,
+                    "destination": destination.value,
+                    "inspect_aggregates": True if aggregates else None,
+                    "inspect_privacy": True if privacy else None,
+                    "roster_minimum": TRACKER_ROSTER_MIN_REFERENCES,
+                },
             )
         except PromptRenderError:
             # The mandate has no private-surface description to judge
             # against. A scanner registered without its configuration is a
             # blocked payload, never a quietly absent scanner.
             return ScanResult(failure=ScanFailureKind.NOT_CONFIGURED)
-        interval = self._retry_initial_interval
         result = ScanResult(failure=ScanFailureKind.EMPTY_RESPONSE)
-        for attempt in range(1, self._retry_max_attempts + 1):
+        for attempt in range(self._retry.attempts):
             result = await self._attempt(prompt=prompt, content=content)
-            if result.failure is None or result.failure not in _RETRYABLE:
+            if result.failure is None:
+                if not privacy and any(
+                    not isinstance(hit.category, DurabilityCategory)
+                    for hit in result.hits
+                ):
+                    return ScanResult(failure=ScanFailureKind.MALFORMED_VERDICT)
+                return result.model_copy(
+                    update={
+                        "hits": tuple(
+                            hit
+                            for hit in result.hits
+                            if (
+                                aggregates
+                                if isinstance(hit.category, DurabilityCategory)
+                                else privacy
+                            )
+                        )
+                    }
+                )
+            if result.failure not in _RETRYABLE:
                 return result
             await self._log.awarning(
                 "content_audit_attempt_failed",
-                attempt=attempt,
+                attempt=attempt + 1,
                 failure=result.failure.value,
                 destination=destination.value,
             )
-            if attempt < self._retry_max_attempts:
-                await asyncio.sleep(interval)
-                interval *= 2
+            if attempt + 1 < self._retry.attempts:
+                await asyncio.sleep(self._retry.delay(attempt))
         return result
 
     async def _attempt(self, *, prompt: str, content: str) -> ScanResult:
@@ -144,13 +188,17 @@ class AgentContentScanner:
             return ScanResult(failure=ScanFailureKind.TIMEOUT)
         except OSError:
             return ScanResult(failure=ScanFailureKind.TRANSPORT_ERROR)
+        except AgentSDKError as exc:
+            return ScanResult(failure=_failure_for_sdk(exc))
 
         if rate_limit_rejected:
             return ScanResult(failure=ScanFailureKind.RATE_LIMITED)
         if result_event is None:
             return ScanResult(failure=ScanFailureKind.EMPTY_RESPONSE)
+        if result_event.failure_kind is not None:
+            return ScanResult(failure=_SCAN_FAILURES[result_event.failure_kind])
         if result_event.is_error:
-            return ScanResult(failure=_failure_for_subtype(result_event.subtype))
+            return ScanResult(failure=ScanFailureKind.EXECUTION_ERROR)
         if result_event.structured_output is None:
             return ScanResult(failure=ScanFailureKind.EMPTY_RESPONSE)
         try:
@@ -160,18 +208,21 @@ class AgentContentScanner:
         return _hits_from(audit, content=content)
 
 
-def _failure_for_subtype(subtype: str) -> ScanFailureKind:
-    """Map an errored result's subtype onto the taxonomy. Never CLEAN."""
-    normalised = subtype.lower()
-    if "budget" in normalised or "cost" in normalised:
-        return ScanFailureKind.BUDGET_EXHAUSTED
-    if "rate" in normalised or "limit" in normalised:
-        return ScanFailureKind.RATE_LIMITED
-    if "refus" in normalised or "block" in normalised:
-        return ScanFailureKind.REFUSAL
-    if "timeout" in normalised:
-        return ScanFailureKind.TIMEOUT
-    return ScanFailureKind.TRANSPORT_ERROR
+def _failure_for_sdk(error: AgentSDKError) -> ScanFailureKind:
+    """Read native causes here, without widening domain errors or SSE frames."""
+    cause = error.__cause__
+    if isinstance(cause, ResultError):
+        failure = result_failure(cause)
+        return (
+            _SCAN_FAILURES[failure]
+            if failure is not None
+            else ScanFailureKind.EXECUTION_ERROR
+        )
+    if isinstance(cause, CLINotFoundError):
+        return ScanFailureKind.NOT_CONFIGURED
+    if isinstance(cause, CLIConnectionError):
+        return ScanFailureKind.TRANSPORT_ERROR
+    return ScanFailureKind.EXECUTION_ERROR
 
 
 def _hits_from(audit: ContentAuditOutput, *, content: str) -> ScanResult:
@@ -186,7 +237,7 @@ def _hits_from(audit: ContentAuditOutput, *, content: str) -> ScanResult:
         if finding.start is None and finding.end is None:
             hits.append(
                 ScanHit(
-                    category=RedactionCategory.ORG_PRIVATE,
+                    category=finding.category,
                     rationale=finding.rationale,
                 ),
             )
@@ -195,10 +246,15 @@ def _hits_from(audit: ContentAuditOutput, *, content: str) -> ScanResult:
             return ScanResult(failure=ScanFailureKind.SPANS_UNRESOLVABLE)
         hits.append(
             ScanHit(
-                category=RedactionCategory.ORG_PRIVATE,
+                category=finding.category,
                 start=finding.start,
                 end=finding.end,
                 rationale=finding.rationale,
+                matched_text=(
+                    content[finding.start : finding.end]
+                    if isinstance(finding.category, DurabilityCategory)
+                    else None
+                ),
             ),
         )
     hits.sort(key=lambda hit: hit.sort_key())

@@ -23,6 +23,7 @@ from kodezart.types.domain.operation import (
     QueueState,
     RecordDestination,
 )
+from tests.docs.configuration import shipped_config_variables
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 README = REPO_ROOT / "README.md"
@@ -60,7 +61,7 @@ CITED_ERRORS: frozenset[str] = frozenset(
 #: does carry is checked against the shipped model by the test below.
 CITED_VARIABLES: frozenset[str] = frozenset(
     {
-        "KODEZART_TRACKER_TOKEN",
+        "KODEZART_TRACKER__TOKEN",
         "KODEZART_OPERATION_CONFIG",
         "KODEZART_GITHUB_TOKEN",
     },
@@ -170,11 +171,7 @@ def test_the_guide_states_the_credential_shape_boot_enforces() -> None:
     assert ACCEPTED_CREDENTIAL_SHAPE in _guide()
 
 
-def _shipped_variables() -> set[str]:
-    """Every environment name ``AppConfig`` actually reads."""
-    from kodezart.core.config import AppConfig
-
-    return {f"KODEZART_{name.upper()}" for name in AppConfig.model_fields}
+_shipped_variables = shipped_config_variables
 
 
 def test_every_variable_the_guide_sets_is_a_shipped_config_field() -> None:

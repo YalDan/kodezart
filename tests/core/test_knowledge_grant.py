@@ -11,29 +11,38 @@ from typing import Final
 import pytest
 from pydantic import ValidationError
 
+from kodezart.adapters._mcp_mapping import map_knowledge_mcp
 from kodezart.core.config import AppConfig
 from kodezart.main import create_app, lifespan
 from kodezart.types.domain.session import SessionType
 
 _CREDENTIAL: Final[str] = "ntn_" + ("Q" * 44)
-_GRANTS_VAR: Final[str] = "KODEZART_KNOWLEDGE_SESSION_GRANTS"
-_TOKEN_VAR: Final[str] = "KODEZART_KNOWLEDGE_MCP_TOKEN"
-_URL_VAR: Final[str] = "KODEZART_KNOWLEDGE_MCP_SERVER_URL"
+_GRANTS_VAR: Final[str] = "KODEZART_KNOWLEDGE__SESSION_GRANTS"
+_TOKEN_VAR: Final[str] = "KODEZART_KNOWLEDGE__CONNECTION__CREDENTIAL"
+_URL_VAR: Final[str] = "KODEZART_KNOWLEDGE__CONNECTION__SERVER_URL"
 _SELF_HOSTED_URL: Final[str] = "https://knowledge.invalid/mcp"
 #: Any non-empty map: the model refuses a grant that names a session type
 #: and carries none, so the builder has to be handed one.
 _MAP: Final[str] = "── fixture map ──"
 
 
+@pytest.fixture(autouse=True)
+def _http_connection(monkeypatch):
+    monkeypatch.setenv("KODEZART_KNOWLEDGE__CONNECTION__TRANSPORT", "http")
+    monkeypatch.setenv(
+        "KODEZART_KNOWLEDGE__CONNECTION__SERVER_URL", "https://knowledge.invalid/mcp"
+    )
+
+
 def test_the_shipped_grant_names_no_session_type() -> None:
     """The mechanism ships; the grant is operator configuration."""
-    assert AppConfig().knowledge_session_grants == []
-    assert AppConfig().knowledge_grant(knowledge_map="").granted == ()
+    assert AppConfig().knowledge.session_grants == ()
+    assert AppConfig().knowledge.grant(knowledge_map="").granted == ()
 
 
 def test_no_session_type_is_granted_by_the_shipped_default() -> None:
     """Exhaustive over the vocabulary, so a new member cannot ship granted."""
-    grant = AppConfig().knowledge_grant(knowledge_map="")
+    grant = AppConfig().knowledge.grant(knowledge_map="")
 
     for session_type in SessionType:
         assert grant.grants(session_type) is False
@@ -47,7 +56,7 @@ def test_the_grant_list_resolves_from_its_env_var(
     monkeypatch.setenv(_TOKEN_VAR, _CREDENTIAL)
     monkeypatch.setenv(_URL_VAR, _SELF_HOSTED_URL)
 
-    grant = AppConfig().knowledge_grant(knowledge_map=_MAP)
+    grant = AppConfig().knowledge.grant(knowledge_map=_MAP)
 
     assert grant.granted == (SessionType.TICKET_FIRE,)
     assert grant.grants(SessionType.TICKET_FIRE) is True
@@ -61,7 +70,7 @@ def test_an_empty_grant_list_is_a_legal_configuration(
     monkeypatch.setenv(_GRANTS_VAR, "[]")
     monkeypatch.delenv(_TOKEN_VAR, raising=False)
 
-    assert AppConfig().knowledge_grant(knowledge_map="").granted == ()
+    assert AppConfig().knowledge.grant(knowledge_map="").granted == ()
 
 
 def test_an_entry_naming_no_session_type_aborts_boot(
@@ -106,8 +115,8 @@ def test_a_non_empty_grant_without_the_credential_aborts_boot(
         AppConfig()
 
     reported = str(excinfo.value)
-    assert _TOKEN_VAR in reported
-    assert SessionType.TICKET_FIRE.value in reported
+    assert "credential" in reported
+    assert "session_grants" in reported
 
 
 def test_the_credential_rule_does_not_mask_the_vocabulary_rule(
@@ -137,3 +146,28 @@ async def test_the_shipped_grant_boots_clean_with_no_credential(
     app = create_app()
     async with lifespan(app):
         assert app.state.workflow_engine is not None
+
+
+def test_organize_is_a_named_session_kind_with_an_explicit_grant(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    assert SessionType.ORGANIZE_PASS.value == "organize_pass"
+    assert (
+        not AppConfig()
+        .knowledge.grant(knowledge_map="")
+        .grants(SessionType.ORGANIZE_PASS)
+    )
+    monkeypatch.setenv(_GRANTS_VAR, '["organize_pass"]')
+    monkeypatch.setenv(_TOKEN_VAR, _CREDENTIAL)
+    monkeypatch.setenv(_URL_VAR, _SELF_HOSTED_URL)
+    grant = AppConfig().knowledge.grant(knowledge_map=_MAP)
+    assert grant.granted == (SessionType.ORGANIZE_PASS,)
+    assert grant.grants(SessionType.ORGANIZE_PASS)
+    assert not grant.grants(SessionType.TICKET_FIRE)
+
+
+def test_ungranted_organize_uses_strict_mcp_configuration() -> None:
+    grant = AppConfig().knowledge.grant(knowledge_map="")
+    options = map_knowledge_mcp(grant, SessionType.ORGANIZE_PASS)
+    assert options["strict_mcp_config"] is True
+    assert options["mcp_servers"] == {}

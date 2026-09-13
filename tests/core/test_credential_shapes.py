@@ -16,8 +16,7 @@ from typing import Final
 
 import pytest
 
-from kodezart.adapters.pattern_outbound_gate import PatternOutboundContentGate
-from kodezart.adapters.regex_content_scanner import RegexContentScanner
+from kodezart.adapters.outbound_admission import _CREDENTIAL_PATTERNS, OutboundAdmission
 from kodezart.core.config import AppConfig
 from kodezart.core.error_egress import _COMPILED_CREDENTIAL_SHAPES, redact_credentials
 from kodezart.types.domain.credentials import CREDENTIAL_SHAPES, REDACTION_SENTINEL
@@ -30,6 +29,8 @@ from kodezart.types.domain.gating import (
     WriterShape,
 )
 from kodezart.types.domain.tracker import TrackerBackend
+from tests.docs.configuration import model_types
+from tests.outbound import make_admission
 
 # Each fixture is assembled by concatenation so no literal in this file has
 # the shape of a real credential, and each names the AppConfig field whose
@@ -45,23 +46,20 @@ _ENGINE_KEY: Final[str] = "sk-ant-api03-" + ("D" * 90)
 _HELD_CREDENTIALS: Final[tuple[tuple[str, str], ...]] = (
     ("github_token", f"git clone https://x-access-token:{_FORGE_TOKEN}@h/o/r.git"),
     ("github_token", f"forge call rejected: {_FORGE_TOKEN}"),
-    ("knowledge_mcp_token", f"knowledge call rejected: {_KNOWLEDGE_TOKEN}"),
-    ("tracker_token", f"tracker call rejected: {_TRACKER_TOKEN}"),
+    ("knowledge credential", f"knowledge call rejected: {_KNOWLEDGE_TOKEN}"),
+    ("TrackerSettings.token", f"tracker call rejected: {_TRACKER_TOKEN}"),
     ("engine credential", f"process error: {_ENGINE_KEY}"),
 )
 
 
-def _gate(config: AppConfig) -> PatternOutboundContentGate:
-    return PatternOutboundContentGate(
-        scanners=[RegexContentScanner(patterns=config.deny_patterns)],
-        verdicts=config.deny_pattern_verdicts,
-    )
+def _gate(config: AppConfig) -> OutboundAdmission:
+    return make_admission()
 
 
 @pytest.mark.usefixtures("_pristine_environment")
 def test_the_gate_and_the_scrubber_read_the_same_table() -> None:
     """Both surfaces derive from the table, so neither can drift off it."""
-    shipped = AppConfig().deny_patterns[RedactionCategory.CREDENTIALS]
+    shipped = [pattern.pattern for pattern in _CREDENTIAL_PATTERNS]
     compiled = [pattern.pattern for pattern, _ in _COMPILED_CREDENTIAL_SHAPES]
 
     assert shipped == [shape.pattern for shape in CREDENTIAL_SHAPES]
@@ -111,28 +109,33 @@ def test_the_one_tracker_backend_has_a_credential_shape() -> None:
 #: Every credential-bearing field, mapped to a value in its live shape.
 _CREDENTIAL_FIELD_FIXTURES: Final[dict[str, str]] = {
     "github_token": _FORGE_TOKEN,
-    "tracker_token": _TRACKER_TOKEN,
-    "knowledge_mcp_token": _KNOWLEDGE_TOKEN,
+    "TrackerSettings.token": _TRACKER_TOKEN,
+    "HttpKnowledge.credential": _KNOWLEDGE_TOKEN,
+    "StdioKnowledge.credential": _KNOWLEDGE_TOKEN,
 }
+_SHAPELESS_TOKEN_FIELDS = {"HttpKnowledge.gateway_credential"}
 
-#: The gateway credential is operator-minted against a self-hosted server,
-#: so it has no vendor taxonomy a pattern could recognise; its egress guard
-#: is the field itself — a secret, excluded from serialization — and the
-#: exemption is asserted rather than assumed.
-_SHAPELESS_TOKEN_FIELDS: Final[frozenset[str]] = frozenset(
-    {"knowledge_mcp_gateway_token"},
-)
+
+def _credential_fields(model=AppConfig):
+    fields = {}
+    for name, field in model.model_fields.items():
+        if name == "token" or name.endswith(("_token", "credential")):
+            key = name if model is AppConfig else f"{model.__name__}.{name}"
+            fields[key] = field
+        for nested in model_types(field.annotation):
+            fields.update(_credential_fields(nested))
+    return fields
 
 
 def test_every_token_field_maps_into_the_table_or_names_its_exemption() -> None:
     """The class, closed: a credential field the table does not know fails here.
 
-    The enumeration is derived from the configuration model — every field
-    whose name ends ``_token`` — so a new credential knob cannot ship
+    The enumeration follows the actual configuration models, including nested
+    sections and transport arms. Token and credential fields cannot ship
     without either a shape the scrubber recognises or a recorded shapeless
     exemption, and neither can this test go vacuous when one is renamed.
     """
-    token_fields = {name for name in AppConfig.model_fields if name.endswith("_token")}
+    token_fields = set(_credential_fields())
 
     assert token_fields == set(_CREDENTIAL_FIELD_FIXTURES) | _SHAPELESS_TOKEN_FIELDS
     for field, value in _CREDENTIAL_FIELD_FIXTURES.items():
@@ -144,7 +147,7 @@ def test_every_token_field_maps_into_the_table_or_names_its_exemption() -> None:
 def test_every_shapeless_token_field_is_a_secret_that_never_serializes() -> None:
     """The exemption's ground, asserted: shapeless means guarded another way."""
     for field in _SHAPELESS_TOKEN_FIELDS:
-        info = AppConfig.model_fields[field]
+        info = _credential_fields()[field]
 
         assert info.exclude is True, field
         assert "SecretStr" in str(info.annotation), field

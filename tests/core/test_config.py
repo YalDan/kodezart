@@ -1,7 +1,7 @@
 """Configuration criteria — the fan-out cap, and the two flipped defaults.
 
-KOD-89-AC-5: every numeric constant in this project is an ``AppConfig``
-field with the ``KODEZART_`` prefix, so the cap is asserted the same way —
+The configured investigation cap is an ``AppConfig`` field with the
+``KODEZART_`` prefix, so the operator choice is asserted directly —
 it reads from the environment, it refuses values outside its declared range
 at construction, and the range itself is the one the fire-time ruling
 recorded.
@@ -15,6 +15,7 @@ make this suite agree with whatever is already configured.
 import pytest
 from pydantic import ValidationError
 
+from kodezart.core.agent_settings import AgentSettings
 from kodezart.core.config import AppConfig
 from kodezart.types.domain.ticket_review import TicketReviewMode
 
@@ -152,7 +153,7 @@ def test_an_unset_forge_token_is_the_absent_state_and_still_loads() -> None:
 @pytest.mark.usefixtures("_pristine_environment")
 def test_session_models_ships_empty_and_loads() -> None:
     """The default pins nothing: every key resolves exactly as before."""
-    assert AppConfig().session_models == {}
+    assert AppConfig().agent.session_models == {}
 
 
 @pytest.mark.usefixtures("_pristine_environment")
@@ -162,7 +163,7 @@ def test_a_key_outside_the_prompt_vocabulary_is_refused_naming_it(
     """The closed-vocabulary refusal: a typo becomes a one-line fix, never
     a table entry nothing ever reads."""
     monkeypatch.setenv(
-        "KODEZART_SESSION_MODELS",
+        "KODEZART_AGENT__SESSION_MODELS",
         '{"implemenation": "engine-a"}',
     )
 
@@ -179,11 +180,11 @@ def test_a_table_of_prompt_keys_loads_verbatim(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv(
-        "KODEZART_SESSION_MODELS",
+        "KODEZART_AGENT__SESSION_MODELS",
         '{"implementation": "engine-a", "fix": "engine-b"}',
     )
 
-    assert AppConfig().session_models == {
+    assert AppConfig().agent.session_models == {
         "implementation": "engine-a",
         "fix": "engine-b",
     }
@@ -201,24 +202,21 @@ def test_no_output_style_is_declared_by_default() -> None:
     A shipped value here would be kodezart picking a system prompt for
     every deployment that never asked for one.
     """
-    field = AppConfig.model_fields["claude_output_style"]
+    field = AgentSettings.model_fields["output_style"]
 
     assert field.annotation == str | None
-    assert AppConfig().claude_output_style is None
+    assert AppConfig().agent.output_style is None
 
 
 @pytest.mark.usefixtures("_pristine_environment")
 def test_a_declared_style_loads_verbatim(monkeypatch: pytest.MonkeyPatch) -> None:
     """The operation's value reaches the adapter as the operator typed it."""
-    monkeypatch.setenv("KODEZART_CLAUDE_OUTPUT_STYLE", "Concise")
+    monkeypatch.setenv("KODEZART_AGENT__OUTPUT_STYLE", "Concise")
 
-    assert AppConfig().claude_output_style == "Concise"
+    assert AppConfig().agent.output_style == "Concise"
 
 
-SSE_READ_FIELDS = (
-    "tracker_mcp_sse_read_timeout_seconds",
-    "knowledge_mcp_sse_read_timeout_seconds",
-)
+SSE_READ_FIELDS = ("sse_read_timeout_seconds",)
 #: The bounds the sibling timeouts are declared with, and the default the
 #: session ran on while the value came from a private vendor constant
 #: (KOD-299).
@@ -233,7 +231,7 @@ def test_the_stream_read_bound_defaults_to_what_the_session_ran_on(
     field: str,
 ) -> None:
     """Adopting the knob changes who owns the number, not the number."""
-    assert getattr(AppConfig(), field) == SSE_READ_DEFAULT
+    assert getattr(AppConfig().tracker, field) == SSE_READ_DEFAULT
 
 
 @pytest.mark.usefixtures("_pristine_environment")
@@ -242,9 +240,9 @@ def test_the_stream_read_bound_is_read_from_the_prefixed_environment(
     monkeypatch: pytest.MonkeyPatch,
     field: str,
 ) -> None:
-    monkeypatch.setenv(f"KODEZART_{field.upper()}", "450")
+    monkeypatch.setenv(f"KODEZART_TRACKER__{field.upper()}", "450")
 
-    assert getattr(AppConfig(), field) == 450.0
+    assert getattr(AppConfig().tracker, field) == 450.0
 
 
 @pytest.mark.usefixtures("_pristine_environment")
@@ -256,7 +254,7 @@ def test_a_stream_read_bound_outside_its_range_refuses_at_construction(
     value: float,
 ) -> None:
     """Out of range fails at boot, naming the field — never a silent clamp."""
-    monkeypatch.setenv(f"KODEZART_{field.upper()}", str(value))
+    monkeypatch.setenv(f"KODEZART_TRACKER__{field.upper()}", str(value))
 
     with pytest.raises(ValidationError) as excinfo:
         AppConfig()

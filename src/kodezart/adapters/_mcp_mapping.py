@@ -18,26 +18,20 @@ the RESULT of the first rather than re-testing membership, so the two can
 never be answered differently for one session.
 """
 
-from typing import Final, TypedDict
+from typing import TypedDict
 
 from claude_agent_sdk.types import (
-    McpHttpServerConfig,
     McpServerConfig,
-    McpStdioServerConfig,
 )
 
+from kodezart.core.prompt_rendering import PromptTemplate
+from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.session import (
+    HttpKnowledge,
     KnowledgeGrant,
-    KnowledgeTransport,
     SessionType,
+    StdioKnowledge,
 )
-
-#: The header and scheme a client presents a gateway credential in.  This is
-#: the documented self-hosted HTTP shape — the server sits behind a bearer
-#: gateway token — and it is fixed so the upstream pass-through header can
-#: never silently collide with it.
-_GATEWAY_HEADER: Final[str] = "Authorization"
-_GATEWAY_SCHEME: Final[str] = "Bearer"
 
 
 class McpSessionOptions(TypedDict):
@@ -67,108 +61,25 @@ def _described_servers(
     """
     if not grant.grants(session_type):
         return {}
-    if grant.transport is KnowledgeTransport.STDIO:
-        return {grant.server_name: _stdio_definition(grant, session_type)}
-    return {grant.server_name: _http_definition(grant, session_type)}
-
-
-def _http_definition(
-    grant: KnowledgeGrant,
-    session_type: SessionType,
-) -> McpHttpServerConfig:
-    """The HTTP server definition a granted session dials.
-
-    Three expressible header shapes: the upstream credential alone in its
-    configured header, the gateway credential alone as a bearer, or both at
-    once — the vendor's token pass-through, where the upstream header must
-    differ from the gateway's.  No headers at all is the dead configuration
-    and refuses rather than dialling unauthenticated.
-    """
-    headers: dict[str, str] = {}
-    if grant.gateway_credential is not None:
-        headers[_GATEWAY_HEADER] = (
-            f"{_GATEWAY_SCHEME} {grant.gateway_credential.get_secret_value()}"
-        )
-    if grant.credential is not None:
-        if grant.auth_header is None:
-            msg = (
-                f"knowledge grant carries a credential but no auth_header to "
-                f"present it in: set KODEZART_KNOWLEDGE_MCP_AUTH_HEADER, or "
-                f"unset the credential ({grant.server_name})"
-            )
-            raise ValueError(msg)
-        if (
-            grant.auth_header == _GATEWAY_HEADER
-            and grant.gateway_credential is not None
-        ):
-            msg = (
-                f"knowledge grant presents both credentials in "
-                f"{_GATEWAY_HEADER!r}: the gateway credential owns that "
-                f"header, so KODEZART_KNOWLEDGE_MCP_AUTH_HEADER must name the "
-                f"pass-through header the self-hosted server documents"
-            )
-            raise ValueError(msg)
-        composed = (
-            grant.credential.get_secret_value()
-            if grant.auth_scheme is None
-            else f"{grant.auth_scheme} {grant.credential.get_secret_value()}"
-        )
-        headers[grant.auth_header] = composed
-    if not headers:
-        msg = (
-            f"knowledge grant names {session_type.value} but carries no "
-            f"credential: {grant.server_name} would be dialled unauthenticated"
-        )
-        raise ValueError(msg)
-    if grant.server_url is None:
-        msg = (
-            f"knowledge grant carries no server_url for its http transport: "
-            f"{grant.server_name} has no endpoint to dial"
-        )
-        raise ValueError(msg)
-    return {
-        "type": "http",
-        "url": grant.server_url,
-        "headers": headers,
-    }
-
-
-def _stdio_definition(
-    grant: KnowledgeGrant,
-    session_type: SessionType,
-) -> McpStdioServerConfig:
-    """The stdio server definition a granted session spawns.
-
-    The credential is delivered as one environment entry of the spawned
-    process, under the name the server documents.  There is no URL and
-    there are no headers — that absence is the shape, not a gap in it.
-    """
-    if grant.command is None:
-        msg = (
-            f"knowledge grant carries no command for its stdio transport: "
-            f"{grant.server_name} has no process to spawn"
-        )
-        raise ValueError(msg)
-    if grant.credential is None:
-        msg = (
-            f"knowledge grant names {session_type.value} but carries no "
-            f"credential: {grant.server_name} would be spawned unauthenticated"
-        )
-        raise ValueError(msg)
-    if grant.credential_env is None:
-        msg = (
-            f"knowledge grant carries a credential but no credential_env "
-            f"entry to deliver it under: set "
-            f"KODEZART_KNOWLEDGE_MCP_CREDENTIAL_ENV to the environment "
-            f"variable {grant.server_name} reads its token from"
-        )
-        raise ValueError(msg)
-    return {
-        "type": "stdio",
-        "command": grant.command,
-        "args": list(grant.args),
-        "env": {**grant.env, grant.credential_env: grant.credential.get_secret_value()},
-    }
+    connection = grant.connection
+    if isinstance(connection, StdioKnowledge):
+        return {
+            grant.server_name: {
+                "type": "stdio",
+                "command": connection.command,
+                "args": list(connection.args),
+                "env": connection.environment(),
+            }
+        }
+    if isinstance(connection, HttpKnowledge):
+        return {
+            grant.server_name: {
+                "type": "http",
+                "url": connection.server_url,
+                "headers": connection.headers(),
+            }
+        }
+    raise ValueError("granted session has no knowledge connection")
 
 
 def map_knowledge_mcp(
@@ -188,6 +99,7 @@ def map_knowledge_mcp(
             | SessionType.COMMIT_MESSAGE
             | SessionType.CONTENT_AUDIT
             | SessionType.SCHEDULED_PASS
+            | SessionType.ORGANIZE_PASS
         ):
             return McpSessionOptions(
                 mcp_servers=_described_servers(grant, session_type),
@@ -200,6 +112,8 @@ def prompt_with_knowledge_map(
     *,
     grant: KnowledgeGrant,
     attached: McpSessionOptions,
+    fire_record: PromptTemplate | None = None,
+    run_identity: RunIdentity | None = None,
 ) -> str:
     """*prompt* preceded by the what-lives-where map, for a granted session.
 
@@ -215,4 +129,7 @@ def prompt_with_knowledge_map(
     """
     if not attached["mcp_servers"]:
         return prompt
+    if fire_record is not None and run_identity is not None:
+        clause = fire_record.render({"record_title": run_identity.title()})
+        return f"{grant.knowledge_map}\n\n{prompt}\n\n{clause}"
     return f"{grant.knowledge_map}\n\n{prompt}"
