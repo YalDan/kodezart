@@ -2,8 +2,9 @@
 
 No test here sleeps.  ``ClaimHeartbeat`` takes its sleep as a collaborator
 and the tracker double takes its clock as one, so the two are wired to each
-other: a granted interval ADVANCES the fixture clock by exactly the
-interval that was asked for.  That is what makes "a job outliving its
+other: an explicitly granted interval ADVANCES the fixture clock by exactly
+the interval that was asked for. Logging and scheduler turns grant no time.
+That is what makes "a job outliving its
 lease" a thing this suite can state — the job outlives it because the
 renewals moved the clock past it, not because the suite waited.
 
@@ -73,17 +74,18 @@ TERMINAL_EVENT = WorkflowCompleteEvent(
 
 
 class MovingClock:
-    """A fixture clock the heartbeat's own sleeps advance.
+    """A fixture clock advanced by explicitly permitted heartbeat intervals.
 
     ``sleep`` is the heartbeat's collaborator and the instance itself is
     the tracker's, so time passes for the claim exactly as fast as the
-    heartbeat believes it is passing.  A test that advanced one without the
-    other would be asserting over a state neither component could be in.
+    heartbeat believes it is passing. An awaited logger must not manufacture
+    elapsed lease time merely by allowing the heartbeat to run again.
     """
 
     def __init__(self, *, start: datetime) -> None:
         self.now: datetime = start
         self.granted: list[float] = []
+        self._intervals: asyncio.Queue[None] = asyncio.Queue()
 
     def __call__(self) -> datetime:
         return self.now
@@ -91,7 +93,12 @@ class MovingClock:
     def advance(self, *, seconds: float) -> None:
         self.now += timedelta(seconds=seconds)
 
+    def grant_interval(self) -> None:
+        """Permit one requested heartbeat interval to elapse."""
+        self._intervals.put_nowait(None)
+
     async def sleep(self, seconds: float) -> None:
+        await self._intervals.get()
         self.granted.append(seconds)
         self.advance(seconds=seconds)
         await asyncio.sleep(0)
@@ -173,8 +180,10 @@ def heartbeat(tracker: FakeTrackerPort, *, clock: MovingClock) -> ClaimHeartbeat
     )
 
 
-async def run_until(tracker: FakeTrackerPort, *, renewals: int) -> None:
-    """Yield to the heartbeat until it has attempted *renewals* of them.
+async def run_until(
+    tracker: FakeTrackerPort, *, clock: MovingClock, renewals: int
+) -> None:
+    """Grant one interval per required renewal and await the actual attempt.
 
     What a fire does is irrelevant to the claim, so the "job" here is the
     passage of time and nothing else.  Bounded by a timeout, so a heartbeat
@@ -183,20 +192,27 @@ async def run_until(tracker: FakeTrackerPort, *, renewals: int) -> None:
 
     async def _spin() -> None:
         while len(tracker.renewals) < renewals:
-            await asyncio.sleep(0)
+            before = len(tracker.renewals)
+            clock.grant_interval()
+            while len(tracker.renewals) == before:
+                await asyncio.sleep(0)
 
     await asyncio.wait_for(_spin(), timeout=SETTLE_TIMEOUT)
 
 
-async def settle() -> None:
-    """Grant the event loop enough turns for a live heartbeat to renew."""
+async def settle(clock: MovingClock) -> None:
+    """Permit further intervals so an incorrectly live heartbeat can renew."""
     for _ in range(TURNS_AFTER_THE_STOP):
+        clock.grant_interval()
         await asyncio.sleep(0)
 
 
-async def watched(*, events: tuple[AgentEvent, ...]) -> FakeTrackerPort:
+async def watched(
+    *, events: tuple[AgentEvent, ...], clock: MovingClock | None = None
+) -> FakeTrackerPort:
     """Run one claimed issue's watch to its end over a scripted job."""
-    clock = MovingClock(start=FIXTURE_EPOCH)
+    if clock is None:
+        clock = MovingClock(start=FIXTURE_EPOCH)
     tracker, _ = await claimed(clock)
     watch = LifecycleWatcher(
         recorder=RunRecorder(records={}, sinks={}),
@@ -233,7 +249,7 @@ class TestAJobOutlivingItsLease:
         tracker, granted = await claimed(clock)
 
         async with heartbeat(tracker, clock=clock).renewing(issue_key=ISSUE):
-            await run_until(tracker, renewals=RENEWALS_PAST_THE_LEASE)
+            await run_until(tracker, clock=clock, renewals=RENEWALS_PAST_THE_LEASE)
             live = await tracker.active_claim(issue_key=ISSUE)
 
         assert clock.now > granted.expires_at, (
@@ -250,7 +266,7 @@ class TestAJobOutlivingItsLease:
 
         async with heartbeat(tracker, clock=clock).renewing(issue_key=ISSUE):
             for tick in range(1, RENEWALS_PAST_THE_LEASE + 1):
-                await run_until(tracker, renewals=tick)
+                await run_until(tracker, clock=clock, renewals=tick)
                 live = await tracker.active_claim(issue_key=ISSUE)
                 assert live is not None, "the claim lapsed mid-run"
                 seen.append(live.expires_at)
@@ -267,7 +283,7 @@ class TestAJobOutlivingItsLease:
         beat = heartbeat(tracker, clock=clock)
 
         async with beat.renewing(issue_key=ISSUE):
-            await run_until(tracker, renewals=2)
+            await run_until(tracker, clock=clock, renewals=2)
 
         assert beat.interval_seconds == INTERVAL_SECONDS
         assert beat.interval_seconds < LEASE_SECONDS
@@ -282,9 +298,9 @@ class TestRenewalStopsWhenTheJobDoes:
         tracker, _ = await claimed(clock)
 
         async with heartbeat(tracker, clock=clock).renewing(issue_key=ISSUE):
-            await run_until(tracker, renewals=2)
+            await run_until(tracker, clock=clock, renewals=2)
         at_exit = len(tracker.renewals)
-        await settle()
+        await settle(clock)
 
         assert len(tracker.renewals) == at_exit
 
@@ -294,11 +310,11 @@ class TestRenewalStopsWhenTheJobDoes:
 
         with pytest.raises(RuntimeError):
             async with heartbeat(tracker, clock=clock).renewing(issue_key=ISSUE):
-                await run_until(tracker, renewals=2)
+                await run_until(tracker, clock=clock, renewals=2)
                 msg = "the run died"
                 raise RuntimeError(msg)
         at_exit = len(tracker.renewals)
-        await settle()
+        await settle(clock)
 
         assert len(tracker.renewals) == at_exit
 
@@ -308,7 +324,7 @@ class TestRenewalStopsWhenTheJobDoes:
         tracker, _ = await claimed(clock)
 
         async with heartbeat(tracker, clock=clock).renewing(issue_key=ISSUE):
-            await run_until(tracker, renewals=2)
+            await run_until(tracker, clock=clock, renewals=2)
         assert await tracker.active_claim(issue_key=ISSUE) is not None
         clock.advance(seconds=LEASE_SECONDS)
 
@@ -321,8 +337,8 @@ class TestRenewalStopsWhenTheJobDoes:
         await tracker.release_claim(issue_key=ISSUE, holder=HOLDER)
 
         async with heartbeat(tracker, clock=clock).renewing(issue_key=ISSUE):
-            await run_until(tracker, renewals=1)
-            await settle()
+            await run_until(tracker, clock=clock, renewals=1)
+            await settle(clock)
 
         assert tracker.renewals == [(ISSUE, HOLDER)], "the refused loop kept going"
         assert await tracker.active_claim(issue_key=ISSUE) is None
@@ -345,7 +361,7 @@ class TestARenewalWriteThatFails:
         )
 
         async with heartbeat(tracker, clock=clock).renewing(issue_key=ISSUE):
-            await run_until(tracker, renewals=4)
+            await run_until(tracker, clock=clock, renewals=4)
             live = await tracker.active_claim(issue_key=ISSUE)
 
         assert live is not None, "two failed writes must not lose the claim"
@@ -366,7 +382,7 @@ class TestARenewalWriteThatFails:
 
         with structlog.testing.capture_logs() as logs:
             async with heartbeat(tracker, clock=clock).renewing(issue_key=ISSUE):
-                await run_until(tracker, renewals=2)
+                await run_until(tracker, clock=clock, renewals=2)
 
         failed = [entry for entry in logs if entry["event"] == "claim_renewal_failed"]
         assert len(failed) == 1
@@ -391,7 +407,7 @@ class TestARenewalWriteThatFails:
         )
 
         async with heartbeat(tracker, clock=clock).renewing(issue_key=ISSUE):
-            await run_until(tracker, renewals=RENEWALS_PAST_THE_LEASE)
+            await run_until(tracker, clock=clock, renewals=RENEWALS_PAST_THE_LEASE)
 
         assert await tracker.active_claim(issue_key=ISSUE) is None
 
@@ -422,8 +438,8 @@ class TestARenewalThatMeetsARefusedCredential:
 
         with structlog.testing.capture_logs() as logs:
             async with heartbeat(tracker, clock=clock).renewing(issue_key=ISSUE):
-                await run_until(tracker, renewals=1)
-                await settle()
+                await run_until(tracker, clock=clock, renewals=1)
+                await settle(clock)
 
         refused = [
             entry
@@ -450,8 +466,8 @@ class TestARenewalThatMeetsARefusedCredential:
         )
 
         async with heartbeat(tracker, clock=clock).renewing(issue_key=ISSUE):
-            await run_until(tracker, renewals=1)
-            await settle()
+            await run_until(tracker, clock=clock, renewals=1)
+            await settle(clock)
 
         assert tracker.renewals == [(ISSUE, HOLDER)]
 
@@ -473,7 +489,7 @@ class TestARenewalThatMeetsARefusedCredential:
 
         with structlog.testing.capture_logs() as logs:
             async with heartbeat(tracker, clock=clock).renewing(issue_key=ISSUE):
-                await run_until(tracker, renewals=2)
+                await run_until(tracker, clock=clock, renewals=2)
 
         assert [
             entry["event"] for entry in logs if entry["event"] == "claim_renewal_failed"
@@ -489,18 +505,21 @@ class TestTheWatcherDrivesTheHeartbeat:
     """The seam: the watch's lifetime is the job's, so the claim's is too."""
 
     async def test_a_run_reaching_a_terminal_outcome_stops_renewing(self) -> None:
-        tracker = await watched(events=(TERMINAL_EVENT,))
+        clock = MovingClock(start=FIXTURE_EPOCH)
+        tracker = await watched(events=(TERMINAL_EVENT,), clock=clock)
         at_exit = len(tracker.renewals)
-        await settle()
+        await settle(clock)
 
         assert len(tracker.renewals) == at_exit
 
     async def test_a_run_reaching_no_terminal_outcome_stops_renewing(self) -> None:
+        clock = MovingClock(start=FIXTURE_EPOCH)
         tracker = await watched(
             events=(ErrorEvent(error="boom", error_kind="RuntimeError"),),
+            clock=clock,
         )
         at_exit = len(tracker.renewals)
-        await settle()
+        await settle(clock)
 
         assert len(tracker.renewals) == at_exit
         assert tracker.restored_states == [(ISSUE, PRE_CLAIM_STATE)]
@@ -530,7 +549,7 @@ class TestTheWatcherDrivesTheHeartbeat:
                 pre_claim_state=PRE_CLAIM_STATE,
             )
         at_exit = len(tracker.renewals)
-        await settle()
+        await settle(clock)
 
         assert len(tracker.renewals) == at_exit
 
