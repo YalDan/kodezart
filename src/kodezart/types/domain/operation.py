@@ -17,7 +17,9 @@ keeps the claim honest until that lands.
 from collections.abc import Sequence
 from enum import StrEnum
 from typing import Self
+
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.organize import (
     MandateKind,
@@ -36,9 +38,6 @@ from kodezart.types.domain.run_event import (
     RunEventTableError,
 )
 from kodezart.types.domain.scope_address import ScopeRef
-
-
-
 
 #: The one stable document key the structure validators below and the pass
 #: templates address by name; it carries no accessor that refuses on absence,
@@ -151,6 +150,7 @@ class QueueState(StrEnum):
     APPROVED = "approved"
     DONE = "done"
     DECISION = "decision"
+
 
 class ScopeLabel(StrEnum):
     """Scope admission vocabulary, resolved separately from the issue queue.
@@ -280,6 +280,7 @@ class TeamEntry(OperationModel):
     #: resolved must over-scrub rather than under-scrub (KOD-157).
     visibility: RepoVisibility | None = None
 
+
 class CheckPrerequisite(StrEnum):
     """Environment facts that a repository may explicitly declare."""
 
@@ -385,11 +386,13 @@ class DocumentEntry(OperationModel):
             raise ValueError(msg)
         return self
 
+
 class RecordOutcomeSource(StrEnum):
     """Which observed outcome vocabulary a destination column represents."""
 
     RUN = "run"
     WORKFLOW = "workflow"
+
 
 class RecordOutcomeMapping(OperationModel):
     """An explicit semantic source and its destination select options."""
@@ -415,9 +418,11 @@ class RecordOutcomeMapping(OperationModel):
                 )
         return self
 
+
 class RecordDurationUnit(StrEnum):
     SECONDS = "seconds"
     MINUTES = "minutes"
+
 
 class RecordColumns(OperationModel):
     """Explicit bindings for structural facts and session-authored narrative."""
@@ -491,6 +496,42 @@ class RecordDestination(OperationModel):
                 raise ValueError("the outcome property must have its own record column")
         return self
 
+
+def check_chain_failures(steps: Sequence[CheckStep]) -> list[str]:
+    """Every structural failure in one repository's check chain.
+
+    A chain that names a step twice, depends on a step that is not in it,
+    or closes a cycle cannot be classified into roots and cascades at all,
+    so it is rejected at load rather than mis-reported at run time.
+    """
+    failures: list[str] = []
+    seen: set[str] = set()
+    for step in steps:
+        if step.name in seen:
+            failures.append(f"duplicate step name {step.name!r}")
+        seen.add(step.name)
+
+    by_name = {step.name: step for step in steps}
+    for step in steps:
+        if step.depends_on is None:
+            continue
+        if step.depends_on not in by_name:
+            failures.append(
+                f"step {step.name!r} depends on unknown step {step.depends_on!r}",
+            )
+            continue
+        walked: set[str] = {step.name}
+        cursor: str | None = step.depends_on
+        while cursor is not None:
+            if cursor in walked:
+                failures.append(f"step {step.name!r} closes a dependency cycle")
+                break
+            walked.add(cursor)
+            ancestor = by_name.get(cursor)
+            cursor = None if ancestor is None else ancestor.depends_on
+    return failures
+
+
 class OrganizeScopeBinding(OperationModel):
     """One explicit writable scope and the declared repository it is judged against."""
 
@@ -499,8 +540,13 @@ class OrganizeScopeBinding(OperationModel):
     repo_url: str = Field(min_length=1)
 
 
+class AuditScopeBinding(OperationModel):
+    """An explicit audit scope, declared repository and native report destination."""
 
-
+    model_config = ConfigDict(extra="forbid", frozen=True, hide_input_in_errors=True)
+    scope: ScopeRef
+    repo_url: str = Field(min_length=1, pattern=r"\S")
+    report_issue_key: str = Field(min_length=1, pattern=r"\S")
 
 
 class OperationConfig(OperationModel):
@@ -544,12 +590,6 @@ class OperationConfig(OperationModel):
     records: dict[str, RecordDestination] = Field(default_factory=dict)
     knowledge: dict[str, str] = Field(default_factory=dict)
     endpoints: dict[str, str] = Field(default_factory=dict)
-    # Prose describing the CLASS of thing this operation treats as private,
-    # never a list of instances. Prose generalizes to instances the operator
-    # never enumerated, and it lives operator-side, which together is the
-    # whole reason this is not a pattern list. ``None`` means the operator
-    # has not supplied one; the judgment scanner then refuses to register
-    # rather than registering with nothing to judge against.
     private_surface: PrivateSurface | None = None
 
     @field_validator("private_surface", mode="before")
@@ -916,6 +956,7 @@ class OperationConfig(OperationModel):
                 failures.append(f"{kind.value!r} requires a named workflow state")
         if failures:
             raise RunEventTableError(tuple(failures))
+
     def resolve_organize_mandates(self) -> tuple[ResolvedMandateSpec, ...]:
         """Resolve every declared phase during ordinary configuration validation.
 

@@ -1,4 +1,4 @@
-"""GitHub REST API adapter — implements PRCreator and CIMonitor protocols.
+"""GitHub REST API adapter — implements forge write, query and CI protocols.
 
 ``httpx`` and this forge's wire shapes are the module's private business.
 No NON-DOMAIN exception leaves a port method: every request goes through
@@ -11,30 +11,54 @@ the retry-eligible failures and ``ForgeAPIError`` for the rest.
 The one deliberate exception is ``extract_owner_repo``'s ``ValueError``
 on an origin this forge does not own.  That is a domain refusal rather
 than a vendor leak, it is raised before any request, and the composition
-root routes such origins to another adapter rather than here (KOD-148).
+root routes such origins to another adapter rather than here.
 """
 
 import asyncio
 import re
 import secrets
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
+from contextvars import ContextVar
+from dataclasses import dataclass, replace
 from enum import StrEnum
 from typing import Final, TypeVar
+from urllib.parse import quote, urlsplit
 
 import httpx
 
-from kodezart.core.logging import BoundLogger, get_logger
-from kodezart.domain.errors import ForgeAPIError, RateLimitError, TransientAPIError
-from kodezart.domain.git_url import extract_owner_repo
-from kodezart.types.domain.gating import RepoVisibility
-from kodezart.types.domain.github import (
+from kodezart.adapters.github_types import (
     CheckRun,
     CheckRunsResponse,
+    CommitIdentity,
+    DeclaredWorkflowsResponse,
     PullRequestResponse,
+    PullRequestStateResponse,
     PullRequestSummary,
     RepositoryResponse,
+    WorkflowJob,
+    WorkflowJobsResponse,
+    WorkflowRun,
+    WorkflowRunsResponse,
     WorkflowsResponse,
 )
+from kodezart.core.backoff import RetryPolicy
+from kodezart.core.logging import BoundLogger, get_logger
+from kodezart.domain.errors import (
+    CheckObservationError,
+    ForgeAPIError,
+    PRStateReadError,
+    RateLimitError,
+    TransientAPIError,
+)
+from kodezart.domain.git_url import extract_owner_repo
+from kodezart.types.domain.check_observation import (
+    AbsentChecks,
+    CIWatchResult,
+    IncompleteChecks,
+    ObservedChecks,
+)
+from kodezart.types.domain.gating import RepoVisibility
+from kodezart.types.domain.pr_state import PRLifecycle, PRState
 from kodezart.utils.http import parse_ratelimit_reset, parse_retry_after
 
 #: Every root httpx derives an exception from.  ``HTTPError`` covers the
@@ -49,6 +73,24 @@ _VENDOR_FAILURE: Final[tuple[type[Exception], ...]] = (
 )
 
 _WireT = TypeVar("_WireT")
+
+
+@dataclass(frozen=True)
+class _RerunTarget:
+    run: WorkflowRun
+    previous_job_ids: frozenset[int]
+
+
+@dataclass(frozen=True)
+class _RerunBatch:
+    targets: tuple[_RerunTarget, ...]
+    dispatched: bool = False
+
+
+@dataclass(frozen=True)
+class _RerunContext:
+    task: object
+    batches: Mapping[tuple[str, str, str], _RerunBatch]
 
 
 def _pull_request_listing(payload: object) -> tuple[PullRequestSummary, ...]:
@@ -78,7 +120,7 @@ class WorkflowsProbeResult(StrEnum):
 
 
 class GitHubAPIClient:
-    """Single adapter satisfying both PRCreator and CIMonitor protocols.
+    """Single adapter serving active PR writes, check watches and audit reads.
 
     Uses httpx.AsyncClient for async HTTP. API responses are validated
     via frozen Pydantic models (``CheckRunsResponse``, ``PullRequestResponse``,
@@ -94,6 +136,9 @@ class GitHubAPIClient:
         }
     )
     _OK_CONCLUSIONS = frozenset({"success", "neutral", "skipped"})
+    _PENDING_STATUSES = frozenset(
+        {"queued", "in_progress", "waiting", "pending", "requested"}
+    )
     _ACTIVE_WORKFLOW_STATE = "active"
     _NOT_FOUND_STATUS = 404
     _PAGE_SIZE = 100
@@ -115,8 +160,7 @@ class GitHubAPIClient:
         ci_ref_not_found_grace_polls: int,
         ci_check_runs_max_pages: int,
         timeout_seconds: float,
-        max_retries: int,
-        retry_backoff_factor: float,
+        retry: RetryPolicy,
         client: httpx.AsyncClient | None = None,
     ) -> None:
         self._ci_poll_interval: float = ci_poll_interval_seconds
@@ -126,8 +170,12 @@ class GitHubAPIClient:
         self._ci_grace_poll_interval: float = ci_grace_poll_interval_seconds
         self._ci_ref_not_found_grace_polls: int = ci_ref_not_found_grace_polls
         self._ci_check_runs_max_pages: int = ci_check_runs_max_pages
-        self._max_retries: int = max_retries
-        self._retry_backoff_factor: float = retry_backoff_factor
+        self._retry = retry
+        self._reruns: ContextVar[_RerunContext | None] = ContextVar(
+            "github_ci_rerun_context", default=None
+        )
+        self._rerun_dispatch_locks: dict[tuple[str, str, str], asyncio.Lock] = {}
+        self._rerun_attempt_floors: dict[tuple[str, str, int], int] = {}
         self._rng: secrets.SystemRandom = secrets.SystemRandom()
         self._log: BoundLogger = get_logger(__name__)
         self._client: httpx.AsyncClient = client or httpx.AsyncClient(
@@ -149,8 +197,9 @@ class GitHubAPIClient:
         *,
         json: dict[str, object] | None = None,
         params: dict[str, str | int] | None = None,
+        retryable: bool = True,
     ) -> httpx.Response:
-        """HTTP request with exponential backoff + 10% jitter.
+        """HTTP request with the configured bounded backoff and jitter.
 
         Raises ``RateLimitError`` / ``TransientAPIError`` once the retry
         budget is spent and ``ForgeAPIError`` on a failure no retry would
@@ -165,7 +214,8 @@ class GitHubAPIClient:
         identical request finds changed, and it carries no status
         because none was ever received.
         """
-        for attempt in range(self._max_retries + 1):
+        attempts = self._retry.attempts if retryable else 1
+        for attempt in range(attempts):
             try:
                 response = await self._client.request(
                     method,
@@ -177,26 +227,16 @@ class GitHubAPIClient:
                 return response
             except httpx.HTTPStatusError as exc:
                 status = exc.response.status_code
-                is_last = attempt == self._max_retries
+                is_last = attempt + 1 == attempts
 
                 if status == 429 or status >= 500:
-                    if status == 429:
-                        header_wait = parse_retry_after(
-                            exc.response,
-                        )
-                        base_wait: float = (
-                            header_wait
-                            if header_wait is not None
-                            else self._retry_backoff_factor * (2**attempt)
-                        )
-                    else:
-                        base_wait = self._retry_backoff_factor * (2**attempt)
-
-                    jitter = self._rng.uniform(
-                        0.0,
-                        base_wait * 0.1,
+                    wait = self._retry.delay(
+                        attempt,
+                        retry_after=parse_retry_after(exc.response)
+                        if status == 429
+                        else None,
+                        rng=self._rng,
                     )
-                    wait = base_wait + jitter
 
                     await self._log.awarning(
                         "github_api_retry",
@@ -235,13 +275,8 @@ class GitHubAPIClient:
                 ) from exc
 
             except httpx.TransportError as exc:
-                is_last = attempt == self._max_retries
-                base_wait = self._retry_backoff_factor * (2**attempt)
-                jitter = self._rng.uniform(
-                    0.0,
-                    base_wait * 0.1,
-                )
-                wait = base_wait + jitter
+                is_last = attempt + 1 == attempts
+                wait = self._retry.delay(attempt, rng=self._rng)
 
                 await self._log.awarning(
                     "github_api_transport_error",
@@ -277,6 +312,7 @@ class GitHubAPIClient:
         *,
         json: dict[str, object] | None = None,
         params: dict[str, str | int] | None = None,
+        retryable: bool = True,
     ) -> _WireT:
         """One request, with its body decoded and validated.
 
@@ -296,6 +332,7 @@ class GitHubAPIClient:
             url,
             json=json,
             params=params,
+            retryable=retryable,
         )
         try:
             return parse(response.json())
@@ -372,6 +409,128 @@ class GitHubAPIClient:
             json={"body": body},
         )
 
+    # -- ForgeQuery ----------------------------------------------------------
+
+    async def open_pr_for_head(
+        self, *, repo_url: str, head: str
+    ) -> tuple[str, int] | None:
+        """Ask this forge's own head filter, and refuse a contradictory answer.
+
+        The filter is the forge's: its listing takes ``owner:branch`` and
+        answers with the open pull requests on that head, so the question
+        is asked once, of the party that knows, instead of being
+        reconstructed by paging every open pull request and matching here.
+        """
+        owner, repo = extract_owner_repo(repo_url)
+        listing = await self._parsed_with_retry(
+            "GET",
+            f"/repos/{owner}/{repo}/pulls",
+            _pull_request_listing,
+            params={
+                "state": self._OPEN_STATE,
+                "head": f"{owner}:{head}",
+                "per_page": self._PAGE_SIZE,
+            },
+        )
+        if not listing:
+            return None
+        if len(listing) > 1:
+            raise ForgeAPIError(
+                f"the forge reports {len(listing)} open pull requests on one head",
+                status_code=None,
+                detail=f"GET /repos/{owner}/{repo}/pulls?head={owner}:{head}",
+            )
+        return (listing[0].html_url, listing[0].number)
+
+    def branch_web_url(self, *, repo_url: str, branch: str) -> str:
+        """Compose the branch page from this repository's own host and path.
+
+        The host comes from the origin rather than from the configured API
+        base: this forge serves its API and its pages from two different
+        hosts, and a deployment against an enterprise instance has both of
+        them different again.
+        """
+        owner, repo = extract_owner_repo(repo_url)
+        origin = urlsplit(repo_url)
+        if origin.scheme != "https" or not origin.netloc:
+            msg = f"Cannot compose a branch page for origin: {repo_url}"
+            raise ValueError(msg)
+        return f"https://{origin.netloc}/{owner}/{repo}/tree/{quote(branch)}"
+
+    # -- PRStateReader -------------------------------------------------------
+
+    async def read_pr_state(self, *, repo_url: str, pr_number: int) -> PRState:
+        """Read one native PR, without relying on an open-only listing."""
+        if (
+            not isinstance(pr_number, int)
+            or isinstance(pr_number, bool)
+            or pr_number <= 0
+        ):
+            raise PRStateReadError("a PR number must be a positive integer")
+        owner, repo = extract_owner_repo(repo_url)
+        native = await self._parsed_with_retry(
+            "GET",
+            f"/repos/{owner}/{repo}/pulls/{pr_number}",
+            PullRequestStateResponse.model_validate,
+        )
+        expected = urlsplit(repo_url)
+        try:
+            observed = urlsplit(native.html_url)
+        except ValueError as exc:
+            raise PRStateReadError("native PR URL is malformed") from exc
+        expected_path = f"/{owner}/{repo}/pull/{pr_number}"
+        if (
+            native.number != pr_number
+            or observed.scheme != "https"
+            or observed.netloc.casefold() != expected.netloc.casefold()
+            or observed.path.casefold() != expected_path.casefold()
+            or observed.query
+            or observed.fragment
+            or observed.username is not None
+            or observed.password is not None
+        ):
+            raise PRStateReadError("native PR identity differs from its address")
+        head_repo, base_repo = native.head.repo, native.base.repo
+        if head_repo is None or base_repo is None:
+            raise PRStateReadError("native PR head or base repository is unavailable")
+        for role, repository in (("head", head_repo), ("base", base_repo)):
+            try:
+                origin = urlsplit(repository.html_url)
+            except ValueError as exc:
+                raise PRStateReadError(
+                    f"native PR {role} repository URL is malformed"
+                ) from exc
+            if (
+                origin.scheme != "https"
+                or origin.netloc.casefold() != expected.netloc.casefold()
+                or origin.path.casefold() != f"/{owner}/{repo}".casefold()
+                or origin.query
+                or origin.fragment
+                or origin.username is not None
+                or origin.password is not None
+                or repository.full_name.casefold() != f"{owner}/{repo}".casefold()
+            ):
+                raise PRStateReadError(
+                    f"native PR {role} belongs to another repository"
+                )
+        lifecycle = (
+            PRLifecycle.MERGED
+            if native.merged
+            else PRLifecycle.OPEN
+            if native.state == self._OPEN_STATE
+            else PRLifecycle.CLOSED
+        )
+        return PRState(
+            url=native.html_url,
+            number=native.number,
+            head_repo_url=head_repo.html_url,
+            head_branch=native.head.ref,
+            head_sha=native.head.sha,
+            base_repo_url=base_repo.html_url,
+            base_branch=native.base.ref,
+            lifecycle=lifecycle,
+        )
+
     # -- DeliveryProbe -------------------------------------------------------
 
     async def open_delivery_exists(
@@ -384,8 +543,8 @@ class GitHubAPIClient:
 
         Matching lives here, not in the caller: the reference convention is
         a property of this forge's pull requests.  The key is matched as a
-        whole token in the title or body, so ``KOD-5`` never matches
-        ``KOD-58``.  A branch name is never parsed — an issue identity is
+        whole token in the title or body, never as the prefix of a longer
+        key.  A branch name is never parsed — an issue identity is
         not derivable from one.
         """
         owner, repo = extract_owner_repo(repo_url)
@@ -402,6 +561,264 @@ class GitHubAPIClient:
         return False
 
     # -- CIMonitor -----------------------------------------------------------
+
+    def _rerun_context(self) -> Mapping[tuple[str, str, str], _RerunBatch]:
+        context = self._reruns.get()
+        if context is None or context.task is not asyncio.current_task():
+            return {}
+        return context.batches
+
+    def _remember_rerun(
+        self, owner: str, repo: str, ref: str, batch: _RerunBatch
+    ) -> None:
+        batches = dict(self._rerun_context())
+        batches[(owner, repo, ref)] = batch
+        self._reruns.set(_RerunContext(task=asyncio.current_task(), batches=batches))
+
+    @staticmethod
+    def _rerun_error(message: str) -> ForgeAPIError:
+        return ForgeAPIError(message, status_code=None, detail="CI rerun observation")
+
+    def _terminal_checks(self, page: CheckRunsResponse) -> None:
+        if (
+            len(page.check_runs) != page.total_count
+            or len({run.id for run in page.check_runs}) != page.total_count
+        ):
+            raise self._rerun_error(
+                "Check observation was incomplete or repeated identities"
+            )
+        if any(
+            run.status != "completed"
+            or run.conclusion not in self._FAILURE_CONCLUSIONS | self._OK_CONCLUSIONS
+            for run in page.check_runs
+        ):
+            raise self._rerun_error("Check observation was not terminal and understood")
+
+    async def _attempt_jobs(
+        self, owner: str, repo: str, run: WorkflowRun, attempt: int
+    ) -> tuple[WorkflowJob, ...]:
+        jobs: dict[int, WorkflowJob] = {}
+        expected_total: int | None = None
+        for page_number in range(1, self._ci_check_runs_max_pages + 1):
+            page = await self._parsed_with_retry(
+                "GET",
+                f"/repos/{owner}/{repo}/actions/runs/{run.id}/attempts/{attempt}/jobs",
+                WorkflowJobsResponse.model_validate,
+                params={"per_page": self._PAGE_SIZE, "page": page_number},
+            )
+            if expected_total is not None and page.total_count != expected_total:
+                raise self._rerun_error("Attempt jobs changed during pagination")
+            expected_total = page.total_count
+            for job in page.jobs:
+                if job.id in jobs:
+                    raise self._rerun_error("Attempt jobs repeated an identity")
+                if job.run_id != run.id or job.head_sha != run.head_sha:
+                    raise self._rerun_error(
+                        "Attempt job belonged to another run or SHA"
+                    )
+                jobs[job.id] = job
+            if len(jobs) == expected_total:
+                return tuple(jobs.values())
+            if not page.jobs or len(jobs) > expected_total:
+                raise self._rerun_error("Attempt jobs were incompletely enumerated")
+        raise self._rerun_error("Attempt jobs exceeded the pagination bound")
+
+    async def rerun_checks(self, *, repo_url: str, ref: str) -> None:
+        """Re-run the Actions runs backing every current check, at one SHA.
+
+        All mappings are validated before the first write. POSTs are not
+        automatically retried: a lost response cannot safely be turned into
+        an additional attempt. A failed batch remains unreadable, including
+        when some of its requests succeeded. Its caller receives the error.
+        """
+        owner, repo = extract_owner_repo(repo_url)
+        previous = self._rerun_context().get((owner, repo, ref))
+        if previous is not None:
+            observed = await self._rerun_observation(owner, repo, previous)
+            if observed is None:
+                raise self._rerun_error("The preceding rerun has not completed")
+        encoded_ref = quote(ref, safe="")
+        commit = await self._parsed_with_retry(
+            "GET",
+            f"/repos/{owner}/{repo}/commits/{encoded_ref}",
+            CommitIdentity.model_validate,
+        )
+        if re.fullmatch(r"[0-9a-fA-F]{40}", ref) and commit.sha.lower() != ref.lower():
+            raise self._rerun_error("Resolved commit did not match the requested SHA")
+        key = (owner.casefold(), repo.casefold(), commit.sha.lower())
+        lock = self._rerun_dispatch_locks.setdefault(key, asyncio.Lock())
+        async with lock:
+            await self._dispatch_rerun(owner, repo, ref, commit)
+
+    async def _dispatch_rerun(
+        self, owner: str, repo: str, ref: str, commit: CommitIdentity
+    ) -> None:
+        """Serialize baseline selection and writes across aliases of one SHA."""
+        page = await self._fetch_check_runs(
+            owner, repo, commit.sha, require_stable_total=True
+        )
+        if page is None or not page.check_runs:
+            raise self._rerun_error("No complete check set exists to rerun")
+        self._terminal_checks(page)
+        suites: dict[int, set[int]] = {}
+        for check in page.check_runs:
+            if check.check_suite is None or check.head_sha != commit.sha:
+                raise self._rerun_error(
+                    "Check suite or matching commit identity was absent"
+                )
+            suites.setdefault(check.check_suite.id, set()).add(check.id)
+
+        targets: list[_RerunTarget] = []
+        for suite_id, check_ids in sorted(suites.items()):
+            listing = await self._parsed_with_retry(
+                "GET",
+                f"/repos/{owner}/{repo}/actions/runs",
+                WorkflowRunsResponse.model_validate,
+                params={
+                    "head_sha": commit.sha,
+                    "check_suite_id": suite_id,
+                    "per_page": self._PAGE_SIZE,
+                },
+            )
+            if listing.total_count != 1 or len(listing.workflow_runs) != 1:
+                raise self._rerun_error(
+                    "Check suite did not map to exactly one Actions run"
+                )
+            run = listing.workflow_runs[0]
+            observed_attempt = self._rerun_attempt_floors.get(
+                (owner.casefold(), repo.casefold(), run.id)
+            )
+            if observed_attempt is not None and run.run_attempt < observed_attempt:
+                raise self._rerun_error(
+                    "Actions listing preceded an already observed attempt"
+                )
+            if run.check_suite_id != suite_id or run.head_sha != commit.sha:
+                raise self._rerun_error(
+                    "Actions run did not match its check suite and SHA"
+                )
+            if (
+                run.status != "completed"
+                or run.conclusion
+                not in self._FAILURE_CONCLUSIONS | self._OK_CONCLUSIONS
+            ):
+                raise self._rerun_error("Actions run was not terminal and understood")
+            jobs = await self._attempt_jobs(owner, repo, run, run.run_attempt)
+            self._terminal_checks(
+                CheckRunsResponse(total_count=len(jobs), check_runs=list(jobs))
+            )
+            expected_urls = {
+                str(
+                    self._client.build_request(
+                        "GET", f"/repos/{owner}/{repo}/check-runs/{check_id}"
+                    ).url
+                )
+                for check_id in check_ids
+            }
+            if {job.check_run_url for job in jobs} != expected_urls:
+                raise self._rerun_error(
+                    "Actions attempt did not cover the observed check set"
+                )
+            targets.append(
+                _RerunTarget(
+                    run=run, previous_job_ids=frozenset(job.id for job in jobs)
+                )
+            )
+
+        if len({target.run.id for target in targets}) != len(targets):
+            raise self._rerun_error("Check suites repeated a workflow run identity")
+        batch = _RerunBatch(targets=tuple(targets))
+        self._remember_rerun(owner, repo, ref, batch)
+        for target in batch.targets:
+            self._rerun_attempt_floors[
+                (owner.casefold(), repo.casefold(), target.run.id)
+            ] = target.run.run_attempt + 1
+        for target in batch.targets:
+            response = await self._request_with_retry(
+                "POST",
+                f"/repos/{owner}/{repo}/actions/runs/{target.run.id}/rerun",
+                retryable=False,
+            )
+            if response.status_code != 201:
+                raise self._rerun_error("Forge did not confirm creation of the rerun")
+        self._remember_rerun(owner, repo, ref, replace(batch, dispatched=True))
+
+    async def _rerun_observation(
+        self, owner: str, repo: str, batch: _RerunBatch
+    ) -> CheckRunsResponse | None:
+        if not batch.dispatched:
+            raise self._rerun_error(
+                "Rerun dispatch was incomplete or its response was lost"
+            )
+        checks: list[CheckRun] = []
+        for target in batch.targets:
+            expected = target.run.run_attempt + 1
+            try:
+                run = await self._parsed_with_retry(
+                    "GET",
+                    f"/repos/{owner}/{repo}/actions/runs/{target.run.id}/attempts/{expected}",
+                    WorkflowRun.model_validate,
+                )
+            except ForgeAPIError as exc:
+                if exc.status_code == self._NOT_FOUND_STATUS:
+                    return None
+                raise
+            if (
+                run.id != target.run.id
+                or run.head_sha != target.run.head_sha
+                or run.check_suite_id != target.run.check_suite_id
+            ):
+                raise self._rerun_error(
+                    "Rerun identity changed from the requested run and SHA"
+                )
+            if run.run_attempt < expected:
+                return None
+            if run.run_attempt != expected:
+                raise self._rerun_error("Forge returned another rerun attempt")
+            if run.status in self._PENDING_STATUSES:
+                return None
+            if run.status != "completed":
+                raise self._rerun_error("Rerun carried an unknown status")
+            if run.conclusion not in self._FAILURE_CONCLUSIONS | self._OK_CONCLUSIONS:
+                raise self._rerun_error("Rerun carried an unknown conclusion")
+            jobs = await self._attempt_jobs(owner, repo, run, expected)
+            if not jobs:
+                raise self._rerun_error("Completed rerun contained no observable jobs")
+            if any(job.id in target.previous_job_ids for job in jobs):
+                return None
+            if any(job.status in self._PENDING_STATUSES for job in jobs):
+                return None
+            page = CheckRunsResponse(total_count=len(jobs), check_runs=list(jobs))
+            self._terminal_checks(page)
+            verdict = self._verdict(page)
+            if verdict is None or verdict[0] != (
+                run.conclusion in self._OK_CONCLUSIONS
+            ):
+                raise self._rerun_error("Rerun conclusion disagreed with its jobs")
+            checks.extend(jobs)
+        page = CheckRunsResponse(total_count=len(checks), check_runs=checks)
+        self._terminal_checks(page)
+        return page
+
+    async def _wait_for_rerun(
+        self, owner: str, repo: str, ref: str, batch: _RerunBatch, *, repo_url: str
+    ) -> ObservedChecks:
+        for poll in range(self._ci_poll_max_attempts):
+            page = await self._rerun_observation(owner, repo, batch)
+            if page is not None:
+                verdict = self._verdict(page)
+                if verdict is not None:
+                    return self._completed_watch(
+                        repo_url=repo_url,
+                        ref=ref,
+                        page=page,
+                        passed=verdict[0],
+                        summary=verdict[1],
+                    )
+            if poll + 1 < self._ci_poll_max_attempts:
+                await asyncio.sleep(self._ci_poll_interval)
+        raise TransientAPIError(
+            "Requested CI rerun was not observable within the poll bound"
+        )
 
     def _grace_polls_for(self, probe: WorkflowsProbeResult) -> int:
         """Grace window an empty check-runs streak is measured against."""
@@ -451,6 +868,8 @@ class GitHubAPIClient:
         owner: str,
         repo: str,
         ref: str,
+        *,
+        require_stable_total: bool = False,
     ) -> CheckRunsResponse | None:
         """Fetch every check-runs page for *ref*, or ``None`` when it 404s.
 
@@ -495,6 +914,16 @@ class GitHubAPIClient:
                 if exc.status_code == self._NOT_FOUND_STATUS:
                     return None
                 raise
+            if (
+                require_stable_total
+                and page_number > 1
+                and page.total_count != reported_total
+            ):
+                raise ForgeAPIError(
+                    "Check listing changed during pagination",
+                    status_code=None,
+                    detail="CI observation",
+                )
             reported_total = page.total_count
             collected.extend(page.check_runs)
             if not page.check_runs or len(collected) >= reported_total:
@@ -551,12 +980,128 @@ class GitHubAPIClient:
         )
         return probe
 
+    async def checks_declared(self, *, repo_url: str) -> bool:
+        """Whether an active Actions workflow is actually declared.
+
+        The advisory grace-window probe cannot answer this contract: an
+        unreadable or incomplete declaration is an error, never absence.
+        """
+        owner, repo = extract_owner_repo(repo_url)
+        seen: set[int] = set()
+        expected_total: int | None = None
+        for page_number in range(1, self._ci_check_runs_max_pages + 1):
+            page = await self._parsed_with_retry(
+                "GET",
+                f"/repos/{owner}/{repo}/actions/workflows",
+                DeclaredWorkflowsResponse.model_validate,
+                params={"per_page": self._PAGE_SIZE, "page": page_number},
+            )
+            if any(
+                item.state == self._ACTIVE_WORKFLOW_STATE for item in page.workflows
+            ):
+                return True
+            if expected_total is not None and page.total_count != expected_total:
+                raise ForgeAPIError(
+                    "Workflow declaration changed during pagination",
+                    status_code=None,
+                    detail="CI observation",
+                )
+            expected_total = page.total_count
+            if any(
+                item.state
+                not in {
+                    "deleted",
+                    "disabled_fork",
+                    "disabled_inactivity",
+                    "disabled_manually",
+                }
+                for item in page.workflows
+            ):
+                raise ForgeAPIError(
+                    "Workflow declaration contained an unknown state",
+                    status_code=None,
+                    detail="CI observation",
+                )
+            identities = {item.id for item in page.workflows}
+            if identities & seen or len(identities) != len(page.workflows):
+                raise ForgeAPIError(
+                    "Workflow declaration pagination repeated an identity",
+                    status_code=None,
+                    detail="CI observation",
+                )
+            seen.update(identities)
+            if len(seen) == page.total_count:
+                return False
+            if not identities or len(seen) > page.total_count:
+                raise ForgeAPIError(
+                    "Workflow declaration listing was incomplete",
+                    status_code=None,
+                    detail="CI observation",
+                )
+        raise ForgeAPIError(
+            "Workflow declaration exceeded pagination bound",
+            status_code=None,
+            detail="CI observation",
+        )
+
+    def _completed_watch(
+        self,
+        *,
+        repo_url: str,
+        ref: str,
+        page: CheckRunsResponse,
+        passed: bool,
+        summary: str,
+    ) -> ObservedChecks:
+        reason: str | None = None
+        checks = page.check_runs
+        if not checks:
+            reason = "a completed check watch must be nonempty"
+        elif (
+            len(checks) != page.total_count
+            or len({check.id for check in checks}) != page.total_count
+        ):
+            reason = "the watched check set was incomplete or repeated identities"
+        elif any(
+            check.status != "completed"
+            or check.conclusion not in self._FAILURE_CONCLUSIONS | self._OK_CONCLUSIONS
+            or not check.name.strip()
+            for check in checks
+        ):
+            reason = "the watched check set was not terminal and understood"
+        if reason is not None:
+            raise CheckObservationError(repo_url=repo_url, ref=ref, reason=reason)
+        sha = checks[0].head_sha
+        if not sha or not sha.strip() or any(check.head_sha != sha for check in checks):
+            raise CheckObservationError(
+                repo_url=repo_url,
+                ref=ref,
+                reason="the watched checks did not identify one immutable commit",
+            )
+        if re.fullmatch(r"[0-9a-fA-F]{40}", ref) and sha.lower() != ref.lower():
+            raise CheckObservationError(
+                repo_url=repo_url,
+                ref=ref,
+                reason="the watched commit differs from the requested SHA",
+            )
+        return ObservedChecks(
+            commit_sha=sha,
+            checks_passed=passed,
+            check_names=frozenset(check.name for check in checks),
+            failed_check_names=frozenset(
+                check.name
+                for check in checks
+                if check.conclusion in self._FAILURE_CONCLUSIONS
+            ),
+            summary=summary,
+        )
+
     async def wait_for_checks(
         self,
         *,
         repo_url: str,
         ref: str,
-    ) -> tuple[bool | None, str]:
+    ) -> CIWatchResult:
         """Poll Check Runs API until all checks complete or timeout.
 
         Single loop.  While no check run has ever been observed, poll at
@@ -571,10 +1116,15 @@ class GitHubAPIClient:
         tolerated up to ``ci_ref_not_found_grace_polls`` consecutive
         occurrences; beyond that the call raises ``TransientAPIError``.
 
-        Returns ``(True, ...)`` when all checks pass, ``(False, ...)``
-        on failure or timeout, ``(None, ...)`` when no CI ran.
+        Return the complete observation, an absent run, or an incomplete
+        watch at exhaustion. Timeout never claims a completed red verdict.
         """
         owner, repo = extract_owner_repo(repo_url)
+        batch = self._rerun_context().get((owner, repo, ref))
+        if batch is not None:
+            return await self._wait_for_rerun(
+                owner, repo, ref, batch, repo_url=repo_url
+            )
         grace_interval = min(self._ci_poll_interval, self._ci_grace_poll_interval)
 
         probe: WorkflowsProbeResult | None = None
@@ -585,7 +1135,9 @@ class GitHubAPIClient:
         polls_used = 0
 
         while True:
-            page = await self._fetch_check_runs(owner, repo, ref)
+            page = await self._fetch_check_runs(
+                owner, repo, ref, require_stable_total=True
+            )
 
             if page is None:
                 not_found_polls += 1
@@ -619,7 +1171,9 @@ class GitHubAPIClient:
                         result=probe,
                         grace_polls=grace_polls,
                     )
-                    return (None, self._no_checks_summary(probe, grace_polls))
+                    return AbsentChecks(
+                        summary=self._no_checks_summary(probe, grace_polls)
+                    )
                 await asyncio.sleep(grace_interval)
                 continue
 
@@ -634,11 +1188,30 @@ class GitHubAPIClient:
             polls_used += 1
             verdict = self._verdict(page)
             if verdict is not None:
-                return verdict
+                return self._completed_watch(
+                    repo_url=repo_url,
+                    ref=ref,
+                    page=page,
+                    passed=verdict[0],
+                    summary=verdict[1],
+                )
 
             if polls_used >= self._ci_poll_max_attempts:
                 attempts = self._ci_poll_max_attempts
-                return (False, f"CI checks still running after {attempts} polls.")
+                return IncompleteChecks(
+                    commit_shas=frozenset(
+                        check.head_sha for check in page.check_runs if check.head_sha
+                    ),
+                    check_names=frozenset(check.name for check in page.check_runs),
+                    failed_check_names=frozenset(
+                        check.name
+                        for check in page.check_runs
+                        if check.conclusion in self._FAILURE_CONCLUSIONS
+                    ),
+                    observed_count=len(page.check_runs),
+                    expected_count=page.total_count,
+                    summary=f"CI checks still running after {attempts} polls.",
+                )
             await asyncio.sleep(self._ci_poll_interval)
 
     # -- Lifecycle -----------------------------------------------------------
