@@ -52,6 +52,11 @@ work_ref = "kodezart-workref"
 base_spec = "kodezart-basespec"
 repository = "kodezart-repo"
 issue_identity = "kodezart-issue"
+# One idempotent terminal outcome comment per queued job.
+run_outcome = "run-outcome"
+
+run_state = "run-state"
+
 decision = "decision"
 # Record-shaped issues carry history and are never scope fire candidates.
 tracker = "tracker"
@@ -335,7 +340,39 @@ notion_connector = "example-notion-connector-id"
 # they do not grant a state writer or override tracker criterion rollup.
 [run_event_states]
 pr_opened = "in_review"
+criterion_refuted = "DERIVED"
+
+escalation_raised = "NO_TRANSITION"
+
+evaluator_accepted = "DERIVED"
+
+gate_green = "NO_TRANSITION"
+
+gate_red = "NO_TRANSITION"
+
+issue_crossed_off = "NO_TRANSITION"
+
+lane_dispatched = "in_progress"
+
+lane_plateaued = "in_review"
+
 claim_lost = "in_progress"
+audit_refuted = "DERIVED"
+
+checks_green = "in_review"
+
+criteria_halt = "in_progress"
+
+first_push = "NO_TRANSITION"
+
+landed_and_verified = "DERIVED"
+
+node_session_started = "NO_TRANSITION"
+
+run_alarm_cleared = "NO_TRANSITION"
+
+run_alarm_raised = "NO_TRANSITION"
+
 
 
 # Initiatives the operation is steering toward. `target_date` is OPTIONAL and

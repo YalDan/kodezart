@@ -44,7 +44,33 @@ from tests.prompts.test_prompt_wiring import load_registry
 #: shared fixture case, so the expectation is stated per rendering rather
 #: than per key — the regeneration round injects one the first round does
 #: not, and that difference is the point of listing them separately.
+ORGANIZE_INPUT_TAGS = (
+    "mandate_rubric",
+    "issue_key",
+    "organize_context",
+    "issue_body",
+    "linked_issue_bodies",
+    "linked_issue",
+    "criterion_issue_bodies",
+    "criterion_issue",
+    "base_ref",
+    "defect_classes",
+)
+
 ARTIFACT_TAGS: dict[str, tuple[str, ...]] = {
+    "audit_overclaim": ("criterion_key", "graded_sha", "head_sha", "check"),
+    "audit_mandate": (
+        "defect_class",
+        "refutation_evidence",
+        "head_sha",
+        "audited_surfaces",
+    ),
+    "audit_claim": ("criterion_key", "head_sha", "check"),
+    "audit_detection_removal": ("criterion_key", "graded_sha", "head_sha", "check"),
+    "organize_assess": ORGANIZE_INPUT_TAGS,
+    "organize_verify": ORGANIZE_INPUT_TAGS,
+    "organize_author": (*ORGANIZE_INPUT_TAGS, "refusal_evidence"),
+    "organize_criteria_author": (*ORGANIZE_INPUT_TAGS, "refusal_evidence"),
     "acceptance_criteria": ("ticket",),
     "acceptance_criteria__regeneration_round": ("validation_findings", "ticket"),
     "branch_name": ("task",),
@@ -61,6 +87,7 @@ ARTIFACT_TAGS: dict[str, tuple[str, ...]] = {
     "implementation": ("ticket",),
     "iteration_feedback": ("failed_criteria",),
     "knowledge_map": (),
+    "fire_record": (),
     "post_merge_review": ("acceptance_criteria", "changeset"),
     "pr_description": ("ticket", "acceptance_criteria"),
     "remediation_ticket": ("ticket", "done_work", "failure_evidence"),

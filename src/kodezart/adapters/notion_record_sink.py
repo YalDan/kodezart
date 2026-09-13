@@ -1,41 +1,44 @@
 """``RunRecordSink`` over the knowledge vendor's MCP server.
 
-A destination in the KNOWLEDGE system is a data source — a database whose
-rows are pages — and one structural record is one new page whose title
-property carries the domain's one line.  Which property is the title is
-the data source's own schema fact, so it is read rather than assumed:
-every data source has exactly one title property, but its NAME is the
-operator's ("Run" on the measured logs), and writing under a guessed name
-is a vendor refusal.
+A knowledge destination is a data source whose rows are pages. Scheduled
+records retain their line-based contract. Fire records use the exact shared
+run identity as their title and verify configured structured properties.
+An existing session-created row is filled in place without touching prose.
 
-The tool names are the vendor MCP server's OpenAPI-derived ones, held
-here because they are vendor knowledge; the verification boot exercises
-them against the live server, which is where a version mismatch fails
-loudly (KOD-170).
-
-The title property earns its schema read twice over: it is where a row is
-written, and it is what a row is FOUND by — verification asks whether
-this run's row is there, not whether the log has been written to lately
-(KOD-288).  A row is asked for by the record's whole TITLE at the head of
-that property, never by containment of its name: a title containing
-``KOD-17`` is also every title containing ``KOD-170``.  At the head rather
-than whole, because the two writers of a row title it differently and both
-are this run's — a session writes the prescribed title alone, and this
-sink's own backfill writes the title followed by the outcome and the
-duration a structural row owes (KOD-238).
+Tool names and property payloads follow the vendor MCP server's OpenAPI:
+``API-patch-page`` takes ``page_id`` and the properties to change; omitted
+properties are preserved. The live schema supplies the title property and
+valid select options. Structured verification reads the full matching page
+set so duplicate identities cannot masquerade as a successful record.
 """
 
 from collections.abc import Mapping
 
-from kodezart.core.errors import McpTransportError
+from pydantic import BaseModel, ValidationError
+
+from kodezart.adapters.notion_record_properties import (
+    mapping_error,
+    record_properties,
+    write_properties,
+)
+from kodezart.adapters.pagination import cursor_pages
+from kodezart.adapters.record_failures import record_failure_boundary
+from kodezart.core.errors import McpTransportError, RunRecordWriteError
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import McpToolCaller
-from kodezart.types.domain.operation import RecordDestination
-from kodezart.types.domain.run_records import RunRecord
+from kodezart.types.domain.notion_records import (
+    NotionPropertyValue,
+    NotionRecordPage,
+    NotionRecordPageList,
+    NotionRecordSchema,
+)
+from kodezart.types.domain.operation import RecordDestination, RunKind
+from kodezart.types.domain.run_records import RunRecord, RunRecordFailure
 
 _TOOL_RETRIEVE_DATA_SOURCE = "API-retrieve-a-data-source"
 _TOOL_POST_PAGE = "API-post-page"
 _TOOL_QUERY_DATA_SOURCE = "API-query-data-source"
+_TOOL_PATCH_PAGE = "API-patch-page"
 
 
 class NotionRecordSink:
@@ -64,45 +67,51 @@ class NotionRecordSink:
         source carries.  The window alone answered for the whole log — two
         fires swept at one shutdown produced one row, the first answering
         for the second — and a title CONTAINING the name answered for
-        every longer name it prefixed (KOD-288).  Page one of size one is
+        every longer name it prefixed.  Page one of size one is
         all the answer needs.
         """
-        title_property = await self._title_property(destination)
-        payload = await self._caller.call_tool(
-            name=_TOOL_QUERY_DATA_SOURCE,
-            arguments={
-                "data_source_id": destination.id,
-                "filter": {
-                    "and": [
-                        {
-                            "timestamp": "created_time",
-                            "created_time": {
-                                "on_or_after": record.started_at.isoformat(),
+        with record_failure_boundary(destination=destination, record=record):
+            if record.kind is RunKind.FIRE or destination.outcome_mapping is not None:
+                title, expected = await self._structured_target(destination, record)
+                page = await self._find_record(destination, record, title)
+                return page is not None and self._matches_properties(page, expected)
+            title_property = await self._title_property(destination)
+            payload = await self._caller.call_tool(
+                name=_TOOL_QUERY_DATA_SOURCE,
+                arguments={
+                    "data_source_id": destination.id,
+                    "filter": {
+                        "and": [
+                            {
+                                "timestamp": "created_time",
+                                "created_time": {
+                                    "on_or_after": record.started_at.isoformat(),
+                                },
                             },
-                        },
-                        {
-                            "property": title_property,
-                            "title": {"starts_with": record.title()},
-                        },
-                    ],
+                            {
+                                "property": title_property,
+                                "title": {"starts_with": record.title()},
+                            },
+                        ],
+                    },
+                    "page_size": 1,
                 },
-                "page_size": 1,
-            },
-        )
-        if not isinstance(payload, Mapping):
-            raise McpTransportError(
-                "the data-source query answered with no object to read results from",
-                server_name=self._server_name,
-                tool_name=_TOOL_QUERY_DATA_SOURCE,
             )
-        results = payload.get("results")
-        if not isinstance(results, list):
-            raise McpTransportError(
-                "the data-source query's answer carries no results list",
-                server_name=self._server_name,
-                tool_name=_TOOL_QUERY_DATA_SOURCE,
-            )
-        return len(results) > 0
+            if not isinstance(payload, Mapping):
+                raise McpTransportError(
+                    "the data-source query answered with no object "
+                    "to read results from",
+                    server_name=self._server_name,
+                    tool_name=_TOOL_QUERY_DATA_SOURCE,
+                )
+            results = payload.get("results")
+            if not isinstance(results, list):
+                raise McpTransportError(
+                    "the data-source query's answer carries no results list",
+                    server_name=self._server_name,
+                    tool_name=_TOOL_QUERY_DATA_SOURCE,
+                )
+            return len(results) > 0
 
     async def write_record(
         self,
@@ -110,22 +119,141 @@ class NotionRecordSink:
         destination: RecordDestination,
         record: RunRecord,
     ) -> None:
-        """One page in the destination, its title property the record line."""
-        title_property = await self._title_property(destination)
-        await self._caller.call_tool(
-            name=_TOOL_POST_PAGE,
-            arguments={
-                "parent": {
-                    "type": "data_source_id",
-                    "data_source_id": destination.id,
-                },
-                "properties": {
-                    title_property: {
-                        "title": [{"text": {"content": record.line()}}],
+        """Create or complete this run's page using its declared contract."""
+        with record_failure_boundary(destination=destination, record=record):
+            if record.kind is RunKind.FIRE or destination.outcome_mapping is not None:
+                title, expected = await self._structured_target(destination, record)
+                page = await self._find_record(destination, record, title)
+                if page is not None and self._matches_properties(page, expected):
+                    return
+                properties = write_properties(expected)
+                if page is not None:
+                    await self._caller.call_tool(
+                        name=_TOOL_PATCH_PAGE,
+                        arguments={"page_id": page.id, "properties": properties},
+                    )
+                else:
+                    await self._caller.call_tool(
+                        name=_TOOL_POST_PAGE,
+                        arguments={
+                            "parent": {
+                                "type": "data_source_id",
+                                "data_source_id": destination.id,
+                            },
+                            "properties": properties,
+                        },
+                    )
+                return
+            title_property = await self._title_property(destination)
+            await self._caller.call_tool(
+                name=_TOOL_POST_PAGE,
+                arguments={
+                    "parent": {
+                        "type": "data_source_id",
+                        "data_source_id": destination.id,
+                    },
+                    "properties": {
+                        title_property: {
+                            "title": [{"text": {"content": record.line()}}],
+                        },
                     },
                 },
-            },
+            )
+
+    async def _structured_target(
+        self, destination: RecordDestination, record: RunRecord
+    ) -> tuple[str, dict[str, NotionPropertyValue]]:
+        payload = await self._caller.call_tool(
+            name=_TOOL_RETRIEVE_DATA_SOURCE,
+            arguments={"data_source_id": destination.id},
         )
+        schema = self._validate(NotionRecordSchema, payload, _TOOL_RETRIEVE_DATA_SOURCE)
+        titles = [
+            name for name, value in schema.properties.items() if value.type == "title"
+        ]
+        if len(titles) != 1:
+            raise mapping_error(
+                destination, record, "the destination must have one title property"
+            )
+        title = titles[0]
+        return title, record_properties(destination, record, schema, title)
+
+    @staticmethod
+    def _matches_properties(
+        page: NotionRecordPage, expected: dict[str, NotionPropertyValue]
+    ) -> bool:
+        return all(
+            page.properties.get(name) == value for name, value in expected.items()
+        )
+
+    async def _find_record(
+        self, destination: RecordDestination, record: RunRecord, title_property: str
+    ) -> NotionRecordPage | None:
+        arguments: dict[str, object] = {
+            "data_source_id": destination.id,
+            "filter": {
+                "and": [
+                    {
+                        "timestamp": "created_time",
+                        "created_time": {"on_or_after": record.started_at.isoformat()},
+                    },
+                    {
+                        "property": title_property,
+                        "title": {"starts_with": record.title()},
+                    },
+                ]
+            },
+            "page_size": 100,
+        }
+        found: dict[str, NotionRecordPage] = {}
+
+        async def read(
+            request: Mapping[str, object],
+        ) -> tuple[NotionRecordPageList, bool, str | None]:
+            payload = await self._caller.call_tool(
+                name=_TOOL_QUERY_DATA_SOURCE, arguments=request
+            )
+            page = self._validate(
+                NotionRecordPageList, payload, _TOOL_QUERY_DATA_SOURCE
+            )
+            return page, page.has_more, page.next_cursor
+
+        async for page in cursor_pages(
+            read,
+            arguments=arguments,
+            cursor_key="start_cursor",
+            refusal=lambda _: mapping_error(
+                destination, record, "record query pagination cannot advance"
+            ),
+        ):
+            for row in page.results:
+                title = row.properties.get(title_property)
+                if title is None or title.title is None:
+                    raise mapping_error(
+                        destination, record, "a queried row has no title to identify it"
+                    )
+                text = "".join(part.plain_text for part in title.title)
+                if text == record.title() or text.startswith(f"{record.title()} — "):
+                    found[row.id] = row
+        if len(found) > 1:
+            raise RunRecordWriteError(
+                "more than one destination row carries this run identity",
+                kind=record.kind.value,
+                destination=destination.id,
+                system=destination.system.value,
+                failure=RunRecordFailure.IDENTITY_CONFLICT.value,
+            )
+        return next(iter(found.values())) if found else None
+
+    def _validate[T: BaseModel](self, model: type[T], payload: object, tool: str) -> T:
+        try:
+            return model.model_validate(payload)
+        except ValidationError as exc:
+            raise McpTransportError(
+                "the record destination returned an incomplete response",
+                server_name=self._server_name,
+                tool_name=tool,
+            ) from exc
 
     async def _title_property(self, destination: RecordDestination) -> str:
         """The NAME of the destination's one title property, read once."""
