@@ -659,3 +659,70 @@ class GitOperationError(RuntimeError):
 
 class GitRepositoryError(ValueError):
     """A requested local path does not identify an available Git repository."""
+
+
+class CheckChainExecutionError(Exception):
+    """The configured chain could not be observed as command results."""
+
+    def __init__(self, *, cwd: str, step_name: str | None, reason: str) -> None:
+        self.cwd = cwd
+        self.step_name = step_name
+        self.reason = reason
+        super().__init__(f"Cannot execute check chain in {cwd!r}: {reason}")
+
+
+class DeliveryHeadError(Exception):
+    """A delivery branch no longer has the head whose evidence was supplied."""
+
+    def __init__(
+        self,
+        *,
+        issue_id: str,
+        branch: str,
+        expected_sha: str,
+        observed_sha: str | None,
+    ) -> None:
+        super().__init__(
+            f"Delivery head changed for {issue_id} on {branch}: "
+            f"expected {expected_sha}, observed {observed_sha!r}"
+        )
+        self.issue_id = issue_id
+        self.branch = branch
+        self.expected_sha = expected_sha
+        self.observed_sha = observed_sha
+
+
+class PRStateReadError(ValueError):
+    """A native PR observation cannot establish the requested identity."""
+
+
+class UnionHeadReadError(Exception):
+    """Current remote heads could not establish a complete union snapshot."""
+
+    def __init__(self, *, scope_key: str, branch: str | None, reason: str) -> None:
+        self.scope_key = scope_key
+        self.branch = branch
+        self.reason = reason
+        super().__init__(f"Union head observation for {scope_key!r} refused: {reason}")
+
+
+class UnionUnstableError(Exception):
+    """Every allowed union attempt was superseded by current remote heads."""
+
+    def __init__(
+        self,
+        *,
+        scope_key: str,
+        attempts: int,
+        lane_keys: tuple[str, ...],
+        measured_shas: tuple[str, ...],
+        current_shas: tuple[str, ...],
+    ) -> None:
+        self.scope_key = scope_key
+        self.attempts = attempts
+        self.lane_keys = lane_keys
+        self.measured_shas = measured_shas
+        self.current_shas = current_shas
+        super().__init__(
+            f"Union heads for {scope_key!r} changed across {attempts} attempts"
+        )

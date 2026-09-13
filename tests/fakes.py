@@ -9,6 +9,7 @@ from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from pathlib import Path
 from unittest.mock import patch
+from urllib.parse import quote, urlsplit
 
 from fastapi import FastAPI
 
@@ -45,6 +46,7 @@ from kodezart.domain.errors import (
     DuplicateWorkRefError,
     MergeConflictError,
     OrganizeWriteRefusalError,
+    PRStateReadError,
     RateLimitError,
     ScopeReadError,
     SurfaceLeaseError,
@@ -53,6 +55,7 @@ from kodezart.domain.errors import (
     WorkspaceError,
 )
 from kodezart.domain.fire_spec import require_fire_entry, tracker_spec_from_issues
+from kodezart.domain.git_url import extract_owner_repo
 from kodezart.domain.organize_graph import (
     changed_peers,
     graph_snapshot,
@@ -125,6 +128,7 @@ from kodezart.types.domain.operation import (
 )
 from kodezart.types.domain.organize_graph import GraphChange, IssueGraphSnapshot
 from kodezart.types.domain.persist import ArtifactPersistStatus, PersistResult
+from kodezart.types.domain.pr_state import PRState
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run_records import RunIdentity, RunOutcome, RunRecord
 from kodezart.types.domain.scope import ScopeContainer, ScopeKind, ScopeRef
@@ -659,6 +663,20 @@ class FakeGitService:
             head_sha=await self.current_sha(cwd),
             content_digest=sha256(str(self.has_changes_result).encode()).hexdigest(),
         )
+
+    async def merge_scratch_head(
+        self, *, cwd: str, head_sha: str, author_name: str, author_email: str
+    ) -> None:
+        self.calls.append(
+            ("merge_scratch_head", cwd, head_sha, author_name, author_email)
+        )
+        paths = self._merge_conflicts.get(head_sha)
+        if paths is not None:
+            raise MergeConflictError(
+                "scratch merge conflict",
+                source_branch=head_sha,
+                paths=paths,
+            )
 
 
 class FakeAgentExecutor:
@@ -4563,15 +4581,34 @@ class FakeTrackerPort:
 
 
 class FakeDeliveryProbe:
-    """``DeliveryProbe`` over a fixed set of issue keys with an open delivery."""
+    """One forge double, answering both questions the native client answers.
 
-    def __init__(self, *, delivered: Sequence[str] = ()) -> None:
+    The production client implements ``DeliveryProbe`` and ``PRStateReader``
+    on the same object, so a consumer handed this probe is holding the
+    merge-state boundary as well: ``calls`` records what it was asked about
+    deliveries, ``merge_state.calls`` what it was asked about pull requests.
+    That is what makes "the merge-state reader was never asked" an
+    observation about the consumer rather than about an unreachable double.
+    """
+
+    def __init__(
+        self,
+        *,
+        delivered: Sequence[str] = (),
+        pr_states: Mapping[tuple[str, int], PRState] | None = None,
+    ) -> None:
         self.delivered: set[str] = set(delivered)
         self.calls: list[str] = []
+        self.merge_state = FakePRStateReader(records=dict(pr_states or {}))
 
     async def open_delivery_exists(self, *, repo_url: str, issue_key: str) -> bool:
         self.calls.append(issue_key)
         return issue_key in self.delivered
+
+    async def read_pr_state(self, *, repo_url: str, pr_number: int) -> PRState:
+        return await self.merge_state.read_pr_state(
+            repo_url=repo_url, pr_number=pr_number
+        )
 
 
 def make_tracker_review(
@@ -5032,3 +5069,73 @@ def make_passing_evaluation_of_fake_criteria() -> AcceptanceCriteriaOutput:
 
 
 FAKE_CRITERION_IDS = ("AC-1", "AC-2")
+
+
+class FakeForgeQuery:
+    """The forge's read side, beside the creator fake it is consulted with.
+
+    Seeded with the open pull requests the forge holds, keyed by origin and
+    head.  A head the fixture does not name has nothing open on it, which
+    is the same answer the forge gives — an answer, never a failure, so a
+    read that must fail is stated as ``fail_lookup`` instead.
+    """
+
+    def __init__(
+        self,
+        *,
+        open_prs: Mapping[tuple[str, str], tuple[str, int]] | None = None,
+        fail_lookup: Exception | None = None,
+    ) -> None:
+        self._open_prs = dict(open_prs or {})
+        self._fail_lookup = fail_lookup
+        self.lookups: list[tuple[str, str]] = []
+
+    async def open_pr_for_head(
+        self, *, repo_url: str, head: str
+    ) -> tuple[str, int] | None:
+        self.lookups.append((repo_url, head))
+        if self._fail_lookup is not None:
+            raise self._fail_lookup
+        return self._open_prs.get((repo_url, head))
+
+    def branch_web_url(self, *, repo_url: str, branch: str) -> str:
+        owner, repo = extract_owner_repo(repo_url)
+        origin = urlsplit(repo_url)
+        if origin.scheme != "https" or not origin.netloc:
+            msg = f"Cannot compose a branch page for origin: {repo_url}"
+            raise ValueError(msg)
+        return f"https://{origin.netloc}/{owner}/{repo}/tree/{quote(branch)}"
+
+
+class FakePRStateReader:
+    """Read-only exact-identity double for the native PR state boundary."""
+
+    def __init__(self, *, records: dict[tuple[str, int], PRState]) -> None:
+        self.records = records
+        self.calls: list[tuple[str, int]] = []
+
+    async def read_pr_state(self, *, repo_url: str, pr_number: int) -> PRState:
+        if (
+            not isinstance(pr_number, int)
+            or isinstance(pr_number, bool)
+            or pr_number <= 0
+        ):
+            raise PRStateReadError("a PR number must be a positive integer")
+        self.calls.append((repo_url, pr_number))
+        try:
+            result = self.records[(repo_url, pr_number)]
+        except KeyError as exc:
+            raise PRStateReadError("native PR is unavailable") from exc
+        if result.number != pr_number:
+            raise PRStateReadError("native PR has another identity")
+        if (
+            result.head_repo_url.casefold()
+            != repo_url.rstrip("/").removesuffix(".git").casefold()
+        ):
+            raise PRStateReadError("native PR head belongs to another repository")
+        if (
+            result.base_repo_url.casefold()
+            != repo_url.rstrip("/").removesuffix(".git").casefold()
+        ):
+            raise PRStateReadError("native PR base belongs to another repository")
+        return result

@@ -6,6 +6,7 @@ from pydantic import Field, model_validator
 
 from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.branch import BaseSpec
+from kodezart.types.domain.scope import ScopeKind
 
 HttpPermissionMode = Literal["plan", "bypassPermissions"]
 
@@ -54,6 +55,13 @@ class QueryRequest(RepoSourceRequest):
         return self
 
 
+class ScopeRefRequest(CamelCaseModel):
+    """Address a tracker scope without resolving its membership at submission."""
+
+    kind: ScopeKind
+    key: str = Field(min_length=1)
+
+
 class WorkflowRequest(RepoSourceRequest):
     """Request body for ``POST /api/v1/agent/workflow``.
 
@@ -73,6 +81,8 @@ class WorkflowRequest(RepoSourceRequest):
     """
 
     base_branch: str = "main"
+    issue_key: str | None = None
+    scope: ScopeRefRequest | None = None
     base_spec: BaseSpec | None = None
     implied_base: BaseSpec | None = None
     permission_mode: HttpPermissionMode = "bypassPermissions"

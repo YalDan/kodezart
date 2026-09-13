@@ -575,3 +575,21 @@ class TrackerWriterAttributionError(Exception):
         self.writer: tuple[str, ...] = tuple(writer)
         self.declared: tuple[str, ...] = tuple(declared)
         self.field: str = field
+
+
+class LaneRosterArityError(Exception):
+    """A returned roster differs from the dispatched identities."""
+
+    def __init__(
+        self,
+        *,
+        dispatched_lane_keys: Sequence[str],
+        reported_lane_keys: Sequence[str],
+    ) -> None:
+        self.dispatched_lane_keys = tuple(dispatched_lane_keys)
+        self.reported_lane_keys = tuple(reported_lane_keys)
+        super().__init__(
+            "Lane report roster does not match dispatch: "
+            f"dispatched={self.dispatched_lane_keys!r}, "
+            f"reported={self.reported_lane_keys!r}"
+        )

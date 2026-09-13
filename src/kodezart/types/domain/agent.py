@@ -1143,3 +1143,30 @@ WIRE_SCHEMAS: dict[str, dict[str, object]] = {
     "DRAFT_CRITIQUE_SCHEMA": DRAFT_CRITIQUE_SCHEMA,
     "WRITE_BACK_SCHEMA": WRITE_BACK_SCHEMA,
 }
+
+
+type NativeFireProgressEvent = Annotated[
+    UserMessageEvent
+    | AssistantTextEvent
+    | AssistantThinkingEvent
+    | ToolUseEvent
+    | ToolResultEvent
+    | SystemEvent
+    | TaskStartedEvent
+    | TaskProgressEvent
+    | TaskUpdatedEvent
+    | TaskNotificationEvent
+    | ResultEvent
+    | StreamDataEvent
+    | ErrorEvent
+    | RateLimitWarningEvent
+    | NodeSessionStartedEvent
+    | WorkflowIterationEvent
+    | WorkflowConsolidationEvent
+    | WorkflowReviewEvent
+    | WorkflowRemediationEvent
+    | WorkflowVisibilityEvent
+    | WorkflowScopeBaseEvent
+    | NativeAmendmentEvent,
+    Field(discriminator="type"),
+]

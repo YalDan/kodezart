@@ -103,7 +103,7 @@ from kodezart.domain.tracker_writes import (
     marked_comment_body,
     require_expected_comment,
 )
-from kodezart.types.domain.branch import BaseSpec, WorkRef, WorkRefRole
+from kodezart.types.domain.branch import BaseSpec, WorkRef, WorkRefLanding, WorkRefRole
 from kodezart.types.domain.dispatch import PassSignal, SelfWriteLedger
 from kodezart.types.domain.fire_spec import TrackerSpec
 from kodezart.types.domain.issue_identity import IssueIdentity
@@ -1495,10 +1495,18 @@ class LinearMcpTracker:
         """Every work ref recorded on the issue, oldest first."""
         refs: list[WorkRef] = []
         pattern = self._markers.work_ref_pattern
+        marker = self._markers.work_ref_marker_pattern
         for wire in await self._comment_wires(issue_key):
-            match = pattern.search(wire.body)
-            if match is None:
+            occurrences = tuple(marker.finditer(wire.body))
+            if not occurrences:
                 continue
+            match = pattern.search(wire.body)
+            if match is None or len(occurrences) != 1:
+                raise TrackerProtocolError(
+                    "work-ref marker is malformed or repeated",
+                    tool=_TOOL_LIST_COMMENTS,
+                    detail=wire.id,
+                )
             role = _WORK_REF_ROLE_BY_VALUE.get(match.group("role"))
             if role is None:
                 raise TrackerProtocolError(
@@ -1506,15 +1514,27 @@ class LinearMcpTracker:
                     tool=_TOOL_LIST_COMMENTS,
                     detail=match.group("role"),
                 )
-            refs.append(
-                WorkRef(
+            try:
+                landing = match.group("landing")
+                ref = WorkRef(
                     issue_id=issue_key,
                     role=role,
                     branch=match.group("branch"),
                     pushed_head_sha=match.group("sha"),
+                    landing=(
+                        WorkRefLanding.UNKNOWN
+                        if landing is None
+                        else WorkRefLanding(landing)
+                    ),
                     recorded_at=wire.created_at,
-                ),
-            )
+                )
+            except ValueError as exc:
+                raise TrackerProtocolError(
+                    "work-ref marker does not match its declared shape",
+                    tool=_TOOL_LIST_COMMENTS,
+                    detail=wire.id,
+                ) from exc
+            refs.append(ref)
         return tuple(refs)
 
     async def record_base_spec(self, *, issue_key: str, spec: BaseSpec) -> None:

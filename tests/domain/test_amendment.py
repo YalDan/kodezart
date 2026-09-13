@@ -4,6 +4,8 @@ import pytest
 from pydantic import TypeAdapter, ValidationError
 
 from kodezart.domain.amendment import repeated_upheld, upheld_reason
+from kodezart.handlers.agent_handler import _queued_event_payload
+from kodezart.types.domain.agent import NativeAmendmentEvent
 from kodezart.types.domain.agent import RulingId as ExistingRulingId
 from kodezart.types.domain.amendment import (
     AmendmentClaim,
@@ -20,6 +22,7 @@ from kodezart.types.domain.audit import TrackerArtifact
 from kodezart.types.domain.operation import CheckPrerequisite
 from kodezart.types.domain.ruling_id import RulingId
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
+from kodezart.types.domain.scope_runtime import ScopeLaneEvent
 from kodezart.types.domain.surface import SurfaceKind, WritableSurface
 from kodezart.types.domain.write_back import WriteBackFinding, WriteBackResult
 
@@ -247,3 +250,20 @@ def test_completed_reports_refuse_missing_or_unrelated_canonical_evidence(mutati
         AmendmentReport.model_validate(
             {"verdicts": [value, value] if mutation == "duplicate" else [value]}
         )
+
+
+def test_actual_scope_egress_roundtrips_required_nulls_and_rejects_bad_native_reports():
+    event = ScopeLaneEvent(
+        lane_key="lane",
+        event=NativeAmendmentEvent(
+            report=AmendmentReport(verdicts=(record(),)),
+        ),
+    )
+    payload = _queued_event_payload(event)
+    assert ScopeLaneEvent.model_validate(payload) == event
+    original = payload["event"]["report"]["verdicts"][0]
+    assert "claimedCapability" in original["claim"]
+    assert original["claim"]["claimedCapability"] is None
+    original["reason"] = "guessed_reason"
+    with pytest.raises(ValidationError):
+        ScopeLaneEvent.model_validate(payload)

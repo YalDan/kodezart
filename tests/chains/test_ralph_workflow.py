@@ -4913,6 +4913,7 @@ def _dispatch_sites() -> list[tuple[str, str]]:
 #: The dispatch census this suite expects to find, so a site that stops
 #: resolving a template cannot silently leave the check.
 KEYED_DISPATCH_COUNTS = {
+    "lane_delivery.py": 1,
     "audit_sessions.py": 1,
     "agent_content_scanner.py": 1,
     "git_change_persister.py": 1,

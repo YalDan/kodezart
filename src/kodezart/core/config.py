@@ -1224,6 +1224,7 @@ class AppConfig(BaseSettings):
                 "organize_max_admission_rounds",
                 "organize_max_convergence_rounds",
                 "write_back_max_verify_rounds",
+                "union_check_cleanup_poll_interval_seconds",
                 "git_remote",
                 "git_base_url",
                 "clone_cache_dir",
@@ -1274,5 +1275,19 @@ class AppConfig(BaseSettings):
         description=(
             "Times a red check set is re-run at one sha "
             "before the red is treated as reproduced."
+        ),
+    )
+
+    union_check_step_timeout_seconds: float = Field(
+        default=1800,
+        gt=0,
+        description="Wall-clock bound for one check step of a union composition.",
+    )
+
+    union_stale_max_attempts: int = Field(
+        default=3,
+        ge=1,
+        description=(
+            "Maximum union attempts before continuously moving lane heads refuse."
         ),
     )

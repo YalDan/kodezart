@@ -22,7 +22,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass, replace
 from enum import StrEnum
 from typing import Final, TypeVar
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 import httpx
 
@@ -32,6 +32,7 @@ from kodezart.adapters.github_types import (
     CommitIdentity,
     DeclaredWorkflowsResponse,
     PullRequestResponse,
+    PullRequestStateResponse,
     PullRequestSummary,
     RepositoryResponse,
     WorkflowJob,
@@ -45,6 +46,7 @@ from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.domain.errors import (
     CheckObservationError,
     ForgeAPIError,
+    PRStateReadError,
     RateLimitError,
     TransientAPIError,
 )
@@ -56,6 +58,7 @@ from kodezart.types.domain.check_observation import (
     ObservedChecks,
 )
 from kodezart.types.domain.gating import RepoVisibility
+from kodezart.types.domain.pr_state import PRLifecycle, PRState
 from kodezart.utils.http import parse_ratelimit_reset, parse_retry_after
 
 #: Every root httpx derives an exception from.  ``HTTPError`` covers the
@@ -417,8 +420,8 @@ class GitHubAPIClient:
 
         Matching lives here, not in the caller: the reference convention is
         a property of this forge's pull requests.  The key is matched as a
-        whole token in the title or body, so ``KOD-5`` never matches
-        ``KOD-58``.  A branch name is never parsed — an issue identity is
+        whole token in the title or body, never as the prefix of a longer
+        key.  A branch name is never parsed — an issue identity is
         not derivable from one.
         """
         owner, repo = extract_owner_repo(repo_url)
@@ -1097,3 +1100,121 @@ class GitHubAPIClient:
     _PENDING_STATUSES = frozenset(
         {"queued", "in_progress", "waiting", "pending", "requested"}
     )
+
+    async def open_pr_for_head(
+        self, *, repo_url: str, head: str
+    ) -> tuple[str, int] | None:
+        """Ask this forge's own head filter, and refuse a contradictory answer.
+
+        The filter is the forge's: its listing takes ``owner:branch`` and
+        answers with the open pull requests on that head, so the question
+        is asked once, of the party that knows, instead of being
+        reconstructed by paging every open pull request and matching here.
+        """
+        owner, repo = extract_owner_repo(repo_url)
+        listing = await self._parsed_with_retry(
+            "GET",
+            f"/repos/{owner}/{repo}/pulls",
+            _pull_request_listing,
+            params={
+                "state": self._OPEN_STATE,
+                "head": f"{owner}:{head}",
+                "per_page": self._PAGE_SIZE,
+            },
+        )
+        if not listing:
+            return None
+        if len(listing) > 1:
+            raise ForgeAPIError(
+                f"the forge reports {len(listing)} open pull requests on one head",
+                status_code=None,
+                detail=f"GET /repos/{owner}/{repo}/pulls?head={owner}:{head}",
+            )
+        return (listing[0].html_url, listing[0].number)
+
+    def branch_web_url(self, *, repo_url: str, branch: str) -> str:
+        """Compose the branch page from this repository's own host and path.
+
+        The host comes from the origin rather than from the configured API
+        base: this forge serves its API and its pages from two different
+        hosts, and a deployment against an enterprise instance has both of
+        them different again.
+        """
+        owner, repo = extract_owner_repo(repo_url)
+        origin = urlsplit(repo_url)
+        if origin.scheme != "https" or not origin.netloc:
+            msg = f"Cannot compose a branch page for origin: {repo_url}"
+            raise ValueError(msg)
+        return f"https://{origin.netloc}/{owner}/{repo}/tree/{quote(branch)}"
+
+    async def read_pr_state(self, *, repo_url: str, pr_number: int) -> PRState:
+        """Read one native PR, without relying on an open-only listing."""
+        if (
+            not isinstance(pr_number, int)
+            or isinstance(pr_number, bool)
+            or pr_number <= 0
+        ):
+            raise PRStateReadError("a PR number must be a positive integer")
+        owner, repo = extract_owner_repo(repo_url)
+        native = await self._parsed_with_retry(
+            "GET",
+            f"/repos/{owner}/{repo}/pulls/{pr_number}",
+            PullRequestStateResponse.model_validate,
+        )
+        expected = urlsplit(repo_url)
+        try:
+            observed = urlsplit(native.html_url)
+        except ValueError as exc:
+            raise PRStateReadError("native PR URL is malformed") from exc
+        expected_path = f"/{owner}/{repo}/pull/{pr_number}"
+        if (
+            native.number != pr_number
+            or observed.scheme != "https"
+            or observed.netloc.casefold() != expected.netloc.casefold()
+            or observed.path.casefold() != expected_path.casefold()
+            or observed.query
+            or observed.fragment
+            or observed.username is not None
+            or observed.password is not None
+        ):
+            raise PRStateReadError("native PR identity differs from its address")
+        head_repo, base_repo = native.head.repo, native.base.repo
+        if head_repo is None or base_repo is None:
+            raise PRStateReadError("native PR head or base repository is unavailable")
+        for role, repository in (("head", head_repo), ("base", base_repo)):
+            try:
+                origin = urlsplit(repository.html_url)
+            except ValueError as exc:
+                raise PRStateReadError(
+                    f"native PR {role} repository URL is malformed"
+                ) from exc
+            if (
+                origin.scheme != "https"
+                or origin.netloc.casefold() != expected.netloc.casefold()
+                or origin.path.casefold() != f"/{owner}/{repo}".casefold()
+                or origin.query
+                or origin.fragment
+                or origin.username is not None
+                or origin.password is not None
+                or repository.full_name.casefold() != f"{owner}/{repo}".casefold()
+            ):
+                raise PRStateReadError(
+                    f"native PR {role} belongs to another repository"
+                )
+        lifecycle = (
+            PRLifecycle.MERGED
+            if native.merged
+            else PRLifecycle.OPEN
+            if native.state == self._OPEN_STATE
+            else PRLifecycle.CLOSED
+        )
+        return PRState(
+            url=native.html_url,
+            number=native.number,
+            head_repo_url=head_repo.html_url,
+            head_branch=native.head.ref,
+            head_sha=native.head.sha,
+            base_repo_url=base_repo.html_url,
+            base_branch=native.base.ref,
+            lifecycle=lifecycle,
+        )

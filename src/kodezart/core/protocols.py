@@ -12,6 +12,7 @@ from kodezart.types.domain.amendment import (
 )
 from kodezart.types.domain.assertion_drift import GitSourceBlob
 from kodezart.types.domain.branch import BaseSpec, WorkRef
+from kodezart.types.domain.check_chain import CheckChainResult
 from kodezart.types.domain.check_observation import CIWatchResult
 from kodezart.types.domain.consolidation import (
     ChangesetDigest,
@@ -36,6 +37,7 @@ from kodezart.types.domain.issue_identity import IssueIdentity
 from kodezart.types.domain.job import JobRecord
 from kodezart.types.domain.native_execution import NativeAuthoritySnapshot
 from kodezart.types.domain.operation import (
+    CheckStep,
     LifecycleStage,
     QueueState,
     RecordDestination,
@@ -43,6 +45,7 @@ from kodezart.types.domain.operation import (
 )
 from kodezart.types.domain.organize_graph import GraphChange, IssueGraphSnapshot
 from kodezart.types.domain.persist import ArtifactPersistStatus, PersistResult
+from kodezart.types.domain.pr_state import PRState
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run import RunState
 from kodezart.types.domain.run_records import RunIdentity, RunRecord
@@ -291,6 +294,12 @@ class GitService(Protocol):
         self, cwd: str, *, repository_path: str
     ) -> GitWorktreeIdentity:
         """Read actual Git/index/working content identity without mutating it."""
+        ...
+
+    async def merge_scratch_head(
+        self, *, cwd: str, head_sha: str, author_name: str, author_email: str
+    ) -> None:
+        """Merge a pinned commit in a detached scratch tree, never a branch."""
         ...
 
 
@@ -1755,3 +1764,63 @@ class ContentScanner(Protocol):
     ) -> ScanResult:
         """Every finding, or the typed reason there is no answer."""
         ...
+
+
+@runtime_checkable
+class ForgeQuery(Protocol):
+    """The forge's READ side: what already exists, and where to look at it.
+
+    Separate from ``PRCreator`` because it grants nothing.  A caller
+    asking "is there already a pull request for this head?" before opening
+    one needs no authority to open one, and a port that bundled the two
+    would hand the write to every caller that only wanted the answer.
+    """
+
+    async def open_pr_for_head(
+        self, *, repo_url: str, head: str
+    ) -> tuple[str, int] | None:
+        """The OPEN pull request on *head* — its web URL and number — or none.
+
+        ``None`` is an ANSWER and not a failure: the forge was asked and
+        reported nothing open on that head.  A read that could not be
+        made RAISES, because "nobody has opened one" and "we could not
+        find out" send a check-before-create caller to opposite branches,
+        and the second one arriving as the first opens a duplicate.
+
+        More than one open pull request on one head is the forge
+        contradicting the question it was asked, and it raises rather
+        than picking: a caller that skipped its own create because of an
+        arbitrary pick would attach its work to whichever came back first.
+        """
+        ...
+
+    def branch_web_url(self, *, repo_url: str, branch: str) -> str:
+        """The page a person opens to look at *branch* on this forge.
+
+        Composed by the adapter because the shape of that address belongs
+        to the forge: a caller assembling it would be a second statement
+        of one vendor's URL layout, free to disagree with the first.
+
+        This asks the forge nothing, so it is not a coroutine and it
+        never reports whether the branch exists — an address is not an
+        observation, and a caller must not read one as the other.
+        """
+        ...
+
+
+@runtime_checkable
+class PRStateReader(Protocol):
+    """Read one PR's native lifecycle without edit, close or merge authority."""
+
+    async def read_pr_state(self, *, repo_url: str, pr_number: int) -> PRState:
+        """Require exact addressed identity; failed or missing reads refuse."""
+        ...
+
+
+@runtime_checkable
+class CheckChainRunner(Protocol):
+    """Execute the declared ordered chain, retaining every step's output."""
+
+    async def run_chain(
+        self, *, cwd: str, steps: Sequence[CheckStep]
+    ) -> CheckChainResult: ...

@@ -22,6 +22,8 @@ from kodezart.chains.ralph_loop import RalphLoop
 from kodezart.chains.ralph_workflow import RalphWorkflowEngine
 from kodezart.chains.remediation import RemediationChain
 from kodezart.chains.ticket_generation import TicketGenerationLoop
+from kodezart.composition.delivery import build_native_lane_workflow
+from kodezart.composition.scope_runtime import build_scope_runtime
 from kodezart.core.config import AppConfig
 from kodezart.core.errors import RateLimitedSoftFailureError
 from kodezart.core.logging import BoundLogger, get_logger
@@ -326,7 +328,42 @@ def build_workflow_engine(
 
     forge_arm = arm(github_api)
     forge_less_arm = arm(None)
+    scoped_arm = None
+    if scope_tracker is not None:
+        if criteria is None:
+            raise ValueError("Scope execution requires a native criterion source")
+        scoped_arm = build_scope_runtime(
+            tracker=scope_tracker,
+            forge_lane=build_native_lane_workflow(
+                fire=forge_arm.fire,
+                config=config,
+                service=agent_service,
+                git=git,
+                forge=github_api,
+                prompts=prompts,
+                skills=skills,
+                gate=gate,
+                repositories=repositories,
+            ),
+            forge_less_lane=build_native_lane_workflow(
+                fire=forge_less_arm.fire,
+                config=config,
+                service=agent_service,
+                git=git,
+                forge=None,
+                prompts=prompts,
+                skills=skills,
+                gate=gate,
+                repositories=repositories,
+            ),
+            forge_probe=github_api,
+            git=git,
+            cache=cache,
+            repositories=repositories,
+            config=config,
+        )
     return OriginRoutedWorkflowEngine(
         forge_arm=forge_arm,
         forge_less_arm=forge_less_arm,
+        scoped_arm=scoped_arm,
     )

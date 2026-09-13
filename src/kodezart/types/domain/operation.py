@@ -629,7 +629,7 @@ class OperationConfig(OperationModel):
         for index, repo in enumerate(self.repos):
             failures.extend(
                 f"repos[{index}].checks: {failure}"
-                for failure in _check_chain_failures(repo.checks)
+                for failure in check_chain_failures(repo.checks)
             )
 
         known_users = {p.tracker_user for p in self.principals}
@@ -899,7 +899,7 @@ FIELD_OWNERSHIP: dict[str, ConfigOwnership] = {
 }
 
 
-def _check_chain_failures(steps: Sequence[CheckStep]) -> list[str]:
+def check_chain_failures(steps: Sequence[CheckStep]) -> list[str]:
     """Every structural failure in one repository's check chain.
 
     A chain that names a step twice, depends on a step that is not in it,
@@ -929,5 +929,6 @@ def _check_chain_failures(steps: Sequence[CheckStep]) -> list[str]:
                 failures.append(f"step {step.name!r} closes a dependency cycle")
                 break
             walked.add(cursor)
-            cursor = by_name[cursor].depends_on
+            ancestor = by_name.get(cursor)
+            cursor = None if ancestor is None else ancestor.depends_on
     return failures

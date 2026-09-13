@@ -49,7 +49,7 @@ class LinearMarkers:
             "work_ref",
             r'\s+role="(?P<role>[^"]+)"\s+branch="(?P<branch>[^"]+)"'
             r'(?:\s+pushed-head-sha="(?P<sha>[^"]+)")?'
-            r"\s*-->",
+            r'(?:\s+landing="(?P<landing>[^"]*)")?\s*-->',
         )
 
     def work_ref_body(self, ref: WorkRef) -> str:
@@ -60,7 +60,7 @@ class LinearMarkers:
         )
         return (
             f'<!-- {self._prefix("work_ref")} role="{ref.role.value}" '
-            f'branch="{ref.branch}"{sha} -->'
+            f'branch="{ref.branch}"{sha} landing="{ref.landing.value}" -->'
         )
 
     @property
