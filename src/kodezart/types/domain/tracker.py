@@ -7,7 +7,7 @@ translation between these types and whatever their backend calls the
 same thing.
 
 Issues are addressed by ``issue_key``: the stable, human-readable
-identifier the backend already exposes (``KOD-57`` on Linear, ``#412``
+identifier the backend already exposes (a team-prefixed key on Linear, ``#412``
 on GitHub Issues, ``PROJ-8`` on Jira).  The adapter maps a key onto its
 backend's internal identifier; consumers never see one.
 """
@@ -16,7 +16,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Annotated
 
-from pydantic import ConfigDict, Field
+from pydantic import AwareDatetime, ConfigDict, Field, field_validator
 
 from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.operation import OperationConfig, QueueState
@@ -104,7 +104,7 @@ class IssueRelationKind(StrEnum):
     port — an issue names its own parent through ``parent_key`` — and no
     backend measured so far reports children at all.  A member no
     adapter can emit and no consumer can branch on is vocabulary that
-    reads as a capability (KOD-143).
+    reads as a capability.
     """
 
     BLOCKED_BY = "blocked_by"
@@ -119,6 +119,8 @@ class MappingKind(StrEnum):
     USER = "user"
     TEAM = "team"
     QUEUE_STATE = "queue_state"
+    SCOPE_LABEL = "scope_label"
+    ISSUE_LABEL = "issue_label"
     WORKFLOW_STATE = "workflow_state"
     DOCUMENT = "document"
 
@@ -130,7 +132,12 @@ class MappingKind(StrEnum):
 #: a ref outside this set is ``TrackerEnsureConflictError`` everywhere, which
 #: is what keeps an adapter and a test double from disagreeing about it.
 INSTATABLE_MAPPING_KINDS: frozenset[MappingKind] = frozenset(
-    {MappingKind.QUEUE_STATE, MappingKind.DOCUMENT},
+    {
+        MappingKind.QUEUE_STATE,
+        MappingKind.SCOPE_LABEL,
+        MappingKind.ISSUE_LABEL,
+        MappingKind.DOCUMENT,
+    },
 )
 
 
@@ -150,12 +157,16 @@ class EnsureAction(StrEnum):
 class ClaimStatus(StrEnum):
     """Outcome partition of one atomic claim attempt.
 
-    ``LOST`` is a value, never an exception: losing a race is an ordinary
-    result the caller routes on.
+    ``LOST`` and ``CONTENDED`` are values, never exceptions: losing a race
+    is an ordinary result the caller routes on.  They differ in what the
+    backend settled: ``LOST`` names a holder that owns the issue now,
+    ``CONTENDED`` a race the backend could not order, where every claimant
+    stood back and nobody holds it.  Only ``GRANTED`` is ownership.
     """
 
     GRANTED = "granted"
     LOST = "lost"
+    CONTENDED = "contended"
 
 
 class TrackerModel(CamelCaseModel):
@@ -194,13 +205,18 @@ class TrackerIssue(TrackerModel):
     state_name: str
     state_kind: WorkflowStateKind
     queue_states: frozenset[QueueState]
+    #: Configured semantic issue-label keys, never backend label spellings.
+    issue_labels: frozenset[str] = frozenset()
     team_key: str | None
     #: The project the issue belongs to, in both spellings the backend
     #: reports them — display name and id — or ``None`` for an issue in no
     #: project.  Carried off the scan so a team's declared scope is judged
-    #: without a per-issue read (KOD-169).
+    #: without a per-issue read.
     project: str | None = None
     project_id: str | None = None
+    #: The milestone reported by the full issue read; omission means the
+    #: issue belongs to none. Adapters translate their membership field.
+    milestone_key: str | None = None
     relations: tuple[IssueRelation, ...] = ()
     parent_key: str | None = None
     assignee_key: str | None = None
@@ -209,13 +225,39 @@ class TrackerIssue(TrackerModel):
     url: str
 
 
+class TrackerIssueStateChange(TrackerModel):
+    """An issue and its current state's entry time from one full read."""
+
+    issue: TrackerIssue
+    state_changed_at: AwareDatetime
+
+
+class TrackerIssueRevision(TrackerModel):
+    """One full issue read and the digest of the body in that same read.
+
+    The digest is opaque to consumers. An adapter may derive it from the
+    body bytes or use a backend revision that changes only with the body.
+    Neither metadata changes nor another surface's body can move it.
+    """
+
+    issue: TrackerIssue
+    body_digest: str = Field(min_length=1)
+
+    @field_validator("body_digest")
+    @classmethod
+    def _require_digest(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("body_digest must be nonempty")
+        return value
+
+
 class TrackerComment(TrackerModel):
     """One comment on an issue.
 
     ``author_key`` carries the backend's attribution, and ``None`` is a
     STATE of it rather than a missing value: the backend reported no
     author at all, which is what a removed user or an integration leaves
-    behind (KOD-172).  Every reader of attribution has to surface that as
+    behind.  Every reader of attribution has to surface that as
     itself — a substituted name would attribute a comment to somebody who
     did not write it, and a reader that cannot distinguish the two states
     would answer "who said this?" with a guess.  Required with no default,
@@ -227,15 +269,27 @@ class TrackerComment(TrackerModel):
     author_key: Annotated[str, Field(min_length=1)] | None
     body: str
     created_at: datetime
+    #: The addressed comment when the backend reports a reply relationship.
+    reply_to: Annotated[str, Field(min_length=1)] | None = None
 
 
 class ClaimResult(TrackerModel):
-    """The outcome of one atomic claim attempt."""
+    """The outcome of one atomic claim attempt.
+
+    ``holder`` is always the claimant this result answers, so a caller
+    reads its own identity back whatever the outcome.  ``current_holder``
+    names an OWNER and nothing else: the holder that owns the issue after
+    a ``LOST``.  It is absent on a grant, and absent under a
+    ``CONTENDED`` — a race the backend settled for nobody has no owner to
+    name, and naming the party contended with would report a claimant as
+    holding an issue it was refused.
+    """
 
     issue_key: str = Field(min_length=1)
     status: ClaimStatus
     holder: str = Field(min_length=1)
     expires_at: datetime
+    current_holder: str | None = None
 
 
 class TrackerAsset(TrackerModel):

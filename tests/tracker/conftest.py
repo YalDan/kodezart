@@ -6,16 +6,19 @@ adapter joins the suite by adding one entry to ``TRACKER_ADAPTERS`` — no
 test is copied, which is the whole point of a port-level suite.
 """
 
-import asyncio
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from inspect import isawaitable
 
 import pytest
 
 from kodezart.adapters.linear_mcp_tracker import LinearMcpTracker
+from kodezart.core.backoff import RetryPolicy
 from kodezart.core.protocols import TrackerPort
 from kodezart.types.domain.dispatch import PassSignal, SelfWriteLedger
-from kodezart.types.domain.operation import LifecycleStage
+from kodezart.types.domain.operation import LifecycleStage, ScopeLabel
+from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.tracker import IssueQuery, ReviewQuery
 from tests.fakes import (
     FakeLinearMcpServer,
@@ -25,11 +28,46 @@ from tests.fakes import (
     FakeMcpIssue,
     FakeTrackerPort,
 )
+from tests.tracker.marker_config import MARKER_PREFIXES
 
 FIXTURE_NOW: datetime = datetime(2026, 3, 1, 12, 0, tzinfo=UTC)
 
+
+@dataclass
+class FixtureClock:
+    """The conformance clock, movable by the cases that need to cross an expiry.
+
+    Frozen at ``FIXTURE_NOW`` unless a case advances it, so every existing
+    case reads the same instant it always did.  A duration is honored by
+    the implementation under test, so an expiry is shown by moving the
+    clock past it rather than by asking for a degenerate duration.
+    """
+
+    now: datetime = FIXTURE_NOW
+
+    def __call__(self) -> datetime:
+        return self.now
+
+    def advance(self, *, seconds: float) -> None:
+        self.now += timedelta(seconds=seconds)
+
+
+def _frozen_now() -> datetime:
+    """The instant every caller that states no clock of its own reads."""
+    return FIXTURE_NOW
+
+
+FIRE_SCOPE_LABEL = "execution-consent"
+FIRE_STAGE_LABEL = "criteria-prepared"
+FIRE_STAGE_KEY = "criteria_ready"
+FIRE_ENTRY_LABELS = [FIRE_SCOPE_LABEL, FIRE_STAGE_LABEL]
+
 APPROVER = "fixture-approver"
 BYSTANDER = "fixture-bystander"
+#: The non-human writer the operation declares.  A workspace member like
+#: any other, so a boot over a credential belonging to it has a declared
+#: agent identity to recognise itself by.
+AGENT_IDENTITY = "fixture-agent"
 
 QUEUE_STATE_LABELS: dict[str, str] = {
     "triage": "queue:triage",
@@ -96,10 +134,21 @@ SCOPE_DIAGNOSIS = "auth_insufficient_scope: the credential cannot read this"
 def fixture_server(
     *,
     scope_refusals: Mapping[str, str] | None = None,
+    actor: str = APPROVER,
+    clock: Callable[[], datetime] = _frozen_now,
 ) -> FakeLinearMcpServer:
-    """A fresh fake workspace — one per test, never shared."""
+    """A fresh fake workspace — one per test, never shared.
+
+    *actor* is the account whose credential the workspace is dialled with:
+    it authors every comment this server records and it is what the
+    current-user read answers.  It defaults to the approver so the
+    comment-author assertions elsewhere read the same author they always
+    did; a boot case that needs an attributable non-human writer passes
+    ``AGENT_IDENTITY``.
+    """
     return FakeLinearMcpServer(
         tool_errors=scope_refusals,
+        comment_clock=clock,
         diffs=[
             FakeMcpDiff(
                 full_identifier=FIXTURE_REVIEW,
@@ -184,7 +233,7 @@ def fixture_server(
                 content=DOCUMENT_CONTENT,
             ),
         ],
-        users=[APPROVER, BYSTANDER],
+        users=[APPROVER, BYSTANDER, AGENT_IDENTITY],
         teams=["fixture-team", FOREIGN_TEAM],
         labels=list(QUEUE_STATE_LABELS.values()),
         # Both boards in the fixture workspace offer the whole vocabulary:
@@ -192,25 +241,40 @@ def fixture_server(
         # would make the ordinary case the divergent one.
         statuses={team: list(STATE_TYPES) for team in ("fixture-team", FOREIGN_TEAM)},
         state_types=STATE_TYPES,
-        actor=APPROVER,
+        actor=actor,
     )
 
 
-def linear_over_fake_mcp(server: FakeLinearMcpServer) -> TrackerPort:
+def linear_over_fake_mcp(
+    server: FakeLinearMcpServer,
+    *,
+    scope_labels: Mapping[str, str] | None = None,
+    clock: Callable[[], datetime] = _frozen_now,
+) -> TrackerPort:
     """The shipped Linear adapter, dialing the in-process fake MCP server."""
     return LinearMcpTracker(
+        marker_prefixes=MARKER_PREFIXES,
+        issue_labels={
+            "criterion": "acceptance-condition",
+            FIRE_STAGE_KEY: FIRE_STAGE_LABEL,
+        },
+        criteria_stage_label_key=FIRE_STAGE_KEY,
+        scope_labels=scope_labels
+        if scope_labels is not None
+        else {"approved": FIRE_SCOPE_LABEL},
         caller=server,
         queue_state_labels=QUEUE_STATE_LABELS,
         workflow_state_names=WORKFLOW_STATE_NAMES,
         team_identifiers=TEAM_IDENTIFIERS,
-        max_retries=0,
-        retry_backoff_factor=1.0,
-        clock=lambda: FIXTURE_NOW,
+        retry=RetryPolicy(attempts=1, initial_delay=1.0),
+        clock=clock,
         ledger=SelfWriteLedger(),
     )
 
 
-async def _snapshot(source: TrackerPort) -> FakeTrackerPort:
+async def _snapshot(
+    source: TrackerPort, *, clock: Callable[[], datetime]
+) -> FakeTrackerPort:
     """Read the fixture workspace through the adapter into domain objects."""
     keys = [
         issue.issue_key
@@ -223,6 +287,7 @@ async def _snapshot(source: TrackerPort) -> FakeTrackerPort:
     refusals = await source.verify_scan_capability(signals=list(PassSignal))
     port = FakeTrackerPort(
         issues=issues,
+        marker_prefixes=MARKER_PREFIXES,
         assets={key: await source.list_issue_assets(issue_key=key) for key in keys},
         documents={
             DOCUMENT_KEY: await source.read_document(document_key=DOCUMENT_KEY),
@@ -234,14 +299,19 @@ async def _snapshot(source: TrackerPort) -> FakeTrackerPort:
             if (spec := await source.read_base_spec(issue_key=key)) is not None
         },
         scan_refusals=refusals,
+        writer_identities=await source.writer_identity(),
         known_identifiers=[
-            *(APPROVER, BYSTANDER),
+            *(APPROVER, BYSTANDER, AGENT_IDENTITY),
             *TEAM_IDENTIFIERS.values(),
             *QUEUE_STATE_LABELS.values(),
             *WORKFLOW_STATE_NAMES.values(),
         ],
-        clock=lambda: FIXTURE_NOW,
+        clock=clock,
     )
+    port.issue_state_changes = {
+        key: (await source.read_issue_state_change(issue_key=key)).state_changed_at
+        for key in keys
+    }
     # A credential refused the review scan cannot read one, so the double it
     # seeds holds none — the same state the workspace behind it presents.
     if PassSignal.reviews_changed not in refusals:
@@ -254,32 +324,48 @@ async def _snapshot(source: TrackerPort) -> FakeTrackerPort:
     return port
 
 
-def fake_port_over_fixture(server: FakeLinearMcpServer) -> TrackerPort:
+async def fake_port_over_fixture(
+    server: FakeLinearMcpServer, *, clock: Callable[[], datetime] = _frozen_now
+) -> TrackerPort:
     """The consumer double, seeded from the SAME fixture workspace.
 
     Seeded by reading through the adapter rather than by restating the
     workspace in domain vocabulary: a hand-written second statement of the
     fixture is a place for the two to disagree, and the disagreement would
     show up as the double being wrong about the thing consumers trust it
-    for.  ``asyncio.run`` is safe here because the workspace is pure
-    in-memory state with nothing bound to a loop.
+    for. Use pytest's loop: an ``asyncio.run`` here displaces its current
+    loop and can leak that loop's selector sockets between cases.
     """
-    return asyncio.run(_snapshot(linear_over_fake_mcp(server)))
+    port = await _snapshot(linear_over_fake_mcp(server, clock=clock), clock=clock)
+    port.criteria_stage_label_key = FIRE_STAGE_KEY
+    port.scope_label_members = {
+        ScopeRef(kind=ScopeKind.ISSUE, key=key): frozenset({ScopeLabel.APPROVED})
+        for key, issue in server.issues.items()
+        if FIRE_SCOPE_LABEL in issue.labels
+    }
+    return port
 
 
 #: Real adapters — every one must serve the fixture workspace unchanged.
-TRACKER_ADAPTERS: dict[str, Callable[[FakeLinearMcpServer], TrackerPort]] = {
-    "linear-mcp": linear_over_fake_mcp,
+TRACKER_ADAPTERS: dict[
+    str, Callable[[FakeLinearMcpServer, FixtureClock], TrackerPort]
+] = {
+    "linear-mcp": lambda server, clock: linear_over_fake_mcp(server, clock=clock),
 }
 
 #: Test doubles that consumers are tested on.  They run the SAME suite, per
 #: the ruling that this is what keeps them honest: a double that drifts from
 #: the contract fails exactly where a non-conforming vendor adapter would.
-TRACKER_DOUBLES: dict[str, Callable[[FakeLinearMcpServer], TrackerPort]] = {
-    "fake-port": fake_port_over_fixture,
+TRACKER_DOUBLES: dict[
+    str, Callable[[FakeLinearMcpServer, FixtureClock], Awaitable[TrackerPort]]
+] = {
+    "fake-port": lambda server, clock: fake_port_over_fixture(server, clock=clock),
 }
 
-TRACKER_IMPLEMENTATIONS: dict[str, Callable[[FakeLinearMcpServer], TrackerPort]] = {
+TRACKER_IMPLEMENTATIONS: dict[
+    str,
+    Callable[[FakeLinearMcpServer, FixtureClock], TrackerPort | Awaitable[TrackerPort]],
+] = {
     **TRACKER_ADAPTERS,
     **TRACKER_DOUBLES,
 }
@@ -299,30 +385,67 @@ def refused_signals(request: pytest.FixtureRequest) -> tuple[PassSignal, ...]:
 
 
 @pytest.fixture
-def server(refused_signals: tuple[PassSignal, ...]) -> FakeLinearMcpServer:
-    """A fresh fixture workspace."""
+def server(
+    refused_signals: tuple[PassSignal, ...], clock: FixtureClock
+) -> FakeLinearMcpServer:
+    """A fresh fixture workspace, on the same clock the holders read.
+
+    The backend's stamps are what ownership is arbitrated by, so a
+    workspace whose comment log ran on a clock of its own would answer
+    every question about expiry with a skew no deployment has.
+    """
     return fixture_server(
         scope_refusals={
             SCAN_TOOL_BY_SIGNAL[signal]: SCOPE_DIAGNOSIS for signal in refused_signals
         },
+        clock=clock,
     )
 
 
+@pytest.fixture
+def clock() -> FixtureClock:
+    """One movable clock per case, shared by the implementation under test."""
+    return FixtureClock()
+
+
 @pytest.fixture(params=sorted(TRACKER_IMPLEMENTATIONS))
-def tracker(
+async def tracker(
     request: pytest.FixtureRequest,
     server: FakeLinearMcpServer,
+    clock: FixtureClock,
 ) -> TrackerPort:
     """Every registered adapter AND double, over one fixture workspace."""
     factory = TRACKER_IMPLEMENTATIONS[request.param]
-    return factory(server)
+    port = factory(server, clock)
+    return await port if isawaitable(port) else port
 
 
 @pytest.fixture(params=sorted(TRACKER_ADAPTERS))
 def adapter(
     request: pytest.FixtureRequest,
     server: FakeLinearMcpServer,
+    clock: FixtureClock,
 ) -> TrackerPort:
     """Registered ADAPTERS only — for rules about backend substitutability."""
     factory = TRACKER_ADAPTERS[request.param]
-    return factory(server)
+    return factory(server, clock)
+
+
+@pytest.fixture
+def tracker_writes(
+    tracker: TrackerPort, server: FakeLinearMcpServer
+) -> Callable[[], tuple[object, ...]]:
+    """Observe actual mutation calls independently of the port's return values."""
+    if isinstance(tracker, FakeTrackerPort):
+        return lambda: (
+            *tracker.comment_writes,
+            *tracker.issue_writes,
+            *tracker.issue_creations,
+            *tracker.workflow_writes,
+            *tracker.restored_states,
+            *tracker.queue_writes,
+            *tracker.classification_writes,
+        )
+    return lambda: tuple(
+        call for call in server.calls if call[0] in {"save_comment", "save_issue"}
+    )

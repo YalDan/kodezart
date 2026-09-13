@@ -68,8 +68,6 @@ async def test_persist_creates_kodezart_files_and_pushes(
     workspace = GitWorktreeProvider(
         git=git,
         cache=cache,
-        committer_name="test",
-        committer_email="t@t.dev",
     )
     persister = GitArtifactPersister(
         git=git,
@@ -110,8 +108,6 @@ async def test_clean_removes_kodezart_directory(
     workspace = GitWorktreeProvider(
         git=git,
         cache=cache,
-        committer_name="test",
-        committer_email="t@t.dev",
     )
     persister = GitArtifactPersister(
         git=git,
@@ -153,8 +149,6 @@ async def test_clean_noop_when_no_artifacts(
     workspace = GitWorktreeProvider(
         git=git,
         cache=cache,
-        committer_name="test",
-        committer_email="t@t.dev",
     )
     persister = GitArtifactPersister(
         git=git,
@@ -191,8 +185,6 @@ async def test_persist_skips_when_target_gitignores_artifact_dir(
     workspace = GitWorktreeProvider(
         git=git,
         cache=cache,
-        committer_name="test",
-        committer_email="t@t.dev",
     )
     persister = GitArtifactPersister(
         git=git,
@@ -240,8 +232,6 @@ async def test_persist_reports_ignored_by_target_status(
     workspace = GitWorktreeProvider(
         git=git,
         cache=cache,
-        committer_name="test",
-        committer_email="t@t.dev",
     )
     persister = GitArtifactPersister(
         git=git,
@@ -280,8 +270,6 @@ async def test_persist_reports_unchanged_when_artifacts_already_committed(
     workspace = GitWorktreeProvider(
         git=git,
         cache=cache,
-        committer_name="test",
-        committer_email="t@t.dev",
     )
     persister = GitArtifactPersister(
         git=git,

@@ -5,7 +5,7 @@ than defines.
 """
 
 from kodezart.adapters.host_skill_inventory import HostSkillInventory
-from kodezart.core.config import AppConfig
+from kodezart.core.agent_settings import AgentSettings
 from kodezart.core.errors import SkillPreflightError
 from kodezart.core.logging import BoundLogger
 from kodezart.core.protocols import (
@@ -71,7 +71,7 @@ def preflight_prompt_skill_loadouts(
 
 async def boot_skills(
     *,
-    config: AppConfig,
+    settings: AgentSettings,
     prompts: PromptProvider,
     log: BoundLogger,
 ) -> SkillsSelection:
@@ -82,13 +82,13 @@ async def boot_skills(
     saying so, and a loadout naming an unregistered skill renders a prompt
     that quietly loads nothing.
     """
-    skills = config.skills_selection()
-    preflight_skills(skills, HostSkillInventory(home_dir=config.claude_home_dir))
+    skills = settings.skills
+    preflight_skills(skills, HostSkillInventory(home_dir=settings.home_dir))
     preflight_prompt_skill_loadouts(skills, prompts)
     await log.ainfo(
         "skills_selection_resolved",
         mode=skills.mode.value,
         allowlist=list(skills.allowlist),
-        setting_sources=config.setting_sources,
+        setting_sources=settings.setting_sources,
     )
     return skills

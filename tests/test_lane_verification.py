@@ -16,7 +16,7 @@ from kodezart.core.config import AppConfig
 from kodezart.core.prompt_namespaces import bindings_for
 from kodezart.types.domain.prompts import PromptKey
 from tests.fakes import pass_render_variables
-from tests.prompt_census import PROMPT_FUNCTION_COUNT
+from tests.prompt_census import PROMPT_FUNCTION_NAMES
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 EXAMPLE = REPO_ROOT / "docs" / "operation.example.toml"
@@ -61,7 +61,7 @@ def test_claude_opus_completeness_check_passes_at_the_full_census() -> None:
     """Loading succeeds only because the default set supplies every key."""
     registry = default_registry()
     table = registry.resolution_table()
-    assert len(table) == PROMPT_FUNCTION_COUNT
+    assert {key.value for key in table} == PROMPT_FUNCTION_NAMES
     assert set(table) == set(PromptKey)
 
 
@@ -72,22 +72,26 @@ def test_claude_opus_completeness_check_passes_at_the_full_census() -> None:
 
 def test_every_writer_in_the_corrected_inventory_names_the_gate() -> None:
     """V-3: the five-writer inventory routes through the gate."""
-    workflow = (
-        REPO_ROOT / "src" / "kodezart" / "chains" / "ralph_workflow.py"
+    workflow = "\n".join(
+        (REPO_ROOT / "src" / "kodezart" / "chains" / name).read_text(encoding="utf-8")
+        for name in ("fire_specification.py", "fire_implementation.py")
+    )
+    delivery = (
+        REPO_ROOT / "src" / "kodezart" / "chains" / "authored_publication.py"
     ).read_text(encoding="utf-8")
     persister = (
         REPO_ROOT / "src" / "kodezart" / "adapters" / "git_change_persister.py"
     ).read_text(encoding="utf-8")
 
-    for writer in (
-        "destination=OutboundDestination.BRANCH_NAME",
-        "destination=OutboundDestination.ARTIFACT_TICKET_JSON",
-        "destination=OutboundDestination.ARTIFACT_CRITERIA_JSON",
-        "destination=OutboundDestination.PR_TITLE",
-        "destination=OutboundDestination.PR_BODY",
-        "destination=OutboundDestination.PR_COMMENT",
+    for writer, owner in (
+        ("destination=OutboundDestination.BRANCH_NAME", workflow),
+        ("destination=OutboundDestination.ARTIFACT_TICKET_JSON", workflow),
+        ("destination=OutboundDestination.ARTIFACT_CRITERIA_JSON", workflow),
+        ("destination=OutboundDestination.PR_TITLE", delivery),
+        ("destination=OutboundDestination.PR_BODY", delivery),
+        ("destination=OutboundDestination.PR_COMMENT", delivery),
     ):
-        assert writer in workflow, f"{writer} does not route through the gate"
+        assert writer in owner, f"{writer} does not route through the gate"
 
     assert "OutboundDestination.COMMIT_MESSAGE," in persister
     assert "OutboundDestination.COMMIT_MESSAGE_DIVERGENCE_REPLAY," in persister
@@ -96,6 +100,7 @@ def test_every_writer_in_the_corrected_inventory_names_the_gate() -> None:
     # the event vocabulary and the error's writer field are typed rather
     # than prose. A bare string at a gate call site is the defect.
     assert "writer_name=" not in workflow
+    assert "writer_name=" not in delivery
     assert "writer_name=" not in persister
 
 

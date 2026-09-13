@@ -11,6 +11,7 @@ from kodezart.types.domain.agent import (
     ResultEvent,
     WorkflowRemediationEvent,
 )
+from kodezart.types.domain.fire_spec import AuthoredSpec
 from kodezart.types.domain.remediation import RemediationEntry
 from kodezart.types.domain.trajectory import IterationRecord
 from kodezart.types.domain.workflow import RemediationRequest
@@ -58,7 +59,7 @@ def _request(
     return RemediationRequest(
         entry=entry,
         round_index=round_index,
-        original_ticket=make_ticket_draft(title=_ORIGINAL_TITLE),
+        original_spec=AuthoredSpec(ticket=make_ticket_draft(title=_ORIGINAL_TITLE)),
         work_branch="kodezart/widget-12345678",
         work_base_ref="kodezart/widget-12345678",
         pr_url=pr_url,

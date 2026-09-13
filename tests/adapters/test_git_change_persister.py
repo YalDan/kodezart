@@ -7,10 +7,8 @@ import pytest
 import structlog.testing
 
 from kodezart.adapters.git_change_persister import GitChangePersister
-from kodezart.adapters.pattern_outbound_gate import PatternOutboundContentGate
-from kodezart.adapters.regex_content_scanner import RegexContentScanner
+from kodezart.adapters.outbound_admission import OutboundAdmission
 from kodezart.adapters.subprocess_git_service import SubprocessGitService
-from kodezart.core.config import AppConfig
 from kodezart.core.protocols import ChangePersister
 from kodezart.domain.errors import OutboundContentBlockedError
 from kodezart.types.domain.agent import ResultEvent
@@ -21,6 +19,7 @@ from kodezart.types.domain.gating import (
     WriterShape,
 )
 from kodezart.types.domain.persist import PersistSource
+from kodezart.types.domain.privacy import PrivateSurface
 from tests.fakes import (
     SUPPRESS_ALL_SKILLS,
     FakeAgentExecutor,
@@ -28,6 +27,7 @@ from tests.fakes import (
     PassThroughGate,
     make_prompt_provider,
 )
+from tests.outbound import make_admission
 
 
 async def _run_git(cmd: list[str], cwd: Path) -> None:
@@ -347,14 +347,7 @@ async def test_commit_message_routes_through_the_gate() -> None:
 
 async def test_blocked_commit_message_raises_before_committing() -> None:
     """A blocked commit message fails the write loudly; nothing is committed."""
-    gate = PatternOutboundContentGate(
-        scanners=[
-            RegexContentScanner(
-                patterns={RedactionCategory.INFRA_ENDPOINTS: [r"because"]},
-            )
-        ],
-        verdicts=AppConfig().deny_pattern_verdicts,
-    )
+    gate = gate_over()
     git = FakeGitService(has_changes_result=True)
     persister = GitChangePersister(
         git=git,
@@ -373,7 +366,7 @@ async def test_blocked_commit_message_raises_before_committing() -> None:
                 is_error=False,
                 num_turns=1,
                 session_id="s",
-                structured_output={"title": "feat: x", "body": "because"},
+                structured_output={"title": "feat: x", "body": "https://db.internal"},
             ),
         ],
     )
@@ -430,13 +423,11 @@ async def test_divergence_replay_message_routes_through_the_gate() -> None:
 # ---------------------------------------------------------------------------
 
 
-def gate_over(
-    patterns: dict[RedactionCategory, list[str]],
-) -> PatternOutboundContentGate:
-    """The shipped gate wiring with one test pattern set installed."""
-    return PatternOutboundContentGate(
-        scanners=[RegexContentScanner(patterns=patterns)],
-        verdicts=AppConfig().deny_pattern_verdicts,
+def gate_over() -> OutboundAdmission:
+    return make_admission(
+        private_surface=PrivateSurface(
+            hosts=["db.internal"], workspaces={"linear.app": ["private-example"]}
+        )
     )
 
 
@@ -458,7 +449,7 @@ def commit_message_executor(*, title: str, body: str) -> FakeAgentExecutor:
 
 def persister_over(
     git: FakeGitService,
-    gate: PatternOutboundContentGate | PassThroughGate,
+    gate: OutboundAdmission | PassThroughGate,
 ) -> GitChangePersister:
     return GitChangePersister(
         git=git,
@@ -477,7 +468,7 @@ def gate_events(captured: list[dict[str, object]]) -> list[dict[str, object]]:
 async def test_clean_commit_message_emits_a_clean_verdict_event() -> None:
     """No hits: the event still fires, naming the writer and the visibility."""
     git = FakeGitService(has_changes_result=True)
-    persister = persister_over(git, gate_over({}))
+    persister = persister_over(git, gate_over())
     with structlog.testing.capture_logs() as captured:
         result = await persister.persist(
             workspace_path="/tmp/ws",
@@ -502,7 +493,7 @@ async def test_redacted_commit_message_emits_its_hit_categories() -> None:
     git = FakeGitService(has_changes_result=True)
     persister = persister_over(
         git,
-        gate_over({RedactionCategory.TRACKER_URLS: [r"TRACKER-\d+"]}),
+        gate_over(),
     )
     with structlog.testing.capture_logs() as captured:
         result = await persister.persist(
@@ -510,7 +501,7 @@ async def test_redacted_commit_message_emits_its_hit_categories() -> None:
             branch="kodezart/b",
             executor=commit_message_executor(
                 title="feat: x",
-                body="closes TRACKER-99",
+                body="closes https://linear.app/private-example/issue/EX-99",
             ),
             backup_ref_id_prefix="abcd1234",
             skills=SUPPRESS_ALL_SKILLS,
@@ -534,7 +525,7 @@ async def test_blocked_commit_message_emits_the_verdict_before_raising() -> None
     git = FakeGitService(has_changes_result=True)
     persister = persister_over(
         git,
-        gate_over({RedactionCategory.INFRA_ENDPOINTS: [r"db\.internal"]}),
+        gate_over(),
     )
     with structlog.testing.capture_logs() as captured:
         with pytest.raises(OutboundContentBlockedError):
@@ -543,7 +534,7 @@ async def test_blocked_commit_message_emits_the_verdict_before_raising() -> None
                 branch="kodezart/b",
                 executor=commit_message_executor(
                     title="feat: x",
-                    body="points at db.internal",
+                    body="points at https://db.internal",
                 ),
                 backup_ref_id_prefix="abcd1234",
                 skills=SUPPRESS_ALL_SKILLS,
@@ -565,7 +556,7 @@ async def test_divergence_replay_verdict_is_observed_under_its_own_writer() -> N
         ancestor_pairs=set(),
         trees={"r" * 40: "t1", "a" * 40: "t2"},
     )
-    persister = persister_over(git, gate_over({}))
+    persister = persister_over(git, gate_over())
     with structlog.testing.capture_logs() as captured:
         await persister.persist(
             workspace_path="/tmp/ws",
@@ -586,7 +577,7 @@ async def test_private_target_is_observed_as_clean_without_redaction() -> None:
     git = FakeGitService(has_changes_result=True)
     persister = persister_over(
         git,
-        gate_over({RedactionCategory.TRACKER_URLS: [r"TRACKER-\d+"]}),
+        gate_over(),
     )
     with structlog.testing.capture_logs() as captured:
         result = await persister.persist(
@@ -594,7 +585,7 @@ async def test_private_target_is_observed_as_clean_without_redaction() -> None:
             branch="kodezart/b",
             executor=commit_message_executor(
                 title="feat: x",
-                body="closes TRACKER-99",
+                body="closes https://linear.app/private-example/issue/EX-99",
             ),
             backup_ref_id_prefix="abcd1234",
             skills=SUPPRESS_ALL_SKILLS,
@@ -605,4 +596,7 @@ async def test_private_target_is_observed_as_clean_without_redaction() -> None:
     assert events[0]["verdict"] == GateVerdict.CLEAN.value
     assert events[0]["visibility"] == RepoVisibility.PRIVATE.value
     assert result is not None
-    assert result.message == "feat: x\n\ncloses TRACKER-99"
+    assert (
+        result.message
+        == "feat: x\n\ncloses https://linear.app/private-example/issue/EX-99"
+    )

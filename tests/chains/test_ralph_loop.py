@@ -12,6 +12,7 @@ from typing import TypedDict
 import pytest
 from pydantic import ValidationError
 
+from kodezart.chains.authored_delivery import AuthoredDeliveryCoordinator
 from kodezart.chains.ralph_loop import RalphLoop
 from kodezart.chains.ralph_workflow import RalphWorkflowEngine
 from kodezart.chains.ticket_generation import TicketGenerationLoop
@@ -43,7 +44,8 @@ from kodezart.types.domain.criteria import CriterionVerdict, ValidatedCriterion
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.persist import PersistResult, PersistSource
 from kodezart.types.domain.prompts import PromptKey
-from kodezart.types.domain.session import SessionType
+from kodezart.types.domain.run_records import RunIdentity
+from kodezart.types.domain.session import PermissionMode, SessionType
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.subagents import (
     NO_SUBAGENTS,
@@ -140,7 +142,7 @@ def _run_kwargs(
         # A first round cuts its branch from the base it is scoped
         # against; only a remediation round is handed a different ref.
         work_base_ref=work_base_ref if work_base_ref is not None else spec.base_branch,
-        permission_mode="bypassPermissions",
+        permission_mode=PermissionMode.UNATTENDED,
         allowed_tools=["Bash"],
         acceptance_criteria=acceptance_criteria or make_criteria("Tests pass"),
         cache_key="test-cache-key",
@@ -253,10 +255,11 @@ async def test_loop_second_iteration_succeeds() -> None:
             *,
             prompt: str,
             cwd: str,
-            permission_mode: str,
+            permission_mode: PermissionMode,
             allowed_tools: list[str],
             skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
             session_type: SessionType = FAKE_SESSION_TYPE,
+            run_identity: RunIdentity | None = None,
             agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
             session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
             session_id: str | None = None,
@@ -567,10 +570,11 @@ async def test_loop_re_evaluates_all_criteria_every_iteration(
             *,
             prompt: str,
             cwd: str,
-            permission_mode: str,
+            permission_mode: PermissionMode,
             allowed_tools: list[str],
             skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
             session_type: SessionType = FAKE_SESSION_TYPE,
+            run_identity: RunIdentity | None = None,
             agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
             session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
             session_id: str | None = None,
@@ -717,10 +721,11 @@ async def test_evaluate_node_emits_workflowiteration_with_per_iter_commit_sha(
             *,
             prompt: str,
             cwd: str,
-            permission_mode: str,
+            permission_mode: PermissionMode,
             allowed_tools: list[str],
             skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
             session_type: SessionType = FAKE_SESSION_TYPE,
+            run_identity: RunIdentity | None = None,
             agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
             session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
             session_id: str | None = None,
@@ -1008,7 +1013,7 @@ async def test_the_evaluation_prompt_states_each_criterion_verdict() -> None:
     _ = [e async for e in loop.run(**_run_kwargs(acceptance_criteria=criteria))]
 
     rendered = str(executor.calls[-1]["prompt"])
-    assert "AC-1 [hard_gate] [unverifiable]" in rendered
+    assert "AC-1 [unverifiable]" in rendered
     assert "[blocked on: a PostgreSQL server reachable from the runner]" in rendered
 
 
@@ -1036,10 +1041,11 @@ async def test_no_structured_output_raises_with_ralph_evaluator_raise_site() -> 
             *,
             prompt: str,
             cwd: str,
-            permission_mode: str,
+            permission_mode: PermissionMode,
             allowed_tools: list[str],
             skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
             session_type: SessionType = FAKE_SESSION_TYPE,
+            run_identity: RunIdentity | None = None,
             agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
             session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
             session_id: str | None = None,
@@ -1103,10 +1109,11 @@ class _ScriptedLoopExecutor:
         *,
         prompt: str,
         cwd: str,
-        permission_mode: str,
+        permission_mode: PermissionMode,
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
@@ -1649,10 +1656,11 @@ class _NonPermutationExecutor:
         *,
         prompt: str,
         cwd: str,
-        permission_mode: str,
+        permission_mode: PermissionMode,
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
@@ -1899,16 +1907,24 @@ def test_every_loop_requires_a_delay_floor_of_its_caller() -> None:
     """No default resolver on any of the three loops (KOD-282).
 
     Measured at ``6e98499``: ``delay_floor_for`` defaulted to ``None`` on
-    ``RalphLoop``, ``TicketGenerationLoop`` and ``RalphWorkflowEngine``, so
+    ``RalphLoop``, ``TicketGenerationLoop`` and ``AuthoredDeliveryCoordinator``, so
     an engine assembled without one silently retried a provider rate limit
     at the graph's own speed — the respawns KOD-174 measured, with the
     remedy wired but not reaching the object.  A caller that means "no
     floor" now has to pass a resolver saying so.
+
+    Fire owns the resolver after phase extraction. Authored delivery must
+    receive that same typed fire collaborator; its retrying nodes are checked
+    against ``self.fire.floor`` and ``self.fire.retry`` by the wiring guard.
     """
     for loop in (RalphLoop, TicketGenerationLoop, RalphWorkflowEngine):
         parameter = inspect.signature(loop.__init__).parameters["delay_floor_for"]
         assert parameter.default is inspect.Parameter.empty, loop.__name__
         assert parameter.kind is inspect.Parameter.KEYWORD_ONLY, loop.__name__
+    fire = inspect.signature(AuthoredDeliveryCoordinator.__init__).parameters["fire"]
+    assert fire.default is inspect.Parameter.empty
+    assert fire.kind is inspect.Parameter.KEYWORD_ONLY
+    assert fire.annotation is RalphWorkflowEngine
 
 
 # ---------------------------------------------------------------------------
@@ -1947,10 +1963,11 @@ class _RejectedThenEvaluatingExecutor:
         *,
         prompt: str,
         cwd: str,
-        permission_mode: str,
+        permission_mode: PermissionMode,
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,

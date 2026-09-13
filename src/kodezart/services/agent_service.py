@@ -5,13 +5,24 @@ from collections.abc import AsyncGenerator, Sequence
 
 from kodezart.core.error_egress import build_error_event
 from kodezart.core.logging import BoundLogger, get_logger
-from kodezart.core.protocols import AgentExecutor, ChangePersister, WorkspaceProvider
+from kodezart.core.protocols import (
+    AgentExecutor,
+    ChangePersister,
+    NativeWriteGuard,
+    WorkspaceProvider,
+)
 from kodezart.domain.agent import generate_workspace_id
+from kodezart.domain.amendment import NativeWriteRefusalError
 from kodezart.domain.errors import WorkspaceError
 from kodezart.domain.git_url import resolve_repo_url
-from kodezart.types.domain.agent import AgentEvent, ResultEvent
+from kodezart.services.native_execution import NativeExecution, NativeExecutionRequest
+from kodezart.types.domain.agent import (
+    AgentEvent,
+    ResultEvent,
+)
 from kodezart.types.domain.gating import RepoVisibility
-from kodezart.types.domain.session import SessionType
+from kodezart.types.domain.run_records import RunIdentity
+from kodezart.types.domain.session import AllowedTools, PermissionMode, SessionType
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.subagents import (
     NO_SUBAGENTS,
@@ -47,10 +58,11 @@ class AgentService:
         repo_path: str | None = None,
         repo_url: str | None = None,
         branch: str | None = None,
-        permission_mode: str,
-        allowed_tools: list[str],
+        permission_mode: PermissionMode,
+        allowed_tools: AllowedTools,
         skills: SkillsSelection,
         session_type: SessionType,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
@@ -73,6 +85,7 @@ class AgentService:
             allowed_tools=allowed_tools,
             skills=skills,
             session_type=session_type,
+            run_identity=run_identity,
             agents=agents,
             session_policy=session_policy,
             session_id=session_id,
@@ -86,10 +99,11 @@ class AgentService:
         *,
         prompt: str,
         workspace_path: str,
-        permission_mode: str,
-        allowed_tools: list[str],
+        permission_mode: PermissionMode,
+        allowed_tools: AllowedTools,
         skills: SkillsSelection,
         session_type: SessionType,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
@@ -103,6 +117,7 @@ class AgentService:
             allowed_tools=allowed_tools,
             skills=skills,
             session_type=session_type,
+            run_identity=run_identity,
             agents=agents,
             session_policy=session_policy,
             session_id=session_id,
@@ -119,15 +134,17 @@ class AgentService:
         base_branch: str = "main",
         branch_name: str | None = None,
         ralph_branch: str | None = None,
-        permission_mode: str,
-        allowed_tools: list[str],
+        permission_mode: PermissionMode,
+        allowed_tools: AllowedTools,
         skills: SkillsSelection,
         session_type: SessionType,
+        run_identity: RunIdentity | None = None,
         visibility: RepoVisibility,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         create_branch: bool = True,
         cache_key: str | None = None,
+        native_guard: NativeWriteGuard | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
         """Workflow mode: acquire, execute, persist, release."""
         effective_branch = branch_name or ""
@@ -143,11 +160,13 @@ class AgentService:
             allowed_tools=allowed_tools,
             skills=skills,
             session_type=session_type,
+            run_identity=run_identity,
             agents=agents,
             session_policy=session_policy,
             visibility=visibility,
             persist_branch=effective_ralph,
             cache_key=cache_key,
+            native_guard=native_guard,
         ):
             if isinstance(event, ResultEvent):
                 event = event.model_copy(
@@ -164,10 +183,11 @@ class AgentService:
         ref: str,
         branch_name: str | None = None,
         create_branch: bool = True,
-        permission_mode: str,
-        allowed_tools: list[str],
+        permission_mode: PermissionMode,
+        allowed_tools: AllowedTools,
         skills: SkillsSelection,
         session_type: SessionType,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         visibility: RepoVisibility = RepoVisibility.UNKNOWN,
@@ -175,9 +195,47 @@ class AgentService:
         output_format: dict[str, object] | None = None,
         persist_branch: str | None = None,
         cache_key: str | None = None,
+        native_guard: NativeWriteGuard | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
         if repo_url is not None:
             repo_url = resolve_repo_url(repo_url, self._git_base_url)
+
+        if native_guard is not None:
+            if (
+                self._persister is None
+                or not persist_branch
+                or branch_name != persist_branch
+            ):
+                raise NativeWriteRefusalError(
+                    "Native persistence is not configured for this branch"
+                )
+            execution = NativeExecution(
+                executor=self._executor,
+                workspace=self._workspace,
+                persister=self._persister,
+                guard=native_guard,
+                request=NativeExecutionRequest(
+                    prompt=prompt,
+                    repo_path=repo_path,
+                    repo_url=repo_url,
+                    ref=ref,
+                    branch=persist_branch,
+                    create_branch=create_branch,
+                    permission_mode=permission_mode,
+                    allowed_tools=allowed_tools,
+                    skills=skills,
+                    session_type=session_type,
+                    run_identity=run_identity,
+                    agents=agents,
+                    session_policy=session_policy,
+                    session_id=session_id,
+                    visibility=visibility,
+                    cache_key=cache_key,
+                ),
+            )
+            async for event in execution.stream():
+                yield event
+            return
 
         try:
             workspace_path = await self._workspace.acquire(
@@ -214,6 +272,7 @@ class AgentService:
                 allowed_tools=allowed_tools,
                 skills=skills,
                 session_type=session_type,
+                run_identity=run_identity,
                 agents=agents,
                 session_policy=session_policy,
                 session_id=session_id,
@@ -241,7 +300,6 @@ class AgentService:
                             "branch": persist_branch,
                         },
                     )
-
             if buffered_result:
                 yield buffered_result
         finally:
