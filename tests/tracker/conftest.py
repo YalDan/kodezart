@@ -271,7 +271,9 @@ def linear_over_fake_mcp(
     )
 
 
-async def _snapshot(source: TrackerPort) -> FakeTrackerPort:
+async def _snapshot(
+    source: TrackerPort, *, clock: Callable[[], datetime]
+) -> FakeTrackerPort:
     """Read the fixture workspace through the adapter into domain objects."""
     keys = [
         issue.issue_key
@@ -284,6 +286,7 @@ async def _snapshot(source: TrackerPort) -> FakeTrackerPort:
     refusals = await source.verify_scan_capability(signals=list(PassSignal))
     port = FakeTrackerPort(
         issues=issues,
+        marker_prefixes=MARKER_PREFIXES,
         assets={key: await source.list_issue_assets(issue_key=key) for key in keys},
         documents={
             DOCUMENT_KEY: await source.read_document(document_key=DOCUMENT_KEY),
@@ -295,14 +298,19 @@ async def _snapshot(source: TrackerPort) -> FakeTrackerPort:
             if (spec := await source.read_base_spec(issue_key=key)) is not None
         },
         scan_refusals=refusals,
+        writer_identities=await source.writer_identity(),
         known_identifiers=[
-            *(APPROVER, BYSTANDER),
+            *(APPROVER, BYSTANDER, AGENT_IDENTITY),
             *TEAM_IDENTIFIERS.values(),
             *QUEUE_STATE_LABELS.values(),
             *WORKFLOW_STATE_NAMES.values(),
         ],
-        clock=lambda: FIXTURE_NOW,
+        clock=clock,
     )
+    port.issue_state_changes = {
+        key: (await source.read_issue_state_change(issue_key=key)).state_changed_at
+        for key in keys
+    }
     # A credential refused the review scan cannot read one, so the double it
     # seeds holds none — the same state the workspace behind it presents.
     if PassSignal.reviews_changed not in refusals:
