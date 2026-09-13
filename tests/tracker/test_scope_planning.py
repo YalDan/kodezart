@@ -11,7 +11,7 @@ from kodezart.domain.errors import (
     ScopePlanRefusalError,
     ScopeReadError,
 )
-from kodezart.services.scope_planning import read_scope_plan
+from kodezart.services.scope_planning import read_scope_facts, read_scope_plan
 from kodezart.types.domain.dispatch import SelfWriteLedger
 from kodezart.types.domain.operation import OperationMemberAbsentError
 from kodezart.types.domain.scope import ScopeContainer, ScopeKind, ScopeRef
@@ -160,7 +160,10 @@ async def test_closed_decisions_and_sibling_edges_return_native_plan_facts(
     "damage",
     ["foreign-dependency", "changed-dependency", "changed-member", "new-member"],
 )
-async def test_unstable_native_facts_never_return_a_plan(build, monkeypatch, damage):
+@pytest.mark.parametrize("read_scope", [read_scope_plan, read_scope_facts])
+async def test_unstable_native_facts_never_return_a_plan(
+    build, monkeypatch, damage, read_scope
+):
     tracker = build(
         [
             row("root", blockers=("external",)),
@@ -196,7 +199,7 @@ async def test_unstable_native_facts_never_return_a_plan(build, monkeypatch, dam
     monkeypatch.setattr(tracker, "read_planning_issue", read)
     monkeypatch.setattr(tracker, "scope_issues", scoped)
     with pytest.raises(ScopeReadError):
-        await read_scope_plan(ref=SCOPE, tracker=tracker)
+        await read_scope(ref=SCOPE, tracker=tracker)
 
 
 @pytest.mark.parametrize("missing", ["criterion", "decision"])

@@ -9,7 +9,7 @@ from kodezart.services.scope_membership import (
     read_scope_members,
 )
 from kodezart.types.domain.scope import ResolvedScope, ScopePlanSnapshot, ScopeRef
-from kodezart.types.domain.tracker import WorkflowStateKind, is_open
+from kodezart.types.domain.tracker import TrackerIssue, WorkflowStateKind, is_open
 
 
 async def read_scope_plan(*, ref: ScopeRef, tracker: TrackerPort) -> ScopePlanSnapshot:
@@ -23,6 +23,58 @@ async def read_scope_plan(*, ref: ScopeRef, tracker: TrackerPort) -> ScopePlanSn
     This establishes no approval or readiness. The future walker must apply
     approval, live subtree closure and dispatch ownership to the returned facts.
     """
+    snapshot, subtree = await _read_scope_facts(ref=ref, tracker=tracker)
+    facts = {
+        issue.issue_key: issue
+        for issue in (*snapshot.scope.issues, *snapshot.dependencies)
+    }
+    open_decisions = tuple(
+        issue.issue_key
+        for issue in subtree
+        if "decision" in issue.issue_labels and is_open(issue.state_kind)
+    )
+    backlog = tuple(
+        issue.issue_key
+        for issue in subtree
+        if "criterion" in issue.issue_labels
+        and issue.state_kind is WorkflowStateKind.BACKLOG
+    )
+    crossing = tuple(
+        (issue.issue_key, target)
+        for issue in facts.values()
+        for target in blocker_keys(issue)
+        if (
+            "criterion" in issue.issue_labels
+            or "criterion" in facts[target].issue_labels
+        )
+        and (issue.parent_key is None or issue.parent_key != facts[target].parent_key)
+    )
+    if open_decisions or backlog or crossing:
+        raise ScopePlanRefusalError(
+            ref=ref,
+            open_decisions=open_decisions,
+            backlog_criteria=backlog,
+            cross_subtree_edges=crossing,
+        )
+    # Preserve stage refusal precedence over the existing structural check.
+    plan_topology(issues=tuple(facts.values()), candidate_keys=frozenset())
+    return snapshot
+
+
+async def read_scope_facts(*, ref: ScopeRef, tracker: TrackerPort) -> ScopePlanSnapshot:
+    """Read coherent membership and dependencies without future-stage admission."""
+    snapshot, _subtree = await _read_scope_facts(ref=ref, tracker=tracker)
+    plan_topology(
+        issues=(*snapshot.scope.issues, *snapshot.dependencies),
+        candidate_keys=frozenset(),
+    )
+    return snapshot
+
+
+async def _read_scope_facts(
+    *, ref: ScopeRef, tracker: TrackerPort
+) -> tuple[ScopePlanSnapshot, tuple[TrackerIssue, ...]]:
+    """Share the same native observations and rereads across scope consumers."""
     tracker.require_scope_plan_reads()
     members = await read_scope_members(tracker=tracker, scope=ref)
     for key, issue in members.items():
@@ -62,38 +114,8 @@ async def read_scope_plan(*, ref: ScopeRef, tracker: TrackerPort) -> ScopePlanSn
         != subtree
     ):
         raise ScopeReadError("member subtrees changed during planning", ref=ref)
-    open_decisions = tuple(
-        key
-        for key, issue in subtree.items()
-        if "decision" in issue.issue_labels and is_open(issue.state_kind)
-    )
-    backlog = tuple(
-        key
-        for key, issue in subtree.items()
-        if "criterion" in issue.issue_labels
-        and issue.state_kind is WorkflowStateKind.BACKLOG
-    )
-    crossing = tuple(
-        (issue.issue_key, target)
-        for issue in facts.values()
-        for target in blocker_keys(issue)
-        if (
-            "criterion" in issue.issue_labels
-            or "criterion" in facts[target].issue_labels
-        )
-        and (issue.parent_key is None or issue.parent_key != facts[target].parent_key)
-    )
-    if open_decisions or backlog or crossing:
-        raise ScopePlanRefusalError(
-            ref=ref,
-            open_decisions=open_decisions,
-            backlog_criteria=backlog,
-            cross_subtree_edges=crossing,
-        )
-    # The existing planner owns cycle detection. No candidate has yet been
-    # approved, so the stage check deliberately emits no ready-set claim.
-    plan_topology(issues=tuple(facts.values()), candidate_keys=frozenset())
-    return ScopePlanSnapshot(
+    snapshot = ScopePlanSnapshot(
         scope=ResolvedScope(ref=ref, issues=tuple(members.values())),
         dependencies=tuple(issue for key, issue in facts.items() if key not in members),
     )
+    return snapshot, tuple(subtree.values())
