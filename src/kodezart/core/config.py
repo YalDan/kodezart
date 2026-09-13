@@ -1,6 +1,7 @@
 """Application configuration via Pydantic Settings."""
 
 from typing import Self
+
 from pydantic import Field, model_validator
 from pydantic_settings import (
     BaseSettings,
@@ -10,6 +11,7 @@ from pydantic_settings import (
     SecretsSettingsSource,
     SettingsConfigDict,
 )
+
 from kodezart.core.agent_settings import AgentSettings
 from kodezart.core.audit_settings import AuditSettings
 from kodezart.core.git_settings import GitSettings
@@ -25,9 +27,6 @@ from kodezart.types.domain.ticket_review import (
     DEFAULT_MAX_REVIEWS,
     TicketReviewMode,
 )
-
-
-
 
 
 class AppConfig(BaseSettings):
@@ -144,9 +143,11 @@ class AppConfig(BaseSettings):
             checked(dotenv_settings),
             checked(file_secret_settings),
         )
+
     organize: OrganizeSettings | None = None
     write_back: WriteBackSettings | None = None
     audit: AuditSettings | None = None
+
     http: HttpSettings = Field(
         default_factory=HttpSettings,
         description="HTTP application metadata, debug behavior and route prefix.",
@@ -155,7 +156,6 @@ class AppConfig(BaseSettings):
         default_factory=LoggingSettings,
         description="Logging severity and output format.",
     )
-
     github_token: str | None = Field(
         default=None,
         min_length=1,
@@ -327,8 +327,6 @@ class AppConfig(BaseSettings):
             "always runs independently of this setting."
         ),
     )
-
-
 
     remediation_max_rounds: int = Field(
         default=1,
@@ -676,7 +674,6 @@ class AppConfig(BaseSettings):
     )
     agent: AgentSettings = Field(default_factory=AgentSettings)
 
-
     checkpoint_url: str | None = Field(
         default=None,
         description="LangGraph checkpoint URL. :memory: or PostgreSQL.",
@@ -721,12 +718,6 @@ class AppConfig(BaseSettings):
         ),
     )
 
-    # Credentials are the one category that ships populated: a credential
-    # leaving the process is never acceptable regardless of deployment. The
-    # shapes come from the table the wire-egress scrubber reads too, so a
-    # vendor is covered on both surfaces or on neither. Every other category
-    # ships empty, so an unconfigured deployment behaves exactly as it did
-    # before the gate existed.
     operation_config: str | None = Field(
         default=None,
         description=(
@@ -747,6 +738,7 @@ class AppConfig(BaseSettings):
         default_factory=JobQueueSettings,
         description="Job queue capacity and record/replay retention.",
     )
+
     @model_validator(mode="after")
     def _audit_full_interval_includes_tick(self) -> Self:
         """A full-coverage interval cannot be shorter than its scheduler tick."""
@@ -756,13 +748,6 @@ class AppConfig(BaseSettings):
                 "audit_sweep_interval_seconds"
             )
         return self
-
-
-
-
-
-
-
 
     def explicit_max_reviews(self) -> int | None:
         """``max_reviews`` when the deployment configured one, else ``None``.
@@ -774,7 +759,6 @@ class AppConfig(BaseSettings):
         the only place that knows which fields were supplied.
         """
         return self.max_reviews if "max_reviews" in self.model_fields_set else None
-
 
     @classmethod
     def from_env(cls) -> Self:

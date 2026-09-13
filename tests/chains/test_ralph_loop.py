@@ -8,8 +8,10 @@ from collections.abc import AsyncGenerator, Sequence
 from itertools import pairwise
 from pathlib import Path
 from typing import TypedDict
+
 import pytest
 from pydantic import ValidationError
+
 from kodezart.chains.authored_delivery import AuthoredDeliveryCoordinator
 from kodezart.chains.ralph_loop import RalphLoop
 from kodezart.chains.ralph_workflow import RalphWorkflowEngine
@@ -72,9 +74,6 @@ from tests.fakes import (
     make_prompt_provider,
     no_delay_floor,
 )
-
-
-
 
 
 def _make_loop(

@@ -16,8 +16,10 @@ import re
 import sys
 from collections import Counter
 from pathlib import Path
+
 import pytest
 from pydantic import BaseModel, ValidationError
+
 from kodezart.types.domain.agent import (
     WIRE_SCHEMAS,
     AcceptanceCriteriaOutput,
@@ -49,9 +51,6 @@ from kodezart.types.domain.remediation import RemediationPlan
 from kodezart.types.domain.write_back import WriteBackFinding
 from tests.types.schema_nodes import DEFS, schema_nodes
 
-
-
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SRC = REPO_ROOT / "src" / "kodezart"
 
@@ -67,8 +66,8 @@ SCHEMA_ARGUMENT = re.compile(
 #: re-introduces a keyword filter under the old name is rejected by the
 #: same sweep that rejects an unrostered schema.
 SANITIZER_CALL = "sanitize_schema("
-#: The one dispatch site whose schema is not a roster constant: the agent
-#: endpoint forwards the schema its caller supplied, unaltered.
+#: The public endpoint forwards its caller-owned schema unchanged. Shared
+#: internal forwarding is registered only at the exact sites below.
 CALLER_SUPPLIED_SCHEMA = "request.output_schema"
 
 #: The model each roster schema is derived from. The equality test below
@@ -98,7 +97,12 @@ WIRE_MODELS: dict[str, type[BaseModel]] = {
     "DETECTOR_REMOVAL_SCHEMA": DetectorRemovalJudgment,
 }
 
+
+# This retained model has no dispatch consumer at the reviewed source. Its
+# schema/model/constraint checks remain required, and a new dispatch
+# must explicitly update this census instead of being inferred from counts.
 UNDISPATCHED_SCHEMAS = {"DRAFT_CRITIQUE_SCHEMA"}
+
 
 def source_files():
     return {
@@ -146,6 +150,7 @@ def scoped_calls(source: str):
     visitor.visit(ast.parse(source))
     return visitor.calls
 
+
 def audit_forwarding_lines(source: str, *, relative_path: str) -> set[int]:
     """Only the actual shared dispatch and its owned-workspace bridge forward."""
     if relative_path != "services/audit_sessions.py":
@@ -181,6 +186,7 @@ def audit_forwarding_lines(source: str, *, relative_path: str) -> set[int]:
                     lines.add(value.lineno)
     return lines
 
+
 def audit_schema_bindings(source: str, *, relative_path: str):
     """Each actual shared-helper caller supplies its own exact model schema."""
     return [
@@ -189,6 +195,7 @@ def audit_schema_bindings(source: str, *, relative_path: str):
         for keyword in call.keywords
         if keyword.arg == "output_schema"
     ]
+
 
 AUDIT_SCHEMA_BINDINGS = [
     (
@@ -392,6 +399,7 @@ def test_only_the_actual_owned_audit_forwarding_site_is_registered():
     for line in forwarded:
         assert "output_schema" in SCHEMA_ARGUMENT.findall(source.splitlines()[line - 1])
 
+
 @pytest.mark.parametrize("bridge", [False, True])
 @pytest.mark.parametrize(
     "damage", ["path", "owner", "nested", "lambda", "target", "filter", "wrong"]
@@ -433,6 +441,7 @@ def test_audit_schema_forwarding_registration_is_scoped_and_unfiltered(bridge, d
             '"schema": output_schema', '"schema": AUDIT_CLAIM_SCHEMA'
         )
     assert audit_forwarding_lines(source, relative_path=path) == set()
+
 
 def test_shared_judgment_callers_keep_their_exact_schema_and_forwarding_chain():
     bindings = [
@@ -531,6 +540,7 @@ def test_actual_schema_census_rejects_damaged_source(monkeypatch, damage, guard)
     with pytest.raises(AssertionError):
         guard()
 
+
 def test_the_undispatched_critique_model_is_only_declared_in_the_model_module():
     owners = {
         path
@@ -540,6 +550,7 @@ def test_the_undispatched_critique_model_is_only_declared_in_the_model_module():
         and node.id in {"DRAFT_CRITIQUE_SCHEMA", "DraftCritiqueOutput"}
     }
     assert owners == {"types/domain/agent.py"}
+
 
 def test_remediation_dispatch_and_validation_select_the_same_registered_model():
     source = source_files()["chains/remediation.py"]
@@ -574,6 +585,7 @@ def test_remediation_dispatch_and_validation_select_the_same_registered_model():
         "RemediationPlan.model_validate(result_event.structured_output) if native "
         "else TicketDraftOutput.model_validate(result_event.structured_output)"
     )
+
 
 @pytest.mark.parametrize(
     "old,new",

@@ -11,7 +11,9 @@ git service can make that claim true.
 import asyncio
 import uuid
 from pathlib import Path
+
 import pytest
+
 from kodezart.adapters.git_branch_merger import GitBranchMerger
 from kodezart.adapters.git_change_persister import GitChangePersister
 from kodezart.adapters.git_worktree_provider import GitWorktreeProvider
@@ -42,9 +44,6 @@ from tests.fakes import (
     no_delay_floor,
 )
 from tests.workflow_factory import make_authored_workflow
-
-
-
 
 BLOCKER_A_BRANCH = "kodezart/blocker-a-11111111"
 BLOCKER_B_BRANCH = "kodezart/blocker-b-22222222"

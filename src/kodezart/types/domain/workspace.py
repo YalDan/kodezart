@@ -3,8 +3,8 @@
 from pydantic import ConfigDict, Field
 
 from kodezart.types.base import CamelCaseModel
-
 from kodezart.types.domain.amendment import CommitSha, Nonblank
+
 
 class GitWorktreeIdentity(CamelCaseModel):
     """Read-only Git and filesystem identity, with no captured file contents."""
@@ -23,6 +23,7 @@ class GitWorktreeIdentity(CamelCaseModel):
     branch: Nonblank
     head_sha: CommitSha
     content_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
 
 class WorkspaceSnapshot(CamelCaseModel):
     """An actual acquisition and the native parent job that can resume it."""

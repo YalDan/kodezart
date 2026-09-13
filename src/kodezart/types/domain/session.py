@@ -11,6 +11,7 @@ from enum import StrEnum
 from pathlib import PurePosixPath
 from typing import Annotated, Final, Literal, Self
 from urllib.parse import urlsplit
+
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -19,10 +20,8 @@ from pydantic import (
     field_validator,
     model_validator,
 )
+
 from kodezart.types.base import CamelCaseModel
-
-
-
 
 
 class PermissionMode(StrEnum):
@@ -37,6 +36,7 @@ class PermissionMode(StrEnum):
     PLAN = "plan"
     UNATTENDED = "unattended"
 
+
 class SessionFailureKind(StrEnum):
     """A reported session failure, independent of provider error vocabulary."""
 
@@ -47,6 +47,7 @@ class SessionFailureKind(StrEnum):
     BUDGET_EXHAUSTED = "budget_exhausted"
     MALFORMED_OUTPUT = "malformed_output"
     EXECUTION_ERROR = "execution_error"
+
 
 class ToolPreset(StrEnum):
     """Existing application tool bundles, expanded by the session adapter.
@@ -59,6 +60,9 @@ class ToolPreset(StrEnum):
     DELEGATED_EVALUATION = "delegated_evaluation"
     AUTHORING = "authoring"
     IMPLEMENTATION = "implementation"
+
+
+type AllowedTools = ToolPreset | list[str]
 
 
 class SessionType(StrEnum):
@@ -154,6 +158,7 @@ class HttpKnowledge(BaseModel):
             )
         return headers
 
+
 class StdioKnowledge(BaseModel):
     """One installed process and its explicit credential environment entry."""
 
@@ -196,6 +201,7 @@ class StdioKnowledge(BaseModel):
         if self.credential_env is not None and self.credential is not None:
             env[self.credential_env] = self.credential.get_secret_value()
         return env
+
 
 KnowledgeConnection = Annotated[
     HttpKnowledge | StdioKnowledge, Field(discriminator="transport")

@@ -5,14 +5,12 @@ from typing import Annotated, NewType
 from pydantic import ConfigDict, Field
 
 from kodezart.types.base import CamelCaseModel
-
 from kodezart.types.domain.agent import TicketDraftOutput
-
 from kodezart.types.domain.criterion_ref import CriterionRef as CriterionRef
 
 IssueRef = NewType("IssueRef", str)
-
 CriterionRefItem = Annotated[CriterionRef, Field(min_length=1)]
+
 
 class AuthoredSpec(CamelCaseModel):
     """The ticket produced by the authored single-issue path."""
@@ -20,6 +18,7 @@ class AuthoredSpec(CamelCaseModel):
     model_config = ConfigDict(frozen=True)
 
     ticket: TicketDraftOutput
+
 
 class TrackerSpec(CamelCaseModel):
     """A subject read from the tracker, with opaque issue-key provenance.
@@ -35,5 +34,6 @@ class TrackerSpec(CamelCaseModel):
     body: str
     criteria: tuple[CriterionRefItem, ...]
     read_at_version: str = Field(min_length=1)
+
 
 FireSpec = AuthoredSpec | TrackerSpec

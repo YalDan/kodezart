@@ -1,5 +1,15 @@
 # Configuration Reference
 
+Tracker deployments require a complete `[run_event_states]` table. Its keys
+are the single `RunEventKind` vocabulary; startup names every missing or
+undeclared key before opening the tracker transport. `DERIVED` and
+`NO_TRANSITION` retain their ruled meanings, including `NO_TRANSITION` for
+both supervisor events and `node_session_started`. Other rows select an
+existing semantic workflow state. The table classifies events; it does not
+introduce a workflow-state writer or override criterion rollup. An operation
+without a configured tracker can retain an absent table. The annotated operation
+example shows the complete declaration; the minimal floor keeps collections empty.
+
 ## Overview
 
 Kodezart uses [Pydantic Settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/)
@@ -19,34 +29,6 @@ Audit claim, Evidence, source, terminal and sweep consumers receive only the
 resolved Git remote name, rather than the application configuration object.
 `KODEZART_GIT__REMOTE` retains its existing default and environment override;
 this API narrowing does not add an audit setting or compose a new scheduler.
-## Agent settings migration
-
-Agent deployment choices are grouped under `AppConfig.agent`. The existing
-skill-selection model owns its three modes and allowlist validation directly;
-there is no separate configuration conversion. Defaults and session behavior
-are unchanged. Replace these former field names with the corresponding paths:
-
-| Former field | Current field |
-| --- | --- |
-| `model` | `agent.model` |
-| `fallback_model` | `agent.fallback_model` |
-| `session_models` | `agent.session_models` |
-| `claude_output_style` | `agent.output_style` |
-| `claude_home_dir` | `agent.home_dir` |
-| `setting_sources` | `agent.setting_sources` |
-| `skills_mode` | `agent.skills.mode` |
-| `skills_allowlist` | `agent.skills.allowlist` |
-
-For environment and dotenv entries, prefix the uppercase current path with
-`KODEZART_` and separate each path component with two underscores. File-secret
-sources use one `KODEZART_AGENT` file containing the corresponding JSON object;
-for example `{"skills":{"mode":"none"}}`. Environment and dotenv sources also
-accept `KODEZART_AGENT__SKILLS` as a JSON object for the selection alone.
-The exact former constructor,
-environment, dotenv and file-secret names are refused without exposing values.
-Prompt-key typos are refused by name against the current vocabulary. Explicit
-skills still require a nonempty allowlist provisioned under the configured home;
-other modes require an empty allowlist. JSON allowlists remain arrays.
 
 ## Git settings migration
 
@@ -106,6 +88,35 @@ file-secret sources; delete their corresponding uppercase prefixed assignments:
 - `aggregate_tracker_object_nouns`
 - `aggregate_issue_identifier_pattern`
 - `aggregate_identifier_separator_pattern`
+
+## Agent settings migration
+
+Agent deployment choices are grouped under `AppConfig.agent`. The existing
+skill-selection model owns its three modes and allowlist validation directly;
+there is no separate configuration conversion. Defaults and session behavior
+are unchanged. Replace these former field names with the corresponding paths:
+
+| Former field | Current field |
+| --- | --- |
+| `model` | `agent.model` |
+| `fallback_model` | `agent.fallback_model` |
+| `session_models` | `agent.session_models` |
+| `claude_output_style` | `agent.output_style` |
+| `claude_home_dir` | `agent.home_dir` |
+| `setting_sources` | `agent.setting_sources` |
+| `skills_mode` | `agent.skills.mode` |
+| `skills_allowlist` | `agent.skills.allowlist` |
+
+For environment and dotenv entries, prefix the uppercase current path with
+`KODEZART_` and separate each path component with two underscores. File-secret
+sources use one `KODEZART_AGENT` file containing the corresponding JSON object;
+for example `{"skills":{"mode":"none"}}`. Environment and dotenv sources also
+accept `KODEZART_AGENT__SKILLS` as a JSON object for the selection alone.
+The exact former constructor,
+environment, dotenv and file-secret names are refused without exposing values.
+Prompt-key typos are refused by name against the current vocabulary. Explicit
+skills still require a nonempty allowlist provisioned under the configured home;
+other modes require an empty allowlist. JSON allowlists remain arrays.
 
 ## Tracker settings migration
 
@@ -252,6 +263,7 @@ and leased alarm writer remain separate work.
 | `KODEZART_TRACKER_QUERY_PAGE_SIZE` | `int` | `50` | >= 1, <= 250 | Issues requested per tracker scan page. |
 | `KODEZART_TRACKER__TOKEN` | `SecretStr \| None` | `None` |  | Tracker credential for the MCP server. Environment only, excluded from serialization, and masked in repr: a dumped config is copied into logs, fixtures and error payloads. The account it belongs to must be one of the operation's `agent_identities`; boot refuses otherwise. |
 | `KODEZART_KNOWLEDGE` | `KnowledgeSettings` | unconfigured | typed HTTP/stdio connection | Knowledge grants and server configuration; nested overrides below. |
+
 ## Adapter retry timing
 
 GitHub, Linear and the content scanner receive one validated `RetryPolicy`
@@ -266,51 +278,6 @@ replaces the exponential delay before jitter is applied. Retryable failures,
 unsafe write replays, response parsing and per-attempt timeouts remain owned
 by each adapter. Cancellation interrupts requests and backoff. LangGraph
 node retry policy is separate.
-
-## Knowledge environment migration
-
-The left column lists removed variables, rejected in the process environment,
-dotenv, initializer and file-secret sources. Rename each value to its replacement;
-do not keep HTTP-only settings when selecting stdio.
-
-| Removed variable | Replacement variable |
-| --- | --- |
-| `KODEZART_KNOWLEDGE_SESSION_GRANTS` | `KODEZART_KNOWLEDGE__SESSION_GRANTS` |
-| `KODEZART_KNOWLEDGE_MCP_SERVER_NAME` | `KODEZART_KNOWLEDGE__SERVER_NAME` |
-| `KODEZART_KNOWLEDGE_MCP_CALL_TIMEOUT_SECONDS` | `KODEZART_KNOWLEDGE__CALL_TIMEOUT_SECONDS` |
-| `KODEZART_KNOWLEDGE_MCP_ERROR_DETAIL_LIMIT` | `KODEZART_KNOWLEDGE__ERROR_DETAIL_LIMIT` |
-| `KODEZART_KNOWLEDGE_MCP_TRANSPORT` | `KODEZART_KNOWLEDGE__CONNECTION__TRANSPORT` |
-| `KODEZART_KNOWLEDGE_MCP_SERVER_URL` | `KODEZART_KNOWLEDGE__CONNECTION__SERVER_URL` |
-| `KODEZART_KNOWLEDGE_MCP_AUTH_HEADER` | `KODEZART_KNOWLEDGE__CONNECTION__AUTH_HEADER` |
-| `KODEZART_KNOWLEDGE_MCP_AUTH_SCHEME` | `KODEZART_KNOWLEDGE__CONNECTION__AUTH_SCHEME` |
-| `KODEZART_KNOWLEDGE_MCP_TOKEN` | `KODEZART_KNOWLEDGE__CONNECTION__CREDENTIAL` |
-| `KODEZART_KNOWLEDGE_MCP_GATEWAY_TOKEN` | `KODEZART_KNOWLEDGE__CONNECTION__GATEWAY_CREDENTIAL` |
-| `KODEZART_KNOWLEDGE_MCP_INTERACTIVE_AUTH_HOSTS` | `KODEZART_KNOWLEDGE__CONNECTION__INTERACTIVE_AUTH_HOSTS` |
-| `KODEZART_KNOWLEDGE_MCP_TIMEOUT_SECONDS` | `KODEZART_KNOWLEDGE__CONNECTION__TIMEOUT_SECONDS` |
-| `KODEZART_KNOWLEDGE_MCP_SSE_READ_TIMEOUT_SECONDS` | `KODEZART_KNOWLEDGE__CONNECTION__SSE_READ_TIMEOUT_SECONDS` |
-| `KODEZART_KNOWLEDGE_MCP_COMMAND` | `KODEZART_KNOWLEDGE__CONNECTION__COMMAND` |
-| `KODEZART_KNOWLEDGE_MCP_ARGS` | `KODEZART_KNOWLEDGE__CONNECTION__ARGS` |
-| `KODEZART_KNOWLEDGE_MCP_ENV` | `KODEZART_KNOWLEDGE__CONNECTION__ENV` |
-| `KODEZART_KNOWLEDGE_MCP_CREDENTIAL_ENV` | `KODEZART_KNOWLEDGE__CONNECTION__CREDENTIAL_ENV` |
-| `KODEZART_KNOWLEDGE_MCP_STDERR_TAIL_LIMIT` | `KODEZART_KNOWLEDGE__CONNECTION__STDERR_TAIL_LIMIT` |
-
-`knowledge.connection` is absent by default. Selecting one requires its
-explicit `transport` discriminator and `server_url` (HTTP) or `command`
-(stdio). Unknown fields, including explicitly empty fields from the other
-transport, are refused. The parsed connection is carried unchanged into the
-session grant and deterministic recorder. Both HTTP clients use the complete
-same credential headers; stdio clients use the same command and environment.
-
-Pydantic Settings keeps initializer > process environment > dotenv > file
-secret > default precedence. `KODEZART_KNOWLEDGE` accepts one JSON object;
-`KODEZART_KNOWLEDGE__CONNECTION` accepts a transport JSON object;
-`__` nested environment values override corresponding JSON members. `null`
-expresses absence, including a raw HTTP `AUTH_SCHEME=null` header. Session
-grants default to `[]`, server name to `notion`, call timeout to60 seconds
-(1–120), and error detail to500 characters (80–8000). HTTP exchange timeout
-is30 seconds (5–120), HTTP stream-read timeout300 (30–3600), and stdio stderr
-tail2000 bytes (200–20000). These transport bounds still serve actual record
-clients; they are not SDK tool timeout promises.
 
 ## Organize phase configuration
 
@@ -377,6 +344,51 @@ in-flight workspace acquisition or release to settle. A cancellation during
 acquisition releases the resulting workspace without starting the session;
 repeated cancellation cannot interrupt that cleanup.
 
+## Knowledge environment migration
+
+The left column lists removed variables, rejected in the process environment,
+dotenv, initializer and file-secret sources. Rename each value to its replacement;
+do not keep HTTP-only settings when selecting stdio.
+
+| Removed variable | Replacement variable |
+| --- | --- |
+| `KODEZART_KNOWLEDGE_SESSION_GRANTS` | `KODEZART_KNOWLEDGE__SESSION_GRANTS` |
+| `KODEZART_KNOWLEDGE_MCP_SERVER_NAME` | `KODEZART_KNOWLEDGE__SERVER_NAME` |
+| `KODEZART_KNOWLEDGE_MCP_CALL_TIMEOUT_SECONDS` | `KODEZART_KNOWLEDGE__CALL_TIMEOUT_SECONDS` |
+| `KODEZART_KNOWLEDGE_MCP_ERROR_DETAIL_LIMIT` | `KODEZART_KNOWLEDGE__ERROR_DETAIL_LIMIT` |
+| `KODEZART_KNOWLEDGE_MCP_TRANSPORT` | `KODEZART_KNOWLEDGE__CONNECTION__TRANSPORT` |
+| `KODEZART_KNOWLEDGE_MCP_SERVER_URL` | `KODEZART_KNOWLEDGE__CONNECTION__SERVER_URL` |
+| `KODEZART_KNOWLEDGE_MCP_AUTH_HEADER` | `KODEZART_KNOWLEDGE__CONNECTION__AUTH_HEADER` |
+| `KODEZART_KNOWLEDGE_MCP_AUTH_SCHEME` | `KODEZART_KNOWLEDGE__CONNECTION__AUTH_SCHEME` |
+| `KODEZART_KNOWLEDGE_MCP_TOKEN` | `KODEZART_KNOWLEDGE__CONNECTION__CREDENTIAL` |
+| `KODEZART_KNOWLEDGE_MCP_GATEWAY_TOKEN` | `KODEZART_KNOWLEDGE__CONNECTION__GATEWAY_CREDENTIAL` |
+| `KODEZART_KNOWLEDGE_MCP_INTERACTIVE_AUTH_HOSTS` | `KODEZART_KNOWLEDGE__CONNECTION__INTERACTIVE_AUTH_HOSTS` |
+| `KODEZART_KNOWLEDGE_MCP_TIMEOUT_SECONDS` | `KODEZART_KNOWLEDGE__CONNECTION__TIMEOUT_SECONDS` |
+| `KODEZART_KNOWLEDGE_MCP_SSE_READ_TIMEOUT_SECONDS` | `KODEZART_KNOWLEDGE__CONNECTION__SSE_READ_TIMEOUT_SECONDS` |
+| `KODEZART_KNOWLEDGE_MCP_COMMAND` | `KODEZART_KNOWLEDGE__CONNECTION__COMMAND` |
+| `KODEZART_KNOWLEDGE_MCP_ARGS` | `KODEZART_KNOWLEDGE__CONNECTION__ARGS` |
+| `KODEZART_KNOWLEDGE_MCP_ENV` | `KODEZART_KNOWLEDGE__CONNECTION__ENV` |
+| `KODEZART_KNOWLEDGE_MCP_CREDENTIAL_ENV` | `KODEZART_KNOWLEDGE__CONNECTION__CREDENTIAL_ENV` |
+| `KODEZART_KNOWLEDGE_MCP_STDERR_TAIL_LIMIT` | `KODEZART_KNOWLEDGE__CONNECTION__STDERR_TAIL_LIMIT` |
+
+`knowledge.connection` is absent by default. Selecting one requires its
+explicit `transport` discriminator and `server_url` (HTTP) or `command`
+(stdio). Unknown fields, including explicitly empty fields from the other
+transport, are refused. The parsed connection is carried unchanged into the
+session grant and deterministic recorder. Both HTTP clients use the complete
+same credential headers; stdio clients use the same command and environment.
+
+Pydantic Settings keeps initializer > process environment > dotenv > file
+secret > default precedence. `KODEZART_KNOWLEDGE` accepts one JSON object;
+`KODEZART_KNOWLEDGE__CONNECTION` accepts a transport JSON object;
+`__` nested environment values override corresponding JSON members. `null`
+expresses absence, including a raw HTTP `AUTH_SCHEME=null` header. Session
+grants default to `[]`, server name to `notion`, call timeout to60 seconds
+(1–120), and error detail to500 characters (80–8000). HTTP exchange timeout
+is30 seconds (5–120), HTTP stream-read timeout300 (30–3600), and stdio stderr
+tail2000 bytes (200–20000). These transport bounds still serve actual record
+clients; they are not SDK tool timeout promises.
+
 ## The knowledge-server grant
 
 `KODEZART_KNOWLEDGE__SESSION_GRANTS` names, one by one, the kinds of agent
@@ -412,6 +424,7 @@ The knowledge knobs are role-named, and the vendor appears only in values —
 the server name (`notion`) and the interactive-auth host list. Putting a
 different knowledge store behind the MCP mechanism is a change of values —
 never a schema migration, and never an edit to a consumer.
+
 ## The knowledge transport, and the shapes it can express
 
 `KODEZART_KNOWLEDGE__CONNECTION__TRANSPORT` states the route explicitly. Each route
@@ -476,6 +489,7 @@ reader lacks.
 operation config: the run-record rows then land on the tracker, the knowledge
 grant may be empty, and no knowledge server is dialled.
 
+
 ## Private knowledge base — the knowledge credential
 
 `KODEZART_KNOWLEDGE__CONNECTION__CREDENTIAL` is a credential, and it is configured **only**
@@ -491,6 +505,7 @@ Three properties hold for the value, and each is a test rather than a promise:
 - **redacted at egress** — if the value ever reaches adapter stderr or an
   exception message it is replaced with the redaction sentinel by
   `redact_credentials`, alongside the GitHub credential forms.
+
 ## Queue retention — two independent windows
 
 A terminal job has two parts that cost very different amounts, so each has its
@@ -512,6 +527,7 @@ silent gap.
 `queue.terminal_retention_seconds`: a buffer outliving the record that names it
 is incoherent, so the configuration is **rejected at startup** rather than
 clamped.
+
 ## .env.example
 
 The `.env.example` file intentionally includes only a curated subset of the
@@ -532,6 +548,7 @@ KODEZART_HTTP__API_V1_PREFIX=/api/v1
 KODEZART_GIT__CLONE_CACHE_DIR=/tmp/kodezart-clones
 KODEZART_GIT__INTEGRATION_WORKSPACE_DIR=/tmp/kodezart-integration
 ```
+
 ## Logging Modes
 
 ### JSON Lines (Production Default)
@@ -544,6 +561,7 @@ WARNING level.
 
 When `KODEZART_LOGGING__PRETTY=true`, log output uses colorized human-readable
 formatting for local development.
+
 ## Checkpointing
 
 LangGraph workflow state can be checkpointed for resumability. Configure via
@@ -663,6 +681,27 @@ the workspace; an unreadable namespace cannot establish a valid observation.
 Scoped execution is currently unavailable and refuses before tracker,
 repository or judgment work. There is no fire-time ruling prompt setting or
 preparation-only session. Authored workflow prompt configuration is unchanged.
+
+## Queue environment migration
+
+Queue settings now live in the ordinary `AppConfig.queue` value passed to the
+queue builder. The five operator choices, defaults and bounds are unchanged.
+Replace each former flat field's environment name (the uppercase field with the
+`KODEZART` prefix and separator) with the nested name below. Old flat assignments
+are rejected in constructor input, process environment, dotenv and file secrets.
+
+| Former flat field | Nested environment name |
+| --- | --- |
+| `queue_max_concurrent_runs_per_lane` | `KODEZART_QUEUE__MAX_CONCURRENT_RUNS_PER_LANE` |
+| `queue_max_depth_per_lane` | `KODEZART_QUEUE__MAX_DEPTH_PER_LANE` |
+| `queue_terminal_retention_seconds` | `KODEZART_QUEUE__TERMINAL_RETENTION_SECONDS` |
+| `queue_event_buffer_retention_seconds` | `KODEZART_QUEUE__EVENT_BUFFER_RETENTION_SECONDS` |
+| `queue_event_buffer_capacity` | `KODEZART_QUEUE__EVENT_BUFFER_CAPACITY` |
+
+A file secret named `KODEZART_QUEUE` contains a JSON object with these section
+field names, without the old `queue_` prefix. Standard settings precedence remains
+constructor input, process environment, dotenv, file secrets, then defaults.
+
 ## HTTP environment migration
 
 HTTP settings now live in `AppConfig.http`. The application consumes this section;
@@ -714,6 +753,21 @@ rejected. Each native tick uses the
 existing grooming run identity and resolves the configured repository trunk to
 a fresh immutable remote commit before assessment.
 
+## Tracker write verification
+
+Configured tracker-writing owners require `AppConfig.write_back` with
+`max_verify_rounds`, an integer from 1 through 10 with no default. Set
+`KODEZART_WRITE_BACK__MAX_VERIFY_ROUNDS`, or declare the same field in the
+`KODEZART_WRITE_BACK` JSON object. The canonical verifier uses this bound
+independently of Organize admission and convergence. Its halt evidence names
+`write_back.max_verify_rounds` and retains every actual verification result.
+
+The retired flat `write_back_max_verify_rounds` field and its uppercase
+`KODEZART_` environment spelling are refused; migrate to the nested spelling.
+Deployments without a configured tracker-writing owner can leave the section
+absent. A configured owner with no verification budget refuses at startup.
+
+
 ## Native Audit scheduling
 
 Audit uses its own explicit `[[audit_scopes]]` operation rows. Each row declares
@@ -753,37 +807,3 @@ native references. Those records are reread before summary publication and after
 its verification; missing or changed records leave coverage incomplete. The same
 privacy gate checks the complete summary payload. These freshness checks do not
 provide backend compare-and-set or fence an already issued write.
-
-## Queue environment migration
-
-Queue settings now live in the ordinary `AppConfig.queue` value passed to the
-queue builder. The five operator choices, defaults and bounds are unchanged.
-Replace each former flat field's environment name (the uppercase field with the
-`KODEZART` prefix and separator) with the nested name below. Old flat assignments
-are rejected in constructor input, process environment, dotenv and file secrets.
-
-| Former flat field | Nested environment name |
-| --- | --- |
-| `queue_max_concurrent_runs_per_lane` | `KODEZART_QUEUE__MAX_CONCURRENT_RUNS_PER_LANE` |
-| `queue_max_depth_per_lane` | `KODEZART_QUEUE__MAX_DEPTH_PER_LANE` |
-| `queue_terminal_retention_seconds` | `KODEZART_QUEUE__TERMINAL_RETENTION_SECONDS` |
-| `queue_event_buffer_retention_seconds` | `KODEZART_QUEUE__EVENT_BUFFER_RETENTION_SECONDS` |
-| `queue_event_buffer_capacity` | `KODEZART_QUEUE__EVENT_BUFFER_CAPACITY` |
-
-A file secret named `KODEZART_QUEUE` contains a JSON object with these section
-field names, without the old `queue_` prefix. Standard settings precedence remains
-constructor input, process environment, dotenv, file secrets, then defaults.
-
-## Tracker write verification
-
-Configured tracker-writing owners require `AppConfig.write_back` with
-`max_verify_rounds`, an integer from 1 through 10 with no default. Set
-`KODEZART_WRITE_BACK__MAX_VERIFY_ROUNDS`, or declare the same field in the
-`KODEZART_WRITE_BACK` JSON object. The canonical verifier uses this bound
-independently of Organize admission and convergence. Its halt evidence names
-`write_back.max_verify_rounds` and retains every actual verification result.
-
-The retired flat `write_back_max_verify_rounds` field and its uppercase
-`KODEZART_` environment spelling are refused; migrate to the nested spelling.
-Deployments without a configured tracker-writing owner can leave the section
-absent. A configured owner with no verification budget refuses at startup.

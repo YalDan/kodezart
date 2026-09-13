@@ -2,11 +2,10 @@
 
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
+
 from kodezart.core.constants import RESULT_TAIL_CHARS
 from kodezart.domain.errors import TransientAPIError
 from kodezart.types.domain.agent import ResultEvent
-
-
 
 if TYPE_CHECKING:
     # Type-only import — keeps RaiseSite out of this module's runtime namespace
@@ -301,12 +300,14 @@ class TrackerEnsureConflictError(Exception):
         super().__init__(f"{message} ({entry})")
         self.entry: str = entry
 
+
 class TrackerUnavailableError(Exception):
     """The tracker call could not establish a result.
 
     The adapter has already applied its safe retry policy. A write may have
     succeeded without an answer, so this failure does not authorize replay.
     """
+
 
 class TrackerAccessDeniedError(Exception):
     """The tracker refused the configured authority; retrying cannot fix it."""
@@ -423,6 +424,7 @@ class TrackerCredentialShapeError(Exception):
         super().__init__(f"{message} ({field} must hold {accepted_shape})")
         self.field: str = field
         self.accepted_shape: str = accepted_shape
+
 
 class TrackerWriterAttributionError(Exception):
     """Raised at boot when no declared agent identity owns the credential.
@@ -573,6 +575,7 @@ class RunRecordWriteError(Exception):
         """
         cause = self.__cause__
         return type(self if cause is None else cause).__name__
+
 
 class LaneRosterArityError(Exception):
     """A returned roster differs from the dispatched identities."""

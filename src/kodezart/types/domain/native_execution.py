@@ -5,9 +5,7 @@ from typing import Annotated, Literal, Self
 from pydantic import ConfigDict, Field, model_validator
 
 from kodezart.types.base import CamelCaseModel
-
 from kodezart.types.domain.agent import ResultEvent, Ruling
-
 from kodezart.types.domain.amendment import (
     AmendmentReport,
     CommitSha,
@@ -15,20 +13,14 @@ from kodezart.types.domain.amendment import (
     NativeWriterStart,
     Nonblank,
 )
-
 from kodezart.types.domain.audit import TrackerArtifact
-
 from kodezart.types.domain.criteria import TrackerCriterionSet
-
 from kodezart.types.domain.fire_spec import TrackerSpec
-
 from kodezart.types.domain.persist import PersistResult
-
 from kodezart.types.domain.run_records import RunIdentity
-
 from kodezart.types.domain.tracker import TrackerComment, TrackerIssue
-
 from kodezart.types.domain.workspace import WorkspaceSnapshot
+
 
 class NativeAuthoritySnapshot(CamelCaseModel):
     """The original source facts and only the writer's verified source updates."""
@@ -44,11 +36,13 @@ class NativeAuthoritySnapshot(CamelCaseModel):
     base_sha: CommitSha
     holder: Nonblank
 
+
 class NewNativeExecution(CamelCaseModel):
     """No workspace or writer effect has completed."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
     phase: Literal["new"] = "new"
+
 
 class _NativeWorkspacePhase(CamelCaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -58,6 +52,7 @@ class _NativeWorkspacePhase(CamelCaseModel):
     authority: NativeAuthoritySnapshot
     cache_key: str | None
     run_identity: RunIdentity | None
+
 
 class PreparedNativeExecution(_NativeWorkspacePhase):
     """A validated acquired workspace and original live authority."""
@@ -69,6 +64,7 @@ class PreparedNativeExecution(_NativeWorkspacePhase):
         if self.workspace.identity.head_sha != self.start.head_sha:
             raise ValueError("prepared workspace differs from the actual starting HEAD")
         return self
+
 
 class _WrittenNativeExecution(_NativeWorkspacePhase):
     result: ResultEvent
@@ -87,10 +83,12 @@ class _WrittenNativeExecution(_NativeWorkspacePhase):
             )
         return self
 
+
 class WrittenNativeExecution(_WrittenNativeExecution):
     """The actual completed writer output and its uncommitted workspace."""
 
     phase: Literal["written"] = "written"
+
 
 class _ReconciledNativeExecution(_WrittenNativeExecution):
     report: AmendmentReport
@@ -106,6 +104,7 @@ class _ReconciledNativeExecution(_WrittenNativeExecution):
             )
         return self
 
+
 class ReconciledNativeExecution(_ReconciledNativeExecution):
     """All claimed departures have actual completed amendment receipts."""
 
@@ -119,6 +118,7 @@ class ReconciledNativeExecution(_ReconciledNativeExecution):
             )
         return self
 
+
 class RefusedNativeExecution(_ReconciledNativeExecution):
     """A completed actual UPHELD report; no harness persistence is authorized."""
 
@@ -129,6 +129,7 @@ class RefusedNativeExecution(_ReconciledNativeExecution):
         if not self.report.upheld:
             raise ValueError("a native refusal requires an actual UPHELD departure")
         return self
+
 
 class PersistedNativeExecution(_ReconciledNativeExecution):
     """The persister returned its actual commit/publication receipt."""
@@ -148,6 +149,7 @@ class PersistedNativeExecution(_ReconciledNativeExecution):
             )
         return self
 
+
 class UnchangedNativeExecution(_ReconciledNativeExecution):
     """Persistence completed and reported no code changes to commit."""
 
@@ -158,3 +160,24 @@ class UnchangedNativeExecution(_ReconciledNativeExecution):
         if self.report.upheld:
             raise ValueError("an UPHELD departure cannot complete persistence")
         return self
+
+
+type NativeExecutionPhase = Annotated[
+    NewNativeExecution
+    | PreparedNativeExecution
+    | WrittenNativeExecution
+    | ReconciledNativeExecution
+    | RefusedNativeExecution
+    | PersistedNativeExecution
+    | UnchangedNativeExecution,
+    Field(discriminator="phase"),
+]
+
+type ActiveNativeExecution = (
+    PreparedNativeExecution
+    | WrittenNativeExecution
+    | ReconciledNativeExecution
+    | RefusedNativeExecution
+    | PersistedNativeExecution
+    | UnchangedNativeExecution
+)

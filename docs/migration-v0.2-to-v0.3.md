@@ -9,6 +9,7 @@ deployment on v0.3.
 Nothing on the HTTP wire is renamed by this guide. What changes is the shape of
 the settings surface: the flat `KODEZART_<FIELD>` names that grew per subsystem
 are now nested sections, and the sections are the unit an operator configures.
+
 ## In one paragraph
 
 A v0.2 `.env` does not boot on v0.3. Every renamed name is *refused* rather than
@@ -20,6 +21,7 @@ flat](#settings-that-stay-flat) exactly as they are, delete the ones under
 [Removed with no replacement](#removed-with-no-replacement), and the service
 boots with the behaviour it had before. No default changed as part of the
 regrouping.
+
 ## 1. The naming rule
 
 A nested setting's environment name is the uppercase path from `AppConfig`,
@@ -43,6 +45,7 @@ KODEZART_TRACKER='{"server_name":"linear","max_retries":3}'
 
 An `__` entry overrides the corresponding member of such an object rather than
 replacing the object.
+
 ## 2. Empty is not unset
 
 For every nullable field (`str | None`), an empty assignment binds the empty
@@ -57,6 +60,7 @@ KODEZART_AGENT__MODEL=null      # absent, stated explicitly
 
 The credential fields refuse an empty assignment outright rather than resolving
 it to absence on one code path and to an empty credential on the next.
+
 ## 3. Renames
 
 Prefix every name in both columns with `KODEZART_`. The left column is what a
@@ -178,6 +182,7 @@ The standard names remain case-insensitive, `WARN`/`WARNING` and
 | `QUEUE_TERMINAL_RETENTION_SECONDS` | `QUEUE__TERMINAL_RETENTION_SECONDS` |
 | `QUEUE_EVENT_BUFFER_RETENTION_SECONDS` | `QUEUE__EVENT_BUFFER_RETENTION_SECONDS` |
 | `QUEUE_EVENT_BUFFER_CAPACITY` | `QUEUE__EVENT_BUFFER_CAPACITY` |
+
 ## 4. Settings that stay flat
 
 A setting is flat when it is not one subsystem's deployment choice. Leave these
@@ -198,6 +203,7 @@ The existing claim duration and renewal fraction remain flat. Write-surface
 duration moved into the tracker section as listed in the rename table above.
 A caller may pass a duration per acquisition, and that argument wins over the
 configured default for that grant alone.
+
 ## 5. Removed with no replacement
 
 Delete these assignments. Each is refused at startup, from every source, and no
@@ -222,6 +228,7 @@ current name expresses the same choice.
   `KODEZART_AGGREGATE_ISSUE_IDENTIFIER_PATTERN` and
   `KODEZART_AGGREGATE_IDENTIFIER_SEPARATOR_PATTERN` — the same retirement, for
   the aggregate half of that scanner.
+
 ## 6. Checking the result
 
 Renaming by hand is easy to get wrong in one place. Two checks catch it:
@@ -245,6 +252,7 @@ The second command compares key names only and never reads a value. Lines that
 appear only on the left are keys `.env.example` does not carry — the flat
 credential and operation-config entries legitimately appear there; anything else
 is worth a second look.
+
 ## 7. Where the full field reference lives
 
 [docs/configuration.md](configuration.md) documents every field `AppConfig`

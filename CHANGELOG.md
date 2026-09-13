@@ -26,6 +26,7 @@ concerns.
   is now reached by a criterion the feasibility sweep could not grade, and the
   `## Shipped with flags` section of a pull-request body carries those ungraded
   criteria and the evaluator's `sherlockFlags`, never a failed criterion.
+
 ## [0.2.0] - 2026-09-07
 
 v0.2 turns kodezart from a request-driven service into one that runs on its

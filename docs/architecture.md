@@ -1,5 +1,17 @@
 # Architecture
 
+The authored Ralph evaluator observes native SDK session openings at its
+actual dispatch boundary. A typed `node_session_started` stream occurrence
+carries the existing fire identity and explicit node invocation; each
+iteration, corrective dispatch and graph-level retry is a separate invocation. A repeated native
+opening frame is not a second session. Missing or malformed opening evidence
+is refused after draining the executor, preserving its cleanup. Generic calls
+without a fire identity retain their existing stream. Tracker publication and
+the supervisor's durable event reader remain unavailable until the universal
+surface-lease contract is satisfied; these stream occurrences are not a claim
+of persisted run history. The frozen alarm subject vocabulary also does not
+yet provide a per-node subject identity, which this producer does not invent.
+
 ## Overview
 
 Kodezart follows a hexagonal (ports-and-adapters) architecture with three
@@ -23,6 +35,7 @@ exceptional exit, and one release failure does not skip later callbacks. The
 unwind is one owned task so repeated cancellation cannot interrupt a queue
 worker or close a transport before its consumers finish. Each cleanup failure
 is logged before propagation, so later failures cannot hide an earlier error.
+
 ## Component Diagram
 
 ```mermaid
@@ -244,6 +257,7 @@ parent body judgment; execution-state changes alone do not. Record-shaped
 Incomplete parent identity or duplicate revision/admission records refuse
 computation. Collecting and persisting these snapshots and running leased
 author sessions remain orchestration work outside this pure function.
+
 ## Workflow Pipeline
 
 The delivery-free `RalphWorkflowEngine` in `chains/ralph_workflow.py` owns
@@ -323,6 +337,7 @@ existing no-adapter outcome.
 This extraction does not wire the tracker-native scope walker or replace its
 criterion trajectory producer. The lane-addressed `DeliveryCoordinator`
 retains its separate strict FIRE identity and dispatch contract.
+
 ## Ticket Generation Loop
 
 The ticket generation loop runs as a LangGraph StateGraph in
@@ -503,6 +518,7 @@ serialization. Permission mode and knowledge-server grants remain independent.
 Structured JSON responses use `output_format={'type': 'json_schema',
 'schema': ...}` to constrain agent output to predefined schemas
 (`CommitMessageOutput`, `BranchNameOutput`, `TicketDraftOutput`, etc.).
+
 ## LangGraph Configurable Pattern
 
 The codebase passes context through `config["configurable"]` dicts using typed
@@ -514,244 +530,6 @@ config.
 > replacement for the configurable dict pattern. The codebase pins
 > `langgraph>=0.2.0` and does not use `config_schema`. This pattern may need
 > migration in future LangGraph versions.
-## Audit coverage selection
-
-`AuditCoverage` visits the supplied complete eligible snapshot in state-change
-time and issue-key order. The first attempt is full; later attempts select new
-or changed identities until the configured full-sweep interval expires. Marks
-are per-scope process caches and are advanced only after every selected visit
-returns. Interrupted or failed attempts repeat their selection, and a fresh
-process starts full. Per-key stamps retain newly observed identities even when
-their times tie a previously covered entry. Neither a quiet tick nor an empty
-snapshot postpones periodic full coverage. If the next configured tick would
-cross the full-coverage deadline, the current tick covers everything; intervals
-that are not divisible therefore cannot silently extend the declared bound.
-
-The caller supplies the observation time; this component adds no clock, timer
-or scheduler. A simultaneous attempt for the same scope refuses without
-disturbing its owner. Candidates are snapshotted before visiting, and returned
-coverage facts are immutable point-in-time observations, not durable verdicts.
-The native tracker state-change collector supplies complete checked candidates.
-Granted audit sessions and registration on the existing scheduler remain
-separate implementation work. Sampled mode is retired.
-
-## Check-chain execution
-
-The check-chain runner executes each declared command through the host shell,
-in the supplied directory and in declared order. Earlier failures do not hide
-later observations. The configured per-step deadline includes launch and kills the shell process
-group while retaining partial output. Repeated cancellation cannot interrupt
-eventual-process cleanup; cancellation propagates after the attempt is reaped.
-Cleanup repeats group termination at its configured polling cadence until
-captured output reaches EOF, covering a child created during the first signal.
-Empty or ambiguous step identities refuse before execution.
-The runner returns failed names and ordered outputs without classifying roots
-or cascades. Union composition and its result publication are separate consumers.
-
-`UnionComposition.verify` consumes the planner's ordered lane-head snapshot
-through an immutable measurement boundary. `UnionTick.verify` is its current-head
-consumer: one instance fixes the scope, repository configuration and selected
-base; each call supplies the complete ordered lane-branch roster. It reads the
-current remote SHAs, reuses its own unchanged result, and otherwise fetches with
-matching head reads on both sides before invoking the actual scratch composition.
-It re-reads every head before reporting a new result
-and repeats a stale attempt. The configured attempt bound produces
-`UnionUnstableError` if the heads keep moving, and an absent or unreadable head
-produces `UnionHeadReadError`. Native reads settle before cancellation returns;
-concurrent calls on one instance share the result. These are repeat-read
-observations, without atomic exclusion of a writer after the last read. The
-scope-walker tick invocation and durable result persistence remain separate work.
-
-The pinned composition consumes the ordered lane-head snapshot
-and an immutable selected base. It creates a detached Git worktree, merges
-those exact commit IDs in planner order, runs `RepoEntry.checks`, and removes
-the tree on return, refusal, exception, or cancellation. Scratch merges have
-a separate Git operation; normal branch consolidation remains fast-forward
-only. Named branches and forge pull requests are untouched.
-
-Both union consumers require the native Git replacement namespace to be empty.
-A replacement can make an immutable commit name select another tree, so an
-unreadable namespace or any replacement raises `UnionHeadReadError`. The check
-precedes scratch creation, runs again before checks and before returning either
-checks or a merge conflict, and also protects cached current-head results.
-Replacement reads settle before cancellation propagates. Like the head checks,
-these observations do not claim atomic exclusion of later local writers.
-
-The shared `UnionCompositionResult` retains scope and repository identity,
-ordered branch/head pairs, the selected base, and the discarded scratch
-path and commit. A conflict reports only its successfully merged prefix;
-infrastructure errors remain errors. Executed checks use the restored
-historical root/cascade classifier, and a red check result carries one
-`UnionRemediationEntry` naming those roots and cascades. A measured merge
-conflict carries one entry naming its actual conflicting lane and paths, with
-no invented check failures. The shared result validates that every red has
-exactly its matching remediation and every green has none. This scope outcome
-is independent of lane outcomes. The result is available to any caller;
-it does not itself publish a tracker remediation record or scope terminal.
-Walker invocation and terminal residual publication remain separate integration
-work. The union residual's readable owning-issue carrier is still undeclared;
-an ordinary red union also supplies no fired stopping bound for the existing
-terminal convergence validator. The returned remediation supplies neither a
-fabricated record reference nor a terminal outcome.
-
-
-## Current-head audit claim sessions
-
-`AuditClaimVerifier` reads the current criterion through its owning lane's
-complete criterion query and extracts only its Check. It reconstructs the lane
-from the current addressed tracker comment, resolves the actual remote branch
-head and acquires a detached workspace at that exact SHA. The fresh evaluative
-session receives the Check and measured head, with `session_id=None`, no
-subagents and the configured read-only tools. The record's prior head, prior
-Evidence/verdict and author transcript are not session inputs.
-Active Git replacement references refuse the claim before dispatch or before
-an observation returns: a matching SHA and clean status alone do not prove
-that the workspace contains the original commit tree. The replacement read
-settles before cancellation releases the workspace, and read failures propagate.
-
-The result uses the shared three-state `AuditVerdict`. The caller attaches the
-measured SHA, native comment reference and exact Check. A changed criterion,
-record, workspace or remote head refuses the observation; workspace release
-also runs on errors and cancellation. This is a repeat-read observation, not an
-atomic snapshot or a full sweep: Evidence-sha/lapse handling, mandate completion,
-report publication, write-back and scheduler registration remain separate work.
-
-Revision comparisons share `AuditSourceReader` and `FreshAuditSession`.
-The source reader requires the criterion's native Evidence, validates its
-graded commit against the current recorded branch, and retains the exact
-criterion, Check, Evidence and lane comment. Its `require_unchanged` check
-re-reads the criterion, lane record and remote head before a consumer returns.
-The session helper owns a detached workspace at the immutable head, checks
-its head and cleanliness before and after fresh read-only execution, and
-settles acquisition, native reads and release through repeated cancellation.
-Callers supply a prompt and output schema and validate the returned structured
-value; the helpers neither inherit prior conclusions nor publish a verdict.
-
-`DetectorRemovalVerifier` composes these readers with the
-`audit_detection_removal` role. The fresh session compares the real graded and
-current revisions, tests the removal counterfactual, and searches for retained,
-moved or replacement detection. Removing a mechanism and its final effective
-test produces a refuted observation; retained detection keeps this particular
-arm quiet even when that test is red. Inconclusive comparisons use the existing
-unverifiable verdict.
-
-Before returning a proposed finding, the consumer re-reads its mechanism and
-test quotations from native baseline blobs and verifies their stated lines.
-It rejects excerpts that still exist at the current path. Native source lookup
-distinguishes an absent file from an unreadable commit or unsupported object.
-The session's semantic counterfactual remains a judgment: exact quotations do
-not prove the absence of all replacement detection. The test fixture executes
-the real current suite and baseline detector at the current head through the
-actual agent/workspace boundary; it does not call a live model. The verifier
-returns a source-checked observation. `AuditReadSweep` invokes it independently
-for each native criterion request and completes a separate existing mandate
-report for every demonstrated loss. Each report retains the exact mechanism
-and detector quotations, their addresses and the absence demonstration; these
-remain evidence for a judgment rather than a new routing rule. A quiet or
-unverifiable detector produces its own non-refuted report without a mandate.
-
-Failure in the ordinary claim or over-claim arm does not suppress this detector.
-An unavailable revision or verifier is named separately, including states
-outside the revision reader's completed/configured-review contract. Final scope,
-record and current-head checks include every successful detector observation.
-The native sweep fixtures execute the current suite and old guard: deleting the
-last guard reports a loss, while retaining or replacing it keeps this arm quiet.
-There are no tracker writes, coverage marks or writer-lease bypasses here;
-scheduled publication and complete coverage of the other detectors remain
-separate consumers.
-
-
-## Recorded criterion Evidence and lapse observations
-
-`AuditReadSweep` independently invokes `AuditForgeVerifier` for completed native
-criterion requests. The request's criterion, owning issue and repository come
-from the same native scope assembly as the other arms. The full forge reading
-retains recorded Evidence, required and observed check names, and the existing
-delivery classifier's same-SHA rerun history. This sweep can request bounded
-forge reruns; it performs no tracker writes.
-
-Each forge verdict has an addressed claim report using the exact Check, native
-lane-comment reference and historical graded SHA. Refutations receive the
-existing mandate hunt at that SHA. If the hunt fails, the raw forge observation
-remains available with an explicit failure and no completed forge report.
-Missing capabilities, rosters and prerequisites remain unverifiable. A missing
-verifier or ineligible source has its own refusal without suppressing other
-arms. The observed criterion must equal the collected target, and final native
-source checks still cover its body, state, Evidence and lane record. Historical
-forge SHAs do not enter the current-head equality check: a current lapse can
-coexist with a green or refuted historical forge proposition. Scheduling,
-coverage advancement and leased publication remain separate consumers.
-
-`AuditEvidenceVerifier.observe` reads the requested criterion's current full
-record and its lane's addressed run-state comment. The existing Evidence field
-contains one explicit JSON block, rendered by `render_evidence_field`:
-
-````markdown
-**Evidence:**
-```json
-{
-  "gradedSha": "0123456789abcdef0123456789abcdef01234567",
-  "test": "tests/test_contract.py::test_current_check"
-}
-```
-````
-
-The complete Git commit identity and named test or recorded observation are the
-two stored fields. The codec refuses repeated fields/keys, ambiguous framing,
-extra verdicts and historical prose. It does not rewrite that prose or infer a
-SHA from it. The shared criterion-field parser keeps Check extraction separate
-from Evidence and ignores quoted field labels and HTML comments.
-
-For a completed criterion, the reader fetches the recorded repository, reads
-the live remote branch head, and verifies both immutable commit identities and
-their ancestry. A completed claim at an older commit yields `unverifiable`,
-naming the original criterion, recorded SHA and current head, without a grading
-session. An off-branch or unreadable commit causes a typed read refusal.
-Active Git replacement references also refuse before ancestry is inspected
-and before the observation returns: substituted parent history cannot establish
-that the Evidence SHA belongs to the current branch. Both replacement reads
-settle through cancellation, including the lapse arm that starts no session.
-An unreadable replacement namespace is a typed read failure, never an empty set.
-
-A current completed claim, or a claim in the configured review state, goes
-through the existing fresh `AuditClaimVerifier`. Review re-verification does not
-require old history to remain reachable after a rewrite: it judges the current
-Check at the current remote head and retains the previous Evidence as a prior
-claim, without reestablishing it as proof. Recorded test prose and verdicts stay
-out of that session. The final source, lane record and remote head reads must
-agree; owned repository reads settle before cancellation returns.
-
-These are observations before correction and publication. Evaluator adoption
-of the codec, historical migration, Evidence test/observation admissibility,
-forge comparison, state transitions, mandate-complete reports and the scheduled
-sweep remain separate consumers. The reader acquires no authoring lease and
-performs no tracker write; the required correction writers must use the ruled
-lease and inline verification boundaries.
-
-The separate `AuditForgeVerifier` checks a completed criterion's own explicit
-Evidence SHA through the existing CI monitor and completed-watch reader. Its
-request cannot supply a replacement SHA. The returned commit must match exactly;
-no branch name, newer branch run or ancestor run can substitute. Completed watch
-snapshots now retain their check names, and every explicitly configured
-`CheckStep.forge_check` must be present before accepting green. A readable red
-is still classified when another declared check is missing: reproduced failure
-can refute the forge claim without proving unrelated missing checks. An empty
-configured roster leaves the repository's observed CI roster authoritative.
-
-Green at that SHA holds the forge proposition. Red goes through the existing
-`classify_red_checks` with the operation's repository declarations and existing
-rerun bound, including native same-SHA rerun requests. A reproduced work defect is
-refuted; an unmet prerequisite or unclassified red is unverifiable. A flake with
-an exact-SHA green rerun holds, while a rerun with no observable checks remains
-unverifiable. A missing run never proves this proposition, including when the
-separate delivery policy declares the repository forge-exempt. Each call starts
-a fresh task-owned observation sequence so a caller's older CI watch or rerun
-cannot replace its evidence. The full criterion source is reread before return.
-
-This is a forge-claim observation, not a whole-criterion satisfaction verdict.
-It performs no tracker writes, correction or remediation. Scheduled sweep
-composition, mandate completion for refutations, lease-protected state changes
-and publication remain separate consumers.
 
 ## Run-shape observations
 
@@ -982,6 +760,283 @@ timestamp replaces this graph comparison. Both signals preserve their raw
 readings for replay; the structural signal has no threshold. Retaining prior
 snapshots, supervisor scheduling and alarm publication under the universal
 surface lease remain separate consumers.
+## Audit coverage selection
+
+`AuditCoverage` visits the supplied complete eligible snapshot in state-change
+time and issue-key order. The first attempt is full; later attempts select new
+or changed identities until the configured full-sweep interval expires. Marks
+are per-scope process caches and are advanced only after every selected visit
+returns. Interrupted or failed attempts repeat their selection, and a fresh
+process starts full. Per-key stamps retain newly observed identities even when
+their times tie a previously covered entry. Neither a quiet tick nor an empty
+snapshot postpones periodic full coverage. If the next configured tick would
+cross the full-coverage deadline, the current tick covers everything; intervals
+that are not divisible therefore cannot silently extend the declared bound.
+
+The caller supplies the observation time; this component adds no clock, timer
+or scheduler. A simultaneous attempt for the same scope refuses without
+disturbing its owner. Candidates are snapshotted before visiting, and returned
+coverage facts are immutable point-in-time observations, not durable verdicts.
+The native tracker state-change collector supplies complete checked candidates.
+Granted audit sessions and registration on the existing scheduler remain
+separate implementation work. Sampled mode is retired.
+
+## Check-chain execution
+
+The check-chain runner executes each declared command through the host shell,
+in the supplied directory and in declared order. Earlier failures do not hide
+later observations. The configured per-step deadline includes launch and kills the shell process
+group while retaining partial output. Repeated cancellation cannot interrupt
+eventual-process cleanup; cancellation propagates after the attempt is reaped.
+Cleanup repeats group termination at its configured polling cadence until
+captured output reaches EOF, covering a child created during the first signal.
+Empty or ambiguous step identities refuse before execution.
+The runner returns failed names and ordered outputs without classifying roots
+or cascades. Union composition and its result publication are separate consumers.
+
+`UnionComposition.verify` consumes the planner's ordered lane-head snapshot
+through an immutable measurement boundary. `UnionTick.verify` is its current-head
+consumer: one instance fixes the scope, repository configuration and selected
+base; each call supplies the complete ordered lane-branch roster. It reads the
+current remote SHAs, reuses its own unchanged result, and otherwise fetches with
+matching head reads on both sides before invoking the actual scratch composition.
+It re-reads every head before reporting a new result
+and repeats a stale attempt. The configured attempt bound produces
+`UnionUnstableError` if the heads keep moving, and an absent or unreadable head
+produces `UnionHeadReadError`. Native reads settle before cancellation returns;
+concurrent calls on one instance share the result. These are repeat-read
+observations, without atomic exclusion of a writer after the last read. The
+scope-walker tick invocation and durable result persistence remain separate work.
+
+The pinned composition consumes the ordered lane-head snapshot
+and an immutable selected base. It creates a detached Git worktree, merges
+those exact commit IDs in planner order, runs `RepoEntry.checks`, and removes
+the tree on return, refusal, exception, or cancellation. Scratch merges have
+a separate Git operation; normal branch consolidation remains fast-forward
+only. Named branches and forge pull requests are untouched.
+
+Both union consumers require the native Git replacement namespace to be empty.
+A replacement can make an immutable commit name select another tree, so an
+unreadable namespace or any replacement raises `UnionHeadReadError`. The check
+precedes scratch creation, runs again before checks and before returning either
+checks or a merge conflict, and also protects cached current-head results.
+Replacement reads settle before cancellation propagates. Like the head checks,
+these observations do not claim atomic exclusion of later local writers.
+
+The shared `UnionCompositionResult` retains scope and repository identity,
+ordered branch/head pairs, the selected base, and the discarded scratch
+path and commit. A conflict reports only its successfully merged prefix;
+infrastructure errors remain errors. Executed checks use the restored
+historical root/cascade classifier, and a red check result carries one
+`UnionRemediationEntry` naming those roots and cascades. A measured merge
+conflict carries one entry naming its actual conflicting lane and paths, with
+no invented check failures. The shared result validates that every red has
+exactly its matching remediation and every green has none. This scope outcome
+is independent of lane outcomes. The result is available to any caller;
+it does not itself publish a tracker remediation record or scope terminal.
+Walker invocation and terminal residual publication remain separate integration
+work. The union residual's readable owning-issue carrier is still undeclared;
+an ordinary red union also supplies no fired stopping bound for the existing
+terminal convergence validator. The returned remediation supplies neither a
+fabricated record reference nor a terminal outcome.
+
+
+## Current-head audit claim sessions
+
+`AuditClaimVerifier` reads the current criterion through its owning lane's
+complete criterion query and extracts only its Check. It reconstructs the lane
+from the current addressed tracker comment, resolves the actual remote branch
+head and acquires a detached workspace at that exact SHA. The fresh evaluative
+session receives the Check and measured head, with `session_id=None`, no
+subagents and the configured read-only tools. The record's prior head, prior
+Evidence/verdict and author transcript are not session inputs.
+Active Git replacement references refuse the claim before dispatch or before
+an observation returns: a matching SHA and clean status alone do not prove
+that the workspace contains the original commit tree. The replacement read
+settles before cancellation releases the workspace, and read failures propagate.
+
+The result uses the shared three-state `AuditVerdict`. The caller attaches the
+measured SHA, native comment reference and exact Check. A changed criterion,
+record, workspace or remote head refuses the observation; workspace release
+also runs on errors and cancellation. This is a repeat-read observation, not an
+atomic snapshot or a full sweep: Evidence-sha/lapse handling, mandate completion,
+report publication, write-back and scheduler registration remain separate work.
+
+Revision comparisons share `AuditSourceReader` and `FreshAuditSession`.
+The source reader requires the criterion's native Evidence, validates its
+graded commit against the current recorded branch, and retains the exact
+criterion, Check, Evidence and lane comment. Its `require_unchanged` check
+re-reads the criterion, lane record and remote head before a consumer returns.
+The session helper owns a detached workspace at the immutable head, checks
+its head and cleanliness before and after fresh read-only execution, and
+settles acquisition, native reads and release through repeated cancellation.
+Callers supply a prompt and output schema and validate the returned structured
+value; the helpers neither inherit prior conclusions nor publish a verdict.
+
+`DetectorRemovalVerifier` composes these readers with the
+`audit_detection_removal` role. The fresh session compares the real graded and
+current revisions, tests the removal counterfactual, and searches for retained,
+moved or replacement detection. Removing a mechanism and its final effective
+test produces a refuted observation; retained detection keeps this particular
+arm quiet even when that test is red. Inconclusive comparisons use the existing
+unverifiable verdict.
+
+Before returning a proposed finding, the consumer re-reads its mechanism and
+test quotations from native baseline blobs and verifies their stated lines.
+It rejects excerpts that still exist at the current path. Native source lookup
+distinguishes an absent file from an unreadable commit or unsupported object.
+The session's semantic counterfactual remains a judgment: exact quotations do
+not prove the absence of all replacement detection. The test fixture executes
+the real current suite and baseline detector at the current head through the
+actual agent/workspace boundary; it does not call a live model. The verifier
+returns a source-checked observation. `AuditReadSweep` invokes it independently
+for each native criterion request and completes a separate existing mandate
+report for every demonstrated loss. Each report retains the exact mechanism
+and detector quotations, their addresses and the absence demonstration; these
+remain evidence for a judgment rather than a new routing rule. A quiet or
+unverifiable detector produces its own non-refuted report without a mandate.
+
+Failure in the ordinary claim or over-claim arm does not suppress this detector.
+An unavailable revision or verifier is named separately, including states
+outside the revision reader's completed/configured-review contract. Final scope,
+record and current-head checks include every successful detector observation.
+The native sweep fixtures execute the current suite and old guard: deleting the
+last guard reports a loss, while retaining or replacing it keeps this arm quiet.
+There are no tracker writes, coverage marks or writer-lease bypasses here;
+scheduled publication and complete coverage of the other detectors remain
+separate consumers.
+
+
+## Standing over-claim observations
+
+`AuditOverclaimVerifier.observe` reads the criterion through `AuditSourceReader`
+and obtains one fresh `FreshAuditSession` judgment at the measured head. Its
+schema requires exactly one reading for each standing check: recomputed
+aggregates, independently witnessed completeness, verbatim adoption and
+compliance with the artifact's own rules. Refuted aggregates name the recomputed
+value; unverifiable readings name the missing artifact. Prior grading prose,
+author reasoning and old verdicts are not session inputs.
+
+For adoption, the session identifies source and artifact paths at the graded
+or current revisions. The harness reads their immutable Git objects and compares
+actual bytes independently of the session's coverage assessment. A differing
+pair refutes adoption even if the session reported all topics covered. Missing
+native objects remain unverifiable, foreign revisions and self-witnesses refuse,
+and equal pairs cannot fill a separately missing external witness. The model
+still owns semantic claim discovery and witness selection; a list of matching
+pairs is not proof that every possible adoption claim was discovered.
+
+The observation derives its overall three-state verdict from all four readings,
+then rechecks native criterion, lane-record and remote-head identity. It performs
+no tracker writes. `AuditReadSweep` now invokes this verifier for each native
+criterion request independently of its ordinary claim/Evidence arm. It retains
+all four readings, including recomputed values, missing witnesses and native
+byte pairs. Each category has its own addressed report; every refutation passes
+through the existing mandate hunt before that report can be returned. Equal
+reading text cannot relabel categories or exchange their mandate findings.
+
+An unavailable verifier or source produces a named per-target detector refusal;
+it does not suppress the independent claim arm. The revision reader still
+requires a completed or configured-review criterion with native Evidence, so
+other states retain their fresh claim observation and an unavailable revision
+detector. A lapsed completed claim can coexist with a current over-claim
+observation. Final native source checks and equal observed branch heads prevent
+combining observations from different revisions. Scheduled coverage advancement
+and leased publication remain separate consumers. Native Git fixtures exercise all four
+categories using a scripted external judgment boundary; they validate execution
+and evidence handling without claiming live-model detection accuracy.
+
+## Recorded criterion Evidence and lapse observations
+
+`AuditReadSweep` independently invokes `AuditForgeVerifier` for completed native
+criterion requests. The request's criterion, owning issue and repository come
+from the same native scope assembly as the other arms. The full forge reading
+retains recorded Evidence, required and observed check names, and the existing
+delivery classifier's same-SHA rerun history. This sweep can request bounded
+forge reruns; it performs no tracker writes.
+
+Each forge verdict has an addressed claim report using the exact Check, native
+lane-comment reference and historical graded SHA. Refutations receive the
+existing mandate hunt at that SHA. If the hunt fails, the raw forge observation
+remains available with an explicit failure and no completed forge report.
+Missing capabilities, rosters and prerequisites remain unverifiable. A missing
+verifier or ineligible source has its own refusal without suppressing other
+arms. The observed criterion must equal the collected target, and final native
+source checks still cover its body, state, Evidence and lane record. Historical
+forge SHAs do not enter the current-head equality check: a current lapse can
+coexist with a green or refuted historical forge proposition. Scheduling,
+coverage advancement and leased publication remain separate consumers.
+
+`AuditEvidenceVerifier.observe` reads the requested criterion's current full
+record and its lane's addressed run-state comment. The existing Evidence field
+contains one explicit JSON block, rendered by `render_evidence_field`:
+
+````markdown
+**Evidence:**
+```json
+{
+  "gradedSha": "0123456789abcdef0123456789abcdef01234567",
+  "test": "tests/test_contract.py::test_current_check"
+}
+```
+````
+
+The complete Git commit identity and named test or recorded observation are the
+two stored fields. The codec refuses repeated fields/keys, ambiguous framing,
+extra verdicts and historical prose. It does not rewrite that prose or infer a
+SHA from it. The shared criterion-field parser keeps Check extraction separate
+from Evidence and ignores quoted field labels and HTML comments.
+
+For a completed criterion, the reader fetches the recorded repository, reads
+the live remote branch head, and verifies both immutable commit identities and
+their ancestry. A completed claim at an older commit yields `unverifiable`,
+naming the original criterion, recorded SHA and current head, without a grading
+session. An off-branch or unreadable commit causes a typed read refusal.
+Active Git replacement references also refuse before ancestry is inspected
+and before the observation returns: substituted parent history cannot establish
+that the Evidence SHA belongs to the current branch. Both replacement reads
+settle through cancellation, including the lapse arm that starts no session.
+An unreadable replacement namespace is a typed read failure, never an empty set.
+
+A current completed claim, or a claim in the configured review state, goes
+through the existing fresh `AuditClaimVerifier`. Review re-verification does not
+require old history to remain reachable after a rewrite: it judges the current
+Check at the current remote head and retains the previous Evidence as a prior
+claim, without reestablishing it as proof. Recorded test prose and verdicts stay
+out of that session. The final source, lane record and remote head reads must
+agree; owned repository reads settle before cancellation returns.
+
+These are observations before correction and publication. Evaluator adoption
+of the codec, historical migration, Evidence test/observation admissibility,
+forge comparison, state transitions, mandate-complete reports and the scheduled
+sweep remain separate consumers. The reader acquires no authoring lease and
+performs no tracker write; the required correction writers must use the ruled
+lease and inline verification boundaries.
+
+The separate `AuditForgeVerifier` checks a completed criterion's own explicit
+Evidence SHA through the existing CI monitor and completed-watch reader. Its
+request cannot supply a replacement SHA. The returned commit must match exactly;
+no branch name, newer branch run or ancestor run can substitute. Completed watch
+snapshots now retain their check names, and every explicitly configured
+`CheckStep.forge_check` must be present before accepting green. A readable red
+is still classified when another declared check is missing: reproduced failure
+can refute the forge claim without proving unrelated missing checks. An empty
+configured roster leaves the repository's observed CI roster authoritative.
+
+Green at that SHA holds the forge proposition. Red goes through the existing
+`classify_red_checks` with the operation's repository declarations and existing
+rerun bound, including native same-SHA rerun requests. A reproduced work defect is
+refuted; an unmet prerequisite or unclassified red is unverifiable. A flake with
+an exact-SHA green rerun holds, while a rerun with no observable checks remains
+unverifiable. A missing run never proves this proposition, including when the
+separate delivery policy declares the repository forge-exempt. Each call starts
+a fresh task-owned observation sequence so a caller's older CI watch or rerun
+cannot replace its evidence. The full criterion source is reread before return.
+
+This is a forge-claim observation, not a whole-criterion satisfaction verdict.
+It performs no tracker writes, correction or remediation. Scheduled sweep
+composition, mandate completion for refutations, lease-protected state changes
+and publication remain separate consumers.
 
 ## Scoped execution boundary
 
@@ -1088,42 +1143,3 @@ read-only tool and permission policy, drains the result and preserves typed
 soft failures. The caller supplies its phase, prompt policy and error context,
 and retains the workspace through its own before/after source checks. ORGANIZE
 keeps its own session type and requires no Git dependency for this reuse.
-
-## Standing over-claim observations
-
-`AuditOverclaimVerifier.observe` reads the criterion through `AuditSourceReader`
-and obtains one fresh `FreshAuditSession` judgment at the measured head. Its
-schema requires exactly one reading for each standing check: recomputed
-aggregates, independently witnessed completeness, verbatim adoption and
-compliance with the artifact's own rules. Refuted aggregates name the recomputed
-value; unverifiable readings name the missing artifact. Prior grading prose,
-author reasoning and old verdicts are not session inputs.
-
-For adoption, the session identifies source and artifact paths at the graded
-or current revisions. The harness reads their immutable Git objects and compares
-actual bytes independently of the session's coverage assessment. A differing
-pair refutes adoption even if the session reported all topics covered. Missing
-native objects remain unverifiable, foreign revisions and self-witnesses refuse,
-and equal pairs cannot fill a separately missing external witness. The model
-still owns semantic claim discovery and witness selection; a list of matching
-pairs is not proof that every possible adoption claim was discovered.
-
-The observation derives its overall three-state verdict from all four readings,
-then rechecks native criterion, lane-record and remote-head identity. It performs
-no tracker writes. `AuditReadSweep` now invokes this verifier for each native
-criterion request independently of its ordinary claim/Evidence arm. It retains
-all four readings, including recomputed values, missing witnesses and native
-byte pairs. Each category has its own addressed report; every refutation passes
-through the existing mandate hunt before that report can be returned. Equal
-reading text cannot relabel categories or exchange their mandate findings.
-
-An unavailable verifier or source produces a named per-target detector refusal;
-it does not suppress the independent claim arm. The revision reader still
-requires a completed or configured-review criterion with native Evidence, so
-other states retain their fresh claim observation and an unavailable revision
-detector. A lapsed completed claim can coexist with a current over-claim
-observation. Final native source checks and equal observed branch heads prevent
-combining observations from different revisions. Scheduled coverage advancement
-and leased publication remain separate consumers. Native Git fixtures exercise all four
-categories using a scripted external judgment boundary; they validate execution
-and evidence handling without claiming live-model detection accuracy.

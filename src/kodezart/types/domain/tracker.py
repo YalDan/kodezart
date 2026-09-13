@@ -7,7 +7,7 @@ translation between these types and whatever their backend calls the
 same thing.
 
 Issues are addressed by ``issue_key``: the stable, human-readable
-identifier the backend already exposes (``KOD-57`` on Linear, ``#412``
+identifier the backend already exposes (a team-prefixed key on Linear, ``#412``
 on GitHub Issues, ``PROJ-8`` on Jira).  The adapter maps a key onto its
 backend's internal identifier; consumers never see one.
 """
@@ -15,12 +15,11 @@ backend's internal identifier; consumers never see one.
 from datetime import datetime
 from enum import StrEnum
 from typing import Annotated
+
 from pydantic import AwareDatetime, ConfigDict, Field, field_validator
+
 from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.operation import OperationConfig, QueueState
-
-
-
 
 
 class TrackerBackend(StrEnum):
@@ -225,11 +224,13 @@ class TrackerIssue(TrackerModel):
     updated_at: datetime
     url: str
 
+
 class TrackerIssueStateChange(TrackerModel):
     """An issue and its current state's entry time from one full read."""
 
     issue: TrackerIssue
     state_changed_at: AwareDatetime
+
 
 class TrackerIssueRevision(TrackerModel):
     """One full issue read and the digest of the body in that same read.

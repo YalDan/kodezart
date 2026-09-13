@@ -1,16 +1,14 @@
 """Admission judgments preserve both refusal and unavailable evidence."""
 
 from enum import StrEnum
-
 from typing import Annotated, Literal, Self
 
 from pydantic import ConfigDict, Field, RootModel, field_validator, model_validator
 
 from kodezart.types.base import CamelCaseModel
-
 from kodezart.types.domain.prompts import PromptKey
-
 from kodezart.types.domain.scope_address import ScopeRef
+
 
 class AdmissionVerdict(StrEnum):
     """A buildability finding is a three-way decision, never a boolean."""
@@ -22,11 +20,13 @@ class AdmissionVerdict(StrEnum):
     def __bool__(self) -> bool:
         raise TypeError("AdmissionVerdict requires an explicit three-state comparison")
 
+
 class RefusalKind(StrEnum):
     """Whether re-authoring can repair a refusal without a human decision."""
 
     SPEC_GAP = "spec_gap"
     HUMAN_DECISION = "human_decision"
+
 
 class AdmissionRoute(StrEnum):
     """The next admission action; choosing one performs no tracker write."""
@@ -35,11 +35,13 @@ class AdmissionRoute(StrEnum):
     REAUTHOR = "reauthor"
     ESCALATE = "escalate"
 
+
 class DefectRole(StrEnum):
     """A defect instance or the instruction that makes writers reproduce it."""
 
     INSTANCE = "instance"
     MANDATE = "mandate"
+
 
 class SpecFinding(CamelCaseModel):
     """Evidence for a class in the selected rubric, with any mandate verbatim."""
@@ -70,6 +72,7 @@ class SpecFinding(CamelCaseModel):
             raise ValueError("INSTANCE requires mandate_text to be None")
         return self
 
+
 class _AdmissionFields(CamelCaseModel):
     verdict: AdmissionVerdict = Field(
         description="Buildability of the current issue under the configured mandate."
@@ -96,6 +99,7 @@ class _AdmissionFields(CamelCaseModel):
         ),
     )
 
+
 class BuildableAdmission(_AdmissionFields):
     """No invented decision or unavailable artifact is carried by success."""
 
@@ -105,6 +109,7 @@ class BuildableAdmission(_AdmissionFields):
             "missing evidence."
         )
     )
+
 
 class RefusedAdmission(_AdmissionFields):
     """A refusal names the decision and the route it requires."""
@@ -126,6 +131,7 @@ class RefusedAdmission(_AdmissionFields):
             "must settle the choice."
         )
     )
+
 
 class UnverifiableAdmission(_AdmissionFields):
     """Unavailable evidence retains its named dependency without inventing it."""
@@ -149,10 +155,12 @@ class UnverifiableAdmission(_AdmissionFields):
         ),
     )
 
+
 AdmissionDecision = Annotated[
     BuildableAdmission | RefusedAdmission | UnverifiableAdmission,
     Field(discriminator="verdict"),
 ]
+
 
 class _AdmissionView[T: _AdmissionFields](RootModel[T]):
     model_config = ConfigDict(frozen=True)
@@ -203,27 +211,34 @@ class _AdmissionView[T: _AdmissionFields](RootModel[T]):
             else None
         )
 
+
 class AdmissionJudgment(_AdmissionView[AdmissionDecision]):
     """The agent sees the same discriminated legal states its consumer validates."""
+
 
 class _AdmittedRevision(CamelCaseModel):
     admitted_body_digest: str = Field(min_length=1, pattern=r"\S")
     admitted_scope: ScopeRef
     admitted_context_digest: str = Field(min_length=1, pattern=r"\S")
 
+
 class _BuildableResult(BuildableAdmission, _AdmittedRevision):
     pass
+
 
 class _RefusedResult(RefusedAdmission, _AdmittedRevision):
     pass
 
+
 class _UnverifiableResult(UnverifiableAdmission, _AdmittedRevision):
     pass
+
 
 BoundAdmissionDecision = Annotated[
     _BuildableResult | _RefusedResult | _UnverifiableResult,
     Field(discriminator="verdict"),
 ]
+
 
 class AdmissionResult(_AdmissionView[BoundAdmissionDecision]):
     """The caller binds each legal judgment to the exact body it examined."""
@@ -240,6 +255,7 @@ class AdmissionResult(_AdmissionView[BoundAdmissionDecision]):
     def admitted_context_digest(self) -> str:
         return self.root.admitted_context_digest
 
+
 class MandateKind(StrEnum):
     """The phases of one organize pass, before scope approval."""
 
@@ -247,11 +263,13 @@ class MandateKind(StrEnum):
     TICKET = "ticket"
     CRITERIA = "criteria"
 
+
 class OrganizeLabelNamespace(StrEnum):
     """The operation mappings a phase may reference explicitly."""
 
     SCOPE = "scope_labels"
     ISSUE = "issue_labels"
+
 
 def split_label_key(reference: str) -> tuple[OrganizeLabelNamespace, str]:
     """Parse a qualified mapping key without guessing from the phase kind."""
@@ -261,6 +279,7 @@ def split_label_key(reference: str) -> tuple[OrganizeLabelNamespace, str]:
             "label reference requires a namespace and nonempty mapping key"
         )
     return OrganizeLabelNamespace(namespace), key
+
 
 class MandateSpec(CamelCaseModel):
     """One phase's configured differences, with explicit mapping references."""
@@ -287,6 +306,7 @@ class MandateSpec(CamelCaseModel):
             raise ValueError("an organize phase terminates on an issue_labels marker")
         return value
 
+
 class ResolvedMandateSpec(CamelCaseModel):
     """A validated phase specification and the configured labels it names."""
 
@@ -295,6 +315,7 @@ class ResolvedMandateSpec(CamelCaseModel):
     spec: MandateSpec
     gate_label: str
     terminal_marker: str
+
 
 class OrganizeAdmissionRequest(CamelCaseModel):
     """Source identity, rubric and repository base for one fresh judgment."""

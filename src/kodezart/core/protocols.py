@@ -2,6 +2,7 @@
 
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from typing import Protocol, runtime_checkable
+
 from kodezart.core.prompt_rendering import PromptTemplate
 from kodezart.domain.run_event_stream import LaneRunEvent
 from kodezart.types.domain.agent import AgentEvent
@@ -82,8 +83,6 @@ from kodezart.types.domain.workflow import RemediationRequest, WorkflowSubmissio
 from kodezart.types.domain.workspace import GitWorktreeIdentity, WorkspaceSnapshot
 
 
-
-
 @runtime_checkable
 class LogEmitter(Protocol):
     """Structured logging port — structlog's stdlib BoundLogger satisfies it.
@@ -107,6 +106,7 @@ class LogEmitter(Protocol):
     async def aerror(self, event: str, **kwargs: object) -> None: ...
 
     async def aexception(self, event: str, **kwargs: object) -> None: ...
+
 
 @runtime_checkable
 class GitSourceReader(Protocol):
@@ -514,6 +514,7 @@ class PRCreator(Protocol):
         """
         ...
 
+
 @runtime_checkable
 class ForgeQuery(Protocol):
     """The forge's READ side: what already exists, and where to look at it.
@@ -554,6 +555,7 @@ class ForgeQuery(Protocol):
         observation, and a caller must not read one as the other.
         """
         ...
+
 
 @runtime_checkable
 class PRStateReader(Protocol):
@@ -620,7 +622,7 @@ class DeliveryProbe(Protocol):
 #: What a tool call answers with.  A JSON object OR a JSON array: the MCP
 #: spec constrains a tool result to neither shape, and a measured server
 #: answered some of its tools with a bare array carrying no envelope at
-#: all (KOD-143).  Narrowing this to an object would put those payloads
+#: all.  Narrowing this to an object would put those payloads
 #: out of reach of every adapter above the transport.  WHICH server and
 #: which tool is an adapter's knowledge; this seam holds only the fact
 #: that both shapes are legal.
@@ -722,6 +724,7 @@ class ManagedMcpToolCaller(McpToolCaller, Protocol):
         """Close the session. Closing a closed caller is a no-op."""
         ...
 
+
 @runtime_checkable
 class TrackerCommentReader(Protocol):
     """Read complete native comments without granting a writer."""
@@ -729,6 +732,7 @@ class TrackerCommentReader(Protocol):
     async def list_comments(self, *, issue_key: str) -> Sequence[TrackerComment]:
         """Every comment on the issue, oldest first."""
         ...
+
 
 @runtime_checkable
 class TrackerCriteriaReader(Protocol):
@@ -743,6 +747,7 @@ class TrackerCriteriaReader(Protocol):
         becomes an empty answer. No parent-body syntax supplies membership.
         """
         ...
+
 
 @runtime_checkable
 class TrackerContextReader(Protocol):
@@ -836,6 +841,7 @@ class TrackerPort(
         serve, so nothing downstream branches on the answer.
         """
         ...
+
     async def read_issue_movement(self, *, issue_key: str) -> IssueMovementSnapshot:
         """Stable native field projection and complete comments for receipt replay."""
         ...
@@ -847,6 +853,7 @@ class TrackerPort(
     async def read_planning_issue(self, *, issue_key: str) -> TrackerIssue:
         """Read reported labels and full dependency relations; omission refuses."""
         ...
+
     async def read_labeled_issues(
         self, *, classification: str
     ) -> Sequence[TrackerIssue]:
@@ -857,6 +864,7 @@ class TrackerPort(
         refuses instead of returning a truncated or filtered set.
         """
         ...
+
     def require_scope_plan_reads(self) -> None:
         """Require semantic criterion and decision reads before scope planning.
 
@@ -864,6 +872,7 @@ class TrackerPort(
         empty decision set. This declaration performs no tracker write.
         """
         ...
+
     def require_issue_classification_reads(
         self, *, additional_keys: frozenset[str] = frozenset()
     ) -> None:
@@ -875,6 +884,7 @@ class TrackerPort(
         performs no tracker write.
         """
         ...
+
     async def read_issue_state_change(
         self, *, issue_key: str
     ) -> TrackerIssueStateChange:
@@ -885,6 +895,7 @@ class TrackerPort(
         This is read-only and acquires no write lease.
         """
         ...
+
     async def read_issue_revision(self, *, issue_key: str) -> TrackerIssueRevision:
         """Read one issue and its body digest from the same body snapshot.
 
@@ -894,6 +905,7 @@ class TrackerPort(
         An unavailable digest raises, never substitutes an empty or live one.
         """
         ...
+
     async def scope_issues(self, *, ref: ScopeRef) -> Sequence[TrackerIssue]:
         """All issues in the scope, with their relations and parent fields.
 
@@ -902,9 +914,11 @@ class TrackerPort(
         for the complete scope.
         """
         ...
+
     async def read_scope_labels(self, *, ref: ScopeRef) -> frozenset[ScopeLabel]:
         """Read configured labels on this exact scope, without approval cascade."""
         ...
+
     async def execution_approved(self, *, issue_key: str) -> bool:
         """Resolve the configured scope approval label from current ancestry.
 
@@ -914,11 +928,13 @@ class TrackerPort(
         and missing or unreadable ancestry raises instead of returning false.
         """
         ...
+
     async def project_milestones(
         self, *, project_key: str
     ) -> tuple[ScopeContainer, ...]:
         """Read all native project milestones without selection policy."""
         ...
+
     async def container_metadata(self, *, ref: ScopeRef) -> ScopeContainer:
         """The container's ref, name, description, optional url and parent.
 
@@ -927,6 +943,7 @@ class TrackerPort(
         through ``read_issue``, never returned as an empty container.
         """
         ...
+
     async def update_issue_graph(
         self,
         *,
@@ -942,9 +959,11 @@ class TrackerPort(
         this is a refusal check, not an atomic backend compare-and-set.
         """
         ...
+
     async def read_split_children(self, *, source_key: str) -> tuple[TrackerIssue, ...]:
         """Read ordinary children with the source's unique split identities."""
         ...
+
     async def create_split_if_absent(
         self,
         *,
@@ -962,6 +981,7 @@ class TrackerPort(
         identities. A declared parent creation surface grants no existing child edit.
         """
         ...
+
     async def create_criterion_if_absent(
         self,
         *,
@@ -981,6 +1001,7 @@ class TrackerPort(
         child edits require their own CRITERION_SUB_ISSUE authority.
         """
         ...
+
     async def reset_criterion_pending(
         self, *, expected: TrackerIssue, holder: str
     ) -> TrackerIssue:
@@ -1033,6 +1054,7 @@ class TrackerPort(
         identity carrier; descriptions retain its raw representation.
         """
         ...
+
     async def read_fire_spec(self, *, issue_key: str) -> TrackerSpec:
         """Capture the subject once and read its full criterion membership.
 
@@ -1042,6 +1064,7 @@ class TrackerPort(
         criterion-state policy remains a separate entry requirement.
         """
         ...
+
     async def read_issue_identity(self, *, issue_key: str) -> IssueIdentity | None:
         """The issue's recorded deliverable identity, or no owned identity."""
         ...
@@ -1160,6 +1183,7 @@ class TrackerPort(
         absence never creates a replacement. This is not backend atomic CAS.
         """
         ...
+
     async def record_run_alarm(
         self, *, issue_key: str, alarm: RunAlarm, holder: str
     ) -> None:
@@ -1171,11 +1195,13 @@ class TrackerPort(
         refuse, as do missing, expired or foreign holders.
         """
         ...
+
     async def read_run_alarm(
         self, *, issue_key: str, subject: AlarmSubject, signal: AlarmSignal
     ) -> RunAlarm | None:
         """Read exactly this address; absence is None, damage is a typed refusal."""
         ...
+
     async def post_run_event(
         self, *, issue_key: str, event: LaneRunEvent
     ) -> LaneRunEvent:
@@ -1190,6 +1216,7 @@ class TrackerPort(
         report a lane that stalled and retried as one that never did.
         """
         ...
+
     async def lane_run_events(
         self, *, issue_key: str, lane_key: str
     ) -> Sequence[LaneRunEvent]:
@@ -1205,6 +1232,7 @@ class TrackerPort(
         hole would report a history that never happened.
         """
         ...
+
     async def read_escalation_resolution(
         self, *, issue_key: str, lane_key: str, escalation_key: str
     ) -> EscalationResolution:
@@ -1215,7 +1243,6 @@ class TrackerPort(
         value requires a complete readable escalation with no answer.
         """
         ...
-
 
     async def claim_issue(
         self,
@@ -1297,6 +1324,7 @@ class TrackerPort(
         the claim's process identity.
         """
         ...
+
     async def renew_surfaces(
         self,
         *,
@@ -1313,6 +1341,7 @@ class TrackerPort(
         free.
         """
         ...
+
     async def release_surfaces(
         self,
         *,
@@ -1324,8 +1353,6 @@ class TrackerPort(
         A surface it does not hold is a no-op, live or expired.
         """
         ...
-
-
 
     async def record_work_ref(self, *, ref: WorkRef) -> None:
         """Record *ref* against its issue; ``work_refs`` is the read.
@@ -1523,6 +1550,7 @@ class AgentRunner(Protocol):
         """Execute in a pre-acquired workspace (no lifecycle)."""
         ...
 
+
 @runtime_checkable
 class NativeWriteGuard(Protocol):
     """A native session's live semantic and source authority before commit."""
@@ -1560,6 +1588,7 @@ class NativeWriteGuard(Protocol):
     ) -> AmendmentReport:
         """Independently reconcile actual writer claims before persistence."""
         ...
+
     async def require_current(
         self,
         *,
@@ -1568,6 +1597,7 @@ class NativeWriteGuard(Protocol):
     ) -> None:
         """Refuse changed HEAD, Checks or rulings after an awaited boundary."""
         ...
+
     async def require_publishable(
         self,
         *,
@@ -1577,6 +1607,7 @@ class NativeWriteGuard(Protocol):
     ) -> None:
         """Recheck current authority against the harness's actual commit receipt."""
         ...
+
     async def require_unchanged_head(
         self,
         *,
@@ -1599,6 +1630,7 @@ class GitAuth(Protocol):
         """Return env vars for git subprocess (e.g. GIT_ASKPASS). Empty if none."""
         ...
 
+
 @runtime_checkable
 class FireCriteriaReader(Protocol):
     """Read current native obligations against the run's frozen subject spec.
@@ -1610,6 +1642,7 @@ class FireCriteriaReader(Protocol):
     async def read_current(self, *, spec: TrackerSpec) -> TrackerCriterionSet:
         """Return one complete current Check snapshot or a typed refusal."""
         ...
+
 
 @runtime_checkable
 class FireCriteriaSource(FireCriteriaReader, Protocol):
@@ -1722,6 +1755,7 @@ class WorkflowEngine(Protocol):
         addresses the run's checkpoints.
         """
         ...
+
 
 @runtime_checkable
 class DispatchProducer(Protocol):
@@ -1872,6 +1906,7 @@ class RepoVisibilityResolver(Protocol):
         """Return PRIVATE / PUBLIC, or UNKNOWN when resolution fails."""
         ...
 
+
 @runtime_checkable
 class ContentJudgment(Protocol):
     """Judge authored outbound text using an independent session."""
@@ -1884,8 +1919,6 @@ class ContentJudgment(Protocol):
     ) -> ScanResult:
         """Findings or the typed reason judgment could not complete."""
         ...
-
-
 
 
 @runtime_checkable
@@ -1909,6 +1942,7 @@ class OutboundContentGate(Protocol):
         saying so.
         """
         ...
+
 
 @runtime_checkable
 class CheckChainRunner(Protocol):

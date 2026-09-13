@@ -10,7 +10,9 @@ from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from inspect import isawaitable
+
 import pytest
+
 from kodezart.adapters.linear_mcp_tracker import LinearMcpTracker
 from kodezart.core.backoff import RetryPolicy
 from kodezart.core.protocols import TrackerPort
@@ -27,9 +29,6 @@ from tests.fakes import (
     FakeTrackerPort,
 )
 from tests.tracker.marker_config import MARKER_PREFIXES
-
-
-
 
 FIXTURE_NOW: datetime = datetime(2026, 3, 1, 12, 0, tzinfo=UTC)
 
@@ -52,16 +51,15 @@ class FixtureClock:
     def advance(self, *, seconds: float) -> None:
         self.now += timedelta(seconds=seconds)
 
+
 def _frozen_now() -> datetime:
     """The instant every caller that states no clock of its own reads."""
     return FIXTURE_NOW
 
+
 FIRE_SCOPE_LABEL = "execution-consent"
-
 FIRE_STAGE_LABEL = "criteria-prepared"
-
 FIRE_STAGE_KEY = "criteria_ready"
-
 FIRE_ENTRY_LABELS = [FIRE_SCOPE_LABEL, FIRE_STAGE_LABEL]
 
 APPROVER = "fixture-approver"

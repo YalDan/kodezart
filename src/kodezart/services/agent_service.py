@@ -2,6 +2,7 @@
 
 import sys
 from collections.abc import AsyncGenerator, Sequence
+
 from kodezart.core.error_egress import build_error_event
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import (
@@ -29,8 +30,6 @@ from kodezart.types.domain.subagents import (
     AgentDefinition,
     SessionPolicy,
 )
-
-
 
 
 class AgentService:

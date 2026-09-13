@@ -16,6 +16,7 @@ explicit. The HTTP dependency providers in `api/dependencies.py` read resources
 owned by the lifespan; route tests can replace them with FastAPI dependency
 overrides. A one-shot query has no workflow-queue dependency.
 
+
 ## GET /api/v1/health
 
 Health check endpoint.
@@ -111,18 +112,12 @@ curl -N http://localhost:8000/api/v1/agent/workflow \
   -H "Content-Type: application/json" \
   -d '{"prompt": "Add input validation", "repoUrl": "owner/repo", "baseBranch": "main"}'
 ```
+
 ## POST /api/v1/agent/fire
 
 Queue a workflow run and return immediately. Same request body as
 `POST /api/v1/agent/workflow` (`WorkflowRequest`); no stream is opened.
 
-### Example
-
-```bash
-curl -X POST http://localhost:8000/api/v1/agent/fire \
-  -H "Content-Type: application/json" \
-  -d '{"prompt": "Add input validation", "repoUrl": "owner/repo"}'
-```
 ### Response — `202 Accepted` (`FireAcceptedResponse`)
 
 ```json
@@ -140,6 +135,14 @@ curl -X POST http://localhost:8000/api/v1/agent/fire \
 `queuePosition` is `null` once the run has left the queue. A lane at
 `KODEZART_QUEUE__MAX_DEPTH_PER_LANE` rejects the submission with `429`.
 
+### Example
+
+```bash
+curl -X POST http://localhost:8000/api/v1/agent/fire \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "Add input validation", "repoUrl": "owner/repo"}'
+```
+
 ## GET /api/v1/jobs/{jobId}
 
 Registry facts for a queued or running job, plus the checkpointed run state.
@@ -151,6 +154,7 @@ record has been released (`KODEZART_QUEUE__TERMINAL_RETENTION_SECONDS`).
 ```bash
 curl http://localhost:8000/api/v1/jobs/3fa85f6457174562b3fc2c963f66afa6
 ```
+
 ## GET /api/v1/jobs/{jobId}/stream
 
 Attach to a job's event stream. Replays the job's bounded event buffer
@@ -165,6 +169,7 @@ record and replays nothing.
 ```bash
 curl -N http://localhost:8000/api/v1/jobs/3fa85f6457174562b3fc2c963f66afa6/stream
 ```
+
 ## SSE Event Types
 
 Every frame type the stream can carry is in one of the tables below.
@@ -350,6 +355,7 @@ rate limit) is identified by this frame alone: `resultEventObserved`
 separates "no result arrived" from "a result arrived carrying no
 structured output", and `resultTail` carries the end of the agent's own
 result text, credential-redacted.
+
 ## Error Handling
 
 - **422 Validation Error**: Returned as standard HTTP response for invalid

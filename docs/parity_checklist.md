@@ -38,6 +38,7 @@ list of behaviors kodezart currently has:
   the verbatim routine prose the template carries — or `—` when the
   obligation is a parity dimension a prompt could never state: cadence,
   cost, one claim per pass. The evidence cell is the verdict either way.
+
 ## The checklist
 
 Each row names one obligation, the shipped clause carrying it, the
@@ -91,6 +92,7 @@ whereas an undemonstrated one is an unknown.
 | identity discipline | — | Rendering fails loudly on any unconditional placeholder without a config value, naming every missing name at once. | `tests/prompts/test_operation_config.py::test_an_unconditional_placeholder_without_a_config_value_fails_loudly` |
 | outbound legality | — | No shipped template carries a resolved org-shaped value. | `tests/prompts/test_operation_config.py::test_ported_templates_contain_no_resolved_org_values` |
 | routine-text coverage | fire_prep_pass + grooming_pass, whole texts | Parity is claimed against the routine text itself. Since the byte-identity replacement the templates carry the routines' verbatim prose with config placeholders for every operation-specific token; rendering them against the real operation config must reproduce the live texts byte-for-byte — verbatim everywhere except the passages where a routine named a fixed team or repository slot, which are amended to enumerate the declared roster one member per line (`cutover_mapping.md`). The comparison needs the private reference texts, so it runs as recorded evidence at a named sha on the owning issue, not in CI. | not yet demonstrated |
+
 ## Why the undemonstrated rows are undemonstrated
 
 They fall into three classes, and the classes matter because they close in

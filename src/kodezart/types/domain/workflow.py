@@ -1,8 +1,10 @@
 """Workflow state definitions for the ralph loop and outer pipeline."""
 
 from typing import NotRequired, Self, TypedDict
+
 from langchain_core.runnables import RunnableConfig
 from pydantic import ConfigDict, Field, model_validator
+
 from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.accept import AcceptVerdict, FlaggedItem
 from kodezart.types.domain.agent import TicketDraftOutput
@@ -29,9 +31,6 @@ from kodezart.types.domain.session import AllowedTools, PermissionMode
 from kodezart.types.domain.ticket_review import TicketApproval
 from kodezart.types.domain.trajectory import IterationRecord as IterationRecord
 from kodezart.types.domain.trajectory import LoopTrajectory as LoopTrajectory
-
-
-
 
 _LANGGRAPH_RESERVED_PREFIX = "__pregel_"
 _LANGGRAPH_RESERVED_KEYS: frozenset[str] = frozenset(
@@ -282,6 +281,7 @@ class WorkflowState(TypedDict):
     repo_url: str | None
     repo_visibility: RepoVisibility
     trajectory: LoopTrajectory | None
+
 
 class AuthoredWorkflowState(WorkflowState):
     """Outer authored delivery state, never passed into the fire graph."""

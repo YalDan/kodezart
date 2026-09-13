@@ -10,7 +10,9 @@ from hashlib import sha256
 from pathlib import Path
 from unittest.mock import patch
 from urllib.parse import quote, urlsplit
+
 from fastapi import FastAPI
+
 from kodezart.adapters.asyncio_job_queue import AsyncioJobQueue
 from kodezart.adapters.claude_agent_executor import ClaudeAgentExecutor
 from kodezart.adapters.claude_client_executor import ClaudeClientExecutor
@@ -192,9 +194,6 @@ from kodezart.types.domain.trajectory import IterationRecord, LoopTrajectory
 from kodezart.types.domain.workflow import RemediationRequest, WorkflowSubmission
 from kodezart.types.domain.workspace import GitWorktreeIdentity, WorkspaceSnapshot
 from tests.prompt_census import configured_investigation_cap
-
-
-
 
 SUPPRESS_ALL_SKILLS: SkillsSelection = SkillsSelection(mode=SkillsMode.NONE)
 #: The kind a fake session reports when a test does not care which kind it
@@ -1247,6 +1246,7 @@ class FakeAgentRunner:
         )
         for event in self._events:
             yield event
+
     async def stream_in_workspace(
         self,
         *,
@@ -1548,29 +1548,18 @@ def make_generated_criteria() -> list[GeneratedCriterion]:
         )
     )
 
+
+#: Every id the fake criteria generator mints, in emission order.
+#:
+#: A fixture that means "the loop passed" answers all of them: grading
+#: counts the DISPATCHED set, so an evaluation that leaves an id
+#: unanswered is a failing run wearing a passing name.
 FAKE_CRITERION_IDS = ("AC-1", "AC-2")
+
 
 def make_passing_evaluation_of_fake_criteria() -> AcceptanceCriteriaOutput:
     """A pass for every criterion the fake generator emits."""
     return make_passing_evaluation_over(*FAKE_CRITERION_IDS)
-
-
-def make_passing_evaluation(
-    criterion: str = "Tests pass",
-    reasoning: str = "Fake passing evaluation.",
-    criterion_id: str = DEFAULT_CRITERION_ID,
-) -> AcceptanceCriteriaOutput:
-    """Construct an AcceptanceCriteriaOutput where the criterion passes."""
-    return AcceptanceCriteriaOutput(
-        criteria_results=[
-            CriterionResult(
-                criterion_id=criterion_id,
-                criterion=criterion,
-                passed=True,
-                reasoning=reasoning,
-            ),
-        ],
-    )
 
 
 def make_passing_evaluation_over(*criterion_ids: str) -> AcceptanceCriteriaOutput:
@@ -1772,6 +1761,7 @@ class FakeRemediator:
             base_ref=request.work_base_ref,
         )
 
+
 class FakeForgeQuery:
     """The forge's read side, beside the creator fake it is consulted with.
 
@@ -1868,6 +1858,9 @@ class FakePRCreator:
             raise self._fail_comment
 
 
+type _FakeCIObservation = tuple[bool | None, str, frozenset[str]]
+
+
 class FakeCIMonitor:
     """Fake CIMonitor for testing the outer workflow pipeline."""
 
@@ -1926,6 +1919,7 @@ class FakeCIMonitor:
         attempts = self._attempt_context()
         attempts[(repo_url, ref)] = result
         self._attempts.set((asyncio.current_task(), attempts))
+
     async def checks_declared(self, *, repo_url: str) -> bool:
         self.declaration_calls.append(repo_url)
         if self._fail is not None:
@@ -2235,6 +2229,7 @@ class FakeVisibilityResolver:
             raise self._fail
         return self._visibility
 
+
 class FakeContentJudgment:
     """ContentJudgment that reports a scripted result, and counts its calls.
 
@@ -2273,8 +2268,6 @@ class FakeContentJudgment:
                 hits=tuple(self._hits_by_destination.get(destination, [])),
             )
         return ScanResult(hits=tuple(self._hits))
-
-
 
 
 @asynccontextmanager
@@ -2543,6 +2536,8 @@ class FakeMcpComment:
             "onBehalfOf": None,
         }
 
+
+#: The query the vendor's user read answers the caller's own account for.
 _CURRENT_USER = "me"
 
 
@@ -4167,6 +4162,7 @@ class FakeTrackerPort:
         self._wrote(issue_key)
         self.issue_state_changes[issue_key] = self.issues[issue_key].updated_at
         return updated
+
     async def restore_workflow_state(
         self,
         *,
@@ -4204,6 +4200,7 @@ class FakeTrackerPort:
         self.issues[issue_key] = updated
         self._wrote(issue_key)
         return updated
+
     async def set_issue_classification(
         self, *, issue_key: str, classification: str, holder: str | None = None
     ) -> TrackerIssue:
@@ -4231,6 +4228,7 @@ class FakeTrackerPort:
         self.issues[issue_key] = updated
         self._wrote(issue_key)
         return updated
+
     async def post_comment(self, *, issue_key: str, body: str) -> TrackerComment:
         self._sequence += 1
         comment = TrackerComment(
@@ -4361,6 +4359,7 @@ class FakeTrackerPort:
             holder=holder,
             validate_existing=validate_existing,
         )
+
     async def read_run_alarm(
         self, *, issue_key: str, subject: AlarmSubject, signal: AlarmSignal
     ) -> RunAlarm | None:
@@ -4430,6 +4429,7 @@ class FakeTrackerPort:
             prefixes=self.marker_prefixes,
             comments=await self.list_comments(issue_key=issue_key),
         )
+
     async def claim_issue(
         self,
         *,
@@ -4933,6 +4933,7 @@ class FakeJobQueue:
         self.submissions.append((lane, request))
         self.records[job_id] = record
         return record
+
     def attach(self, *, job_id: str) -> AsyncGenerator[AgentEvent, None]:
         """Replay the scripted run, exactly as the real queue's stream does.
 

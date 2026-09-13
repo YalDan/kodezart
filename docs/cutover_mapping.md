@@ -25,6 +25,7 @@ live with the cutover work itself.
 | How often a pass runs | Scheduler (cron) configuration only — never a prompt |
 | Credentials and deployment knobs | `AppConfig` env, never the operation config |
 | Whether a pass's output may leave the process | `OutboundContentGate` |
+
 ## Behavior-parity dimensions → template and section
 
 Each dimension names the template and the section carrying it. A test asserts
@@ -111,6 +112,7 @@ registries.
 | endpoints.cloudflare_docs_mcp | endpoints |
 | endpoints.notion_connector | endpoints |
 | private_surface | private_surface |
+
 ## What this lane does not claim
 
 - **Live-workspace resolution.** Validation here is structural only: required
@@ -121,6 +123,7 @@ registries.
   the next pass reads (KOD-245); no separate checkpoint document carries it,
   in any prompt set (KOD-306). `documents` stays a read-side registry.
 - **Cutover execution.** Only the mapping.
+
 ## Native OperationConfig consumers
 
 These fields have native typed consumers rather than template placeholders. The field census remains total across both tables.

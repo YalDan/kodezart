@@ -1,11 +1,11 @@
 """Domain exceptions — no I/O, no infrastructure concerns."""
 
 from collections.abc import Sequence
+
 from kodezart.types.domain.gating import ScanFailureKind, ScanHit
 from kodezart.types.domain.organize_owner import OrganizeReport
 from kodezart.types.domain.scope import ScopeRef
 from kodezart.types.domain.surface import WritableSurface
-
 
 
 class IssueLabelReadError(Exception):
@@ -16,8 +16,10 @@ class IssueLabelReadError(Exception):
         self.reason = reason
         super().__init__(f"issue label {classification!r} could not be read: {reason}")
 
+
 class GitRepositoryError(ValueError):
     """A requested local path does not identify an available Git repository."""
+
 
 class GitOperationError(RuntimeError):
     """A Git command failed or returned an invalid provider response."""
@@ -32,6 +34,7 @@ class GitSourceReadError(Exception):
         self.reason = reason
         super().__init__(f"source {ref!r}:{path!r} could not be read: {reason}")
 
+
 class AssertionComparisonError(Exception):
     """A protected comparison cannot establish a readable, unambiguous pair."""
 
@@ -39,6 +42,7 @@ class AssertionComparisonError(Exception):
         self.source_ref = source_ref
         self.reason = reason
         super().__init__(f"assertion comparison for {source_ref!r} refused: {reason}")
+
 
 class AuditEvidenceReadError(Exception):
     """A criterion's recorded grading cannot establish one current observation."""
@@ -62,6 +66,7 @@ class CheckObservationError(Exception):
         self.reason = reason
         super().__init__(f"Cannot read watched checks for {repo_url}@{ref}: {reason}")
 
+
 class PRTrackerIdentityError(Exception):
     """The publishable PR body lost its required tracker identity."""
 
@@ -72,6 +77,7 @@ class PRTrackerIdentityError(Exception):
             f"{issue_key!r}"
         )
 
+
 class RunShapeReadError(Exception):
     """Recorded observations cannot establish a run-shape predicate."""
 
@@ -80,6 +86,7 @@ class RunShapeReadError(Exception):
         self.source_ref = source_ref
         self.reason = reason
         super().__init__(f"{signal} cannot read {source_ref!r}: {reason}")
+
 
 class SurfaceLeaseError(Exception):
     """A surface acquisition or write lacks the required live lease.
@@ -109,6 +116,7 @@ class SurfaceLeaseError(Exception):
         self.marker: str | None = surface.marker
         self.current_holder: str | None = current_holder
 
+
 class SurfaceLeaseLostError(Exception):
     """Renewal could not confirm the run's complete declared write set.
 
@@ -122,6 +130,7 @@ class SurfaceLeaseLostError(Exception):
         self.surfaces = surfaces
         super().__init__(f"run {job_id!r} lost its declared surface lease")
 
+
 class SurfaceWriteAttributionError(Exception):
     """A protected record cannot be attributed to this tracker writer."""
 
@@ -132,6 +141,7 @@ class SurfaceWriteAttributionError(Exception):
             "the protected tracker record is not attributable to this writer "
             f"(author: {author!r})"
         )
+
 
 class DuplicateCommentMarkerError(Exception):
     """Several comments claim the same first-line marker on one target."""
@@ -147,6 +157,7 @@ class DuplicateCommentMarkerError(Exception):
         self.marker = marker
         self.comment_keys = tuple(comment_keys)
 
+
 class StaleWriteError(Exception):
     """Neither the asserted anchor nor its replacement is on the target."""
 
@@ -154,6 +165,7 @@ class StaleWriteError(Exception):
         super().__init__(f"stale description write on {target!r}: anchor {expected!r}")
         self.target = target
         self.expected = expected
+
 
 class StaleCommentWriteError(Exception):
     """An asserted native comment changed before its amendment could be issued."""
@@ -166,6 +178,7 @@ class StaleCommentWriteError(Exception):
             f"comment {expected_comment_key!r} on {target!r} "
             f"cannot be amended: {reason}"
         )
+
 
 class RulingRecordReadError(Exception):
     """The addressed issue's ruling records are unreadable or ambiguous."""
@@ -180,6 +193,7 @@ class RulingRecordReadError(Exception):
         super().__init__(
             f"rulings on {issue_key!r} {region} could not be read: {reason}"
         )
+
 
 class LaneRecordReadError(Exception):
     """A lane's branch record cannot be read from its addressed tracker comment."""
@@ -201,6 +215,7 @@ class LaneRecordReadError(Exception):
             f"for {lane_key!r} could not be read: {reason}"
         )
 
+
 class EscalationReadError(Exception):
     """Resolution cannot be established from a readable, unique escalation."""
 
@@ -216,6 +231,7 @@ class EscalationReadError(Exception):
             f"in lane {lane_key!r} could not be read: {reason}"
         )
 
+
 class CriterionReadError(Exception):
     """A criterion membership read could not establish a complete answer."""
 
@@ -223,6 +239,7 @@ class CriterionReadError(Exception):
         self.issue_key = issue_key
         self.reason = reason
         super().__init__(f"criteria of {issue_key!r} could not be read: {reason}")
+
 
 class CriterionResolutionError(ValueError):
     """A native criterion key has no unique current child in the addressed family."""
@@ -236,6 +253,7 @@ class CriterionResolutionError(ValueError):
             f"{reason}"
         )
 
+
 class FireSpecEntryError(Exception):
     """The current subject lacks its machine completion or human approval."""
 
@@ -244,12 +262,14 @@ class FireSpecEntryError(Exception):
         self.reason = reason
         super().__init__(f"fire subject {issue_key!r} cannot enter: {reason}")
 
+
 class EmptyFireCriteriaError(Exception):
     """A successful tracker spec read found no criterion sub-issues."""
 
     def __init__(self, *, issue_key: str) -> None:
         self.issue_key = issue_key
         super().__init__(f"fire subject {issue_key!r} has no criterion sub-issues")
+
 
 class InvalidFireCriterionError(Exception):
     """A criterion cannot supply its required specification at fire entry."""
@@ -262,6 +282,7 @@ class InvalidFireCriterionError(Exception):
             f"criterion {criterion_key!r} of fire subject {issue_key!r} "
             f"cannot be consumed: {reason}"
         )
+
 
 class DuplicateIssueIdentityError(Exception):
     """Several issues claim one scope-and-deliverable identity."""
@@ -277,6 +298,7 @@ class DuplicateIssueIdentityError(Exception):
         self.deliverable_key = deliverable_key
         self.issue_keys = tuple(issue_keys)
 
+
 class ScopeCycleError(Exception):
     """A cycle in the scope's dependency graph prevents any plan being returned.
 
@@ -289,12 +311,14 @@ class ScopeCycleError(Exception):
         self.issue_keys: tuple[str, ...] = tuple(issue_keys)
         super().__init__(f"scope dependency cycle: {', '.join(self.issue_keys)}")
 
+
 class ScopeReadError(Exception):
     """A scope cannot be resolved without inventing membership or metadata."""
 
     def __init__(self, message: str, *, ref: ScopeRef) -> None:
         super().__init__(f"{message} (scope: {ref.kind.value}:{ref.key})")
         self.ref: ScopeRef = ref
+
 
 class ScopePlanRefusalError(ScopeReadError):
     """Live scope facts violate the stage barrier before dispatch can begin."""
@@ -325,6 +349,7 @@ class ScopePlanRefusalError(ScopeReadError):
             )
         super().__init__("scope plan refused; " + "; ".join(details), ref=ref)
 
+
 class ScopeSupersessionReadError(ScopeReadError):
     """Readiness needs a cancellation reference without an established reader."""
 
@@ -335,6 +360,7 @@ class ScopeSupersessionReadError(ScopeReadError):
             + ", ".join(self.criterion_keys),
             ref=ref,
         )
+
 
 class ScopedExecutionUnavailableError(Exception):
     """An addressed scope cannot execute through the legacy workflow pipeline."""
@@ -517,6 +543,7 @@ class AssetFetchError(Exception):
         self.reason: str = reason
         self.asset_key: str | None = asset_key
 
+
 class DeliveryHeadError(Exception):
     """A delivery branch no longer has the head whose evidence was supplied."""
 
@@ -677,6 +704,7 @@ class StaleBaseError(Exception):
         self.implied_ref: str = implied_ref
         self.changed_inputs: list[str] = list(changed_inputs)
 
+
 class OrganizeAdmissionIdentityError(Exception):
     """The judgment did not address the source issue that was dispatched."""
 
@@ -687,6 +715,7 @@ class OrganizeAdmissionIdentityError(Exception):
             f"organize admission returned issue {observed!r}, expected {expected!r}"
         )
 
+
 class CheckChainExecutionError(Exception):
     """The configured chain could not be observed as command results."""
 
@@ -696,6 +725,7 @@ class CheckChainExecutionError(Exception):
         self.reason = reason
         super().__init__(f"Cannot execute check chain in {cwd!r}: {reason}")
 
+
 class UnionHeadReadError(Exception):
     """Current remote heads could not establish a complete union snapshot."""
 
@@ -704,6 +734,7 @@ class UnionHeadReadError(Exception):
         self.branch = branch
         self.reason = reason
         super().__init__(f"Union head observation for {scope_key!r} refused: {reason}")
+
 
 class UnionUnstableError(Exception):
     """Every allowed union attempt was superseded by current remote heads."""
@@ -726,6 +757,7 @@ class UnionUnstableError(Exception):
             f"Union heads for {scope_key!r} changed across {attempts} attempts"
         )
 
+
 class AuditClaimReadError(ValueError):
     """The claim's source or remote head cannot support this observation."""
 
@@ -733,8 +765,10 @@ class AuditClaimReadError(ValueError):
 class WriteBackReadError(ValueError):
     """An addressed artifact cannot be re-read completely for verification."""
 
+
 class PRStateReadError(ValueError):
     """A native PR observation cannot establish the requested identity."""
+
 
 class OrganizeWriteRefusalError(Exception):
     """A proposed or stale write is outside this operation's current authority."""
@@ -743,6 +777,7 @@ class OrganizeWriteRefusalError(Exception):
         self.issue_key = issue_key
         self.reason = reason
         super().__init__(f"organize write for {issue_key!r} refused: {reason}")
+
 
 class OrganizeHaltError(Exception):
     """A completed Organize tick retains its exact addressed halt report."""
@@ -756,6 +791,7 @@ class OrganizeHaltError(Exception):
             f"Organize for {scope.kind.value} {scope.key!r} halted: "
             f"{report.halt.cause.value}"
         )
+
 
 class OrganizeDecisionRequiredError(Exception):
     """An author found a human decision, before proposing any permitted write."""

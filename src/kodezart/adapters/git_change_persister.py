@@ -18,6 +18,7 @@ mutated (no reset, no commit-tree, no follow-up push).
 """
 
 from collections.abc import Awaitable, Callable
+
 from kodezart.core.errors import soft_failure
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.outbound_write import gated_write
@@ -44,7 +45,6 @@ from kodezart.types.domain.persist import PersistResult, PersistSource
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.session import PermissionMode, SessionType, ToolPreset
 from kodezart.types.domain.skills import SkillsSelection
-
 
 
 class GitChangePersister:

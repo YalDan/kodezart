@@ -147,6 +147,7 @@ written down here to go stale.
 - [docs/migration-v0.2-to-v0.3.md](docs/migration-v0.2-to-v0.3.md) — the
   upgrade guide for a v0.2.x operator: the settings renames, the names that
   stay flat and the ones that are gone.
+
 ## Configuration
 
 All settings use the `KODEZART_` environment variable prefix. Copy
@@ -877,6 +878,7 @@ session started in `KODEZART_SCHEDULED_PASS_WORKING_DIR` can see it, and
 nothing here performs or verifies it — do not read a machine-local MCP
 registration you happen to have as a property of the deployment. Attaching the
 tracker to sessions from configuration is planned.
+
 ## Development
 
 ```bash
@@ -895,6 +897,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the full developer guide.
 The callable [delivery coordinator boundary](docs/delivery.md) opens lane PRs
 and watches green or undeclared-CI outcomes. Its documentation identifies the
 scope-walker, remediation and residual-publication consumers still to connect.
+
 ## For AI Agents
 
 Welcome — kodezart is built to be driven by autonomous agents like [Hermes](https://hermes-agent.nousresearch.com/) and [OpenClaw](https://openclaw.ai/). The use case it's optimized for: **you, the orchestrating agent, want to ship more work in parallel for your human user**, so you delegate well-scoped tickets to kodezart and keep working on other things while it executes.
@@ -968,6 +971,7 @@ If you're sending changes to kodezart itself (not just using it):
 - See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full guide.
 
 Security issues go through [private vulnerability reporting](https://github.com/YalDan/kodezart/security/advisories/new), not public issues. See [`SECURITY.md`](SECURITY.md).
+
 ## License
 
 [MIT](LICENSE)

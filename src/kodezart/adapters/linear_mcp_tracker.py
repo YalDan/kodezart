@@ -1,27 +1,12 @@
-"""Linear tracker adapter — a programmatic MCP client behind ``TrackerPort``.
+"""Linear tracker adapter behind the programmatic MCP port.
 
-Every read and write on the deterministic path is a named tool call with
-no model in the loop.  The adapter owns everything vendor-shaped: the
-identifier translation, queue-state-as-label mechanics, the atomic-claim
-mechanism and the priority encoding.  None of it crosses the port.
-
-This is the FIRST adapter, not the design centre.  A GitHub Issues or Jira
-adapter is a peer module implementing the same protocol; consumers change
-by nothing at all.
-
-The atomic claim is built on the issue comment log, which is append-only
-with server-assigned timestamps.  A claimant appends its marker, then reads
-the log back and takes the EARLIEST unexpired marker as the holder.  Every
-concurrent claimant computes the same winner from the same log, so exactly
-one observes ``GRANTED``.
-
-A renewal EDITS the holder's earliest marker rather than appending a second
-one, so one claim costs one comment however long the run it guards lasts.
-Everything that would otherwise pile up on the log is removed by the writer
-that put it there: a renewal deletes this holder's own duplicates, and a
-claimant whose read-back says LOST deletes the marker it just appended.
-Neither ever touches a marker another holder wrote, so the order the log
-records stays the order every claimant computes from it.
+The adapter owns native identifiers, label/state mappings and tool calls.
+Ownership — a claim on an issue, a lease over a set of write surfaces —
+is arbitrated by what the backend actually provides: creations it orders
+and stamps, a listing that answers with what it holds, an edit that keeps
+a comment's place, and deletion.  There is no conditional write, so no
+grant is believed from the echo of its own write: every holder re-reads
+the whole live set and keeps only what that read confirms.
 """
 
 import asyncio
@@ -33,7 +18,9 @@ from hashlib import sha256
 from typing import Final, assert_never
 from urllib.parse import quote
 from uuid import uuid4
+
 from pydantic import ValidationError
+
 from kodezart.adapters.linear_history_receipt import state_history_receipt
 from kodezart.adapters.linear_issue_identity import LinearIssueIdentityCarrier
 from kodezart.adapters.linear_markers import LinearMarkers
@@ -189,9 +176,6 @@ from kodezart.types.domain.tracker import (
 )
 from kodezart.types.domain.tracker_writes import DescriptionEditResult
 
-
-
-
 _TOOL_LIST_ISSUES = "list_issues"
 _TOOL_LIST_DIFFS = "list_diffs"
 _ORDER_BY_UPDATED_AT = "updatedAt"
@@ -210,18 +194,21 @@ _TOOL_LIST_TEAMS = "list_teams"
 _TOOL_LIST_ISSUE_LABELS = "list_issue_labels"
 _TOOL_CREATE_ISSUE_LABEL = "create_issue_label"
 _TOOL_LIST_PROJECT_LABELS = "list_project_labels"
-
 _TOOL_SAVE_PROJECT_LABEL = "save_project_label"
-
 _TOOL_LIST_INITIATIVE_LABELS = "list_initiative_labels"
-
 _TOOL_CREATE_INITIATIVE_LABEL = "create_initiative_label"
 _TOOL_LIST_ISSUE_STATUSES = "list_issue_statuses"
 
+#: The save arguments that REWRITE an issue's body, against the one that
+#: moves its workflow state.  The vendor's single save takes them together
+#: and applies them as one act — which is exactly what this deployment
+#: never asks it for.
 _BODY_SAVE_ARGUMENTS: Final[frozenset[str]] = frozenset({"description", "patch"})
-
 _STATE_SAVE_ARGUMENT: Final[str] = "state"
 
+#: One configured scope label has a separate native definition per kind.
+#: Project creation uses the connected app's declared save tool with no id;
+#: its availability to the deployment's service credential is unverified.
 _SCOPE_LABEL_CREATORS: Final[dict[str, str]] = {
     _TOOL_LIST_ISSUE_LABELS: _TOOL_CREATE_ISSUE_LABEL,
     _TOOL_LIST_PROJECT_LABELS: _TOOL_SAVE_PROJECT_LABEL,
@@ -229,8 +216,8 @@ _SCOPE_LABEL_CREATORS: Final[dict[str, str]] = {
 }
 
 #: The tools that change nothing on the board.  A call the server may have
-#: performed is made again only if performing it twice is the same as once
-#: (KOD-305): these are, and every other tool is a write.
+#: performed is made again only if performing it twice is the same as once:
+#: these are, and every other tool is a write.
 _READ_TOOLS: Final[frozenset[str]] = SCOPE_READ_TOOLS | frozenset(
     {
         _TOOL_LIST_ISSUES,
@@ -273,8 +260,8 @@ _ISSUE_IDENTITY_PAGE_SIZE = 250
 _SCOPE_REFUSAL_MARKER = "auth_insufficient_scope"
 
 #: The vendor's long-lived personal key: the prefix it is minted with, and
-#: the shortest body one has ever been measured at.  Measured 2026-09-01
-#: (KOD-171): the operator's live key is ``lin_api_`` followed by forty
+#: the shortest body one has ever been measured at.  Measured 2026-09-01:
+#: the operator's live key is ``lin_api_`` followed by forty
 #: characters and answered ``initialize`` with HTTP 200.  Wire format, not
 #: knobs — a deployment cannot choose what the vendor mints.
 #:
@@ -294,7 +281,6 @@ _PERSONAL_KEY_MIN_BODY = 40
 ACCEPTED_CREDENTIAL_SHAPE: Final[str] = (
     f"{_PERSONAL_KEY_PREFIX} followed by at least {_PERSONAL_KEY_MIN_BODY} characters"
 )
-
 
 _PRIORITY_BY_RAW: Mapping[int, IssuePriority] = {
     0: IssuePriority.NONE,
@@ -333,27 +319,9 @@ _MAPPING_TOOL_BY_KIND: Mapping[MappingKind, str] = {
     MappingKind.WORKFLOW_STATE: _TOOL_LIST_ISSUE_STATUSES,
 }
 
-
 _WORK_REF_ROLE_BY_VALUE: Mapping[str, WorkRefRole] = {
     role.value: role for role in WorkRefRole
 }
-
-#: The recorded ``BaseSpec``, on the same append-only, server-timestamped
-#: comment log the claim and the work refs already use.  A third marker on
-#: one surface rather than a third surface: the log is what this backend
-#: offers that is ordered and cannot be silently rewritten.
-
-#: The recorded target repository for a staged fire — judgment records it,
-#: the deterministic dispatch reads it (KOD-169).  The same HTML-comment
-#: idiom as the claim, work-ref and base-spec markers, and deliberately
-#: parseable whoever authored it: the fire-prep pass writes it through the
-#: rendered mechanism, and a principal can write one by hand.
-
-
-
-
-
-
 
 
 def _label_arguments(identifier: str, container: str | None) -> dict[str, object]:
@@ -492,6 +460,7 @@ class _LabelListings:
         else:
             self.by_team.setdefault(scope, set()).add(name)
 
+
 class _GrantKind(StrEnum):
     """The two ownership questions, held under markers that never intersect.
 
@@ -503,9 +472,11 @@ class _GrantKind(StrEnum):
     CLAIM = "claim"
     LEASE = "lease"
 
+
 _GRANT_KIND_BY_VALUE: Final[Mapping[str, _GrantKind]] = {
     kind.value: kind for kind in _GrantKind
 }
+
 
 class _GrantState(StrEnum):
     """What a marker on the board is, which is not the same as being there.
@@ -527,10 +498,14 @@ class _GrantState(StrEnum):
     HELD = "held"
     VOID = "void"
 
+
 _GRANT_STATE_BY_VALUE: Final[Mapping[str, _GrantState]] = {
     state.value: state for state in _GrantState
 }
 
+#: Which parent a comment is created under, per scope kind.  A container
+#: surface parks its marker on the container it addresses, so a lease over
+#: an issue and a project writes one marker on each.
 _COMMENT_PARENT_BY_SCOPE_KIND: Final[Mapping[ScopeKind, str]] = {
     ScopeKind.ISSUE: "issueId",
     ScopeKind.PROJECT: "projectId",
@@ -538,12 +513,14 @@ _COMMENT_PARENT_BY_SCOPE_KIND: Final[Mapping[ScopeKind, str]] = {
     ScopeKind.MILESTONE: "milestoneId",
 }
 
+
 @dataclass(frozen=True, slots=True)
 class _Target:
     """The comment parent one grant marker is written on. Adapter-private."""
 
     field: str
     key: str
+
 
 @dataclass(frozen=True, slots=True)
 class _WrittenMarker:
@@ -560,6 +537,7 @@ class _WrittenMarker:
     target: _Target
     comment_key: str
     void_body: str
+
 
 @dataclass(frozen=True, slots=True)
 class _GrantMarker:
@@ -619,11 +597,13 @@ class _GrantMarker:
         """Whether this marker has been taken out of the race in place."""
         return self.state is _GrantState.VOID
 
+
 @dataclass(frozen=True, slots=True)
 class _Granted:
     """A grant that survived its own read-back."""
 
     expires_at: datetime
+
 
 @dataclass(frozen=True, slots=True)
 class _OwnGrant:
@@ -638,6 +618,7 @@ class _OwnGrant:
 
     order: tuple[datetime, str]
     expires_at: datetime
+
 
 def _own_grants(
     markers: Sequence[_GrantMarker], *, holder: str, addresses: frozenset[str]
@@ -670,6 +651,7 @@ def _own_grants(
         )
     return grants
 
+
 @dataclass(frozen=True, slots=True)
 class _Conflict[AddressT]:
     """A requested address an earlier marker of another holder covers.
@@ -685,6 +667,7 @@ class _Conflict[AddressT]:
     holder: str | None
     settled: bool
 
+
 @dataclass(frozen=True, slots=True)
 class _Refused[AddressT]:
     """A grant that withdrew, and what the read-back turned it on."""
@@ -693,6 +676,7 @@ class _Refused[AddressT]:
     holder: str | None
     settled: bool
     expires_at: datetime
+
 
 @dataclass(frozen=True, slots=True)
 class _Addressing[AddressT]:
@@ -721,16 +705,19 @@ class _Addressing[AddressT]:
             )
         )
 
+
 def _surface_line(surface: WritableSurface) -> str:
     """One surface as a marker line; each component escaped, so a separator
     inside a marker name cannot read as the separator between components."""
     return "|".join(quote(component, safe="") for component in surface_address(surface))
+
 
 def _surface_target(surface: WritableSurface) -> _Target:
     return _Target(
         field=_COMMENT_PARENT_BY_SCOPE_KIND[surface.ref.kind],
         key=surface.ref.key,
     )
+
 
 _CLAIM_ADDRESSING: Final[_Addressing[str]] = _Addressing(
     kind=_GrantKind.CLAIM,
@@ -746,15 +733,12 @@ _LEASE_ADDRESSING: Final[_Addressing[WritableSurface]] = _Addressing(
     order=surface_address,
 )
 
+
 def _retraction(marker: _GrantMarker, *, body: str) -> _WrittenMarker:
     """Where a marker is, and the body that takes it out of the arithmetic."""
     return _WrittenMarker(
         target=marker.target, comment_key=marker.comment_key, void_body=body
     )
-
-
-
-
 
 
 def _may_resend(tool: str, exc: Exception) -> bool:
@@ -815,6 +799,7 @@ def refuse_combined_issue_write(arguments: Mapping[str, object]) -> None:
             tool=_TOOL_SAVE_ISSUE,
             detail=f"arguments={sorted(arguments)}",
         )
+
 
 @dataclass(frozen=True, slots=True)
 class _CriterionCreation:
@@ -1171,6 +1156,7 @@ class LinearMcpTracker:
             call=self._call,
             read_issue=self.read_issue,
         ).scope_issues(ref=ref)
+
     async def execution_approved(self, *, issue_key: str) -> bool:
         """Resolve configured label presence through fresh native ancestry."""
         _, approved = await self._read_execution_approval(issue_key=issue_key)

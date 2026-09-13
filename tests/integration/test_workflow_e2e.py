@@ -5,8 +5,10 @@ import os
 import uuid
 from collections.abc import AsyncGenerator, Sequence
 from pathlib import Path
+
 import pytest
 import structlog
+
 from kodezart.adapters.git_branch_merger import GitBranchMerger
 from kodezart.adapters.git_change_persister import GitChangePersister
 from kodezart.adapters.git_worktree_provider import GitWorktreeProvider
@@ -70,9 +72,6 @@ from tests.fakes import (
     no_delay_floor,
 )
 from tests.workflow_factory import make_authored_workflow
-
-
-
 
 
 async def _git(cmd: list[str], cwd: Path) -> None:
@@ -657,15 +656,15 @@ async def test_workflow_e2e_divergent_base_branch(
 
 
 # ---------------------------------------------------------------------------
-# AppConfig.git_remote threading — end-to-end verification
+# AppConfig.git.remote threading — end-to-end verification
 #
 # The two tests below cover the failed criteria from the refactor that
-# extracted ``_REMOTE = "origin"`` to ``AppConfig.git_remote``:
+# extracted ``_REMOTE = "origin"`` to ``AppConfig.git.remote``:
 #
-#   1. Default-parity: WITHOUT ``KODEZART_GIT_REMOTE`` set, every git
+#   1. Default-parity: WITHOUT ``KODEZART_GIT__REMOTE`` set, every git
 #      subprocess and remote-ref probe addresses ``origin/*`` (byte-identical
 #      to the pre-refactor literal).
-#   2. Override path: WITH ``KODEZART_GIT_REMOTE=upstream`` (or, equivalently,
+#   2. Override path: WITH ``KODEZART_GIT__REMOTE=upstream`` (or, equivalently,
 #      ``remote="upstream"`` threaded through constructors), every git
 #      subprocess addresses ``upstream/*`` and the three rewritten error
 #      messages contain ``upstream`` rather than ``origin``.

@@ -3,7 +3,6 @@
 from collections.abc import Sequence
 
 from kodezart.domain.dispatch import blocker_keys
-
 from kodezart.types.domain.organize import (
     AdmissionResult,
     AdmissionRoute,
@@ -13,12 +12,12 @@ from kodezart.types.domain.organize import (
     SpecFinding,
     UnverifiableAdmission,
 )
-
 from kodezart.types.domain.tracker import (
     TrackerIssue,
     TrackerIssueRevision,
     WorkflowStateKind,
 )
+
 
 def is_admission_live(*, admitted_body_digest: str, current_body_digest: str) -> bool:
     """A judgment applies only to the exact body revision it examined.
@@ -29,6 +28,7 @@ def is_admission_live(*, admitted_body_digest: str, current_body_digest: str) ->
     if not admitted_body_digest.strip() or not current_body_digest.strip():
         raise ValueError("admission liveness requires both nonempty body digests")
     return admitted_body_digest == current_body_digest
+
 
 def admission_route(
     result: AdmissionResult,

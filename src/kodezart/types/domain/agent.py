@@ -2,12 +2,14 @@
 
 from enum import StrEnum
 from typing import Annotated, Literal, Self
+
 from pydantic import (
     ConfigDict,
     Field,
     field_validator,
     model_validator,
 )
+
 from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.accept import AcceptVerdict, SherlockFlag
 from kodezart.types.domain.amendment import (
@@ -65,8 +67,6 @@ class RulingAuthor(StrEnum):
 
     MACHINE = "machine"
     PRINCIPAL = "principal"
-
-
 
 
 # ---------------------------------------------------------------------------
@@ -323,6 +323,7 @@ class TaskUsageInfo(CamelCaseModel):
     total_tokens: int
     tool_uses: int
     duration_ms: int
+
 
 class NodeSessionStartedEvent(AgentEvent):
     """An actual native opening, emitted by its addressed harness invocation.
@@ -733,6 +734,7 @@ class GeneratedCriteriaOutput(CamelCaseModel):
         description="How the set was derived from the ticket and the repository.",
     )
 
+
 class RulingClass(StrEnum):
     """The four defects a fire-time ruling may resolve."""
 
@@ -741,10 +743,12 @@ class RulingClass(StrEnum):
     REGROUND_PREMISE = "reground_premise"
     RESOLVE_CONTRADICTION = "resolve_contradiction"
 
+
 class RulingProtectedTestRef(ProtectedTestRef):
     """A native ruling designation retains the canonical typed owner identity."""
 
     source_ref: RulingId = Field(min_length=1, pattern=r"\S")
+
 
 class Ruling(CamelCaseModel):
     """One pinned answer, with explicit authorship and its stable question key."""
@@ -812,6 +816,7 @@ class Ruling(CamelCaseModel):
                 raise ValueError("duplicate protected test in one ruling")
             addresses.add(address)
         return self
+
 
 class RulingOutput(CamelCaseModel):
     """The complete structured result of a fire-time ruling session."""
@@ -980,6 +985,7 @@ class WorkflowCompleteEvent(AgentEvent):
     trajectory: LoopTrajectory | None = None
     criteria_validation: CriteriaValidation | None = None
 
+
 class AuthoredWorkflowCompleteEvent(WorkflowCompleteEvent):
     """Existing authored HTTP terminal after external delivery completes."""
 
@@ -1082,12 +1088,44 @@ class WorkflowTicketEvent(AgentEvent):
     approved: TicketApproval
     mode: TicketReviewMode
 
+
+# The native graph forwards SDK events and emits only these progress variants.
+# Terminal events are consumed by its caller; authored ticket/artifact events
+# belong to the authored composition. Reuse models so wire validation preserves
+# every field rather than deserializing the AgentEvent base alone.
 class NativeAmendmentEvent(AgentEvent):
     """Independent precommit findings; upheld departures were not actioned."""
 
     type: Literal["native_amendment"] = "native_amendment"
     report: AmendmentReport
     repeated: tuple[RepeatedUpheld, ...] = ()
+
+
+type NativeFireProgressEvent = Annotated[
+    UserMessageEvent
+    | AssistantTextEvent
+    | AssistantThinkingEvent
+    | ToolUseEvent
+    | ToolResultEvent
+    | SystemEvent
+    | TaskStartedEvent
+    | TaskProgressEvent
+    | TaskUpdatedEvent
+    | TaskNotificationEvent
+    | ResultEvent
+    | StreamDataEvent
+    | ErrorEvent
+    | RateLimitWarningEvent
+    | NodeSessionStartedEvent
+    | WorkflowIterationEvent
+    | WorkflowConsolidationEvent
+    | WorkflowReviewEvent
+    | WorkflowRemediationEvent
+    | WorkflowVisibilityEvent
+    | WorkflowScopeBaseEvent
+    | NativeAmendmentEvent,
+    Field(discriminator="type"),
+]
 
 
 # Pre-computed WIRE schemas for structured agent output via output_format.
@@ -1122,19 +1160,15 @@ DRAFT_CRITIQUE_SCHEMA: dict[str, object] = DraftCritiqueOutput.model_json_schema
 AUDIT_MANDATE_SCHEMA: dict[str, object] = AuditMandateJudgment.model_json_schema()
 
 AUDIT_OVERCLAIM_SCHEMA: dict[str, object] = AuditOverclaimJudgment.model_json_schema()
-
 AUDIT_CLAIM_SCHEMA: dict[str, object] = AuditClaimJudgment.model_json_schema()
 DETECTOR_REMOVAL_SCHEMA: dict[str, object] = DetectorRemovalJudgment.model_json_schema()
 
+
 ORGANIZE_ADMISSION_SCHEMA: dict[str, object] = AdmissionJudgment.model_json_schema()
-
 NATIVE_WRITER_SCHEMA: dict[str, object] = NativeWriterOutput.model_json_schema()
-
 AMENDMENT_JUDGMENT_SCHEMA: dict[str, object] = AmendmentJudgment.model_json_schema()
-
 AMENDMENT_TEXT_SCHEMA: dict[str, object] = AmendmentTextOutput.model_json_schema()
 ORGANIZE_PROPOSAL_SCHEMA: dict[str, object] = OrganizeProposal.model_json_schema()
-
 WRITE_BACK_SCHEMA: dict[str, object] = WriteBackFinding.model_json_schema()
 
 #: Every wire schema this system dispatches, by constant name. The

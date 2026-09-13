@@ -14,15 +14,14 @@ from collections import deque
 from datetime import datetime
 from enum import StrEnum
 from typing import Final
+
 from pydantic import ConfigDict, Field
+
 from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.branch import BaseSpec
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.self_writes import OwnMutation
 from kodezart.types.domain.tracker import IssuePriority
-
-
-
 
 
 class DispatchOutcome(StrEnum):
@@ -206,11 +205,11 @@ class DispatchReport(DispatchModel):
     write under, and the unresolved one is the fail-closed one."""
     job_id: str | None = None
     base: BaseSpec | None = None
-    criterion_keys: tuple[str, ...] = ()
     """The base the fire was dispatched on, and everything it was computed
     from.  ``None`` on the two outcomes that enqueued nothing — a pass that
     claimed no issue resolved no base, which is a different fact from a
     base that resolved to trunk."""
+    criterion_keys: tuple[str, ...] = ()
     """The open criterion records under the issue the dispatched fire is FOR.
 
     Empty for a producer that selects whole issues: its unit of work is the
@@ -284,6 +283,9 @@ class PassDelta(DispatchModel):
         """True iff something moved and a full pass is therefore warranted."""
         return bool(self.changed)
 
+
+#: Bookkeeping can conservatively wake a lagging gate instead of retaining
+#: arbitrary full comment bodies for the entire service lifetime.
 _SELF_WRITE_RECEIPT_LIMIT: Final[int] = 256
 
 
