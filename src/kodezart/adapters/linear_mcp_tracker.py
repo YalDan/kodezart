@@ -134,6 +134,7 @@ from kodezart.types.domain.surface import (
     SurfaceKind,
     SurfaceLease,
     WritableSurface,
+    WriteRevalidation,
 )
 from kodezart.types.domain.tracker import (
     INSTATABLE_MAPPING_KINDS,
@@ -174,7 +175,20 @@ _TOOL_GET_USER = "get_user"
 _TOOL_LIST_TEAMS = "list_teams"
 _TOOL_LIST_ISSUE_LABELS = "list_issue_labels"
 _TOOL_CREATE_ISSUE_LABEL = "create_issue_label"
+_TOOL_LIST_PROJECT_LABELS = "list_project_labels"
+_TOOL_SAVE_PROJECT_LABEL = "save_project_label"
+_TOOL_LIST_INITIATIVE_LABELS = "list_initiative_labels"
+_TOOL_CREATE_INITIATIVE_LABEL = "create_initiative_label"
 _TOOL_LIST_ISSUE_STATUSES = "list_issue_statuses"
+
+#: One configured scope label has a separate native definition per kind.
+#: Project creation uses the connected app's declared save tool with no id;
+#: its availability to the deployment's service credential is unverified.
+_SCOPE_LABEL_CREATORS: Final[dict[str, str]] = {
+    _TOOL_LIST_ISSUE_LABELS: _TOOL_CREATE_ISSUE_LABEL,
+    _TOOL_LIST_PROJECT_LABELS: _TOOL_SAVE_PROJECT_LABEL,
+    _TOOL_LIST_INITIATIVE_LABELS: _TOOL_CREATE_INITIATIVE_LABEL,
+}
 
 #: The tools that change nothing on the board.  A call the server may have
 #: performed is made again only if performing it twice is the same as once
@@ -193,6 +207,8 @@ _READ_TOOLS: Final[frozenset[str]] = frozenset(
         _TOOL_GET_USER,
         _TOOL_LIST_TEAMS,
         _TOOL_LIST_ISSUE_LABELS,
+        _TOOL_LIST_PROJECT_LABELS,
+        _TOOL_LIST_INITIATIVE_LABELS,
         _TOOL_LIST_ISSUE_STATUSES,
     },
 )
@@ -1607,6 +1623,9 @@ class LinearMcpTracker:
         unresolved: list[MappingRef] = []
         divergent: list[str] = []
         for ref in refs:
+            if ref.kind is MappingKind.SCOPE_LABEL and ref.scope is not None:
+                unresolved.append(ref)
+                continue
             if ref.kind is MappingKind.WORKFLOW_STATE:
                 if states_by_team is None:
                     states_by_team = await self._workflow_states_by_team()
@@ -1693,6 +1712,11 @@ class LinearMcpTracker:
         """
         outcomes: list[MappingOutcome] = []
         definitions = await self._label_definitions()
+        scope_definitions = (
+            await self._scope_label_definitions(definitions)
+            if any(ref.kind is MappingKind.SCOPE_LABEL for ref in refs)
+            else {}
+        )
         documents = (
             await self._document_definitions()
             if any(ref.kind is MappingKind.DOCUMENT for ref in refs)
@@ -1706,6 +1730,11 @@ class LinearMcpTracker:
                 )
             if ref.kind is MappingKind.DOCUMENT:
                 outcomes.append(await self._ensure_document(ref, documents))
+                continue
+            if ref.kind is MappingKind.SCOPE_LABEL:
+                outcomes.append(
+                    await self._ensure_scope_label(ref, definitions, scope_definitions),
+                )
                 continue
             identifier = ref.identifier
             if identifier is None:
@@ -1760,6 +1789,70 @@ class LinearMcpTracker:
                 team=ref.scope,
             )
         return tuple(outcomes)
+
+    async def _scope_label_definitions(
+        self,
+        issue_definitions: _LabelListings,
+    ) -> dict[str, set[str]]:
+        """Keep native namespaces apart: one label id cannot stand for all."""
+        return {
+            tool: (
+                issue_definitions.workspace
+                if tool == _TOOL_LIST_ISSUE_LABELS
+                else {entry.name for entry in await self._label_entries({}, tool=tool)}
+            )
+            for tool in _SCOPE_LABEL_CREATORS
+        }
+
+    async def _ensure_scope_label(
+        self,
+        ref: MappingRef,
+        issues: _LabelListings,
+        definitions: dict[str, set[str]],
+    ) -> MappingOutcome:
+        """Create missing definitions only; never apply approval to an entity.
+
+        Scope labels are workspace-level, including the issue namespace.
+        A declared team's own copy is refused before any namespace write:
+        preserving it and adding a workspace copy would leave issue writes
+        ambiguous. Undeclared teams remain unobservable, as for queue labels.
+
+        Create replies were not captured by the connected-app measurement.
+        Resolve the name through a fresh listing instead of inventing a
+        write-response schema or treating a successful call as readback.
+        """
+        identifier = ref.identifier
+        if identifier is None or ref.scope is not None:
+            raise TrackerEnsureConflictError(
+                "a scope label requires its configured identifier and workspace scope",
+                entry=ref.describe(),
+            )
+        held = issues.teams_holding(identifier)
+        if held:
+            raise TrackerEnsureConflictError(
+                "a workspace scope label conflicts with an existing team label; "
+                f"found {', '.join(repr(team) for team in held)}",
+                entry=ref.describe(),
+            )
+        action = EnsureAction.ADOPTED
+        for tool, creator in _SCOPE_LABEL_CREATORS.items():
+            names = definitions[tool]
+            if identifier in names:
+                continue
+            await self._call(creator, {"name": identifier})
+            observed = {
+                entry.name for entry in await self._label_entries({}, tool=tool)
+            }
+            if identifier not in observed:
+                raise TrackerProtocolError(
+                    "the created scope label is absent from its namespace readback",
+                    tool=tool,
+                    detail=ref.describe(),
+                )
+            names.clear()
+            names.update(observed)
+            action = EnsureAction.CREATED
+        return MappingOutcome(ref=ref, action=action, identifier=identifier)
 
     async def _ensure_document(
         self,
@@ -1882,11 +1975,30 @@ class LinearMcpTracker:
     async def _label_entries(
         self,
         arguments: Mapping[str, object],
+        *,
+        tool: str = _TOOL_LIST_ISSUE_LABELS,
     ) -> Sequence[LinearLabelWire]:
-        """One label listing, scoped by *arguments* or not scoped at all."""
-        tool = _MAPPING_TOOL_BY_KIND[MappingKind.QUEUE_STATE]
-        payload = await self._call(tool, arguments)
-        return self._validate(LinearLabelListWire, payload, tool).labels
+        """Every page of one label namespace, preserving the listing scope."""
+        entries: list[LinearLabelWire] = []
+
+        async def read(
+            request: Mapping[str, object],
+        ) -> tuple[LinearLabelListWire, bool, str | None]:
+            payload = await self._call(tool, request)
+            listing = self._validate(LinearLabelListWire, payload, tool)
+            return listing, listing.has_next_page, listing.cursor
+
+        async for listing in cursor_pages(
+            read,
+            arguments=arguments,
+            refusal=lambda cursor: TrackerProtocolError(
+                "label pagination did not provide a new continuation cursor",
+                tool=tool,
+                detail=f"cursor={cursor!r}",
+            ),
+        ):
+            entries.extend(listing.labels)
+        return entries
 
     async def _team_listing(self) -> Sequence[LinearTeamWire]:
         """Every team the workspace holds, with the UUID it is addressed by."""
@@ -1958,6 +2070,13 @@ class LinearMcpTracker:
                 return frozenset(await self._document_definitions())
             case MappingKind.QUEUE_STATE | MappingKind.ISSUE_LABEL:
                 return (await self._label_definitions()).names()
+            case MappingKind.SCOPE_LABEL:
+                issues = await self._label_definitions()
+                definitions = await self._scope_label_definitions(issues)
+                shared = set.intersection(*definitions.values())
+                return frozenset(
+                    name for name in shared if not issues.teams_holding(name)
+                )
             case MappingKind.USER:
                 return frozenset(
                     identity
@@ -3027,17 +3146,25 @@ class LinearMcpTracker:
         return await self._caller.call_tool(name=tool, arguments=arguments)
 
     async def _retry_call[ResultT](
-        self, tool: str, invoke: Callable[[], Awaitable[ResultT]]
+        self,
+        tool: str,
+        invoke: Callable[[], Awaitable[ResultT]],
+        *,
+        revalidate: WriteRevalidation | None = None,
     ) -> ResultT:
         """Use the existing policy around one complete, safe-to-repeat attempt.
 
         Protected mutations include their fresh preconditions in ``invoke``.
+        A caller's source authorization is revalidated before each attempt;
+        it does not replace the adapter's identity, snapshot or grant checks.
         They end at the write receipt; subsequent awaited readback belongs
         outside this scope so a read failure cannot resend a completed write.
         """
         attempt = 0
         while True:
             try:
+                if revalidate is not None:
+                    await revalidate()
                 return await invoke()
             except McpCredentialRefusedError as exc:
                 # Named once and raised, never retried: the refusal is the
@@ -3425,13 +3552,16 @@ class LinearMcpTracker:
         expected: tuple[IssueGraphSnapshot, ...],
         changes: tuple[GraphChange, ...],
         holder: str,
+        revalidate: WriteRevalidation | None = None,
     ) -> TrackerIssue:
         async def attempt() -> tuple[TrackerIssue, ...]:
             return await self._update_issue_graph_once(
                 issue_key=issue_key, expected=expected, changes=changes, holder=holder
             )
 
-        written = await self._retry_call(_TOOL_SAVE_ISSUE, attempt)
+        written = await self._retry_call(
+            _TOOL_SAVE_ISSUE, attempt, revalidate=revalidate
+        )
         # A completed save must never be retried because a later read cannot answer.
         for expected_issue in written:
             observed = await self.read_issue(issue_key=expected_issue.issue_key)
@@ -3580,6 +3710,7 @@ class LinearMcpTracker:
         body: str,
         holder: str,
         expected: tuple[IssueGraphSnapshot, ...],
+        revalidate: WriteRevalidation | None = None,
     ) -> TrackerIssue:
         if not all(
             value.strip() for value in (source_key, deliverable_key, title, body)
@@ -3602,7 +3733,9 @@ class LinearMcpTracker:
                 expected=expected,
             )
 
-        written = await self._retry_call(_TOOL_SAVE_ISSUE, attempt)
+        written = await self._retry_call(
+            _TOOL_SAVE_ISSUE, attempt, revalidate=revalidate
+        )
         if isinstance(written, TrackerIssue):
             return written
         created, source, content = written.saved, written.source, written.content
@@ -3722,7 +3855,14 @@ class LinearMcpTracker:
         return unstarted[0]
 
     async def create_criterion_if_absent(
-        self, *, parent_key: str, title: str, check: str, do: str, holder: str
+        self,
+        *,
+        parent_key: str,
+        title: str,
+        check: str,
+        do: str,
+        holder: str,
+        revalidate: WriteRevalidation | None = None,
     ) -> TrackerIssue:
         body = criterion_body(parent_key=parent_key, check=check, do=do)
         if not title.strip():
@@ -3774,7 +3914,9 @@ class LinearMcpTracker:
             )
             return _CriterionCreation(saved=created)
 
-        written = await self._retry_call(_TOOL_SAVE_ISSUE, attempt)
+        written = await self._retry_call(
+            _TOOL_SAVE_ISSUE, attempt, revalidate=revalidate
+        )
         if isinstance(written, TrackerIssue):
             return written
         created = written.saved
@@ -3942,7 +4084,9 @@ class LinearMcpTracker:
                 self._saved_issue(payload, written={"description": body})
                 return DescriptionEditResult.EDITED
 
-            return await self._retry_call(_TOOL_SAVE_ISSUE, attempt)
+            return await self._retry_call(
+                _TOOL_SAVE_ISSUE, attempt, revalidate=authorization.revalidate
+            )
         current = await self.read_issue(issue_key=target)
         body = description_replacement(
             target=target, body=current.body, expected=expected, replacement=replacement

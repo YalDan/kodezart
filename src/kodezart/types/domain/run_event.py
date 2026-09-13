@@ -1,4 +1,4 @@
-"""Shared native run-event names; publication belongs to its actual owner."""
+"""The shared run-event vocabulary, owned once."""
 
 from enum import StrEnum
 

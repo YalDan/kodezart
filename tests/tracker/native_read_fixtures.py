@@ -20,8 +20,8 @@ LABELS = {
 def tracker_over(server, *, issue_labels=None):
     return LinearMcpTracker(
         criteria_stage_label_key=None,
-        scope_labels={},
         caller=server,
+        scope_labels={},
         issue_labels=LABELS if issue_labels is None else issue_labels,
         marker_prefixes=MARKER_PREFIXES,
         queue_state_labels=QUEUE_STATE_LABELS,

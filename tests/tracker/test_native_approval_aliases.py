@@ -39,7 +39,7 @@ class ApprovalAliasServer(FakeLinearMcpServer):
         return payload
 
 
-@pytest.mark.parametrize("entry", ["approval"])
+@pytest.mark.parametrize("entry", ["approval", "spec"])
 @pytest.mark.parametrize("requested", ["ROOT-1", NATIVE_UUID])
 async def test_actual_entry_preserves_reported_alias_with_one_subject_read(
     entry, requested
@@ -61,7 +61,7 @@ async def test_actual_entry_preserves_reported_alias_with_one_subject_read(
     assert server.tool_calls("save_issue") == []
 
 
-@pytest.mark.parametrize("entry", ["approval"])
+@pytest.mark.parametrize("entry", ["approval", "spec"])
 @pytest.mark.parametrize("reported_uuid", [None, OTHER_UUID])
 async def test_actual_entry_refuses_foreign_subject_before_membership(
     entry, reported_uuid

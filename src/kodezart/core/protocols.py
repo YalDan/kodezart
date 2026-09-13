@@ -60,6 +60,7 @@ from kodezart.types.domain.surface import (
     DescriptionWriteAuthority,
     SurfaceLease,
     WritableSurface,
+    WriteRevalidation,
 )
 from kodezart.types.domain.tracker import (
     ClaimResult,
@@ -1159,6 +1160,7 @@ class TrackerPort(TrackerCriteriaReader, Protocol):
         expected: tuple[IssueGraphSnapshot, ...],
         changes: tuple[GraphChange, ...],
         holder: str,
+        revalidate: WriteRevalidation | None = None,
     ) -> TrackerIssue:
         """Apply explicit graph deltas under source and affected peer grants.
 
@@ -1180,6 +1182,7 @@ class TrackerPort(TrackerCriteriaReader, Protocol):
         body: str,
         holder: str,
         expected: tuple[IssueGraphSnapshot, ...],
+        revalidate: WriteRevalidation | None = None,
     ) -> TrackerIssue:
         """Create one ordinary unstarted child under ISSUE_SPLIT_SET authority.
 
@@ -1196,6 +1199,7 @@ class TrackerPort(TrackerCriteriaReader, Protocol):
         check: str,
         do: str,
         holder: str,
+        revalidate: WriteRevalidation | None = None,
     ) -> TrackerIssue:
         """Mint one Todo criterion under a held CRITERION_CHILD_SET surface.
 
