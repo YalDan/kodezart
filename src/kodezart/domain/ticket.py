@@ -1,6 +1,9 @@
 """Ticket rendering — pure domain formatter."""
 
+from typing import assert_never
+
 from kodezart.types.domain.agent import TicketDraftOutput
+from kodezart.types.domain.fire_spec import AuthoredSpec, FireSpec, TrackerSpec
 
 
 def format_ticket_as_task(ticket: TicketDraftOutput) -> str:
@@ -33,3 +36,14 @@ def format_ticket_as_task(ticket: TicketDraftOutput) -> str:
         sections.append(f"## Open Questions\n{items}")
 
     return "\n\n".join(sections)
+
+
+def format_fire_spec(spec: FireSpec) -> str:
+    """Render either source without interpreting a tracker body as a draft."""
+    match spec:
+        case AuthoredSpec(ticket=ticket):
+            return format_ticket_as_task(ticket)
+        case TrackerSpec(body=body):
+            return body
+        case _:
+            assert_never(spec)

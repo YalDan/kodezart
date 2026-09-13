@@ -32,8 +32,10 @@ from kodezart.core.config import AppConfig
 from kodezart.core.logging import configure_logging, get_logger
 from kodezart.services.pass_scheduler import PassScheduler, ScheduledPass
 from kodezart.types.domain.agent import AgentEvent
+from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.dispatch import PassRun
-from kodezart.types.requests.agent import WorkflowRequest
+from kodezart.types.domain.session import PermissionMode
+from kodezart.types.domain.workflow import WorkflowSubmission
 from tests.services.test_pass_scheduler import Metronome
 
 FAILURE = "the creator produced no structured output"
@@ -161,18 +163,27 @@ async def test_the_queues_failure_event_carries_the_traceback() -> None:
         queue = AsyncioJobQueue(
             engine=RaisingEngine(),
             max_concurrent_runs_per_lane=1,
-            max_depth_per_lane=config.queue_max_depth_per_lane,
-            terminal_retention_seconds=config.queue_terminal_retention_seconds,
+            max_depth_per_lane=config.queue.max_depth_per_lane,
+            terminal_retention_seconds=config.queue.terminal_retention_seconds,
             event_buffer_retention_seconds=(
-                config.queue_event_buffer_retention_seconds
+                config.queue.event_buffer_retention_seconds
             ),
-            event_buffer_capacity=config.queue_event_buffer_capacity,
+            event_buffer_capacity=config.queue.event_buffer_capacity,
         )
         await queue.start()
         try:
             record = await queue.submit(
                 lane=LANE,
-                request=WorkflowRequest(prompt="do the thing", repo_path="/tmp/fake"),
+                request=WorkflowSubmission(
+                    prompt="do the thing",
+                    repo_path="/tmp/fake",
+                    repo_url=None,
+                    base_spec=trunk_base("main"),
+                    implied_base=None,
+                    scope=None,
+                    permission_mode=PermissionMode.UNATTENDED,
+                    allowed_tools=["Read", "Glob", "Grep", "Bash", "Edit", "Write"],
+                ),
             )
             await asyncio.wait_for(
                 drain(queue, job_id=record.job_id),
@@ -271,3 +282,27 @@ async def test_the_console_renderer_also_names_the_frames() -> None:
         "ConsoleRenderer was handed a pre-formatted exception; "
         "the coloured traceback this deployment exists for is gone"
     )
+
+
+async def test_pretty_tracebacks_do_not_render_live_workflow_locals() -> None:
+    """Formatting diagnostics must not traverse live graph/workspace objects."""
+
+    class LiveWorkflow:
+        def __init__(self) -> None:
+            self.repr_calls = 0
+
+        def __repr__(self) -> str:
+            self.repr_calls += 1
+            return "a live workflow with arbitrary user-defined repr work"
+
+    workflow = LiveWorkflow()
+    with configured_chain(pretty=True) as buffer:
+        log = get_logger("kodezart.tests.logging_chain")
+        try:
+            raise RuntimeError(FAILURE)
+        except RuntimeError:
+            await log.aexception("job_failed", job_id="job-0001")
+
+    assert workflow.repr_calls == 0
+    assert FAILURE in buffer.getvalue()
+    assert "test_logging_chain" in buffer.getvalue()

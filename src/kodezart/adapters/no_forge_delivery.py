@@ -3,7 +3,7 @@
 A peer of the forge adapter on ``DeliveryProbe``, not a degraded mode of
 it: the forge client keeps raising loudly on URLs it does not own, and
 which probe answers for a repository is decided once, at the composition
-root, from that repository's origin (KOD-145).
+root, from that repository's origin.
 """
 
 from kodezart.core.logging import BoundLogger, get_logger

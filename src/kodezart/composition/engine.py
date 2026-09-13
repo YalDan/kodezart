@@ -72,7 +72,7 @@ class OriginRoutedWorkflowEngine:
     wired together.  The forge adapter is unchanged and still raises on
     URLs it does not own; it is simply never reached for an origin it
     could not have served, instead of being reached on the last act after
-    a hundred minutes of correct work (KOD-148).
+    a hundred minutes of correct work.
     """
 
     def __init__(
@@ -80,9 +80,11 @@ class OriginRoutedWorkflowEngine:
         *,
         forge_arm: WorkflowEngine,
         forge_less_arm: WorkflowEngine,
+        scoped_arm: WorkflowEngine | None = None,
     ) -> None:
         self._forge_arm: WorkflowEngine = forge_arm
         self._forge_less_arm: WorkflowEngine = forge_less_arm
+        self._scoped_arm = scoped_arm
         self._log: BoundLogger = get_logger(__name__)
 
     def arm_for(self, repo_url: str | None) -> WorkflowEngine:
@@ -101,21 +103,27 @@ class OriginRoutedWorkflowEngine:
         self,
         *,
         prompt: str,
+        issue_key: str | None = None,
+        run_identity: RunIdentity | None = None,
         repo_path: str | None,
         repo_url: str | None,
         base_spec: BaseSpec,
+        scope: ScopeRef | None,
         implied_base: BaseSpec | None = None,
-        permission_mode: str,
-        allowed_tools: list[str],
+        permission_mode: PermissionMode,
+        allowed_tools: AllowedTools,
         cache_key: str,
     ) -> AsyncIterator[AgentEvent]:
-        """Run on the arm this origin's forge capability allows.
-
-        A forwarder, never a second dispatch path: the queue worker is
-        still the only thing that starts a run, and this hands that one
-        run to the arm the origin allows.
-        """
-        arm = self.arm_for(repo_url)
+        """Route an addressed job to its scope controller, preserving its identity."""
+        if scope is not None:
+            if self._scoped_arm is None:
+                raise ScopedExecutionUnavailableError(
+                    "Scoped graph execution is not implemented in this deployment",
+                    ref=scope,
+                )
+            arm = self._scoped_arm
+        else:
+            arm = self.arm_for(repo_url)
         await self._log.ainfo(
             "forge_capabilities_selected",
             repo_url=repo_url,
@@ -123,9 +131,12 @@ class OriginRoutedWorkflowEngine:
         )
         async for event in arm.run(
             prompt=prompt,
+            issue_key=issue_key,
+            run_identity=run_identity,
             repo_path=repo_path,
             repo_url=repo_url,
             base_spec=base_spec,
+            scope=scope,
             implied_base=implied_base,
             permission_mode=permission_mode,
             allowed_tools=allowed_tools,

@@ -76,7 +76,7 @@ class ExclusionClause(StrEnum):
     one operation's board, and every clause below it would otherwise be
     asked about another board's issue — the approved-state clause
     included, which reads the presence of a queue state and nothing more,
-    so it passes on any board using the same queue vocabulary (KOD-144).
+    so it passes on any board using the same queue vocabulary.
     Since that clause carries no attestation of WHO put the state there,
     this one is the whole of the containment."""
 
@@ -85,7 +85,7 @@ class ExclusionClause(StrEnum):
     Excluded until the issue CHANGES — its ``updated_at`` moving past the
     reading taken after that pass released — so a standing graph obstacle
     is one report line per pass instead of a claim/release cycle every
-    tick feeding its own gate delta (KOD-169).  The detail carries the
+    tick feeding its own gate delta.  The detail carries the
     recorded resolution failure."""
 
     RUN_FAILED = "run_failed"
@@ -94,7 +94,7 @@ class ExclusionClause(StrEnum):
     reading taken after the failure — by the same remembered-exclusion
     mechanism the clause above uses, so a standing failure is one report
     line per pass instead of the whole run fired again at the next tick,
-    into the condition that killed the last one (KOD-174).  The detail
+    into the condition that killed the last one.  The detail
     carries the class the run died of, or how it ended when no error frame
     named one."""
 
@@ -104,7 +104,7 @@ class ExclusionClause(StrEnum):
     The one clause that is not about the issue it annotates: a provider
     rate limit killed the last fire, and the next-ranked candidate would
     meet it unchanged, so every remaining issue on the board carries this
-    line until the cooldown lapses (KOD-174).  Evaluated after the clause
+    line until the cooldown lapses.  Evaluated after the clause
     above so the issue that died still reports what it died of, and lifted
     by the CLOCK rather than by a change on the board — nothing an issue
     does clears a rate limit.  The detail carries the failure class that
@@ -112,13 +112,13 @@ class ExclusionClause(StrEnum):
 
     OUT_OF_SCOPE = "out_of_scope"
     """The issue's team declares a scope and the issue's project and
-    initiatives are not in it (KOD-169).  The detail carries the issue's
+    initiatives are not in it.  The detail carries the issue's
     project, or names that it belongs to none."""
 
     NO_RECORDED_REPOSITORY = "no_recorded_repository"
     """The issue's team binds no repository and no route was ever recorded
     on the issue: judgment has not routed it yet, so no deterministic pass
-    may claim it (KOD-169) — the typed refusal, visible in every report,
+    may claim it — the typed refusal, visible in every report,
     never a claim by tick order."""
 
     RECORDED_ELSEWHERE = "recorded_elsewhere"
@@ -136,7 +136,7 @@ class ExclusionClause(StrEnum):
     Asked over each scan entry's edges, and again over the winner's at
     the pre-claim reading, which supplies the edges a listing does not
     carry — the measured backend answers a listing with each issue's own
-    fields and no relations (KOD-173).  A winner that reading finds
+    fields and no relations.  A winner that reading finds
     blocked is remembered under this clause, by the same mechanism
     ``BASE_UNRESOLVED`` and ``RUN_FAILED`` use, so the lane's next tick
     ranks the next unblocked candidate instead of re-deciding a blocker
@@ -206,6 +206,7 @@ class DispatchReport(DispatchModel):
     write under, and the unresolved one is the fail-closed one."""
     job_id: str | None = None
     base: BaseSpec | None = None
+    criterion_keys: tuple[str, ...] = ()
     """The base the fire was dispatched on, and everything it was computed
     from.  ``None`` on the two outcomes that enqueued nothing — a pass that
     claimed no issue resolved no base, which is a different fact from a

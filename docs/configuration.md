@@ -498,7 +498,7 @@ own window:
 
 - the **job record** (`jobId`, lane, state, outcome, truncated) is 1-2 KB, so it
   is kept for a day by default;
-- the **replay buffer** holds up to `QUEUE_EVENT_BUFFER_CAPACITY` full SSE
+- the **replay buffer** holds up to `queue.event_buffer_capacity` full SSE
   frames, which run to megabytes per job, so it is released after 15 minutes —
   long enough for a disconnected client to reconnect at
   `GET /api/v1/jobs/{jobId}/stream` and replay.
@@ -508,11 +508,10 @@ terminal. Releasing a buffer marks the record `truncated: true` and logs
 `job_event_buffer_dropped`, so frames a client can no longer replay are never a
 silent gap.
 
-`QUEUE_EVENT_BUFFER_RETENTION_SECONDS` must not exceed
-`QUEUE_TERMINAL_RETENTION_SECONDS`: a buffer outliving the record that names it
+`queue.event_buffer_retention_seconds` must not exceed
+`queue.terminal_retention_seconds`: a buffer outliving the record that names it
 is incoherent, so the configuration is **rejected at startup** rather than
 clamped.
-
 ## .env.example
 
 The `.env.example` file intentionally includes only a curated subset of the

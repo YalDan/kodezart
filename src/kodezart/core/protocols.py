@@ -697,6 +697,18 @@ class TrackerCriteriaReader(Protocol):
         """
         ...
 
+@runtime_checkable
+class TrackerContextReader(Protocol):
+    """Read the documents referenced by a fire's issue."""
+
+    async def list_issue_assets(self, *, issue_key: str) -> Sequence[TrackerAsset]:
+        """Attachment and document metadata referenced by the issue."""
+        ...
+
+    async def read_document(self, *, document_key: str) -> str:
+        """The document's text content."""
+        ...
+
 
 @runtime_checkable
 class TrackerPort(
@@ -1565,6 +1577,10 @@ class FireCriteriaReader(Protocol):
 class FireCriteriaSource(FireCriteriaReader, Protocol):
     """Capture an admitted native subject once and refresh its obligations."""
 
+    async def read_spec(self, *, issue_key: str) -> TrackerSpec:
+        """Capture tracker-authored subject data or raise a typed refusal."""
+        ...
+
 
 @runtime_checkable
 class QualityGate(Protocol):
@@ -1684,6 +1700,10 @@ class DispatchProducer(Protocol):
     to know which of them did would be a second copy of the routing the
     passes already compute.
     """
+
+    async def run_pass(self) -> DispatchReport:
+        """Run one selection pass and report exactly what it did."""
+        ...
 
     async def record_run_outcome(
         self,
