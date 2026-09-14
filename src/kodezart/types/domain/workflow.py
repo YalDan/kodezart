@@ -82,6 +82,7 @@ class WorkflowContext(CamelCaseModel):
     repo_path: str | None = None
     repo_url: str | None = None
     cache_key: str = Field(min_length=1)
+    run_identity: RunIdentity | None = None
     workspace_path: str | None = None
 
     @classmethod
