@@ -1,5 +1,6 @@
 {
-  "source_commit": "51d83d5",
+  "source_commit": "6d025023",
+  "provenance": "SHA256 of the prompt each authored consumer renders, captured from the consumers themselves at source_commit; entries are extended, never re-baselined.",
   "prompts": {
     "anthropic_v5": {
       "0": {
