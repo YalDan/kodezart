@@ -19,6 +19,7 @@ from kodezart.types.domain.operation import OperationMemberAbsentError
 from kodezart.types.domain.tracker import TrackerIssue
 
 _CRITERION_ROW = re.compile(r"^ {0,3}\*\*(Check|Do|Evidence|Class):\*\*(.*)$")
+_FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
 
 CriterionField = Literal["Check", "Do", "Evidence", "Class"]
 

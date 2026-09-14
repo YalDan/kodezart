@@ -55,6 +55,8 @@ class WorkflowSubmission(CamelCaseModel):
     text and scope. HTTP submissions may have no tracker identity.
     """
 
+    model_config = ConfigDict(frozen=True)
+
     prompt: str = Field(min_length=1)
     issue_key: str | None = None
     repo_path: str | None
@@ -105,8 +107,17 @@ class ExecutionContext(WorkflowContext):
     """
 
     base_spec: BaseSpec
-    permission_mode: str = Field(min_length=1)
-    allowed_tools: list[str]
+    permission_mode: PermissionMode
+    allowed_tools: AllowedTools
+    surface_holder: str | None = Field(
+        default=None,
+        min_length=1,
+        pattern=r"\S",
+        description=(
+            "The actual parent queue job holding native write surfaces; "
+            "independent of any lane checkpoint namespace. Authored runs may omit it."
+        ),
+    )
 
     @property
     def base_branch(self) -> str:
@@ -127,7 +138,7 @@ class RemediationRequest(CamelCaseModel):
 
     entry: RemediationEntry
     round_index: int = Field(ge=0)
-    original_ticket: TicketDraftOutput
+    original_spec: FireSpec
     work_branch: str = Field(min_length=1)
     work_base_ref: str = Field(min_length=1)
     pr_url: str | None = None
@@ -151,8 +162,20 @@ class RalphLoopContext(ExecutionContext):
     feature_branch: str = Field(min_length=1)
     ralph_branch: str = Field(min_length=1)
     work_base_ref: str = Field(min_length=1)
-    acceptance_criteria: list[ValidatedCriterion] = Field(min_length=1)
+    acceptance_criteria: list[ExecutionCriterion] = Field(min_length=1)
+    tracker_spec: TrackerSpec | None = None
     repo_visibility: RepoVisibility
+
+    @model_validator(mode="after")
+    def _criteria_match_source(self) -> Self:
+        """A native checkpoint cannot fall back to the authored cached arm."""
+        native = self.tracker_spec is not None
+        if any(
+            isinstance(criterion, TrackerCriterion) != native
+            for criterion in self.acceptance_criteria
+        ):
+            raise ValueError("Loop criteria must match the frozen subject source")
+        return self
 
 
 # ---------------------------------------------------------------------------
@@ -192,17 +215,24 @@ class RalphLoopState(TypedDict):
     verdict: AcceptVerdict
     pending_failures: list[CriterionFailure]
     iteration_records: list[IterationRecord]
+    outcome: RalphOutcome
     iteration_commit_sha: NotRequired[str | None]
+    amendment_reports: NotRequired[list[AmendmentReport]]
+    amendment_blocked: NotRequired[bool]
 
 
 class WorkflowState(TypedDict):
-    """State for the outer workflow pipeline.
+    """State for the delivery-free fire graph.
 
-    ``feature_tip_sha`` is the canonical feature-branch tip SHA after the
-    last successful consolidation; ``None`` until ``_merge_to_feature_node``
-    runs.  ``review_base_sha`` / ``review_head_sha`` are the exact 40-char
-    SHAs the evaluator's ``ChangesetDigest`` is computed between — set by
-    consolidation nodes, read by ``_review_against_ticket_node``.
+    ``issue_key`` is the producer's tracker identity for this run. It is
+    preserved across remediation and appended before gating a PR body.
+
+    ``feature_branch`` and ``feature_tip_sha`` identify the selected published
+    head. Consolidation records its branch tip; a stalled exit may instead
+    select the published best-iteration ref. The SHA remains ``None`` until
+    a node establishes that head. ``review_base_sha`` / ``review_head_sha`` are
+    the exact 40-character endpoints of the evaluator's ``ChangesetDigest``.
+    Consolidation nodes write them; ``_review_against_ticket_node`` reads them.
 
     ``trajectory`` carries the most recent quality-gate invocation's
     ``LoopTrajectory``; ``None`` until the first gate invocation projects
@@ -224,11 +254,14 @@ class WorkflowState(TypedDict):
     ``base_spec`` on the execution context.
     """
 
+    issue_key: str | None
     feature_branch: str
     ralph_branch: str
     work_base_ref: str
+    fire_spec: FireSpec | None
     ticket: TicketDraftOutput | None
     acceptance_criteria: list[GeneratedCriterion]
+    criterion_set: CriteriaArtifact | TrackerCriterionSet | None
     criteria_artifact: CriteriaArtifact | None
     criteria_validation: CriteriaValidation | None
     criteria_regeneration_rounds: int
@@ -244,7 +277,7 @@ class WorkflowState(TypedDict):
     review_passed: bool
     review_feedback: str | None
     remediation_rounds_used: int
-    remediation_ticket: TicketDraftOutput | None
+    remediation_ticket: TicketDraftOutput | RemediationPlan | None
     remediation_entry: RemediationEntry | None
     best_iteration_sha: str | None
     pr_url: str | None

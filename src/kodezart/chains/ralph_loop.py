@@ -1,19 +1,27 @@
 """Ralph quality-gating loop — execute + evaluate until accepted or exhausted."""
 
+import json
 from collections.abc import AsyncIterator
+from uuid import uuid4
 
 from langchain_core.runnables import RunnableConfig
+from langchain_core.runnables.config import patch_config
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.config import get_stream_writer
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import RetryPolicy
+from pydantic import TypeAdapter, ValidationError
 
-from kodezart.core.constants import EVAL_PERMISSION_MODE, EVAL_TOOLS
+from kodezart.chains.criteria import current_native_criteria
+from kodezart.core.constants import EVAL_PERMISSION_MODE
 from kodezart.core.errors import soft_failure
 from kodezart.core.logging import BoundLogger, get_logger
+from kodezart.core.node_sessions import NodeSessionObserver
 from kodezart.core.protocols import (
     AgentRunner,
+    FireCriteriaReader,
     GitService,
+    GitSourceReader,
     PromptSetProvider,
     RepoCache,
 )
@@ -21,24 +29,48 @@ from kodezart.core.redispatch import until_permutation
 from kodezart.core.retry import DelayFloor, RetryFloor, should_retry
 from kodezart.core.stream_drain import drain
 from kodezart.domain.accept_gate import gate_cleared
+from kodezart.domain.amendment import NativeWriteRefusalError, repeated_upheld
 from kodezart.domain.criteria_grading import grade_iteration
+from kodezart.domain.errors import GitSourceReadError
 from kodezart.domain.fan_in import fan_in_report, require_permutation
-from kodezart.domain.prompt_variables import changeset_variables
+from kodezart.domain.prompt_variables import (
+    changeset_variables,
+    execution_criteria_variables,
+    tracker_checks_section,
+)
 from kodezart.domain.thread_id import ralph_thread_id
 from kodezart.domain.trajectory import fold_trajectory
+from kodezart.services.native_amendments import NativeAmendments
 from kodezart.types.domain.accept import AcceptVerdict
 from kodezart.types.domain.agent import (
     ACCEPTANCE_CRITERIA_SCHEMA,
     AcceptanceCriteriaOutput,
     AgentEvent,
+    NativeAmendmentEvent,
     ResultEvent,
     WorkflowIterationEvent,
 )
 from kodezart.types.domain.branch import BaseSpec
-from kodezart.types.domain.criteria import FanInReport, ValidatedCriterion
+from kodezart.types.domain.criteria import ExecutionCriterion, FanInReport
+from kodezart.types.domain.fire_spec import TrackerSpec
 from kodezart.types.domain.gating import RepoVisibility
+from kodezart.types.domain.grading import IterationGrade
+from kodezart.types.domain.node_session import NodeInvocation
 from kodezart.types.domain.prompts import PromptKey
-from kodezart.types.domain.session import SessionType
+from kodezart.types.domain.ralph_outcome import (
+    EvaluatedRalphOutcome,
+    NativeEvaluatedRalphOutcome,
+    PendingRalphOutcome,
+    RalphOutcome,
+    RefusedRalphOutcome,
+)
+from kodezart.types.domain.run_records import RunIdentity
+from kodezart.types.domain.session import (
+    AllowedTools,
+    PermissionMode,
+    SessionType,
+    ToolPreset,
+)
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.subagents import NO_SUBAGENTS
 from kodezart.types.domain.trajectory import IterationRecord
@@ -66,8 +98,14 @@ class RalphLoop:
         retry_initial_interval: float,
         delay_floor_for: DelayFloor,
         fan_in_max_attempts: int,
+        criteria_reader: FireCriteriaReader | None = None,
+        amendments: NativeAmendments | None = None,
+        source: GitSourceReader | None = None,
     ) -> None:
         self._service = service
+        self._criteria_reader = criteria_reader
+        self._amendments = amendments
+        self._source = source
         self._max_iterations = max_iterations
         self._plateau_window = plateau_window
         self._fan_in_max_attempts = fan_in_max_attempts
@@ -101,10 +139,13 @@ class RalphLoop:
         ralph_branch: str,
         base_spec: BaseSpec,
         work_base_ref: str,
-        permission_mode: str,
-        allowed_tools: list[str],
-        acceptance_criteria: list[ValidatedCriterion],
+        permission_mode: PermissionMode,
+        allowed_tools: AllowedTools,
+        acceptance_criteria: list[ExecutionCriterion],
+        tracker_spec: TrackerSpec | None = None,
         cache_key: str,
+        run_identity: RunIdentity | None = None,
+        surface_holder: str | None = None,
         repo_visibility: RepoVisibility,
     ) -> AsyncIterator[AgentEvent]:
         """Execute the quality-gating loop.
@@ -117,6 +158,8 @@ class RalphLoop:
             repo_path=repo_path,
             repo_url=repo_url,
             cache_key=cache_key,
+            run_identity=run_identity,
+            surface_holder=surface_holder,
             base_spec=base_spec,
             permission_mode=permission_mode,
             allowed_tools=allowed_tools,
@@ -124,42 +167,89 @@ class RalphLoop:
             ralph_branch=ralph_branch,
             work_base_ref=work_base_ref,
             acceptance_criteria=acceptance_criteria,
+            tracker_spec=tracker_spec,
             repo_visibility=repo_visibility,
         )
         configurable: dict[str, object] = ctx.model_dump()
         if self._checkpointer is not None:
             configurable["thread_id"] = ralph_thread_id(cache_key)
 
-        config: RunnableConfig = {"configurable": configurable}
+        config: RunnableConfig = (
+            {"configurable": configurable}
+            if tracker_spec is None
+            else patch_config(None, configurable=configurable)
+        )
 
         initial_state: RalphLoopState = {
             "iteration": 0,
             "verdict": AcceptVerdict.rejected,
             "pending_failures": [],
             "iteration_records": [],
+            "outcome": PendingRalphOutcome(),
         }
 
-        # TODO(time-travel): For E2E checkpoint resume, two changes needed:
-        # 1. Accept resume flag from outer workflow; pass None instead
-        #    of initial_state to astream() so LangGraph loads from the
-        #    ralph checkpoint ({cache_key}-ralph).
-        # 2. Each iteration already acquires/releases a transient
-        #    worktree within _execute_node (via stream_workflow →
-        #    _run_in_workspace), so workspaces are self-contained per
-        #    node — no cross-iteration workspace state to preserve.
-        #    Session_id capture is NOT needed here: unlike ticket_
-        #    generation, ralph loop has no multi-turn session continuity
-        #    across iterations (each iteration is a fresh conversation).
-        # See ralph_workflow.py TODO for the resume signal plumbing.
-        async for event in self._compiled.astream(
+        # Native nested invocation retains the framework's parent-task namespace
+        # and resume signal. A new authored invocation keeps its existing config.
+        # Values carry the actual completed consumer receipt when a saved child
+        # has no nodes left to run (and consequently emits no fresh custom event).
+        outcome: RalphOutcome = PendingRalphOutcome()
+        forwarded: WorkflowIterationEvent | NativeAmendmentEvent | None = None
+        async for mode, value in self._compiled.astream(
             initial_state,
             config=config,
-            stream_mode="custom",
+            stream_mode=["custom", "values"],
         ):
-            if not isinstance(event, AgentEvent):
-                msg = f"Expected AgentEvent from stream, got {type(event).__name__}"
-                raise TypeError(msg)
-            yield event
+            if mode == "custom":
+                if not isinstance(value, AgentEvent):
+                    raise TypeError("Ralph custom output requires an actual AgentEvent")
+                if isinstance(value, (WorkflowIterationEvent, NativeAmendmentEvent)):
+                    forwarded = value
+                yield value
+            elif tracker_spec is not None:
+                if not isinstance(value, dict):
+                    raise TypeError("Ralph values output requires a state mapping")
+                try:
+                    outcome = TypeAdapter(RalphOutcome).validate_python(
+                        value.get("outcome")
+                    )
+                except ValidationError as exc:
+                    raise NativeWriteRefusalError(
+                        "The native checkpoint has no valid completed-loop receipt"
+                    ) from exc
+        if tracker_spec is not None:
+            current = await current_native_criteria(
+                spec=tracker_spec, reader=self._criteria_reader
+            )
+            if isinstance(outcome, (PendingRalphOutcome, EvaluatedRalphOutcome)):
+                raise NativeWriteRefusalError(
+                    "The native loop has no completed outcome"
+                )
+            if isinstance(outcome, NativeEvaluatedRalphOutcome):
+                if tuple(current.criteria) != outcome.criteria:
+                    raise NativeWriteRefusalError(
+                        "Current Checks differ from the saved native evaluation"
+                    )
+                cwd = (
+                    repo_path
+                    if repo_path is not None
+                    else await self._cache.ensure_available(repo_url or "", cache_key)
+                )
+                if (
+                    await self._native_ref(cwd=cwd, branch=ralph_branch)
+                    != outcome.head_sha
+                ):
+                    raise NativeWriteRefusalError("The evaluated native branch changed")
+                if outcome.event.branch != ralph_branch:
+                    raise NativeWriteRefusalError(
+                        "The saved native evaluation belongs to another branch"
+                    )
+            if forwarded != outcome.event:
+                if (
+                    isinstance(outcome, RefusedRalphOutcome)
+                    and outcome.last_iteration is not None
+                ):
+                    yield outcome.last_iteration
+                yield outcome.event
 
     def _build_graph(
         self,
@@ -178,7 +268,9 @@ class RalphLoop:
             retry_policy=self._retry,
         )
         graph.add_edge(START, "execute")
-        graph.add_edge("execute", "evaluate")
+        graph.add_conditional_edges(
+            "execute", self._route_after_execute, ["evaluate", "execute", END]
+        )
         graph.add_conditional_edges(
             "evaluate",
             self._should_continue,
@@ -192,6 +284,18 @@ class RalphLoop:
         config: RunnableConfig,
     ) -> dict[str, object]:
         ctx = RalphLoopContext.from_configurable(config)
+        if ctx.tracker_spec is not None and self._source is None:
+            raise NativeWriteRefusalError(
+                "Native execution requires its Git source reader"
+            )
+        native_criteria = (
+            None
+            if ctx.tracker_spec is None
+            else await current_native_criteria(
+                spec=ctx.tracker_spec,
+                reader=self._criteria_reader,
+            )
+        )
         writer = get_stream_writer()
         iteration = state["iteration"] + 1
         is_first = iteration == 1
@@ -205,6 +309,32 @@ class RalphLoop:
                 },
             )
 
+        if native_criteria is not None:
+            prompt += "\n\n" + tracker_checks_section(native_criteria)
+
+        native_guard = None
+        reports = state.get("amendment_reports", [])
+        blocked = False
+        refusal: NativeAmendmentEvent | None = None
+        if ctx.tracker_spec is not None and native_criteria is not None:
+            if self._amendments is None:
+                raise NativeWriteRefusalError(
+                    "Native execution requires the precommit amendment owner"
+                )
+            native_guard = self._amendments.for_writer(
+                spec=ctx.tracker_spec,
+                criteria=native_criteria,
+                base_ref=ctx.base_branch,
+                repo_url=ctx.repo_url,
+                holder=ctx.surface_holder,
+                visibility=ctx.repo_visibility,
+                stage=PromptKey.IMPLEMENTATION,
+            )
+            if reports:
+                prompt += "\n\nPrior independent amendment reports:\n" + "\n".join(
+                    report.model_dump_json() for report in reports
+                )
+
         commit_sha: str | None = None
         async for event in self._service.stream_workflow(
             prompt=prompt,
@@ -217,19 +347,47 @@ class RalphLoop:
             allowed_tools=ctx.allowed_tools,
             skills=self._prompts.session_skills(PromptKey.IMPLEMENTATION, self._skills),
             session_type=SessionType.TICKET_FIRE,
+            run_identity=ctx.run_identity,
             session_policy=self._prompts.session_policy(PromptKey.IMPLEMENTATION),
             visibility=ctx.repo_visibility,
             create_branch=is_first,
             cache_key=ctx.cache_key,
+            native_guard=native_guard,
         ):
+            if isinstance(event, NativeAmendmentEvent):
+                reports = [*reports, event.report]
+                blocked = bool(event.report.upheld)
+                event = NativeAmendmentEvent(
+                    report=event.report,
+                    repeated=repeated_upheld(reports),
+                )
+                if blocked:
+                    refusal = event
             writer(event)
             if isinstance(event, ResultEvent) and event.commit_sha:
                 commit_sha = event.commit_sha
 
-        return {
+        update: dict[str, object] = {
             "iteration": iteration,
             "iteration_commit_sha": commit_sha,
         }
+        if native_guard is not None:
+            update.update(amendment_reports=reports, amendment_blocked=blocked)
+            if refusal is not None:
+                previous = state["outcome"]
+                last = (
+                    previous.event
+                    if isinstance(
+                        previous, (EvaluatedRalphOutcome, NativeEvaluatedRalphOutcome)
+                    )
+                    else previous.last_iteration
+                    if isinstance(previous, RefusedRalphOutcome)
+                    else None
+                )
+                update["outcome"] = RefusedRalphOutcome(
+                    event=refusal, last_iteration=last
+                )
+        return update
 
     async def _evaluate_node(
         self,
@@ -246,31 +404,75 @@ class RalphLoop:
                 ctx.cache_key,
             )
         )
+        native_ref = (
+            await self._native_ref(cwd=cwd, branch=ctx.ralph_branch)
+            if ctx.tracker_spec is not None
+            else None
+        )
+        evaluation_ref = native_ref if native_ref is not None else ctx.ralph_branch
         changeset = await self._git.diff_summary(
             cwd=cwd,
             base_ref=ctx.base_branch,
-            head_ref=ctx.ralph_branch,
-        )
-        eval_prompt = self._prompts.template_for(PromptKey.EVALUATION).render(
-            {
-                "criteria": ctx.acceptance_criteria,
-                **changeset_variables(changeset),
-            },
+            head_ref=evaluation_ref,
         )
 
-        async def evaluate() -> AcceptanceCriteriaOutput:
+        # The graph can retry this node after it already opened a session.
+        # Give that execution a fresh invocation component; iteration and
+        # correction ordinals alone repeat on a graph-level retry.
+        node_execution = uuid4().hex
+        evaluation_attempt = 0
+
+        dispatched = tuple(ctx.acceptance_criteria)
+
+        async def evaluate() -> IterationGrade:
+            nonlocal dispatched
+            criteria: list[ExecutionCriterion] = ctx.acceptance_criteria
+            if ctx.tracker_spec is not None:
+                snapshot = await current_native_criteria(
+                    spec=ctx.tracker_spec,
+                    reader=self._criteria_reader,
+                )
+                criteria = list(snapshot.criteria)
+            eval_prompt = self._prompts.template_for(PromptKey.EVALUATION).render(
+                {
+                    **execution_criteria_variables(criteria),
+                    **changeset_variables(changeset),
+                },
+            )
+            nonlocal evaluation_attempt
+            evaluation_attempt += 1
+            observer = None
+            if ctx.run_identity is not None:
+                observer = NodeSessionObserver(
+                    invocation=NodeInvocation(
+                        run=ctx.run_identity,
+                        node_key=PromptKey.EVALUATION.value,
+                        invocation_key=json.dumps(
+                            [
+                                ctx.ralph_branch,
+                                state["iteration"],
+                                evaluation_attempt,
+                                node_execution,
+                            ],
+                            separators=(",", ":"),
+                        ),
+                        declared_sessions=1,
+                    ),
+                    emit=writer,
+                )
             result_event, rate_limit_rejected = await drain(
                 self._service.stream(
                     prompt=eval_prompt,
                     repo_path=ctx.repo_path,
                     repo_url=ctx.repo_url,
-                    branch=ctx.ralph_branch,
+                    branch=evaluation_ref,
                     permission_mode=EVAL_PERMISSION_MODE,
-                    allowed_tools=EVAL_TOOLS,
+                    allowed_tools=ToolPreset.EVALUATION,
                     skills=self._prompts.session_skills(
                         PromptKey.EVALUATION, self._skills
                     ),
                     session_type=SessionType.TICKET_FIRE,
+                    run_identity=ctx.run_identity,
                     # Evaluative: no lens is dispatched from here. Asking a
                     # template not to fan out is a request; an empty
                     # definition list is a guarantee.
@@ -285,7 +487,10 @@ class RalphLoop:
                     cache_key=ctx.cache_key,
                 ),
                 site="ralph_evaluator",
+                observe=None if observer is None else observer.observe,
             )
+            if observer is not None:
+                observer.require_valid()
 
             if result_event is None or result_event.structured_output is None:
                 msg = "Evaluator produced no structured output."
@@ -296,20 +501,27 @@ class RalphLoop:
                     rate_limit_rejected=rate_limit_rejected,
                 )
 
-            return AcceptanceCriteriaOutput.model_validate(
+            output = AcceptanceCriteriaOutput.model_validate(
                 result_event.structured_output,
             )
+            if (
+                native_ref is not None
+                and await self._native_ref(cwd=cwd, branch=ctx.ralph_branch)
+                != native_ref
+            ):
+                raise NativeWriteRefusalError(
+                    "The native branch changed during evaluation"
+                )
+            dispatched = tuple(criteria)
+            return grade_iteration(criteria, output)
 
-        output, unresolved, attempts = await until_permutation(
+        grade, unresolved, attempts = await until_permutation(
             dispatch=evaluate,
-            check=lambda candidate: require_permutation(
-                grade_iteration(ctx.acceptance_criteria, candidate),
-            ),
+            check=require_permutation,
             max_attempts=self._fan_in_max_attempts,
             site="ralph_evaluator",
             log=self._log,
         )
-        grade = grade_iteration(ctx.acceptance_criteria, output)
         fan_in: FanInReport | None = None
         if unresolved is not None:
             # The bound is spent: grade what came back against the
@@ -343,17 +555,16 @@ class RalphLoop:
             ),
         ]
         trajectory = fold_trajectory(records, plateau_window=self._plateau_window)
-        writer(
-            WorkflowIterationEvent(
-                iteration=state["iteration"],
-                branch=ctx.ralph_branch,
-                commit_sha=state.get("iteration_commit_sha"),
-                verdict=verdict,
-                evaluation=reconciled,
-                trajectory=trajectory,
-                fan_in=fan_in,
-            )
+        event = WorkflowIterationEvent(
+            iteration=state["iteration"],
+            branch=ctx.ralph_branch,
+            commit_sha=state.get("iteration_commit_sha"),
+            verdict=verdict,
+            evaluation=reconciled,
+            trajectory=trajectory,
+            fan_in=fan_in,
         )
+        writer(event)
         if (
             trajectory.plateaued
             and not gate_cleared(verdict)
@@ -369,13 +580,39 @@ class RalphLoop:
             "verdict": verdict,
             "pending_failures": pending_failures,
             "iteration_records": records,
+            "outcome": (
+                EvaluatedRalphOutcome(event=event, criteria=dispatched)
+                if native_ref is None
+                else NativeEvaluatedRalphOutcome(
+                    event=event, criteria=dispatched, head_sha=native_ref
+                )
+            ),
         }
+
+    async def _native_ref(self, *, cwd: str, branch: str) -> str:
+        if self._source is None:
+            raise NativeWriteRefusalError(
+                "Native execution requires its Git source reader"
+            )
+        try:
+            return await self._source.resolve_commit(cwd=cwd, ref=branch)
+        except GitSourceReadError as exc:
+            raise NativeWriteRefusalError(
+                "The evaluated native ref cannot be read"
+            ) from exc
+
+    def _route_after_execute(self, state: RalphLoopState) -> str:
+        if state.get("amendment_blocked", False):
+            # No code/evaluation observation was produced. Keep the actual
+            # prior failures and trajectory; only the attempt budget advances.
+            return self._should_continue(state)
+        return "evaluate"
 
     def _should_continue(
         self,
         state: RalphLoopState,
     ) -> str:
-        if gate_cleared(state["verdict"]):
+        if gate_cleared(state["verdict"]) and not state.get("amendment_blocked", False):
             return END
         if state["iteration"] >= self._max_iterations:
             return END
