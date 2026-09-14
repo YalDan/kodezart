@@ -10,7 +10,9 @@ below assert the union step never reaches it either.
 import ast
 import importlib
 import inspect
+from collections.abc import Mapping
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 
@@ -135,18 +137,39 @@ def is_forge_shaped(value: object) -> bool:
 
 
 def held_by(subject: object) -> list[object]:
-    """Every object the subject holds, transitively, itself included."""
+    """Every object the subject holds, transitively, itself included.
+
+    Containers are walked as well as attributes: wiring often lands in a
+    field, and a walk that stopped at ``vars`` would report a step holding
+    ``self._ports = [forge]`` as holding nothing.  Classes and modules are
+    reported but not walked into — a definition is not a collaborator, and
+    descending into one reaches most of the program.
+    """
     found: list[object] = []
     seen: set[int] = set()
-    pending = [subject]
+    pending: list[object] = [subject]
     while pending:
         value = pending.pop()
         if id(value) in seen:
             continue
         seen.add(id(value))
         found.append(value)
+        if isinstance(value, type | ModuleType):
+            continue
+        if isinstance(value, Mapping):
+            pending.extend(value.keys())
+            pending.extend(value.values())
+        elif isinstance(value, list | tuple | set | frozenset):
+            pending.extend(value)
         pending.extend(vars(value).values() if hasattr(value, "__dict__") else ())
     return found
+
+
+class Collaborators:
+    """A holder keeping its collaborators in a list, as wiring often does."""
+
+    def __init__(self, *values: object) -> None:
+        self.values = list(values)
 
 
 async def show_ref(repository: Path) -> str:
@@ -158,6 +181,15 @@ def test_the_forge_predicate_recognises_every_forge_double() -> None:
     assert is_forge_shaped(FakePRCreator())
     assert is_forge_shaped(FakePRStateReader(records={}))
     assert is_forge_shaped(FakeDeliveryProbe())
+
+
+def test_the_holdings_walk_reaches_a_collaborator_inside_a_container() -> None:
+    """Guards the case below: attributes alone are not what a step holds."""
+    nested = Collaborators(Collaborators(FakePRCreator()))
+
+    held = held_by(nested)
+
+    assert [value for value in held if is_forge_shaped(value)] != []
 
 
 async def test_the_union_step_holds_no_forge_collaborator_at_all(delivery) -> None:
