@@ -11,6 +11,7 @@ from kodezart.chains.audit_evidence import AuditEvidenceVerifier
 from kodezart.chains.audit_overclaim import AuditOverclaimVerifier
 from kodezart.chains.audit_pass import AuditClaimVerifier, AuditMandateHunt
 from kodezart.chains.audit_sweep import AuditReadSweep
+from kodezart.chains.write_back_verifier import WriteBackFinding, WriteBackVerifier
 from kodezart.config.app import AppConfig
 from kodezart.core.constants import EVAL_PERMISSION_MODE
 from kodezart.domain.criterion_evidence import render_evidence_field
@@ -31,7 +32,7 @@ from kodezart.types.domain.criterion_evidence import CriterionEvidence
 from kodezart.types.domain.pr_state import PRLifecycle, PRState
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.session import ToolPreset
-from kodezart.types.domain.surface import SurfaceKind
+from kodezart.types.domain.surface import SurfaceKind, WritableSurface
 from kodezart.types.domain.tracker import WorkflowStateKind
 from tests.fakes import (
     SUPPRESS_ALL_SKILLS,
@@ -451,3 +452,85 @@ async def test_cancellation_in_actual_session_propagates_after_release(setup):
     with pytest.raises(asyncio.CancelledError):
         await build().run()
     assert workspace.calls[-1][0] == "release"
+
+
+#: A module the planted Check names and which exists at no commit: the
+#: defect is in the Check itself, because that is the part of the body
+#: the standing sweep's own judge is handed.
+ABSENT_MODULE = "tests/tracker/test_audit_sweep_absent.py"
+PLANTED_CHECK = f"The sweep reads {ABSENT_MODULE}, present at no commit."
+PLANTED_BODY = (
+    f"**Check:** {PLANTED_CHECK}\n**Do:** AUTHOR_REASONING\n"
+    + render_evidence_field(
+        CriterionEvidence(graded_sha=HEAD, test="OLD_RECORDED_TEST")
+    )
+)
+CHILD_DESCRIPTION = WritableSurface(
+    kind=SurfaceKind.ISSUE_DESCRIPTION, ref=ScopeRef(kind=ScopeKind.ISSUE, key=CHILD)
+)
+
+
+class PlantingWriteBack:
+    """A writing step that puts the planted Check on the criterion's body."""
+
+    def __init__(self, tracker):
+        self._tracker = tracker
+        self.findings = []
+
+    @property
+    def surface(self):
+        return CHILD_DESCRIPTION
+
+    async def write(self, *, finding):
+        self.findings.append(finding)
+        await self._tracker.update_issue(issue_key=CHILD, body=PLANTED_BODY)
+
+
+class CredulousJudge:
+    """The inline round's judge, scripted to hold whatever it is handed."""
+
+    def __init__(self):
+        self.seen = []
+
+    async def judge(self, *, artifact, ref):
+        self.seen.append(artifact)
+        return WriteBackFinding(
+            verdict=AuditVerdict.HOLDS, evidence="the inline round accepted the body"
+        )
+
+
+async def test_an_inline_holds_does_not_exempt_the_standing_sweep(setup, tracker):
+    """One artifact, two cadences: the inline holds, the sweep still refutes.
+
+    The sweep's own judge is scripted from the artifact it is handed and
+    knows nothing of the inline round: it refutes exactly because the
+    Check standing on the body names a module present at no commit.
+    """
+    build, executor, *_ = setup
+    step = PlantingWriteBack(tracker)
+    judge = CredulousJudge()
+
+    async def judge_from_the_body(kwargs):
+        if kwargs["output_format"]["schema"] == AUDIT_CLAIM_SCHEMA:
+            executor.verdict = (
+                "refuted" if ABSENT_MODULE in kwargs["prompt"] else "holds"
+            )
+
+    executor.during = judge_from_the_body
+
+    inline = await WriteBackVerifier(
+        tracker=tracker, judge=judge, max_rounds=3
+    ).write_back(step=step, ref=HEAD)
+
+    assert inline.verdict is AuditVerdict.HOLDS
+    assert step.findings == [None]  # nothing was ever repaired
+    assert ABSENT_MODULE in inline.artifact.content
+
+    result = await build().run()
+
+    observation = result.observations[0]
+    assert observation.target.issue.issue_key == CHILD
+    assert observation.claim.claim.check == PLANTED_CHECK
+    assert observation.claim.claim.judgment.verdict is AuditVerdict.REFUTED
+    assert CHILD_DESCRIPTION in result.audited_surfaces
+    assert judge.seen[-1].content == PLANTED_BODY
