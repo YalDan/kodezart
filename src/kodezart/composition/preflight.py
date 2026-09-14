@@ -5,7 +5,7 @@ than defines.
 """
 
 from kodezart.adapters.host_skill_inventory import HostSkillInventory
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.core.errors import SkillPreflightError
 from kodezart.core.logging import BoundLogger
 from kodezart.core.protocols import (

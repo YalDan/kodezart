@@ -237,7 +237,7 @@ def _stdio_env(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_the_transport_resolves_from_its_env_var_and_ships_http(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from kodezart.core.config import AppConfig
+    from kodezart.config.app import AppConfig
 
     assert AppConfig().knowledge_mcp_transport is KnowledgeTransport.HTTP
     monkeypatch.setenv(_TRANSPORT_VAR, "stdio")
@@ -247,7 +247,7 @@ def test_the_transport_resolves_from_its_env_var_and_ships_http(
 
 def test_the_shipped_default_configuration_is_exactly_as_shipped() -> None:
     """No new field changes what a fresh deployment starts from."""
-    from kodezart.core.config import AppConfig
+    from kodezart.config.app import AppConfig
 
     config = AppConfig()
 
@@ -269,7 +269,7 @@ def test_a_full_stdio_route_resolves_into_the_grant(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """KOD-129-AC-2, configuration half: every stdio field threads through."""
-    from kodezart.core.config import AppConfig
+    from kodezart.config.app import AppConfig
 
     _stdio_env(monkeypatch)
     monkeypatch.setenv("KODEZART_KNOWLEDGE_SESSION_GRANTS", '["ticket_fire"]')
@@ -291,7 +291,7 @@ def test_a_null_auth_scheme_loads_as_absence_not_a_placeholder(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """KOD-129-AC-3: the scheme-less header is expressible from the env."""
-    from kodezart.core.config import AppConfig
+    from kodezart.config.app import AppConfig
 
     monkeypatch.setenv("KODEZART_KNOWLEDGE_MCP_AUTH_SCHEME", "null")
     monkeypatch.setenv("KODEZART_KNOWLEDGE_MCP_AUTH_HEADER", "X-API-Key")
@@ -308,7 +308,7 @@ def test_the_gateway_credential_is_env_sourced_and_never_serialized(
     """The new secret-bearing field carries the same hygiene as the first."""
     import json
 
-    from kodezart.core.config import AppConfig
+    from kodezart.config.app import AppConfig
 
     monkeypatch.setenv(_GATEWAY_VAR, _GATEWAY_CREDENTIAL)
 
@@ -329,7 +329,7 @@ def test_no_credential_value_appears_in_any_repr(
     A model repr reaches tracebacks, debuggers and log payloads by paths
     that never call a serializer, so exclusion alone leaves it uncovered.
     """
-    from kodezart.core.config import AppConfig
+    from kodezart.config.app import AppConfig
 
     monkeypatch.setenv(_TOKEN_VAR, _CREDENTIAL)
     monkeypatch.setenv(_GATEWAY_VAR, _GATEWAY_CREDENTIAL)
@@ -366,7 +366,7 @@ def test_a_gateway_credential_satisfies_the_grant_credential_rule(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A self-hosted server holding its own upstream token needs no second."""
-    from kodezart.core.config import AppConfig
+    from kodezart.config.app import AppConfig
 
     monkeypatch.setenv("KODEZART_KNOWLEDGE_SESSION_GRANTS", '["ticket_fire"]')
     monkeypatch.setenv(_URL_VAR, _SELF_HOSTED_URL)
@@ -383,7 +383,7 @@ def test_a_grant_with_neither_credential_still_aborts_boot(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The amended cross-field rule names both variables."""
-    from kodezart.core.config import AppConfig
+    from kodezart.config.app import AppConfig
 
     monkeypatch.setenv("KODEZART_KNOWLEDGE_SESSION_GRANTS", '["ticket_fire"]')
     monkeypatch.delenv(_TOKEN_VAR, raising=False)
@@ -411,7 +411,7 @@ def test_a_stdio_field_under_the_http_transport_aborts_boot_naming_it(
     var: str,
     value: str,
 ) -> None:
-    from kodezart.core.config import AppConfig
+    from kodezart.config.app import AppConfig
 
     monkeypatch.setenv(var, value)
     if var == _CREDENTIAL_ENV_VAR:
@@ -441,7 +441,7 @@ def test_an_empty_stdio_collection_under_http_aborts_boot_naming_it(
     nothing.  Both arms now ask the set, which is the question the
     refusal is actually about.
     """
-    from kodezart.core.config import AppConfig
+    from kodezart.config.app import AppConfig
 
     monkeypatch.setenv(var, value)
 
@@ -453,7 +453,7 @@ def test_the_inert_stdio_defaults_are_legal_under_http(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The control for the set-based rule: shipped defaults abort nothing."""
-    from kodezart.core.config import AppConfig
+    from kodezart.config.app import AppConfig
 
     monkeypatch.delenv("KODEZART_KNOWLEDGE_MCP_ARGS", raising=False)
     monkeypatch.delenv("KODEZART_KNOWLEDGE_MCP_ENV", raising=False)
@@ -478,7 +478,7 @@ def test_an_http_field_explicitly_set_under_stdio_aborts_boot_naming_it(
     var: str,
 ) -> None:
     """Explicitly set is the offence; the inert shipped default is not."""
-    from kodezart.core.config import AppConfig
+    from kodezart.config.app import AppConfig
 
     _stdio_env(monkeypatch)
     monkeypatch.setenv(var, "Bearer" if "SCHEME" in var else "X-Value")
@@ -492,7 +492,7 @@ def test_the_inert_http_defaults_are_legal_under_stdio(
 ) -> None:
     """The control for the explicit-set rule: defaults an operator never
     wrote do not abort a stdio boot."""
-    from kodezart.core.config import AppConfig
+    from kodezart.config.app import AppConfig
 
     _stdio_env(monkeypatch)
 
@@ -502,7 +502,7 @@ def test_the_inert_http_defaults_are_legal_under_stdio(
 def test_a_gateway_credential_under_stdio_aborts_boot(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from kodezart.core.config import AppConfig
+    from kodezart.config.app import AppConfig
 
     _stdio_env(monkeypatch)
     monkeypatch.setenv(_GATEWAY_VAR, _GATEWAY_CREDENTIAL)
@@ -514,7 +514,7 @@ def test_a_gateway_credential_under_stdio_aborts_boot(
 def test_a_stdio_transport_without_a_command_aborts_boot_naming_it(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from kodezart.core.config import AppConfig
+    from kodezart.config.app import AppConfig
 
     monkeypatch.setenv(_TRANSPORT_VAR, "stdio")
 
@@ -525,7 +525,7 @@ def test_a_stdio_transport_without_a_command_aborts_boot_naming_it(
 def test_a_stdio_credential_without_its_delivery_entry_aborts_boot(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from kodezart.core.config import AppConfig
+    from kodezart.config.app import AppConfig
 
     monkeypatch.setenv(_TRANSPORT_VAR, "stdio")
     monkeypatch.setenv(_COMMAND_VAR, _SERVER_COMMAND)
@@ -538,7 +538,7 @@ def test_a_stdio_credential_without_its_delivery_entry_aborts_boot(
 def test_a_delivery_entry_without_a_credential_aborts_boot(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from kodezart.core.config import AppConfig
+    from kodezart.config.app import AppConfig
 
     monkeypatch.setenv(_TRANSPORT_VAR, "stdio")
     monkeypatch.setenv(_COMMAND_VAR, _SERVER_COMMAND)
@@ -552,7 +552,7 @@ def test_a_delivery_entry_without_a_credential_aborts_boot(
 def test_a_delivery_entry_colliding_with_a_declared_env_member_aborts_boot(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from kodezart.core.config import AppConfig
+    from kodezart.config.app import AppConfig
 
     _stdio_env(monkeypatch)
     monkeypatch.setenv(
@@ -568,7 +568,7 @@ def test_a_relative_command_is_refused_when_the_grant_resolves(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The command-safety rules live on the grant value and fire at boot."""
-    from kodezart.core.config import AppConfig
+    from kodezart.config.app import AppConfig
 
     _stdio_env(monkeypatch)
     monkeypatch.setenv(_COMMAND_VAR, "knowledge-mcp-server")
@@ -580,7 +580,7 @@ def test_a_relative_command_is_refused_when_the_grant_resolves(
 def test_a_package_runner_command_is_refused_when_the_grant_resolves(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from kodezart.core.config import AppConfig
+    from kodezart.config.app import AppConfig
 
     _stdio_env(monkeypatch)
     monkeypatch.setenv(_COMMAND_VAR, "/usr/local/bin/npx")
@@ -593,7 +593,7 @@ def test_a_granted_http_route_without_an_endpoint_aborts_boot(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """No endpoint ships, so a granted http deployment must name one."""
-    from kodezart.core.config import AppConfig
+    from kodezart.config.app import AppConfig
 
     monkeypatch.setenv("KODEZART_KNOWLEDGE_SESSION_GRANTS", '["ticket_fire"]')
     monkeypatch.setenv(_TOKEN_VAR, _CREDENTIAL)
@@ -612,7 +612,7 @@ def test_a_static_credential_aimed_at_an_interactive_host_aborts_boot(
     no credential value rescues it: the endpoint has to move, or the route
     has to change.
     """
-    from kodezart.core.config import AppConfig
+    from kodezart.config.app import AppConfig
 
     monkeypatch.setenv("KODEZART_KNOWLEDGE_SESSION_GRANTS", '["ticket_fire"]')
     monkeypatch.setenv(_HOSTS_VAR, f'["{_INTERACTIVE_HOST}"]')
@@ -633,7 +633,7 @@ def test_a_gateway_credential_aimed_at_an_interactive_host_also_aborts_boot(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Any statically composed header is dead against such a host."""
-    from kodezart.core.config import AppConfig
+    from kodezart.config.app import AppConfig
 
     monkeypatch.setenv("KODEZART_KNOWLEDGE_SESSION_GRANTS", '["ticket_fire"]')
     monkeypatch.setenv(_HOSTS_VAR, f'["{_INTERACTIVE_HOST}"]')
@@ -649,7 +649,7 @@ def test_an_interactive_host_granted_to_nobody_is_a_legal_configuration(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The refusal is grant-conditioned: nothing dials, nothing is dead."""
-    from kodezart.core.config import AppConfig
+    from kodezart.config.app import AppConfig
 
     monkeypatch.setenv("KODEZART_KNOWLEDGE_SESSION_GRANTS", "[]")
     monkeypatch.setenv(_HOSTS_VAR, f'["{_INTERACTIVE_HOST}"]')
@@ -665,7 +665,7 @@ def test_the_same_credential_against_a_self_hosted_url_resolves(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The control: the refusal is the host, never the credential."""
-    from kodezart.core.config import AppConfig
+    from kodezart.config.app import AppConfig
 
     monkeypatch.setenv("KODEZART_KNOWLEDGE_SESSION_GRANTS", '["ticket_fire"]')
     monkeypatch.setenv(_HOSTS_VAR, f'["{_INTERACTIVE_HOST}"]')

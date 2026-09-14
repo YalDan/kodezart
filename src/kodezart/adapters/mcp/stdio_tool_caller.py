@@ -9,9 +9,9 @@ One session for the process, opened at boot and closed at shutdown, for
 the same reason the HTTP caller holds one: a session per call re-runs the
 MCP initialise handshake every time.  The hosting of that session — the
 task that owns it, the calls posted to it, the reopen a call takes once —
-is :mod:`kodezart.adapters.hosted_mcp_session`, shared with every other
+is :mod:`kodezart.adapters.mcp.hosted_session`, shared with every other
 transport, and decoding is shared in
-:mod:`kodezart.adapters.mcp_result_decoding`.  What is stdio's own is
+:mod:`kodezart.adapters.mcp.result_decoding`.  What is stdio's own is
 here: how a server is spawned, what its failures are called, and what it
 said on its way out.
 
@@ -54,7 +54,7 @@ from mcp.client.stdio import stdio_client
 from mcp.shared.exceptions import McpError
 from mcp.types import CONNECTION_CLOSED
 
-from kodezart.adapters.hosted_mcp_session import (
+from kodezart.adapters.mcp.hosted_session import (
     HostedMcpSession,
     HostedSessionTransport,
 )

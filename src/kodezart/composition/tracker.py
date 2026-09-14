@@ -7,13 +7,13 @@ than defines.
 from dataclasses import dataclass
 from typing import Final, assert_never
 
-from kodezart.adapters.http_mcp_tool_caller import HttpMcpToolCaller
-from kodezart.adapters.linear_mcp_tracker import (
+from kodezart.adapters.linear.tracker import (
     ACCEPTED_CREDENTIAL_SHAPE,
     LinearMcpTracker,
     is_long_lived_credential,
 )
-from kodezart.core.config import AppConfig
+from kodezart.adapters.mcp.http_tool_caller import HttpMcpToolCaller
+from kodezart.config.app import AppConfig
 from kodezart.core.errors import TrackerCredentialShapeError
 from kodezart.core.logging import BoundLogger
 from kodezart.core.protocols import (

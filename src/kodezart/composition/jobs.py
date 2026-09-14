@@ -8,7 +8,7 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 
 from kodezart.adapters.asyncio_job_queue import AsyncioJobQueue
 from kodezart.adapters.langgraph_run_state_reader import LangGraphRunStateReader
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.core.protocols import JobRegistry, WorkflowEngine
 from kodezart.services.job_service import JobService
 

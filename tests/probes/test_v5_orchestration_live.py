@@ -26,7 +26,7 @@ from pathlib import Path
 
 import pytest
 
-from kodezart.adapters._agents_mapping import map_agents
+from kodezart.adapters.claude.agents_mapping import map_agents
 from kodezart.types.domain.agent import ToolUseEvent
 from kodezart.types.domain.prompts import OrchestrationPrimitive, PromptKey
 from tests.probes.recording import record

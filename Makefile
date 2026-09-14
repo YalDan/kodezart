@@ -34,8 +34,8 @@ test:
 	uv run pytest
 
 verify-no-origin-literal:
-	@if grep -rnE '"origin[/"]' src/kodezart --include='*.py' | grep -v 'core/config.py' ; then \
-		echo 'ERROR: literal "origin" found in src/kodezart outside core/config.py' ; \
+	@if grep -rnE '"origin[/"]' src/kodezart --include='*.py' | grep -v 'config/app.py' ; then \
+		echo 'ERROR: literal "origin" found in src/kodezart outside config/app.py' ; \
 		exit 1 ; \
 	fi
 

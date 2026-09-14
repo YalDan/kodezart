@@ -16,7 +16,7 @@ from typing import Final
 
 import pytest
 
-from kodezart.adapters.linear_mcp_tracker import LinearMcpTracker
+from kodezart.adapters.linear.tracker import LinearMcpTracker
 from kodezart.core.errors import McpSessionClosedError
 from kodezart.core.protocols import McpToolResult
 from kodezart.types.domain.branch import WorkRef, WorkRefRole, trunk_base

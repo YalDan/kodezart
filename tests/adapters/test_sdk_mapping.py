@@ -29,7 +29,7 @@ from claude_agent_sdk import (
     UserMessage,
 )
 
-from kodezart.adapters._sdk_mapping import INIT_SUBTYPE, map_message
+from kodezart.adapters.claude.sdk_mapping import INIT_SUBTYPE, map_message
 from kodezart.core.errors import UnmappedAgentMessageError
 from kodezart.types.domain.agent import SystemEvent, TaskUpdatedEvent
 

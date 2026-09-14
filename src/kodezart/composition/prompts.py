@@ -8,7 +8,7 @@ from kodezart.adapters.in_repo_prompt_registry import (
     InRepoPromptRegistry,
     default_sets_root,
 )
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.core.logging import BoundLogger
 from kodezart.core.prompt_namespaces import bindings_for
 from kodezart.types.domain.operation import OperationConfig

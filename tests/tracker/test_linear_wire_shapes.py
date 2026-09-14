@@ -34,7 +34,7 @@ from datetime import UTC, datetime
 import pytest
 from pydantic import ValidationError
 
-from kodezart.adapters.linear_mcp_tracker import LinearMcpTracker
+from kodezart.adapters.linear.tracker import LinearMcpTracker
 from kodezart.core.errors import TrackerProtocolError
 from kodezart.core.protocols import McpToolResult
 from kodezart.types.domain.dispatch import SelfWriteLedger

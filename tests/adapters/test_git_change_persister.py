@@ -6,11 +6,11 @@ from pathlib import Path
 import pytest
 import structlog.testing
 
-from kodezart.adapters.git_change_persister import GitChangePersister
+from kodezart.adapters.git.change_persister import GitChangePersister
+from kodezart.adapters.git.service import SubprocessGitService
 from kodezart.adapters.pattern_outbound_gate import PatternOutboundContentGate
 from kodezart.adapters.regex_content_scanner import RegexContentScanner
-from kodezart.adapters.subprocess_git_service import SubprocessGitService
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.core.protocols import ChangePersister
 from kodezart.domain.errors import OutboundContentBlockedError
 from kodezart.types.domain.agent import ResultEvent

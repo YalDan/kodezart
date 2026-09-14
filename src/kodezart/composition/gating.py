@@ -9,7 +9,7 @@ from pathlib import Path
 from kodezart.adapters.agent_content_scanner import AgentContentScanner
 from kodezart.adapters.pattern_outbound_gate import PatternOutboundContentGate
 from kodezart.adapters.regex_content_scanner import RegexContentScanner
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.core.errors import ContentScannerBootError
 from kodezart.core.logging import BoundLogger
 from kodezart.core.protocols import (

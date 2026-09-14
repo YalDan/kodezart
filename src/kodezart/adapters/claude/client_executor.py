@@ -14,7 +14,7 @@ from claude_agent_sdk import (
     ResultError,
 )
 
-from kodezart.adapters._agents_mapping import (
+from kodezart.adapters.claude.agents_mapping import (
     map_agents,
     map_effort,
     map_model,
@@ -22,13 +22,13 @@ from kodezart.adapters._agents_mapping import (
     map_system_prompt,
     map_workflow_env,
 )
-from kodezart.adapters._mcp_mapping import (
+from kodezart.adapters.claude.permission_modes import _validate_permission_mode
+from kodezart.adapters.claude.sdk_mapping import INIT_SUBTYPE, map_message
+from kodezart.adapters.claude.skills_mapping import map_setting_sources, map_skills
+from kodezart.adapters.mcp.mapping import (
     map_knowledge_mcp,
     prompt_with_knowledge_map,
 )
-from kodezart.adapters._permission_modes import _validate_permission_mode
-from kodezart.adapters._sdk_mapping import INIT_SUBTYPE, map_message
-from kodezart.adapters._skills_mapping import map_setting_sources, map_skills
 from kodezart.core.constants import STDERR_TAIL_BYTES
 from kodezart.core.error_egress import redact_credentials
 from kodezart.core.errors import OutputStyleNotConfirmedError

@@ -15,8 +15,8 @@ from langgraph.checkpoint.memory import InMemorySaver
 
 from kodezart.chains import ralph_workflow as ralph_workflow_module
 from kodezart.chains.ralph_workflow import RalphWorkflowEngine
+from kodezart.config.app import AppConfig
 from kodezart.core.checkpointer import make_checkpointer
-from kodezart.core.config import AppConfig
 from kodezart.core.error_egress import build_error_event
 from kodezart.core.errors import NoStructuredOutputError, RateLimitedSoftFailureError
 from kodezart.core.protocols import AgentExecutor, TicketGenerator

@@ -12,7 +12,7 @@ from typing import Final
 
 import pytest
 
-from kodezart.adapters._mcp_mapping import map_knowledge_mcp
+from kodezart.adapters.mcp.mapping import map_knowledge_mcp
 from kodezart.types.domain.session import (
     KnowledgeGrant,
     KnowledgeTransport,
@@ -234,7 +234,7 @@ async def test_a_stdio_route_round_trips_from_the_environment_to_the_sdk(
     module: str,
 ) -> None:
     """AC-2 end to end: env vars to AppConfig to grant to SDK options."""
-    from kodezart.core.config import AppConfig
+    from kodezart.config.app import AppConfig
 
     monkeypatch.setenv("KODEZART_KNOWLEDGE_SESSION_GRANTS", '["ticket_fire"]')
     monkeypatch.setenv("KODEZART_KNOWLEDGE_MCP_TRANSPORT", "stdio")
@@ -267,7 +267,7 @@ async def test_a_self_hosted_http_route_round_trips_from_the_environment(
     module: str,
 ) -> None:
     """AC-2 end to end for the http arm, against a self-hosted endpoint."""
-    from kodezart.core.config import AppConfig
+    from kodezart.config.app import AppConfig
 
     monkeypatch.setenv("KODEZART_KNOWLEDGE_SESSION_GRANTS", '["ticket_fire"]')
     monkeypatch.setenv("KODEZART_KNOWLEDGE_MCP_SERVER_URL", _SELF_HOSTED_URL)

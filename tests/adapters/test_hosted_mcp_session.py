@@ -19,8 +19,8 @@ import pytest
 import structlog.testing
 from mcp.types import CallToolResult
 
-from kodezart.adapters import hosted_mcp_session
-from kodezart.adapters.hosted_mcp_session import (
+from kodezart.adapters.mcp import hosted_session as hosted_mcp_session
+from kodezart.adapters.mcp.hosted_session import (
     HostedMcpSession,
     HostedSessionTransport,
     _Phase,
@@ -144,9 +144,9 @@ def test_no_transport_dials_a_session_whose_handshake_is_unbounded() -> None:
     that the unbounded CALL wedged, one step earlier. The SDK's session
     takes the bound; every transport hands it the one it already states.
     """
-    adapters = Path(hosted_mcp_session.__file__).parent
+    adapters = Path(hosted_mcp_session.__file__).parents[1]
     unbounded: list[str] = []
-    for path in sorted(adapters.glob("*.py")):
+    for path in sorted(adapters.rglob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name):

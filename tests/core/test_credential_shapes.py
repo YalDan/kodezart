@@ -18,7 +18,7 @@ import pytest
 
 from kodezart.adapters.pattern_outbound_gate import PatternOutboundContentGate
 from kodezart.adapters.regex_content_scanner import RegexContentScanner
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.core.error_egress import _COMPILED_CREDENTIAL_SHAPES, redact_credentials
 from kodezart.types.domain.credentials import CREDENTIAL_SHAPES, REDACTION_SENTINEL
 from kodezart.types.domain.gating import (
