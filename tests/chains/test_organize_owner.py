@@ -4,6 +4,7 @@
 # current native board and the requested wire type, not a canned verdict order.
 import json
 import re
+from itertools import groupby
 
 import pytest
 
@@ -15,7 +16,7 @@ from kodezart.domain.errors import OrganizeAdmissionIdentityError
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.operation import OperationConfig
-from kodezart.types.domain.organize import AdmissionVerdict
+from kodezart.types.domain.organize import AdmissionVerdict, SpecFinding
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.session import ToolPreset
 from tests.chains.test_organize import (
@@ -674,3 +675,93 @@ async def test_removed_phase_gate_refuses_author_write(monkeypatch):
     with pytest.raises(OrganizeWriteRefusalError, match="phase gate"):
         await run_owner(owner)
     assert not [(name, args) for name, args in board.calls if name.startswith("save_")]
+
+
+ROUND_ONE_CLASSES = ("criterion_admits_two_readings", "probe_call_site_named_nowhere")
+ROUND_TWO_CLASSES = ("probe_call_site_named_nowhere", "response_model_named_nowhere")
+
+
+def finding(defect_class):
+    return {
+        "issue_id": CLAIMED_ISSUE,
+        "defect_class": defect_class,
+        "evidence": f"The current body reproduces {defect_class}.",
+        "role": "instance",
+    }
+
+
+async def test_remediation_round_input_is_the_accumulated_defect_class_set(monkeypatch):
+    from kodezart.chains.organize import OrganizeAdmission
+
+    owner, _board, executor = factory(convergence_bound=3)
+    requests = []
+    assess, verify = OrganizeAdmission.assess, OrganizeAdmission.verify
+
+    async def record_assess(self, request):
+        requests.append(request)
+        return await assess(self, request)
+
+    async def record_verify(self, request):
+        requests.append(request)
+        return await verify(self, request)
+
+    monkeypatch.setattr(OrganizeAdmission, "assess", record_assess)
+    monkeypatch.setattr(OrganizeAdmission, "verify", record_verify)
+    original = executor.stream
+    titles = []
+
+    async def scripted(**kwargs):
+        title = kwargs["output_format"]["schema"].get("title")
+        dry_round = (
+            title == "AdmissionJudgment"
+            and "Adversarially verify the current issue" in kwargs["prompt"]
+            and titles[-1:] == ["AdmissionJudgment"]
+            and requests[-1].issue_key == CLAIMED_ISSUE
+        )
+        seen = set(requests[-1].defect_classes) if requests else set()
+        titles.append(title)
+        scripted_classes = ()
+        if dry_round and not seen:
+            scripted_classes = ROUND_ONE_CLASSES
+        elif dry_round and seen == set(ROUND_ONE_CLASSES):
+            scripted_classes = ROUND_TWO_CLASSES
+        async for event in original(**kwargs):
+            if scripted_classes:
+                event = result(
+                    structured_output={
+                        **event.structured_output,
+                        "findings": [finding(c) for c in scripted_classes],
+                    }
+                )
+            yield event
+
+    monkeypatch.setattr(executor, "stream", scripted)
+    report = await run_owner(owner)
+    assert report.halt is None
+    first_round = tuple(sorted(set(ROUND_ONE_CLASSES)))
+    both_rounds = tuple(sorted(set(ROUND_ONE_CLASSES) | set(ROUND_TWO_CLASSES)))
+    observed = [classes for classes, _ in groupby(r.defect_classes for r in requests)]
+    assert observed == [(), first_round, both_rounds] * 3
+    assert all(
+        not isinstance(value, SpecFinding)
+        and not (
+            isinstance(value, list | tuple)
+            and any(isinstance(item, SpecFinding) for item in value)
+        )
+        for request in requests
+        for value in (getattr(request, name) for name in type(request).model_fields)
+    )
+    evidence = finding(ROUND_ONE_CLASSES[0])["evidence"]
+    assert not any(evidence in request.mandate_rubric for request in requests)
+    authors = [
+        call["prompt"]
+        for call in executor.calls
+        if call["output_format"]["schema"].get("title") == "OrganizeProposal"
+    ]
+    assert any(evidence in prompt for prompt in authors)
+    scoped = next(r for r in reversed(requests) if r.defect_classes == both_rounds)
+    from_previous_findings = scoped.model_copy(
+        update={"defect_classes": tuple(sorted(set(ROUND_TWO_CLASSES)))}
+    )
+    assert from_previous_findings.defect_classes != scoped.defect_classes
+    assert from_previous_findings != scoped
