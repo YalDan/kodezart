@@ -7,8 +7,8 @@ from dataclasses import dataclass
 import pytest
 
 from kodezart.composition.tracker import build_tracker
+from kodezart.config.app import AppConfig
 from kodezart.core.backoff import RetryPolicy
-from kodezart.core.config import AppConfig
 from kodezart.core.errors import (
     TrackerProtocolError,
     TrackerUnavailableError,

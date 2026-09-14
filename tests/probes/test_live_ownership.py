@@ -34,8 +34,8 @@ from kodezart.composition.tracker import (
     make_mcp_tool_caller,
     refuse_foreign_credential,
 )
+from kodezart.config.app import AppConfig
 from kodezart.core.backoff import RetryPolicy
-from kodezart.core.config import AppConfig
 from kodezart.core.errors import McpTransportError
 from kodezart.core.protocols import (
     ManagedMcpToolCaller,

@@ -2,7 +2,7 @@
 
 import pytest
 
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.domain.errors import RunShapeReadError
 from kodezart.services.mandate_graph import (
     observe_ruling_growth,

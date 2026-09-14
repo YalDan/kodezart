@@ -7,7 +7,7 @@ import pytest
 
 from kodezart.composition.jobs import build_job_queue
 from kodezart.composition.passes import build_dispatch_passes
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.domain.errors import (
     OutboundContentBlockedError,
     SurfaceLeaseError,

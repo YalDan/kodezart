@@ -7,7 +7,7 @@ The consumer holds tracker, Git and check-runner ports without forge or
 lane-delivery authority. Composition changes only a disposable scratch tree.
 """
 
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.core.protocols import CheckChainRunner, GitService, TrackerPort
 from kodezart.domain.errors import UnionHeadReadError
 from kodezart.domain.issue_tree import RECORD_KINDS

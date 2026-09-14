@@ -235,7 +235,7 @@ Renaming by hand is easy to get wrong in one place. Two checks catch it:
 
 ```bash
 # Every retired name is refused, so a boot that starts has none left.
-uv run python -c "from kodezart.core.config import AppConfig; c = AppConfig(); print('tracker credential present:', c.tracker.token is not None)"
+uv run python -c "from kodezart.config.app import AppConfig; c = AppConfig(); print('tracker credential present:', c.tracker.token is not None)"
 ```
 
 A validation error at this point names the offending key without printing what

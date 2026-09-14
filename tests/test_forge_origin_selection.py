@@ -34,8 +34,8 @@ from kodezart.composition.forge import (
     pr_state_reader_for_origin,
 )
 from kodezart.composition.jobs import build_job_queue
+from kodezart.config.app import AppConfig
 from kodezart.core import protocols
-from kodezart.core.config import AppConfig
 from kodezart.core.constants import DEFAULT_LANE
 from kodezart.core.protocols import (
     CIMonitor,

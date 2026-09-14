@@ -7,7 +7,7 @@ from kodezart.composition.preflight import (
     preflight_prompt_skill_loadouts,
     preflight_skills,
 )
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.core.errors import NoStructuredOutputError, SkillPreflightError
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.branch import trunk_base

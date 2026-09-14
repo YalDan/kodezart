@@ -7,7 +7,7 @@ from httpx import ASGITransport, AsyncClient
 from pydantic import ValidationError
 
 from kodezart.api import dependencies as deps
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.main import create_app
 from kodezart.types.domain.agent import AssistantTextEvent
 from tests.api.v1.test_dependencies import BODY, events

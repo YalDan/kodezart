@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 
 from kodezart.adapters.outbound_admission import OutboundAdmission
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.core.protocols import OutboundContentGate
 from kodezart.domain.errors import AssetFetchError
 from kodezart.services.fire_context import FireContextAssembler

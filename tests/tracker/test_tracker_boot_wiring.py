@@ -19,6 +19,7 @@ import pytest
 from kodezart.adapters.linear.tracker import LinearMcpTracker
 from kodezart.composition.prompts import boot_prompts
 from kodezart.composition.tracker import CREDENTIAL_FIELD
+from kodezart.config.tracker import TrackerSettings
 from kodezart.core.errors import (
     PassKnowledgeCapabilityError,
     TrackerBootValidationError,
@@ -26,7 +27,6 @@ from kodezart.core.errors import (
     TrackerWriterAttributionError,
 )
 from kodezart.core.protocols import ManagedMcpToolCaller
-from kodezart.core.tracker_settings import TrackerSettings
 from kodezart.main import create_app, lifespan
 from kodezart.services.pass_scheduler import PassScheduler
 from tests.fakes import FakeMcpDocument, ManagedFakeLinearMcpServer

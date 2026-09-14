@@ -4,7 +4,7 @@ from collections.abc import Sequence
 
 from kodezart.adapters.no_forge_delivery import NoForgeDeliveryProbe
 from kodezart.chains.native_delivery import NativeLaneWorkflow
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.core.protocols import DeliveryProbe, GitService, RepoCache, TrackerPort
 from kodezart.domain.git_url import is_forge_less_origin
 from kodezart.services.base_resolver import BaseResolver

@@ -5,7 +5,7 @@ import inspect
 
 import pytest
 
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.domain.errors import CriterionReadError
 from kodezart.domain.run_shape import barren_tick_with_diff_growth
 from kodezart.services import run_shape
@@ -190,7 +190,7 @@ def test_observer_has_one_tracker_read_and_no_version_control_dependency():
     }
     assert imports == {
         "collections.abc",
-        "kodezart.core.config",
+        "kodezart.config.app",
         "kodezart.core.protocols",
         "kodezart.domain.gap",
         "kodezart.domain.run_shape",

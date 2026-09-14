@@ -10,8 +10,8 @@ import structlog
 from kodezart.composition.forge import build_forge_client
 from kodezart.composition.gating import build_outbound_gate
 from kodezart.composition.tracker import build_tracker
+from kodezart.config.app import AppConfig
 from kodezart.core.backoff import RetryPolicy
-from kodezart.core.config import AppConfig
 from kodezart.core.errors import (
     McpCallUnansweredError,
     McpCredentialRefusedError,

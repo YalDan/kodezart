@@ -5,8 +5,8 @@ from datetime import UTC, datetime
 import pytest
 from pydantic import ValidationError
 
-from kodezart.core.config import AppConfig
-from kodezart.core.organize_settings import OrganizeSettings
+from kodezart.config.app import AppConfig
+from kodezart.config.organize import OrganizeSettings
 from kodezart.types.domain.dispatch import PassRun
 from kodezart.types.domain.operation import (
     OperationConfig,

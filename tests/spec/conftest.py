@@ -8,8 +8,8 @@ import pytest
 
 from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.composition.tracker import build_tracker, make_mcp_tool_caller
+from kodezart.config.app import AppConfig
 from kodezart.core.backoff import RetryPolicy
-from kodezart.core.config import AppConfig
 
 
 @pytest.fixture

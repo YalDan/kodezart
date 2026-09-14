@@ -8,7 +8,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 
 from kodezart.chains.criteria import TrackerCriteria
 from kodezart.composition.delivery import build_native_lane_workflow
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.domain.errors import (
     FireSpecEntryError,
     ForgeAPIError,

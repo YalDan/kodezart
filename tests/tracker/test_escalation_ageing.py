@@ -2,7 +2,7 @@
 
 import pytest
 
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.domain.errors import EscalationReadError, RunShapeReadError
 from kodezart.domain.run_shape import escalation_ageing
 from kodezart.services.run_shape import observe_escalation_ageing

@@ -8,7 +8,7 @@ import pytest
 from kodezart.adapters.git.bare_repo_cache import LocalBareRepoCache
 from kodezart.adapters.git.service import SubprocessGitService
 from kodezart.adapters.git.source_reader import SubprocessGitSourceReader
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.domain.errors import (
     AssertionComparisonError,
     AuditEvidenceReadError,

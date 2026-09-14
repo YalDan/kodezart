@@ -16,7 +16,7 @@ import pytest
 from kodezart.adapters.git.check_chain import SubprocessCheckChainRunner
 from kodezart.chains.delivery_coordinator import ScopeUnionCoordinator
 from kodezart.chains.scope_walker import read_scope_ready
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.domain.errors import CheckChainExecutionError, UnionHeadReadError
 from kodezart.types.domain.branch import WorkRef, WorkRefRole
 from kodezart.types.domain.operation import ScopeLabel

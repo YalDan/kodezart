@@ -3,7 +3,7 @@
 from collections.abc import Awaitable, Callable, Sequence
 from datetime import datetime, timedelta
 
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.types.domain.audit import AuditCandidate, AuditCoverageResult
 from kodezart.types.domain.scope import ScopeRef
 

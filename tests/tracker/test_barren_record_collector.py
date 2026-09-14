@@ -6,7 +6,7 @@ import inspect
 
 import pytest
 
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.core.errors import TrackerUnavailableError
 from kodezart.domain.errors import (
     CriterionReadError,

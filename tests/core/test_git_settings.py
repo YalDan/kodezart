@@ -8,7 +8,7 @@ import pytest
 from pydantic import ValidationError
 
 from kodezart.composition.workspace import build_git_stack
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.types.domain.agent import ResultEvent
 from kodezart.types.domain.gating import RepoVisibility
 from tests.core.test_retired_config import _from_source

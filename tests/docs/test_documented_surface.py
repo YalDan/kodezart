@@ -19,7 +19,7 @@ import pytest
 from fastapi.routing import APIRoute
 from pydantic import ValidationError
 
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.main import create_app
 from kodezart.types.domain.agent import AgentEvent
 from tests.docs.configuration import (

@@ -10,7 +10,7 @@ from pydantic import ValidationError
 from pydantic_settings import SettingsError
 
 from kodezart.composition.tracker import boot_tracker, make_mcp_tool_caller
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.core.errors import (
     McpCredentialRefusedError,
     McpTransportError,

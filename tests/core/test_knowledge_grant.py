@@ -12,7 +12,7 @@ import pytest
 from pydantic import ValidationError
 
 from kodezart.adapters.mcp.mapping import map_knowledge_mcp
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.main import create_app, lifespan
 from kodezart.types.domain.session import SessionType
 

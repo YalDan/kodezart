@@ -6,7 +6,7 @@ import logging
 import pytest
 from pydantic import ValidationError
 
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.core.logging import configure_logging
 from tests.core.test_logging_chain import configured_chain
 from tests.core.test_retired_config import _from_source

@@ -12,7 +12,7 @@ from pydantic import ValidationError
 
 from kodezart.adapters.git import check_chain
 from kodezart.adapters.git.check_chain import SubprocessCheckChainRunner
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.core.protocols import CheckChainRunner
 from kodezart.domain.errors import CheckChainExecutionError
 from kodezart.types.domain.operation import CheckStep

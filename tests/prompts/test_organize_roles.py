@@ -8,7 +8,7 @@ import structlog
 
 from kodezart.adapters.in_repo_prompt_registry import default_sets_root
 from kodezart.composition.prompts import boot_prompts
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.core.errors import PromptResolutionError
 from kodezart.types.domain.prompts import PromptKey, SessionRole
 from tests.prompts.sets import OPUS_SET, ORGANIZE_CASE, V5_SET

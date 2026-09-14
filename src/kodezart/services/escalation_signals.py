@@ -1,6 +1,6 @@
 """Collect escalation age from the recorded occurrence and its lane history."""
 
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.core.protocols import TrackerPort
 from kodezart.domain.errors import RunShapeReadError
 from kodezart.services.escalation_records import EscalationRecordReader

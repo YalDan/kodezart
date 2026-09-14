@@ -16,7 +16,7 @@ from kodezart.adapters.git.ref_publisher import GitRefPublisher
 from kodezart.adapters.git.service import SubprocessGitService
 from kodezart.adapters.git.worktree_provider import GitWorktreeProvider
 from kodezart.adapters.github.token_auth import GitHubTokenAuth
-from kodezart.core.git_settings import GitSettings
+from kodezart.config.git import GitSettings
 from kodezart.core.protocols import (
     ArtifactPersister,
     BranchMerger,

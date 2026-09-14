@@ -5,8 +5,8 @@ from collections.abc import Mapping
 import pytest
 
 from kodezart.composition.tracker import build_tracker
+from kodezart.config.app import AppConfig
 from kodezart.core.backoff import RetryPolicy
-from kodezart.core.config import AppConfig
 from kodezart.domain.errors import CriterionReadError
 from kodezart.types.domain.operation import OperationConfig, OperationMemberAbsentError
 from tests.fakes import FakeLinearMcpServer, FakeMcpIssue

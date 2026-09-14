@@ -43,7 +43,7 @@ from kodezart.composition.knowledge import boot_knowledge_grant
 from kodezart.composition.preflight import boot_skills
 from kodezart.composition.prompts import boot_prompts
 from kodezart.composition.workspace import build_git_stack
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.core.protocols import AgentExecutor, PromptSetProvider
 from kodezart.handlers.agent_handler import _HTTP_PERMISSIONS
 from kodezart.services.agent_service import AgentService

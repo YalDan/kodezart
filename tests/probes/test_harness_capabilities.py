@@ -24,7 +24,7 @@ from kodezart.adapters.claude.agents_mapping import map_allowed_tools
 from kodezart.adapters.claude.permission_modes import map_permission_mode
 from kodezart.adapters.claude.sdk_mapping import map_message
 from kodezart.adapters.claude.skills_mapping import map_setting_sources, map_skills
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.core.constants import EVAL_PERMISSION_MODE
 from kodezart.types.domain.agent import (
     AssistantTextEvent,

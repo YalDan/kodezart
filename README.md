@@ -967,7 +967,7 @@ If you're sending changes to kodezart itself (not just using it):
 - `make check` must pass (ruff + mypy strict + pytest).
 - Hexagonal: ports in `src/kodezart/core/protocols.py`, adapters in `src/kodezart/adapters/`, pure domain in `src/kodezart/domain/` (no I/O).
 - Conventional Commits subjects: `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:`.
-- Tests use real fakes (`tests/fakes/`), not mocks. mypy strict; `Any` is forbidden outside `core/config.py`.
+- Tests use real fakes (`tests/fakes/`), not mocks. mypy strict; `Any` is forbidden outside `config/app.py`.
 - See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full guide.
 
 Security issues go through [private vulnerability reporting](https://github.com/YalDan/kodezart/security/advisories/new), not public issues. See [`SECURITY.md`](SECURITY.md).

@@ -8,7 +8,7 @@ from kodezart.chains.audit_overclaim import AuditOverclaimVerifier
 from kodezart.chains.audit_pass import AuditClaimVerifier, AuditMandateHunt
 from kodezart.chains.audit_sweep import AuditReadSweep
 from kodezart.chains.write_back_verifier import FreshWriteBackJudge, WriteBackVerifier
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.core.protocols import (
     AgentRunner,
     CIMonitor,

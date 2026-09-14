@@ -12,7 +12,7 @@ from kodezart.adapters.in_repo_prompt_registry import (
     default_sets_root,
 )
 from kodezart.adapters.toml_operation_config import load_operation_config
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.core.prompt_namespaces import bindings_for
 from kodezart.types.domain.prompts import PromptKey
 from tests.fakes import pass_render_variables

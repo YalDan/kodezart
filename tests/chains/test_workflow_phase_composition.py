@@ -13,7 +13,7 @@ from kodezart.adapters.git.change_persister import GitChangePersister
 from kodezart.adapters.git.service import SubprocessGitService
 from kodezart.adapters.git.worktree_provider import GitWorktreeProvider
 from kodezart.composition.engine import build_workflow_engine
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.domain.thread_id import workflow_thread_id
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.agent import (

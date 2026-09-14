@@ -41,7 +41,7 @@ from kodezart.composition.passes import (
 )
 from kodezart.composition.records import _knowledge_caller
 from kodezart.composition.tracker import DialledTracker, make_mcp_tool_caller
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.core.errors import McpSessionClosedError
 from kodezart.services.claim_heartbeat import ClaimHeartbeat
 from kodezart.services.lifecycle_watcher import LifecycleWatcher

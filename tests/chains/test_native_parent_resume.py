@@ -6,8 +6,8 @@ from langgraph.checkpoint.memory import InMemorySaver
 from kodezart.chains.criteria import TrackerCriteria
 from kodezart.chains.write_back_verifier import WriteBackVerifier
 from kodezart.composition.engine import build_workflow_engine
-from kodezart.core.config import AppConfig
-from kodezart.core.write_back_settings import WriteBackSettings
+from kodezart.config.app import AppConfig
+from kodezart.config.write_back import WriteBackSettings
 from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.operation import OperationConfig, RepoEntry

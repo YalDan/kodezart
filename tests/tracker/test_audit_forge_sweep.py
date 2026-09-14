@@ -5,7 +5,7 @@ import asyncio
 import pytest
 
 from kodezart.chains.audit_forge import AuditForgeVerifier
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.domain.errors import AgentSDKError, AuditClaimReadError
 from kodezart.domain.lane_record import parse_lane_record, render_lane_record
 from kodezart.services.lane_records import LaneRecordReader

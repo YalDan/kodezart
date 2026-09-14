@@ -1264,7 +1264,7 @@ class TrackerPort(
         holding the issue.
 
         *holder* is the deployment's PROCESS identity, the value
-        ``core/config.py::dispatch_holder`` carries. It answers which
+        ``config/app.py::dispatch_holder`` carries. It answers which
         deployment may fire an issue; a surface lease's holder answers
         which run may write a surface. Neither is derived from the other.
         """

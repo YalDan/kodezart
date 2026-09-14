@@ -12,16 +12,16 @@ from pydantic_settings import (
     SettingsConfigDict,
 )
 
-from kodezart.core.agent_settings import AgentSettings
-from kodezart.core.audit_settings import AuditSettings
-from kodezart.core.git_settings import GitSettings
-from kodezart.core.http_settings import HttpSettings
-from kodezart.core.job_queue_settings import JobQueueSettings
-from kodezart.core.knowledge_settings import KnowledgeSettings
-from kodezart.core.logging_settings import LoggingSettings
-from kodezart.core.organize_settings import OrganizeSettings
-from kodezart.core.tracker_settings import TrackerSettings
-from kodezart.core.write_back_settings import WriteBackSettings
+from kodezart.config.agent import AgentSettings
+from kodezart.config.audit import AuditSettings
+from kodezart.config.git import GitSettings
+from kodezart.config.http import HttpSettings
+from kodezart.config.job_queue import JobQueueSettings
+from kodezart.config.knowledge import KnowledgeSettings
+from kodezart.config.logging import LoggingSettings
+from kodezart.config.organize import OrganizeSettings
+from kodezart.config.tracker import TrackerSettings
+from kodezart.config.write_back import WriteBackSettings
 from kodezart.types.domain.dispatch import PassSignal
 from kodezart.types.domain.ticket_review import (
     DEFAULT_MAX_REVIEWS,

@@ -9,7 +9,7 @@ import pytest
 
 from kodezart.adapters.mcp.mapping import map_knowledge_mcp
 from kodezart.composition.records import _knowledge_caller
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.types.domain.session import SessionType
 from tests.fakes import EXECUTOR_MODULES, recorded_session, write_stdio_fake_server
 

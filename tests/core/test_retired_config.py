@@ -5,7 +5,7 @@ import json
 import pytest
 from pydantic import ValidationError
 
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 
 
 def _from_source(source, field, value, tmp_path, monkeypatch):

@@ -5,7 +5,7 @@ what-lives-where map tells it what lives where.  Both are decided by the
 same grant list, so both are resolved here, into one value.
 """
 
-from kodezart.core.knowledge_settings import KnowledgeSettings
+from kodezart.config.knowledge import KnowledgeSettings
 from kodezart.core.logging import BoundLogger
 from kodezart.core.prompt_rendering import PromptTemplate
 from kodezart.core.protocols import PromptProvider

@@ -9,7 +9,7 @@ import pytest
 from pydantic import ValidationError
 
 from kodezart.chains.audit_forge import AuditForgeVerifier
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.domain.errors import AuditEvidenceReadError, ForgeAPIError
 from kodezart.types.domain.audit import AuditVerdict
 from kodezart.types.domain.audit_forge import AuditForgeObservation, AuditForgeRequest

@@ -6,8 +6,8 @@ import pytest
 from pydantic import ValidationError
 
 from kodezart.adapters.mcp.mapping import map_knowledge_mcp
-from kodezart.core.config import AppConfig
-from kodezart.core.knowledge_settings import KnowledgeSettings
+from kodezart.config.app import AppConfig
+from kodezart.config.knowledge import KnowledgeSettings
 from kodezart.types.domain.session import (
     PACKAGE_RUNNER_COMMANDS,
     HttpKnowledge,

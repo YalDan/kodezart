@@ -19,7 +19,7 @@ from kodezart.chains.authored_delivery import AuthoredDeliveryCoordinator
 from kodezart.chains.ralph_loop import RalphLoop
 from kodezart.chains.ticket_generation import TicketGenerationLoop
 from kodezart.composition.prompts import boot_prompts
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.agent import (
     AgentEvent,

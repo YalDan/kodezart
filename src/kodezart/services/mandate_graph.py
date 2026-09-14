@@ -4,7 +4,7 @@ from collections.abc import Mapping
 
 from pydantic import ValidationError
 
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.core.protocols import TrackerPort
 from kodezart.domain.errors import RunShapeReadError
 from kodezart.domain.gap import compute_gap

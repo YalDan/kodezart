@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from kodezart.adapters.toml_operation_config import load_operation_config
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.core.errors import (
     OperationConfigError,
     PromptNamespaceCollisionError,

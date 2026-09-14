@@ -17,8 +17,8 @@ from kodezart.chains import authored_checks
 from kodezart.chains import authored_publication as authored_publication_module
 from kodezart.chains import fire_consolidation as fire_consolidation_module
 from kodezart.chains.authored_delivery import AuthoredDeliveryCoordinator
+from kodezart.config.app import AppConfig
 from kodezart.core.checkpointer import make_checkpointer
-from kodezart.core.config import AppConfig
 from kodezart.core.error_egress import build_error_event
 from kodezart.core.errors import NoStructuredOutputError, RateLimitedSoftFailureError
 from kodezart.core.protocols import AgentExecutor, OutboundContentGate, TicketGenerator

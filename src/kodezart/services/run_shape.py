@@ -2,7 +2,7 @@
 
 from collections.abc import Mapping
 
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.core.protocols import TrackerPort
 from kodezart.domain.gap import compute_gap
 from kodezart.domain.run_shape import (

@@ -10,7 +10,7 @@ from pydantic import SecretStr
 from kodezart.composition.audit import verify_audit_configuration
 from kodezart.composition.passes import build_dispatch_runtime
 from kodezart.composition.tracker import DialledTracker
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.core.logging import get_logger
 from kodezart.services.agent_service import AgentService
 from kodezart.services.audit_runtime import AuditRunIncompleteError

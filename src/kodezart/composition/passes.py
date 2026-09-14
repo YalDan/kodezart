@@ -18,14 +18,14 @@ from kodezart.composition.organize import (
 )
 from kodezart.composition.records import RECORD_KIND_BY_PASS, run_report
 from kodezart.composition.tracker import DialledTracker
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
+from kodezart.config.knowledge import KnowledgeSettings
 from kodezart.core.constants import UNATTENDED_PERMISSION_MODE
 from kodezart.core.errors import (
     PassGateCapabilityError,
     PassKnowledgeCapabilityError,
     PromptRenderError,
 )
-from kodezart.core.knowledge_settings import KnowledgeSettings
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import (
     AgentRunner,

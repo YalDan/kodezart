@@ -159,7 +159,7 @@ def _grounded(verdict: CriterionVerdict, repair: RepairKind) -> dict[str, object
     return _finding_payload(
         verdict,
         repair,
-        refutation="src/kodezart/core/config.py declares no such setting",
+        refutation="src/kodezart/config/app.py declares no such setting",
         missingResource="a PostgreSQL server reachable from the runner",
     )
 
@@ -287,7 +287,7 @@ def test_an_infeasible_verdict_the_sweep_records_carries_its_refutation() -> Non
     front of the drafter.  What keeps it out is that the finding it would
     have been projected from cannot be constructed.
     """
-    refutation = "src/kodezart/core/config.py declares no such setting"
+    refutation = "src/kodezart/config/app.py declares no such setting"
     finding = CriterionFinding.model_validate(
         _finding_payload(
             CriterionVerdict.infeasible,
@@ -346,7 +346,7 @@ _CLASSIFICATION_TABLE: list[
         "class-5 literal-count pinning",
         _feasible(
             "AC-1",
-            pinned_literals=["src/kodezart/core/config.py", "exactly 3 occurrences"],
+            pinned_literals=["src/kodezart/config/app.py", "exactly 3 occurrences"],
         ),
         CriterionVerdict.feasible,
         LimitArm.not_a_limit,
@@ -591,7 +591,7 @@ def test_a_flagged_criterion_keeps_its_text_and_consumes_no_round() -> None:
             _feasible(
                 "AC-1",
                 base_demonstration=BaseDemonstration(
-                    command="rg -n 'max_iterations' src/kodezart/core/config.py",
+                    command="rg -n 'max_iterations' src/kodezart/config/app.py",
                     satisfied_at_base=True,
                 ),
             ),

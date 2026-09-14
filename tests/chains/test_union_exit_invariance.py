@@ -11,7 +11,7 @@ import pytest
 
 from kodezart.adapters.git.check_chain import SubprocessCheckChainRunner
 from kodezart.chains.delivery_coordinator import ScopeUnionCoordinator
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.domain.errors import CheckChainExecutionError, MergeConflictError
 from kodezart.types.domain.operation import CheckStep
 from kodezart.types.domain.union import UnionLaneHead, UnionOutcome

@@ -4,7 +4,7 @@ import pytest
 from pydantic import SecretStr
 
 from kodezart.composition.knowledge import fire_record_template
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.core.prompt_namespaces import bindings_for
 from kodezart.types.domain.operation import OperationConfig, RunKind
 from kodezart.types.domain.run_records import RunRecordResult

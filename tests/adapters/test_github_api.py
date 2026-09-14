@@ -8,8 +8,8 @@ import structlog
 
 from kodezart.adapters.github.api import GitHubAPIClient
 from kodezart.composition.forge import build_forge_client
+from kodezart.config.app import AppConfig
 from kodezart.core.backoff import RetryPolicy
-from kodezart.core.config import AppConfig
 from kodezart.domain.errors import ForgeAPIError, RateLimitError, TransientAPIError
 from kodezart.types.domain.check_observation import (
     AbsentChecks,

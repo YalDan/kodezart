@@ -9,7 +9,7 @@ from pydantic import ValidationError
 from kodezart.adapters.claude.client_executor import ClaudeClientExecutor
 from kodezart.composition.preflight import boot_skills
 from kodezart.composition.prompts import boot_prompts
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.core.errors import OutputStyleNotConfirmedError, SkillPreflightError
 from kodezart.core.logging import get_logger
 from kodezart.types.domain.agent import SystemEvent

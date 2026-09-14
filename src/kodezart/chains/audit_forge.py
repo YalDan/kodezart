@@ -3,7 +3,7 @@
 import asyncio
 from typing import assert_never
 
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.core.protocols import (
     CIMonitor,
     TrackerCriteriaReader,

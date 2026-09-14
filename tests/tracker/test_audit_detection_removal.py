@@ -14,7 +14,7 @@ from kodezart.adapters.git.service import SubprocessGitService
 from kodezart.adapters.git.source_reader import SubprocessGitSourceReader
 from kodezart.adapters.git.worktree_provider import GitWorktreeProvider
 from kodezart.chains.audit_detection_removal import DetectorRemovalVerifier
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.domain.criterion_evidence import render_evidence_field
 from kodezart.domain.errors import AuditEvidenceReadError
 from kodezart.domain.lane_record import render_lane_record

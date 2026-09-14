@@ -6,7 +6,7 @@ import inspect
 import pytest
 from pydantic import ValidationError
 
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.domain import run_shape
 from kodezart.domain.errors import RunShapeReadError
 from kodezart.domain.run_shape import escalation_ageing

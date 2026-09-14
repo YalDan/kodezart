@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from kodezart.composition.gating import build_outbound_gate
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.core.logging import get_logger
 from kodezart.types.domain.gating import (
     ContentClass,

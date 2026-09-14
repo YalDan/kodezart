@@ -3,7 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.services.check_classification import classify_red_checks
 from kodezart.types.domain.check_observation import AbsentChecks, ObservedChecks
 from kodezart.types.domain.delivery import CheckRedClass

@@ -8,8 +8,8 @@ import re
 import pytest
 
 from kodezart.composition.organize import build_organize_owner, build_organize_tick
-from kodezart.core.config import AppConfig
-from kodezart.core.organize_settings import OrganizeSettings
+from kodezart.config.app import AppConfig
+from kodezart.config.organize import OrganizeSettings
 from kodezart.core.prompt_namespaces import operation_bindings
 from kodezart.domain.errors import OrganizeAdmissionIdentityError
 from kodezart.services.agent_service import AgentService

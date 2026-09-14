@@ -766,7 +766,7 @@ def test_normal_toml_loader_resolves_the_declared_phase_table(tmp_path):
 async def test_invalid_table_stops_normal_boot_before_tracker_or_dispatch(
     tmp_path, monkeypatch, field
 ):
-    from kodezart.core.config import AppConfig
+    from kodezart.config.app import AppConfig
     from kodezart.core.errors import OperationConfigError
     from kodezart.main import create_app, lifespan
 

@@ -3,7 +3,7 @@
 import pytest
 from pydantic import TypeAdapter, ValidationError
 
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.domain.errors import RunShapeReadError
 from kodezart.domain.run_alarm_record import surface_alarm_member_id
 from kodezart.domain.run_shape import surface_contended

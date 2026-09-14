@@ -234,7 +234,7 @@ async def test_a_stdio_route_round_trips_from_the_environment_to_the_sdk(
     module: str,
 ) -> None:
     """AC-2 end to end: env vars to AppConfig to grant to SDK options."""
-    from kodezart.core.config import AppConfig
+    from kodezart.config.app import AppConfig
 
     monkeypatch.setenv("KODEZART_KNOWLEDGE__CONNECTION__TRANSPORT", "http")
     monkeypatch.setenv("KODEZART_KNOWLEDGE__SESSION_GRANTS", '["ticket_fire"]')
@@ -270,7 +270,7 @@ async def test_a_self_hosted_http_route_round_trips_from_the_environment(
     module: str,
 ) -> None:
     """AC-2 end to end for the http arm, against a self-hosted endpoint."""
-    from kodezart.core.config import AppConfig
+    from kodezart.config.app import AppConfig
 
     monkeypatch.setenv("KODEZART_KNOWLEDGE__CONNECTION__TRANSPORT", "http")
     monkeypatch.setenv("KODEZART_KNOWLEDGE__SESSION_GRANTS", '["ticket_fire"]')

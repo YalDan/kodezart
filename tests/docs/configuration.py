@@ -5,7 +5,7 @@ from typing import Annotated, Union, get_args, get_origin
 
 from pydantic import BaseModel
 
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 
 
 def model_types(annotation):

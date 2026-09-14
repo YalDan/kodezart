@@ -4,7 +4,7 @@ import asyncio
 
 import pytest
 
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.domain.errors import EscalationReadError, RunShapeReadError
 from kodezart.services.escalation_signals import observe_recorded_escalation_ageing
 from tests.fakes import FakeTrackerPort

@@ -6,7 +6,7 @@ import pytest
 
 from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.composition.prompts import boot_prompts
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.core.errors import OperationConfigError
 from kodezart.core.logging import get_logger
 from kodezart.types.domain.prompts import PromptKey

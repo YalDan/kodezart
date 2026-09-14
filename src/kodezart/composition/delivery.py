@@ -6,7 +6,7 @@ from kodezart.adapters.github.api import GitHubAPIClient
 from kodezart.chains.lane_delivery import LaneDeliveryCoordinator
 from kodezart.chains.native_delivery import NativeLaneWorkflow
 from kodezart.chains.ralph_workflow import RalphWorkflowEngine
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.core.protocols import (
     AgentRunner,
     GitService,

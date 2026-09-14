@@ -8,7 +8,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from pydantic import ValidationError
 
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.services import audit_coverage
 from kodezart.services.audit_coverage import AuditCoverage
 from kodezart.types.domain.audit import AuditCandidate

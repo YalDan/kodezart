@@ -3,7 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 
 LEASE_ENV = "KODEZART_TRACKER__SURFACE_LEASE_SECONDS"
 

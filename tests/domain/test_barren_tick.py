@@ -3,7 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.domain.errors import RunShapeReadError
 from kodezart.domain.run_shape import barren_tick_with_diff_growth
 from kodezart.types.domain.run_alarm import (

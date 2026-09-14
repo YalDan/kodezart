@@ -15,8 +15,9 @@ from kodezart.adapters.linear.tracker import (
 from kodezart.adapters.mcp.http_tool_caller import HttpMcpToolCaller
 from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.composition.tracker import boot_tracker, refuse_foreign_credential
+from kodezart.config.app import AppConfig
+from kodezart.config.tracker import TrackerSettings
 from kodezart.core.backoff import RetryPolicy
-from kodezart.core.config import AppConfig
 from kodezart.core.errors import (
     McpCredentialRefusedError,
     TrackerBootValidationError,
@@ -29,7 +30,6 @@ from kodezart.core.protocols import (
     McpToolResult,
     TrackerPort,
 )
-from kodezart.core.tracker_settings import TrackerSettings
 from kodezart.services.tracker_boot import (
     OWNED_REF_BUILDERS,
     configured_mappings,

@@ -9,7 +9,7 @@ import pytest
 
 from kodezart.adapters.git.check_chain import SubprocessCheckChainRunner
 from kodezart.adapters.git.service import SubprocessGitService
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.domain.errors import CheckChainExecutionError
 from kodezart.services.union_composition import UnionComposition
 from kodezart.types.domain.operation import CheckStep, RepoEntry

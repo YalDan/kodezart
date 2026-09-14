@@ -3,7 +3,7 @@
 import asyncio
 from collections.abc import Awaitable, Callable, Sequence
 
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.core.owned_tasks import settle
 from kodezart.core.protocols import GitService
 from kodezart.domain.errors import UnionHeadReadError, UnionUnstableError

@@ -11,7 +11,7 @@ from kodezart.chains.audit_evidence import AuditEvidenceVerifier
 from kodezart.chains.audit_overclaim import AuditOverclaimVerifier
 from kodezart.chains.audit_pass import AuditClaimVerifier, AuditMandateHunt
 from kodezart.chains.audit_sweep import AuditReadSweep
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.core.constants import EVAL_PERMISSION_MODE
 from kodezart.domain.criterion_evidence import render_evidence_field
 from kodezart.domain.errors import AuditClaimReadError

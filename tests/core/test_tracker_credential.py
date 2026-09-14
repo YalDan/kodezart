@@ -15,7 +15,7 @@ from typing import Final
 import pytest
 from pydantic import ValidationError
 
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.main import create_app, lifespan
 
 #: Built by concatenation: binding a ``lin_api_...`` literal to a name

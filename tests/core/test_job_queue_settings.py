@@ -7,7 +7,7 @@ import pytest
 from pydantic import ValidationError
 
 from kodezart.composition.jobs import build_job_queue
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.domain.errors import QueueFullError
 from kodezart.types.domain.agent import AssistantTextEvent
 from tests.api.v1.test_jobs import (

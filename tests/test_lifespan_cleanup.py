@@ -10,7 +10,7 @@ from fastapi import FastAPI
 
 from kodezart import main
 from kodezart.composition.jobs import build_job_queue
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.services.pass_scheduler import PassScheduler, ScheduledPass
 from kodezart.types.domain.session import PermissionMode
 

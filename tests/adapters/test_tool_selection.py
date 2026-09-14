@@ -11,7 +11,7 @@ from pydantic import ValidationError
 
 from kodezart.api import dependencies
 from kodezart.composition.jobs import build_job_queue
-from kodezart.core.job_queue_settings import JobQueueSettings
+from kodezart.config.job_queue import JobQueueSettings
 from kodezart.main import create_app
 from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.session import PermissionMode, ToolPreset

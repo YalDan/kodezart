@@ -5,8 +5,8 @@ than defines.
 """
 
 from kodezart.adapters.github.api import GitHubAPIClient
+from kodezart.config.app import AppConfig
 from kodezart.core.backoff import RetryPolicy
-from kodezart.core.config import AppConfig
 from kodezart.core.protocols import (
     ForgeQuery,
     PRStateReader,

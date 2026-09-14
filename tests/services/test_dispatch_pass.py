@@ -29,7 +29,7 @@ from kodezart.composition.passes import (
     delivery_probe_for,
     fire_report,
 )
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.core.errors import McpCredentialRefusedError
 from kodezart.domain.git_url import extract_owner_repo
 from kodezart.services import dispatch_pass as dispatch_pass_module

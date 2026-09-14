@@ -3,7 +3,7 @@
 from kodezart.chains.organize import OrganizeAdmission
 from kodezart.chains.organize_author import OrganizeAuthor
 from kodezart.chains.write_back_verifier import FreshWriteBackJudge
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.core.protocols import (
     AgentRunner,
     GitService,

@@ -6,7 +6,7 @@ from urllib.parse import urlsplit
 import httpx
 import pytest
 
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.domain.errors import AuditClaimReadError, PRStateReadError
 from kodezart.domain.lane_record import render_lane_record
 from kodezart.services.audit_terminal import AuditTerminalReader

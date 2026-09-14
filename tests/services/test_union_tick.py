@@ -9,7 +9,7 @@ import pytest
 from pydantic import ValidationError
 
 from kodezart.adapters.git.check_chain import SubprocessCheckChainRunner
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.domain.errors import UnionHeadReadError, UnionUnstableError
 from kodezart.services.union_composition import UnionComposition
 from kodezart.services.union_tick import UnionTick

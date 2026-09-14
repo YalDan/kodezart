@@ -7,7 +7,7 @@ import pytest
 from pydantic import ValidationError
 
 from kodezart.chains.audit_pass import AuditClaimVerifier
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.core.constants import EVAL_PERMISSION_MODE
 from kodezart.core.errors import NoStructuredOutputError
 from kodezart.domain.errors import AuditClaimReadError, InvalidFireCriterionError

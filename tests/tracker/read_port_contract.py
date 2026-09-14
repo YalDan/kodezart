@@ -3,7 +3,7 @@
 from collections.abc import Sequence
 
 from kodezart.chains.audit_forge import AuditForgeVerifier
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.core.protocols import (
     GitService,
     GitSourceReader,

@@ -6,7 +6,7 @@ import re
 import pytest
 from pydantic import ValidationError
 
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.types.domain.operation import OperationMemberAbsentError
 from tests.chains.test_organize_owner import factory, result, run_owner
 

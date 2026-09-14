@@ -20,8 +20,8 @@ from kodezart.chains.fire_specification import FireSpecification
 from kodezart.chains.ralph_loop import RalphLoop
 from kodezart.chains.ralph_workflow import RalphWorkflowEngine
 from kodezart.chains.remediation import RemediationChain
+from kodezart.config.write_back import WriteBackSettings
 from kodezart.core.protocols import QualityGate
-from kodezart.core.write_back_settings import WriteBackSettings
 from kodezart.domain.errors import (
     FireSpecEntryError,
     InvalidFireCriterionError,
@@ -1039,7 +1039,7 @@ async def test_production_constructor_wires_native_source_to_shared_consumers(
     monkeypatch,
 ):
     from kodezart.composition.engine import build_workflow_engine
-    from kodezart.core.config import AppConfig
+    from kodezart.config.app import AppConfig
     from tests.fakes import FakeRefPublisher
 
     monkeypatch.setattr(

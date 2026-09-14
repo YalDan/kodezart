@@ -16,7 +16,7 @@ import pytest
 from kodezart.adapters.in_repo_prompt_registry import InRepoPromptRegistry
 from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.composition.knowledge import boot_knowledge_grant
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.core.errors import PromptRenderError, PromptResolutionError
 from kodezart.core.logging import get_logger
 from kodezart.core.prompt_namespaces import bindings_for

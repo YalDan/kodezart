@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.domain.errors import RulingRecordReadError, RunShapeReadError
 from kodezart.domain.mandate_graph import rulings_outpace_closures
 from kodezart.domain.rulings import render_ruling

@@ -7,7 +7,7 @@ import pytest
 from pydantic import ValidationError
 
 from kodezart.chains.audit_evidence import AuditEvidenceVerifier
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.domain.criterion_evidence import render_evidence_field
 from kodezart.domain.errors import AuditEvidenceReadError
 from kodezart.domain.lane_record import render_lane_record

@@ -24,8 +24,8 @@ from kodezart.composition.tracker import (
     boot_tracker,
 )
 from kodezart.composition.workspace import build_git_stack
+from kodezart.config.app import AppConfig
 from kodezart.core.checkpointer import make_checkpointer
-from kodezart.core.config import AppConfig
 from kodezart.core.logging import BoundLogger, configure_logging, get_logger
 from kodezart.core.owned_tasks import finish_owned
 from kodezart.core.protocols import (

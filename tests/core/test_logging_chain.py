@@ -28,7 +28,7 @@ from datetime import datetime
 import structlog
 
 from kodezart.adapters.asyncio_job_queue import AsyncioJobQueue
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.core.logging import configure_logging, get_logger
 from kodezart.services.pass_scheduler import PassScheduler, ScheduledPass
 from kodezart.types.domain.agent import AgentEvent

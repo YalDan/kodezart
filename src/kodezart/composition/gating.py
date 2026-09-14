@@ -5,8 +5,8 @@ from pathlib import Path
 from kodezart.adapters.agent_content_scanner import AgentContentScanner
 from kodezart.adapters.outbound_admission import OutboundAdmission
 from kodezart.adapters.reference_content_scanner import ReferenceContentScanner
+from kodezart.config.app import AppConfig
 from kodezart.core.backoff import RetryPolicy
-from kodezart.core.config import AppConfig
 from kodezart.core.errors import ContentScannerBootError
 from kodezart.core.logging import BoundLogger
 from kodezart.core.protocols import AgentExecutor, PromptSetProvider

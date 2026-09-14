@@ -267,7 +267,7 @@ async def test_configured_watch_bound_covers_every_parallel_public_run(
 
     ci = HeldChecks()
     if composed:
-        from kodezart.core.config import AppConfig
+        from kodezart.config.app import AppConfig
         from kodezart.types.domain.ticket_review import TicketReviewMode
 
         monkeypatch.setenv("KODEZART_DELIVERY_MAX_CONCURRENT_WATCHES", str(bound))
@@ -395,7 +395,7 @@ def built_workflow(monkeypatch, ci, *, config, repositories=()):
 async def test_operator_override_reaches_the_actual_builder_and_public_graph(
     monkeypatch, bound
 ):
-    from kodezart.core.config import AppConfig
+    from kodezart.config.app import AppConfig
     from kodezart.types.domain.ticket_review import TicketReviewMode
 
     monkeypatch.setenv("KODEZART_DELIVERY_RED_RERUN_MAX_ATTEMPTS", str(bound))
@@ -425,7 +425,7 @@ async def test_operator_override_reaches_the_actual_builder_and_public_graph(
 
 
 async def test_configured_declarations_reach_the_actual_builder(monkeypatch):
-    from kodezart.core.config import AppConfig
+    from kodezart.config.app import AppConfig
     from kodezart.types.domain.ticket_review import TicketReviewMode
 
     ci = FakeCIMonitor(passed=False, failed_names=frozenset({"lint"}))

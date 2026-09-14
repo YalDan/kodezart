@@ -9,7 +9,7 @@ from pydantic import create_model
 
 from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.composition.prompts import boot_prompts
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.core.errors import PromptNamespaceCollisionError, PromptRenderError
 from kodezart.core.prompt_namespaces import (
     PER_CALL_VARIABLE_NAMES,

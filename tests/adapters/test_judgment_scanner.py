@@ -29,8 +29,8 @@ from kodezart.adapters.git.change_persister import GitChangePersister
 from kodezart.adapters.outbound_admission import OutboundAdmission
 from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.composition.gating import build_outbound_gate
+from kodezart.config.app import AppConfig
 from kodezart.core.backoff import RetryPolicy
-from kodezart.core.config import AppConfig
 from kodezart.core.errors import ContentScannerBootError
 from kodezart.core.logging import get_logger
 from kodezart.core.outbound_write import gated_write

@@ -3,7 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 
 
 def test_audit_defaults_and_retired_fields():

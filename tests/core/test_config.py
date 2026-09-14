@@ -15,8 +15,8 @@ make this suite agree with whatever is already configured.
 import pytest
 from pydantic import ValidationError
 
-from kodezart.core.agent_settings import AgentSettings
-from kodezart.core.config import AppConfig
+from kodezart.config.agent import AgentSettings
+from kodezart.config.app import AppConfig
 from kodezart.types.domain.ticket_review import TicketReviewMode
 
 ENV_NAME = "KODEZART_INVESTIGATION_CAP"

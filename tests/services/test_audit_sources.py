@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.domain.errors import AuditEvidenceReadError
 from kodezart.domain.lane_record import render_lane_record
 from kodezart.services.audit_sources import AuditSourceReader

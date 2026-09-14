@@ -84,7 +84,7 @@ prints the bundled CLI's version in the form `<version> (Claude Code)`.
 The loader contract is unchanged: `KODEZART_` prefix, `.env` file,
 case-insensitive keys, `extra="forbid"`. Two loader details are new: the
 literal value `null` sets a nullable field to `None`, and raw values are
-hidden from validation errors (`src/kodezart/core/config.py`,
+hidden from validation errors (`src/kodezart/config/app.py`,
 `model_config`).
 
 ### Removed, renamed, or tightened

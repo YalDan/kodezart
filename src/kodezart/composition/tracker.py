@@ -14,6 +14,7 @@ from kodezart.adapters.linear.tracker import (
     is_long_lived_credential,
 )
 from kodezart.adapters.mcp.http_tool_caller import HttpMcpToolCaller
+from kodezart.config.tracker import TrackerSettings
 from kodezart.core.backoff import RetryPolicy
 from kodezart.core.errors import (
     TrackerCredentialShapeError,
@@ -26,7 +27,6 @@ from kodezart.core.protocols import (
     McpToolCaller,
     TrackerPort,
 )
-from kodezart.core.tracker_settings import TrackerSettings
 from kodezart.services.tracker_boot import reconcile_tracker_mappings
 from kodezart.types.domain.dispatch import SelfWriteLedger
 from kodezart.types.domain.operation import OperationConfig

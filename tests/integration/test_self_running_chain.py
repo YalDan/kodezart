@@ -25,7 +25,7 @@ from collections.abc import AsyncIterator
 
 from kodezart.adapters.asyncio_job_queue import AsyncioJobQueue
 from kodezart.composition.passes import build_dispatch_passes
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.core.errors import NoStructuredOutputError
 from kodezart.services.run_recorder import RunRecorder
 from kodezart.types.domain.agent import (

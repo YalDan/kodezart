@@ -22,8 +22,8 @@ from kodezart.adapters.linear.record_sink import LinearRecordSink
 from kodezart.adapters.mcp.http_tool_caller import HttpMcpToolCaller
 from kodezart.adapters.mcp.stdio_tool_caller import StdioMcpToolCaller
 from kodezart.adapters.notion.record_sink import NotionRecordSink
+from kodezart.config.knowledge import KnowledgeSettings
 from kodezart.core.errors import PassKnowledgeCapabilityError
-from kodezart.core.knowledge_settings import KnowledgeSettings
 from kodezart.core.logging import BoundLogger
 from kodezart.core.protocols import McpToolCaller, RunRecordSink
 from kodezart.services.run_recorder import RunRecorder

@@ -5,7 +5,7 @@ from pydantic import ValidationError
 
 from kodezart.adapters.outbound_admission import OutboundAdmission
 from kodezart.composition.gating import build_outbound_gate
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.core.logging import get_logger
 from kodezart.core.outbound_write import gated_write
 from kodezart.domain.errors import OutboundContentBlockedError

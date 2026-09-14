@@ -7,7 +7,7 @@ from pydantic import ValidationError
 
 from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.composition.tracker import boot_tracker
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.core.errors import OperationConfigError
 from kodezart.types.domain.operation import OperationConfig
 from kodezart.types.domain.run_event import (

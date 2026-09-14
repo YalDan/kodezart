@@ -25,7 +25,7 @@ from kodezart.composition.passes import (
 )
 from kodezart.composition.records import RECORD_KIND_BY_PASS
 from kodezart.composition.tracker import DialledTracker
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.core.errors import (
     PassGateCapabilityError,
     PassKnowledgeCapabilityError,

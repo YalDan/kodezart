@@ -16,9 +16,9 @@ from pydantic import ValidationError
 from kodezart.adapters.asyncio_job_queue import AsyncioJobQueue
 from kodezart.adapters.langgraph_run_state_reader import LangGraphRunStateReader
 from kodezart.chains.authored_delivery import AuthoredDeliveryCoordinator
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
+from kodezart.config.job_queue import JobQueueSettings
 from kodezart.core.constants import DEFAULT_LANE
-from kodezart.core.job_queue_settings import JobQueueSettings
 from kodezart.core.protocols import JobQueue, JobRegistry
 from kodezart.domain.errors import QueueFullError
 from kodezart.domain.thread_id import (

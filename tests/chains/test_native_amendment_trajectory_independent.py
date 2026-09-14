@@ -2,8 +2,8 @@
 
 from kodezart.chains.criteria import TrackerCriteria
 from kodezart.composition.engine import build_workflow_engine
-from kodezart.core.config import AppConfig
-from kodezart.core.write_back_settings import WriteBackSettings
+from kodezart.config.app import AppConfig
+from kodezart.config.write_back import WriteBackSettings
 from kodezart.domain.criteria_grading import grade_iteration
 from kodezart.domain.trajectory import fold_trajectory
 from kodezart.types.domain.agent import (
