@@ -1,5 +1,6 @@
 """Admission judgments preserve both refusal and unavailable evidence."""
 
+from collections.abc import Mapping
 from enum import StrEnum
 from typing import Annotated, Literal, Self
 
@@ -307,14 +308,66 @@ class MandateSpec(CamelCaseModel):
         return value
 
 
+class MandatePhaseRole(CamelCaseModel):
+    """One phase's differences that no operation configures.
+
+    The generative role that drafts a phase's writes, and what its
+    completion marker attests to the readers downstream, belong to the
+    lane rather than to an operator's label spellings.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    author_prompt_key: PromptKey
+    marks_specification_body: bool
+    marks_execution_stage: bool
+
+
+#: The governed phase sequence, and the only place in the sources where a
+#: mandate kind selects anything. Downstream readers take what they need
+#: from the resolved row, never from the kind; configuration table order
+#: carries no ordering authority, this table's does.
+MANDATE_PHASE_ROLES: Mapping[MandateKind, MandatePhaseRole] = {
+    MandateKind.GROOM: MandatePhaseRole(
+        author_prompt_key=PromptKey.ORGANIZE_AUTHOR,
+        marks_specification_body=False,
+        marks_execution_stage=False,
+    ),
+    MandateKind.TICKET: MandatePhaseRole(
+        author_prompt_key=PromptKey.ORGANIZE_AUTHOR,
+        marks_specification_body=True,
+        marks_execution_stage=False,
+    ),
+    MandateKind.CRITERIA: MandatePhaseRole(
+        author_prompt_key=PromptKey.ORGANIZE_CRITERIA_AUTHOR,
+        marks_specification_body=False,
+        marks_execution_stage=True,
+    ),
+}
+
+
+def phase_marker_source(phase: str) -> str:
+    """The configuration address of one phase's completion marker."""
+    return f"organize_mandates.{phase}.terminal_marker_key"
+
+
+def phase_successor(phase: MandateKind) -> MandateKind | None:
+    """The phase the governed sequence runs after *phase*, where there is one."""
+    sequence = tuple(MANDATE_PHASE_ROLES)
+    following = sequence.index(phase) + 1
+    return sequence[following] if following < len(sequence) else None
+
+
 class ResolvedMandateSpec(CamelCaseModel):
-    """A validated phase specification and the configured labels it names."""
+    """A validated phase specification, its labels and its lane role."""
 
     model_config = ConfigDict(frozen=True)
 
     spec: MandateSpec
     gate_label: str
     terminal_marker: str
+    role: MandatePhaseRole
+    marker_source: str
 
 
 class OrganizeAdmissionRequest(CamelCaseModel):

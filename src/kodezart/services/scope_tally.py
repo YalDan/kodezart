@@ -3,14 +3,13 @@
 from kodezart.core.protocols import TrackerPort
 from kodezart.domain.errors import RunShapeReadError
 from kodezart.domain.organize import is_organize_subject
-from kodezart.domain.run_shape import (
-    CRITERIA_MARKER_SOURCE,
-    GROOM_MARKER_SOURCE,
-    TICKET_MARKER_SOURCE,
-    tally_unmoved,
-)
+from kodezart.domain.run_shape import tally_unmoved
 from kodezart.types.domain.operation import OperationConfig, OperationMemberAbsentError
-from kodezart.types.domain.organize import MandateKind, split_label_key
+from kodezart.types.domain.organize import (
+    MandateKind,
+    phase_successor,
+    split_label_key,
+)
 from kodezart.types.domain.run_alarm import (
     AlarmReading,
     AlarmSignal,
@@ -23,17 +22,6 @@ from kodezart.types.domain.run_alarm import (
 )
 from kodezart.types.domain.scope import ScopeRef
 from kodezart.types.domain.tracker import TrackerIssue
-
-# The governed phase sequence is graph, body, then criteria. Configuration
-# table order carries no ordering authority.
-_MARKER_TRANSITIONS = {
-    MandateKind.GROOM: (MandateKind.TICKET, GROOM_MARKER_SOURCE, TICKET_MARKER_SOURCE),
-    MandateKind.TICKET: (
-        MandateKind.CRITERIA,
-        TICKET_MARKER_SOURCE,
-        CRITERIA_MARKER_SOURCE,
-    ),
-}
 
 
 def _refuse(scope: ScopeRef, reason: str) -> RunShapeReadError:
@@ -80,18 +68,20 @@ async def observe_scope_tally(
     from labels or issue workflow states. This collector returns an observation
     and performs no publication, repository read or model session.
     """
-    if phase not in _MARKER_TRANSITIONS:
+    next_phase = phase_successor(phase)
+    if next_phase is None:
         raise _refuse(
             scope, "execution entry requires a native lane-dispatched event reader"
         )
-    next_phase, current_source, next_source = _MARKER_TRANSITIONS[phase]
-    phases = {row.spec.kind: row.spec for row in operation.resolve_organize_mandates()}
+    phases = {row.spec.kind: row for row in operation.resolve_organize_mandates()}
     if phase not in phases or next_phase not in phases:
         raise OperationMemberAbsentError(
             missing="organize_mandates", stops="scope phase markers cannot be read"
         )
-    current = phases[phase].terminal_marker_key
-    following = phases[next_phase].terminal_marker_key
+    current_source = phases[phase].marker_source
+    next_source = phases[next_phase].marker_source
+    current = phases[phase].spec.terminal_marker_key
+    following = phases[next_phase].spec.terminal_marker_key
     current_key, next_key = split_label_key(current)[1], split_label_key(following)[1]
     if (
         current_key == next_key

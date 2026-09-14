@@ -3,7 +3,11 @@
 from kodezart.domain.errors import RunShapeReadError
 from kodezart.domain.run_alarm_record import surface_alarm_member_id
 from kodezart.types.domain.escalation import EscalationResolutionState
-from kodezart.types.domain.organize import OrganizeLabelNamespace, split_label_key
+from kodezart.types.domain.organize import (
+    OrganizeLabelNamespace,
+    phase_marker_source,
+    split_label_key,
+)
 from kodezart.types.domain.run_alarm import (
     AlarmBound,
     AlarmReading,
@@ -449,9 +453,9 @@ def barren_tick_with_diff_growth(
     return None
 
 
-GROOM_MARKER_SOURCE = "organize_mandates.groom.terminal_marker_key"
-TICKET_MARKER_SOURCE = "organize_mandates.ticket.terminal_marker_key"
-CRITERIA_MARKER_SOURCE = "organize_mandates.criteria.terminal_marker_key"
+GROOM_MARKER_SOURCE = phase_marker_source("groom")
+TICKET_MARKER_SOURCE = phase_marker_source("ticket")
+CRITERIA_MARKER_SOURCE = phase_marker_source("criteria")
 
 
 def tally_unmoved(

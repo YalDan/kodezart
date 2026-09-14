@@ -30,7 +30,7 @@ from kodezart.core.protocols import (
 from kodezart.services.tracker_boot import reconcile_tracker_mappings
 from kodezart.types.domain.dispatch import SelfWriteLedger
 from kodezart.types.domain.operation import OperationConfig
-from kodezart.types.domain.organize import MandateKind, split_label_key
+from kodezart.types.domain.organize import split_label_key
 from kodezart.types.domain.tracker import EnsureAction, TrackerBackend
 
 #: Where the tracker credential is read from, named in the refusal because
@@ -154,10 +154,14 @@ def build_tracker(
                 workflow_state_names=operation.workflow_states,
                 marker_prefixes=operation.marker_prefixes,
                 issue_labels=operation.issue_labels,
-                criteria_stage_label_key={
-                    row.spec.kind: split_label_key(row.spec.terminal_marker_key)[1]
-                    for row in operation.resolve_organize_mandates()
-                }.get(MandateKind.CRITERIA),
+                criteria_stage_label_key=next(
+                    (
+                        split_label_key(row.spec.terminal_marker_key)[1]
+                        for row in operation.resolve_organize_mandates()
+                        if row.role.marks_execution_stage
+                    ),
+                    None,
+                ),
                 team_identifiers={
                     team_key: entry.name for team_key, entry in operation.teams.items()
                 },

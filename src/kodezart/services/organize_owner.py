@@ -118,15 +118,6 @@ def _created_context(context: OrganizeContext, child: TrackerIssue) -> OrganizeC
     )
 
 
-def _author_key(kind: MandateKind) -> PromptKey:
-    # The single phase-role lookup. All phases use the same owner and loops.
-    return {
-        MandateKind.GROOM: PromptKey.ORGANIZE_AUTHOR,
-        MandateKind.TICKET: PromptKey.ORGANIZE_AUTHOR,
-        MandateKind.CRITERIA: PromptKey.ORGANIZE_CRITERIA_AUTHOR,
-    }[kind]
-
-
 class OrganizeOwner:
     def __init__(
         self,
@@ -148,12 +139,8 @@ class OrganizeOwner:
         self._gate, self._prompts, self._operation = gate, prompts, operation
         self._policy, self._lease_seconds = policy, lease_seconds
         self._write_back_max_rounds = write_back_max_rounds
-        self._phases = tuple(
-            sorted(
-                operation.resolve_organize_mandates(),
-                key=lambda row: list(MandateKind).index(row.spec.kind),
-            )
-        )
+        # The resolved table already stands in the governed phase sequence.
+        self._phases = operation.resolve_organize_mandates()
         if not self._phases:
             raise OperationMemberAbsentError(
                 missing="organize_mandates", stops="Organize construction"
@@ -170,7 +157,7 @@ class OrganizeOwner:
         self._body_marker = next(
             split_label_key(phase.spec.terminal_marker_key)[1]
             for phase in self._phases
-            if phase.spec.kind is MandateKind.TICKET
+            if phase.role.marks_specification_body
         )
         self._verifier = WriteBackVerifier(
             tracker=tracker, judge=judge, max_rounds=write_back_max_rounds
@@ -1048,7 +1035,7 @@ class OrganizeOwner:
                             for r in snapshot
                         )
                     )
-                    key = _author_key(phase.spec.kind)
+                    key = phase.role.author_prompt_key
                     for _admission_round in range(self._policy.max_admission_rounds):
                         route = await self._route(
                             result, issue=issue, scope_issue_keys=frozenset(members)

@@ -22,10 +22,11 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.organize import (
-    MandateKind,
+    MANDATE_PHASE_ROLES,
     MandateSpec,
     OrganizeLabelNamespace,
     ResolvedMandateSpec,
+    phase_marker_source,
     split_label_key,
 )
 from kodezart.types.domain.privacy import PrivateSurface
@@ -965,13 +966,18 @@ class OperationConfig(OperationModel):
         each key selects its mapping; phase kind never guesses one. Approval
         ends organization, so its configured label cannot be a phase gate
         or a machine-written completion marker, including through aliases.
+
+        Rows come back in the governed phase sequence with the lane role
+        each phase carries, so no reader downstream repeats the sequence
+        or re-derives from a kind what this row already states.
         """
         if not self.organize_mandates:
             return ()
 
         failures: list[str] = []
+        sequence = tuple(MANDATE_PHASE_ROLES)
         kinds = [spec.kind for spec in self.organize_mandates]
-        for kind in MandateKind:
+        for kind in sequence:
             if kind not in kinds:
                 failures.append(f"organize_mandates is missing phase {kind.value!r}")
             elif kinds.count(kind) > 1:
@@ -983,7 +989,9 @@ class OperationConfig(OperationModel):
         }
         approved_label = self.scope_labels.get(ScopeLabel.APPROVED.value)
         resolved: list[ResolvedMandateSpec] = []
-        for spec in self.organize_mandates:
+        for spec in sorted(
+            self.organize_mandates, key=lambda row: sequence.index(row.kind)
+        ):
             labels: dict[str, str] = {}
             for field, reference in (
                 ("gate_label_key", spec.gate_label_key),
@@ -1008,6 +1016,8 @@ class OperationConfig(OperationModel):
                         spec=spec,
                         gate_label=labels["gate_label_key"],
                         terminal_marker=labels["terminal_marker_key"],
+                        role=MANDATE_PHASE_ROLES[spec.kind],
+                        marker_source=phase_marker_source(spec.kind.value),
                     )
                 )
         if failures:
