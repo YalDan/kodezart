@@ -7,8 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from kodezart.adapters.git import service as subprocess_git_service
+from kodezart.adapters.git import service
 from kodezart.adapters.git.service import SubprocessGitService
+from kodezart.domain.errors import GitOperationError
 
 
 @pytest.fixture
@@ -42,6 +43,57 @@ async def test_validate_repo_valid(
     git_service: SubprocessGitService, git_repo: Path
 ) -> None:
     await git_service.validate_repo(str(git_repo))
+
+
+@pytest.mark.parametrize("operation", ["head", "fetch", "remote", "ancestor"])
+async def test_failed_git_commands_have_operational_type(
+    git_service: SubprocessGitService, git_repo: Path, operation: str
+) -> None:
+    """Real failing commands retain diagnostics and a neutral provider type."""
+    with pytest.raises(GitOperationError) as caught:
+        match operation:
+            case "head":
+                await git_service.tree_of(str(git_repo), "absent-ref")
+            case "fetch":
+                await git_service.fetch(str(git_repo))
+            case "remote":
+                await git_service.remote_branch_sha(
+                    str(git_repo), "absent-remote", "main"
+                )
+            case "ancestor":
+                await git_service.is_ancestor(str(git_repo), "absent-ref", "HEAD")
+            case _:
+                pytest.fail("unrecognized test operation")
+    assert str(caught.value).startswith("git ")
+    assert "fatal:" in str(caught.value)
+
+
+async def test_branch_read_does_not_hide_programmer_failure(
+    git_service: SubprocessGitService, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    failure = RuntimeError("provider implementation defect")
+
+    async def fail(*args: object, **kwargs: object) -> str:
+        raise failure
+
+    monkeypatch.setattr(git_service, "_run_output", fail)
+    with pytest.raises(RuntimeError) as caught:
+        await git_service._branch_exists(str(git_repo), "main")
+    assert caught.value is failure
+
+
+async def test_merge_does_not_translate_programmer_failure(
+    git_service: SubprocessGitService, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    failure = RuntimeError("provider implementation defect")
+
+    async def fail(*args: object, **kwargs: object) -> None:
+        raise failure
+
+    monkeypatch.setattr(git_service, "_run", fail)
+    with pytest.raises(RuntimeError) as caught:
+        await git_service.merge_branch(str(git_repo), "main")
+    assert caught.value is failure
 
 
 async def test_validate_repo_not_a_dir(
@@ -623,7 +675,7 @@ def _bare_stream_message_sites(source: str) -> list[str]:
 
 def test_no_runner_interpolates_a_bare_stream_into_a_failure_message() -> None:
     """Every runner's failure text comes from the shared helper, not a raw stream."""
-    source = inspect.getsource(subprocess_git_service)
+    source = inspect.getsource(service)
     assert _bare_stream_message_sites(source) == []
 
 

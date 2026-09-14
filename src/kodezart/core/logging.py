@@ -30,7 +30,7 @@ def configure_logging(*, log_level: str = "INFO", pretty: bool = False) -> None:
     # something has to turn it into frames: without that, the triple is
     # rendered as its members' reprs — the traceback OBJECT printed, so
     # not one frame survives, and a two-minute engine dispatch that raised
-    # leaves a single sentence (KOD-146).  Which processor does it is the
+    # leaves a single sentence.  Which processor does it is the
     # renderer's business, so the choice lives beside the renderer:
     # ``ConsoleRenderer`` formats exceptions itself, in colour and with
     # source context, and warns if handed a pre-formatted string;
@@ -40,7 +40,12 @@ def configure_logging(*, log_level: str = "INFO", pretty: bool = False) -> None:
         structlog.stdlib.ProcessorFormatter.remove_processors_meta,
     ]
     if pretty:
-        renderer = structlog.dev.ConsoleRenderer(colors=True)
+        # Traceback locals can include entire live graphs and workspaces.
+        # Render the raising frames without executing their objects' reprs.
+        renderer = structlog.dev.ConsoleRenderer(
+            colors=True,
+            exception_formatter=structlog.dev.RichTracebackFormatter(show_locals=False),
+        )
     else:
         formatter_processors.append(structlog.processors.format_exc_info)
         renderer = structlog.processors.JSONRenderer()

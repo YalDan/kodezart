@@ -39,7 +39,7 @@ DelayFloor = Callable[[Exception], float | None]
 #: Set on a rejection by the wrapper that slept its floor, so the wrappers
 #: it climbs through on the way out do not sleep it again.  The mark rides
 #: the exception because the exception IS the rejection: one provider
-#: refusal, one wait (KOD-195).
+#: refusal, one wait.
 _FLOOR_PAID = "_kodezart_retry_floor_paid"
 
 _StateT = TypeVar("_StateT")
@@ -68,7 +68,7 @@ class RetryFloor:
     different one per rejection — so the floor rides with the exception
     and is applied where the exception leaves the node.  The policy's
     attempt budget and its ``retry_on`` predicate are untouched: the
-    measured defect (KOD-174) was sixteen sessions spawned seconds apart
+    measured defect was sixteen sessions spawned seconds apart
     under one standing provider limit, not the retrying itself.
 
     Paid by every failing attempt, the last one in the budget included:
@@ -79,8 +79,8 @@ class RetryFloor:
 
     The resolver is required.  A caller that means "no floor for any
     failure" says so in a resolver that answers ``None``, which is a
-    statement someone made; an absent resolver was the same silence
-    KOD-282 removed from the three loops one layer up.
+    statement someone made.  An absent resolver cannot distinguish that
+    choice from a caller that forgot to supply the policy.
 
     A floor is charged ONCE PER REJECTION, not once per node that
     re-raises it.  The graphs nest — the workflow engine wraps the node
