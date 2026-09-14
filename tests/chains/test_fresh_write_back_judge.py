@@ -1,5 +1,7 @@
 """The registered write-back role judges freshly at the actual ref."""
 
+from functools import partial
+
 import pytest
 from pydantic import ValidationError
 
@@ -11,6 +13,7 @@ from kodezart.types.domain.session import SessionType, ToolPreset
 from tests.chains.test_organize import RecordingExecutor, RecordingWorkspace, result
 from tests.chains.test_write_back_verifier import SURFACE
 from tests.fakes import SUPPRESS_ALL_SKILLS, FakeGitService
+from tests.git_read_cancellation import assert_git_read_settles_before_release
 from tests.prompts.test_prompt_wiring import load_registry
 
 HEAD = "a" * 40
@@ -139,3 +142,20 @@ async def test_refutation_cannot_fill_the_citation_requirement_with_blank_refs(
     )
     with pytest.raises(ValidationError):
         await judge.judge(artifact=ARTIFACT, ref=HEAD)
+
+
+@pytest.mark.parametrize("phase", ["current_sha", "has_changes", "has_replace_refs"])
+@pytest.mark.parametrize("read_number", [1, 2])
+async def test_git_read_settles_before_workspace_release(
+    monkeypatch, tmp_path, phase, read_number
+):
+    judge, _, workspace = build({"verdict": "holds", "evidence": "Source checked."})
+    await assert_git_read_settles_before_release(
+        invoke=partial(judge.judge, artifact=ARTIFACT, ref=HEAD),
+        git=judge._git,
+        workspace=workspace,
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+        phase=phase,
+        read_number=read_number,
+    )

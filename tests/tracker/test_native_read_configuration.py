@@ -1,5 +1,7 @@
 """Native classification reads consume validated owned configuration at boot."""
 
+import asyncio
+
 import pytest
 
 from kodezart.composition.tracker import build_tracker
@@ -14,7 +16,8 @@ from kodezart.services.tracker_boot import (
 )
 from kodezart.types.domain.operation import OperationConfig
 from kodezart.types.domain.tracker import MappingKind, TrackerBackend
-from tests.fakes import FakeLinearMcpServer
+from tests.fakes import FakeLinearMcpServer, FakeMcpIssue
+from tests.tracker.test_linear_mcp_tracker import tracker_over
 
 LABELS = {
     "criterion": "acceptance-condition",
@@ -59,3 +62,22 @@ async def test_validation_alone_does_not_silently_skip_missing_native_labels():
     with pytest.raises(TrackerBootValidationError):
         await validate_tracker_mappings(tracker=tracker, config=operation)
     assert server.tool_calls("create_issue_label") == []
+
+
+@pytest.mark.parametrize("failure", [asyncio.CancelledError, RuntimeError])
+async def test_programming_errors_and_cancellation_escape_native_family_read(failure):
+    server = FakeLinearMcpServer(issues=[FakeMcpIssue(id="root")])
+    tracker = tracker_over(server)
+    original = server.call_tool
+    raised = failure("external boundary failure")
+
+    async def broken(*, name, arguments):
+        if name == "list_issues":
+            raise raised
+        return await original(name=name, arguments=arguments)
+
+    server.call_tool = broken
+    with pytest.raises(failure) as caught:
+        await tracker.read_criteria(issue_key="root")
+    assert caught.value is raised
+    assert server.tool_calls("save_issue") == []
