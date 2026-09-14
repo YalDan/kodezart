@@ -25,7 +25,7 @@ the status never reaches an awaiting caller (KOD-268).
 
 The session's whole life runs in ONE task, and ``open``, ``call_tool``
 and ``close`` are MESSAGES to it — the mechanism is
-:mod:`kodezart.adapters.hosted_mcp_session`, shared with every other
+:mod:`kodezart.adapters.mcp.hosted_session`, shared with every other
 transport, and what is HTTP's own is here: how a session is dialled, what
 its failures are called, and the credential a refusal latches.
 """
@@ -48,7 +48,7 @@ from mcp.types import (
     JSONRPCRequest,
 )
 
-from kodezart.adapters.hosted_mcp_session import (
+from kodezart.adapters.mcp.hosted_session import (
     HostedMcpSession,
     HostedSessionTransport,
 )

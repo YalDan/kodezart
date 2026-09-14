@@ -11,8 +11,8 @@ from unittest.mock import patch
 from fastapi import FastAPI
 
 from kodezart.adapters.asyncio_job_queue import AsyncioJobQueue
-from kodezart.adapters.claude_agent_executor import ClaudeAgentExecutor
-from kodezart.adapters.claude_client_executor import ClaudeClientExecutor
+from kodezart.adapters.claude.agent_executor import ClaudeAgentExecutor
+from kodezart.adapters.claude.client_executor import ClaudeClientExecutor
 from kodezart.adapters.in_repo_prompt_registry import (
     InRepoPromptRegistry,
     default_sets_root,
@@ -242,8 +242,8 @@ DEFAULT_SETTING_SOURCES: list[SettingSource] = [
 #: is never absence from a guarantee, so every executor-level assertion runs
 #: over this list rather than over the default.
 EXECUTOR_MODULES: list[str] = [
-    "kodezart.adapters.claude_client_executor",
-    "kodezart.adapters.claude_agent_executor",
+    "kodezart.adapters.claude.client_executor",
+    "kodezart.adapters.claude.agent_executor",
 ]
 
 
@@ -255,7 +255,7 @@ def executor_for(
     output_style: str | None = None,
 ):
     """Build the adapter that lives in *module* with configured setting sources."""
-    if module.endswith("claude_client_executor"):
+    if module.endswith("client_executor"):
         return ClaudeClientExecutor(
             model=model,
             setting_sources=DEFAULT_SETTING_SOURCES,
@@ -351,7 +351,7 @@ async def recorded_session(
 ) -> RecordedSession:
     """Run one session through *module*'s adapter against a recording transport."""
     recorded: list[RecordedSession] = []
-    target = "ClaudeSDKClient" if module.endswith("claude_client_executor") else "query"
+    target = "ClaudeSDKClient" if module.endswith("client_executor") else "query"
     replacement = (
         _recording_client(recorded, messages)
         if target == "ClaudeSDKClient"

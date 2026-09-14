@@ -12,7 +12,7 @@ import pytest
 from pydantic import ValidationError
 
 from kodezart.chains.ralph_workflow import RalphWorkflowEngine
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.core.error_egress import build_error_event
 from kodezart.core.redispatch import CORRECTION_HEADER
 from kodezart.domain.errors import CriteriaFanInError, UngroundedVerdictError

@@ -7,10 +7,10 @@ from pathlib import Path
 import pytest
 import structlog
 
-from kodezart.adapters.git_artifact_persister import ARTIFACT_DIR, GitArtifactPersister
-from kodezart.adapters.git_worktree_provider import GitWorktreeProvider
-from kodezart.adapters.local_bare_repo_cache import LocalBareRepoCache
-from kodezart.adapters.subprocess_git_service import SubprocessGitService
+from kodezart.adapters.git.artifact_persister import ARTIFACT_DIR, GitArtifactPersister
+from kodezart.adapters.git.bare_repo_cache import LocalBareRepoCache
+from kodezart.adapters.git.service import SubprocessGitService
+from kodezart.adapters.git.worktree_provider import GitWorktreeProvider
 from kodezart.types.domain.persist import ArtifactPersistStatus
 
 

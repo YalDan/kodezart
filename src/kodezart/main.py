@@ -6,7 +6,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 
-from kodezart.adapters.claude_client_executor import ClaudeClientExecutor
+from kodezart.adapters.claude.client_executor import ClaudeClientExecutor
 from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.api.v1.router import v1_router
 from kodezart.composition.engine import build_workflow_engine
@@ -22,8 +22,8 @@ from kodezart.composition.tracker import (
     boot_tracker,
 )
 from kodezart.composition.workspace import build_git_stack
+from kodezart.config.app import AppConfig
 from kodezart.core.checkpointer import make_checkpointer
-from kodezart.core.config import AppConfig
 from kodezart.core.logging import BoundLogger, configure_logging, get_logger
 from kodezart.core.protocols import (
     ManagedMcpToolCaller,

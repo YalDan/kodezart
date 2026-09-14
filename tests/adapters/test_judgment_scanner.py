@@ -25,13 +25,13 @@ from pathlib import Path
 import pytest
 
 from kodezart.adapters.agent_content_scanner import AgentContentScanner
-from kodezart.adapters.git_change_persister import GitChangePersister
+from kodezart.adapters.git.change_persister import GitChangePersister
 from kodezart.adapters.pattern_outbound_gate import PatternOutboundContentGate
 from kodezart.adapters.regex_content_scanner import RegexContentScanner
 from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.chains.ralph_workflow import RalphWorkflowEngine
 from kodezart.composition.gating import outbound_scanners
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.core.errors import ContentScannerBootError
 from kodezart.core.outbound_write import gated_write
 from kodezart.core.protocols import ContentScanner, OutboundContentGate

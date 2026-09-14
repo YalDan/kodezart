@@ -5,7 +5,7 @@ from collections.abc import AsyncGenerator
 from fastapi import APIRouter, Request
 from starlette.responses import JSONResponse, Response, StreamingResponse
 
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.core.constants import DEFAULT_LANE
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import JobQueue

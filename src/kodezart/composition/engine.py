@@ -8,12 +8,12 @@ from collections.abc import AsyncIterator
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
 
-from kodezart.adapters.github_api import GitHubAPIClient
+from kodezart.adapters.github.api import GitHubAPIClient
 from kodezart.chains.ralph_loop import RalphLoop
 from kodezart.chains.ralph_workflow import RalphWorkflowEngine
 from kodezart.chains.remediation import RemediationChain
 from kodezart.chains.ticket_generation import TicketGenerationLoop
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.core.errors import RateLimitedSoftFailureError
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import (

@@ -7,7 +7,7 @@ import pytest
 from kodezart.adapters.pattern_outbound_gate import PatternOutboundContentGate
 from kodezart.adapters.regex_content_scanner import RegexContentScanner
 from kodezart.chains.ralph_workflow import RalphWorkflowEngine
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.domain.errors import OutboundContentBlockedError
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.agent import (

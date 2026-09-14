@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from kodezart.adapters import subprocess_git_service
-from kodezart.adapters.subprocess_git_service import SubprocessGitService
+from kodezart.adapters.git import service as subprocess_git_service
+from kodezart.adapters.git.service import SubprocessGitService
 
 
 @pytest.fixture

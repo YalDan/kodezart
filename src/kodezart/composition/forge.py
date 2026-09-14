@@ -4,8 +4,8 @@ Moved verbatim from the composition root, which imports and wires rather
 than defines.
 """
 
-from kodezart.adapters.github_api import GitHubAPIClient
-from kodezart.core.config import AppConfig
+from kodezart.adapters.github.api import GitHubAPIClient
+from kodezart.config.app import AppConfig
 
 
 def build_forge_client(*, config: AppConfig) -> GitHubAPIClient | None:

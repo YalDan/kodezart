@@ -4,7 +4,7 @@ import pytest
 
 from kodezart.adapters.pattern_outbound_gate import PatternOutboundContentGate
 from kodezart.adapters.regex_content_scanner import RegexContentScanner
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.types.domain.gating import (
     PATTERNLESS_CATEGORIES,
     ContentClass,

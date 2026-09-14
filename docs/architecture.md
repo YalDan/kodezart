@@ -239,7 +239,7 @@ prevent accumulation.
 
 ```mermaid
 graph LR
-    SDK["Claude SDK Messages"] --> Map["map_message()<br/>_sdk_mapping.py"]
+    SDK["Claude SDK Messages"] --> Map["map_message()<br/>sdk_mapping.py"]
     Map --> Domain["Domain AgentEvent"]
     Domain --> SSE["format_sse()<br/>utils/sse.py"]
     SSE --> HTTP["HTTP text/event-stream"]

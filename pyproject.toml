@@ -22,11 +22,11 @@ dependencies = [
     "claude-agent-sdk~=0.2.151",
     # The MCP client the tracker transport speaks. Already present
     # transitively under claude-agent-sdk; declared directly because
-    # adapters/http_mcp_tool_caller.py imports it.
+    # adapters/mcp/http_tool_caller.py imports it.
     "mcp>=1.26.0",
     # The async stream classes a closed MCP session raises. Already present
     # transitively under mcp; declared directly because
-    # adapters/stdio_mcp_tool_caller.py imports it.
+    # adapters/mcp/stdio_tool_caller.py imports it.
     "anyio>=4.5.0",
     "langchain>=0.3.0",
     "langgraph>=0.2.0",
@@ -62,7 +62,7 @@ strict = true
 disallow_any_explicit = true
 
 [[tool.mypy.overrides]]
-module = ["kodezart.core.config"]
+module = ["kodezart.config.app"]
 disallow_any_explicit = false
 
 [tool.pydantic-mypy]
@@ -83,7 +83,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py"                       = ["S101", "ARG001", "ARG002", "ANN", "S105", "S108", "S603", "S607"]
-"src/kodezart/core/config.py"        = ["S108"]
+"src/kodezart/config/app.py"        = ["S108"]
 "src/kodezart/types/domain/prompts.py" = ["S105"]
 "src/kodezart/types/domain/session.py" = ["S105"]
 "tests/types/**/*.py"                 = ["A005"]

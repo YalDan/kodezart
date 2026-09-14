@@ -9,17 +9,17 @@ from pathlib import Path
 import pytest
 import structlog
 
-from kodezart.adapters.git_branch_merger import GitBranchMerger
-from kodezart.adapters.git_change_persister import GitChangePersister
-from kodezart.adapters.git_worktree_provider import GitWorktreeProvider
+from kodezart.adapters.git.bare_repo_cache import LocalBareRepoCache
+from kodezart.adapters.git.branch_merger import GitBranchMerger
+from kodezart.adapters.git.change_persister import GitChangePersister
+from kodezart.adapters.git.service import SubprocessGitService
+from kodezart.adapters.git.worktree_provider import GitWorktreeProvider
 from kodezart.adapters.in_repo_prompt_registry import InRepoPromptRegistry
-from kodezart.adapters.local_bare_repo_cache import LocalBareRepoCache
-from kodezart.adapters.subprocess_git_service import SubprocessGitService
 from kodezart.chains.ralph_loop import RalphLoop
 from kodezart.chains.ralph_workflow import RalphWorkflowEngine
 from kodezart.chains.ticket_generation import TicketGenerationLoop
 from kodezart.composition.prompts import boot_prompts
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.agent import (
     AgentEvent,

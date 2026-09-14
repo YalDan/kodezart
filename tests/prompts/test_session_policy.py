@@ -278,7 +278,7 @@ SWEPT_TREES = ("chains", "adapters")
 #: translation of the effort enum onto the SDK's accepted literal type.
 #: Pinned by module AND by exhaustiveness — a table that must carry all
 #: five levels cannot express a choice between them.
-TRANSLATION_MODULE = "_agents_mapping.py"
+TRANSLATION_MODULE = "agents_mapping.py"
 
 
 def swept_sources() -> list[tuple[str, str]]:

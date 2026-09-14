@@ -12,7 +12,7 @@ from kodezart.adapters.in_repo_prompt_registry import (
     default_sets_root,
 )
 from kodezart.adapters.toml_operation_config import load_operation_config
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.core.prompt_namespaces import bindings_for
 from kodezart.types.domain.prompts import PromptKey
 from tests.fakes import pass_render_variables
@@ -76,7 +76,7 @@ def test_every_writer_in_the_corrected_inventory_names_the_gate() -> None:
         REPO_ROOT / "src" / "kodezart" / "chains" / "ralph_workflow.py"
     ).read_text(encoding="utf-8")
     persister = (
-        REPO_ROOT / "src" / "kodezart" / "adapters" / "git_change_persister.py"
+        REPO_ROOT / "src" / "kodezart" / "adapters" / "git" / "change_persister.py"
     ).read_text(encoding="utf-8")
 
     for writer in (

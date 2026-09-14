@@ -21,9 +21,9 @@ from typing import Literal
 import pytest
 from claude_agent_sdk import AgentDefinition, ClaudeAgentOptions, query
 
-from kodezart.adapters._sdk_mapping import map_message
-from kodezart.adapters._skills_mapping import map_setting_sources, map_skills
-from kodezart.core.config import AppConfig
+from kodezart.adapters.claude.sdk_mapping import map_message
+from kodezart.adapters.claude.skills_mapping import map_setting_sources, map_skills
+from kodezart.config.app import AppConfig
 from kodezart.core.constants import (
     EVAL_PERMISSION_MODE,
     EVAL_TOOLS,

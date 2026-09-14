@@ -12,7 +12,7 @@ import tomllib
 from fnmatch import fnmatch
 from pathlib import Path
 
-from kodezart.adapters.linear_mcp_tracker import ACCEPTED_CREDENTIAL_SHAPE
+from kodezart.adapters.linear.tracker import ACCEPTED_CREDENTIAL_SHAPE
 from kodezart.core import errors
 from kodezart.types.domain.dispatch import DispatchOutcome
 from kodezart.types.domain.operation import (
@@ -172,7 +172,7 @@ def test_the_guide_states_the_credential_shape_boot_enforces() -> None:
 
 def _shipped_variables() -> set[str]:
     """Every environment name ``AppConfig`` actually reads."""
-    from kodezart.core.config import AppConfig
+    from kodezart.config.app import AppConfig
 
     return {f"KODEZART_{name.upper()}" for name in AppConfig.model_fields}
 

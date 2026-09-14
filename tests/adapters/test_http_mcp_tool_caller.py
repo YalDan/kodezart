@@ -42,13 +42,17 @@ from mcp.server.lowlevel import Server
 from mcp.shared.memory import create_connected_server_and_client_session
 from mcp.types import CallToolResult, ContentBlock, TextContent
 
-from kodezart.adapters import (
-    hosted_mcp_session,
-    http_mcp_tool_caller,
-    stdio_mcp_tool_caller,
+from kodezart.adapters.mcp import (
+    hosted_session as hosted_mcp_session,
 )
-from kodezart.adapters.hosted_mcp_session import _INBOX_UNBOUNDED, _Phase
-from kodezart.adapters.http_mcp_tool_caller import (
+from kodezart.adapters.mcp import (
+    http_tool_caller as http_mcp_tool_caller,
+)
+from kodezart.adapters.mcp import (
+    stdio_tool_caller as stdio_mcp_tool_caller,
+)
+from kodezart.adapters.mcp.hosted_session import _INBOX_UNBOUNDED, _Phase
+from kodezart.adapters.mcp.http_tool_caller import (
     HttpMcpToolCaller,
     HttpxClientFactory,
     pooled_http_client,

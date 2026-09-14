@@ -38,7 +38,7 @@ from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStre
 from mcp import ClientSession
 from mcp.types import CallToolResult
 
-from kodezart.adapters.mcp_result_decoding import error_detail, structured_result
+from kodezart.adapters.mcp.result_decoding import error_detail, structured_result
 from kodezart.core.errors import (
     McpCallUnansweredError,
     McpSessionClosedError,

@@ -8,8 +8,8 @@ import pytest
 from langchain_core.runnables import RunnableConfig
 
 from kodezart.composition.engine import rate_limit_delay_floor
+from kodezart.config.app import AppConfig
 from kodezart.core import retry as retry_module
-from kodezart.core.config import AppConfig
 from kodezart.core.errors import NoStructuredOutputError, soft_failure
 from kodezart.core.retry import DelayFloor, GraphNode, RetryFloor, should_retry
 from kodezart.domain.errors import ForgeAPIError, RateLimitError, TransientAPIError

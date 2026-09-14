@@ -23,6 +23,6 @@ def configured_investigation_cap() -> int:
     environment what the application ships, and the answer changes with
     whoever exported a variable last.
     """
-    from kodezart.core.config import AppConfig
+    from kodezart.config.app import AppConfig
 
     return int(AppConfig.model_fields["investigation_cap"].default)

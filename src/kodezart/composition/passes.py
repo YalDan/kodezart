@@ -13,7 +13,7 @@ from pathlib import Path
 from kodezart.adapters.no_forge_delivery import NoForgeDeliveryProbe
 from kodezart.composition.records import RECORD_KIND_BY_PASS, run_report
 from kodezart.composition.tracker import DialledTracker
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.core.constants import UNATTENDED_PERMISSION_MODE
 from kodezart.core.errors import (
     PassGateCapabilityError,
