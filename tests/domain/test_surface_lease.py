@@ -9,6 +9,7 @@ from kodezart.domain.surface_lease import (
     live_conflict,
     one_ownership,
     renewed_deadline,
+    retracts,
     surface_address,
 )
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
@@ -242,3 +243,31 @@ def test_an_instant_two_creations_shared_is_settled_by_identity() -> None:
 
     assert one_ownership(mine=second, siblings=(first,), now=NOW) is first
     assert one_ownership(mine=first, siblings=(second,), now=NOW) is first
+
+
+def test_a_renewal_takes_back_the_deadline_it_put_on() -> None:
+    """What a renewal accounts for is its own to remove."""
+    assert retracts(
+        standing=NOW + timedelta(seconds=90), accounted=NOW + timedelta(seconds=90)
+    )
+
+
+def test_a_renewal_takes_back_a_marker_no_later_grant_moved() -> None:
+    """Its own litter: a marker standing no further on than it accounts for."""
+    assert retracts(
+        standing=NOW + timedelta(seconds=30), accounted=NOW + timedelta(seconds=60)
+    )
+
+
+def test_a_marker_carried_past_what_the_renewal_accounts_for_stays() -> None:
+    """The refutation this predicate answers, stated as a property.
+
+    A later grant of one holder lives inside the marker the earlier
+    grant's renewal is extending.  A renewal that has just lapsed must not
+    delete that deadline: the set would read free, the next rival would be
+    granted the whole of it without meeting any contention, and the holder
+    still running on it would never be named.
+    """
+    assert not retracts(
+        standing=NOW + timedelta(seconds=111), accounted=NOW + timedelta(seconds=60)
+    )

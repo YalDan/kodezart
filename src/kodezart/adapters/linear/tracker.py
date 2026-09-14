@@ -111,6 +111,7 @@ from kodezart.domain.surface_lease import (
     one_ownership,
     renewed_deadline,
     renews,
+    retracts,
     surface_address,
 )
 from kodezart.domain.tracker_writes import (
@@ -3175,6 +3176,12 @@ class LinearMcpTracker:
         holder's own retraction ever lands.  Nothing here reads a clock
         of the holder's, so neither skew nor the time a write took to
         land can move the fence.
+
+        The set is therefore renewed one marker at a time, each write
+        read back before the next is published: a renewal that has just
+        learned it renewed nothing holds nothing over the set, and
+        stating a deadline on the rest of it would put one on markers
+        whose ownership is no longer this renewal's to move.
         """
         encoded = frozenset(addressing.lines(addresses))
         targets = addressing.targets(addresses)
@@ -3217,6 +3224,9 @@ class LinearMcpTracker:
             )
             return None
         advertised = self._clock() + timedelta(seconds=lease_seconds)
+        seen: list[_GrantMarker] = []
+        renewed: dict[_Target, _GrantMarker] = {}
+        accounted: dict[_Target, datetime] = {}
         for target, marker in mine.items():
             await self._edit_marker(
                 target=target,
@@ -3232,34 +3242,70 @@ class LinearMcpTracker:
                     addresses=addressing.lines(addresses),
                 ),
             )
-        after = await self._markers_on(addressing.kind, targets=targets)
-        renewed = {
-            marker.target: marker
-            for marker in after
-            if marker.target in mine
-            and marker.nonce == mine[marker.target].nonce
-            and marker.holder == holder
-            and marker.state is _GrantState.HELD
-            and marker.in_force
-        }
+            written = await self._markers_on(addressing.kind, targets=(target,))
+            seen.extend(written)
+            standing = self._own(
+                written, holder=holder, nonce=marker.nonce, state=_GrantState.HELD
+            ).get(target)
+            if standing is None:
+                break
+            accounted[target] = standing.deadline
+            if not standing.in_force:
+                break
+            renewed[target] = standing
         if set(renewed) != set(targets) or (
             self._conflict(
                 addressing=addressing,
                 addresses=addresses,
-                markers=after,
+                markers=seen,
                 mine=renewed,
                 holder=holder,
             )
             is not None
         ):
             await self._stand_down(
-                tuple(
-                    _retraction(marker, body=self._void_body(marker))
-                    for marker in mine.values()
+                await self._renewal_retractions(
+                    addressing.kind, mine=mine, accounted=accounted
                 )
             )
             return None
         return _Granted(expires_at=advertised)
+
+    async def _renewal_retractions(
+        self,
+        kind: _GrantKind,
+        *,
+        mine: Mapping[_Target, _GrantMarker],
+        accounted: Mapping[_Target, datetime],
+    ) -> tuple[_WrittenMarker, ...]:
+        """What a renewal that holds nothing may take back off the board.
+
+        A renewal accounts for the deadline its own write put in force on
+        a marker, and — on a marker of the set it stopped short of — for
+        the deadline it was published against.  The board is read once
+        more because the question is about the marker as it stands NOW: a
+        deadline carried PAST what this renewal accounts for was put
+        there by a LATER grant of the same holder, whose ownership lives
+        inside the marker this renewal was extending, and a lapsed
+        renewal deleting it would hand the whole set to the next rival
+        while its holder still held it.
+        """
+        standing = {
+            marker.comment_key: marker
+            for marker in await self._markers_on(kind, targets=tuple(mine))
+        }
+        retracting: list[_WrittenMarker] = []
+        for target, marker in mine.items():
+            current = standing.get(marker.comment_key)
+            if current is None:
+                continue
+            if not retracts(
+                standing=current.deadline,
+                accounted=accounted.get(target, marker.deadline),
+            ):
+                continue
+            retracting.append(_retraction(current, body=self._void_body(current)))
+        return tuple(retracting)
 
     async def _withdraw[AddressT](
         self,

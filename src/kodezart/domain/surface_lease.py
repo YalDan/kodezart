@@ -122,6 +122,28 @@ def one_ownership[GrantT: OrderedGrant](
     return standing
 
 
+def retracts(*, standing: datetime, accounted: datetime) -> bool:
+    """Whether a renewal that holds nothing may take this marker back off.
+
+    A renewal takes back only the deadline it accounts for: the one its
+    own write put in force on the marker, or — on a marker of the set it
+    never reached — the one it was published against.  ``standing`` is
+    the deadline the marker carries now.
+
+    A marker standing PAST that was carried there by a LATER grant of the
+    same holder, whose ownership lives inside the very marker this
+    renewal was extending.  Taking it off on behalf of a renewal that has
+    already lapsed would delete an ownership that is still running: the
+    set would read free, a rival would be granted the whole of it at
+    acquisition without meeting any contention, and the holder still
+    holding it would never be named.  So a renewal stands down from such
+    a marker rather than retracting it — one nothing renews lapses on the
+    bound it declared, and one a live grant renews is not this renewal's
+    to remove.
+    """
+    return standing <= accounted
+
+
 def live_conflict[AddressT: Hashable](
     *,
     requested: frozenset[AddressT],

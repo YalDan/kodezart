@@ -1378,3 +1378,65 @@ async def test_two_markers_of_one_holder_are_a_duplicate_and_not_two_owners() ->
     board.advance(LEASE_SECONDS * 0.9)
     still = await board.holder().active_claim(issue_key=CLAIMED_ISSUE)
     assert still is not None and still.holder == "runner-one"
+
+
+async def test_a_stale_renewal_cannot_void_the_grant_it_was_carried_into() -> None:
+    """A renewal takes back what it published, never a later grant's ownership.
+
+    One holder, two processes, and the markers they share.  The first
+    process's renewal is held mid-edit; the second process acquires the
+    same set, is carried into the very markers the first is renewing —
+    the comment ids do not change — and is granted well past the deadline
+    those markers carried.  The held write then lands past the deadline it
+    was published against and renews nothing, which is the fence doing
+    what it is for.
+
+    What must not follow is that renewal taking the set down with it.  The
+    deadline standing on the markers it never reached is the second
+    process's, still running, so it is not this renewal's to retract: a
+    rival asking for the same set meets that owner at acquisition and is
+    told whose it is, rather than being handed a board its holder still
+    believes it holds.
+    """
+    board = _Board()
+    paused = _PausedRenewal(board.server)
+    holding = board.holder(caller=paused)
+    granted = await holding.acquire_surfaces(
+        surfaces=SPANNING, holder="job-one", lease_seconds=LEASE_SECONDS
+    )
+    markers = [comment.id for comment in board.server.comments]
+    board.advance(LEASE_SECONDS - 10)
+    paused.holding = True
+    renewal = asyncio.create_task(
+        holding.renew_surfaces(
+            surfaces=SPANNING, holder="job-one", lease_seconds=LEASE_SECONDS
+        )
+    )
+    await asyncio.wait_for(paused.reached.wait(), 5)
+    board.advance(1)
+    carried = await board.holder().acquire_surfaces(
+        surfaces=SPANNING, holder="job-one", lease_seconds=LEASE_SECONDS
+    )
+    # The second process is carried into the markers the first one is
+    # renewing, which is what puts one grant's ownership inside another's.
+    assert [comment.id for comment in board.server.comments] == markers
+    assert carried.expires_at > granted.expires_at
+    deadline = board.server.comments[0].created_at + timedelta(seconds=LEASE_SECONDS)
+    board.now = deadline + timedelta(seconds=2)
+
+    paused.resume.set()
+
+    assert await asyncio.wait_for(renewal, 5) is None
+    # The renewal holds nothing while the grant it was carried into runs on.
+    assert carried.expires_at > board.now
+    # The one marker its write reached is its own to take back; the marker
+    # it never reached keeps the deadline the later grant put there.
+    assert _standing(board.server) == [("job-one", "held")]
+    with pytest.raises(SurfaceLeaseError) as refused:
+        await board.holder().acquire_surfaces(
+            surfaces=SPANNING, holder="job-two", lease_seconds=LEASE_SECONDS
+        )
+    assert refused.value.current_holder == "job-one"
+    assert refused.value.scope_key == CLAIMED_ISSUE
+    # The rival holds nothing either: the board is the owner's marker alone.
+    assert _standing(board.server) == [("job-one", "held")]
