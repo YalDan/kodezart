@@ -1,0 +1,4022 @@
+{
+ ".env.example": {
+  "owner": "M1",
+  "reason": "environment example for the settings split",
+  "split": {
+   "symbols_by_milestone": {
+    "M2": "organize env keys",
+    "M6": "audit env keys",
+    "M7": "run alarm env keys"
+   }
+  }
+ },
+ ".github/workflows/check.yml": {
+  "owner": "M1",
+  "reason": "CI gate definition",
+  "split": null
+ },
+ "CHANGELOG.md": {
+  "owner": "M1",
+  "reason": "changelog opened by the first milestone",
+  "split": {
+   "symbols_by_milestone": {
+    "M2": "organize entries",
+    "M3": "scope runtime entries",
+    "M4": "criterion lifecycle entries",
+    "M5": "delivery entries",
+    "M6": "audit entries",
+    "M7": "run alarm entries"
+   }
+  }
+ },
+ "Dockerfile": {
+  "owner": "M1",
+  "reason": "image build",
+  "split": null
+ },
+ "Makefile": {
+  "owner": "M1",
+  "reason": "developer targets",
+  "split": null
+ },
+ "README.md": {
+  "owner": "M1",
+  "reason": "readme",
+  "split": {
+   "symbols_by_milestone": {
+    "M2": "organize overview",
+    "M5": "delivery overview",
+    "M6": "audit overview"
+   }
+  }
+ },
+ "docs/api.md": {
+  "owner": "M1",
+  "reason": "agent event and API reference",
+  "split": {
+   "symbols_by_milestone": {
+    "M3": "scope-addressed submission reference",
+    "M4": "run event and amendment event reference",
+    "M5": "authored delivery event reference",
+    "M6": "audit event reference"
+   }
+  }
+ },
+ "docs/architecture.md": {
+  "owner": "M1",
+  "reason": "architecture overview",
+  "split": {
+   "symbols_by_milestone": {
+    "M2": "organize section",
+    "M3": "scope runtime and fire graph sections",
+    "M5": "delivery section",
+    "M6": "audit section",
+    "M7": "run alarm section"
+   }
+  }
+ },
+ "docs/assertion-drift.md": {
+  "owner": "M6",
+  "reason": "documents audit assertion drift",
+  "split": null
+ },
+ "docs/configuration.md": {
+  "owner": "M1",
+  "reason": "configuration reference for the settings split",
+  "split": {
+   "symbols_by_milestone": {
+    "M2": "organize settings section",
+    "M4": "write_back settings section",
+    "M5": "delivery/union settings section",
+    "M6": "audit settings section",
+    "M7": "run alarm settings section"
+   }
+  }
+ },
+ "docs/cutover_mapping.md": {
+  "owner": "M1",
+  "reason": "cutover mapping table",
+  "split": {
+   "symbols_by_milestone": {
+    "M2": "organize rows",
+    "M3": "fire graph rows",
+    "M5": "delivery rows",
+    "M6": "audit rows"
+   }
+  }
+ },
+ "docs/delivery.md": {
+  "owner": "M5",
+  "reason": "documents lane delivery",
+  "split": null
+ },
+ "docs/migration-v0.1-to-v0.2.md": {
+  "owner": "M1",
+  "reason": "existing migration guide touched by config split",
+  "split": null
+ },
+ "docs/migration-v0.2-to-v0.3.md": {
+  "owner": "M1",
+  "reason": "migration guide opened by the first milestone",
+  "split": {
+   "symbols_by_milestone": {
+    "M2": "organize steps",
+    "M3": "scope runtime steps",
+    "M4": "criterion/run-event migration steps",
+    "M5": "delivery steps",
+    "M6": "audit steps",
+    "M7": "run alarm steps"
+   }
+  }
+ },
+ "docs/model-agreement.md": {
+  "owner": "M1",
+  "reason": "model agreement spec used from the first milestone",
+  "split": {
+   "symbols_by_milestone": {
+    "M2": "organize members",
+    "M3": "fire/scope members",
+    "M4": "criterion and amendment members",
+    "M5": "delivery members",
+    "M6": "audit members",
+    "M7": "run alarm members"
+   }
+  }
+ },
+ "docs/operation.example.toml": {
+  "owner": "M1",
+  "reason": "example operation config",
+  "split": {
+   "symbols_by_milestone": {
+    "M2": "organize_mandates, organize_scopes",
+    "M4": "run_event_states / record destination columns",
+    "M5": "check chain steps and forge_check",
+    "M6": "audit_scopes"
+   }
+  }
+ },
+ "docs/parity_checklist.md": {
+  "owner": "M1",
+  "reason": "parity checklist",
+  "split": {
+   "symbols_by_milestone": {
+    "M2": "organize rows",
+    "M3": "fire graph rows",
+    "M5": "delivery rows",
+    "M6": "audit rows"
+   }
+  }
+ },
+ "pyproject.toml": {
+  "owner": "M1",
+  "reason": "project metadata and dependency pins",
+  "split": null
+ },
+ "src/kodezart/adapters/claude/agents_mapping.py": {
+  "owner": "M1",
+  "reason": "session permission and tool policy mapping for the agent SDK",
+  "split": null
+ },
+ "src/kodezart/adapters/mcp/mapping.py": {
+  "owner": "M1",
+  "reason": "session permission and tool policy mapping for the agent SDK",
+  "split": null
+ },
+ "src/kodezart/adapters/claude/permission_modes.py": {
+  "owner": "M1",
+  "reason": "session permission and tool policy mapping for the agent SDK",
+  "split": null
+ },
+ "src/kodezart/adapters/claude/sdk_mapping.py": {
+  "owner": "M1",
+  "reason": "session permission and tool policy mapping for the agent SDK",
+  "split": null
+ },
+ "src/kodezart/adapters/agent_content_scanner.py": {
+  "owner": "M1",
+  "reason": "outbound content scanning behind tracker port refusals",
+  "split": null
+ },
+ "src/kodezart/adapters/asyncio_job_queue.py": {
+  "owner": "M3",
+  "reason": "job queue over the split workflow state contract",
+  "split": null
+ },
+ "src/kodezart/adapters/claude/agent_executor.py": {
+  "owner": "M1",
+  "reason": "session permission and tool policy mapping for the agent SDK",
+  "split": null
+ },
+ "src/kodezart/adapters/claude/client_executor.py": {
+  "owner": "M1",
+  "reason": "session permission and tool policy mapping for the agent SDK",
+  "split": null
+ },
+ "src/kodezart/adapters/git/artifact_persister.py": {
+  "owner": "M1",
+  "reason": "Git settings and workspace ports",
+  "split": null
+ },
+ "src/kodezart/adapters/git/change_persister.py": {
+  "owner": "M1",
+  "reason": "git change persister on the workspace port",
+  "split": {
+   "symbols_by_milestone": {
+    "M4": "NativeWriteRefusalError handling on the native amendment persist path"
+   }
+  }
+ },
+ "src/kodezart/adapters/git/worktree_provider.py": {
+  "owner": "M1",
+  "reason": "Git settings and workspace ports",
+  "split": null
+ },
+ "src/kodezart/adapters/github/api.py": {
+  "owner": "M5",
+  "reason": "forge API client and wire types for delivery",
+  "split": null
+ },
+ "src/kodezart/adapters/github/wire.py": {
+  "owner": "M5",
+  "reason": "forge API client and wire types for delivery",
+  "split": null
+ },
+ "src/kodezart/adapters/mcp/hosted_session.py": {
+  "owner": "M1",
+  "reason": "MCP transport ports for the tracker/knowledge sessions",
+  "split": null
+ },
+ "src/kodezart/adapters/mcp/http_tool_caller.py": {
+  "owner": "M1",
+  "reason": "MCP transport ports for the tracker/knowledge sessions",
+  "split": null
+ },
+ "src/kodezart/adapters/in_repo_prompt_registry.py": {
+  "owner": "M4",
+  "reason": "prompt registry reader for the evaluation/write-back prompt sets",
+  "split": null
+ },
+ "src/kodezart/adapters/langgraph_run_state_reader.py": {
+  "owner": "M7",
+  "reason": "langgraph run-state reader feeding run alarms",
+  "split": null
+ },
+ "src/kodezart/adapters/linear/history_receipt.py": {
+  "owner": "M1",
+  "reason": "self-write receipts for the attributable-writer check",
+  "split": null
+ },
+ "src/kodezart/adapters/linear/issue_identity.py": {
+  "owner": "M1",
+  "reason": "issue identity and meta-label marker vocabulary",
+  "split": null
+ },
+ "src/kodezart/adapters/linear/markers.py": {
+  "owner": "M1",
+  "reason": "issue identity and meta-label marker vocabulary",
+  "split": null
+ },
+ "src/kodezart/adapters/linear/tracker.py": {
+  "owner": "M1",
+  "reason": "tracker port implementation and its wire types",
+  "split": {
+   "symbols_by_milestone": {
+    "M2": "criterion_creation and organize_graph writes (update_issue_graph)",
+    "M4": "criterion_amendment, escalation_resolution and fire_spec write paths (create_criterion_if_absent, reset_criterion_pending, read_fire_spec, read_escalation_resolution, set_issue_classification, post_run_event)",
+    "M7": "run_alarm_record and run_event_stream reads (read_run_alarm, record_run_alarm, lane_run_events)"
+   }
+  }
+ },
+ "src/kodezart/adapters/linear/wire.py": {
+  "owner": "M1",
+  "reason": "tracker port implementation and its wire types",
+  "split": null
+ },
+ "src/kodezart/adapters/linear/record_sink.py": {
+  "owner": "M4",
+  "reason": "record sinks for run records and lifecycle write-back",
+  "split": null
+ },
+ "src/kodezart/adapters/linear/references.py": {
+  "owner": "M1",
+  "reason": "outbound content scanning behind tracker port refusals",
+  "split": null
+ },
+ "src/kodezart/adapters/linear/scope_reader.py": {
+  "owner": "M1",
+  "reason": "scope reader adapter and its container read types",
+  "split": null
+ },
+ "src/kodezart/adapters/linear/scope_types.py": {
+  "owner": "M1",
+  "reason": "scope reader adapter and its container read types",
+  "split": null
+ },
+ "src/kodezart/adapters/mcp/result_decoding.py": {
+  "owner": "M1",
+  "reason": "MCP transport ports for the tracker/knowledge sessions",
+  "split": null
+ },
+ "src/kodezart/adapters/no_forge_delivery.py": {
+  "owner": "M3",
+  "reason": "no-forge delivery port used by the scope runtime",
+  "split": null
+ },
+ "src/kodezart/adapters/notion/record_properties.py": {
+  "owner": "M4",
+  "reason": "record sinks for run records and lifecycle write-back",
+  "split": null
+ },
+ "src/kodezart/adapters/notion/record_sink.py": {
+  "owner": "M4",
+  "reason": "record sinks for run records and lifecycle write-back",
+  "split": null
+ },
+ "src/kodezart/adapters/outbound_admission.py": {
+  "owner": "M1",
+  "reason": "outbound content scanning behind tracker port refusals",
+  "split": null
+ },
+ "src/kodezart/adapters/pagination.py": {
+  "owner": "M1",
+  "reason": "tracker port implementation and its wire types",
+  "split": null
+ },
+ "src/kodezart/adapters/record_failures.py": {
+  "owner": "M4",
+  "reason": "record sinks for run records and lifecycle write-back",
+  "split": null
+ },
+ "src/kodezart/adapters/reference_content_scanner.py": {
+  "owner": "M1",
+  "reason": "outbound content scanning behind tracker port refusals",
+  "split": null
+ },
+ "src/kodezart/adapters/regex_content_scanner.py": {
+  "owner": "M1",
+  "reason": "outbound content scanning behind tracker port refusals",
+  "split": null
+ },
+ "src/kodezart/adapters/mcp/stdio_tool_caller.py": {
+  "owner": "M1",
+  "reason": "MCP transport ports for the tracker/knowledge sessions",
+  "split": null
+ },
+ "src/kodezart/adapters/git/check_chain.py": {
+  "owner": "M5",
+  "reason": "subprocess check chain behind union verification",
+  "split": null
+ },
+ "src/kodezart/adapters/git/service.py": {
+  "owner": "M1",
+  "reason": "Git settings and workspace ports",
+  "split": null
+ },
+ "src/kodezart/adapters/git/source_reader.py": {
+  "owner": "M6",
+  "reason": "git source reader for audit assertion-drift evidence",
+  "split": null
+ },
+ "src/kodezart/api/dependencies.py": {
+  "owner": "M3",
+  "reason": "scope-addressed agent request surface over the scope runtime",
+  "split": null
+ },
+ "src/kodezart/api/v1/endpoints/agent.py": {
+  "owner": "M3",
+  "reason": "scope-addressed agent request surface over the scope runtime",
+  "split": null
+ },
+ "src/kodezart/api/v1/endpoints/jobs.py": {
+  "owner": "M3",
+  "reason": "scope-addressed agent request surface over the scope runtime",
+  "split": null
+ },
+ "src/kodezart/chains/audit_detection_removal.py": {
+  "owner": "M6",
+  "reason": "audit pass and sweep chains",
+  "split": null
+ },
+ "src/kodezart/chains/audit_evidence.py": {
+  "owner": "M6",
+  "reason": "audit pass and sweep chains",
+  "split": null
+ },
+ "src/kodezart/chains/audit_forge.py": {
+  "owner": "M6",
+  "reason": "audit pass and sweep chains",
+  "split": null
+ },
+ "src/kodezart/chains/audit_overclaim.py": {
+  "owner": "M6",
+  "reason": "audit pass and sweep chains",
+  "split": null
+ },
+ "src/kodezart/chains/audit_pass.py": {
+  "owner": "M6",
+  "reason": "audit pass and sweep chains",
+  "split": null
+ },
+ "src/kodezart/chains/audit_sweep.py": {
+  "owner": "M6",
+  "reason": "audit pass and sweep chains",
+  "split": null
+ },
+ "src/kodezart/chains/authored_checks.py": {
+  "owner": "M5",
+  "reason": "authored delivery, publication and check graphs",
+  "split": null
+ },
+ "src/kodezart/chains/authored_delivery.py": {
+  "owner": "M5",
+  "reason": "authored delivery, publication and check graphs",
+  "split": null
+ },
+ "src/kodezart/chains/authored_publication.py": {
+  "owner": "M5",
+  "reason": "authored delivery, publication and check graphs",
+  "split": null
+ },
+ "src/kodezart/chains/criteria.py": {
+  "owner": "M3",
+  "reason": "criteria read for fire specs",
+  "split": null
+ },
+ "src/kodezart/chains/delivery_coordinator.py": {
+  "owner": "M5",
+  "reason": "authored delivery, publication and check graphs",
+  "split": null
+ },
+ "src/kodezart/chains/fire_consolidation.py": {
+  "owner": "M3",
+  "reason": "shared fire graph nodes",
+  "split": null
+ },
+ "src/kodezart/chains/fire_implementation.py": {
+  "owner": "M3",
+  "reason": "shared fire graph nodes",
+  "split": null
+ },
+ "src/kodezart/chains/fire_remediation.py": {
+  "owner": "M3",
+  "reason": "shared fire graph nodes",
+  "split": null
+ },
+ "src/kodezart/chains/fire_review.py": {
+  "owner": "M3",
+  "reason": "shared fire graph nodes",
+  "split": null
+ },
+ "src/kodezart/chains/fire_specification.py": {
+  "owner": "M3",
+  "reason": "shared fire graph nodes",
+  "split": null
+ },
+ "src/kodezart/chains/lane_delivery.py": {
+  "owner": "M5",
+  "reason": "authored delivery, publication and check graphs",
+  "split": null
+ },
+ "src/kodezart/chains/native_amendment.py": {
+  "owner": "M4",
+  "reason": "native amendment reconciliation",
+  "split": null
+ },
+ "src/kodezart/chains/native_delivery.py": {
+  "owner": "M3",
+  "reason": "native execution and its persist path",
+  "split": null
+ },
+ "src/kodezart/chains/native_execution.py": {
+  "owner": "M3",
+  "reason": "native execution and its persist path",
+  "split": null
+ },
+ "src/kodezart/chains/organize.py": {
+  "owner": "M2",
+  "reason": "organize author and assess chains",
+  "split": null
+ },
+ "src/kodezart/chains/organize_author.py": {
+  "owner": "M2",
+  "reason": "organize author and assess chains",
+  "split": null
+ },
+ "src/kodezart/chains/ralph_loop.py": {
+  "owner": "M3",
+  "reason": "native/authored fire graph split",
+  "split": null
+ },
+ "src/kodezart/chains/ralph_workflow.py": {
+  "owner": "M3",
+  "reason": "native/authored fire graph split",
+  "split": null
+ },
+ "src/kodezart/chains/remediation.py": {
+  "owner": "M3",
+  "reason": "shared fire graph nodes",
+  "split": null
+ },
+ "src/kodezart/chains/scope_walker.py": {
+  "owner": "M3",
+  "reason": "scope walker over the planned ready set",
+  "split": null
+ },
+ "src/kodezart/chains/ticket_generation.py": {
+  "owner": "M2",
+  "reason": "criteria authoring / ticket generation chain",
+  "split": null
+ },
+ "src/kodezart/chains/write_back_verifier.py": {
+  "owner": "M4",
+  "reason": "write-back verifier and fresh judge",
+  "split": null
+ },
+ "src/kodezart/composition/audit.py": {
+  "owner": "M6",
+  "reason": "audit composition",
+  "split": null
+ },
+ "src/kodezart/composition/delivery.py": {
+  "owner": "M5",
+  "reason": "delivery and forge composition",
+  "split": null
+ },
+ "src/kodezart/composition/engine.py": {
+  "owner": "M1",
+  "reason": "composition root: tracker boot, leases, session policy",
+  "split": {
+   "symbols_by_milestone": {
+    "M3": "FireConsolidation, FireImplementation, FireRemediation, FireReview, FireSpecification, build_scope_runtime, scoped_arm routing",
+    "M4": "NativeAmendments wiring",
+    "M5": "AuthoredChecks, AuthoredDeliveryCoordinator, AuthoredPublication, build_native_lane_workflow, GitHubAPIClient arm",
+    "M6": "SubprocessGitSourceReader wiring"
+   }
+  }
+ },
+ "src/kodezart/composition/forge.py": {
+  "owner": "M5",
+  "reason": "delivery and forge composition",
+  "split": null
+ },
+ "src/kodezart/composition/gating.py": {
+  "owner": "M1",
+  "reason": "composition root: tracker boot, leases, session policy",
+  "split": null
+ },
+ "src/kodezart/composition/jobs.py": {
+  "owner": "M3",
+  "reason": "job queue and run-state composition",
+  "split": {
+   "symbols_by_milestone": {
+    "M7": "langgraph run-state reader wiring"
+   }
+  }
+ },
+ "src/kodezart/composition/knowledge.py": {
+  "owner": "M1",
+  "reason": "composition root: tracker boot, leases, session policy",
+  "split": null
+ },
+ "src/kodezart/composition/organize.py": {
+  "owner": "M2",
+  "reason": "organize composition",
+  "split": null
+ },
+ "src/kodezart/composition/passes.py": {
+  "owner": "M1",
+  "reason": "composition root: tracker boot, leases, session policy",
+  "split": {
+   "symbols_by_milestone": {
+    "M2": "build_organize_tick / OrganizeTick pass wiring",
+    "M3": "fire dispatch pass wiring (fire_context, fire_dispatcher, dispatch_pass, pass_scheduler)",
+    "M4": "record/lifecycle pass wiring (claim_heartbeat, tracker_lifecycle, run_recorder)",
+    "M6": "build_audit_pass, verify_audit_configuration"
+   }
+  }
+ },
+ "src/kodezart/composition/preflight.py": {
+  "owner": "M1",
+  "reason": "composition root: tracker boot, leases, session policy",
+  "split": null
+ },
+ "src/kodezart/composition/prompts.py": {
+  "owner": "M4",
+  "reason": "prompt set and record sink wiring",
+  "split": null
+ },
+ "src/kodezart/composition/records.py": {
+  "owner": "M4",
+  "reason": "prompt set and record sink wiring",
+  "split": null
+ },
+ "src/kodezart/composition/scope_runtime.py": {
+  "owner": "M3",
+  "reason": "scope runtime composition",
+  "split": null
+ },
+ "src/kodezart/composition/tracker.py": {
+  "owner": "M1",
+  "reason": "composition root: tracker boot, leases, session policy",
+  "split": null
+ },
+ "src/kodezart/composition/workspace.py": {
+  "owner": "M1",
+  "reason": "composition root: tracker boot, leases, session policy",
+  "split": null
+ },
+ "src/kodezart/config/agent.py": {
+  "owner": "M1",
+  "reason": "settings decomposition of AppConfig",
+  "split": null
+ },
+ "src/kodezart/config/audit.py": {
+  "owner": "M6",
+  "reason": "audit settings",
+  "split": null
+ },
+ "src/kodezart/core/backoff.py": {
+  "owner": "M1",
+  "reason": "shared constants, retry/backoff, owned tasks, stream drain",
+  "split": null
+ },
+ "src/kodezart/config/app.py": {
+  "owner": "M1",
+  "reason": "settings decomposition of AppConfig",
+  "split": {
+   "symbols_by_milestone": {
+    "M2": "AppConfig.organize",
+    "M4": "AppConfig.write_back",
+    "M5": "AppConfig.delivery_max_concurrent_watches, delivery_red_rerun_max_attempts, union_check_step_timeout_seconds, union_stale_max_attempts",
+    "M6": "AppConfig.audit, audit_sweep_interval_seconds, audit_full_sweep_interval_seconds, _audit_full_interval_includes_tick",
+    "M7": "AppConfig.run_alarm_barren_tick_max_commits_ahead, run_alarm_barren_tick_max_files_changed, run_alarm_escalation_age_max_commits, run_alarm_escalation_age_max_ticks, run_alarm_max_rulings_without_closure, run_alarm_max_surface_holders"
+   }
+  }
+ },
+ "src/kodezart/core/constants.py": {
+  "owner": "M1",
+  "reason": "shared constants, retry/backoff, owned tasks, stream drain",
+  "split": null
+ },
+ "src/kodezart/core/errors.py": {
+  "owner": "M1",
+  "reason": "port refusal error vocabulary",
+  "split": {
+   "symbols_by_milestone": {
+    "M5": "LaneRosterArityError"
+   }
+  }
+ },
+ "src/kodezart/config/git.py": {
+  "owner": "M1",
+  "reason": "settings decomposition of AppConfig",
+  "split": null
+ },
+ "src/kodezart/config/http.py": {
+  "owner": "M1",
+  "reason": "settings decomposition of AppConfig",
+  "split": null
+ },
+ "src/kodezart/config/job_queue.py": {
+  "owner": "M1",
+  "reason": "settings decomposition of AppConfig",
+  "split": null
+ },
+ "src/kodezart/config/knowledge.py": {
+  "owner": "M1",
+  "reason": "settings decomposition of AppConfig",
+  "split": null
+ },
+ "src/kodezart/core/logging.py": {
+  "owner": "M1",
+  "reason": "safe traceback rendering",
+  "split": null
+ },
+ "src/kodezart/config/logging.py": {
+  "owner": "M1",
+  "reason": "settings decomposition of AppConfig",
+  "split": null
+ },
+ "src/kodezart/core/node_sessions.py": {
+  "owner": "M3",
+  "reason": "node session bookkeeping",
+  "split": null
+ },
+ "src/kodezart/config/organize.py": {
+  "owner": "M2",
+  "reason": "organize settings",
+  "split": null
+ },
+ "src/kodezart/core/owned_tasks.py": {
+  "owner": "M1",
+  "reason": "shared constants, retry/backoff, owned tasks, stream drain",
+  "split": null
+ },
+ "src/kodezart/core/prompt_namespaces.py": {
+  "owner": "M4",
+  "reason": "prompt namespace vocabulary for the new prompt sets",
+  "split": null
+ },
+ "src/kodezart/core/prompt_rendering.py": {
+  "owner": "M1",
+  "reason": "prompt rendering used by session policy",
+  "split": null
+ },
+ "src/kodezart/core/protocols.py": {
+  "owner": "M1",
+  "reason": "tracker port protocol surface",
+  "split": {
+   "symbols_by_milestone": {
+    "M2": "TrackerPort.update_issue_graph",
+    "M3": "FireCriteriaReader.read_current; DispatchProducer.run_pass, record_run_outcome",
+    "M4": "TrackerPort.create_criterion_if_absent, reset_criterion_pending, read_fire_spec, read_escalation_resolution, set_issue_classification, post_run_event; TrackerCriteriaReader.read_criteria; FireCriteriaSource.read_spec; NativeWriteGuard (begin, judge, require_current, require_publishable, require_unchanged_head, restore, snapshot, holder)",
+    "M5": "CIMonitor.checks_declared, CIMonitor.rerun_checks; CheckChainRunner.run_chain; ForgeQuery.branch_web_url, open_pr_for_head; PRStateReader.read_pr_state",
+    "M6": "GitSourceReader.find_source, read_source, resolve_commit",
+    "M7": "TrackerPort.lane_run_events, read_run_alarm, record_run_alarm"
+   }
+  }
+ },
+ "src/kodezart/core/retry.py": {
+  "owner": "M1",
+  "reason": "shared constants, retry/backoff, owned tasks, stream drain",
+  "split": null
+ },
+ "src/kodezart/core/stream_drain.py": {
+  "owner": "M1",
+  "reason": "shared constants, retry/backoff, owned tasks, stream drain",
+  "split": null
+ },
+ "src/kodezart/config/tracker.py": {
+  "owner": "M1",
+  "reason": "settings decomposition of AppConfig",
+  "split": null
+ },
+ "src/kodezart/config/write_back.py": {
+  "owner": "M4",
+  "reason": "write-back verification settings",
+  "split": null
+ },
+ "src/kodezart/domain/accept_gate.py": {
+  "owner": "M4",
+  "reason": "accept gate and criterion satisfaction",
+  "split": null
+ },
+ "src/kodezart/domain/agent.py": {
+  "owner": "M1",
+  "reason": "agent-event helpers",
+  "split": null
+ },
+ "src/kodezart/domain/amendment.py": {
+  "owner": "M4",
+  "reason": "criterion amendment and evidence contracts",
+  "split": null
+ },
+ "src/kodezart/domain/assertion_drift.py": {
+  "owner": "M6",
+  "reason": "assertion drift comparison",
+  "split": null
+ },
+ "src/kodezart/domain/authored_outcome.py": {
+  "owner": "M5",
+  "reason": "lane records, PR body and publication stall report",
+  "split": null
+ },
+ "src/kodezart/domain/check_chain.py": {
+  "owner": "M5",
+  "reason": "lane records, PR body and publication stall report",
+  "split": null
+ },
+ "src/kodezart/domain/comment_markers.py": {
+  "owner": "M1",
+  "reason": "marker vocabulary and guarded tracker-write rules",
+  "split": null
+ },
+ "src/kodezart/domain/criteria.py": {
+  "owner": "M4",
+  "reason": "accept gate and criterion satisfaction",
+  "split": null
+ },
+ "src/kodezart/domain/criteria_feasibility.py": {
+  "owner": "M4",
+  "reason": "accept gate and criterion satisfaction",
+  "split": null
+ },
+ "src/kodezart/domain/criteria_grading.py": {
+  "owner": "M4",
+  "reason": "accept gate and criterion satisfaction",
+  "split": null
+ },
+ "src/kodezart/domain/criterion_amendment.py": {
+  "owner": "M4",
+  "reason": "criterion amendment and evidence contracts",
+  "split": null
+ },
+ "src/kodezart/domain/criterion_creation.py": {
+  "owner": "M2",
+  "reason": "criterion creation / minting",
+  "split": null
+ },
+ "src/kodezart/domain/criterion_evidence.py": {
+  "owner": "M4",
+  "reason": "criterion amendment and evidence contracts",
+  "split": null
+ },
+ "src/kodezart/domain/dispatch.py": {
+  "owner": "M3",
+  "reason": "dispatcher vocabulary",
+  "split": null
+ },
+ "src/kodezart/domain/errors.py": {
+  "owner": "M1",
+  "reason": "domain error vocabulary",
+  "split": {
+   "symbols_by_milestone": {
+    "M2": "OrganizeAdmissionIdentityError, OrganizeDecisionRequiredError, OrganizeHaltError, OrganizeWriteRefusalError",
+    "M3": "ScopePlanRefusalError, ScopeCycleError",
+    "M4": "CriterionReadError, CriterionResolutionError, FireSpecEntryError, InvalidFireCriterionError, EmptyFireCriteriaError, EscalationReadError, RulingRecordReadError, WriteBackReadError",
+    "M5": "CheckChainExecutionError, CheckObservationError, DeliveryHeadError, PRStateReadError, PRTrackerIdentityError, UnionHeadReadError, UnionUnstableError, LaneRecordReadError",
+    "M6": "AssertionComparisonError, AuditClaimReadError, AuditEvidenceReadError, GitSourceReadError",
+    "M7": "RunShapeReadError"
+   }
+  }
+ },
+ "src/kodezart/domain/escalation_resolution.py": {
+  "owner": "M4",
+  "reason": "escalation resolution writer",
+  "split": null
+ },
+ "src/kodezart/domain/fire_spec.py": {
+  "owner": "M4",
+  "reason": "criterion field reads over the fire spec body",
+  "split": {
+   "symbols_by_milestone": {
+    "M3": "fire spec entry parsing for the fire graph (spec_entries, authored spec reads)"
+   }
+  }
+ },
+ "src/kodezart/domain/gap.py": {
+  "owner": "M3",
+  "reason": "gap arithmetic and scope subtree closure",
+  "split": null
+ },
+ "src/kodezart/domain/git_url.py": {
+  "owner": "M1",
+  "reason": "repository url vocabulary shared by ports",
+  "split": null
+ },
+ "src/kodezart/domain/issue_tree.py": {
+  "owner": "M3",
+  "reason": "gap arithmetic and scope subtree closure",
+  "split": null
+ },
+ "src/kodezart/domain/lane_record.py": {
+  "owner": "M5",
+  "reason": "lane records, PR body and publication stall report",
+  "split": null
+ },
+ "src/kodezart/domain/mandate_graph.py": {
+  "owner": "M7",
+  "reason": "run alarms, run shape and run-event stream",
+  "split": null
+ },
+ "src/kodezart/domain/organize.py": {
+  "owner": "M1",
+  "reason": "hunk-split: label-namespace helpers (split_label_key, OrganizeLabelNamespace consumers) stay early because M7 scope_tally and M1 operation config read them; admission types/routing/organize_gap split to M2, DefectRole/SpecFinding to M4",
+  "split": {
+   "symbols_by_milestone": {
+    "M2": "is_admission_live, admission_route, organize_gap"
+   }
+  }
+ },
+ "src/kodezart/domain/organize_graph.py": {
+  "owner": "M2",
+  "reason": "organize issue graph rules",
+  "split": null
+ },
+ "src/kodezart/domain/outcome.py": {
+  "owner": "M3",
+  "reason": "workflow outcome classification",
+  "split": null
+ },
+ "src/kodezart/domain/pr_body.py": {
+  "owner": "M5",
+  "reason": "lane records, PR body and publication stall report",
+  "split": null
+ },
+ "src/kodezart/domain/prompt_variables.py": {
+  "owner": "M3",
+  "reason": "fire prompt variables and ticket rendering",
+  "split": null
+ },
+ "src/kodezart/domain/rulings.py": {
+  "owner": "M4",
+  "reason": "ruling and immutable source contracts",
+  "split": null
+ },
+ "src/kodezart/domain/run_alarm_record.py": {
+  "owner": "M7",
+  "reason": "run alarms, run shape and run-event stream",
+  "split": null
+ },
+ "src/kodezart/domain/run_event_stream.py": {
+  "owner": "M7",
+  "reason": "run alarms, run shape and run-event stream",
+  "split": null
+ },
+ "src/kodezart/domain/run_shape.py": {
+  "owner": "M7",
+  "reason": "run alarms, run shape and run-event stream",
+  "split": null
+ },
+ "src/kodezart/domain/scope_approval.py": {
+  "owner": "M1",
+  "reason": "approval ancestry over scope labels",
+  "split": null
+ },
+ "src/kodezart/domain/self_writes.py": {
+  "owner": "M1",
+  "reason": "self-write replay for attributable writes",
+  "split": null
+ },
+ "src/kodezart/domain/stall_report.py": {
+  "owner": "M5",
+  "reason": "lane records, PR body and publication stall report",
+  "split": null
+ },
+ "src/kodezart/domain/surface_lease.py": {
+  "owner": "M1",
+  "reason": "write leases over surface sets",
+  "split": null
+ },
+ "src/kodezart/domain/ticket.py": {
+  "owner": "M3",
+  "reason": "fire prompt variables and ticket rendering",
+  "split": null
+ },
+ "src/kodezart/domain/topology.py": {
+  "owner": "M3",
+  "reason": "topology planner",
+  "split": null
+ },
+ "src/kodezart/domain/tracker_writes.py": {
+  "owner": "M1",
+  "reason": "marker vocabulary and guarded tracker-write rules",
+  "split": null
+ },
+ "src/kodezart/domain/workflow_state.py": {
+  "owner": "M3",
+  "reason": "workflow state split across native/authored graphs",
+  "split": null
+ },
+ "src/kodezart/handlers/agent_handler.py": {
+  "owner": "M3",
+  "reason": "scope-addressed agent request surface over the scope runtime",
+  "split": null
+ },
+ "src/kodezart/main.py": {
+  "owner": "M1",
+  "reason": "app factory and boot sequence",
+  "split": {
+   "symbols_by_milestone": {
+    "M3": "TrackerCriteria wiring and job queue lifespan",
+    "M4": "boot_prompts/records wiring, fire_record_template",
+    "M5": "build_forge_client wiring"
+   }
+  }
+ },
+ "src/kodezart/prompts/sets/anthropic_v5/amendment_author.md": {
+  "owner": "M4",
+  "reason": "amendment authoring prompt",
+  "split": null
+ },
+ "src/kodezart/prompts/sets/anthropic_v5/amendment_judge.md": {
+  "owner": "M4",
+  "reason": "amendment judge prompt",
+  "split": null
+ },
+ "src/kodezart/prompts/sets/anthropic_v5/audit_claim.md": {
+  "owner": "M6",
+  "reason": "audit claim prompt",
+  "split": null
+ },
+ "src/kodezart/prompts/sets/anthropic_v5/audit_detection_removal.md": {
+  "owner": "M6",
+  "reason": "audit detector-removal prompt",
+  "split": null
+ },
+ "src/kodezart/prompts/sets/anthropic_v5/audit_mandate.md": {
+  "owner": "M6",
+  "reason": "audit mandate prompt",
+  "split": null
+ },
+ "src/kodezart/prompts/sets/anthropic_v5/audit_overclaim.md": {
+  "owner": "M6",
+  "reason": "audit overclaim prompt",
+  "split": null
+ },
+ "src/kodezart/prompts/sets/anthropic_v5/content_audit.md": {
+  "owner": "M6",
+  "reason": "content audit prompt",
+  "split": null
+ },
+ "src/kodezart/prompts/sets/anthropic_v5/criteria_validation.md": {
+  "owner": "M2",
+  "reason": "criteria validation prompt",
+  "split": null
+ },
+ "src/kodezart/prompts/sets/anthropic_v5/evaluation.md": {
+  "owner": "M4",
+  "reason": "accept gate evaluation prompt",
+  "split": null
+ },
+ "src/kodezart/prompts/sets/anthropic_v5/fire_prep_pass.md": {
+  "owner": "M3",
+  "reason": "fire prep dispatch prompt",
+  "split": null
+ },
+ "src/kodezart/prompts/sets/anthropic_v5/fire_record.md": {
+  "owner": "M4",
+  "reason": "fire record prompt",
+  "split": null
+ },
+ "src/kodezart/prompts/sets/anthropic_v5/grooming_pass.md": {
+  "owner": "M2",
+  "reason": "grooming/organize pass prompt",
+  "split": null
+ },
+ "src/kodezart/prompts/sets/anthropic_v5/native_writer_contract.md": {
+  "owner": "M3",
+  "reason": "native writer contract prompt",
+  "split": null
+ },
+ "src/kodezart/prompts/sets/anthropic_v5/organize_assess.md": {
+  "owner": "M2",
+  "reason": "organize assess prompt",
+  "split": null
+ },
+ "src/kodezart/prompts/sets/anthropic_v5/organize_author.md": {
+  "owner": "M2",
+  "reason": "organize author prompt",
+  "split": null
+ },
+ "src/kodezart/prompts/sets/anthropic_v5/organize_criteria_author.md": {
+  "owner": "M2",
+  "reason": "organize criteria authoring prompt",
+  "split": null
+ },
+ "src/kodezart/prompts/sets/anthropic_v5/organize_verify.md": {
+  "owner": "M2",
+  "reason": "organize verification prompt",
+  "split": null
+ },
+ "src/kodezart/prompts/sets/anthropic_v5/post_merge_review.md": {
+  "owner": "M6",
+  "reason": "post-merge audit review prompt",
+  "split": null
+ },
+ "src/kodezart/prompts/sets/anthropic_v5/pr_description.md": {
+  "owner": "M5",
+  "reason": "PR body prompt",
+  "split": null
+ },
+ "src/kodezart/prompts/sets/anthropic_v5/set.toml": {
+  "owner": "M4",
+  "reason": "prompt set manifest",
+  "split": {
+   "symbols_by_milestone": {
+    "M2": "organize_assess, organize_author, organize_criteria_author, organize_verify entries",
+    "M3": "native_writer_contract entry",
+    "M6": "audit_claim, audit_mandate, audit_overclaim, audit_detection_removal entries"
+   }
+  }
+ },
+ "src/kodezart/prompts/sets/anthropic_v5/write_back_verify.md": {
+  "owner": "M4",
+  "reason": "write-back verification prompt",
+  "split": null
+ },
+ "src/kodezart/prompts/sets/claude-opus/acceptance_criteria.md": {
+  "owner": "M2",
+  "reason": "criteria authoring prompt",
+  "split": null
+ },
+ "src/kodezart/prompts/sets/claude-opus/amendment_author.md": {
+  "owner": "M4",
+  "reason": "amendment authoring prompt",
+  "split": null
+ },
+ "src/kodezart/prompts/sets/claude-opus/amendment_judge.md": {
+  "owner": "M4",
+  "reason": "amendment judge prompt",
+  "split": null
+ },
+ "src/kodezart/prompts/sets/claude-opus/audit_claim.md": {
+  "owner": "M6",
+  "reason": "audit claim prompt",
+  "split": null
+ },
+ "src/kodezart/prompts/sets/claude-opus/audit_detection_removal.md": {
+  "owner": "M6",
+  "reason": "audit detector-removal prompt",
+  "split": null
+ },
+ "src/kodezart/prompts/sets/claude-opus/audit_mandate.md": {
+  "owner": "M6",
+  "reason": "audit mandate prompt",
+  "split": null
+ },
+ "src/kodezart/prompts/sets/claude-opus/audit_overclaim.md": {
+  "owner": "M6",
+  "reason": "audit overclaim prompt",
+  "split": null
+ },
+ "src/kodezart/prompts/sets/claude-opus/content_audit.md": {
+  "owner": "M6",
+  "reason": "content audit prompt",
+  "split": null
+ },
+ "src/kodezart/prompts/sets/claude-opus/criteria_validation.md": {
+  "owner": "M2",
+  "reason": "criteria validation prompt",
+  "split": null
+ },
+ "src/kodezart/prompts/sets/claude-opus/evaluation.md": {
+  "owner": "M4",
+  "reason": "accept gate evaluation prompt",
+  "split": null
+ },
+ "src/kodezart/prompts/sets/claude-opus/fire_prep_pass.md": {
+  "owner": "M3",
+  "reason": "fire prep dispatch prompt",
+  "split": null
+ },
+ "src/kodezart/prompts/sets/claude-opus/fire_record.md": {
+  "owner": "M4",
+  "reason": "fire record prompt",
+  "split": null
+ },
+ "src/kodezart/prompts/sets/claude-opus/grooming_pass.md": {
+  "owner": "M2",
+  "reason": "grooming/organize pass prompt",
+  "split": null
+ },
+ "src/kodezart/prompts/sets/claude-opus/native_writer_contract.md": {
+  "owner": "M3",
+  "reason": "native writer contract prompt",
+  "split": null
+ },
+ "src/kodezart/prompts/sets/claude-opus/organize_assess.md": {
+  "owner": "M2",
+  "reason": "organize assess prompt",
+  "split": null
+ },
+ "src/kodezart/prompts/sets/claude-opus/organize_author.md": {
+  "owner": "M2",
+  "reason": "organize author prompt",
+  "split": null
+ },
+ "src/kodezart/prompts/sets/claude-opus/organize_criteria_author.md": {
+  "owner": "M2",
+  "reason": "organize criteria authoring prompt",
+  "split": null
+ },
+ "src/kodezart/prompts/sets/claude-opus/organize_verify.md": {
+  "owner": "M2",
+  "reason": "organize verification prompt",
+  "split": null
+ },
+ "src/kodezart/prompts/sets/claude-opus/post_merge_review.md": {
+  "owner": "M6",
+  "reason": "post-merge audit review prompt",
+  "split": null
+ },
+ "src/kodezart/prompts/sets/claude-opus/pr_description.md": {
+  "owner": "M5",
+  "reason": "PR body prompt",
+  "split": null
+ },
+ "src/kodezart/prompts/sets/claude-opus/set.toml": {
+  "owner": "M4",
+  "reason": "prompt set manifest",
+  "split": {
+   "symbols_by_milestone": {
+    "M2": "organize_assess, organize_author, organize_criteria_author, organize_verify entries",
+    "M3": "native_writer_contract entry",
+    "M6": "audit_claim, audit_mandate, audit_overclaim, audit_detection_removal entries"
+   }
+  }
+ },
+ "src/kodezart/prompts/sets/claude-opus/write_back_verify.md": {
+  "owner": "M4",
+  "reason": "write-back verification prompt",
+  "split": null
+ },
+ "src/kodezart/services/agent_service.py": {
+  "owner": "M1",
+  "reason": "agent run service over the session ports",
+  "split": {
+   "symbols_by_milestone": {
+    "M3": "NativeExecution, NativeExecutionRequest wiring",
+    "M4": "NativeWriteRefusalError / amendment report handling"
+   }
+  }
+ },
+ "src/kodezart/services/amendment_writeback.py": {
+  "owner": "M4",
+  "reason": "amendment reconciler and native write-back",
+  "split": null
+ },
+ "src/kodezart/services/assertion_drift.py": {
+  "owner": "M6",
+  "reason": "audit services",
+  "split": null
+ },
+ "src/kodezart/services/audit_collection.py": {
+  "owner": "M6",
+  "reason": "audit services",
+  "split": null
+ },
+ "src/kodezart/services/audit_coverage.py": {
+  "owner": "M6",
+  "reason": "audit services",
+  "split": null
+ },
+ "src/kodezart/services/audit_escalation.py": {
+  "owner": "M6",
+  "reason": "audit services",
+  "split": null
+ },
+ "src/kodezart/services/audit_failures.py": {
+  "owner": "M6",
+  "reason": "audit services",
+  "split": null
+ },
+ "src/kodezart/services/audit_publication.py": {
+  "owner": "M6",
+  "reason": "audit services",
+  "split": null
+ },
+ "src/kodezart/services/audit_requests.py": {
+  "owner": "M6",
+  "reason": "audit services",
+  "split": null
+ },
+ "src/kodezart/services/audit_runtime.py": {
+  "owner": "M6",
+  "reason": "audit services",
+  "split": null
+ },
+ "src/kodezart/services/audit_sessions.py": {
+  "owner": "M4",
+  "reason": "fresh judge sessions in an owned workspace",
+  "split": null
+ },
+ "src/kodezart/services/audit_sources.py": {
+  "owner": "M6",
+  "reason": "audit services",
+  "split": null
+ },
+ "src/kodezart/services/audit_terminal.py": {
+  "owner": "M6",
+  "reason": "audit services",
+  "split": null
+ },
+ "src/kodezart/services/barren_record_signals.py": {
+  "owner": "M7",
+  "reason": "run alarm collectors and run shape",
+  "split": null
+ },
+ "src/kodezart/services/base_resolver.py": {
+  "owner": "M3",
+  "reason": "base resolver",
+  "split": null
+ },
+ "src/kodezart/services/check_classification.py": {
+  "owner": "M5",
+  "reason": "check classification for delivery",
+  "split": null
+ },
+ "src/kodezart/services/claim_heartbeat.py": {
+  "owner": "M4",
+  "reason": "tracker lifecycle writer and run records",
+  "split": null
+ },
+ "src/kodezart/services/criterion_sources.py": {
+  "owner": "M4",
+  "reason": "criterion evidence sources",
+  "split": null
+ },
+ "src/kodezart/services/dispatch_pass.py": {
+  "owner": "M3",
+  "reason": "dispatcher and pass scheduling",
+  "split": null
+ },
+ "src/kodezart/services/escalation_records.py": {
+  "owner": "M4",
+  "reason": "classification and escalation writers",
+  "split": null
+ },
+ "src/kodezart/services/escalation_signals.py": {
+  "owner": "M7",
+  "reason": "run alarm collectors and run shape",
+  "split": null
+ },
+ "src/kodezart/services/fire_context.py": {
+  "owner": "M3",
+  "reason": "dispatcher and pass scheduling",
+  "split": null
+ },
+ "src/kodezart/services/fire_dispatcher.py": {
+  "owner": "M3",
+  "reason": "dispatcher and pass scheduling",
+  "split": null
+ },
+ "src/kodezart/services/fire_record_facts.py": {
+  "owner": "M4",
+  "reason": "tracker lifecycle writer and run records",
+  "split": null
+ },
+ "src/kodezart/services/git_observations.py": {
+  "owner": "M4",
+  "reason": "fresh judge sessions in an owned workspace",
+  "split": null
+ },
+ "src/kodezart/services/lane_escalation.py": {
+  "owner": "M4",
+  "reason": "classification and escalation writers",
+  "split": null
+ },
+ "src/kodezart/services/lane_record_signals.py": {
+  "owner": "M7",
+  "reason": "run alarm collectors and run shape",
+  "split": null
+ },
+ "src/kodezart/services/lane_records.py": {
+  "owner": "M5",
+  "reason": "lane records and reports",
+  "split": null
+ },
+ "src/kodezart/services/lane_reports.py": {
+  "owner": "M5",
+  "reason": "lane records and reports",
+  "split": null
+ },
+ "src/kodezart/services/lifecycle_watcher.py": {
+  "owner": "M4",
+  "reason": "tracker lifecycle writer and run records",
+  "split": null
+ },
+ "src/kodezart/services/mandate_graph.py": {
+  "owner": "M7",
+  "reason": "run alarm collectors and run shape",
+  "split": null
+ },
+ "src/kodezart/services/native_amendments.py": {
+  "owner": "M4",
+  "reason": "amendment reconciler and native write-back",
+  "split": null
+ },
+ "src/kodezart/services/native_execution.py": {
+  "owner": "M3",
+  "reason": "native execution service",
+  "split": null
+ },
+ "src/kodezart/services/organize_context.py": {
+  "owner": "M2",
+  "reason": "organize owner, tick and context",
+  "split": null
+ },
+ "src/kodezart/services/organize_owner.py": {
+  "owner": "M2",
+  "reason": "organize owner, tick and context",
+  "split": null
+ },
+ "src/kodezart/services/organize_tick.py": {
+  "owner": "M2",
+  "reason": "organize owner, tick and context",
+  "split": null
+ },
+ "src/kodezart/services/owned_workspace.py": {
+  "owner": "M4",
+  "reason": "fresh judge sessions in an owned workspace",
+  "split": null
+ },
+ "src/kodezart/services/pass_gate.py": {
+  "owner": "M3",
+  "reason": "dispatcher and pass scheduling",
+  "split": null
+ },
+ "src/kodezart/services/pass_scheduler.py": {
+  "owner": "M3",
+  "reason": "dispatcher and pass scheduling",
+  "split": null
+ },
+ "src/kodezart/services/prompt_pass.py": {
+  "owner": "M3",
+  "reason": "dispatcher and pass scheduling",
+  "split": null
+ },
+ "src/kodezart/services/recorded_assertion_drift.py": {
+  "owner": "M6",
+  "reason": "audit services",
+  "split": null
+ },
+ "src/kodezart/services/repo_observations.py": {
+  "owner": "M6",
+  "reason": "audit services",
+  "split": null
+ },
+ "src/kodezart/services/ruling_records.py": {
+  "owner": "M4",
+  "reason": "ruling records writer",
+  "split": null
+ },
+ "src/kodezart/services/run_recorder.py": {
+  "owner": "M4",
+  "reason": "tracker lifecycle writer and run records",
+  "split": null
+ },
+ "src/kodezart/services/run_shape.py": {
+  "owner": "M7",
+  "reason": "run alarm collectors and run shape",
+  "split": null
+ },
+ "src/kodezart/services/run_surface_lease.py": {
+  "owner": "M1",
+  "reason": "write leases over surface sets",
+  "split": null
+ },
+ "src/kodezart/services/scope_dispatcher.py": {
+  "owner": "M3",
+  "reason": "scope planning, dispatch and runtime engine",
+  "split": null
+ },
+ "src/kodezart/services/scope_membership.py": {
+  "owner": "M1",
+  "reason": "scope resolution and container reads",
+  "split": null
+ },
+ "src/kodezart/services/scope_planning.py": {
+  "owner": "M3",
+  "reason": "scope planning, dispatch and runtime engine",
+  "split": null
+ },
+ "src/kodezart/services/scope_resolution.py": {
+  "owner": "M1",
+  "reason": "scope resolution and container reads",
+  "split": null
+ },
+ "src/kodezart/services/scope_runtime.py": {
+  "owner": "M3",
+  "reason": "scope planning, dispatch and runtime engine",
+  "split": null
+ },
+ "src/kodezart/services/scope_tally.py": {
+  "owner": "M7",
+  "reason": "run alarm collectors and run shape",
+  "split": null
+ },
+ "src/kodezart/services/tracker_artifacts.py": {
+  "owner": "M4",
+  "reason": "tracker artifact reads",
+  "split": null
+ },
+ "src/kodezart/services/tracker_boot.py": {
+  "owner": "M1",
+  "reason": "attributable-writer boot check and label bootstrap",
+  "split": null
+ },
+ "src/kodezart/services/tracker_lifecycle.py": {
+  "owner": "M4",
+  "reason": "tracker lifecycle writer and run records",
+  "split": null
+ },
+ "src/kodezart/services/union_composition.py": {
+  "owner": "M5",
+  "reason": "union verification",
+  "split": null
+ },
+ "src/kodezart/services/union_identity.py": {
+  "owner": "M5",
+  "reason": "union verification",
+  "split": null
+ },
+ "src/kodezart/services/union_tick.py": {
+  "owner": "M5",
+  "reason": "union verification",
+  "split": null
+ },
+ "src/kodezart/types/domain/accept.py": {
+  "owner": "M4",
+  "reason": "criterion vocabulary and accept results",
+  "split": null
+ },
+ "src/kodezart/types/domain/agent.py": {
+  "owner": "M1",
+  "reason": "agent-event vocabulary",
+  "split": {
+   "symbols_by_milestone": {
+    "M2": "ORGANIZE_ADMISSION_SCHEMA, ORGANIZE_PROPOSAL_SCHEMA",
+    "M3": "NodeSessionStartedEvent, REMEDIATION_SCHEMA, NATIVE_WRITER_SCHEMA",
+    "M4": "NativeAmendmentEvent, AMENDMENT_JUDGMENT_SCHEMA, AMENDMENT_TEXT_SCHEMA, WRITE_BACK_SCHEMA, Ruling, RulingAuthor, RulingClass, RulingOutput, RulingProtectedTestRef",
+    "M5": "AuthoredWorkflowCompleteEvent (pr_number, pr_url, ci_status)",
+    "M6": "AUDIT_CLAIM_SCHEMA, AUDIT_MANDATE_SCHEMA, AUDIT_OVERCLAIM_SCHEMA, DETECTOR_REMOVAL_SCHEMA, ContentAuditFinding.category"
+   }
+  }
+ },
+ "src/kodezart/types/domain/amendment.py": {
+  "owner": "M4",
+  "reason": "amendment and write-back contracts",
+  "split": null
+ },
+ "src/kodezart/types/domain/amendment_write.py": {
+  "owner": "M4",
+  "reason": "amendment and write-back contracts",
+  "split": null
+ },
+ "src/kodezart/types/domain/assertion_drift.py": {
+  "owner": "M6",
+  "reason": "audit report contracts",
+  "split": null
+ },
+ "src/kodezart/types/domain/audit.py": {
+  "owner": "M4",
+  "reason": "audit finding vocabulary shared with amendment write-back",
+  "split": {
+   "symbols_by_milestone": {
+    "M6": "audit pass/sweep report types (AuditCandidate consumers, claim and mandate reports)"
+   }
+  }
+ },
+ "src/kodezart/types/domain/audit_detection_removal.py": {
+  "owner": "M6",
+  "reason": "audit report contracts",
+  "split": null
+ },
+ "src/kodezart/types/domain/audit_evidence.py": {
+  "owner": "M6",
+  "reason": "audit report contracts",
+  "split": null
+ },
+ "src/kodezart/types/domain/audit_forge.py": {
+  "owner": "M6",
+  "reason": "audit report contracts",
+  "split": null
+ },
+ "src/kodezart/types/domain/audit_overclaim.py": {
+  "owner": "M6",
+  "reason": "audit report contracts",
+  "split": null
+ },
+ "src/kodezart/types/domain/audit_runtime.py": {
+  "owner": "M6",
+  "reason": "audit report contracts",
+  "split": null
+ },
+ "src/kodezart/types/domain/audit_terminal.py": {
+  "owner": "M6",
+  "reason": "audit report contracts",
+  "split": null
+ },
+ "src/kodezart/types/domain/branch.py": {
+  "owner": "M1",
+  "reason": "branch/base refs and workspace handles",
+  "split": null
+ },
+ "src/kodezart/types/domain/check_chain.py": {
+  "owner": "M5",
+  "reason": "delivery, check and union contracts",
+  "split": null
+ },
+ "src/kodezart/types/domain/check_observation.py": {
+  "owner": "M5",
+  "reason": "delivery, check and union contracts",
+  "split": null
+ },
+ "src/kodezart/types/domain/credentials.py": {
+  "owner": "M1",
+  "reason": "session permission and tool policy types",
+  "split": null
+ },
+ "src/kodezart/types/domain/criteria.py": {
+  "owner": "M4",
+  "reason": "criterion vocabulary and accept results",
+  "split": null
+ },
+ "src/kodezart/types/domain/criterion_evidence.py": {
+  "owner": "M4",
+  "reason": "criterion vocabulary and accept results",
+  "split": null
+ },
+ "src/kodezart/types/domain/criterion_lifecycle.py": {
+  "owner": "M4",
+  "reason": "criterion vocabulary and accept results",
+  "split": null
+ },
+ "src/kodezart/types/domain/criterion_ref.py": {
+  "owner": "M4",
+  "reason": "criterion vocabulary and accept results",
+  "split": null
+ },
+ "src/kodezart/types/domain/delivery.py": {
+  "owner": "M5",
+  "reason": "delivery, check and union contracts",
+  "split": null
+ },
+ "src/kodezart/types/domain/dispatch.py": {
+  "owner": "M1",
+  "reason": "pass signal vocabulary read from operation config",
+  "split": {
+   "symbols_by_milestone": {
+    "M4": "DispatchReport.criterion_keys"
+   }
+  }
+ },
+ "src/kodezart/types/domain/escalation.py": {
+  "owner": "M4",
+  "reason": "escalation vocabulary",
+  "split": null
+ },
+ "src/kodezart/types/domain/fire.py": {
+  "owner": "M3",
+  "reason": "fire context",
+  "split": null
+ },
+ "src/kodezart/types/domain/fire_spec.py": {
+  "owner": "M4",
+  "reason": "criterion ref and spec body contract",
+  "split": {
+   "symbols_by_milestone": {
+    "M3": "AuthoredSpec/TrackerSpec fire-graph union read by the fire chains"
+   }
+  }
+ },
+ "src/kodezart/types/domain/gating.py": {
+  "owner": "M1",
+  "reason": "outbound gating and privacy classes",
+  "split": null
+ },
+ "src/kodezart/types/domain/github.py": {
+  "owner": "M5",
+  "reason": "delivery, check and union contracts",
+  "split": null
+ },
+ "src/kodezart/types/domain/issue_identity.py": {
+  "owner": "M1",
+  "reason": "issue identity keys",
+  "split": null
+ },
+ "src/kodezart/types/domain/mandate_graph.py": {
+  "owner": "M7",
+  "reason": "run alarm and mandate graph contracts",
+  "split": null
+ },
+ "src/kodezart/types/domain/native_delivery.py": {
+  "owner": "M3",
+  "reason": "native delivery state",
+  "split": null
+ },
+ "src/kodezart/types/domain/native_execution.py": {
+  "owner": "M4",
+  "reason": "native writer authority snapshot read by amendment reconciliation",
+  "split": {
+   "symbols_by_milestone": {
+    "M3": "NewNativeExecution, PreparedNativeExecution, WrittenNativeExecution, ReconciledNativeExecution, RefusedNativeExecution, PersistedNativeExecution, UnchangedNativeExecution"
+   }
+  }
+ },
+ "src/kodezart/types/domain/node_session.py": {
+  "owner": "M3",
+  "reason": "node session events",
+  "split": null
+ },
+ "src/kodezart/types/domain/notion_records.py": {
+  "owner": "M4",
+  "reason": "record sink property vocabulary",
+  "split": null
+ },
+ "src/kodezart/types/domain/operation.py": {
+  "owner": "M1",
+  "reason": "operation config vocabulary",
+  "split": {
+   "symbols_by_milestone": {
+    "M2": "OrganizeScopeBinding, OperationConfig.organize_mandates, organize_scopes, resolve_organize_mandates",
+    "M4": "OperationConfig.run_event_states, require_run_event_table; RecordColumns, RecordDestination.columns, RecordOutcomeMapping, RecordOutcomeSource, RecordDurationUnit, RecordDestination._structured_knowledge_destination",
+    "M5": "CheckStep.forge_check, CheckStep.requires, CheckPrerequisite, check_chain_failures",
+    "M6": "AuditScopeBinding, OperationConfig.audit_scopes, RunKind.AUDIT"
+   }
+  }
+ },
+ "src/kodezart/types/domain/organize.py": {
+  "owner": "M1",
+  "reason": "meta-label namespace and mandate vocabulary read by operation config",
+  "split": {
+   "symbols_by_milestone": {
+    "M2": "AdmissionVerdict, RefusalKind, AdmissionRoute, BuildableAdmission, RefusedAdmission, UnverifiableAdmission, AdmissionJudgment, AdmissionResult, OrganizeAdmissionRequest",
+    "M4": "DefectRole, SpecFinding (read by the audit finding contracts)"
+   }
+  }
+ },
+ "src/kodezart/types/domain/organize_graph.py": {
+  "owner": "M2",
+  "reason": "issue graph snapshot contract",
+  "split": null
+ },
+ "src/kodezart/types/domain/organize_owner.py": {
+  "owner": "M2",
+  "reason": "organize owner proposal types",
+  "split": null
+ },
+ "src/kodezart/types/domain/outcome.py": {
+  "owner": "M1",
+  "reason": "run record and outcome vocabulary",
+  "split": null
+ },
+ "src/kodezart/types/domain/pr_state.py": {
+  "owner": "M5",
+  "reason": "delivery, check and union contracts",
+  "split": null
+ },
+ "src/kodezart/types/domain/privacy.py": {
+  "owner": "M1",
+  "reason": "outbound gating and privacy classes",
+  "split": null
+ },
+ "src/kodezart/types/domain/prompts.py": {
+  "owner": "M1",
+  "reason": "prompt key registry",
+  "split": {
+   "symbols_by_milestone": {
+    "M2": "PromptKey.ORGANIZE_ASSESS, ORGANIZE_AUTHOR, ORGANIZE_CRITERIA_AUTHOR, ORGANIZE_VERIFY",
+    "M3": "PromptKey.NATIVE_WRITER_CONTRACT",
+    "M4": "PromptKey.AMENDMENT_AUTHOR, AMENDMENT_JUDGE, WRITE_BACK_VERIFY, FIRE_RECORD",
+    "M6": "PromptKey.AUDIT_CLAIM, AUDIT_MANDATE, AUDIT_OVERCLAIM, AUDIT_DETECTION_REMOVAL"
+   }
+  }
+ },
+ "src/kodezart/types/domain/ralph_outcome.py": {
+  "owner": "M3",
+  "reason": "ralph loop outcome and remediation entries",
+  "split": null
+ },
+ "src/kodezart/types/domain/remediation.py": {
+  "owner": "M3",
+  "reason": "ralph loop outcome and remediation entries",
+  "split": null
+ },
+ "src/kodezart/types/domain/ruling_id.py": {
+  "owner": "M4",
+  "reason": "amendment and write-back contracts",
+  "split": null
+ },
+ "src/kodezart/types/domain/run_alarm.py": {
+  "owner": "M7",
+  "reason": "run alarm and mandate graph contracts",
+  "split": null
+ },
+ "src/kodezart/types/domain/run_event.py": {
+  "owner": "M4",
+  "reason": "run-event vocabulary and state table",
+  "split": null
+ },
+ "src/kodezart/types/domain/run_records.py": {
+  "owner": "M1",
+  "reason": "run record and outcome vocabulary",
+  "split": null
+ },
+ "src/kodezart/types/domain/run_state.py": {
+  "owner": "M4",
+  "reason": "run-event vocabulary and state table",
+  "split": null
+ },
+ "src/kodezart/types/domain/scope.py": {
+  "owner": "M1",
+  "reason": "ScopeRef and scope kinds",
+  "split": null
+ },
+ "src/kodezart/types/domain/scope_address.py": {
+  "owner": "M1",
+  "reason": "ScopeRef and scope kinds",
+  "split": null
+ },
+ "src/kodezart/types/domain/scope_ready.py": {
+  "owner": "M3",
+  "reason": "scope planning, ready set and runtime types",
+  "split": null
+ },
+ "src/kodezart/types/domain/scope_runtime.py": {
+  "owner": "M3",
+  "reason": "scope planning, ready set and runtime types",
+  "split": null
+ },
+ "src/kodezart/types/domain/scope_terminal.py": {
+  "owner": "M5",
+  "reason": "delivery, check and union contracts",
+  "split": null
+ },
+ "src/kodezart/types/domain/self_writes.py": {
+  "owner": "M1",
+  "reason": "self-write receipts",
+  "split": null
+ },
+ "src/kodezart/types/domain/session.py": {
+  "owner": "M1",
+  "reason": "session permission and tool policy types",
+  "split": {
+   "symbols_by_milestone": {
+    "M2": "SessionType.ORGANIZE_PASS"
+   }
+  }
+ },
+ "src/kodezart/types/domain/surface.py": {
+  "owner": "M1",
+  "reason": "writable surface types for leases",
+  "split": null
+ },
+ "src/kodezart/types/domain/topology.py": {
+  "owner": "M3",
+  "reason": "scope planning, ready set and runtime types",
+  "split": null
+ },
+ "src/kodezart/types/domain/tracker.py": {
+  "owner": "M1",
+  "reason": "tracker port wire vocabulary",
+  "split": {
+   "symbols_by_milestone": {
+    "M4": "TrackerIssueRevision (body_digest, _require_digest), TrackerIssueStateChange (state_changed_at)"
+   }
+  }
+ },
+ "src/kodezart/types/domain/tracker_writes.py": {
+  "owner": "M1",
+  "reason": "tracker port wire vocabulary",
+  "split": null
+ },
+ "src/kodezart/types/domain/trajectory.py": {
+  "owner": "M3",
+  "reason": "ralph loop outcome and remediation entries",
+  "split": null
+ },
+ "src/kodezart/types/domain/transport.py": {
+  "owner": "M1",
+  "reason": "session permission and tool policy types",
+  "split": null
+ },
+ "src/kodezart/types/domain/union.py": {
+  "owner": "M5",
+  "reason": "delivery, check and union contracts",
+  "split": null
+ },
+ "src/kodezart/types/domain/union_tick.py": {
+  "owner": "M5",
+  "reason": "delivery, check and union contracts",
+  "split": null
+ },
+ "src/kodezart/types/domain/workflow.py": {
+  "owner": "M3",
+  "reason": "workflow state split across native/authored graphs",
+  "split": {
+   "symbols_by_milestone": {
+    "M4": "RalphLoopState.amendment_blocked, RalphLoopState.amendment_reports",
+    "M5": "AuthoredWorkflowState (pr_number, pr_url, ci_status, ci_summary, ci_red_class, ci_run_absent)"
+   }
+  }
+ },
+ "src/kodezart/types/domain/workspace.py": {
+  "owner": "M1",
+  "reason": "branch/base refs and workspace handles",
+  "split": {
+   "symbols_by_milestone": {
+    "M4": "WorkspaceSnapshot (native amendment capture/resume payload)"
+   }
+  }
+ },
+ "src/kodezart/types/domain/write_back.py": {
+  "owner": "M4",
+  "reason": "amendment and write-back contracts",
+  "split": null
+ },
+ "src/kodezart/types/job_acceptance.py": {
+  "owner": "M3",
+  "reason": "scope-addressed agent request surface over the scope runtime",
+  "split": null
+ },
+ "src/kodezart/types/requests/agent.py": {
+  "owner": "M3",
+  "reason": "scope-addressed agent request surface over the scope runtime",
+  "split": null
+ },
+ "src/kodezart/types/responses/job.py": {
+  "owner": "M3",
+  "reason": "scope-addressed agent request surface over the scope runtime",
+  "split": null
+ },
+ "tests/adapters/scanner_result_wire.json": {
+  "owner": "M1",
+  "reason": "scanner wire fixture",
+  "split": null
+ },
+ "tests/adapters/test_cache_configured_remote.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/adapters/test_check_chain_cleanup.py": {
+  "owner": "M5",
+  "reason": "latest-ranked src it imports (M5)",
+  "split": null
+ },
+ "tests/adapters/test_check_chain_runner.py": {
+  "owner": "M5",
+  "reason": "latest-ranked src it imports (M5)",
+  "split": null
+ },
+ "tests/adapters/test_ci_observation.py": {
+  "owner": "M5",
+  "reason": "latest-ranked src it imports (M5)",
+  "split": null
+ },
+ "tests/adapters/test_ci_rerun.py": {
+  "owner": "M5",
+  "reason": "latest-ranked src it imports (M5)",
+  "split": null
+ },
+ "tests/adapters/test_ci_watch_evidence.py": {
+  "owner": "M5",
+  "reason": "latest-ranked src it imports (M5)",
+  "split": null
+ },
+ "tests/adapters/test_ci_watch_result.py": {
+  "owner": "M5",
+  "reason": "latest-ranked src it imports (M5)",
+  "split": null
+ },
+ "tests/adapters/test_claude_client_executor.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/adapters/test_claude_executors.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/adapters/test_forge_query.py": {
+  "owner": "M5",
+  "reason": "latest-ranked src it imports (M5)",
+  "split": null
+ },
+ "tests/adapters/test_git_artifact_persister.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/adapters/test_git_branch_merger.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/adapters/test_git_change_persister.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/adapters/test_git_worktree_provider.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/adapters/test_github_api.py": {
+  "owner": "M5",
+  "reason": "latest-ranked src it imports (M5)",
+  "split": null
+ },
+ "tests/adapters/test_http_mcp_tool_caller.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/adapters/test_judgment_scanner.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/adapters/test_knowledge_settings_delivery.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/adapters/test_knowledge_transport.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/adapters/test_native_identity_process_probe.py": {
+  "owner": "M6",
+  "reason": "latest-ranked src it imports (M6)",
+  "split": null
+ },
+ "tests/adapters/test_native_workspace_resume.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/adapters/test_nested_run_progress.py": {
+  "owner": "M7",
+  "reason": "latest-ranked src it imports (M7)",
+  "split": null
+ },
+ "tests/adapters/test_outbound_corpus.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/adapters/test_outbound_gate.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/adapters/test_permission_boundary.py": {
+  "owner": "M3",
+  "reason": "latest-ranked src it imports (M3)",
+  "split": null
+ },
+ "tests/adapters/test_pr_state_reader.py": {
+  "owner": "M5",
+  "reason": "latest-ranked src it imports (M5)",
+  "split": null
+ },
+ "tests/adapters/test_record_failure_boundary.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/adapters/test_record_publication_failures.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/adapters/test_scanner_sdk_failures.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/adapters/test_self_write_history_receipts.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/adapters/test_self_write_replay.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/adapters/test_shared_retry.py": {
+  "owner": "M5",
+  "reason": "latest-ranked src it imports (M5)",
+  "split": null
+ },
+ "tests/adapters/test_subprocess_git.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/adapters/test_tool_selection.py": {
+  "owner": "M3",
+  "reason": "latest-ranked src it imports (M3)",
+  "split": null
+ },
+ "tests/adapters/test_tracker_self_writes.py": {
+  "owner": "M3",
+  "reason": "latest-ranked src it imports (M3)",
+  "split": null
+ },
+ "tests/adapters/tool_request_schemas.json": {
+  "owner": "M1",
+  "reason": "tool policy request fixture",
+  "split": null
+ },
+ "tests/api/v1/test_agent.py": {
+  "owner": "M2",
+  "reason": "latest-ranked src it imports (M2)",
+  "split": null
+ },
+ "tests/api/v1/test_dependencies.py": {
+  "owner": "M3",
+  "reason": "latest-ranked src it imports (M3)",
+  "split": null
+ },
+ "tests/api/v1/test_job_acceptance.py": {
+  "owner": "M3",
+  "reason": "latest-ranked src it imports (M3)",
+  "split": null
+ },
+ "tests/api/v1/test_jobs.py": {
+  "owner": "M7",
+  "reason": "latest-ranked src it imports (M7)",
+  "split": null
+ },
+ "tests/api/v1/test_scope_request_boundary.py": {
+  "owner": "M3",
+  "reason": "latest-ranked src it imports (M3)",
+  "split": null
+ },
+ "tests/audit_replacements.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/chains/fire_spec_prompt_goldens.json": {
+  "owner": "M3",
+  "reason": "fire spec prompt goldens",
+  "split": null
+ },
+ "tests/chains/test_accept_gate.py": {
+  "owner": "M5",
+  "reason": "latest-ranked src it imports (M5)",
+  "split": null
+ },
+ "tests/chains/test_amendment_review_reentry.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/chains/test_audit_pass.py": {
+  "owner": "M6",
+  "reason": "latest-ranked src it imports (M6)",
+  "split": null
+ },
+ "tests/chains/test_audit_terminal_cancellation.py": {
+  "owner": "M6",
+  "reason": "exercises audit behaviour",
+  "split": null
+ },
+ "tests/chains/test_authored_check_routing.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/chains/test_authority_independent_review.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/chains/test_criteria_validation.py": {
+  "owner": "M5",
+  "reason": "latest-ranked src it imports (M5)",
+  "split": null
+ },
+ "tests/chains/test_delivery_coordinator.py": {
+  "owner": "M5",
+  "reason": "latest-ranked src it imports (M5)",
+  "split": null
+ },
+ "tests/chains/test_dispatch_definitions.py": {
+  "owner": "M2",
+  "reason": "latest-ranked src it imports (M2)",
+  "split": null
+ },
+ "tests/chains/test_fire_extraction.py": {
+  "owner": "M3",
+  "reason": "latest-ranked src it imports (M3)",
+  "split": null
+ },
+ "tests/chains/test_fire_graph.py": {
+  "owner": "M3",
+  "reason": "latest-ranked src it imports (M3)",
+  "split": null
+ },
+ "tests/chains/test_fire_spec_prompt_consumers.py": {
+  "owner": "M3",
+  "reason": "latest-ranked src it imports (M3)",
+  "split": null
+ },
+ "tests/chains/test_fresh_write_back_judge.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/chains/test_lane_delivery.py": {
+  "owner": "M5",
+  "reason": "latest-ranked src it imports (M5)",
+  "split": null
+ },
+ "tests/chains/test_native_amendment_adoption.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/chains/test_native_amendment_runtime.py": {
+  "owner": "M3",
+  "reason": "latest-ranked src it imports (M3)",
+  "split": null
+ },
+ "tests/chains/test_native_amendment_trajectory_independent.py": {
+  "owner": "M3",
+  "reason": "latest-ranked src it imports (M3)",
+  "split": null
+ },
+ "tests/chains/test_native_delivery.py": {
+  "owner": "M5",
+  "reason": "latest-ranked src it imports (M5)",
+  "split": null
+ },
+ "tests/chains/test_native_fire.py": {
+  "owner": "M3",
+  "reason": "latest-ranked src it imports (M3)",
+  "split": null
+ },
+ "tests/chains/test_native_fresh_boundaries.py": {
+  "owner": "M3",
+  "reason": "latest-ranked src it imports (M3)",
+  "split": null
+ },
+ "tests/chains/test_native_parent_resume.py": {
+  "owner": "M3",
+  "reason": "latest-ranked src it imports (M3)",
+  "split": null
+ },
+ "tests/chains/test_native_port_failures.py": {
+  "owner": "M3",
+  "reason": "latest-ranked src it imports (M3)",
+  "split": null
+ },
+ "tests/chains/test_native_prepare_cancel_peer.py": {
+  "owner": "M3",
+  "reason": "exercises scope/fire runtime",
+  "split": null
+ },
+ "tests/chains/test_native_prepare_cleanup_peer.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/chains/test_node_session_events.py": {
+  "owner": "M3",
+  "reason": "latest-ranked src it imports (M3)",
+  "split": null
+ },
+ "tests/chains/test_organize.py": {
+  "owner": "M2",
+  "reason": "latest-ranked src it imports (M2)",
+  "split": null
+ },
+ "tests/chains/test_organize_correction.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/chains/test_organize_delivery_independent.py": {
+  "owner": "M2",
+  "reason": "latest-ranked src it imports (M2)",
+  "split": null
+ },
+ "tests/chains/test_organize_description_authority.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/chains/test_organize_graph_independent.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/chains/test_organize_graph_owner.py": {
+  "owner": "M2",
+  "reason": "exercises organize behaviour",
+  "split": null
+ },
+ "tests/chains/test_organize_native_independent.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/chains/test_organize_owner.py": {
+  "owner": "M2",
+  "reason": "latest-ranked src it imports (M2)",
+  "split": null
+ },
+ "tests/chains/test_organize_ownership.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/chains/test_organize_write_revalidation.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/chains/test_outbound_gating.py": {
+  "owner": "M5",
+  "reason": "latest-ranked src it imports (M5)",
+  "split": null
+ },
+ "tests/chains/test_ralph_loop.py": {
+  "owner": "M2",
+  "reason": "latest-ranked src it imports (M2)",
+  "split": {
+   "symbols_by_milestone": {
+    "M5": "AuthoredDeliveryCoordinator collaborator-surface assertions (test at line 1910 onward)"
+   }
+  }
+ },
+ "tests/chains/test_ralph_workflow.py": {
+  "owner": "M5",
+  "reason": "latest-ranked src it imports (M5)",
+  "split": null
+ },
+ "tests/chains/test_remediation.py": {
+  "owner": "M3",
+  "reason": "latest-ranked src it imports (M3)",
+  "split": null
+ },
+ "tests/chains/test_retry_floor_wiring.py": {
+  "owner": "M1",
+  "reason": "no delta import; foundational harness",
+  "split": null
+ },
+ "tests/chains/test_scope_gap_membership.py": {
+  "owner": "M3",
+  "reason": "latest-ranked src it imports (M3)",
+  "split": null
+ },
+ "tests/chains/test_scope_gap_selection.py": {
+  "owner": "M3",
+  "reason": "latest-ranked src it imports (M3)",
+  "split": null
+ },
+ "tests/chains/test_scope_observations.py": {
+  "owner": "M3",
+  "reason": "latest-ranked src it imports (M3)",
+  "split": null
+ },
+ "tests/chains/test_scope_ready.py": {
+  "owner": "M3",
+  "reason": "latest-ranked src it imports (M3)",
+  "split": null
+ },
+ "tests/chains/test_shorthand_url_resolution.py": {
+  "owner": "M5",
+  "reason": "latest-ranked src it imports (M5)",
+  "split": null
+ },
+ "tests/chains/test_stalled_handoff.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/chains/test_ticket_generation.py": {
+  "owner": "M2",
+  "reason": "latest-ranked src it imports (M2)",
+  "split": null
+ },
+ "tests/chains/test_tool_preset_composition.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/chains/test_union_exit_invariance.py": {
+  "owner": "M5",
+  "reason": "latest-ranked src it imports (M5)",
+  "split": null
+ },
+ "tests/chains/test_union_final_freshness.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/chains/test_union_forge_isolation.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/chains/test_union_participant_order.py": {
+  "owner": "M5",
+  "reason": "latest-ranked src it imports (M5)",
+  "split": null
+ },
+ "tests/chains/test_union_stage_independence.py": {
+  "owner": "M5",
+  "reason": "latest-ranked src it imports (M5)",
+  "split": null
+ },
+ "tests/chains/test_workflow_phase_composition.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/chains/test_write_back_verifier.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/conftest.py": {
+  "owner": "M1",
+  "reason": "root fixture module used by every lane",
+  "split": null
+ },
+ "tests/core/test_agent_settings.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/core/test_audit_config.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/core/test_config.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/core/test_credential_shapes.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/core/test_delivery_config.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/core/test_docs_prompt_knobs.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/core/test_durable_admission.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/core/test_git_settings.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/core/test_http_settings.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/core/test_job_queue_settings.py": {
+  "owner": "M3",
+  "reason": "latest-ranked src it imports (M3)",
+  "split": null
+ },
+ "tests/core/test_knowledge_connection.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/core/test_knowledge_grant.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/core/test_logging.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/core/test_logging_chain.py": {
+  "owner": "M3",
+  "reason": "latest-ranked src it imports (M3)",
+  "split": null
+ },
+ "tests/core/test_logging_settings.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/core/test_notion_credential.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/core/test_organize_settings.py": {
+  "owner": "M2",
+  "reason": "latest-ranked src it imports (M2)",
+  "split": null
+ },
+ "tests/core/test_owned_tasks.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/core/test_retired_config.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/core/test_surface_lease_config.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/core/test_tracker_credential.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/core/test_tracker_settings.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/core/test_write_back_settings.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/docs/configuration.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/docs/test_api_event_reference.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/docs/test_documented_surface.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/docs/test_setup_guide.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/domain/test_alarm_typed_evidence.py": {
+  "owner": "M7",
+  "reason": "latest-ranked src it imports (M7)",
+  "split": null
+ },
+ "tests/domain/test_amendment.py": {
+  "owner": "M3",
+  "reason": "latest-ranked src it imports (M3)",
+  "split": null
+ },
+ "tests/domain/test_assertion_drift.py": {
+  "owner": "M6",
+  "reason": "latest-ranked src it imports (M6)",
+  "split": null
+ },
+ "tests/domain/test_audit_overclaim.py": {
+  "owner": "M6",
+  "reason": "latest-ranked src it imports (M6)",
+  "split": null
+ },
+ "tests/domain/test_audit_overclaim_report.py": {
+  "owner": "M6",
+  "reason": "latest-ranked src it imports (M6)",
+  "split": null
+ },
+ "tests/domain/test_audit_terminal_report.py": {
+  "owner": "M6",
+  "reason": "latest-ranked src it imports (M6)",
+  "split": null
+ },
+ "tests/domain/test_authored_feasibility_compatibility.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/domain/test_barren_tick.py": {
+  "owner": "M7",
+  "reason": "latest-ranked src it imports (M7)",
+  "split": null
+ },
+ "tests/domain/test_base_resolution.py": {
+  "owner": "M3",
+  "reason": "latest-ranked src it imports (M3)",
+  "split": null
+ },
+ "tests/domain/test_base_scope.py": {
+  "owner": "M3",
+  "reason": "latest-ranked src it imports (M3)",
+  "split": null
+ },
+ "tests/domain/test_comment_markers.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/domain/test_criteria_feasibility.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/domain/test_criteria_grading.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/domain/test_criterion_amendment_fields.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/domain/test_criterion_evidence.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/domain/test_criterion_identity.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/domain/test_criterion_lifecycle.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/domain/test_detector_removal_report.py": {
+  "owner": "M6",
+  "reason": "latest-ranked src it imports (M6)",
+  "split": null
+ },
+ "tests/domain/test_escalation_ageing.py": {
+  "owner": "M7",
+  "reason": "latest-ranked src it imports (M7)",
+  "split": null
+ },
+ "tests/domain/test_fire_spec.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/domain/test_fire_spec_formatter.py": {
+  "owner": "M3",
+  "reason": "latest-ranked src it imports (M3)",
+  "split": null
+ },
+ "tests/domain/test_fire_spec_purity.py": {
+  "owner": "M3",
+  "reason": "exercises scope/fire runtime",
+  "split": null
+ },
+ "tests/domain/test_gap.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/domain/test_issue_label_config.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/domain/test_lane_delivery.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/domain/test_lane_record.py": {
+  "owner": "M5",
+  "reason": "latest-ranked src it imports (M5)",
+  "split": null
+ },
+ "tests/domain/test_mandate_graph.py": {
+  "owner": "M7",
+  "reason": "latest-ranked src it imports (M7)",
+  "split": null
+ },
+ "tests/domain/test_operation_optionality.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/domain/test_organize.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/domain/test_organize_routing.py": {
+  "owner": "M2",
+  "reason": "verifier: zero M1 consumers; importers are M2 (and M7 via scope_tally, resolved by the recorded split)",
+  "split": null
+ },
+ "tests/domain/test_outcome.py": {
+  "owner": "M5",
+  "reason": "latest-ranked src it imports (M5)",
+  "split": null
+ },
+ "tests/domain/test_record_consistency.py": {
+  "owner": "M7",
+  "reason": "latest-ranked src it imports (M7)",
+  "split": null
+ },
+ "tests/domain/test_record_superseded.py": {
+  "owner": "M7",
+  "reason": "latest-ranked src it imports (M7)",
+  "split": null
+ },
+ "tests/domain/test_recorded_landing.py": {
+  "owner": "M4",
+  "reason": "exercises criterion/record behaviour",
+  "split": null
+ },
+ "tests/domain/test_ruling_identity.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/domain/test_ruling_protected_tests.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/domain/test_rulings.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/domain/test_run_alarm.py": {
+  "owner": "M7",
+  "reason": "latest-ranked src it imports (M7)",
+  "split": null
+ },
+ "tests/domain/test_run_alarm_payload.py": {
+  "owner": "M7",
+  "reason": "latest-ranked src it imports (M7)",
+  "split": null
+ },
+ "tests/domain/test_run_event_table.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/domain/test_scope_container.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/domain/test_scope_label_config.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/domain/test_scope_labels.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/domain/test_scope_ref.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/domain/test_scope_tally.py": {
+  "owner": "M7",
+  "reason": "latest-ranked src it imports (M7)",
+  "split": null
+ },
+ "tests/domain/test_scope_terminal.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/domain/test_self_write_retention.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/domain/test_subtree_closure.py": {
+  "owner": "M3",
+  "reason": "latest-ranked src it imports (M3)",
+  "split": null
+ },
+ "tests/domain/test_surface_contention.py": {
+  "owner": "M7",
+  "reason": "latest-ranked src it imports (M7)",
+  "split": null
+ },
+ "tests/domain/test_surface_lease.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/domain/test_surface_lease_error.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/domain/test_topology.py": {
+  "owner": "M3",
+  "reason": "latest-ranked src it imports (M3)",
+  "split": null
+ },
+ "tests/domain/test_topology_cycles.py": {
+  "owner": "M3",
+  "reason": "latest-ranked src it imports (M3)",
+  "split": null
+ },
+ "tests/domain/test_union.py": {
+  "owner": "M5",
+  "reason": "latest-ranked src it imports (M5)",
+  "split": null
+ },
+ "tests/domain/test_union_check_classification.py": {
+  "owner": "M5",
+  "reason": "latest-ranked src it imports (M5)",
+  "split": null
+ },
+ "tests/domain/test_union_remediation.py": {
+  "owner": "M5",
+  "reason": "latest-ranked src it imports (M5)",
+  "split": null
+ },
+ "tests/fakes.py": {
+  "owner": "M1",
+  "reason": "shared fake ports used from the first milestone",
+  "split": {
+   "symbols_by_milestone": {
+    "M2": "FakeTrackerPort.update_issue_graph, _require_graph_holder",
+    "M3": "submit/hydrate job-queue fakes and node-session trajectory fakes",
+    "M4": "FakeTrackerPort.create_criterion_if_absent, reset_criterion_pending, read_fire_spec, read_escalation_resolution, set_issue_classification, post_run_event, read_criteria, read_issue_revision, read_issue_state_change, _read_criterion_family",
+    "M5": "FakeForgeQuery, SequentialCIMonitor, FakePRStateReader (branch_web_url, open_pr_for_head, checks_declared, rerun_checks, read_pr_state)",
+    "M7": "FakeTrackerPort.lane_run_events, read_run_alarm, record_run_alarm, _parse_alarm_comment"
+   }
+  }
+ },
+ "tests/git_read_cancellation.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/identity_guards.py": {
+  "owner": "M1",
+  "reason": "no delta import; foundational harness",
+  "split": null
+ },
+ "tests/integration/test_audit_configuration.py": {
+  "owner": "M6",
+  "reason": "latest-ranked src it imports (M6)",
+  "split": null
+ },
+ "tests/integration/test_audit_failure_boundary_independent.py": {
+  "owner": "M6",
+  "reason": "latest-ranked src it imports (M6)",
+  "split": null
+ },
+ "tests/integration/test_audit_preflight_capability.py": {
+  "owner": "M6",
+  "reason": "latest-ranked src it imports (M6)",
+  "split": null
+ },
+ "tests/integration/test_audit_report_records.py": {
+  "owner": "M6",
+  "reason": "latest-ranked src it imports (M6)",
+  "split": null
+ },
+ "tests/integration/test_audit_runtime_native.py": {
+  "owner": "M6",
+  "reason": "latest-ranked src it imports (M6)",
+  "split": null
+ },
+ "tests/integration/test_audit_runtime_types.py": {
+  "owner": "M6",
+  "reason": "latest-ranked src it imports (M6)",
+  "split": null
+ },
+ "tests/integration/test_audit_scheduler.py": {
+  "owner": "M6",
+  "reason": "latest-ranked src it imports (M6)",
+  "split": null
+ },
+ "tests/integration/test_audit_workspace_failure_review.py": {
+  "owner": "M6",
+  "reason": "exercises audit behaviour",
+  "split": null
+ },
+ "tests/integration/test_authored_aggregate_admission.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/integration/test_criteria_oracle.py": {
+  "owner": "M3",
+  "reason": "latest-ranked src it imports (M3)",
+  "split": null
+ },
+ "tests/integration/test_derived_lifecycle_admission.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/integration/test_fixed_outbound_admission.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/integration/test_issue_key_carriage.py": {
+  "owner": "M3",
+  "reason": "latest-ranked src it imports (M3)",
+  "split": null
+ },
+ "tests/integration/test_live_criteria_probes.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/integration/test_organize_scheduler.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/integration/test_organize_tick_halt.py": {
+  "owner": "M2",
+  "reason": "latest-ranked src it imports (M2)",
+  "split": null
+ },
+ "tests/integration/test_pr_footer_gating.py": {
+  "owner": "M5",
+  "reason": "latest-ranked src it imports (M5)",
+  "split": null
+ },
+ "tests/integration/test_private_reference_writes.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/integration/test_scope_launch_freshness.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/integration/test_scope_runtime.py": {
+  "owner": "M3",
+  "reason": "latest-ranked src it imports (M3)",
+  "split": null
+ },
+ "tests/integration/test_self_running_chain.py": {
+  "owner": "M3",
+  "reason": "latest-ranked src it imports (M3)",
+  "split": null
+ },
+ "tests/integration/test_stacked_scope.py": {
+  "owner": "M2",
+  "reason": "latest-ranked src it imports (M2)",
+  "split": {
+   "symbols_by_milestone": {
+    "M5": "_engine fixture building AuthoredDeliveryCoordinator"
+   }
+  }
+ },
+ "tests/integration/test_workflow_e2e.py": {
+  "owner": "M2",
+  "reason": "latest-ranked src it imports (M2)",
+  "split": {
+   "symbols_by_milestone": {
+    "M5": "AuthoredDeliveryCoordinator end-to-end publication cases"
+   }
+  }
+ },
+ "tests/model_members.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/outbound.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/probes/notion_records.py": {
+  "owner": "M4",
+  "reason": "exercises criterion/record behaviour",
+  "split": null
+ },
+ "tests/probes/test_ab_smoke.py": {
+  "owner": "M3",
+  "reason": "latest-ranked src it imports (M3)",
+  "split": null
+ },
+ "tests/probes/test_harness_capabilities.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/probes/test_live_ownership.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/prompt_census.py": {
+  "owner": "M1",
+  "reason": "no delta import; foundational harness",
+  "split": null
+ },
+ "tests/prompts/sets.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/prompts/test_absence_bindings.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/prompts/test_criteria_generation_prompts.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/prompts/test_fire_record.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/prompts/test_initiative_target_date.py": {
+  "owner": "M1",
+  "reason": "no delta import; foundational harness",
+  "split": null
+ },
+ "tests/prompts/test_issue_label_bindings.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/prompts/test_knowledge_map.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/prompts/test_native_initiative_configuration.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/prompts/test_operation_config.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/prompts/test_organize_call_bindings.py": {
+  "owner": "M3",
+  "reason": "latest-ranked src it imports (M3)",
+  "split": null
+ },
+ "tests/prompts/test_organize_mandate_bindings.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/prompts/test_organize_roles.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/prompts/test_pass_roster.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/prompts/test_prompt_wiring.py": {
+  "owner": "M3",
+  "reason": "latest-ranked src it imports (M3)",
+  "split": null
+ },
+ "tests/prompts/test_resolvable_identifiers.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/prompts/test_scope_label_bindings.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/prompts/test_set_completeness.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/prompts/test_skills_loadouts.py": {
+  "owner": "M3",
+  "reason": "latest-ranked src it imports (M3)",
+  "split": null
+ },
+ "tests/prompts/test_supervision_adoption.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/prompts/test_v5_fragments.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/prompts/test_v5_wiring.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/run_events.py": {
+  "owner": "M7",
+  "reason": "exercises run alarm behaviour",
+  "split": null
+ },
+ "tests/services/test_agent_service.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/services/test_amendment_interrupted_writes.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/services/test_applied_native_amendments.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/services/test_assertion_drift.py": {
+  "owner": "M6",
+  "reason": "latest-ranked src it imports (M6)",
+  "split": null
+ },
+ "tests/services/test_audit_coverage.py": {
+  "owner": "M6",
+  "reason": "latest-ranked src it imports (M6)",
+  "split": null
+ },
+ "tests/services/test_audit_session_ownership.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/services/test_audit_sessions.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/services/test_audit_sources.py": {
+  "owner": "M6",
+  "reason": "latest-ranked src it imports (M6)",
+  "split": null
+ },
+ "tests/services/test_check_classification.py": {
+  "owner": "M5",
+  "reason": "latest-ranked src it imports (M5)",
+  "split": null
+ },
+ "tests/services/test_claim_heartbeat.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/services/test_dispatch_delta_cancel_independent.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/services/test_dispatch_pass.py": {
+  "owner": "M3",
+  "reason": "latest-ranked src it imports (M3)",
+  "split": null
+ },
+ "tests/services/test_fire_context.py": {
+  "owner": "M3",
+  "reason": "latest-ranked src it imports (M3)",
+  "split": null
+ },
+ "tests/services/test_fire_dispatcher.py": {
+  "owner": "M3",
+  "reason": "latest-ranked src it imports (M3)",
+  "split": null
+ },
+ "tests/services/test_fire_log_facts.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/services/test_fire_record_identity.py": {
+  "owner": "M3",
+  "reason": "latest-ranked src it imports (M3)",
+  "split": null
+ },
+ "tests/services/test_git_source_lookup.py": {
+  "owner": "M6",
+  "reason": "latest-ranked src it imports (M6)",
+  "split": null
+ },
+ "tests/services/test_landing_dispatch.py": {
+  "owner": "M3",
+  "reason": "latest-ranked src it imports (M3)",
+  "split": null
+ },
+ "tests/services/test_lane_reports.py": {
+  "owner": "M5",
+  "reason": "latest-ranked src it imports (M5)",
+  "split": null
+ },
+ "tests/services/test_lifecycle_watcher.py": {
+  "owner": "M3",
+  "reason": "latest-ranked src it imports (M3)",
+  "split": null
+ },
+ "tests/services/test_native_amendment_archive_independent.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/services/test_native_amendment_archive_publication.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/services/test_native_amendment_independent.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/services/test_native_amendments.py": {
+  "owner": "M6",
+  "reason": "latest-ranked src it imports (M6)",
+  "split": null
+ },
+ "tests/services/test_native_commit_receipt_independent.py": {
+  "owner": "M3",
+  "reason": "exercises scope/fire runtime",
+  "split": null
+ },
+ "tests/services/test_parent_rollup_authority.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/services/test_pass_delta_cancellation.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/services/test_pass_gate.py": {
+  "owner": "M3",
+  "reason": "latest-ranked src it imports (M3)",
+  "split": null
+ },
+ "tests/services/test_prompt_delta_cancel_independent.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/services/test_prompt_pass.py": {
+  "owner": "M3",
+  "reason": "latest-ranked src it imports (M3)",
+  "split": null
+ },
+ "tests/services/test_prompt_passes.py": {
+  "owner": "M3",
+  "reason": "latest-ranked src it imports (M3)",
+  "split": null
+ },
+ "tests/services/test_run_recorder.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/services/test_run_surface_lease.py": {
+  "owner": "M3",
+  "reason": "latest-ranked src it imports (M3)",
+  "split": null
+ },
+ "tests/services/test_scope_dispatcher.py": {
+  "owner": "M3",
+  "reason": "latest-ranked src it imports (M3)",
+  "split": null
+ },
+ "tests/services/test_scope_planning.py": {
+  "owner": "M3",
+  "reason": "latest-ranked src it imports (M3)",
+  "split": null
+ },
+ "tests/services/test_scope_resolution.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/services/test_session_grant_threading.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/services/test_structured_run_records.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/services/test_tracker_lifecycle.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/services/test_union_composition.py": {
+  "owner": "M5",
+  "reason": "latest-ranked src it imports (M5)",
+  "split": null
+ },
+ "tests/services/test_union_conflict_remediation.py": {
+  "owner": "M5",
+  "reason": "latest-ranked src it imports (M5)",
+  "split": null
+ },
+ "tests/services/test_union_replacement_identity.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/services/test_union_tick.py": {
+  "owner": "M5",
+  "reason": "latest-ranked src it imports (M5)",
+  "split": null
+ },
+ "tests/spec/conftest.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/spec/fixtures/model_members.json": {
+  "owner": "M1",
+  "reason": "model agreement fixture",
+  "split": null
+ },
+ "tests/spec/test_model_agreement.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/test_composition_root.py": {
+  "owner": "M3",
+  "reason": "latest-ranked src it imports (M3)",
+  "split": null
+ },
+ "tests/test_forge_origin_selection.py": {
+  "owner": "M5",
+  "reason": "latest-ranked src it imports (M5)",
+  "split": null
+ },
+ "tests/test_lane_verification.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/test_lifespan_cleanup.py": {
+  "owner": "M3",
+  "reason": "latest-ranked src it imports (M3)",
+  "split": null
+ },
+ "tests/test_organize_portability.py": {
+  "owner": "M2",
+  "reason": "exercises organize behaviour",
+  "split": null
+ },
+ "tests/tracker/conftest.py": {
+  "owner": "M1",
+  "reason": "tracker port fixtures used from the first milestone",
+  "split": {
+   "symbols_by_milestone": {
+    "M4": "tracker_writes fixture rows for criterion/lifecycle writes"
+   }
+  }
+ },
+ "tests/tracker/connected_app_label_contract.py": {
+  "owner": "M1",
+  "reason": "no delta import; foundational harness",
+  "split": null
+ },
+ "tests/tracker/lease_fixtures.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/tracker/marker_config.py": {
+  "owner": "M1",
+  "reason": "no delta import; foundational harness",
+  "split": null
+ },
+ "tests/tracker/read_port_contract.py": {
+  "owner": "M6",
+  "reason": "latest-ranked src it imports (M6)",
+  "split": null
+ },
+ "tests/tracker/test_alarm_independent.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/tracker/test_artifact_native_fields.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/tracker/test_artifact_split_identity_independent.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/tracker/test_audit_claim.py": {
+  "owner": "M6",
+  "reason": "latest-ranked src it imports (M6)",
+  "split": null
+ },
+ "tests/tracker/test_audit_claim_replacements.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/tracker/test_audit_combined_review.py": {
+  "owner": "M6",
+  "reason": "latest-ranked src it imports (M6)",
+  "split": null
+ },
+ "tests/tracker/test_audit_detection_removal.py": {
+  "owner": "M6",
+  "reason": "latest-ranked src it imports (M6)",
+  "split": null
+ },
+ "tests/tracker/test_audit_evidence.py": {
+  "owner": "M6",
+  "reason": "latest-ranked src it imports (M6)",
+  "split": null
+ },
+ "tests/tracker/test_audit_evidence_git.py": {
+  "owner": "M6",
+  "reason": "latest-ranked src it imports (M6)",
+  "split": null
+ },
+ "tests/tracker/test_audit_evidence_replacements.py": {
+  "owner": "M6",
+  "reason": "latest-ranked src it imports (M6)",
+  "split": null
+ },
+ "tests/tracker/test_audit_forge.py": {
+  "owner": "M6",
+  "reason": "latest-ranked src it imports (M6)",
+  "split": null
+ },
+ "tests/tracker/test_audit_forge_sweep.py": {
+  "owner": "M6",
+  "reason": "latest-ranked src it imports (M6)",
+  "split": null
+ },
+ "tests/tracker/test_audit_forge_sweep_git.py": {
+  "owner": "M6",
+  "reason": "latest-ranked src it imports (M6)",
+  "split": null
+ },
+ "tests/tracker/test_audit_mandate.py": {
+  "owner": "M6",
+  "reason": "latest-ranked src it imports (M6)",
+  "split": null
+ },
+ "tests/tracker/test_audit_mandate_replacements.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/tracker/test_audit_overclaim.py": {
+  "owner": "M6",
+  "reason": "latest-ranked src it imports (M6)",
+  "split": null
+ },
+ "tests/tracker/test_audit_overclaim_bytes.py": {
+  "owner": "M6",
+  "reason": "latest-ranked src it imports (M6)",
+  "split": null
+ },
+ "tests/tracker/test_audit_overclaim_git.py": {
+  "owner": "M6",
+  "reason": "latest-ranked src it imports (M6)",
+  "split": null
+ },
+ "tests/tracker/test_audit_overclaim_sweep.py": {
+  "owner": "M6",
+  "reason": "latest-ranked src it imports (M6)",
+  "split": null
+ },
+ "tests/tracker/test_audit_overclaim_sweep_git.py": {
+  "owner": "M6",
+  "reason": "latest-ranked src it imports (M6)",
+  "split": null
+ },
+ "tests/tracker/test_audit_repository_cancellation.py": {
+  "owner": "M6",
+  "reason": "exercises audit behaviour",
+  "split": null
+ },
+ "tests/tracker/test_audit_requests.py": {
+  "owner": "M6",
+  "reason": "latest-ranked src it imports (M6)",
+  "split": null
+ },
+ "tests/tracker/test_audit_sweep.py": {
+  "owner": "M6",
+  "reason": "latest-ranked src it imports (M6)",
+  "split": null
+ },
+ "tests/tracker/test_audit_sweep_git.py": {
+  "owner": "M6",
+  "reason": "latest-ranked src it imports (M6)",
+  "split": null
+ },
+ "tests/tracker/test_audit_terminal_mandate.py": {
+  "owner": "M6",
+  "reason": "latest-ranked src it imports (M6)",
+  "split": null
+ },
+ "tests/tracker/test_audit_terminal_mandate_git.py": {
+  "owner": "M6",
+  "reason": "latest-ranked src it imports (M6)",
+  "split": null
+ },
+ "tests/tracker/test_barren_record_collector.py": {
+  "owner": "M7",
+  "reason": "latest-ranked src it imports (M7)",
+  "split": null
+ },
+ "tests/tracker/test_barren_tick.py": {
+  "owner": "M7",
+  "reason": "latest-ranked src it imports (M7)",
+  "split": null
+ },
+ "tests/tracker/test_body_revisions.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/tracker/test_classification_authority.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/tracker/test_combined_issue_writes.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/tracker/test_comment_expected.py": {
+  "owner": "M1",
+  "reason": "no delta import; foundational harness",
+  "split": null
+ },
+ "tests/tracker/test_comment_expected_independent.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/tracker/test_comment_pages.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/tracker/test_consumer_read_ports.py": {
+  "owner": "M5",
+  "reason": "latest-ranked src it imports (M5)",
+  "split": null
+ },
+ "tests/tracker/test_criterion_creation.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/tracker/test_criterion_family_aliases.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/tracker/test_criterion_family_identity.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/tracker/test_criterion_identity_conformance.py": {
+  "owner": "M4",
+  "reason": "exercises criterion/record behaviour",
+  "split": null
+ },
+ "tests/tracker/test_criterion_label_independent.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/tracker/test_criterion_label_surface.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/tracker/test_criterion_reader.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/tracker/test_criterion_reader_boundary.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/tracker/test_criterion_receipt_boundary.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/tracker/test_criterion_record_fidelity.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/tracker/test_criterion_resolution.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/tracker/test_criterion_resolution_consumers.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/tracker/test_criterion_retry_independent.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/tracker/test_description_classification_presence.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/tracker/test_detector_removal_sweep.py": {
+  "owner": "M6",
+  "reason": "latest-ranked src it imports (M6)",
+  "split": null
+ },
+ "tests/tracker/test_detector_removal_sweep_git.py": {
+  "owner": "M6",
+  "reason": "latest-ranked src it imports (M6)",
+  "split": null
+ },
+ "tests/tracker/test_document_relation_assets.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/tracker/test_empty_fire_entry.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/tracker/test_escalation_ageing.py": {
+  "owner": "M7",
+  "reason": "latest-ranked src it imports (M7)",
+  "split": null
+ },
+ "tests/tracker/test_escalation_record_collector.py": {
+  "owner": "M7",
+  "reason": "latest-ranked src it imports (M7)",
+  "split": null
+ },
+ "tests/tracker/test_escalation_record_reader.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/tracker/test_escalation_resolution.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/tracker/test_escalation_resolution_boundary.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/tracker/test_escalation_resolution_drift.py": {
+  "owner": "M7",
+  "reason": "latest-ranked src it imports (M7)",
+  "split": null
+ },
+ "tests/tracker/test_fire_spec_approval.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/tracker/test_fire_spec_approval_ancestry.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/tracker/test_fire_spec_reader.py": {
+  "owner": "M3",
+  "reason": "latest-ranked src it imports (M3)",
+  "split": null
+ },
+ "tests/tracker/test_idempotent_writes.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/tracker/test_issue_classification_reads.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/tracker/test_issue_identity_boundary.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/tracker/test_issue_ruling_records.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/tracker/test_issue_upsert.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/tracker/test_labeled_issues.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/tracker/test_landing_ambiguity.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/tracker/test_landing_base_resolution.py": {
+  "owner": "M3",
+  "reason": "latest-ranked src it imports (M3)",
+  "split": null
+ },
+ "tests/tracker/test_lane_escalation.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/tracker/test_lane_record_signals.py": {
+  "owner": "M7",
+  "reason": "latest-ranked src it imports (M7)",
+  "split": null
+ },
+ "tests/tracker/test_lane_records.py": {
+  "owner": "M5",
+  "reason": "latest-ranked src it imports (M5)",
+  "split": null
+ },
+ "tests/tracker/test_linear_mcp_tracker.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/tracker/test_linear_tool_arguments.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/tracker/test_linear_tool_roster.py": {
+  "owner": "M1",
+  "reason": "no delta import; foundational harness",
+  "split": null
+ },
+ "tests/tracker/test_linear_wire_shapes.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/tracker/test_mandate_graph.py": {
+  "owner": "M7",
+  "reason": "latest-ranked src it imports (M7)",
+  "split": null
+ },
+ "tests/tracker/test_marker_configuration.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/tracker/test_milestone_approval.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/tracker/test_native_approval_aliases.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/tracker/test_native_criterion_amendment.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/tracker/test_native_recorded_landing.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/tracker/test_organize_graph_final_boundary.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/tracker/test_organize_graph_independent.py": {
+  "owner": "M2",
+  "reason": "latest-ranked src it imports (M2)",
+  "split": null
+ },
+ "tests/tracker/test_organize_graph_receipt_boundary.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/tracker/test_organize_graph_retry_boundary.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/tracker/test_organize_graph_writes.py": {
+  "owner": "M2",
+  "reason": "latest-ranked src it imports (M2)",
+  "split": null
+ },
+ "tests/tracker/test_ownership_arbitration.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/tracker/test_port_failure_boundary.py": {
+  "owner": "M5",
+  "reason": "latest-ranked src it imports (M5)",
+  "split": null
+ },
+ "tests/tracker/test_protected_comment_retry.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/tracker/test_recorded_assertion_drift.py": {
+  "owner": "M6",
+  "reason": "latest-ranked src it imports (M6)",
+  "split": null
+ },
+ "tests/tracker/test_recorded_landing.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/tracker/test_recorded_landing_git.py": {
+  "owner": "M3",
+  "reason": "latest-ranked src it imports (M3)",
+  "split": null
+ },
+ "tests/tracker/test_recorded_ruling_growth.py": {
+  "owner": "M7",
+  "reason": "latest-ranked src it imports (M7)",
+  "split": null
+ },
+ "tests/tracker/test_ruling_reader_independent.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/tracker/test_ruling_records.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/tracker/test_run_alarm_records.py": {
+  "owner": "M7",
+  "reason": "latest-ranked src it imports (M7)",
+  "split": null
+ },
+ "tests/tracker/test_scope_alias_identity.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/tracker/test_scope_ancestor_identity.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/tracker/test_scope_approval.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/tracker/test_scope_label_mappings.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/tracker/test_scope_planning.py": {
+  "owner": "M3",
+  "reason": "latest-ranked src it imports (M3)",
+  "split": null
+ },
+ "tests/tracker/test_scope_reads.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/tracker/test_scope_subtree_reach.py": {
+  "owner": "M3",
+  "reason": "latest-ranked src it imports (M3)",
+  "split": null
+ },
+ "tests/tracker/test_scope_tally.py": {
+  "owner": "M7",
+  "reason": "latest-ranked src it imports (M7)",
+  "split": null
+ },
+ "tests/tracker/test_scope_tool_arguments.py": {
+  "owner": "M3",
+  "reason": "exercises scope/fire runtime",
+  "split": null
+ },
+ "tests/tracker/test_state_history.py": {
+  "owner": "M6",
+  "reason": "latest-ranked src it imports (M6)",
+  "split": null
+ },
+ "tests/tracker/test_tracker_boot.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/tracker/test_tracker_boot_cleanup.py": {
+  "owner": "M1",
+  "reason": "no delta import; foundational harness",
+  "split": null
+ },
+ "tests/tracker/test_tracker_boot_wiring.py": {
+  "owner": "M3",
+  "reason": "latest-ranked src it imports (M3)",
+  "split": null
+ },
+ "tests/tracker/test_tracker_conformance.py": {
+  "owner": "M7",
+  "reason": "latest-ranked src it imports (M7)",
+  "split": null
+ },
+ "tests/types/test_audit_mandate_independent.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/types/test_audit_report_contract.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/types/test_audit_union_contracts.py": {
+  "owner": "M4",
+  "reason": "latest-ranked src it imports (M4)",
+  "split": null
+ },
+ "tests/types/test_organize_halt.py": {
+  "owner": "M2",
+  "reason": "latest-ranked src it imports (M2)",
+  "split": null
+ },
+ "tests/types/test_scope_events.py": {
+  "owner": "M3",
+  "reason": "latest-ranked src it imports (M3)",
+  "split": null
+ },
+ "tests/types/test_wire_renames.py": {
+  "owner": "M1",
+  "reason": "no delta import; foundational harness",
+  "split": null
+ },
+ "tests/types/test_wire_schemas.py": {
+  "owner": "M6",
+  "reason": "latest-ranked src it imports (M6)",
+  "split": {
+   "symbols_by_milestone": {
+    "M2": "ORGANIZE_PROPOSAL_SCHEMA roster row and the (OrganizeAuthor, propose) / (OrganizeAdmission, _judge) dispatch-site rows"
+   }
+  }
+ },
+ "tests/types/test_writable_surface.py": {
+  "owner": "M1",
+  "reason": "latest-ranked src it imports (M1)",
+  "split": null
+ },
+ "tests/workflow_factory.py": {
+  "owner": "M5",
+  "reason": "latest-ranked src it imports (M5)",
+  "split": null
+ },
+ "uv.lock": {
+  "owner": "M1",
+  "reason": "dependency lock",
+  "split": null
+ }
+}
