@@ -116,23 +116,6 @@ curl -N http://localhost:8000/api/v1/agent/workflow \
 Queue a workflow run and return immediately. Same request body as
 `POST /api/v1/agent/workflow` (`WorkflowRequest`); no stream is opened.
 
-### Response — `202 Accepted` (`FireAcceptedResponse`)
-
-```json
-{
-  "jobId": "3fa85f6457174562b3fc2c963f66afa6",
-  "lane": "workflow",
-  "state": "queued",
-  "queuePosition": 1,
-  "submittedAt": "2026-01-01T00:00:00Z",
-  "statusUrl": "/api/v1/jobs/3fa85f6457174562b3fc2c963f66afa6",
-  "streamUrl": "/api/v1/jobs/3fa85f6457174562b3fc2c963f66afa6/stream"
-}
-```
-
-`queuePosition` is `null` once the run has left the queue. A lane at
-`KODEZART_QUEUE_MAX_DEPTH_PER_LANE` rejects the submission with `429`.
-
 ### Example
 
 ```bash
@@ -140,19 +123,17 @@ curl -X POST http://localhost:8000/api/v1/agent/fire \
   -H "Content-Type: application/json" \
   -d '{"prompt": "Add input validation", "repoUrl": "owner/repo"}'
 ```
-
 ## GET /api/v1/jobs/{jobId}
 
 Registry facts for a queued or running job, plus the checkpointed run state.
 `404` with a `BaseResponse` error body when the job id is unknown or its
-record has been released (`KODEZART_QUEUE_TERMINAL_RETENTION_SECONDS`).
+record has been released (`KODEZART_QUEUE__TERMINAL_RETENTION_SECONDS`).
 
 ### Example
 
 ```bash
 curl http://localhost:8000/api/v1/jobs/3fa85f6457174562b3fc2c963f66afa6
 ```
-
 ## GET /api/v1/jobs/{jobId}/stream
 
 Attach to a job's event stream. Replays the job's bounded event buffer
