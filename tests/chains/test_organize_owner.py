@@ -15,6 +15,7 @@ from kodezart.domain.errors import OrganizeAdmissionIdentityError
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.operation import OperationConfig
+from kodezart.types.domain.organize import AdmissionVerdict
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.session import ToolPreset
 from tests.chains.test_organize import (
@@ -52,11 +53,14 @@ async def test_source_identity_is_checked_before_any_session(monkeypatch, method
 
 
 class BoardExecutor:
-    def __init__(self, board, *, refuse_forever=False, wrong_proposal=False):
+    def __init__(
+        self, board, *, refuse_forever=False, wrong_proposal=False, refusal=None
+    ):
         self.board = board
         self.calls = []
         self.refuse_forever = refuse_forever
         self.wrong_proposal = wrong_proposal
+        self.refusal = refusal
 
     async def stream(self, **kwargs):
         self.calls.append(kwargs)
@@ -108,6 +112,7 @@ class BoardExecutor:
                     "evidence": "The current body omits the required source.",
                     "refusal_kind": "spec_gap",
                     "invented_decision": "Restore the source requirement.",
+                    **(self.refusal or {}),
                 }
             else:
                 payload = {
@@ -122,6 +127,8 @@ def factory(
     *,
     refuse_forever=False,
     wrong_proposal=False,
+    refusal=None,
+    body=None,
     bound=2,
     convergence_bound=2,
     write_back_bound=2,
@@ -144,7 +151,7 @@ def factory(
         ]
     operation = OperationConfig.model_validate(operation_fields)
     parent = board.server.issues[CLAIMED_ISSUE]
-    parent.description = "Missing specification"
+    parent.description = body if body is not None else "Missing specification"
     parent.labels = ["candidate scope"]
     tracker = tracker_over(
         board.server,
@@ -155,7 +162,10 @@ def factory(
         criteria_stage_label_key="criteria",
     )
     executor = BoardExecutor(
-        board, refuse_forever=refuse_forever, wrong_proposal=wrong_proposal
+        board,
+        refuse_forever=refuse_forever,
+        wrong_proposal=wrong_proposal,
+        refusal=refusal,
     )
     workspace = RecordingWorkspace()
     constructor = build_organize_tick if tick else build_organize_owner
@@ -259,6 +269,86 @@ async def test_single_admission_round_stops_with_durable_refusal_and_no_completi
         if call["output_format"]["schema"].get("title") == "OrganizeProposal"
     ]
     assert len(authors) == 1
+
+
+MEASURED_REFUSAL_CLASSES = (
+    pytest.param(
+        "The record must be current before the probe runs.",
+        "The phrase 'current' reads either as the fresh tracker revision or as "
+        "the local checkout, and the two select different records.",
+        "Which of the two readings of a current record the criterion means.",
+        id="criterion_admits_two_readings",
+    ),
+    pytest.param(
+        "The endpoint returns the prepared response model to the caller.",
+        "No response model of that description is named anywhere in the "
+        "current source.",
+        "Which response model the endpoint returns.",
+        id="response_model_named_nowhere",
+    ),
+    pytest.param(
+        "The freshness probe runs before the record is read.",
+        "No call site for that probe is named anywhere in the current source.",
+        "Where the freshness probe is called from.",
+        id="probe_call_site_named_nowhere",
+    ),
+    pytest.param(
+        "The record is written synchronously, and the committed design of this "
+        "issue queues every record write asynchronously.",
+        "The body requires a synchronous write that its own committed "
+        "asynchronous queue forbids.",
+        "Whether the committed asynchronous queue or the body's synchronous "
+        "write governs the record write.",
+        id="body_contradicts_its_committed_design",
+    ),
+)
+
+
+@pytest.mark.parametrize(
+    ("body", "evidence", "invented_decision"), MEASURED_REFUSAL_CLASSES
+)
+async def test_measured_refusal_class_refuses_without_marker_or_criterion(
+    body, evidence, invented_decision
+):
+    owner, board, executor = factory(
+        refuse_forever=True,
+        bound=1,
+        body=body,
+        refusal={"evidence": evidence, "invented_decision": invented_decision},
+    )
+    report = await run_owner(owner)
+    assert report.halt.cause == "admission_exhausted"
+    assert report.completed_phases == ()
+    judged = [
+        call["prompt"]
+        for call in executor.calls
+        if call["output_format"]["schema"].get("title") == "AdmissionJudgment"
+    ]
+    assert any(body in prompt for prompt in judged)
+    refusals = [
+        result
+        for result in report.halt.admission_results
+        if result.issue_id == CLAIMED_ISSUE
+    ]
+    assert [result.verdict for result in refusals] == [AdmissionVerdict.NOT_BUILDABLE]
+    assert refusals[0].invented_decision == invented_decision
+    assert refusals[0].evidence == evidence
+    parent = board.server.issues[CLAIMED_ISSUE]
+    assert "body complete" not in parent.labels
+    assert not set(parent.labels) & {
+        "graph complete",
+        "body complete",
+        "criteria complete",
+        "approved scope",
+    }
+    assert not any(
+        issue.parent_id == CLAIMED_ISSUE for issue in board.server.issues.values()
+    )
+    assert not [
+        args
+        for name, args in board.calls
+        if name == "save_issue" and args.get("parentId") == CLAIMED_ISSUE
+    ]
 
 
 async def test_wrong_author_identity_refuses_before_native_issue_write():
