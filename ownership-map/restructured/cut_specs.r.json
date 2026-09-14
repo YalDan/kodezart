@@ -1689,7 +1689,15 @@
     "import:from uuid import uuid4",
     "import:import re",
     "is_long_lived_credential",
-    "refuse_combined_issue_write"
+    "refuse_combined_issue_write",
+    "import:from kodezart.domain.errors import ( ApprovalLabelWriteError, CriterionReadError, DuplicateIssueIdentityError, DuplicateWorkRefError, EscalationReadError, IssueLabelReadError, OrganizeWriteRefusalError, PrincipalAuthoredSurfaceError, ScopeReadError, SurfaceLeaseError, SurfaceWriteAttributionError, TransientAPIError, )",
+    "import:from kodezart.domain.surface_lease import ( live_conflict, one_ownership, renewed_deadline, renews, retracts, surface_address, )",
+    "import:from kodezart.types.domain.surface import ( DescriptionWriteAuthority, SurfaceAuthorship, SurfaceKind, SurfaceLease, WritableSurface, WriteRevalidation, require_body_authorship_surface, )",
+    "LinearMcpTracker._read_planning_wire",
+    "LinearMcpTracker.read_surface_authorship",
+    "LinearMcpTracker._body_authorship",
+    "LinearMcpTracker._require_machine_authored",
+    "LinearMcpTracker._renewal_retractions"
    ],
    "remove": [
     "LinearMcpTracker._append_claim_marker",
@@ -1944,7 +1952,15 @@
     "import:from urllib.parse import quote",
     "import:from uuid import uuid4",
     "is_long_lived_credential",
-    "refuse_combined_issue_write"
+    "refuse_combined_issue_write",
+    "import:from kodezart.domain.errors import ( ApprovalLabelWriteError, CriterionReadError, DuplicateIssueIdentityError, DuplicateWorkRefError, EscalationReadError, IssueLabelReadError, OrganizeWriteRefusalError, PrincipalAuthoredSurfaceError, ScopeReadError, SurfaceLeaseError, SurfaceWriteAttributionError, TransientAPIError, )",
+    "import:from kodezart.domain.surface_lease import ( live_conflict, one_ownership, renewed_deadline, renews, retracts, surface_address, )",
+    "import:from kodezart.types.domain.surface import ( DescriptionWriteAuthority, SurfaceAuthorship, SurfaceKind, SurfaceLease, WritableSurface, WriteRevalidation, require_body_authorship_surface, )",
+    "LinearMcpTracker._read_planning_wire",
+    "LinearMcpTracker.read_surface_authorship",
+    "LinearMcpTracker._body_authorship",
+    "LinearMcpTracker._require_machine_authored",
+    "LinearMcpTracker._renewal_retractions"
    ]
   },
   "src/kodezart/adapters/mcp/result_decoding.py": {
@@ -3463,7 +3479,6 @@
     "TrackerPort.restore_workflow_state",
     "TrackerPort.scan_issues",
     "TrackerPort.scan_reviews",
-    "TrackerPort.update_issue",
     "TrackerPort.verify_scan_capability",
     "WorkspaceProvider.acquire",
     "WorkspaceProvider.release",
@@ -3603,7 +3618,10 @@
     "import:from kodezart.types.domain.workflow import RemediationRequest",
     "import:from kodezart.types.domain.workflow import RemediationRequest, WorkflowSubmission",
     "import:from kodezart.types.domain.workspace import GitWorktreeIdentity, WorkspaceSnapshot",
-    "import:from kodezart.types.requests.agent import WorkflowRequest"
+    "import:from kodezart.types.requests.agent import WorkflowRequest",
+    "import:from kodezart.types.domain.surface import ( DescriptionWriteAuthority, SurfaceAuthorship, SurfaceLease, WritableSurface, WriteRevalidation, )",
+    "TrackerPort.read_surface_authorship",
+    "TrackerPort.update_issue"
    ],
    "remove": [
     "ContentScanner",
@@ -3729,7 +3747,10 @@
     "import:from kodezart.types.domain.tracker import ( ClaimResult, IssuePriority, IssueQuery, MappingOutcome, MappingRef, ReviewQuery, TrackerAsset, TrackerComment, TrackerIssue, TrackerIssueRevision, TrackerIssueStateChange, TrackerReview, )",
     "import:from kodezart.types.domain.tracker_writes import DescriptionEditResult",
     "import:from kodezart.types.domain.workflow import RemediationRequest, WorkflowSubmission",
-    "import:from kodezart.types.domain.workspace import GitWorktreeIdentity, WorkspaceSnapshot"
+    "import:from kodezart.types.domain.workspace import GitWorktreeIdentity, WorkspaceSnapshot",
+    "import:from kodezart.types.domain.surface import ( DescriptionWriteAuthority, SurfaceAuthorship, SurfaceLease, WritableSurface, WriteRevalidation, )",
+    "TrackerPort.read_surface_authorship",
+    "TrackerPort.update_issue"
    ]
   },
   "src/kodezart/core/stream_drain.py": {
@@ -3950,7 +3971,11 @@
     "UnionHeadReadError",
     "UnionUnstableError",
     "import:from kodezart.types.domain.scope import ScopeRef",
-    "import:from kodezart.types.domain.surface import WritableSurface"
+    "import:from kodezart.types.domain.surface import WritableSurface",
+    "PrincipalAuthoredSurfaceError",
+    "PrincipalAuthoredSurfaceError.__init__",
+    "ApprovalLabelWriteError",
+    "ApprovalLabelWriteError.__init__"
    ],
    "remove": [],
    "take_from_donor": [
@@ -3997,7 +4022,11 @@
     "UnionHeadReadError",
     "UnionUnstableError",
     "import:from kodezart.types.domain.scope import ScopeRef",
-    "import:from kodezart.types.domain.surface import WritableSurface"
+    "import:from kodezart.types.domain.surface import WritableSurface",
+    "PrincipalAuthoredSurfaceError",
+    "PrincipalAuthoredSurfaceError.__init__",
+    "ApprovalLabelWriteError",
+    "ApprovalLabelWriteError.__init__"
    ]
   },
   "src/kodezart/domain/fire_spec.py": {
@@ -9527,7 +9556,6 @@
     "FakeLinearMcpServer._tool_create_issue_label",
     "FakeLinearMcpServer._tool_delete_comment",
     "FakeLinearMcpServer._tool_get_document",
-    "FakeLinearMcpServer._tool_get_issue",
     "FakeLinearMcpServer._tool_get_project",
     "FakeLinearMcpServer._tool_list_diffs",
     "FakeLinearMcpServer._tool_list_documents",
@@ -9894,7 +9922,14 @@
     "make_generated_criteria",
     "make_passing_evaluation_of_fake_criteria",
     "make_tracker_issue",
-    "recorded_session"
+    "recorded_session",
+    "import:from kodezart.domain.errors import ( ApprovalLabelWriteError, CriterionReadError, DuplicateIssueIdentityError, DuplicateWorkRefError, EscalationReadError, IssueLabelReadError, MergeConflictError, OrganizeWriteRefusalError, PrincipalAuthoredSurfaceError, PRStateReadError, RateLimitError, ScopeReadError, SurfaceLeaseError, SurfaceWriteAttributionError, TransientAPIError, WorkspaceError, )",
+    "import:from kodezart.types.domain.surface import ( DescriptionWriteAuthority, SurfaceAuthorship, SurfaceKind, SurfaceLease, WritableSurface, WriteRevalidation, require_body_authorship_surface, )",
+    "FakeMcpIssue.created_by",
+    "FakeLinearMcpServer._tool_get_issue",
+    "FakeTrackerPort.read_surface_authorship",
+    "FakeTrackerPort._body_authorship",
+    "FakeTrackerPort._require_machine_authored"
    ],
    "remove": [
     "FakeContentScanner",
@@ -10062,7 +10097,14 @@
     "make_generated_criteria",
     "make_passing_evaluation_of_fake_criteria",
     "make_tracker_issue",
-    "recorded_session"
+    "recorded_session",
+    "import:from kodezart.domain.errors import ( ApprovalLabelWriteError, CriterionReadError, DuplicateIssueIdentityError, DuplicateWorkRefError, EscalationReadError, IssueLabelReadError, MergeConflictError, OrganizeWriteRefusalError, PrincipalAuthoredSurfaceError, PRStateReadError, RateLimitError, ScopeReadError, SurfaceLeaseError, SurfaceWriteAttributionError, TransientAPIError, WorkspaceError, )",
+    "import:from kodezart.types.domain.surface import ( DescriptionWriteAuthority, SurfaceAuthorship, SurfaceKind, SurfaceLease, WritableSurface, WriteRevalidation, require_body_authorship_surface, )",
+    "FakeMcpIssue.created_by",
+    "FakeLinearMcpServer._tool_get_issue",
+    "FakeTrackerPort.read_surface_authorship",
+    "FakeTrackerPort._body_authorship",
+    "FakeTrackerPort._require_machine_authored"
    ]
   },
   "tests/integration/test_stacked_scope.py": {
@@ -10795,7 +10837,16 @@
     "linear_over_fake_mcp",
     "server",
     "tracker",
-    "tracker_writes"
+    "tracker_writes",
+    "import:from kodezart.types.domain.surface import ( SurfaceKind, WritableSurface, )",
+    "ISSUE_LABELS",
+    "SCOPE_LABELS",
+    "approval_classifications",
+    "TrackerWorkspace",
+    "TrackerWorkspace.server",
+    "TrackerWorkspace.clock",
+    "TrackerWorkspace.scope_labels",
+    "observed_writes"
    ],
    "remove": [
     "import:from collections.abc import Callable, Mapping, Sequence",
@@ -10828,7 +10879,16 @@
     "linear_over_fake_mcp",
     "server",
     "tracker",
-    "tracker_writes"
+    "tracker_writes",
+    "import:from kodezart.types.domain.surface import ( SurfaceKind, WritableSurface, )",
+    "ISSUE_LABELS",
+    "SCOPE_LABELS",
+    "approval_classifications",
+    "TrackerWorkspace",
+    "TrackerWorkspace.server",
+    "TrackerWorkspace.clock",
+    "TrackerWorkspace.scope_labels",
+    "observed_writes"
    ]
   },
   "tests/tracker/test_linear_mcp_tracker.py": {

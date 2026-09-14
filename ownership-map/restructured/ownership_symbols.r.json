@@ -14779,6 +14779,62 @@
    "owner": "M1",
    "owner_grep_only": "M1",
    "sym_kind": "function"
+  },
+  "import:from kodezart.domain.errors import ( ApprovalLabelWriteError, CriterionReadError, DuplicateIssueIdentityError, DuplicateWorkRefError, EscalationReadError, IssueLabelReadError, OrganizeWriteRefusalError, PrincipalAuthoredSurfaceError, ScopeReadError, SurfaceLeaseError, SurfaceWriteAttributionError, TransientAPIError, )": {
+   "consumers": {},
+   "kind": "added",
+   "note": "added by M1 gap work 2026-09-14 (KOD-390/KOD-384)",
+   "owner": "M1",
+   "sym_kind": "symbol"
+  },
+  "import:from kodezart.domain.surface_lease import ( live_conflict, one_ownership, renewed_deadline, renews, retracts, surface_address, )": {
+   "consumers": {},
+   "kind": "added",
+   "note": "added by M1 gap work 2026-09-14 (KOD-390/KOD-384)",
+   "owner": "M1",
+   "sym_kind": "symbol"
+  },
+  "import:from kodezart.types.domain.surface import ( DescriptionWriteAuthority, SurfaceAuthorship, SurfaceKind, SurfaceLease, WritableSurface, WriteRevalidation, require_body_authorship_surface, )": {
+   "consumers": {},
+   "kind": "added",
+   "note": "added by M1 gap work 2026-09-14 (KOD-390/KOD-384)",
+   "owner": "M1",
+   "sym_kind": "symbol"
+  },
+  "LinearMcpTracker._read_planning_wire": {
+   "consumers": {},
+   "kind": "added",
+   "note": "added by M1 gap work 2026-09-14 (KOD-390/KOD-384)",
+   "owner": "M1",
+   "sym_kind": "symbol"
+  },
+  "LinearMcpTracker.read_surface_authorship": {
+   "consumers": {},
+   "kind": "added",
+   "note": "added by M1 gap work 2026-09-14 (KOD-390/KOD-384)",
+   "owner": "M1",
+   "sym_kind": "symbol"
+  },
+  "LinearMcpTracker._body_authorship": {
+   "consumers": {},
+   "kind": "added",
+   "note": "added by M1 gap work 2026-09-14 (KOD-390/KOD-384)",
+   "owner": "M1",
+   "sym_kind": "symbol"
+  },
+  "LinearMcpTracker._require_machine_authored": {
+   "consumers": {},
+   "kind": "added",
+   "note": "added by M1 gap work 2026-09-14 (KOD-390/KOD-384)",
+   "owner": "M1",
+   "sym_kind": "symbol"
+  },
+  "LinearMcpTracker._renewal_retractions": {
+   "consumers": {},
+   "kind": "added",
+   "note": "added by M1 gap work 2026-09-14 (KOD-390/KOD-384)",
+   "owner": "M1",
+   "sym_kind": "symbol"
   }
  },
  "src/kodezart/adapters/linear/record_sink.py": {
@@ -26421,7 +26477,7 @@
   },
   "TrackerPort.update_issue": {
    "consumers": {},
-   "kind": "unchanged",
+   "kind": "modified",
    "note": "unchanged between main and donor; stays as main has it",
    "owner": "M1",
    "sym_kind": "method"
@@ -27137,6 +27193,20 @@
    "note": "unchanged between main and donor; stays as main has it",
    "owner": "M1",
    "sym_kind": "import"
+  },
+  "import:from kodezart.types.domain.surface import ( DescriptionWriteAuthority, SurfaceAuthorship, SurfaceLease, WritableSurface, WriteRevalidation, )": {
+   "consumers": {},
+   "kind": "added",
+   "note": "added by M1 gap work 2026-09-14 (KOD-390/KOD-384)",
+   "owner": "M1",
+   "sym_kind": "symbol"
+  },
+  "TrackerPort.read_surface_authorship": {
+   "consumers": {},
+   "kind": "added",
+   "note": "added by M1 gap work 2026-09-14 (KOD-390/KOD-384)",
+   "owner": "M1",
+   "sym_kind": "symbol"
   }
  },
  "src/kodezart/core/retry.py": {
@@ -29703,6 +29773,34 @@
     "M1"
    ],
    "sym_kind": "import"
+  },
+  "PrincipalAuthoredSurfaceError": {
+   "consumers": {},
+   "kind": "added",
+   "note": "added by M1 gap work 2026-09-14 (KOD-390/KOD-384)",
+   "owner": "M1",
+   "sym_kind": "symbol"
+  },
+  "PrincipalAuthoredSurfaceError.__init__": {
+   "consumers": {},
+   "kind": "added",
+   "note": "added by M1 gap work 2026-09-14 (KOD-390/KOD-384)",
+   "owner": "M1",
+   "sym_kind": "symbol"
+  },
+  "ApprovalLabelWriteError": {
+   "consumers": {},
+   "kind": "added",
+   "note": "added by M1 gap work 2026-09-14 (KOD-390/KOD-384)",
+   "owner": "M1",
+   "sym_kind": "symbol"
+  },
+  "ApprovalLabelWriteError.__init__": {
+   "consumers": {},
+   "kind": "added",
+   "note": "added by M1 gap work 2026-09-14 (KOD-390/KOD-384)",
+   "owner": "M1",
+   "sym_kind": "symbol"
   }
  },
  "src/kodezart/domain/fire_spec.py": {
@@ -68259,7 +68357,7 @@
   },
   "FakeLinearMcpServer._tool_get_issue": {
    "consumers": {},
-   "kind": "unchanged",
+   "kind": "modified",
    "note": "unchanged between main and donor; stays as main has it",
    "owner": "M1",
    "sym_kind": "method"
@@ -71794,6 +71892,48 @@
    "note": "unchanged between main and donor; stays as main has it",
    "owner": "M1",
    "sym_kind": "function"
+  },
+  "import:from kodezart.domain.errors import ( ApprovalLabelWriteError, CriterionReadError, DuplicateIssueIdentityError, DuplicateWorkRefError, EscalationReadError, IssueLabelReadError, MergeConflictError, OrganizeWriteRefusalError, PrincipalAuthoredSurfaceError, PRStateReadError, RateLimitError, ScopeReadError, SurfaceLeaseError, SurfaceWriteAttributionError, TransientAPIError, WorkspaceError, )": {
+   "consumers": {},
+   "kind": "added",
+   "note": "added by M1 gap work 2026-09-14 (KOD-390/KOD-384)",
+   "owner": "M1",
+   "sym_kind": "symbol"
+  },
+  "import:from kodezart.types.domain.surface import ( DescriptionWriteAuthority, SurfaceAuthorship, SurfaceKind, SurfaceLease, WritableSurface, WriteRevalidation, require_body_authorship_surface, )": {
+   "consumers": {},
+   "kind": "added",
+   "note": "added by M1 gap work 2026-09-14 (KOD-390/KOD-384)",
+   "owner": "M1",
+   "sym_kind": "symbol"
+  },
+  "FakeMcpIssue.created_by": {
+   "consumers": {},
+   "kind": "added",
+   "note": "added by M1 gap work 2026-09-14 (KOD-390/KOD-384)",
+   "owner": "M1",
+   "sym_kind": "symbol"
+  },
+  "FakeTrackerPort.read_surface_authorship": {
+   "consumers": {},
+   "kind": "added",
+   "note": "added by M1 gap work 2026-09-14 (KOD-390/KOD-384)",
+   "owner": "M1",
+   "sym_kind": "symbol"
+  },
+  "FakeTrackerPort._body_authorship": {
+   "consumers": {},
+   "kind": "added",
+   "note": "added by M1 gap work 2026-09-14 (KOD-390/KOD-384)",
+   "owner": "M1",
+   "sym_kind": "symbol"
+  },
+  "FakeTrackerPort._require_machine_authored": {
+   "consumers": {},
+   "kind": "added",
+   "note": "added by M1 gap work 2026-09-14 (KOD-390/KOD-384)",
+   "owner": "M1",
+   "sym_kind": "symbol"
   }
  },
  "tests/integration/test_criteria_oracle.py": {
@@ -86966,6 +87106,69 @@
    "owner": "M1",
    "owner_grep_only": "M1",
    "sym_kind": "function"
+  },
+  "import:from kodezart.types.domain.surface import ( SurfaceKind, WritableSurface, )": {
+   "consumers": {},
+   "kind": "added",
+   "note": "added by M1 gap work 2026-09-14 (KOD-390/KOD-384)",
+   "owner": "M1",
+   "sym_kind": "symbol"
+  },
+  "ISSUE_LABELS": {
+   "consumers": {},
+   "kind": "added",
+   "note": "added by M1 gap work 2026-09-14 (KOD-390/KOD-384)",
+   "owner": "M1",
+   "sym_kind": "symbol"
+  },
+  "SCOPE_LABELS": {
+   "consumers": {},
+   "kind": "added",
+   "note": "added by M1 gap work 2026-09-14 (KOD-390/KOD-384)",
+   "owner": "M1",
+   "sym_kind": "symbol"
+  },
+  "approval_classifications": {
+   "consumers": {},
+   "kind": "added",
+   "note": "added by M1 gap work 2026-09-14 (KOD-390/KOD-384)",
+   "owner": "M1",
+   "sym_kind": "symbol"
+  },
+  "TrackerWorkspace": {
+   "consumers": {},
+   "kind": "added",
+   "note": "added by M1 gap work 2026-09-14 (KOD-390/KOD-384)",
+   "owner": "M1",
+   "sym_kind": "symbol"
+  },
+  "TrackerWorkspace.server": {
+   "consumers": {},
+   "kind": "added",
+   "note": "added by M1 gap work 2026-09-14 (KOD-390/KOD-384)",
+   "owner": "M1",
+   "sym_kind": "symbol"
+  },
+  "TrackerWorkspace.clock": {
+   "consumers": {},
+   "kind": "added",
+   "note": "added by M1 gap work 2026-09-14 (KOD-390/KOD-384)",
+   "owner": "M1",
+   "sym_kind": "symbol"
+  },
+  "TrackerWorkspace.scope_labels": {
+   "consumers": {},
+   "kind": "added",
+   "note": "added by M1 gap work 2026-09-14 (KOD-390/KOD-384)",
+   "owner": "M1",
+   "sym_kind": "symbol"
+  },
+  "observed_writes": {
+   "consumers": {},
+   "kind": "added",
+   "note": "added by M1 gap work 2026-09-14 (KOD-390/KOD-384)",
+   "owner": "M1",
+   "sym_kind": "symbol"
   }
  },
  "tests/tracker/test_linear_mcp_tracker.py": {

@@ -4018,5 +4018,55 @@
   "owner": "M1",
   "reason": "dependency lock",
   "split": null
+ },
+ "tests/chains/test_m4_local_sdk_independent.py": {
+  "owner": "M4",
+  "reason": "2026-09-14 harvest / M1 gap work (KOD-827, KOD-73)",
+  "split": null
+ },
+ "tests/chains/test_m4_native_extension_independent.py": {
+  "owner": "M4",
+  "reason": "2026-09-14 harvest / M1 gap work (KOD-827, KOD-73)",
+  "split": null
+ },
+ "tests/chains/test_native_artifact_readback.py": {
+  "owner": "M4",
+  "reason": "2026-09-14 harvest / M1 gap work (KOD-827, KOD-73)",
+  "split": null
+ },
+ "tests/chains/test_write_back_tracker_boundary.py": {
+  "owner": "M4",
+  "reason": "2026-09-14 harvest / M1 gap work (KOD-827, KOD-73)",
+  "split": null
+ },
+ "tests/tracker/test_escalation_owned_boundaries.py": {
+  "owner": "M4",
+  "reason": "2026-09-14 harvest / M1 gap work (KOD-827, KOD-73)",
+  "split": null
+ },
+ "tests/chains/test_session_policy_composition.py": {
+  "owner": "M3",
+  "reason": "2026-09-14 harvest / M1 gap work (KOD-827, KOD-73)",
+  "split": null
+ },
+ "tests/test_suppression_baseline.py": {
+  "owner": "M1",
+  "reason": "2026-09-14 harvest / M1 gap work (KOD-827, KOD-73)",
+  "split": null
+ },
+ "tests/tracker/test_conformance_registry_routing.py": {
+  "owner": "M1",
+  "reason": "2026-09-14 harvest / M1 gap work (KOD-827, KOD-73)",
+  "split": null
+ },
+ "tests/tracker/test_native_read_configuration.py": {
+  "owner": "M1",
+  "reason": "2026-09-14 harvest / M1 gap work (KOD-827, KOD-73)",
+  "split": null
+ },
+ "tests/tracker/test_ruling_protocol_boundary.py": {
+  "owner": "M1",
+  "reason": "2026-09-14 harvest / M1 gap work (KOD-827, KOD-73)",
+  "split": null
  }
 }

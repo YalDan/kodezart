@@ -11621,5 +11621,95 @@
   "kind": "config",
   "first_seen": "M1",
   "imports": []
+ },
+ {
+  "path": "tests/chains/test_m4_local_sdk_independent.py",
+  "status": "A",
+  "added": 122,
+  "deleted": 0,
+  "kind": "test_py",
+  "first_seen": "union-2026-09-14",
+  "imports": []
+ },
+ {
+  "path": "tests/chains/test_m4_native_extension_independent.py",
+  "status": "A",
+  "added": 34,
+  "deleted": 0,
+  "kind": "test_py",
+  "first_seen": "union-2026-09-14",
+  "imports": []
+ },
+ {
+  "path": "tests/chains/test_native_artifact_readback.py",
+  "status": "A",
+  "added": 72,
+  "deleted": 0,
+  "kind": "test_py",
+  "first_seen": "union-2026-09-14",
+  "imports": []
+ },
+ {
+  "path": "tests/chains/test_write_back_tracker_boundary.py",
+  "status": "A",
+  "added": 163,
+  "deleted": 0,
+  "kind": "test_py",
+  "first_seen": "union-2026-09-14",
+  "imports": []
+ },
+ {
+  "path": "tests/tracker/test_escalation_owned_boundaries.py",
+  "status": "A",
+  "added": 214,
+  "deleted": 0,
+  "kind": "test_py",
+  "first_seen": "union-2026-09-14",
+  "imports": []
+ },
+ {
+  "path": "tests/chains/test_session_policy_composition.py",
+  "status": "A",
+  "added": 105,
+  "deleted": 0,
+  "kind": "test_py",
+  "first_seen": "union-2026-09-14",
+  "imports": []
+ },
+ {
+  "path": "tests/test_suppression_baseline.py",
+  "status": "A",
+  "added": 101,
+  "deleted": 0,
+  "kind": "test_py",
+  "first_seen": "union-2026-09-14",
+  "imports": []
+ },
+ {
+  "path": "tests/tracker/test_conformance_registry_routing.py",
+  "status": "A",
+  "added": 114,
+  "deleted": 0,
+  "kind": "test_py",
+  "first_seen": "union-2026-09-14",
+  "imports": []
+ },
+ {
+  "path": "tests/tracker/test_native_read_configuration.py",
+  "status": "A",
+  "added": 83,
+  "deleted": 0,
+  "kind": "test_py",
+  "first_seen": "union-2026-09-14",
+  "imports": []
+ },
+ {
+  "path": "tests/tracker/test_ruling_protocol_boundary.py",
+  "status": "A",
+  "added": 9,
+  "deleted": 0,
+  "kind": "test_py",
+  "first_seen": "union-2026-09-14",
+  "imports": []
  }
 ]
