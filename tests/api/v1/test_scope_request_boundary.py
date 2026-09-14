@@ -11,6 +11,7 @@ from kodezart.adapters.asyncio_job_queue import AsyncioJobQueue
 from kodezart.api.v1.endpoints.agent import router
 from kodezart.main import create_app
 from kodezart.services.agent_service import AgentService
+from kodezart.services.scope_resolution import resolve_scope
 from kodezart.types.domain.agent import AgentEvent, AssistantTextEvent
 from kodezart.types.domain.branch import BaseSpec
 from kodezart.types.domain.job import JobRecord
@@ -22,11 +23,14 @@ from tests.fakes import (
     SUPPRESS_ALL_SKILLS,
     FakeAgentExecutor,
     FakeChangePersister,
+    FakeTrackerPort,
     FakeWorkspaceProvider,
+    make_tracker_issue,
 )
 
 ROUTES = ("/api/v1/agent/fire", "/api/v1/agent/workflow")
 SETTLE_SECONDS = 5.0
+CHILDLESS_KEY = "FIX-5"
 
 
 def test_scope_input_uses_only_the_existing_agent_routes() -> None:
@@ -179,6 +183,49 @@ async def test_issue_identity_is_independent_of_scope_and_prompt(
         assert submission.implied_base.base_branch == "implied-base"
         assert submission.permission_mode == "plan"
         assert submission.allowed_tools == ["Read"]
+
+
+@pytest.mark.parametrize("route", ROUTES)
+async def test_childless_issue_scope_resolves_to_the_unscoped_per_issue_input(
+    route: str,
+) -> None:
+    """The issue arm degenerates: no sub-issues, no widening of the fire input."""
+    tracker = FakeTrackerPort(
+        issues=[
+            make_tracker_issue(CHILDLESS_KEY),
+            make_tracker_issue("FIX-1"),
+            make_tracker_issue("FIX-2", parent_key="FIX-1"),
+        ]
+    )
+    body = {"prompt": "implement scope", "repoPath": "/tmp/fixture"}
+
+    async with scope_app() as (client, queue, engine):
+        response = await client.post(route, json={**body, "issueKey": CHILDLESS_KEY})
+        assert_accepted(response, route)
+        await asyncio.wait_for(engine.finished.wait(), timeout=SETTLE_SECONDS)
+        (unscoped,) = queue.submissions
+        assert unscoped.scope is None
+        assert engine.scopes == [None]
+        assert isinstance(unscoped.issue_key, str)
+        fire_input = {unscoped.issue_key}
+
+    async with scope_app() as (client, queue, engine):
+        response = await client.post(
+            route,
+            json={**body, "scope": {"kind": "issue", "key": CHILDLESS_KEY}},
+        )
+        assert_accepted(response, route)
+        await asyncio.wait_for(engine.finished.wait(), timeout=SETTLE_SECONDS)
+        (scoped,) = queue.submissions
+        assert scoped.issue_key is None
+        assert scoped.scope is not None
+        assert engine.scopes == [scoped.scope]
+
+    resolved = await resolve_scope(ref=scoped.scope, tracker=tracker)
+
+    assert {issue.issue_key for issue in resolved.issues} == fire_input
+    assert fire_input == {CHILDLESS_KEY}
+    assert len(resolved.issues) == 1
 
 
 @pytest.mark.parametrize("route", ROUTES)

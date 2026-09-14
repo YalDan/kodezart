@@ -32,6 +32,7 @@ INITIATIVE = ScopeRef(kind=ScopeKind.INITIATIVE, key="initiative-one")
 PROJECT = ScopeRef(kind=ScopeKind.PROJECT, key="project-one")
 MILESTONE = ScopeRef(kind=ScopeKind.MILESTONE, key="milestone-one")
 ROOT = ScopeRef(kind=ScopeKind.ISSUE, key="FIX-1")
+CHILDLESS = ScopeRef(kind=ScopeKind.ISSUE, key="FIX-5")
 OTHER_PROJECT = "project-two"
 EMPTY_PROJECT = ScopeRef(kind=ScopeKind.PROJECT, key="empty-project")
 EMPTY_INITIATIVE = ScopeRef(kind=ScopeKind.INITIATIVE, key="empty-initiative")
@@ -324,6 +325,16 @@ async def test_issue_scope_includes_root_and_all_descendants_across_containers(
     assert root.relations == (
         IssueRelation(kind=IssueRelationKind.BLOCKS, issue_key="FIX-4"),
     )
+
+
+async def test_childless_issue_scope_resolves_to_that_issue_alone(
+    scope_fixture: ScopeFixture,
+) -> None:
+    issues = await scope_fixture.tracker.scope_issues(ref=CHILDLESS)
+
+    assert {issue.issue_key for issue in issues} == {CHILDLESS.key}
+    assert len(issues) == 1
+    assert issues[0].parent_key is None
 
 
 @pytest.mark.parametrize(
