@@ -1,6 +1,6 @@
 {
-  "source_commit": "6d025023",
-  "provenance": "SHA256 of the prompt each authored consumer renders, captured from the consumers themselves at source_commit; entries are extended, never re-baselined.",
+  "source_commit": "aa4d04ff",
+  "provenance": "SHA256 of the prompt each authored consumer renders, captured from the consumers themselves at source_commit. Base 51d83d5; re-baselined once at aa4d04ff under the founder's ruling KOD-753, which deleted the criterion class from the acceptance-criteria prompt; no other re-baseline. Entries are otherwise extended, never re-baselined.",
   "prompts": {
     "anthropic_v5": {
       "0": {
