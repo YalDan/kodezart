@@ -10,6 +10,7 @@ as a claim that was never spent.
 import ast
 import importlib
 import inspect
+import textwrap
 from datetime import datetime, timedelta
 
 import pytest
@@ -28,6 +29,7 @@ from kodezart.services.pass_gate import PassGate
 from kodezart.services.run_recorder import RunRecorder
 from kodezart.services.scope_dispatcher import ScopeDispatcher
 from kodezart.services.tracker_lifecycle import TrackerLifecycleWriter
+from kodezart.types.domain import scope_ready
 from kodezart.types.domain.branch import WorkRef, WorkRefRole
 from kodezart.types.domain.dispatch import (
     DispatchOutcome,
@@ -38,6 +40,7 @@ from kodezart.types.domain.dispatch import (
 )
 from kodezart.types.domain.job import JobState
 from kodezart.types.domain.operation import ScopeLabel
+from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.scope import ScopeContainer, ScopeKind, ScopeRef
 from kodezart.types.domain.tracker import (
     IssuePriority,
@@ -539,6 +542,114 @@ def test_ready_set_and_walker_modules_hold_no_merge_state_call_site():
         "kodezart.types.domain.run_records",
         "kodezart.types.domain.scope",
     }
+
+
+def fire_outcome_vocabulary() -> frozenset[str]:
+    """The fire-level outcome vocabulary, read off the enum rather than listed.
+
+    A member appended later is covered by the assertion below without the
+    assertion being touched, which is the whole point of deriving the set
+    from the enum: a hand-written list would only forbid what the author of
+    the list happened to know about.
+    """
+    return frozenset(
+        {WorkflowOutcome.__name__}
+        | {member.name for member in WorkflowOutcome}
+        | {member.value for member in WorkflowOutcome}
+    )
+
+
+def outcome_references(source: str) -> frozenset[str]:
+    """Every fire-level outcome the parsed *source* names, however it names it.
+
+    Imports, bare names, attribute reads and the wire strings themselves all
+    count: a predicate that compared ``report.outcome == "scope_converged"``
+    would be reading a fire outcome just as surely as one that imported the
+    enum.
+    """
+    vocabulary = fire_outcome_vocabulary()
+    found: set[str] = set()
+    for node in ast.walk(ast.parse(textwrap.dedent(source))):
+        if isinstance(node, ast.Name) and node.id in vocabulary:
+            found.add(node.id)
+        if isinstance(node, ast.Attribute) and node.attr in vocabulary:
+            found.add(node.attr)
+        if isinstance(node, ast.ImportFrom | ast.Import):
+            found |= {
+                alias.name.rsplit(".", 1)[-1] for alias in node.names
+            } & vocabulary
+        if isinstance(node, ast.Constant) and node.value in vocabulary:
+            found.add(node.value)
+    return frozenset(found)
+
+
+def dispatchability_predicate_sources() -> tuple[tuple[str, str], ...]:
+    """The source of everything that decides whether a lane is dispatchable.
+
+    The decision is the ready set and the gap arithmetic under it, plus the
+    pass that walks the result: the subtree closure that says what a
+    candidate still owes, the topology that partitions candidates into ready
+    and blocked, the walker that assembles the ready set from both, the type
+    that carries it, and the one pass method that turns it into a launch.
+    ``record_run_outcome`` is deliberately absent — it records how a fire
+    that already ran ended, which is the one place a run outcome belongs.
+    """
+    return (
+        ("SubtreeClosure", inspect.getsource(issue_tree.SubtreeClosure)),
+        ("plan_topology", inspect.getsource(topology.plan_topology)),
+        ("scope_ready", inspect.getsource(scope_ready)),
+        ("scope_walker", inspect.getsource(scope_walker)),
+        ("run_pass", inspect.getsource(ScopeDispatcher.run_pass)),
+    )
+
+
+def test_the_detector_flags_a_dispatch_decision_that_reads_a_fire_outcome():
+    """The positive control: the same scan over a predicate that does read one."""
+    member = next(iter(WorkflowOutcome))
+    reading_enum = f"""
+        from kodezart.types.domain.outcome import WorkflowOutcome
+
+        def dispatchable(lane):
+            return lane.last_outcome is not WorkflowOutcome.{member.name}
+    """
+    reading_wire_string = f"""
+        def dispatchable(lane):
+            return lane.last_outcome != "{member.value}"
+    """
+
+    reading_the_gap = """
+        def dispatchable(lane):
+            return not lane.gap and not lane.blocker_keys
+    """
+
+    assert outcome_references(reading_enum) >= {
+        WorkflowOutcome.__name__,
+        member.name,
+    }
+    assert outcome_references(reading_wire_string) >= {member.value}
+    assert outcome_references(reading_the_gap) == frozenset()
+
+
+def test_no_fire_outcome_is_read_anywhere_the_dispatch_decision_is_made():
+    """A lane's admissibility is decided without any fire's ending being read.
+
+    Whether a lane is dispatchable follows from its gap and its blockers and
+    from nothing else, so a run that ended ``loop_not_accepted`` can never be
+    read as a lane finished, and one that ended ``shutdown_abandoned`` can
+    never be read as a lane abandoned: the arithmetic has no access to either
+    fact in the first place.
+    """
+    scanned = dispatchability_predicate_sources()
+
+    assert {label for label, _ in scanned} == {
+        "SubtreeClosure",
+        "plan_topology",
+        "scope_ready",
+        "scope_walker",
+        "run_pass",
+    }
+    for label, source in scanned:
+        assert outcome_references(source) == frozenset(), label
 
 
 def re_entry_board():
