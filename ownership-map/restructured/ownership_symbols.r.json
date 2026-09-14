@@ -47038,6 +47038,13 @@
    "note": "unchanged between main and donor; stays as main has it",
    "owner": "M1",
    "sym_kind": "import"
+  },
+  "import:from kodezart.types.domain.organize import ( MANDATE_PHASE_ROLES, MandateSpec, OrganizeLabelNamespace, ResolvedMandateSpec, phase_marker_source, split_label_key, )": {
+   "consumers": {},
+   "kind": "added",
+   "note": "introduced a96fa312..f575b2e8",
+   "owner": "M2",
+   "sym_kind": "symbol"
   }
  },
  "src/kodezart/types/domain/organize.py": {
@@ -48249,6 +48256,83 @@
    "owner": "M1",
    "owner_grep_only": "M1",
    "sym_kind": "function"
+  },
+  "import:from collections.abc import Mapping": {
+   "consumers": {},
+   "kind": "added",
+   "note": "introduced a96fa312..f575b2e8",
+   "owner": "M2",
+   "sym_kind": "symbol"
+  },
+  "MandatePhaseRole": {
+   "consumers": {},
+   "kind": "added",
+   "note": "introduced a96fa312..f575b2e8",
+   "owner": "M2",
+   "sym_kind": "symbol"
+  },
+  "MandatePhaseRole.model_config": {
+   "consumers": {},
+   "kind": "added",
+   "note": "introduced a96fa312..f575b2e8",
+   "owner": "M2",
+   "sym_kind": "symbol"
+  },
+  "MandatePhaseRole.author_prompt_key": {
+   "consumers": {},
+   "kind": "added",
+   "note": "introduced a96fa312..f575b2e8",
+   "owner": "M2",
+   "sym_kind": "symbol"
+  },
+  "MandatePhaseRole.marks_specification_body": {
+   "consumers": {},
+   "kind": "added",
+   "note": "introduced a96fa312..f575b2e8",
+   "owner": "M2",
+   "sym_kind": "symbol"
+  },
+  "MandatePhaseRole.marks_execution_stage": {
+   "consumers": {},
+   "kind": "added",
+   "note": "introduced a96fa312..f575b2e8",
+   "owner": "M2",
+   "sym_kind": "symbol"
+  },
+  "MANDATE_PHASE_ROLES": {
+   "consumers": {},
+   "kind": "added",
+   "note": "introduced a96fa312..f575b2e8",
+   "owner": "M2",
+   "sym_kind": "symbol"
+  },
+  "phase_marker_source": {
+   "consumers": {},
+   "kind": "added",
+   "note": "introduced a96fa312..f575b2e8",
+   "owner": "M2",
+   "sym_kind": "symbol"
+  },
+  "phase_successor": {
+   "consumers": {},
+   "kind": "added",
+   "note": "introduced a96fa312..f575b2e8",
+   "owner": "M2",
+   "sym_kind": "symbol"
+  },
+  "ResolvedMandateSpec.role": {
+   "consumers": {},
+   "kind": "added",
+   "note": "introduced a96fa312..f575b2e8",
+   "owner": "M2",
+   "sym_kind": "symbol"
+  },
+  "ResolvedMandateSpec.marker_source": {
+   "consumers": {},
+   "kind": "added",
+   "note": "introduced a96fa312..f575b2e8",
+   "owner": "M2",
+   "sym_kind": "symbol"
   }
  },
  "src/kodezart/types/domain/outcome.py": {

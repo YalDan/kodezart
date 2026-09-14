@@ -16739,7 +16739,8 @@
    "new_at_this_milestone": [
     "OrganizeScopeBinding",
     "OrganizeScopeBinding.repo_url",
-    "OrganizeScopeBinding.scope"
+    "OrganizeScopeBinding.scope",
+    "import:from kodezart.types.domain.organize import ( MANDATE_PHASE_ROLES, MandateSpec, OrganizeLabelNamespace, ResolvedMandateSpec, phase_marker_source, split_label_key, )"
    ],
    "remove": [
     "Initiative",
@@ -16817,7 +16818,8 @@
     "import:from kodezart.types.domain.privacy import PrivateSurface",
     "import:from kodezart.types.domain.run_event import ( DERIVED_RUN_EVENTS, RUN_EVENT_PUBLISHERS, SILENT_STATE_EVENTS, RunEventEffect, RunEventKind, RunEventTableError, )",
     "import:from kodezart.types.domain.scope_address import ScopeRef",
-    "import:from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator"
+    "import:from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator",
+    "import:from kodezart.types.domain.organize import ( MANDATE_PHASE_ROLES, MandateSpec, OrganizeLabelNamespace, ResolvedMandateSpec, phase_marker_source, split_label_key, )"
    ]
   },
   "src/kodezart/types/domain/organize.py": {
@@ -16835,7 +16837,18 @@
     "OrganizeAdmissionRequest.issue_key",
     "OrganizeAdmissionRequest.mandate_rubric",
     "OrganizeAdmissionRequest.repo_url",
-    "OrganizeAdmissionRequest.scope"
+    "OrganizeAdmissionRequest.scope",
+    "import:from collections.abc import Mapping",
+    "MandatePhaseRole",
+    "MandatePhaseRole.model_config",
+    "MandatePhaseRole.author_prompt_key",
+    "MandatePhaseRole.marks_specification_body",
+    "MandatePhaseRole.marks_execution_stage",
+    "MANDATE_PHASE_ROLES",
+    "phase_marker_source",
+    "phase_successor",
+    "ResolvedMandateSpec.role",
+    "ResolvedMandateSpec.marker_source"
    ],
    "remove": [],
    "take_from_donor": [
@@ -16939,7 +16952,18 @@
     "import:from kodezart.types.domain.scope_address import ScopeRef",
     "import:from pydantic import ConfigDict, Field, RootModel, field_validator, model_validator",
     "import:from typing import Annotated, Literal, Self",
-    "split_label_key"
+    "split_label_key",
+    "import:from collections.abc import Mapping",
+    "MandatePhaseRole",
+    "MandatePhaseRole.model_config",
+    "MandatePhaseRole.author_prompt_key",
+    "MandatePhaseRole.marks_specification_body",
+    "MandatePhaseRole.marks_execution_stage",
+    "MANDATE_PHASE_ROLES",
+    "phase_marker_source",
+    "phase_successor",
+    "ResolvedMandateSpec.role",
+    "ResolvedMandateSpec.marker_source"
    ]
   },
   "src/kodezart/types/domain/outcome.py": {

@@ -4068,5 +4068,25 @@
   "owner": "M1",
   "reason": "2026-09-14 harvest / M1 gap work (KOD-827, KOD-73)",
   "split": null
+ },
+ "tests/chains/test_organize_outbound_gating.py": {
+  "owner": "M2",
+  "reason": "introduced a96fa312..f575b2e8 by a M2 commit",
+  "split": null
+ },
+ "tests/chains/test_write_back_adoption.py": {
+  "owner": "M6",
+  "reason": "introduced a96fa312..f575b2e8 by a M6 commit",
+  "split": null
+ },
+ "tests/domain/test_fire_spec_arm_reads.py": {
+  "owner": "M3",
+  "reason": "introduced a96fa312..f575b2e8 by a M3 commit",
+  "split": null
+ },
+ "tests/test_mandate_dispatch_sites.py": {
+  "owner": "M2",
+  "reason": "introduced a96fa312..f575b2e8 by a M2 commit",
+  "split": null
  }
 }
