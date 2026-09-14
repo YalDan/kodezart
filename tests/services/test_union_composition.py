@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from kodezart.adapters.subprocess_check_chain import SubprocessCheckChainRunner
-from kodezart.adapters.subprocess_git_service import SubprocessGitService
+from kodezart.adapters.git.check_chain import SubprocessCheckChainRunner
+from kodezart.adapters.git.service import SubprocessGitService
 from kodezart.core.config import AppConfig
 from kodezart.domain.errors import CheckChainExecutionError
 from kodezart.services.union_composition import UnionComposition

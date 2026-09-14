@@ -14,8 +14,8 @@ from claude_agent_sdk import (
     ResultMessage,
 )
 
-from kodezart.adapters.claude_agent_executor import ClaudeAgentExecutor
-from kodezart.adapters.claude_client_executor import ClaudeClientExecutor
+from kodezart.adapters.claude.agent_executor import ClaudeAgentExecutor
+from kodezart.adapters.claude.client_executor import ClaudeClientExecutor
 from kodezart.core.backoff import RetryPolicy
 from kodezart.domain.errors import AgentSDKError, OutboundContentBlockedError
 from kodezart.types.domain.gating import (
@@ -92,7 +92,7 @@ def native_executor(monkeypatch, entry, scripts):
                 return messages(self.index)
 
         monkeypatch.setattr(
-            "kodezart.adapters.claude_client_executor.ClaudeSDKClient", Client
+            "kodezart.adapters.claude.client_executor.ClaudeSDKClient", Client
         )
         executor = ClaudeClientExecutor(
             setting_sources=DEFAULT_SETTING_SOURCES,
@@ -110,7 +110,7 @@ def native_executor(monkeypatch, entry, scripts):
             finally:
                 closed.append(index)
 
-        monkeypatch.setattr("kodezart.adapters.claude_agent_executor.query", query)
+        monkeypatch.setattr("kodezart.adapters.claude.agent_executor.query", query)
         executor = ClaudeAgentExecutor(
             setting_sources=DEFAULT_SETTING_SOURCES,
             knowledge_grant=NO_KNOWLEDGE_GRANT,
@@ -405,7 +405,7 @@ async def test_internal_failure_preserves_actual_handler_and_result_json(
     import json
     from pathlib import Path
 
-    from kodezart.adapters._sdk_mapping import map_message
+    from kodezart.adapters.claude.sdk_mapping import map_message
     from kodezart.handlers.agent_handler import AgentHandler
     from kodezart.services.agent_service import AgentService
     from kodezart.types.domain.session import SessionFailureKind

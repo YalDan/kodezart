@@ -213,7 +213,7 @@ async def test_split_source_drift_during_state_lookup_refuses_before_create(
 def test_initial_state_requires_actual_nonblank_native_identity(missing):
     from pydantic import ValidationError
 
-    from kodezart.adapters.linear_mcp_types import LINEAR_WORKFLOW_STATES
+    from kodezart.adapters.linear.wire import LINEAR_WORKFLOW_STATES
 
     row = {"name": "Todo", "type": "unstarted"}
     if missing is not None:
@@ -234,7 +234,7 @@ def test_initial_state_requires_actual_nonblank_native_identity(missing):
     ],
 )
 def test_split_creation_shape_never_bypasses_existing_issue_transition_guard(extra):
-    from kodezart.adapters.linear_mcp_tracker import refuse_combined_issue_write
+    from kodezart.adapters.linear.tracker import refuse_combined_issue_write
     from kodezart.core.errors import TrackerProtocolError
 
     payload = {

@@ -463,7 +463,7 @@ async def test_real_git_workspace_integrity_for_pinned_observation(
 ):
     import subprocess
 
-    from kodezart.adapters.subprocess_git_service import SubprocessGitService
+    from kodezart.adapters.git.service import SubprocessGitService
 
     def command(*args):
         return subprocess.check_output(

@@ -17,7 +17,7 @@ from collections.abc import Mapping, Sequence
 
 import pytest
 
-from kodezart.adapters.linear_mcp_tracker import LinearMcpTracker
+from kodezart.adapters.linear.tracker import LinearMcpTracker
 from kodezart.chains.scope_walker import (
     UnreachableCriterion,
     read_scope_ready,

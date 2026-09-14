@@ -12,7 +12,7 @@ import tomllib
 from fnmatch import fnmatch
 from pathlib import Path
 
-from kodezart.adapters.linear_mcp_tracker import ACCEPTED_CREDENTIAL_SHAPE
+from kodezart.adapters.linear.tracker import ACCEPTED_CREDENTIAL_SHAPE
 from kodezart.core import errors
 from kodezart.types.domain.dispatch import DispatchOutcome
 from kodezart.types.domain.operation import (

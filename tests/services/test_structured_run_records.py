@@ -6,7 +6,7 @@ from datetime import timedelta, timezone
 import pytest
 from pydantic import ValidationError
 
-from kodezart.adapters.notion_record_sink import NotionRecordSink
+from kodezart.adapters.notion.record_sink import NotionRecordSink
 from kodezart.core.errors import RunRecordWriteError
 from kodezart.services.run_recorder import RunRecorder
 from kodezart.types.domain.operation import (

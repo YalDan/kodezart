@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from kodezart.adapters.linear_issue_identity import LinearIssueIdentityCarrier
+from kodezart.adapters.linear.issue_identity import LinearIssueIdentityCarrier
 from kodezart.core.errors import TrackerProtocolError
 from kodezart.domain.errors import OrganizeWriteRefusalError, WriteBackReadError
 from kodezart.services.tracker_artifacts import read_tracker_artifact

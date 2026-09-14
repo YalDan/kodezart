@@ -15,7 +15,7 @@ from datetime import datetime, timedelta
 import pytest
 import structlog.testing
 
-from kodezart.adapters.linear_mcp_tracker import LinearMcpTracker
+from kodezart.adapters.linear.tracker import LinearMcpTracker
 from kodezart.core.errors import McpTransportError, TrackerProtocolError
 from kodezart.core.protocols import McpToolCaller, McpToolResult
 from kodezart.domain.errors import SurfaceLeaseError

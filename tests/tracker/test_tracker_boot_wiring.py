@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from kodezart.adapters.linear_mcp_tracker import LinearMcpTracker
+from kodezart.adapters.linear.tracker import LinearMcpTracker
 from kodezart.composition.prompts import boot_prompts
 from kodezart.composition.tracker import CREDENTIAL_FIELD
 from kodezart.core.errors import (

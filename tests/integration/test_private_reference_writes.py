@@ -3,7 +3,7 @@
 import pytest
 from pydantic import AnyHttpUrl, TypeAdapter, ValidationError
 
-from kodezart.adapters.linear_references import linear_reference
+from kodezart.adapters.linear.references import linear_reference
 from kodezart.adapters.reference_content_scanner import private_reference_category
 from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.composition.gating import build_outbound_gate

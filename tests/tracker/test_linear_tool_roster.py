@@ -105,7 +105,7 @@ def named_tools() -> dict[str, str]:
     found: dict[str, str] = {}
     for path in sorted(SOURCE_ROOT.rglob("*.py")):
         for match in _TOOL_CONSTANT.finditer(path.read_text()):
-            found[match.group("name")] = path.name
+            found[match.group("name")] = f"{path.parent.name}/{path.name}"
     return found
 
 
@@ -124,7 +124,7 @@ def test_the_server_offers_no_issue_history_tool() -> None:
 #: tracker tool cannot hide in one: the paired test below pins their
 #: naming shape, and their live roster is measured by the verification
 #: boot (KOD-170) the way this file's Linear roster was.
-KNOWLEDGE_TOOL_MODULES = frozenset({"notion_record_sink.py"})
+KNOWLEDGE_TOOL_MODULES = frozenset({"notion/record_sink.py"})
 
 
 def test_every_tracker_tool_has_a_measured_public_declaration() -> None:

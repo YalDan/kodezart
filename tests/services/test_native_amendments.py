@@ -5,10 +5,10 @@ from pathlib import Path
 
 import pytest
 
-from kodezart.adapters.git_change_persister import GitChangePersister
-from kodezart.adapters.git_worktree_provider import GitWorktreeProvider
-from kodezart.adapters.subprocess_git_service import SubprocessGitService
-from kodezart.adapters.subprocess_git_source_reader import SubprocessGitSourceReader
+from kodezart.adapters.git.change_persister import GitChangePersister
+from kodezart.adapters.git.service import SubprocessGitService
+from kodezart.adapters.git.source_reader import SubprocessGitSourceReader
+from kodezart.adapters.git.worktree_provider import GitWorktreeProvider
 from kodezart.chains.criteria import TrackerCriteria
 from kodezart.domain.amendment import NativeWriteRefusalError
 from kodezart.domain.errors import FireSpecEntryError

@@ -43,10 +43,10 @@ from pathlib import Path
 import pytest
 from pydantic import ConfigDict, Field
 
-from kodezart.adapters.claude_client_executor import ClaudeClientExecutor
-from kodezart.adapters.git_worktree_provider import GitWorktreeProvider
-from kodezart.adapters.local_bare_repo_cache import LocalBareRepoCache
-from kodezart.adapters.subprocess_git_service import SubprocessGitService
+from kodezart.adapters.claude.client_executor import ClaudeClientExecutor
+from kodezart.adapters.git.bare_repo_cache import LocalBareRepoCache
+from kodezart.adapters.git.service import SubprocessGitService
+from kodezart.adapters.git.worktree_provider import GitWorktreeProvider
 from kodezart.core.config import AppConfig
 from kodezart.core.constants import EVAL_PERMISSION_MODE
 from kodezart.core.stream_drain import drain

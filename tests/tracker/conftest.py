@@ -13,7 +13,7 @@ from inspect import isawaitable
 
 import pytest
 
-from kodezart.adapters.linear_mcp_tracker import LinearMcpTracker
+from kodezart.adapters.linear.tracker import LinearMcpTracker
 from kodezart.core.backoff import RetryPolicy
 from kodezart.core.protocols import TrackerPort
 from kodezart.types.domain.dispatch import PassSignal, SelfWriteLedger

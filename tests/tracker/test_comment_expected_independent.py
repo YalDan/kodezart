@@ -2,7 +2,7 @@
 
 import pytest
 
-from kodezart.adapters.linear_mcp_tracker import LinearMcpTracker
+from kodezart.adapters.linear.tracker import LinearMcpTracker
 from kodezart.core.backoff import RetryPolicy
 from kodezart.core.errors import McpTransportError
 from kodezart.domain.errors import StaleCommentWriteError, SurfaceLeaseError

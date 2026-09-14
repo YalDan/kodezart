@@ -4,8 +4,8 @@ import asyncio
 import os
 import sys
 
-from kodezart.adapters.local_bare_repo_cache import LocalBareRepoCache
-from kodezart.adapters.subprocess_git_service import SubprocessGitService
+from kodezart.adapters.git.bare_repo_cache import LocalBareRepoCache
+from kodezart.adapters.git.service import SubprocessGitService
 
 
 async def assert_git_read_settles_before_release(

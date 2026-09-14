@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from kodezart.adapters import subprocess_check_chain
-from kodezart.adapters.subprocess_check_chain import SubprocessCheckChainRunner
+from kodezart.adapters.git import check_chain
+from kodezart.adapters.git.check_chain import SubprocessCheckChainRunner
 from kodezart.core.config import AppConfig
 from kodezart.types.domain.operation import CheckStep
 
@@ -27,7 +27,7 @@ async def test_native_orphan_is_reaped_through_repeated_cancellation(
     first_signal = asyncio.Event()
     release = asyncio.Event()
     signaled: list[asyncio.subprocess.Process] = []
-    real_kill = subprocess_check_chain._kill_group
+    real_kill = check_chain._kill_group
     repeated_signals = []
 
     def controlled_signal(process: asyncio.subprocess.Process) -> None:
@@ -40,7 +40,7 @@ async def test_native_orphan_is_reaped_through_repeated_cancellation(
             if release.is_set():
                 real_kill(process)
 
-    monkeypatch.setattr(subprocess_check_chain, "_kill_group", controlled_signal)
+    monkeypatch.setattr(check_chain, "_kill_group", controlled_signal)
     adapter = SubprocessCheckChainRunner(
         timeout=AppConfig(
             union_check_step_timeout_seconds=0.2 if trigger == "timeout" else 30

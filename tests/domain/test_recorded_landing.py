@@ -8,7 +8,7 @@ import pytest
 ROOT = Path(__file__).parents[2] / "src" / "kodezart"
 READ_OWNERS = {
     ("types/domain/branch.py", "identity"),
-    ("adapters/linear_markers.py", "work_ref_body"),
+    ("adapters/linear/markers.py", "work_ref_body"),
     ("services/base_resolver.py", "_input_for"),
 }
 
@@ -37,7 +37,7 @@ def landing_read_violations(source, module):
             return isinstance(parent, ast.Tuple) and isinstance(
                 parents[id(parent)], ast.Return
             )
-        if pair == ("adapters/linear_markers.py", "work_ref_body"):
+        if pair == ("adapters/linear/markers.py", "work_ref_body"):
             return (
                 isinstance(parent, ast.Attribute)
                 and parent.attr == "value"
@@ -132,7 +132,7 @@ def test_direct_boolean_alias_and_reflective_reads_fail(statement):
 def test_known_owner_does_not_permit_boolean_wire_or_identity_coercion():
     assert landing_read_violations(
         "def work_ref_body(ref):\n    return f'{bool(ref.landing.value)}'",
-        "adapters/linear_markers.py",
+        "adapters/linear/markers.py",
     )
     assert landing_read_violations(
         "def identity(self):\n    return (bool(self.landing),)",
@@ -165,7 +165,7 @@ def landing_derivation_violations(source, module):
     for node in ast.walk(tree):
         if isinstance(node, ast.keyword) and node.arg == "landing":
             if (
-                module != "adapters/linear_mcp_tracker.py"
+                module != "adapters/linear/tracker.py"
                 or ast.dump(node.value) != wire_read
             ):
                 failures.append(node.lineno)
@@ -179,7 +179,7 @@ def landing_derivation_violations(source, module):
             isinstance(target, ast.Name) and target.id == "landing"
             for target in node.targets
         ):
-            if module != "adapters/linear_mcp_tracker.py" or ast.dump(
+            if module != "adapters/linear/tracker.py" or ast.dump(
                 node.value
             ) != ast.dump(ast.parse('match.group("landing")', mode="eval").body):
                 failures.append(node.lineno)
@@ -200,7 +200,7 @@ def landing_derivation_violations(source, module):
             and node.target.id == "landing"
         ):
             if (
-                module != "adapters/linear_mcp_tracker.py"
+                module != "adapters/linear/tracker.py"
                 or node.value is None
                 or ast.dump(node.value)
                 != ast.dump(ast.parse('match.group("landing")', mode="eval").body)
@@ -269,7 +269,7 @@ def test_a_constructor_cannot_derive_or_assume_a_landing(expression):
         f"WorkRef(landing={expression})", "services/base_resolver.py"
     )
     assert landing_derivation_violations(
-        f"WorkRef(landing={expression})", "adapters/linear_mcp_tracker.py"
+        f"WorkRef(landing={expression})", "adapters/linear/tracker.py"
     )
 
 
@@ -311,21 +311,21 @@ def test_pydantic_mapping_inputs_cannot_derive_a_recorded_fact(construction):
     ],
 )
 def test_native_constructor_must_consume_the_recorded_landing_attribute(replacement):
-    source = (ROOT / "adapters/linear_mcp_tracker.py").read_text()
-    assert not landing_derivation_violations(source, "adapters/linear_mcp_tracker.py")
+    source = (ROOT / "adapters/linear/tracker.py").read_text()
+    assert not landing_derivation_violations(source, "adapters/linear/tracker.py")
     derived = source.replace(
         'landing = match.group("landing")',
         replacement,
     )
     assert derived != source
-    assert landing_derivation_violations(derived, "adapters/linear_mcp_tracker.py")
+    assert landing_derivation_violations(derived, "adapters/linear/tracker.py")
 
 
 def test_typed_native_binding_still_accepts_the_actual_recorded_attribute():
-    source = (ROOT / "adapters/linear_mcp_tracker.py").read_text()
+    source = (ROOT / "adapters/linear/tracker.py").read_text()
     typed = source.replace(
         'landing = match.group("landing")',
         'landing: str | None = match.group("landing")',
     )
     assert typed != source
-    assert not landing_derivation_violations(typed, "adapters/linear_mcp_tracker.py")
+    assert not landing_derivation_violations(typed, "adapters/linear/tracker.py")

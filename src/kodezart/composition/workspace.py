@@ -8,14 +8,14 @@ extraction plus one addition rather than a pure move.
 
 from dataclasses import dataclass
 
-from kodezart.adapters.git_artifact_persister import GitArtifactPersister
-from kodezart.adapters.git_branch_merger import GitBranchMerger
-from kodezart.adapters.git_change_persister import GitChangePersister
-from kodezart.adapters.git_ref_publisher import GitRefPublisher
-from kodezart.adapters.git_worktree_provider import GitWorktreeProvider
-from kodezart.adapters.github_token_auth import GitHubTokenAuth
-from kodezart.adapters.local_bare_repo_cache import LocalBareRepoCache
-from kodezart.adapters.subprocess_git_service import SubprocessGitService
+from kodezart.adapters.git.artifact_persister import GitArtifactPersister
+from kodezart.adapters.git.bare_repo_cache import LocalBareRepoCache
+from kodezart.adapters.git.branch_merger import GitBranchMerger
+from kodezart.adapters.git.change_persister import GitChangePersister
+from kodezart.adapters.git.ref_publisher import GitRefPublisher
+from kodezart.adapters.git.service import SubprocessGitService
+from kodezart.adapters.git.worktree_provider import GitWorktreeProvider
+from kodezart.adapters.github.token_auth import GitHubTokenAuth
 from kodezart.core.git_settings import GitSettings
 from kodezart.core.protocols import (
     ArtifactPersister,

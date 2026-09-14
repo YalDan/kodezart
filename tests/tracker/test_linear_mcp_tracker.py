@@ -15,8 +15,8 @@ import httpx
 import pytest
 import structlog
 
-from kodezart.adapters.http_mcp_tool_caller import HttpMcpToolCaller
-from kodezart.adapters.linear_mcp_tracker import LinearMcpTracker
+from kodezart.adapters.linear.tracker import LinearMcpTracker
+from kodezart.adapters.mcp.http_tool_caller import HttpMcpToolCaller
 from kodezart.core.backoff import RetryPolicy
 from kodezart.core.errors import (
     TrackerAccessDeniedError,

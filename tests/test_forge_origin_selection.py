@@ -23,7 +23,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-from kodezart.adapters.github_api import GitHubAPIClient
+from kodezart.adapters.github.api import GitHubAPIClient
 from kodezart.chains.authored_delivery import AuthoredDeliveryCoordinator
 from kodezart.composition.engine import (
     OriginRoutedWorkflowEngine,

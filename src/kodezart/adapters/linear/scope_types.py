@@ -7,7 +7,7 @@ explicit here and is refused by the adapter's metadata capability.
 
 from pydantic import Field
 
-from kodezart.adapters.linear_mcp_types import (
+from kodezart.adapters.linear.wire import (
     LinearAddressedIssueWire,
     LinearWireModel,
 )

@@ -1,6 +1,6 @@
 """Construct the standing native audit from explicitly declared scope bindings."""
 
-from kodezart.adapters.subprocess_git_source_reader import SubprocessGitSourceReader
+from kodezart.adapters.git.source_reader import SubprocessGitSourceReader
 from kodezart.chains.audit_detection_removal import DetectorRemovalVerifier
 from kodezart.chains.audit_evidence import AuditEvidenceVerifier
 from kodezart.chains.audit_forge import AuditForgeVerifier

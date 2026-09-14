@@ -8,11 +8,11 @@ from typing import ClassVar
 import httpx
 import pytest
 
-from kodezart.adapters.http_mcp_tool_caller import HttpMcpToolCaller
-from kodezart.adapters.linear_mcp_tracker import (
+from kodezart.adapters.linear.tracker import (
     ACCEPTED_CREDENTIAL_SHAPE,
     LinearMcpTracker,
 )
+from kodezart.adapters.mcp.http_tool_caller import HttpMcpToolCaller
 from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.composition.tracker import boot_tracker, refuse_foreign_credential
 from kodezart.core.backoff import RetryPolicy

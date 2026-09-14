@@ -2,7 +2,7 @@
 
 import pytest
 
-from kodezart.adapters.subprocess_git_source_reader import SubprocessGitSourceReader
+from kodezart.adapters.git.source_reader import SubprocessGitSourceReader
 from kodezart.domain.errors import GitSourceReadError
 from tests.services.test_assertion_drift import PATH, commit, git, source
 from tests.services.test_assertion_drift import repo as repo

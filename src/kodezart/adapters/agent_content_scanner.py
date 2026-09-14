@@ -21,7 +21,7 @@ import asyncio
 from claude_agent_sdk import CLIConnectionError, CLINotFoundError, ResultError
 from pydantic import ValidationError
 
-from kodezart.adapters._sdk_mapping import result_failure
+from kodezart.adapters.claude.sdk_mapping import result_failure
 from kodezart.core.backoff import RetryPolicy
 from kodezart.core.errors import PromptRenderError
 from kodezart.core.logging import BoundLogger, get_logger

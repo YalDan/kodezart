@@ -632,7 +632,7 @@ async def test_actual_lifespan_agent_settings_reach_native_session(
 
     from claude_agent_sdk import SystemMessage
 
-    from kodezart.adapters.claude_client_executor import ClaudeClientExecutor
+    from kodezart.adapters.claude.client_executor import ClaudeClientExecutor
     from kodezart.composition.preflight import boot_skills
     from kodezart.composition.prompts import boot_prompts
     from kodezart.types.domain.agent import SystemEvent
@@ -667,7 +667,7 @@ async def test_actual_lifespan_agent_settings_reach_native_session(
     if configured_agent:
         opening["output_style"] = "Concise"
     monkeypatch.setattr(
-        "kodezart.adapters.claude_client_executor.ClaudeSDKClient",
+        "kodezart.adapters.claude.client_executor.ClaudeSDKClient",
         _recording_client(recorded, [SystemMessage(subtype="init", data=opening)]),
     )
     async with resources.app.router.lifespan_context(resources.app):

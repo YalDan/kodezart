@@ -26,7 +26,7 @@ from urllib.parse import quote, urlsplit
 
 import httpx
 
-from kodezart.adapters.github_types import (
+from kodezart.adapters.github.wire import (
     CheckRun,
     CheckRunsResponse,
     CommitIdentity,

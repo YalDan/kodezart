@@ -8,8 +8,8 @@ import pytest
 from claude_agent_sdk import ResultMessage, SystemMessage
 from pydantic import ValidationError
 
-from kodezart.adapters._sdk_mapping import map_message
-from kodezart.adapters.claude_client_executor import ClaudeClientExecutor
+from kodezart.adapters.claude.client_executor import ClaudeClientExecutor
+from kodezart.adapters.claude.sdk_mapping import map_message
 from kodezart.core.node_sessions import NodeSessionObserver
 from kodezart.types.domain.agent import NodeSessionStartedEvent
 from kodezart.types.domain.node_session import (
@@ -206,7 +206,7 @@ async def test_actual_evaluator_emits_only_its_native_sessions(monkeypatch, mode
         "opened": asyncio.Event(),
     }
     monkeypatch.setattr(
-        "kodezart.adapters.claude_client_executor.ClaudeSDKClient",
+        "kodezart.adapters.claude.client_executor.ClaudeSDKClient",
         lambda **kwargs: SDKClient(**kwargs, state=state),
     )
     executor = ClaudeClientExecutor(

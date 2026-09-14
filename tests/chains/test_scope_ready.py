@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 import pytest
 
-from kodezart.adapters.linear_mcp_tracker import LinearMcpTracker
+from kodezart.adapters.linear.tracker import LinearMcpTracker
 from kodezart.chains.scope_walker import read_scope_ready
 from kodezart.composition.engine import OriginRoutedWorkflowEngine
 from kodezart.core.backoff import RetryPolicy

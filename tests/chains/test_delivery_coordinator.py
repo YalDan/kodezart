@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from kodezart.adapters.subprocess_check_chain import SubprocessCheckChainRunner
+from kodezart.adapters.git.check_chain import SubprocessCheckChainRunner
 from kodezart.chains.delivery_coordinator import ScopeUnionCoordinator
 from kodezart.chains.scope_walker import read_scope_ready
 from kodezart.core.config import AppConfig

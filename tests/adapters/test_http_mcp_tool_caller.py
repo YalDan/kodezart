@@ -42,13 +42,13 @@ from mcp.server.lowlevel import Server
 from mcp.shared.memory import create_connected_server_and_client_session
 from mcp.types import CallToolResult, ContentBlock, TextContent
 
-from kodezart.adapters import (
-    hosted_mcp_session,
-    http_mcp_tool_caller,
-    stdio_mcp_tool_caller,
+from kodezart.adapters.mcp import (
+    hosted_session,
+    http_tool_caller,
+    stdio_tool_caller,
 )
-from kodezart.adapters.hosted_mcp_session import _INBOX_UNBOUNDED, _Phase
-from kodezart.adapters.http_mcp_tool_caller import (
+from kodezart.adapters.mcp.hosted_session import _INBOX_UNBOUNDED, _Phase
+from kodezart.adapters.mcp.http_tool_caller import (
     HttpMcpToolCaller,
     HttpxClientFactory,
     pooled_http_client,
@@ -1313,7 +1313,7 @@ def test_no_private_vendor_module_is_imported_by_the_transport() -> None:
     now be reached for, and a guard that watched only the file the import
     used to be in would watch the wrong file.
     """
-    transports = (hosted_mcp_session, http_mcp_tool_caller, stdio_mcp_tool_caller)
+    transports = (hosted_session, http_tool_caller, stdio_tool_caller)
     imported: set[str] = set()
     for module in transports:
         tree = ast.parse(Path(module.__file__ or "").read_text(encoding="utf-8"))

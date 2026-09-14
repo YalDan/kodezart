@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock
 import pytest
 from pydantic import TypeAdapter, ValidationError
 
-from kodezart.adapters.subprocess_git_service import SubprocessGitService
+from kodezart.adapters.git.service import SubprocessGitService
 from kodezart.domain.errors import RunShapeReadError
 from kodezart.domain.run_shape import record_superseded
 from kodezart.types.domain.run_alarm import (

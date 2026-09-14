@@ -10,8 +10,8 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from kodezart.adapters import subprocess_check_chain
-from kodezart.adapters.subprocess_check_chain import SubprocessCheckChainRunner
+from kodezart.adapters.git import check_chain
+from kodezart.adapters.git.check_chain import SubprocessCheckChainRunner
 from kodezart.core.config import AppConfig
 from kodezart.core.protocols import CheckChainRunner
 from kodezart.domain.errors import CheckChainExecutionError
@@ -107,9 +107,7 @@ async def test_cancel_during_spawn_reaps_the_eventual_process(
         await release.wait()
         return process
 
-    monkeypatch.setattr(
-        subprocess_check_chain.asyncio, "create_subprocess_shell", delayed_spawn
-    )
+    monkeypatch.setattr(check_chain.asyncio, "create_subprocess_shell", delayed_spawn)
     task = asyncio.create_task(
         runner().run_chain(
             cwd=str(tmp_path), steps=[CheckStep(name="slow", command="sleep 30")]
@@ -248,9 +246,7 @@ async def test_launch_handshake_counts_against_step_deadline(
         await release.wait()
         return process
 
-    monkeypatch.setattr(
-        subprocess_check_chain.asyncio, "create_subprocess_shell", delayed_spawn
-    )
+    monkeypatch.setattr(check_chain.asyncio, "create_subprocess_shell", delayed_spawn)
     task = asyncio.create_task(
         runner(0.05).run_chain(
             cwd=str(tmp_path),

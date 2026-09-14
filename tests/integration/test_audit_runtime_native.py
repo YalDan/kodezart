@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from kodezart.adapters.git_worktree_provider import GitWorktreeProvider
-from kodezart.adapters.local_bare_repo_cache import LocalBareRepoCache
-from kodezart.adapters.subprocess_git_service import SubprocessGitService
+from kodezart.adapters.git.bare_repo_cache import LocalBareRepoCache
+from kodezart.adapters.git.service import SubprocessGitService
+from kodezart.adapters.git.worktree_provider import GitWorktreeProvider
 from kodezart.composition.audit import build_audit_pass
 from kodezart.core.config import AppConfig
 from kodezart.domain.criterion_evidence import render_evidence_field

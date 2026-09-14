@@ -5,7 +5,7 @@ from html import unescape
 
 from pydantic import AnyHttpUrl, TypeAdapter, ValidationError
 
-from kodezart.adapters.linear_references import LINEAR_WEB_HOSTS, linear_reference
+from kodezart.adapters.linear.references import LINEAR_WEB_HOSTS, linear_reference
 from kodezart.core.errors import ContentScannerBootError
 from kodezart.types.domain.gating import (
     OutboundDestination,

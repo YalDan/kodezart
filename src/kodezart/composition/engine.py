@@ -8,8 +8,8 @@ from collections.abc import AsyncIterator, Sequence
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
 
-from kodezart.adapters.github_api import GitHubAPIClient
-from kodezart.adapters.subprocess_git_source_reader import SubprocessGitSourceReader
+from kodezart.adapters.git.source_reader import SubprocessGitSourceReader
+from kodezart.adapters.github.api import GitHubAPIClient
 from kodezart.chains.authored_checks import AuthoredChecks
 from kodezart.chains.authored_delivery import AuthoredDeliveryCoordinator
 from kodezart.chains.authored_publication import AuthoredPublication

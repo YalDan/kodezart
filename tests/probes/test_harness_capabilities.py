@@ -20,10 +20,10 @@ from pathlib import Path
 import pytest
 from claude_agent_sdk import AgentDefinition, ClaudeAgentOptions, query
 
-from kodezart.adapters._agents_mapping import map_allowed_tools
-from kodezart.adapters._permission_modes import map_permission_mode
-from kodezart.adapters._sdk_mapping import map_message
-from kodezart.adapters._skills_mapping import map_setting_sources, map_skills
+from kodezart.adapters.claude.agents_mapping import map_allowed_tools
+from kodezart.adapters.claude.permission_modes import map_permission_mode
+from kodezart.adapters.claude.sdk_mapping import map_message
+from kodezart.adapters.claude.skills_mapping import map_setting_sources, map_skills
 from kodezart.core.config import AppConfig
 from kodezart.core.constants import EVAL_PERMISSION_MODE
 from kodezart.types.domain.agent import (

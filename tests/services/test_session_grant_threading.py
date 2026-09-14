@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from kodezart.adapters.claude_client_executor import ClaudeClientExecutor
+from kodezart.adapters.claude.client_executor import ClaudeClientExecutor
 from kodezart.core.config import AppConfig
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.agent import AssistantTextEvent, ResultEvent

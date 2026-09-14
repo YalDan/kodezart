@@ -15,8 +15,8 @@ from typing import Final
 
 import pytest
 
-from kodezart.adapters.linear_record_sink import LinearRecordSink
-from kodezart.adapters.notion_record_sink import NotionRecordSink
+from kodezart.adapters.linear.record_sink import LinearRecordSink
+from kodezart.adapters.notion.record_sink import NotionRecordSink
 from kodezart.core.errors import (
     McpCallUnansweredError,
     McpSessionClosedError,

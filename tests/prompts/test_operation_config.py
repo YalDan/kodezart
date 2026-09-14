@@ -638,7 +638,7 @@ def test_placeholder_mapping_is_total_in_both_directions() -> None:
     assert native == {
         "organize_scopes": "composition/organize.py::build_organize_tick",
         "audit_scopes": "composition/audit.py::build_audit_pass",
-        "workflow_states.done": "adapters/linear_mcp_tracker.py::set_workflow_state",
+        "workflow_states.done": "adapters/linear/tracker.py::set_workflow_state",
     }
     assert set(mapped).isdisjoint(native)
     assert set(mapped.values()) | {name.split(".")[0] for name in native} == set(

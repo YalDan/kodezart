@@ -7,8 +7,8 @@ import sys
 
 import pytest
 
-from kodezart.adapters.subprocess_git_service import SubprocessGitService
-from kodezart.adapters.subprocess_git_source_reader import SubprocessGitSourceReader
+from kodezart.adapters.git.service import SubprocessGitService
+from kodezart.adapters.git.source_reader import SubprocessGitSourceReader
 
 
 @pytest.mark.parametrize("reader", ["identity", "source"])

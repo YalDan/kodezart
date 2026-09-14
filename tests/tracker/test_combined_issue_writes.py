@@ -16,7 +16,7 @@ from collections.abc import Mapping
 
 import pytest
 
-from kodezart.adapters.linear_mcp_tracker import (
+from kodezart.adapters.linear.tracker import (
     LinearMcpTracker,
     refuse_combined_issue_write,
 )

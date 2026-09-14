@@ -22,7 +22,7 @@ from unittest.mock import patch
 import pytest
 from claude_agent_sdk import ProcessError, ResultError, SystemMessage
 
-from kodezart.adapters.claude_client_executor import ClaudeClientExecutor
+from kodezart.adapters.claude.client_executor import ClaudeClientExecutor
 from kodezart.core.errors import OutputStyleNotConfirmedError
 from kodezart.domain.errors import AgentSDKError
 from kodezart.types.domain.agent import AgentEvent, SystemEvent
@@ -36,7 +36,7 @@ from tests.fakes import (
     recorded_session,
 )
 
-_EXECUTOR_MODULE = "kodezart.adapters.claude_client_executor"
+_EXECUTOR_MODULE = "kodezart.adapters.claude.client_executor"
 
 #: The style the operation declares, and one the operator did not.
 _DECLARED_STYLE = "Concise"

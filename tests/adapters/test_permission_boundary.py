@@ -39,7 +39,7 @@ TOOLS = ["Read", "Bash(git status:*)", "mcp__fixture__read", "FutureTool"]
 def sdk(request):
     module = request.param
     records = []
-    persistent = module.endswith("claude_client_executor")
+    persistent = module.endswith("client_executor")
     target = "ClaudeSDKClient" if persistent else "query"
     replacement = (
         _recording_client(records, ()) if persistent else _recording_query(records, ())
@@ -265,7 +265,7 @@ async def test_cancellation_still_closes_sdk_and_releases_the_workspace(module):
             )
         ]
 
-    persistent = module.endswith("claude_client_executor")
+    persistent = module.endswith("client_executor")
     target = "ClaudeSDKClient" if persistent else "query"
     with patch(f"{module}.{target}", Client if persistent else query):
         task = asyncio.create_task(run())

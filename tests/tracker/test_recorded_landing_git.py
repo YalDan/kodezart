@@ -1,6 +1,6 @@
 """Real squash and merge graphs cannot change a recorded landing decision."""
 
-from kodezart.adapters.subprocess_git_service import SubprocessGitService
+from kodezart.adapters.git.service import SubprocessGitService
 from kodezart.services.base_resolver import BaseResolver
 from kodezart.types.domain.branch import WorkRef, WorkRefLanding, WorkRefRole
 from tests.services.test_union_composition import git

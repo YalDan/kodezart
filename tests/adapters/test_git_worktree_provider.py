@@ -5,9 +5,9 @@ from pathlib import Path
 
 import pytest
 
-from kodezart.adapters.git_worktree_provider import GitWorktreeProvider
-from kodezart.adapters.local_bare_repo_cache import LocalBareRepoCache
-from kodezart.adapters.subprocess_git_service import SubprocessGitService
+from kodezart.adapters.git.bare_repo_cache import LocalBareRepoCache
+from kodezart.adapters.git.service import SubprocessGitService
+from kodezart.adapters.git.worktree_provider import GitWorktreeProvider
 from kodezart.core.protocols import WorkspaceProvider
 from kodezart.domain.errors import WorkspaceError
 from tests.fakes import FakeGitService, FakeRepoCache

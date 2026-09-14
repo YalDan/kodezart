@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from kodezart.adapters.local_bare_repo_cache import LocalBareRepoCache
-from kodezart.adapters.subprocess_git_service import SubprocessGitService
+from kodezart.adapters.git.bare_repo_cache import LocalBareRepoCache
+from kodezart.adapters.git.service import SubprocessGitService
 from tests.adapters.test_subprocess_git import _run_git
 from tests.adapters.test_subprocess_git import git_repo as git_repo
 

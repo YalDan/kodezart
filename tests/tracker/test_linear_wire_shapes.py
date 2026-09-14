@@ -34,8 +34,8 @@ from datetime import UTC, datetime
 import pytest
 from pydantic import ValidationError
 
-from kodezart.adapters.linear_mcp_tracker import LinearMcpTracker
-from kodezart.adapters.linear_mcp_types import (
+from kodezart.adapters.linear.tracker import LinearMcpTracker
+from kodezart.adapters.linear.wire import (
     LINEAR_NAMED_ARRAY,
     LinearCommentListWire,
     LinearCommentWire,

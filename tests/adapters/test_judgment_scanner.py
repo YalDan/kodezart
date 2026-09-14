@@ -25,7 +25,7 @@ from pathlib import Path
 import pytest
 
 from kodezart.adapters.agent_content_scanner import AgentContentScanner
-from kodezart.adapters.git_change_persister import GitChangePersister
+from kodezart.adapters.git.change_persister import GitChangePersister
 from kodezart.adapters.outbound_admission import OutboundAdmission
 from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.composition.gating import build_outbound_gate

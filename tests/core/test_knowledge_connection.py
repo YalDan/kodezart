@@ -5,7 +5,7 @@ import json
 import pytest
 from pydantic import ValidationError
 
-from kodezart.adapters._mcp_mapping import map_knowledge_mcp
+from kodezart.adapters.mcp.mapping import map_knowledge_mcp
 from kodezart.core.config import AppConfig
 from kodezart.core.knowledge_settings import KnowledgeSettings
 from kodezart.types.domain.session import (

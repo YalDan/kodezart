@@ -6,7 +6,7 @@ import pytest
 from claude_agent_sdk import SystemMessage
 from pydantic import ValidationError
 
-from kodezart.adapters.claude_client_executor import ClaudeClientExecutor
+from kodezart.adapters.claude.client_executor import ClaudeClientExecutor
 from kodezart.composition.preflight import boot_skills
 from kodezart.composition.prompts import boot_prompts
 from kodezart.core.config import AppConfig
@@ -111,7 +111,7 @@ async def test_agent_sources_reach_native_inventory_policies_and_session(
         )
     recorded = []
     monkeypatch.setattr(
-        "kodezart.adapters.claude_client_executor.ClaudeSDKClient",
+        "kodezart.adapters.claude.client_executor.ClaudeSDKClient",
         _recording_client(
             recorded,
             [
@@ -179,7 +179,7 @@ async def test_declared_style_still_requires_native_confirmation(tmp_path, monke
     config = configured("init", tmp_path, monkeypatch)
     recorded = []
     monkeypatch.setattr(
-        "kodezart.adapters.claude_client_executor.ClaudeSDKClient",
+        "kodezart.adapters.claude.client_executor.ClaudeSDKClient",
         _recording_client(
             recorded,
             [

@@ -7,11 +7,11 @@ from pathlib import Path
 import pytest
 from langgraph.checkpoint.memory import InMemorySaver
 
-from kodezart.adapters.git_branch_merger import GitBranchMerger
-from kodezart.adapters.git_change_persister import GitChangePersister
-from kodezart.adapters.git_worktree_provider import GitWorktreeProvider
-from kodezart.adapters.local_bare_repo_cache import LocalBareRepoCache
-from kodezart.adapters.subprocess_git_service import SubprocessGitService
+from kodezart.adapters.git.bare_repo_cache import LocalBareRepoCache
+from kodezart.adapters.git.branch_merger import GitBranchMerger
+from kodezart.adapters.git.change_persister import GitChangePersister
+from kodezart.adapters.git.service import SubprocessGitService
+from kodezart.adapters.git.worktree_provider import GitWorktreeProvider
 from kodezart.composition.engine import build_workflow_engine
 from kodezart.core.config import AppConfig
 from kodezart.domain.thread_id import workflow_thread_id

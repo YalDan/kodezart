@@ -12,7 +12,7 @@ from typing import Final
 
 import pytest
 
-from kodezart.adapters._mcp_mapping import map_knowledge_mcp
+from kodezart.adapters.mcp.mapping import map_knowledge_mcp
 from kodezart.types.domain.session import (
     KnowledgeGrant,
     KnowledgeTransport,

@@ -80,7 +80,7 @@ def test_every_writer_in_the_corrected_inventory_names_the_gate() -> None:
         REPO_ROOT / "src" / "kodezart" / "chains" / "authored_publication.py"
     ).read_text(encoding="utf-8")
     persister = (
-        REPO_ROOT / "src" / "kodezart" / "adapters" / "git_change_persister.py"
+        REPO_ROOT / "src" / "kodezart" / "adapters" / "git" / "change_persister.py"
     ).read_text(encoding="utf-8")
 
     for writer, owner in (

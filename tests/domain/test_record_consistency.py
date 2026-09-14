@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock
 import pytest
 from pydantic import ValidationError
 
-from kodezart.adapters.subprocess_git_service import SubprocessGitService
+from kodezart.adapters.git.service import SubprocessGitService
 from kodezart.domain.errors import RunShapeReadError
 from kodezart.domain.run_alarm_record import surface_alarm_member_id
 from kodezart.domain.run_shape import commits_ahead_of_record, write_back_missing

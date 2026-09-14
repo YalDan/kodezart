@@ -5,7 +5,7 @@ from itertools import product
 
 import pytest
 
-from kodezart.adapters.linear_mcp_types import LinearLabelListWire
+from kodezart.adapters.linear.wire import LinearLabelListWire
 from kodezart.core.errors import (
     TrackerEnsureConflictError,
     TrackerProtocolError,

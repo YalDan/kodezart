@@ -2,7 +2,7 @@
 
 import pytest
 
-from kodezart.adapters.linear_mcp_tracker import refuse_combined_issue_write
+from kodezart.adapters.linear.tracker import refuse_combined_issue_write
 from kodezart.core.errors import TrackerProtocolError
 from kodezart.domain.errors import CriterionReadError, SurfaceLeaseError
 from kodezart.services.run_surface_lease import RunSurfaceLease

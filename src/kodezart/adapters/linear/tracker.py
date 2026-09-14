@@ -21,10 +21,15 @@ from uuid import uuid4
 
 from pydantic import ValidationError
 
-from kodezart.adapters.linear_history_receipt import state_history_receipt
-from kodezart.adapters.linear_issue_identity import LinearIssueIdentityCarrier
-from kodezart.adapters.linear_markers import LinearMarkers
-from kodezart.adapters.linear_mcp_types import (
+from kodezart.adapters.linear.history_receipt import state_history_receipt
+from kodezart.adapters.linear.issue_identity import LinearIssueIdentityCarrier
+from kodezart.adapters.linear.markers import LinearMarkers
+from kodezart.adapters.linear.scope_reader import SCOPE_READ_TOOLS, LinearScopeReader
+from kodezart.adapters.linear.scope_types import (
+    LinearApprovalIssueWire,
+    LinearScopeIssuesWire,
+)
+from kodezart.adapters.linear.wire import (
     LINEAR_NAMED_ARRAY,
     LINEAR_WORKFLOW_STATES,
     LinearAddressedIssueWire,
@@ -51,11 +56,6 @@ from kodezart.adapters.linear_mcp_types import (
     LinearUserListWire,
     LinearUserWire,
     LinearWireModel,
-)
-from kodezart.adapters.linear_scope_reader import SCOPE_READ_TOOLS, LinearScopeReader
-from kodezart.adapters.linear_scope_types import (
-    LinearApprovalIssueWire,
-    LinearScopeIssuesWire,
 )
 from kodezart.adapters.pagination import cursor_pages
 from kodezart.core.backoff import RetryPolicy

@@ -8,8 +8,8 @@ import pytest
 import structlog
 from httpx import ASGITransport, AsyncClient
 
-from kodezart.adapters.git_branch_merger import GitBranchMerger
-from kodezart.adapters.subprocess_git_service import SubprocessGitService
+from kodezart.adapters.git.branch_merger import GitBranchMerger
+from kodezart.adapters.git.service import SubprocessGitService
 from kodezart.core.config import AppConfig
 from kodezart.main import create_app
 from kodezart.services.agent_service import AgentService

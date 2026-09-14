@@ -6,7 +6,7 @@ import httpx
 import pytest
 import structlog
 
-from kodezart.adapters.github_api import GitHubAPIClient
+from kodezart.adapters.github.api import GitHubAPIClient
 from kodezart.composition.forge import build_forge_client
 from kodezart.core.backoff import RetryPolicy
 from kodezart.core.config import AppConfig

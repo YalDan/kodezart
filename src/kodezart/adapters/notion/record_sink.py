@@ -16,7 +16,7 @@ from collections.abc import Mapping
 
 from pydantic import BaseModel, ValidationError
 
-from kodezart.adapters.notion_record_properties import (
+from kodezart.adapters.notion.record_properties import (
     mapping_error,
     record_properties,
     write_properties,

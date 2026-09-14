@@ -3,7 +3,7 @@
 import pytest
 from claude_agent_sdk import AssistantMessage, ResultMessage, SystemMessage, TextBlock
 
-from kodezart.adapters.claude_client_executor import ClaudeClientExecutor
+from kodezart.adapters.claude.client_executor import ClaudeClientExecutor
 from kodezart.types.domain.agent import (
     AssistantTextEvent,
     ResultEvent,
@@ -72,7 +72,7 @@ async def test_actual_graph_presets_reach_native_sessions(
                     )
 
     monkeypatch.setattr(
-        "kodezart.adapters.claude_client_executor.ClaudeSDKClient", Client
+        "kodezart.adapters.claude.client_executor.ClaudeSDKClient", Client
     )
     executor = ClaudeClientExecutor(
         setting_sources=[], knowledge_grant=NO_KNOWLEDGE_GRANT

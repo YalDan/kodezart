@@ -7,7 +7,7 @@ import sys
 
 import pytest
 
-from kodezart.adapters.subprocess_git_source_reader import SubprocessGitSourceReader
+from kodezart.adapters.git.source_reader import SubprocessGitSourceReader
 from kodezart.core.protocols import GitSourceReader
 from kodezart.domain.errors import AssertionComparisonError, GitSourceReadError
 from kodezart.services.assertion_drift import AssertionDriftDetector

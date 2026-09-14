@@ -5,9 +5,9 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from kodezart.adapters.local_bare_repo_cache import LocalBareRepoCache
-from kodezart.adapters.subprocess_git_service import SubprocessGitService
-from kodezart.adapters.subprocess_git_source_reader import SubprocessGitSourceReader
+from kodezart.adapters.git.bare_repo_cache import LocalBareRepoCache
+from kodezart.adapters.git.service import SubprocessGitService
+from kodezart.adapters.git.source_reader import SubprocessGitSourceReader
 from kodezart.domain.errors import AuditEvidenceReadError, GitSourceReadError
 from tests.git_read_cancellation import assert_git_read_settles_before_release
 from tests.tracker.test_audit_evidence import CHILD, REQUEST, body

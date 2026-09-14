@@ -32,7 +32,7 @@ from pydantic import SecretStr
 from structlog.typing import EventDict
 
 from kodezart.adapters.asyncio_job_queue import AsyncioJobQueue
-from kodezart.adapters.http_mcp_tool_caller import HttpMcpToolCaller
+from kodezart.adapters.mcp.http_tool_caller import HttpMcpToolCaller
 from kodezart.composition import engine as composition_engine
 from kodezart.composition.passes import (
     build_dispatch_runtime,

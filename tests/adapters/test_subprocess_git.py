@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from kodezart.adapters import subprocess_git_service
-from kodezart.adapters.subprocess_git_service import SubprocessGitService
+from kodezart.adapters.git import service
+from kodezart.adapters.git.service import SubprocessGitService
 from kodezart.domain.errors import GitOperationError
 
 
@@ -675,7 +675,7 @@ def _bare_stream_message_sites(source: str) -> list[str]:
 
 def test_no_runner_interpolates_a_bare_stream_into_a_failure_message() -> None:
     """Every runner's failure text comes from the shared helper, not a raw stream."""
-    source = inspect.getsource(subprocess_git_service)
+    source = inspect.getsource(service)
     assert _bare_stream_message_sites(source) == []
 
 

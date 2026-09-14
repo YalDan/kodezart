@@ -5,9 +5,9 @@ from pathlib import Path
 
 import pytest
 
-from kodezart.adapters.local_bare_repo_cache import LocalBareRepoCache
-from kodezart.adapters.subprocess_git_service import SubprocessGitService
-from kodezart.adapters.subprocess_git_source_reader import SubprocessGitSourceReader
+from kodezart.adapters.git.bare_repo_cache import LocalBareRepoCache
+from kodezart.adapters.git.service import SubprocessGitService
+from kodezart.adapters.git.source_reader import SubprocessGitSourceReader
 from kodezart.domain.criterion_evidence import render_evidence_field
 from kodezart.types.domain.audit import AuditVerdict
 from kodezart.types.domain.audit_overclaim import OverclaimKind
