@@ -1,0 +1,12 @@
+{
+ "milestone": "M7",
+ "branch": "v03/m7-run-supervisor",
+ "base": "v03/m5-deliver-terminate",
+ "head": "5253956948b88e6b992cdcdec5c58351b6d0d1a8",
+ "later_members_shown_here": [],
+ "own_members_shown_earlier": [],
+ "counts": {
+  "later_members_shown_here": 0,
+  "own_members_shown_earlier": 0
+ }
+}

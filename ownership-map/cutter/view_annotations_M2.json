@@ -1,0 +1,77 @@
+{
+ "milestone": "M2",
+ "branch": "v03/m2-organize",
+ "base": "v03/m3-plan-walk",
+ "head": "e8e941a3143daf625b97362cb6a0e7b3e130da07",
+ "later_members_shown_here": [],
+ "own_members_shown_earlier": [
+  {
+   "file": "src/kodezart/chains/ralph_loop.py",
+   "symbol": "RalphLoop._evaluate_node",
+   "shown_at": "M3",
+   "shown_pr": 125,
+   "sym_kind": "method",
+   "kind": "modified"
+  },
+  {
+   "file": "src/kodezart/domain/errors.py",
+   "symbol": "import:from kodezart.types.domain.organize_owner import OrganizeReport",
+   "shown_at": "M1",
+   "shown_pr": 123,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/domain/organize.py",
+   "symbol": "import:from collections.abc import Sequence",
+   "shown_at": "M1",
+   "shown_pr": 123,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/handlers/agent_handler.py",
+   "symbol": "AgentHandler.stream_workflow",
+   "shown_at": "M3",
+   "shown_pr": 125,
+   "sym_kind": "method",
+   "kind": "modified"
+  },
+  {
+   "file": "src/kodezart/types/domain/workflow.py",
+   "symbol": "import:from kodezart.types.domain.run_records import RunIdentity",
+   "shown_at": "M1",
+   "shown_pr": 123,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "tests/chains/test_ralph_loop.py",
+   "symbol": "import:from kodezart.chains.authored_delivery import AuthoredDeliveryCoordinator",
+   "shown_at": "M1",
+   "shown_pr": 123,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "tests/chains/test_ralph_loop.py",
+   "symbol": "import:from kodezart.types.domain.run_records import RunIdentity",
+   "shown_at": "M1",
+   "shown_pr": 123,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "tests/chains/test_retry_floor_wiring.py",
+   "symbol": "_module_source",
+   "shown_at": "M1",
+   "shown_pr": 123,
+   "sym_kind": "function",
+   "kind": "modified"
+  }
+ ],
+ "counts": {
+  "later_members_shown_here": 0,
+  "own_members_shown_earlier": 8
+ }
+}
