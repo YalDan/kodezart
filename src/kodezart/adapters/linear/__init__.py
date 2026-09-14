@@ -1,1 +1,1 @@
-"""Linear adapters: tracker and record sink."""
+"""Linear tracker adapters."""

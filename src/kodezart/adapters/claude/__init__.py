@@ -1,1 +1,1 @@
-"""Claude adapters: executors and SDK mappings."""
+"""Claude agent SDK adapters."""

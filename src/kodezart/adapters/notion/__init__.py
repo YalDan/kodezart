@@ -1,1 +1,1 @@
-"""Notion adapters: record sink."""
+"""Notion knowledge adapters."""

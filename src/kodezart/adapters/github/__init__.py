@@ -1,1 +1,1 @@
-"""GitHub adapters: API client and token auth."""
+"""GitHub forge adapters."""

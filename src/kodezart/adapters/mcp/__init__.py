@@ -1,1 +1,1 @@
-"""MCP adapters: hosted session, transports and result decoding."""
+"""MCP transport adapters."""
