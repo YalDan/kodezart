@@ -60,7 +60,6 @@ from kodezart.types.domain.operation import (
     CheckStep,
     DocumentEntry,
     DocumentSystem,
-    Initiative,
     LifecycleStage,
     OperationConfig,
     Principal,
@@ -160,6 +159,7 @@ def operation_config(
     return OperationConfig(
         operation_name="fixture",
         workspace="fixture-workspace",
+        marker_prefixes={"run_outcome": "fixture-outcome"},
         principals=[
             Principal(
                 tracker_user=APPROVER,
@@ -206,7 +206,6 @@ def operation_config(
         },
         knowledge={},
         endpoints={},
-        initiatives=[Initiative(id="init-1")],
     )
 
 
@@ -260,7 +259,12 @@ def tick(tracker: FakeTrackerPort) -> tuple[GatedDispatchPass, FakeJobQueue]:
             recorder=RunRecorder(records={}, sinks={}),
             queue=queue,
             registry=queue,
-            writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
+            writer=TrackerLifecycleWriter(
+                marker_prefixes={"run_outcome": "fixture-outcome"},
+                surface_lease_seconds=900,
+                tracker=tracker,
+                gate=PassThroughGate(),
+            ),
             heartbeat=ClaimHeartbeat(
                 tracker=tracker,
                 holder=HOLDER,
@@ -358,7 +362,12 @@ async def test_an_enqueue_reporting_nothing_enqueued_raises(absent_field: str) -
         recorder=RunRecorder(records={}, sinks={}),
         queue=queue,
         registry=queue,
-        writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
+        writer=TrackerLifecycleWriter(
+            marker_prefixes={"run_outcome": "fixture-outcome"},
+            surface_lease_seconds=900,
+            tracker=tracker,
+            gate=PassThroughGate(),
+        ),
         heartbeat=ClaimHeartbeat(
             tracker=tracker,
             holder=HOLDER,
@@ -404,6 +413,7 @@ class _FailingDispatcher:
         error: Exception | None = None,
     ) -> None:
         self.calls: int = 0
+        self.entered = asyncio.Event()
         self._block: asyncio.Event | None = block
         self._error: Exception = (
             TimeoutError("the delivery probe could not be reached")
@@ -413,6 +423,7 @@ class _FailingDispatcher:
 
     async def run_pass(self) -> DispatchReport:
         self.calls += 1
+        self.entered.set()
         if self._block is not None:
             await self._block.wait()
         raise self._error
@@ -442,6 +453,8 @@ def failing_tick(
                 queue=queue,
                 registry=queue,
                 writer=TrackerLifecycleWriter(
+                    marker_prefixes={"run_outcome": "fixture-outcome"},
+                    surface_lease_seconds=900,
                     tracker=tracker,
                     gate=PassThroughGate(),
                 ),
@@ -541,14 +554,61 @@ class TestAFailedPassGivesTheWakeUpBack:
         tracker = FakeTrackerPort(issues=[make_tracker_issue("K-1")])
         pass_, guard, dispatcher = failing_tick(tracker, block=asyncio.Event())
 
-        with pytest.raises(TimeoutError):
+        running = asyncio.create_task(pass_.run(TICK_STARTED_AT))
+        try:
             await asyncio.wait_for(
-                pass_.run(TICK_STARTED_AT),
-                timeout=SETTLE_DELAY_SECONDS,
+                dispatcher.entered.wait(),
+                timeout=SETTLE_TRIES * SETTLE_DELAY_SECONDS,
             )
+            with pytest.raises(TimeoutError):
+                await asyncio.wait_for(running, timeout=SETTLE_DELAY_SECONDS)
+        finally:
+            running.cancel()
+            await asyncio.gather(running, return_exceptions=True)
 
         assert dispatcher.calls == 1, "the pass was entered and then abandoned"
         assert guard.mark(PassSignal.approved_changed, container=TEAM_KEYS[0]) is None
+
+    async def test_budget_cancellation_during_gate_logging_gives_the_window_back(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The mark can advance before the dispatcher is entered."""
+        tracker = FakeTrackerPort(issues=[make_tracker_issue("K-1")])
+        block = asyncio.Event()
+        pass_, guard, dispatcher = failing_tick(tracker, block=block)
+        logging = asyncio.Event()
+        original = guard._log.ainfo
+
+        async def delayed(event: str, **fields: object) -> None:
+            await original(event, **fields)
+            if event == "pass_gate_delta":
+                logging.set()
+                await asyncio.Event().wait()
+
+        monkeypatch.setattr(guard._log, "ainfo", delayed)
+        running = asyncio.create_task(pass_.run(TICK_STARTED_AT))
+        try:
+            await asyncio.wait_for(
+                logging.wait(), timeout=SETTLE_TRIES * SETTLE_DELAY_SECONDS
+            )
+            assert (
+                guard.mark(PassSignal.approved_changed, container=TEAM_KEYS[0])
+                is not None
+            )
+            with pytest.raises(TimeoutError):
+                await asyncio.wait_for(running, timeout=SETTLE_DELAY_SECONDS)
+        finally:
+            running.cancel()
+            await asyncio.gather(running, return_exceptions=True)
+
+        assert dispatcher.calls == 0
+        assert guard.mark(PassSignal.approved_changed, container=TEAM_KEYS[0]) is None
+        monkeypatch.setattr(guard._log, "ainfo", original)
+        block.set()
+        with pytest.raises(TimeoutError, match="delivery probe"):
+            await pass_.run(TICK_STARTED_AT)
+        assert dispatcher.calls == 1
+        assert tracker.scans[-1].updated_since is None
 
 
 async def test_a_second_tick_over_an_unchanged_board_costs_one_query() -> None:
@@ -829,20 +889,19 @@ async def test_a_pass_the_root_built_follows_the_run_it_enqueued() -> None:
 
     await built.passes[0].run(TICK_STARTED_AT)
     # The write-back runs in a background watch, so the test waits for the
-    # terminal chain it asserts on: the DONE transition, then the comment
+    # terminal chain it asserts on: the queue disposition, then the comment
     # that ``LifecycleWatcher`` posts after it.
     await settled(
         lambda: (
-            ("K-1", LifecycleStage.DONE) in tracker.workflow_writes
-            and bool(tracker.comments)
+            ("K-1", QueueState.DONE) in tracker.queue_writes and bool(tracker.comments)
         ),
     )
 
     assert queue.attached == ["job-0001"]
     assert tracker.workflow_writes == [
         ("K-1", LifecycleStage.IN_PROGRESS),
-        ("K-1", LifecycleStage.DONE),
     ]
+    assert ("K-1", LifecycleStage.DONE) not in tracker.workflow_writes
     assert tracker.queue_writes == [("K-1", QueueState.DONE)]
     assert [comment.issue_key for comment in tracker.comments] == ["K-1"]
 

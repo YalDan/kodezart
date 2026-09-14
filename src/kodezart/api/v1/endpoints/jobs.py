@@ -2,14 +2,13 @@
 
 from collections.abc import AsyncGenerator
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter
 from starlette.responses import JSONResponse, Response, StreamingResponse
 
+from kodezart.api.dependencies import JobHandlerDep, JobRegistryDep, WorkflowHandlerDep
 from kodezart.core.logging import BoundLogger, get_logger
-from kodezart.core.protocols import JobQueue, JobRegistry
-from kodezart.handlers.agent_handler import AgentHandler
-from kodezart.handlers.job_handler import JobHandler
 from kodezart.types.responses.common import BaseResponse
+from kodezart.types.responses.job import JobStatusResponse
 from kodezart.utils.sse import format_sse
 
 router = APIRouter()
@@ -26,37 +25,42 @@ def _not_found(job_id: str) -> JSONResponse:
     )
 
 
-@router.get("/{job_id}", summary="Job status")
-async def get_job_status(job_id: str, request: Request) -> Response:
+@router.get(
+    "/{job_id}",
+    response_model=JobStatusResponse,
+    responses={404: {"model": BaseResponse, "description": "Job is unknown"}},
+    summary="Job status",
+)
+async def get_job_status(
+    job_id: str, handler: JobHandlerDep
+) -> JobStatusResponse | JSONResponse:
     """``GET /api/v1/jobs/{job_id}``. Registry facts plus checkpointed run state."""
     await _log.adebug("job_status_endpoint", job_id=job_id)
-    handler = JobHandler(service=request.app.state.job_service)
     status = await handler.get_status(job_id=job_id)
     if status is None:
         return _not_found(job_id)
-    return JSONResponse(
-        status_code=200,
-        content=status.model_dump(by_alias=True, mode="json"),
-    )
+    return status
 
 
-@router.get("/{job_id}/stream", summary="Attach to a job's event stream")
-async def stream_job(job_id: str, request: Request) -> Response:
+@router.get(
+    "/{job_id}/stream",
+    response_class=StreamingResponse,
+    responses={
+        200: {"content": {"text/event-stream": {"schema": {"type": "string"}}}},
+        404: {"model": BaseResponse, "description": "Job is unknown"},
+    },
+    summary="Attach to a job's event stream",
+)
+async def stream_job(
+    job_id: str, registry: JobRegistryDep, handler: WorkflowHandlerDep
+) -> Response:
     """``GET /api/v1/jobs/{job_id}/stream``.
 
     Replays the job's bounded event buffer, then goes live.
     """
     await _log.adebug("stream_job_endpoint", job_id=job_id)
-    registry: JobRegistry = request.app.state.job_queue
     if await registry.get(job_id=job_id) is None:
         return _not_found(job_id)
-
-    queue: JobQueue = request.app.state.job_queue
-    handler = AgentHandler(
-        service=request.app.state.agent_service,
-        skills=request.app.state.skills,
-        queue=queue,
-    )
 
     async def generate() -> AsyncGenerator[str, None]:
         async for event in handler.attach_job(job_id=job_id):

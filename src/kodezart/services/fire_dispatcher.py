@@ -57,8 +57,9 @@ from kodezart.types.domain.dispatch import (
 from kodezart.types.domain.job import JobState
 from kodezart.types.domain.operation import OperationConfig, QueueState
 from kodezart.types.domain.run_records import RunOutcome
+from kodezart.types.domain.session import PermissionMode, ToolPreset
 from kodezart.types.domain.tracker import ClaimStatus, IssueQuery, TrackerIssue
-from kodezart.types.requests.agent import WorkflowRequest
+from kodezart.types.domain.workflow import WorkflowSubmission
 
 
 def _uniform_draw(candidates: Sequence[str]) -> str:
@@ -73,12 +74,12 @@ class _RememberedExclusion:
     ``updated_at`` is the issue's timestamp read AFTER the failure was
     complete — deliberately not the scan-time value, because the writes
     that accompany a failure move the timestamp themselves: the claim and
-    its release for a base that would not resolve (KOD-169: 15 claim
+    its release for a base that would not resolve (15 measured claim
     write-delete cycles, each feeding the next tick's gate delta), and the
-    put-back and terminal comment for a run that died (KOD-174).
+    put-back and terminal comment for a run that died.
     Remembered at scan time, this pass's own noise would re-admit the
     issue on the very next tick, which IS both measured loops.  The third
-    entrant — a winner the pre-claim read found blocked (KOD-173) — is
+    entrant — a winner the pre-claim read found blocked — is
     recorded off that same reading, which is already after everything
     this pass did to the issue, because that arm writes nothing at all.
 
@@ -101,7 +102,7 @@ class _LaneBackoff:
     would spend.  Measured 2026-09-01: the run that died at 17:57 on a
     rejection was followed by the next tick firing again into the same
     limit, and the creator's retry policy spawning sixteen empty sessions
-    under it (KOD-174).  Remembering the issue is not enough — the next
+    under it.  Remembering the issue is not enough — the next
     issue meets the same limit — so the lane itself stops until the
     cooldown lapses.
     """
@@ -121,9 +122,8 @@ class LaneCooldown:
     dispatchers are one per repository over that single account.  Held
     inside a dispatcher, the cooldown reached only the pass that happened
     to fire the run that met the limit, and the operation's other
-    repositories kept firing into it — the loop KOD-174 measured, one
-    dispatcher narrower (KOD-281).  Composition builds ONE of these per
-    operation and hands it to every dispatcher, so the first failure to
+    repositories kept firing into the same limit.  Composition builds ONE
+    of these per operation and hands it to every dispatcher, so the first failure to
     name the limit stops all of them.
 
     The clock is the same one the dispatcher reads: a cooldown is lifted
@@ -221,7 +221,7 @@ class FireDispatcher:
         self._remembered: dict[str, _RememberedExclusion] = {}
         #: One ``initiative_identifiers`` read per distinct project for
         #: this dispatcher's lifetime — membership does not move under a
-        #: running pass (KOD-169).
+        #: running pass.
         self._initiatives_by_project: dict[str, frozenset[str]] = {}
         #: The teams whose issues route to this repository by BINDING; an
         #: issue on any other scanned team routes by its recorded
@@ -237,8 +237,8 @@ class FireDispatcher:
         bound to its repository, plus every unbound team — whose issues
         route by the repository recorded on each one, so the
         recorded-repository clause keeps concurrent passes' claims
-        disjoint (KOD-169) rather than tick order deciding a routing
-        question (KOD-157).  The teams bound elsewhere are not this pass's
+        disjoint rather than tick order deciding a routing
+        question.  The teams bound elsewhere are not this pass's
         candidates.  A repository no team's issues can reach refuses here,
         before any query is issued.
         """
@@ -308,7 +308,7 @@ class FireDispatcher:
         # empty for every scanned issue and the live-blocker clause passed
         # vacuously over all of them — three winners in one afternoon were
         # claimed, failed base resolution and were released, with the edge
-        # that made them unfireable never read (KOD-173).  ONE read, on the
+        # that made them unfireable never read.  ONE read, on the
         # winner alone, is what gives that clause real edges to decide
         # over, and taking it before the claim is what makes a blocked
         # winner cost no claim/release pair.
@@ -349,30 +349,65 @@ class FireDispatcher:
                 eligible=eligible_keys,
                 tied_candidates=selection.tied,
             )
+        return await self.launch(
+            winner,
+            rows=rows,
+            exclusions=exclusions,
+            eligible_keys=eligible_keys,
+            tied=selection.tied,
+        )
+
+    async def launch(
+        self,
+        winner: TrackerIssue,
+        *,
+        rows: tuple[IssueSnapshot, ...],
+        exclusions: tuple[IssueExclusion, ...],
+        eligible_keys: tuple[str, ...],
+        tied: tuple[str, ...] = (),
+        criterion_keys: tuple[str, ...] = (),
+    ) -> DispatchReport:
+        """Claim *winner*, resolve its base, assemble it and enqueue its fire.
+
+        Everything a selection producer needs after it has decided WHICH
+        issue goes next, and nothing about how it decided.  The two
+        producers differ only in the arithmetic above this line — one ranks
+        an approved scan, the other walks a scope's ready set — and the
+        writes a fire costs are one procedure either way, so they are one
+        method rather than two copies that drift.
+
+        *criterion_keys* is what the caller says the fire is FOR: the open
+        criterion records of the subtree the lane being dispatched owns,
+        which need not all be its own children.  Empty is the honest answer
+        for a producer that selects whole issues.
+        """
         claim = await self._tracker.claim_issue(
-            issue_key=selection.winner_key,
+            issue_key=winner.issue_key,
             holder=self._holder,
             lease_seconds=self._claim_lease_seconds,
         )
-        if claim.status is ClaimStatus.LOST:
+        if claim.status is not ClaimStatus.GRANTED:
             await self._log.ainfo(
                 "dispatch_claim_lost",
                 outcome=DispatchOutcome.claim_lost.value,
-                issue_key=selection.winner_key,
+                issue_key=winner.issue_key,
                 holder=self._holder,
+                status=claim.status.value,
+                current_holder=claim.current_holder,
             )
             return DispatchReport(
                 outcome=DispatchOutcome.claim_lost,
                 snapshot=rows,
                 exclusions=exclusions,
                 eligible=eligible_keys,
-                tied_candidates=selection.tied,
+                tied_candidates=tied,
                 claimed_issue_key=None,
+                criterion_keys=criterion_keys,
             )
 
         # The base is READ off the graph, never assumed — and BEFORE the
         # context is assembled, so the expensive assembly never runs for a
-        # candidate that cannot resolve (KOD-169). A lane whose premise is
+        # candidate that cannot resolve. A lane whose premise is
         # another issue's delivered branch is dispatched onto that branch;
         # only a lane with no blockers gets the repository's configured
         # trunk, and the resolver raises rather than falling back to trunk
@@ -398,7 +433,7 @@ class FireDispatcher:
             )
             # The exclusion timestamp is read AFTER the release, so this
             # pass's own claim-cycle writes sit inside it and only a real
-            # change re-admits the issue (KOD-169).
+            # change re-admits the issue.
             refreshed = await self._tracker.read_issue(issue_key=winner.issue_key)
             self._remembered[winner.issue_key] = _RememberedExclusion(
                 updated_at=refreshed.updated_at,
@@ -416,8 +451,9 @@ class FireDispatcher:
                 snapshot=rows,
                 exclusions=exclusions,
                 eligible=eligible_keys,
-                tied_candidates=selection.tied,
+                tied_candidates=tied,
                 claimed_issue_key=winner.issue_key,
+                criterion_keys=criterion_keys,
             )
         context = await self._assembler.assemble(
             issue_key=winner.issue_key,
@@ -445,12 +481,16 @@ class FireDispatcher:
         await self._tracker.record_base_spec(issue_key=winner.issue_key, spec=spec)
         record = await self._queue.submit(
             lane=self._lane,
-            request=WorkflowRequest(
+            request=WorkflowSubmission(
                 prompt=context.render(),
+                issue_key=winner.issue_key,
+                repo_path=None,
                 repo_url=self._repo_url,
-                base_branch=spec.base_branch,
                 base_spec=spec,
                 implied_base=spec,
+                scope=None,
+                permission_mode=PermissionMode.UNATTENDED,
+                allowed_tools=ToolPreset.IMPLEMENTATION,
             ),
         )
         self._jobs_by_issue[winner.issue_key] = record.job_id
@@ -467,7 +507,7 @@ class FireDispatcher:
             snapshot=rows,
             exclusions=exclusions,
             eligible=eligible_keys,
-            tied_candidates=selection.tied,
+            tied_candidates=tied,
             claimed_issue_key=winner.issue_key,
             # The pre-claim state, off the reading this pass took before it
             # claimed: the last one before the lifecycle writes In
@@ -482,6 +522,7 @@ class FireDispatcher:
             job_id=record.job_id,
             base=spec,
             superseded_base=superseded,
+            criterion_keys=criterion_keys,
         )
 
     async def record_run_outcome(
@@ -494,8 +535,8 @@ class FireDispatcher:
 
         The measured loop: a run was dispatched at 17:48, died at 17:57 on
         a provider rate-limit rejection, was put back correctly — and the
-        next tick re-selected the same issue and fired the whole run again
-        (KOD-174).  A pass had no memory of the run it started, so a
+        next tick re-selected the same issue and fired the whole run again.
+        A pass had no memory of the run it started, so a
         standing failure was a fresh run every interval.  A failed run
         joins the same remembered-exclusion mechanism a failed base
         resolution does, under its own clause and carrying what the run
@@ -517,8 +558,7 @@ class FireDispatcher:
         check, because it is not about the issue or about who fired it:
         the limit belongs to the account all of them spend.  Set after the
         check, it reached only the dispatcher that fired the run, and the
-        operation's other repositories went on firing into the same limit
-        (KOD-281).
+        operation's other repositories went on firing into the same limit.
         """
         if outcome is RunOutcome.COMPLETED:
             return
@@ -589,110 +629,193 @@ class FireDispatcher:
         declaration, so a backend that cannot push the scope down, or an
         adapter that stops sending it, changes what a pass reads and not
         what it may claim.
+
+        The clauses are named methods in evaluation order, and each answers
+        for itself alone.  A second producer selecting over a different
+        arithmetic reaches for the subset that still holds under it rather
+        than for a copy of this sequence.
         """
-        if not clause_in_team(issue, team_keys=team_keys):
-            return IssueExclusion(
-                issue_key=issue.issue_key,
-                clause=ExclusionClause.OUTSIDE_TEAM,
-                detail="" if issue.team_key is None else issue.team_key,
-            )
+        return (
+            self._team_exclusion(issue, team_keys=team_keys)
+            or await self._memory_exclusion(issue)
+            or self._backoff_exclusion(issue)
+            or await self._exclude_by_scope(issue)
+            or await self._route_exclusion(issue)
+            or self._approval_exclusion(issue)
+            or self._open_exclusion(issue)
+            or await self._blocker_exclusion(issue)
+            or await self._in_flight_exclusion(issue)
+            or await self._delivery_exclusion(issue)
+        )
+
+    async def standing_exclusion(self, issue: TrackerIssue) -> IssueExclusion | None:
+        """The clauses that hold whatever selected *issue*, or ``None``.
+
+        What a selection producer with its OWN admission arithmetic still
+        has to ask.  Approval, openness, the blocker edge and the container
+        filter are absent by construction: a ready set decides all four
+        over the criterion sub-issues and the live subtree closure, and
+        re-asking them here would overrule that with the deliverable's own
+        workflow field — the exact substitution the criterion children
+        exist to replace.
+
+        What remains is about the RUN rather than about the graph: the
+        board this repository serves, the route recorded on the issue, the
+        failure this dispatcher remembers, the limit the account is holding
+        back from, a run still in flight, and a delivery already open.
+        Every one of them is true of the fire whichever arithmetic chose
+        it.
+        """
+        team_keys = self._operation.team_keys_for_repo(self._repo_url)
+        return (
+            self._team_exclusion(issue, team_keys=team_keys)
+            or await self._route_exclusion(issue)
+            or await self._memory_exclusion(issue)
+            or self._backoff_exclusion(issue)
+            or await self._in_flight_exclusion(issue)
+            or await self._delivery_exclusion(issue)
+        )
+
+    def _team_exclusion(
+        self,
+        issue: TrackerIssue,
+        *,
+        team_keys: Sequence[str],
+    ) -> IssueExclusion | None:
+        """The issue belongs to a board this operation does not declare."""
+        if clause_in_team(issue, team_keys=team_keys):
+            return None
+        return IssueExclusion(
+            issue_key=issue.issue_key,
+            clause=ExclusionClause.OUTSIDE_TEAM,
+            detail="" if issue.team_key is None else issue.team_key,
+        )
+
+    async def _memory_exclusion(self, issue: TrackerIssue) -> IssueExclusion | None:
+        """A remembered failure on *issue*, while it still stands.
+
+        Re-admitted once the issue has CHANGED past the reading taken after
+        the failure — retrying an unchanged issue re-runs the same failing
+        resolution and re-writes the claim churn it produced, or fires the
+        whole run again into the rejection that killed the last one — or
+        once the memory no longer stands on its own terms: the blocked
+        winner's is about its BLOCKER, which ``_still_stands`` reads, so a
+        blocker that closed re-admits an issue that never moved, while a
+        standing one costs a read rather than the lane's whole throughput.
+        """
         remembered = self._remembered.get(issue.issue_key)
-        if remembered is not None:
-            # Re-admitted once the issue has CHANGED past the reading taken
-            # after the failure — retrying an unchanged issue re-runs the
-            # same failing resolution and re-writes the claim churn it
-            # produced (KOD-169), or fires the whole run again into the
-            # rejection that killed the last one (KOD-174) — or once the
-            # memory no longer stands on its own terms: the blocked
-            # winner's is about its BLOCKER, which ``_still_stands`` reads,
-            # so a blocker that closed re-admits an issue that never moved
-            # (KOD-285), while a standing one costs a read rather than the
-            # lane's whole throughput (KOD-173).
-            if issue.updated_at <= remembered.updated_at and await self._still_stands(
-                remembered,
-            ):
-                return IssueExclusion(
-                    issue_key=issue.issue_key,
-                    clause=remembered.clause,
-                    detail=remembered.detail,
-                )
-            del self._remembered[issue.issue_key]
-        # The one clause that is not about the issue it annotates: the
-        # limit that killed the last fire is the ACCOUNT's, so the
-        # next-ranked candidate meets it unchanged and firing it is the
-        # same failure with a different key on it — and so does the next
-        # repository's candidate, which is why the cooldown asked here is
-        # the operation's rather than this dispatcher's (KOD-281).
-        # Evaluated after the issue's own memory so the issue that died
-        # still reports what it died of, and lifted by the clock rather
-        # than by a change on the board — nothing an issue does clears a
-        # rate limit.
+        if remembered is None:
+            return None
+        if issue.updated_at <= remembered.updated_at and await self._still_stands(
+            remembered,
+        ):
+            return IssueExclusion(
+                issue_key=issue.issue_key,
+                clause=remembered.clause,
+                detail=remembered.detail,
+            )
+        del self._remembered[issue.issue_key]
+        return None
+
+    def _backoff_exclusion(self, issue: TrackerIssue) -> IssueExclusion | None:
+        """The lane is held back after a failure the whole account shares.
+
+        The one clause that is not about the issue it annotates: the limit
+        that killed the last fire is the ACCOUNT's, so the next-ranked
+        candidate meets it unchanged and firing it is the same failure with
+        a different key on it — and so does the next repository's
+        candidate, which is why the cooldown asked here is the operation's
+        rather than this dispatcher's.
+
+        Evaluated after the issue's own memory so the issue that died still
+        reports what it died of, and lifted by the clock rather than by a
+        change on the board — nothing an issue does clears a rate limit.
+        """
         holding = self._cooldown.holding()
-        if holding is not None:
+        if holding is None:
+            return None
+        return IssueExclusion(
+            issue_key=issue.issue_key,
+            clause=ExclusionClause.LANE_BACKOFF,
+            detail=holding,
+        )
+
+    async def _route_exclusion(self, issue: TrackerIssue) -> IssueExclusion | None:
+        """An unbound team's issue routes by the repository recorded on it."""
+        if issue.team_key in self._bound_team_keys:
+            return None
+        recorded = await self._tracker.recorded_repository(issue_key=issue.issue_key)
+        if clause_recorded_repository(
+            team_bound=False,
+            recorded=recorded,
+            repo_url=self._repo_url,
+        ):
+            return None
+        if recorded is None:
             return IssueExclusion(
                 issue_key=issue.issue_key,
-                clause=ExclusionClause.LANE_BACKOFF,
-                detail=holding,
+                clause=ExclusionClause.NO_RECORDED_REPOSITORY,
             )
-        scope_exclusion = await self._exclude_by_scope(issue)
-        if scope_exclusion is not None:
-            return scope_exclusion
-        team_bound = issue.team_key in self._bound_team_keys
-        if not team_bound:
-            recorded = await self._tracker.recorded_repository(
-                issue_key=issue.issue_key,
-            )
-            if not clause_recorded_repository(
-                team_bound=team_bound,
-                recorded=recorded,
-                repo_url=self._repo_url,
-            ):
-                if recorded is None:
-                    return IssueExclusion(
-                        issue_key=issue.issue_key,
-                        clause=ExclusionClause.NO_RECORDED_REPOSITORY,
-                    )
-                return IssueExclusion(
-                    issue_key=issue.issue_key,
-                    clause=ExclusionClause.RECORDED_ELSEWHERE,
-                    detail=recorded,
-                )
-        if not clause_approved(issue):
-            return IssueExclusion(
-                issue_key=issue.issue_key,
-                clause=ExclusionClause.NOT_APPROVED,
-            )
-        if not clause_open(issue):
-            return IssueExclusion(
-                issue_key=issue.issue_key,
-                clause=ExclusionClause.NOT_OPEN,
-                detail=issue.state_name,
-            )
+        return IssueExclusion(
+            issue_key=issue.issue_key,
+            clause=ExclusionClause.RECORDED_ELSEWHERE,
+            detail=recorded,
+        )
+
+    def _approval_exclusion(self, issue: TrackerIssue) -> IssueExclusion | None:
+        """The issue does not carry the approved queue state."""
+        if clause_approved(issue):
+            return None
+        return IssueExclusion(
+            issue_key=issue.issue_key,
+            clause=ExclusionClause.NOT_APPROVED,
+        )
+
+    def _open_exclusion(self, issue: TrackerIssue) -> IssueExclusion | None:
+        """The issue's own workflow state is no longer an open one."""
+        if clause_open(issue):
+            return None
+        return IssueExclusion(
+            issue_key=issue.issue_key,
+            clause=ExclusionClause.NOT_OPEN,
+            detail=issue.state_name,
+        )
+
+    async def _blocker_exclusion(self, issue: TrackerIssue) -> IssueExclusion | None:
+        """An edge from *issue* reaches an issue that is still open."""
         blocking = await self._live_blocker_of(issue)
-        if blocking is not None:
-            return IssueExclusion(
-                issue_key=issue.issue_key,
-                clause=ExclusionClause.LIVE_BLOCKER,
-                detail=blocking,
-            )
+        if blocking is None:
+            return None
+        return IssueExclusion(
+            issue_key=issue.issue_key,
+            clause=ExclusionClause.LIVE_BLOCKER,
+            detail=blocking,
+        )
+
+    async def _in_flight_exclusion(self, issue: TrackerIssue) -> IssueExclusion | None:
+        """Someone holds the claim, or a fire this dispatcher started runs."""
         claim = await self._tracker.active_claim(issue_key=issue.issue_key)
         run_is_live = await self._run_is_live(issue.issue_key)
-        if not clause_unclaimed(claim=claim, run_is_live=run_is_live):
-            return IssueExclusion(
-                issue_key=issue.issue_key,
-                clause=ExclusionClause.CLAIMED_OR_IN_FLIGHT,
-                detail="" if claim is None else claim.holder,
-            )
+        if clause_unclaimed(claim=claim, run_is_live=run_is_live):
+            return None
+        return IssueExclusion(
+            issue_key=issue.issue_key,
+            clause=ExclusionClause.CLAIMED_OR_IN_FLIGHT,
+            detail="" if claim is None else claim.holder,
+        )
+
+    async def _delivery_exclusion(self, issue: TrackerIssue) -> IssueExclusion | None:
+        """A delivery for *issue* is already open on this repository."""
         delivered = await self._delivery.open_delivery_exists(
             repo_url=self._repo_url,
             issue_key=issue.issue_key,
         )
-        if not clause_undelivered(has_open_delivery=delivered):
-            return IssueExclusion(
-                issue_key=issue.issue_key,
-                clause=ExclusionClause.OPEN_DELIVERY,
-            )
-        return None
+        if clause_undelivered(has_open_delivery=delivered):
+            return None
+        return IssueExclusion(
+            issue_key=issue.issue_key,
+            clause=ExclusionClause.OPEN_DELIVERY,
+        )
 
     async def _exclude_by_scope(
         self,
@@ -744,7 +867,7 @@ class FireDispatcher:
         since closed is a premise delivered — nothing the blocked issue
         does or fails to do bears on that.  Held to its own timestamp
         alone, a candidate whose blocker closed quietly stayed remembered
-        until something unrelated happened to touch it (KOD-285), which on
+        until something unrelated happened to touch it, which on
         a board where the blocker is the thing being worked is exactly the
         moment it becomes fireable.
 
@@ -763,7 +886,7 @@ class FireDispatcher:
         Each blocker is read, because whether an edge blocks is a fact
         about the issue at its far end — a closed blocker is a delivered
         premise, not a standing one.  The same reading serves the scan-time
-        clause and the pre-claim one (KOD-173).
+        clause and the pre-claim one.
         """
         blockers = {
             key: await self._tracker.read_issue(issue_key=key)
