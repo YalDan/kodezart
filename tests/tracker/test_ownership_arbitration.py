@@ -552,14 +552,12 @@ class _UnseenRace:
         assert isinstance(result, Mapping)
         entries = result["comments"]
         assert isinstance(entries, list)
-        return {
-            **result,
-            "comments": [
-                entry
-                for entry in entries
-                if _holder_of(str(entry["body"])) != self._hidden  # type: ignore[index]
-            ],
-        }
+        comments: list[Mapping[str, object]] = []
+        for entry in entries:
+            assert isinstance(entry, Mapping)
+            if _holder_of(str(entry["body"])) != self._hidden:
+                comments.append(entry)
+        return {**result, "comments": comments}
 
 
 async def test_a_renewal_an_earlier_grant_outranks_withdraws_the_late_one() -> None:

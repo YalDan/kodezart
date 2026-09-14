@@ -114,8 +114,10 @@ DEPLOYMENT_ENV = Path(__file__).resolve().parents[2] / ".env"
 
 
 def _deployment_config() -> AppConfig:
-    if not DEPLOYMENT_ENV.is_file():
-        pytest.skip(f"no deployment configuration at {DEPLOYMENT_ENV.name}")
+    assert DEPLOYMENT_ENV.is_file(), (
+        f"the live marker selected this probe with no deployment "
+        f"configuration at {DEPLOYMENT_ENV.name}"
+    )
     return AppConfig(_env_file=DEPLOYMENT_ENV)
 
 
@@ -195,8 +197,10 @@ def _probe_operation() -> OperationConfig:
     keeps every marker this run mints unmistakably the probe's.
     """
     config = _deployment_config()
-    if config.operation_config is None:
-        pytest.skip("no operation config is configured for this deployment")
+    assert config.operation_config is not None, (
+        "the live marker selected this probe against a deployment that "
+        "configures no operation"
+    )
     declared = load_operation_config(Path(config.operation_config))
     return declared.model_copy(
         update={"marker_prefixes": {"claim": PROBE_MARKER_PREFIX}}
@@ -216,8 +220,10 @@ async def _dial(
     boot applies before a request is made.
     """
     config = _deployment_config()
-    if config.tracker.token is None:
-        pytest.skip("no tracker credential is configured for this deployment")
+    assert config.tracker.token is not None, (
+        "the live marker selected this probe against a deployment that "
+        "configures no tracker credential"
+    )
     token = config.tracker.token.get_secret_value()
     refuse_foreign_credential(backend=config.tracker.backend, token=token)
     caller = make_mcp_tool_caller(settings=config.tracker, token=token)
