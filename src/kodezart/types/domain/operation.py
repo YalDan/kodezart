@@ -491,6 +491,13 @@ class RecordDestination(OperationModel):
                 raise ValueError("the outcome property must have its own record column")
         return self
 
+class OrganizeScopeBinding(OperationModel):
+    """One explicit writable scope and the declared repository it is judged against."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, hide_input_in_errors=True)
+    scope: ScopeRef
+    repo_url: str = Field(min_length=1)
+
 
 
 

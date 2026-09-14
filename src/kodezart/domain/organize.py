@@ -70,3 +70,78 @@ def admission_route(
 def is_organize_subject(issue: TrackerIssue) -> bool:
     """The phase work roster excludes criteria and record-shaped issues."""
     return not bool(issue.issue_labels & {"criterion", "tracker", "decision"})
+
+
+def organize_gap(
+    *,
+    revisions: Sequence[TrackerIssueRevision],
+    admissions: Sequence[AdmissionResult],
+    open_findings: Sequence[SpecFinding],
+    body_marker_key: str,
+) -> tuple[TrackerIssue, ...]:
+    """Return the exact issue records whose specifications need organize work.
+
+    The caller supplies a complete scope snapshot, including full criterion
+    child revisions, and only findings that remain open. Label values are
+    configured semantic issue-label keys. A missing admission is not live.
+    Record-shaped members and criterion children are never work targets.
+
+    This function reads no tracker, judges no text and dispatches no author.
+    Each body is compared with its own admission; a stale child surface
+    puts its parent in the work set without changing the parent admission.
+    Criterion execution state only answers whether a non-Canceled child
+    exists; a code-only regression cannot put a specification in the gap.
+
+    A vendor change timestamp enters no clause of this computation. A
+    mention bumps it without touching a body, so it reports movement that
+    is not change and a work set keyed on it re-processes items nothing
+    happened to. The prohibition is absolute here rather than a tuned
+    window size, and it is scoped to this computation alone: it does not
+    reach the reply/mention scan, whose own window is correct precisely
+    because there a mention IS the signal being scanned for. Neither half
+    is evidence for the other.
+    """
+    if not body_marker_key.strip():
+        raise ValueError("organize gap requires a body phase marker key")
+    by_key = {revision.issue.issue_key: revision for revision in revisions}
+    if len(by_key) != len(revisions):
+        raise ValueError("organize gap requires one revision per issue")
+    admitted = {result.issue_id: result for result in admissions}
+    if len(admitted) != len(admissions):
+        raise ValueError("organize gap requires one admission per surface")
+    children: dict[str, list[TrackerIssueRevision]] = {}
+    for revision in revisions:
+        issue = revision.issue
+        if "criterion" in issue.issue_labels:
+            if issue.parent_key not in by_key:
+                raise ValueError("organize gap requires each criterion's parent")
+            children.setdefault(issue.parent_key, []).append(revision)
+    finding_keys = {finding.issue_id for finding in open_findings}
+    gap: list[TrackerIssue] = []
+    for revision in revisions:
+        issue = revision.issue
+        if not is_organize_subject(issue):
+            continue
+        surfaces = (revision, *children.get(issue.issue_key, ()))
+        has_lapsed_surface = any(
+            surface.issue.issue_key not in admitted
+            or not is_admission_live(
+                admitted_body_digest=admitted[
+                    surface.issue.issue_key
+                ].admitted_body_digest,
+                current_body_digest=surface.body_digest,
+            )
+            for surface in surfaces
+        )
+        has_criterion = any(
+            child.issue.state_kind is not WorkflowStateKind.CANCELED
+            for child in children.get(issue.issue_key, ())
+        )
+        if (
+            body_marker_key not in issue.issue_labels
+            or has_lapsed_surface
+            or not has_criterion
+            or any(surface.issue.issue_key in finding_keys for surface in surfaces)
+        ):
+            gap.append(issue)
+    return tuple(gap)
