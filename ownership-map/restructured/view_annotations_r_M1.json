@@ -2,7 +2,7 @@
  "milestone": "M1",
  "branch": "origin/v03/m1-scope-ports",
  "base": "origin/v03/restructure",
- "head": "1dac5d48a1ae85911253589fd3357dc3166b600b",
+ "head": "37ea59ec6e6968057d29a746e30c22d7f949c322",
  "later_members_shown_here": [
   {
    "file": "src/kodezart/adapters/git/service.py",
@@ -406,10 +406,26 @@
   },
   {
    "file": "src/kodezart/types/domain/operation.py",
+   "symbol": "import:from kodezart.types.domain.organize import ( MANDATE_PHASE_ROLES, MandateSpec, OrganizeLabelNamespace, ResolvedMandateSpec, phase_marker_source, split_label_key, )",
+   "owner": "M2",
+   "owner_pr": 126,
+   "sym_kind": "symbol",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/operation.py",
    "symbol": "import:from kodezart.types.domain.scope_address import ScopeRef",
    "owner": "M3",
    "owner_pr": 125,
    "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/organize.py",
+   "symbol": "import:from collections.abc import Mapping",
+   "owner": "M2",
+   "owner_pr": 126,
+   "sym_kind": "symbol",
    "kind": "added"
   },
   {
@@ -679,7 +695,7 @@
  ],
  "own_members_shown_earlier": [],
  "counts": {
-  "later_members_shown_here": 84,
+  "later_members_shown_here": 86,
   "own_members_shown_earlier": 0
  }
 }

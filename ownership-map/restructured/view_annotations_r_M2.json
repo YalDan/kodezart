@@ -2,7 +2,7 @@
  "milestone": "M2",
  "branch": "origin/v03/m2-organize",
  "base": "origin/v03/m3-plan-walk",
- "head": "5882cd94683d311cd62221e3f3c84b0425e7c31a",
+ "head": "de9151f3a945933a988370e0274930c1f6138716",
  "later_members_shown_here": [],
  "own_members_shown_earlier": [
   {
@@ -36,6 +36,22 @@
    "shown_pr": 125,
    "sym_kind": "method",
    "kind": "modified"
+  },
+  {
+   "file": "src/kodezart/types/domain/operation.py",
+   "symbol": "import:from kodezart.types.domain.organize import ( MANDATE_PHASE_ROLES, MandateSpec, OrganizeLabelNamespace, ResolvedMandateSpec, phase_marker_source, split_label_key, )",
+   "shown_at": "M1",
+   "shown_pr": 133,
+   "sym_kind": "symbol",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/organize.py",
+   "symbol": "import:from collections.abc import Mapping",
+   "shown_at": "M1",
+   "shown_pr": 133,
+   "sym_kind": "symbol",
+   "kind": "added"
   },
   {
    "file": "src/kodezart/types/domain/workflow.py",
@@ -72,6 +88,6 @@
  ],
  "counts": {
   "later_members_shown_here": 0,
-  "own_members_shown_earlier": 8
+  "own_members_shown_earlier": 10
  }
 }

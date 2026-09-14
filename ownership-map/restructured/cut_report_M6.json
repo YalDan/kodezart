@@ -45,6 +45,7 @@
   "tests/adapters/test_native_identity_process_probe.py",
   "tests/chains/test_audit_pass.py",
   "tests/chains/test_audit_terminal_cancellation.py",
+  "tests/chains/test_write_back_adoption.py",
   "tests/domain/test_assertion_drift.py",
   "tests/domain/test_audit_overclaim.py",
   "tests/domain/test_audit_overclaim_report.py",

@@ -84,6 +84,7 @@
   "tests/domain/test_amendment.py",
   "tests/domain/test_base_resolution.py",
   "tests/domain/test_base_scope.py",
+  "tests/domain/test_fire_spec_arm_reads.py",
   "tests/domain/test_fire_spec_formatter.py",
   "tests/domain/test_fire_spec_purity.py",
   "tests/domain/test_subtree_closure.py",
@@ -157,13 +158,19 @@
  "preserved": [
   [
    "src/kodezart/types/domain/workflow.py",
-   "WorkflowState.ci_status",
+   "WorkflowState.ci_summary",
    "M3",
    "M5"
   ],
   [
    "src/kodezart/types/domain/workflow.py",
-   "WorkflowState.ci_summary",
+   "WorkflowState.pr_url",
+   "M3",
+   "M5"
+  ],
+  [
+   "src/kodezart/types/domain/workflow.py",
+   "WorkflowState.pr_number",
    "M3",
    "M5"
   ],
@@ -181,13 +188,7 @@
   ],
   [
    "src/kodezart/types/domain/workflow.py",
-   "WorkflowState.pr_number",
-   "M3",
-   "M5"
-  ],
-  [
-   "src/kodezart/types/domain/workflow.py",
-   "WorkflowState.pr_url",
+   "WorkflowState.ci_status",
    "M3",
    "M5"
   ]

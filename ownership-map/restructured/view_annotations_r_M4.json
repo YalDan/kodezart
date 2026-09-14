@@ -2,7 +2,7 @@
  "milestone": "M4",
  "branch": "origin/v03/m4-criterion-lifecycle",
  "base": "origin/v03/m1-scope-ports",
- "head": "9fd71bca593ef646f6ad4adeb4b00f5cf2396546",
+ "head": "ee122edb4131ef200738d06c78dbbe04214456e5",
  "later_members_shown_here": [
   {
    "file": "src/kodezart/domain/accept_gate.py",
