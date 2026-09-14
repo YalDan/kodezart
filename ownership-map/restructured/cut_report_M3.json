@@ -78,6 +78,7 @@
   "tests/chains/test_scope_gap_selection.py",
   "tests/chains/test_scope_observations.py",
   "tests/chains/test_scope_ready.py",
+  "tests/chains/test_session_policy_composition.py",
   "tests/core/test_job_queue_settings.py",
   "tests/core/test_logging_chain.py",
   "tests/domain/test_amendment.py",
@@ -162,13 +163,13 @@
   ],
   [
    "src/kodezart/types/domain/workflow.py",
-   "WorkflowState.pr_number",
+   "WorkflowState.ci_summary",
    "M3",
    "M5"
   ],
   [
    "src/kodezart/types/domain/workflow.py",
-   "WorkflowState.ci_summary",
+   "WorkflowState.ticket",
    "M3",
    "M5"
   ],
@@ -180,7 +181,7 @@
   ],
   [
    "src/kodezart/types/domain/workflow.py",
-   "WorkflowState.ticket",
+   "WorkflowState.pr_number",
    "M3",
    "M5"
   ],

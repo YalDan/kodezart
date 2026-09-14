@@ -1,0 +1,77 @@
+{
+ "milestone": "M2",
+ "branch": "origin/v03/m2-organize",
+ "base": "origin/v03/m3-plan-walk",
+ "head": "5882cd94683d311cd62221e3f3c84b0425e7c31a",
+ "later_members_shown_here": [],
+ "own_members_shown_earlier": [
+  {
+   "file": "src/kodezart/chains/ralph_loop.py",
+   "symbol": "RalphLoop._evaluate_node",
+   "shown_at": "M3",
+   "shown_pr": 125,
+   "sym_kind": "method",
+   "kind": "modified"
+  },
+  {
+   "file": "src/kodezart/domain/errors.py",
+   "symbol": "import:from kodezart.types.domain.organize_owner import OrganizeReport",
+   "shown_at": "M1",
+   "shown_pr": 133,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/domain/organize.py",
+   "symbol": "import:from collections.abc import Sequence",
+   "shown_at": "M1",
+   "shown_pr": 133,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/handlers/agent_handler.py",
+   "symbol": "AgentHandler.stream_workflow",
+   "shown_at": "M3",
+   "shown_pr": 125,
+   "sym_kind": "method",
+   "kind": "modified"
+  },
+  {
+   "file": "src/kodezart/types/domain/workflow.py",
+   "symbol": "import:from kodezart.types.domain.run_records import RunIdentity",
+   "shown_at": "M1",
+   "shown_pr": 133,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "tests/chains/test_ralph_loop.py",
+   "symbol": "import:from kodezart.chains.authored_delivery import AuthoredDeliveryCoordinator",
+   "shown_at": "M1",
+   "shown_pr": 133,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "tests/chains/test_ralph_loop.py",
+   "symbol": "import:from kodezart.types.domain.run_records import RunIdentity",
+   "shown_at": "M1",
+   "shown_pr": 133,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "tests/chains/test_retry_floor_wiring.py",
+   "symbol": "_module_source",
+   "shown_at": "M1",
+   "shown_pr": 133,
+   "sym_kind": "function",
+   "kind": "modified"
+  }
+ ],
+ "counts": {
+  "later_members_shown_here": 0,
+  "own_members_shown_earlier": 8
+ }
+}
