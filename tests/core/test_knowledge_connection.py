@@ -305,3 +305,38 @@ def test_credentials_are_excluded_from_settings_and_grant_serialization(connecti
         for serialized in (value.model_dump(), json.loads(value.model_dump_json())):
             assert "credential" not in serialized["connection"]
             assert "gateway_credential" not in serialized["connection"]
+
+
+INTERACTIVE_HOST = "hosted.invalid"
+
+
+async def test_no_boot_log_line_carries_the_gateway_credential(monkeypatch, capsys):
+    from kodezart.main import create_app, lifespan
+
+    monkeypatch.setenv("KODEZART_KNOWLEDGE__CONNECTION__TRANSPORT", "http")
+    monkeypatch.setenv("KODEZART_KNOWLEDGE__CONNECTION__SERVER_URL", URL)
+    monkeypatch.setenv("KODEZART_KNOWLEDGE__CONNECTION__GATEWAY_CREDENTIAL", GATEWAY)
+
+    app = create_app()
+    async with lifespan(app):
+        pass
+
+    emitted = capsys.readouterr().out + capsys.readouterr().err
+    assert '"event"' in emitted
+    assert GATEWAY not in emitted
+
+
+def test_a_gateway_credential_aimed_at_an_interactive_host_also_aborts_boot():
+    """Any statically composed header is dead against such a host."""
+    with pytest.raises(ValidationError, match="interactively"):
+        AppConfig(
+            knowledge={
+                "session_grants": ["ticket_fire"],
+                "connection": http(
+                    server_url=f"https://{INTERACTIVE_HOST}/mcp",
+                    interactive_auth_hosts=[INTERACTIVE_HOST],
+                    gateway_credential=GATEWAY,
+                    credential=None,
+                ),
+            }
+        )
