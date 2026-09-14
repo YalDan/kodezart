@@ -26,7 +26,14 @@ from kodezart.types.domain.tracker import (
     WorkflowStateKind,
 )
 from tests.fakes import FakeLinearMcpServer, FakeMcpIssue, FakeTrackerPort
-from tests.tracker.conftest import FIXTURE_NOW, linear_over_fake_mcp
+from tests.tracker.conftest import (
+    FIXTURE_NOW,
+    TRACKER_ADAPTERS,
+    TRACKER_IMPLEMENTATIONS,
+    FixtureClock,
+    TrackerWorkspace,
+    linear_over_fake_mcp,
+)
 
 INITIATIVE = ScopeRef(kind=ScopeKind.INITIATIVE, key="initiative-one")
 PROJECT = ScopeRef(kind=ScopeKind.PROJECT, key="project-one")
@@ -289,8 +296,14 @@ class ScopeFixture:
     fake: FakeTrackerPort
 
 
-@pytest.fixture(params=["linear", "fake"])
-def scope_fixture(request: pytest.FixtureRequest) -> ScopeFixture:
+@pytest.fixture(params=sorted(TRACKER_IMPLEMENTATIONS))
+def scope_fixture(request: pytest.FixtureRequest, clock: FixtureClock) -> ScopeFixture:
+    """Every registered implementation, over one stated scope workspace.
+
+    Parametrised over the conformance registry rather than over a pair
+    named here, so an adapter that joins ``TRACKER_ADAPTERS`` is put
+    through these container reads without a case being copied.
+    """
     server = ScopeMcpServer()
     fake = FakeTrackerPort(
         issues=[_domain_issue(issue) for issue in server.issues.values()],
@@ -309,7 +322,9 @@ def scope_fixture(request: pytest.FixtureRequest) -> ScopeFixture:
             EMPTY_INITIATIVE: [],
         },
     )
-    tracker = linear_over_fake_mcp(server) if request.param == "linear" else fake
+    adapter = TRACKER_ADAPTERS.get(request.param)
+    workspace = TrackerWorkspace(server=server, clock=clock)
+    tracker = fake if adapter is None else adapter(workspace)
     return ScopeFixture(tracker=tracker, server=server, fake=fake)
 
 

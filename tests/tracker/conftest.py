@@ -346,25 +346,41 @@ async def fake_port_over_fixture(
     return port
 
 
+@dataclass
+class TrackerWorkspace:
+    """Everything a registered factory needs to serve one case.
+
+    Stated as one object rather than as a widening positional signature so
+    a case that dials a workspace differently — a remapped scope
+    vocabulary, say — still reaches every registered implementation
+    through the registry instead of building a pair of its own beside it.
+    """
+
+    server: FakeLinearMcpServer
+    clock: FixtureClock
+    scope_labels: Mapping[str, str] | None = None
+
+
 #: Real adapters — every one must serve the fixture workspace unchanged.
-TRACKER_ADAPTERS: dict[
-    str, Callable[[FakeLinearMcpServer, FixtureClock], TrackerPort]
-] = {
-    "linear-mcp": lambda server, clock: linear_over_fake_mcp(server, clock=clock),
+TRACKER_ADAPTERS: dict[str, Callable[[TrackerWorkspace], TrackerPort]] = {
+    "linear-mcp": lambda workspace: linear_over_fake_mcp(
+        workspace.server,
+        scope_labels=workspace.scope_labels,
+        clock=workspace.clock,
+    ),
 }
 
 #: Test doubles that consumers are tested on.  They run the SAME suite, per
 #: the ruling that this is what keeps them honest: a double that drifts from
 #: the contract fails exactly where a non-conforming vendor adapter would.
-TRACKER_DOUBLES: dict[
-    str, Callable[[FakeLinearMcpServer, FixtureClock], Awaitable[TrackerPort]]
-] = {
-    "fake-port": lambda server, clock: fake_port_over_fixture(server, clock=clock),
+TRACKER_DOUBLES: dict[str, Callable[[TrackerWorkspace], Awaitable[TrackerPort]]] = {
+    "fake-port": lambda workspace: fake_port_over_fixture(
+        workspace.server, clock=workspace.clock
+    ),
 }
 
 TRACKER_IMPLEMENTATIONS: dict[
-    str,
-    Callable[[FakeLinearMcpServer, FixtureClock], TrackerPort | Awaitable[TrackerPort]],
+    str, Callable[[TrackerWorkspace], TrackerPort | Awaitable[TrackerPort]]
 ] = {
     **TRACKER_ADAPTERS,
     **TRACKER_DOUBLES,
@@ -416,7 +432,7 @@ async def tracker(
 ) -> TrackerPort:
     """Every registered adapter AND double, over one fixture workspace."""
     factory = TRACKER_IMPLEMENTATIONS[request.param]
-    port = factory(server, clock)
+    port = factory(TrackerWorkspace(server=server, clock=clock))
     return await port if isawaitable(port) else port
 
 
@@ -428,7 +444,7 @@ def adapter(
 ) -> TrackerPort:
     """Registered ADAPTERS only — for rules about backend substitutability."""
     factory = TRACKER_ADAPTERS[request.param]
-    return factory(server, clock)
+    return factory(TrackerWorkspace(server=server, clock=clock))
 
 
 @pytest.fixture

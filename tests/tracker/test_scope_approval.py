@@ -18,7 +18,13 @@ from kodezart.domain.errors import ScopeReadError
 from kodezart.types.domain.operation import OperationMemberAbsentError, ScopeLabel
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from tests.fakes import FakeTrackerPort
-from tests.tracker.conftest import linear_over_fake_mcp
+from tests.tracker.conftest import (
+    TRACKER_ADAPTERS,
+    TRACKER_IMPLEMENTATIONS,
+    FixtureClock,
+    TrackerWorkspace,
+    linear_over_fake_mcp,
+)
 from tests.tracker.test_scope_reads import (
     INITIATIVE,
     OTHER_PROJECT,
@@ -75,8 +81,14 @@ class ApprovalFixture:
         )
 
 
-@pytest.fixture(params=["linear", "fake"])
-def approval(request: pytest.FixtureRequest) -> ApprovalFixture:
+@pytest.fixture(params=sorted(TRACKER_IMPLEMENTATIONS))
+def approval(request: pytest.FixtureRequest, clock: FixtureClock) -> ApprovalFixture:
+    """Every registered implementation, over one remapped label vocabulary.
+
+    Parametrised over the conformance registry rather than over a pair
+    named here, so an adapter that joins ``TRACKER_ADAPTERS`` is put
+    through these meta-label reads without a case being copied.
+    """
     server = ScopeMcpServer()
     issues = []
     for native in server.issues.values():
@@ -97,11 +109,11 @@ def approval(request: pytest.FixtureRequest) -> ApprovalFixture:
             _container(INITIATIVE),
         ],
     )
-    tracker = (
-        linear_over_fake_mcp(server, scope_labels=APPROVAL_LABELS)
-        if request.param == "linear"
-        else fake
+    adapter = TRACKER_ADAPTERS.get(request.param)
+    workspace = TrackerWorkspace(
+        server=server, clock=clock, scope_labels=APPROVAL_LABELS
     )
+    tracker = fake if adapter is None else adapter(workspace)
     return ApprovalFixture(tracker=tracker, server=server, fake=fake)
 
 
