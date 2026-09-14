@@ -1103,15 +1103,18 @@ def test_gap_has_no_amendment_input_or_body_judgment_branch():
 
 SRC = Path(__file__).resolve().parents[2] / "src" / "kodezart"
 CHANGE_STAMP_FIELDS = frozenset({"updated_at", "updated_since", "updatedAt"})
-GAP_ARITHMETIC_NAMES = frozenset({"organize_gap", "SubtreeClosure"})
+GAP_ARITHMETIC_NAMES = frozenset(
+    {"compute_gap", "in_gap", "organize_gap", "SubtreeClosure"}
+)
 GAP_COMPUTATION_MODULES = frozenset(
     {
+        "domain/gap.py",
         "domain/organize.py",
         "domain/issue_tree.py",
-        "chains/organize.py",
         "chains/scope_walker.py",
+        "services/mandate_graph.py",
         "services/organize_owner.py",
-        "services/organize_tick.py",
+        "services/run_shape.py",
     }
 )
 
@@ -1135,11 +1138,19 @@ def change_stamp_reads(tree):
     return reads
 
 
-def gap_arithmetic_modules():
-    """Every module under the source tree that defines or reaches the gap."""
+def source_tree():
+    """Every module under the source tree, by its path relative to the root."""
+    return {
+        path.relative_to(SRC).as_posix(): path.read_text(encoding="utf-8")
+        for path in sorted(SRC.rglob("*.py"))
+    }
+
+
+def gap_computation_sites(sources):
+    """Every supplied module that defines or reaches the gap arithmetic."""
     found = {}
-    for path in sorted(SRC.rglob("*.py")):
-        tree = ast.parse(path.read_text(encoding="utf-8"))
+    for relative, source in sources.items():
+        tree = ast.parse(source)
         named = set()
         for node in ast.walk(tree):
             if isinstance(node, ast.Name):
@@ -1151,22 +1162,58 @@ def gap_arithmetic_modules():
             ):
                 named.add(node.name)
         if named & GAP_ARITHMETIC_NAMES:
-            found[path.relative_to(SRC).as_posix()] = tree
+            found[relative] = tree
     return found
 
 
+def gap_sites_reading_the_change_stamp(sources):
+    """The discovered gap sites that reach the tracker's change-timestamp field."""
+    return {
+        relative: change_stamp_reads(tree)
+        for relative, tree in gap_computation_sites(sources).items()
+        if change_stamp_reads(tree)
+    }
+
+
 def test_no_gap_computation_call_site_reads_the_tracker_change_timestamp():
-    discovered = gap_arithmetic_modules()
-    assert {"domain/organize.py", "domain/issue_tree.py"} <= discovered.keys()
+    discovered = gap_computation_sites(source_tree())
+    assert discovered
+    assert {
+        "domain/gap.py",
+        "domain/organize.py",
+        "domain/issue_tree.py",
+    } <= discovered.keys()
     assert discovered.keys() <= GAP_COMPUTATION_MODULES
-    scanned = {
-        relative: ast.parse((SRC / relative).read_text(encoding="utf-8"))
-        for relative in GAP_COMPUTATION_MODULES
-    }
-    assert {name: change_stamp_reads(tree) for name, tree in scanned.items()} == {
-        name: set() for name in GAP_COMPUTATION_MODULES
-    }
+    assert gap_sites_reading_the_change_stamp(source_tree()) == {}
     assert change_stamp_reads(ast.parse(inspect.getsource(organize_gap))) == set()
+
+
+@pytest.mark.parametrize(
+    ("relative", "anchor", "planted"),
+    [
+        (
+            "domain/gap.py",
+            "    return tuple(\n",
+            "    if any(criterion.updated_at for criterion in criteria):\n"
+            '        raise ValueError("a criterion changed")\n'
+            "    return tuple(\n",
+        ),
+        (
+            "services/run_shape.py",
+            "    open_keys = {\n",
+            "    if any(criterion.updated_at for criterion in criteria):\n"
+            '        raise ValueError("a criterion changed")\n'
+            "    open_keys = {\n",
+        ),
+    ],
+)
+def test_the_guard_reddens_when_a_discovered_gap_site_reads_the_field(
+    relative, anchor, planted
+):
+    sources = source_tree()
+    assert sources[relative].count(anchor) == 1
+    sources[relative] = sources[relative].replace(anchor, planted)
+    assert gap_sites_reading_the_change_stamp(sources) == {relative: {"updated_at"}}
 
 
 @pytest.mark.parametrize("field", sorted(CHANGE_STAMP_FIELDS))
