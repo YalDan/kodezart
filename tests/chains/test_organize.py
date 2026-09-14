@@ -4,6 +4,7 @@ import ast
 import inspect
 from collections.abc import AsyncIterator, Sequence
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 import structlog.testing
@@ -1098,3 +1099,86 @@ def test_gap_has_no_amendment_input_or_body_judgment_branch():
         "open_findings",
         "body_marker_key",
     }
+
+
+SRC = Path(__file__).resolve().parents[2] / "src" / "kodezart"
+CHANGE_STAMP_FIELDS = frozenset({"updated_at", "updated_since", "updatedAt"})
+GAP_ARITHMETIC_NAMES = frozenset({"organize_gap", "SubtreeClosure"})
+GAP_COMPUTATION_MODULES = frozenset(
+    {
+        "domain/organize.py",
+        "domain/issue_tree.py",
+        "chains/organize.py",
+        "chains/scope_walker.py",
+        "services/organize_owner.py",
+        "services/organize_tick.py",
+    }
+)
+
+
+def change_stamp_reads(tree):
+    """Every way parsed source reaches the tracker's change-timestamp field."""
+    reads = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute) and node.attr in CHANGE_STAMP_FIELDS:
+            reads.add(node.attr)
+        elif isinstance(node, ast.Name) and node.id in CHANGE_STAMP_FIELDS:
+            reads.add(node.id)
+        elif isinstance(node, ast.keyword) and node.arg in CHANGE_STAMP_FIELDS:
+            reads.add(node.arg)
+        elif (
+            isinstance(node, ast.Constant)
+            and isinstance(node.value, str)
+            and node.value in CHANGE_STAMP_FIELDS
+        ):
+            reads.add(node.value)
+    return reads
+
+
+def gap_arithmetic_modules():
+    """Every module under the source tree that defines or reaches the gap."""
+    found = {}
+    for path in sorted(SRC.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        named = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Name):
+                named.add(node.id)
+            elif isinstance(node, ast.Attribute):
+                named.add(node.attr)
+            elif isinstance(
+                node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef
+            ):
+                named.add(node.name)
+        if named & GAP_ARITHMETIC_NAMES:
+            found[path.relative_to(SRC).as_posix()] = tree
+    return found
+
+
+def test_no_gap_computation_call_site_reads_the_tracker_change_timestamp():
+    discovered = gap_arithmetic_modules()
+    assert {"domain/organize.py", "domain/issue_tree.py"} <= discovered.keys()
+    assert discovered.keys() <= GAP_COMPUTATION_MODULES
+    scanned = {
+        relative: ast.parse((SRC / relative).read_text(encoding="utf-8"))
+        for relative in GAP_COMPUTATION_MODULES
+    }
+    assert {name: change_stamp_reads(tree) for name, tree in scanned.items()} == {
+        name: set() for name in GAP_COMPUTATION_MODULES
+    }
+    assert change_stamp_reads(ast.parse(inspect.getsource(organize_gap))) == set()
+
+
+@pytest.mark.parametrize("field", sorted(CHANGE_STAMP_FIELDS))
+@pytest.mark.parametrize("form", ["attribute", "name", "keyword", "wire_key"])
+def test_change_stamp_detector_flags_a_gap_site_that_reads_the_field(field, form):
+    snippet = {
+        "attribute": f"def gap(rows, since):\n"
+        f"    return [row for row in rows if row.{field} > since]\n",
+        "name": f"def gap(rows, {field}):\n"
+        f"    return [row for row in rows if row.body_digest != {field}]\n",
+        "keyword": f"def gap(tracker):\n    return tracker.query({field}=MARK)\n",
+        "wire_key": f"def gap(row):\n    return row['{field}']\n",
+    }[form]
+    assert change_stamp_reads(ast.parse(snippet)) == {field}
+    assert change_stamp_reads(ast.parse(snippet.replace(field, "body_digest"))) == set()
