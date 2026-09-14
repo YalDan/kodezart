@@ -52,7 +52,9 @@ async def test_actual_gated_writer_round_trips_through_cold_record_reader(port):
     )
     assert record == original
     assert comment == stored
-    assert len(gate.content_classes) == 1
+    # The raise gated its comment and its classification; the read gates
+    # nothing, so the count is still the two the seed made.
+    assert len(gate.content_classes) == 2
     # Native reads appear in the native call log; only mutation entries matter.
     if server is None:
         assert writes() == before

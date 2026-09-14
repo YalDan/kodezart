@@ -728,6 +728,7 @@ class OrganizeOwner:
         job_id: str,
         judgments: Sequence[AdmissionResult],
         scope: ScopeRef,
+        visibility: RepoVisibility,
     ) -> bool:
         _, marker = split_label_key(phase.spec.terminal_marker_key)
         current = await self._tracker.read_issue(issue_key=request.issue_key)
@@ -750,6 +751,24 @@ class OrganizeOwner:
                     reason="phase evidence changed before marker",
                 )
             await self._may_write(request.issue_key, phase=phase, scope=scope)
+            # The marker is DERIVED — a configured phase member a process
+            # that never held the session recomputes — and it is an
+            # IDENTIFIER: a placeholder in its place names no member of the
+            # board's vocabulary, so a hit refuses rather than redacts.
+            classification = await gated_write(
+                gate=self._gate,
+                log=self._log,
+                content=marker,
+                visibility=visibility,
+                shape=WriterShape.IDENTIFIER,
+                destination=OutboundDestination.TRACKER_CLASSIFICATION,
+                content_class=ContentClass.DERIVED,
+            )
+            if classification != marker:
+                raise OrganizeWriteRefusalError(
+                    issue_key=request.issue_key,
+                    reason="outbound gate changed the phase marker",
+                )
             async with RunSurfaceLease(
                 tracker=self._tracker,
                 job_id=job_id,
@@ -765,7 +784,7 @@ class OrganizeOwner:
                 await self._may_write(request.issue_key, phase=phase, scope=scope)
                 await settle(
                     self._tracker.set_issue_classification(
-                        issue_key=request.issue_key, classification=marker
+                        issue_key=request.issue_key, classification=classification
                     )
                 )
 
@@ -1252,6 +1271,7 @@ class OrganizeOwner:
                             job_id=job_id,
                             judgments=fresh,
                             scope=scope,
+                            visibility=visibility,
                         ):
                             raise OrganizeWriteRefusalError(
                                 issue_key=issue.issue_key,

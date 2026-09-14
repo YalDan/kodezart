@@ -147,6 +147,7 @@ class OutboundDestination(StrEnum):
     TRACKER_COMMENT = "tracker_comment"
     TRACKER_DESCRIPTION = "tracker_description"
     TRACKER_TITLE = "tracker_title"
+    TRACKER_CLASSIFICATION = "tracker_classification"
 
 
 #: Total over :class:`OutboundDestination`; a test asserts the totality so a
@@ -163,6 +164,7 @@ DESTINATION_SURFACE: Mapping[OutboundDestination, OutboundSurface] = {
     OutboundDestination.TRACKER_COMMENT: OutboundSurface.TRACKER,
     OutboundDestination.TRACKER_DESCRIPTION: OutboundSurface.TRACKER,
     OutboundDestination.TRACKER_TITLE: OutboundSurface.TRACKER,
+    OutboundDestination.TRACKER_CLASSIFICATION: OutboundSurface.TRACKER,
 }
 
 
@@ -188,6 +190,7 @@ DESTINATION_DURABILITY: Mapping[OutboundDestination, SurfaceDurability] = {
     OutboundDestination.TRACKER_COMMENT: SurfaceDurability.POINT_IN_TIME,
     OutboundDestination.TRACKER_DESCRIPTION: SurfaceDurability.DURABLE,
     OutboundDestination.TRACKER_TITLE: SurfaceDurability.DURABLE,
+    OutboundDestination.TRACKER_CLASSIFICATION: SurfaceDurability.DURABLE,
 }
 
 

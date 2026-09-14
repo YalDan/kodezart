@@ -134,6 +134,7 @@ def factory(
     write_back_bound=2,
     tick=False,
     settings=None,
+    gate=None,
 ):
     board = _Board()
     operation_fields = declared_operation().model_dump()
@@ -192,7 +193,7 @@ def factory(
             default_set="claude-opus", bindings=operation_bindings(operation)
         ),
         skills=SUPPRESS_ALL_SKILLS,
-        gate=PassThroughGate(),
+        gate=PassThroughGate() if gate is None else gate,
         **({} if tick else {"repo_url": "https://example.invalid/repository"}),
     )
     return owner, board, executor

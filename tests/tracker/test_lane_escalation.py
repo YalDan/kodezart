@@ -138,8 +138,15 @@ async def test_raise_is_durable_before_later_report_failure_and_replay_is_noop(p
         )
     else:
         assert writes() == mutation_count
-    assert gate.content_classes == [ContentClass.AUTHORED, ContentClass.AUTHORED]
-    assert gate.destinations == [OutboundDestination.TRACKER_COMMENT] * 2
+    assert gate.content_classes == [ContentClass.AUTHORED, ContentClass.DERIVED] * 2
+    assert (
+        gate.destinations
+        == [
+            OutboundDestination.TRACKER_COMMENT,
+            OutboundDestination.TRACKER_CLASSIFICATION,
+        ]
+        * 2
+    )
     assert gate.calls[0][0] == stored.body
 
 

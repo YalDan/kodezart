@@ -339,7 +339,7 @@ def pending(shape, board):
     )
 
 
-def organize_run(monkeypatch, journal, *, shape="bodies"):
+def organize_run(monkeypatch, journal, *, shape="bodies", gate=None):
     """The composed Organize owner, observed at the port it writes through."""
     trackers = organize_suite.tracker_over
     ports = []
@@ -349,7 +349,7 @@ def organize_run(monkeypatch, journal, *, shape="bodies"):
         return ports[-1]
 
     monkeypatch.setattr(organize_suite, "tracker_over", recording)
-    owner, board, executor = factory(convergence_bound=4, bound=3)
+    owner, board, executor = factory(convergence_bound=4, bound=3, gate=gate)
     if shape == "bodies":
         return owner, board, ports
     if shape == "edges":

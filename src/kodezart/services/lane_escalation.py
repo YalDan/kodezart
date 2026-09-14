@@ -107,6 +107,24 @@ class LaneEscalationWriter:
                 writer=OutboundDestination.TRACKER_COMMENT.value,
                 categories=[],
             )
+        # The classification is DERIVED — the operation's own decision member,
+        # recomputable without the session — and an IDENTIFIER, because a
+        # redacted member names no classification the board holds.
+        classification = await gated_write(
+            gate=self._gate,
+            log=self._log,
+            content="decision",
+            visibility=visibility,
+            shape=WriterShape.IDENTIFIER,
+            destination=OutboundDestination.TRACKER_CLASSIFICATION,
+            content_class=ContentClass.DERIVED,
+        )
+        if classification != "decision":
+            raise OutboundContentBlockedError(
+                "The outbound gate changed the escalation classification",
+                writer=OutboundDestination.TRACKER_CLASSIFICATION.value,
+                categories=[],
+            )
         current = await self._tracker.read_planning_issue(issue_key=escalation.issue_id)
         if current.issue_key != escalation.issue_id:
             raise IssueLabelReadError(
@@ -144,7 +162,7 @@ class LaneEscalationWriter:
             await settle(
                 self._tracker.set_issue_classification(
                     issue_key=escalation.issue_id,
-                    classification="decision",
+                    classification=classification,
                     holder=job_id,
                 )
             )
