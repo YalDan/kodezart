@@ -44,6 +44,8 @@ class DefectRole(StrEnum):
 class SpecFinding(CamelCaseModel):
     """Evidence for a class in the selected rubric, with any mandate verbatim."""
 
+    model_config = ConfigDict(frozen=True)
+
     issue_id: str = Field(
         min_length=1, description="Tracker key owning the source finding."
     )
