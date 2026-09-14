@@ -60,6 +60,7 @@ from kodezart.types.domain.subagents import (
 )
 from kodezart.types.domain.surface import (
     DescriptionWriteAuthority,
+    SurfaceAuthorship,
     SurfaceLease,
     WritableSurface,
     WriteRevalidation,
@@ -906,6 +907,22 @@ class TrackerPort(
         """
         ...
 
+    async def read_surface_authorship(
+        self, *, surface: WritableSurface
+    ) -> SurfaceAuthorship:
+        """Whom the tracker records as the author of the addressed body.
+
+        Answered from the backend's own attribution of that surface, never
+        from what the text looks like. A body the backend attributes to
+        this writer's account reads MACHINE_AUTHORED; anything else,
+        including a body it attributes to nobody, reads PRINCIPAL_AUTHORED.
+
+        Only the surfaces whose body this port can replace are answerable;
+        any other address raises before a read is issued, because an
+        authorship nothing can act on states a capability no caller has.
+        """
+        ...
+
     async def scope_issues(self, *, ref: ScopeRef) -> Sequence[TrackerIssue]:
         """All issues in the scope, with their relations and parent fields.
 
@@ -1032,7 +1049,11 @@ class TrackerPort(
         title: str | None = None,
         body: str | None = None,
     ) -> TrackerIssue:
-        """Update the given fields; ``None`` leaves a field untouched."""
+        """Update the given fields; ``None`` leaves a field untouched.
+
+        A body replacing one the tracker attributes to a principal raises
+        ``PrincipalAuthoredSurfaceError`` before the mutation is sent.
+        """
         ...
 
     async def upsert_issue(
@@ -1098,6 +1119,12 @@ class TrackerPort(
         StaleWriteError with no write. Substrings do not identify the target.
         Callers serialize writes; this is not an atomic compare-and-swap.
 
+        A replacement of a body the tracker attributes to a principal
+        raises ``PrincipalAuthoredSurfaceError`` before the mutation is
+        sent, leaving that body byte-identical. An anchor a caller read
+        off a principal's own text is not authority to replace it: what
+        the machine may rewrite is what the tracker records as its own.
+
         Explicit authorization selects its own ISSUE_DESCRIPTION or
         CRITERION_SUB_ISSUE grant. Reject a target mismatch before reads,
         and repeat expected source and lease checks on every unsent retry.
@@ -1152,6 +1179,12 @@ class TrackerPort(
         A supplied holder must retain this issue's ISSUE_LABEL_SET grant
         after internal reads and on every known-unsent retry. Re-read its
         actual classification outside the mutation retry before returning.
+
+        A classification the operation resolves to the scope admission
+        vocabulary's approved member raises ``ApprovalLabelWriteError``
+        before any backend request, whatever identity the write carries:
+        admission is the approver's act, and a run holding a label lease
+        holds no part of it.
         """
         ...
 

@@ -143,6 +143,46 @@ class SurfaceWriteAttributionError(Exception):
         )
 
 
+class PrincipalAuthoredSurfaceError(Exception):
+    """A write would replace text the tracker attributes to a principal.
+
+    The machine may rewrite what the tracker records as its own; a
+    principal's words are not its to replace, and the refusal is the
+    port's, not a prompt's.  The address is snapshotted as primitive
+    fields, and no attribution identity crosses the boundary: which of
+    the workspace's members wrote the body is the tracker's business,
+    and a caller that learned it would have been told who to impersonate.
+    """
+
+    def __init__(self, *, surface: WritableSurface) -> None:
+        address = f"{surface.kind.value}:{surface.ref.kind.value}:{surface.ref.key}"
+        super().__init__(
+            f"the addressed body is principal-authored (surface: {address})"
+        )
+        self.surface_kind: str = surface.kind.value
+        self.scope_kind: str = surface.ref.kind.value
+        self.scope_key: str = surface.ref.key
+
+
+class ApprovalLabelWriteError(Exception):
+    """A label write named the admission member the approver alone grants.
+
+    Granting or revoking admission is the approver's own act.  A
+    configuration whose semantic classification resolves to that same
+    member would let an ordinary label write hand a run its own
+    authorization, so the write is refused at the port rather than
+    relied on not to be attempted.
+    """
+
+    def __init__(self, *, issue_key: str, classification: str) -> None:
+        self.issue_key = issue_key
+        self.classification = classification
+        super().__init__(
+            f"classification {classification!r} on {issue_key!r} names the "
+            "approval member and cannot be written"
+        )
+
+
 class DuplicateCommentMarkerError(Exception):
     """Several comments claim the same first-line marker on one target."""
 

@@ -36,8 +36,36 @@ class SurfaceKind(StrEnum):
     ISSUE_SPLIT_SET = "issue_split_set"
 
 
+class SurfaceAuthorship(StrEnum):
+    """Who the tracker itself records as the author of a surface's body.
+
+    The partition a write seam needs and the whole of it: either the
+    backend attributes the text standing there to the writing account, or
+    it does not.  ``PRINCIPAL_AUTHORED`` is therefore everything else —
+    another member's words, and equally a body the backend attributes to
+    nobody at all, because an unattributed surface is not one this writer
+    can show it wrote.
+
+    Read from the tracker's own attribution and never from the text: a
+    body that merely looks machine-written is not a record of who wrote
+    it, and a seam deciding otherwise would be guessing about a
+    principal's words.
+    """
+
+    PRINCIPAL_AUTHORED = "principal_authored"
+    MACHINE_AUTHORED = "machine_authored"
+
+
 _CONTAINER_KINDS: frozenset[SurfaceKind] = frozenset(
     {SurfaceKind.CONTAINER_DESCRIPTION, SurfaceKind.CONTAINER_STATUS_UPDATE},
+)
+
+#: The surfaces whose body this port can both read attribution for and
+#: replace.  Authorship is asked of exactly those: a kind the port cannot
+#: replace has no write seam to refuse at, and answering for one would
+#: state a capability no caller can use.
+BODY_AUTHORSHIP_SURFACES: frozenset[SurfaceKind] = frozenset(
+    {SurfaceKind.ISSUE_DESCRIPTION, SurfaceKind.CRITERION_SUB_ISSUE},
 )
 
 
@@ -68,6 +96,18 @@ class WritableSurface:
                 raise ValueError("a marker-keyed comment requires a nonblank marker")
         elif self.marker is not None:
             raise ValueError("only a marker-keyed comment may carry a marker")
+
+
+def require_body_authorship_surface(surface: WritableSurface) -> None:
+    """Refuse an authorship question no implementation can answer.
+
+    Stated once, beside the set itself, so every implementation refuses
+    the same addresses rather than each drawing its own boundary.
+    """
+    if surface.kind not in BODY_AUTHORSHIP_SURFACES:
+        raise ValueError(
+            f"authorship is recorded for an issue body, not {surface.kind.value}"
+        )
 
 
 type WriteRevalidation = Callable[[], Awaitable[None]]

@@ -42,6 +42,7 @@ from kodezart.domain.criteria import mint_criteria
 from kodezart.domain.criterion_amendment import require_criterion_source
 from kodezart.domain.criterion_creation import criterion_body, existing_criterion
 from kodezart.domain.errors import (
+    ApprovalLabelWriteError,
     CriterionReadError,
     DuplicateIssueIdentityError,
     DuplicateWorkRefError,
@@ -49,6 +50,7 @@ from kodezart.domain.errors import (
     IssueLabelReadError,
     MergeConflictError,
     OrganizeWriteRefusalError,
+    PrincipalAuthoredSurfaceError,
     PRStateReadError,
     RateLimitError,
     ScopeReadError,
@@ -162,10 +164,12 @@ from kodezart.types.domain.subagents import (
 )
 from kodezart.types.domain.surface import (
     DescriptionWriteAuthority,
+    SurfaceAuthorship,
     SurfaceKind,
     SurfaceLease,
     WritableSurface,
     WriteRevalidation,
+    require_body_authorship_surface,
 )
 from kodezart.types.domain.ticket_review import TicketApproval, TicketReviewMode
 from kodezart.types.domain.tracker import (
@@ -2402,6 +2406,11 @@ class FakeMcpIssue:
     project_id: str | None = None
     milestone_id: str | None = None
     assignee: str | None = None
+    #: The member the workspace attributes the issue to.  ``None`` is the
+    #: fixture declining to name one, and the server answers such a read
+    #: with its own dialled account; a case that means somebody ELSE wrote
+    #: the body names that member here.
+    created_by: str | None = None
     created_at: datetime = FIXTURE_EPOCH
     updated_at: datetime = FIXTURE_EPOCH
     state_changed_at: datetime | None = None
@@ -2447,6 +2456,7 @@ class FakeMcpIssue:
         """
         return {
             **self.entry(),
+            "createdBy": self.created_by,
             "relations": self.relations_wire(),
             "attachments": [asset.wire() for asset in self.attachments],
             "documents": [asset.wire() for asset in self.documents],
@@ -2791,7 +2801,11 @@ class FakeLinearMcpServer:
         self,
         arguments: Mapping[str, object],
     ) -> Mapping[str, object]:
-        return self._issue(arguments, "id").wire()
+        issue = self._issue(arguments, "id")
+        wire = dict(issue.wire())
+        if issue.created_by is None:
+            wire["createdBy"] = self.actor
+        return wire
 
     def _tool_save_issue(
         self,
@@ -2827,6 +2841,7 @@ class FakeLinearMcpServer:
                 status_type=self.state_types[state]
                 if "state" in arguments
                 else "backlog",
+                created_by=self.actor,
             )
             self.issues[created.id] = created
             return created.wire()
@@ -3342,6 +3357,8 @@ class FakeTrackerPort:
         initiative_identifiers: Mapping[str, frozenset[str]] | None = None,
         scan_refusals: Mapping[PassSignal, str] | None = None,
         writer_identities: frozenset[str] = frozenset({"kodezart"}),
+        body_authorship: Mapping[str, SurfaceAuthorship] | None = None,
+        approval_classifications: frozenset[str] = frozenset(),
         clock: Callable[[], datetime] = lambda: FIXTURE_EPOCH,
     ) -> None:
         self.issues: dict[str, TrackerIssue] = {
@@ -3428,6 +3445,16 @@ class FakeTrackerPort:
         self.capability_probes: list[tuple[PassSignal, ...]] = []
         #: Both spellings of the account this double's writes are signed by.
         self.writer_identities: frozenset[str] = writer_identities
+        #: Whom this workspace records as the author of each issue's body.
+        #: An issue the fixture does not name one for reads as this
+        #: account's own, the way a comment this double posts is: seeded
+        #: text nobody attributed is text the double itself stands behind,
+        #: and a case meaning a principal's words says so here.
+        self.body_authorship: dict[str, SurfaceAuthorship] = dict(body_authorship or {})
+        #: The semantic classifications this workspace resolves to the scope
+        #: admission vocabulary's approved member — empty unless a
+        #: configuration actually aliases the two.
+        self.approval_classifications: frozenset[str] = approval_classifications
         self._assets: dict[str, tuple[TrackerAsset, ...]] = {
             key: tuple(value) for key, value in (assets or {}).items()
         }
@@ -4079,6 +4106,22 @@ class FakeTrackerPort:
             await self.update_issue(issue_key=current.issue_key, title=title)
         return await self.read_issue(issue_key=current.issue_key)
 
+    async def read_surface_authorship(
+        self, *, surface: WritableSurface
+    ) -> SurfaceAuthorship:
+        require_body_authorship_surface(surface)
+        return self._body_authorship(surface.ref.key)
+
+    def _body_authorship(self, issue_key: str) -> SurfaceAuthorship:
+        return self.body_authorship.get(issue_key, SurfaceAuthorship.MACHINE_AUTHORED)
+
+    def _require_machine_authored(self, *, surface: WritableSurface) -> None:
+        """Refuse a replacement of text this workspace attributes elsewhere."""
+        if self._body_authorship(surface.ref.key) is (
+            SurfaceAuthorship.PRINCIPAL_AUTHORED
+        ):
+            raise PrincipalAuthoredSurfaceError(surface=surface)
+
     async def update_issue(
         self,
         *,
@@ -4086,6 +4129,13 @@ class FakeTrackerPort:
         title: str | None = None,
         body: str | None = None,
     ) -> TrackerIssue:
+        if body is not None:
+            self._require_machine_authored(
+                surface=WritableSurface(
+                    kind=SurfaceKind.ISSUE_DESCRIPTION,
+                    ref=ScopeRef(kind=ScopeKind.ISSUE, key=issue_key),
+                ),
+            )
         self.issue_writes.append((issue_key, title, body))
         issue = self.issues[issue_key]
         updated = issue.model_copy(
@@ -4137,6 +4187,14 @@ class FakeTrackerPort:
         )
         if body is None:
             return DescriptionEditResult.UNCHANGED
+        self._require_machine_authored(
+            surface=authorization.surface
+            if authorization is not None
+            else WritableSurface(
+                kind=SurfaceKind.ISSUE_DESCRIPTION,
+                ref=ScopeRef(kind=ScopeKind.ISSUE, key=target),
+            ),
+        )
         await self.update_issue(issue_key=target, body=body)
         return DescriptionEditResult.EDITED
 
@@ -4204,6 +4262,10 @@ class FakeTrackerPort:
     async def set_issue_classification(
         self, *, issue_key: str, classification: str, holder: str | None = None
     ) -> TrackerIssue:
+        if classification in self.approval_classifications:
+            raise ApprovalLabelWriteError(
+                issue_key=issue_key, classification=classification
+            )
         issue = await self.read_issue(issue_key=issue_key)
         if holder is not None:
             surface = classification_surface(issue)

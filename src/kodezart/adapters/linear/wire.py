@@ -179,10 +179,18 @@ class LinearIssueDetailWire(LinearIssueWire):
     rather than defaulted for exactly that reason: "the vendor stopped
     sending the key" and "this issue has nothing attached" are different
     facts, and only the second one is an empty list.
+
+    ``createdBy`` is the workspace member the vendor attributes the issue
+    to, by display name, measured on this read beside a ``createdById``
+    the adapter does not read.  Required and nullable for the reason the
+    comment author is: a payload that dropped the key would be saying
+    nothing about authorship rather than saying there is none, and those
+    are different facts about who wrote the body standing there.
     """
 
     attachments: list[LinearAssetWire]
     documents: list[LinearDocumentReferenceWire]
+    created_by: str | None
 
 
 class LinearPlanningIssueWire(LinearIssueDetailWire):

@@ -74,12 +74,14 @@ from kodezart.core.protocols import McpToolCaller, McpToolResult
 from kodezart.domain.criterion_amendment import require_criterion_source
 from kodezart.domain.criterion_creation import criterion_body, existing_criterion
 from kodezart.domain.errors import (
+    ApprovalLabelWriteError,
     CriterionReadError,
     DuplicateIssueIdentityError,
     DuplicateWorkRefError,
     EscalationReadError,
     IssueLabelReadError,
     OrganizeWriteRefusalError,
+    PrincipalAuthoredSurfaceError,
     ScopeReadError,
     SurfaceLeaseError,
     SurfaceWriteAttributionError,
@@ -148,10 +150,12 @@ from kodezart.types.domain.self_writes import (
 )
 from kodezart.types.domain.surface import (
     DescriptionWriteAuthority,
+    SurfaceAuthorship,
     SurfaceKind,
     SurfaceLease,
     WritableSurface,
     WriteRevalidation,
+    require_body_authorship_surface,
 )
 from kodezart.types.domain.tracker import (
     INSTATABLE_MAPPING_KINDS,
@@ -1018,12 +1022,48 @@ class LinearMcpTracker:
         return self._to_issue(await self._read_issue_wire(issue_key))
 
     async def read_planning_issue(self, *, issue_key: str) -> TrackerIssue:
+        return self._to_issue(await self._read_planning_wire(issue_key))
+
+    async def _read_planning_wire(self, issue_key: str) -> LinearPlanningIssueWire:
+        """The planning read's own payload, attribution included.
+
+        Kept apart from the domain projection so a write seam asking who
+        wrote the body it is about to replace reads the same snapshot its
+        preconditions were checked against, rather than issuing a second
+        read the first one cannot speak for.
+        """
         payload = await self._call(
             _TOOL_GET_ISSUE, {"id": issue_key, "includeRelations": True}
         )
-        return self._to_issue(
-            self._validate(LinearPlanningIssueWire, payload, _TOOL_GET_ISSUE)
-        )
+        return self._validate(LinearPlanningIssueWire, payload, _TOOL_GET_ISSUE)
+
+    async def read_surface_authorship(
+        self, *, surface: WritableSurface
+    ) -> SurfaceAuthorship:
+        """Report the backend's own attribution of the addressed body."""
+        require_body_authorship_surface(surface)
+        return await self._body_authorship(await self._read_issue_wire(surface.ref.key))
+
+    async def _body_authorship(self, wire: LinearIssueDetailWire) -> SurfaceAuthorship:
+        """Decide authorship from the attribution this very read carried.
+
+        The account this credential writes as is the only machine hand the
+        backend can attest to. A body it attributes to another member, and
+        a body it attributes to nobody, are alike text this writer cannot
+        show it put there.
+        """
+        if wire.created_by is not None and wire.created_by in (
+            await self.writer_identity()
+        ):
+            return SurfaceAuthorship.MACHINE_AUTHORED
+        return SurfaceAuthorship.PRINCIPAL_AUTHORED
+
+    async def _require_machine_authored(
+        self, *, surface: WritableSurface, wire: LinearIssueDetailWire
+    ) -> None:
+        """Refuse a replacement of text the backend attributes elsewhere."""
+        if await self._body_authorship(wire) is SurfaceAuthorship.PRINCIPAL_AUTHORED:
+            raise PrincipalAuthoredSurfaceError(surface=surface)
 
     def _classification_label(self, classification: str, *, stops: str) -> str:
         label = self._issue_labels.get(classification)
@@ -1898,6 +1938,13 @@ class LinearMcpTracker:
             arguments["title"] = title
         if body is not None:
             current = await self._read_issue_wire(issue_key)
+            await self._require_machine_authored(
+                surface=WritableSurface(
+                    kind=SurfaceKind.ISSUE_DESCRIPTION,
+                    ref=ScopeRef(kind=ScopeKind.ISSUE, key=issue_key),
+                ),
+                wire=current,
+            )
             identity = self._issue_identity.decode(
                 current.description or "", issue_key=issue_key
             )
@@ -2150,7 +2197,8 @@ class LinearMcpTracker:
                 markers = await self._markers_on(
                     _GrantKind.LEASE, targets=(_LEASE_ADDRESSING.target(surface),)
                 )
-                current = await self.read_planning_issue(issue_key=target)
+                current_wire = await self._read_planning_wire(target)
+                current = self._to_issue(current_wire)
                 require_surface(current)
                 if surface.kind is SurfaceKind.CRITERION_SUB_ISSUE:
                     require_criterion_source(
@@ -2178,6 +2226,7 @@ class LinearMcpTracker:
                 )
                 if body is None:
                     return DescriptionEditResult.UNCHANGED
+                await self._require_machine_authored(surface=surface, wire=current_wire)
                 identity = self._issue_identity.decode(current.body, issue_key=target)
                 if identity is not None:
                     body = self._issue_identity.encode(
@@ -2329,6 +2378,10 @@ class LinearMcpTracker:
         label = self._classification_label(
             classification, stops="this issue classification cannot be written"
         )
+        if label == self._scope_labels.get(ScopeLabel.APPROVED.value):
+            raise ApprovalLabelWriteError(
+                issue_key=issue_key, classification=classification
+            )
         if holder is not None:
             self._classification_label(
                 "criterion", stops="the classification write surface cannot be read"

@@ -19,6 +19,10 @@ from kodezart.core.protocols import TrackerPort
 from kodezart.types.domain.dispatch import PassSignal, SelfWriteLedger
 from kodezart.types.domain.operation import LifecycleStage, ScopeLabel
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
+from kodezart.types.domain.surface import (
+    SurfaceKind,
+    WritableSurface,
+)
 from kodezart.types.domain.tracker import IssueQuery, ReviewQuery
 from tests.fakes import (
     FakeLinearMcpServer,
@@ -68,6 +72,19 @@ BYSTANDER = "fixture-bystander"
 #: any other, so a boot over a credential belonging to it has a declared
 #: agent identity to recognise itself by.
 AGENT_IDENTITY = "fixture-agent"
+
+#: The operation's semantic issue classifications, stated once: the
+#: adapter is dialled with them and the double is told which of them a
+#: remapped admission vocabulary would collide with.
+ISSUE_LABELS: dict[str, str] = {
+    "criterion": "acceptance-condition",
+}
+
+#: The admission vocabulary this workspace is dialled with unless a case
+#: remaps it.  Stated beside the classifications above so the one question
+#: a collision asks — do these two namespaces spell the same label — has
+#: both of its halves in one place.
+SCOPE_LABELS: dict[str, str] = {ScopeLabel.APPROVED.value: FIRE_SCOPE_LABEL}
 
 QUEUE_STATE_LABELS: dict[str, str] = {
     "triage": "queue:triage",
@@ -192,6 +209,13 @@ def fixture_server(
             FakeMcpIssue(
                 id=ASSET_ISSUE,
                 title="carries assets",
+                # The one surface in this workspace a member other than
+                # the dialled account wrote.  Every other body reads as
+                # this writer's own, so a case about replacing somebody
+                # else's words has an address and the ordinary cases keep
+                # the workspace they always had.
+                description="words a member of this workspace wrote",
+                created_by=BYSTANDER,
                 priority_raw=0,
                 status="Done",
                 status_type="completed",
@@ -254,14 +278,9 @@ def linear_over_fake_mcp(
     """The shipped Linear adapter, dialing the in-process fake MCP server."""
     return LinearMcpTracker(
         marker_prefixes=MARKER_PREFIXES,
-        issue_labels={
-            "criterion": "acceptance-condition",
-            FIRE_STAGE_KEY: FIRE_STAGE_LABEL,
-        },
+        issue_labels={**ISSUE_LABELS, FIRE_STAGE_KEY: FIRE_STAGE_LABEL},
         criteria_stage_label_key=FIRE_STAGE_KEY,
-        scope_labels=scope_labels
-        if scope_labels is not None
-        else {"approved": FIRE_SCOPE_LABEL},
+        scope_labels=scope_labels if scope_labels is not None else SCOPE_LABELS,
         caller=server,
         queue_state_labels=QUEUE_STATE_LABELS,
         workflow_state_names=WORKFLOW_STATE_NAMES,
@@ -308,6 +327,15 @@ async def _snapshot(
         ],
         clock=clock,
     )
+    port.body_authorship = {
+        key: await source.read_surface_authorship(
+            surface=WritableSurface(
+                kind=SurfaceKind.ISSUE_DESCRIPTION,
+                ref=ScopeRef(kind=ScopeKind.ISSUE, key=key),
+            )
+        )
+        for key in keys
+    }
     port.issue_state_changes = {
         key: (await source.read_issue_state_change(issue_key=key)).state_changed_at
         for key in keys
@@ -324,8 +352,27 @@ async def _snapshot(
     return port
 
 
+def approval_classifications(scope_labels: Mapping[str, str] | None) -> frozenset[str]:
+    """The classifications this workspace resolves to the approved member.
+
+    Empty for the ordinary vocabulary, where the two namespaces spell
+    different labels. A workspace that maps them onto one label has an
+    ordinary classification write that would grant admission, and every
+    implementation has to know which one that is.
+    """
+    approved = (scope_labels or SCOPE_LABELS).get(ScopeLabel.APPROVED.value)
+    return frozenset(
+        key
+        for key, label in ISSUE_LABELS.items()
+        if approved is not None and label == approved
+    )
+
+
 async def fake_port_over_fixture(
-    server: FakeLinearMcpServer, *, clock: Callable[[], datetime] = _frozen_now
+    server: FakeLinearMcpServer,
+    *,
+    clock: Callable[[], datetime] = _frozen_now,
+    scope_labels: Mapping[str, str] | None = None,
 ) -> TrackerPort:
     """The consumer double, seeded from the SAME fixture workspace.
 
@@ -336,8 +383,12 @@ async def fake_port_over_fixture(
     for. Use pytest's loop: an ``asyncio.run`` here displaces its current
     loop and can leak that loop's selector sockets between cases.
     """
-    port = await _snapshot(linear_over_fake_mcp(server, clock=clock), clock=clock)
+    port = await _snapshot(
+        linear_over_fake_mcp(server, scope_labels=scope_labels, clock=clock),
+        clock=clock,
+    )
     port.criteria_stage_label_key = FIRE_STAGE_KEY
+    port.approval_classifications = approval_classifications(scope_labels)
     port.scope_label_members = {
         ScopeRef(kind=ScopeKind.ISSUE, key=key): frozenset({ScopeLabel.APPROVED})
         for key, issue in server.issues.items()
@@ -375,7 +426,9 @@ TRACKER_ADAPTERS: dict[str, Callable[[TrackerWorkspace], TrackerPort]] = {
 #: the contract fails exactly where a non-conforming vendor adapter would.
 TRACKER_DOUBLES: dict[str, Callable[[TrackerWorkspace], Awaitable[TrackerPort]]] = {
     "fake-port": lambda workspace: fake_port_over_fixture(
-        workspace.server, clock=workspace.clock
+        workspace.server,
+        clock=workspace.clock,
+        scope_labels=workspace.scope_labels,
     ),
 }
 
@@ -452,6 +505,18 @@ def tracker_writes(
     tracker: TrackerPort, server: FakeLinearMcpServer
 ) -> Callable[[], tuple[object, ...]]:
     """Observe actual mutation calls independently of the port's return values."""
+    return observed_writes(tracker, server)
+
+
+def observed_writes(
+    tracker: TrackerPort, server: FakeLinearMcpServer
+) -> Callable[[], tuple[object, ...]]:
+    """The same observation, for a case dialling its own workspace.
+
+    Stated as a function beside the fixture so a case parametrised over
+    the registry with a remapped vocabulary observes mutations the one
+    way, rather than growing a second idea of what a write is.
+    """
     if isinstance(tracker, FakeTrackerPort):
         return lambda: (
             *tracker.comment_writes,
