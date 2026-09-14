@@ -119,7 +119,7 @@ async def test_real_authored_consumer_prompts_match_recorded_base(
     family, index, monkeypatch
 ):
     golden = json.loads(GOLDENS.read_text())
-    assert golden["source_commit"] == "6d025023"
+    assert golden["source_commit"] == "aa4d04ff"
     calls = []
 
     def formatted(spec):
