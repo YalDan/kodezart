@@ -35,9 +35,9 @@ from kodezart.domain.errors import (
     CriteriaFanInError,
     UngroundedVerdictError,
 )
-from kodezart.domain.ticket import format_ticket_as_task
+from kodezart.domain.ticket import format_fire_spec
 from kodezart.domain.workflow_state import (
-    current_ticket,
+    current_fire_spec,
 )
 from kodezart.types.domain.agent import (
     BRANCH_NAME_SCHEMA,
@@ -255,11 +255,11 @@ class FireSpecification:
         ctx = ExecutionContext.from_configurable(config)
         writer = get_stream_writer()
 
-        ticket = current_ticket(state)
+        spec = current_fire_spec(state)
 
         prompt = self._prompts.template_for(PromptKey.ACCEPTANCE_CRITERIA).render(
             {
-                "task_description": format_ticket_as_task(ticket),
+                "task_description": format_fire_spec(spec),
                 "validation_findings": render_validation_findings(
                     state["acceptance_criteria"],
                     state["criteria_validation"],
@@ -342,12 +342,12 @@ class FireSpecification:
         ctx = ExecutionContext.from_configurable(config)
         writer = get_stream_writer()
 
-        ticket = current_ticket(state)
+        spec = current_fire_spec(state)
 
         criteria = state["acceptance_criteria"]
         prompt = self._prompts.template_for(PromptKey.CRITERIA_VALIDATION).render(
             {
-                "task_description": format_ticket_as_task(ticket),
+                "task_description": format_fire_spec(spec),
                 "acceptance_criteria": criteria,
                 "base_ref": ctx.base_branch,
             },
