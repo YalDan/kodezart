@@ -1,0 +1,25 @@
+"""Leaf addresses shared by operation configuration and resolved tracker scopes."""
+
+from enum import StrEnum
+
+from pydantic import ConfigDict, Field
+
+from kodezart.types.base import CamelCaseModel
+
+
+class ScopeKind(StrEnum):
+    """The four kinds of scope an operation can address."""
+
+    INITIATIVE = "initiative"
+    PROJECT = "project"
+    MILESTONE = "milestone"
+    ISSUE = "issue"
+
+
+class ScopeRef(CamelCaseModel):
+    """A scope's kind and opaque key; the adapter resolves its address."""
+
+    model_config = ConfigDict(frozen=True)
+
+    kind: ScopeKind
+    key: str = Field(min_length=1)

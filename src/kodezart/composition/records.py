@@ -18,11 +18,11 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from kodezart.adapters.http_mcp_tool_caller import HttpMcpToolCaller
-from kodezart.adapters.linear_record_sink import LinearRecordSink
-from kodezart.adapters.notion_record_sink import NotionRecordSink
-from kodezart.adapters.stdio_mcp_tool_caller import StdioMcpToolCaller
-from kodezart.core.config import AppConfig
+from kodezart.adapters.linear.record_sink import LinearRecordSink
+from kodezart.adapters.mcp.http_tool_caller import HttpMcpToolCaller
+from kodezart.adapters.mcp.stdio_tool_caller import StdioMcpToolCaller
+from kodezart.adapters.notion.record_sink import NotionRecordSink
+from kodezart.config.app import AppConfig
 from kodezart.core.errors import PassKnowledgeCapabilityError
 from kodezart.core.logging import BoundLogger
 from kodezart.core.protocols import McpToolCaller, RunRecordSink

@@ -11,16 +11,14 @@ git service can make that claim true.
 import asyncio
 import uuid
 from pathlib import Path
-
 import pytest
-
-from kodezart.adapters.git_branch_merger import GitBranchMerger
-from kodezart.adapters.git_change_persister import GitChangePersister
-from kodezart.adapters.git_worktree_provider import GitWorktreeProvider
-from kodezart.adapters.local_bare_repo_cache import LocalBareRepoCache
-from kodezart.adapters.subprocess_git_service import SubprocessGitService
+from kodezart.adapters.git.bare_repo_cache import LocalBareRepoCache
+from kodezart.adapters.git.branch_merger import GitBranchMerger
+from kodezart.adapters.git.change_persister import GitChangePersister
+from kodezart.adapters.git.service import SubprocessGitService
+from kodezart.adapters.git.worktree_provider import GitWorktreeProvider
+from kodezart.chains.authored_delivery import AuthoredDeliveryCoordinator
 from kodezart.chains.ralph_loop import RalphLoop
-from kodezart.chains.ralph_workflow import RalphWorkflowEngine
 from kodezart.chains.ticket_generation import TicketGenerationLoop
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.agent import (
@@ -34,6 +32,7 @@ from kodezart.types.domain.branch import (
     WorkRefRole,
     trunk_base,
 )
+from kodezart.types.domain.session import PermissionMode
 from kodezart.types.domain.ticket_review import TicketReviewMode
 from tests.fakes import (
     SUPPRESS_ALL_SKILLS,
@@ -42,6 +41,10 @@ from tests.fakes import (
     make_prompt_provider,
     no_delay_floor,
 )
+from tests.workflow_factory import make_authored_workflow
+
+
+
 
 BLOCKER_A_BRANCH = "kodezart/blocker-a-11111111"
 BLOCKER_B_BRANCH = "kodezart/blocker-b-22222222"
@@ -205,18 +208,19 @@ def _engine(repo: Path, tmp_path: Path) -> RalphWorkflowEngine:
 
 
 async def _run(
-    engine: RalphWorkflowEngine,
+    engine: AuthoredDeliveryCoordinator,
     repo: Path,
     base_spec: BaseSpec,
 ) -> list[AgentEvent]:
     return [
         event
         async for event in engine.run(
+            scope=None,
             prompt="do the lane's own work",
             repo_path=str(repo),
             repo_url=None,
             base_spec=base_spec,
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )

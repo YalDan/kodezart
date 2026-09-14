@@ -9,11 +9,16 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from functools import partial
 from pathlib import Path
-
 from kodezart.adapters.no_forge_delivery import NoForgeDeliveryProbe
+from kodezart.composition.audit import build_audit_pass, verify_audit_configuration
+from kodezart.composition.organize import (
+    build_organize_tick,
+    verify_organize_configuration,
+)
 from kodezart.composition.records import RECORD_KIND_BY_PASS, run_report
 from kodezart.composition.tracker import DialledTracker
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
+from kodezart.config.knowledge import KnowledgeSettings
 from kodezart.core.constants import UNATTENDED_PERMISSION_MODE
 from kodezart.core.errors import (
     PassGateCapabilityError,
@@ -23,14 +28,18 @@ from kodezart.core.errors import (
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import (
     AgentRunner,
+    CIMonitor,
     DeliveryProbe,
+    DispatchProducer,
     GitService,
     JobQueue,
     JobRegistry,
     OutboundContentGate,
     PromptSetProvider,
+    PRStateReader,
     RepoCache,
     TrackerPort,
+    WorkspaceProvider,
 )
 from kodezart.domain.git_url import is_forge_less_origin
 from kodezart.services.base_resolver import BaseResolver
@@ -39,6 +48,7 @@ from kodezart.services.dispatch_pass import GatedDispatchPass
 from kodezart.services.fire_context import FireContextAssembler
 from kodezart.services.fire_dispatcher import FireDispatcher, LaneCooldown
 from kodezart.services.lifecycle_watcher import FireReport, LifecycleWatcher
+from kodezart.services.organize_tick import OrganizeTick
 from kodezart.services.pass_gate import PassGate
 from kodezart.services.pass_scheduler import PassScheduler, ScheduledPass
 from kodezart.services.prompt_pass import pass_render_bindings, run_prompt_pass
@@ -55,6 +65,8 @@ from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run_records import RunIdentity, RunOutcome
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
+
+
 
 #: What a dispatch pass is called: on its own where the pass CLASS is
 #: meant, and prefixing the repository where one instance is.
@@ -83,7 +95,7 @@ class DispatchPasses:
     order and in two different ways: the passes stop FIRST, so none of them
     claims an issue into a queue that is closing, and the watches are
     DRAINED last — after the queue has ended their streams, because that
-    end is what makes each of them release its claim (KOD-152).
+    end is what makes each of them release its claim.
     """
 
     passes: tuple[ScheduledPass, ...]
@@ -176,7 +188,7 @@ def _assert_renders(*, key: PromptKey, prompts: PromptSetProvider) -> None:
     Bound the way a TICK binds, off the identity a run beginning at this
     instant would carry: the render a boot proves has to be the render a
     pass will actually make, or the two namespaces differ and boot proves
-    the wrong one (KOD-290).
+    the wrong one.
     """
     identity = RunIdentity(
         kind=_record_kind_for(key),
@@ -240,7 +252,7 @@ def _record_kind_for(key: PromptKey) -> RunKind:
 
     A third scheduled pass added without a kind would otherwise KeyError
     inside a comprehension; a wiring gap is a named refusal here like
-    everywhere else in this lane (KOD-170).
+    everywhere else in this lane.
     """
     kind = RECORD_KIND_BY_PASS.get(key)
     if kind is None:
@@ -541,7 +553,9 @@ async def _verify_wired_gates(
         {}
         if absent_roster(operation)
         else {
-            key.value: row.signals for key, row in prompt_pass_schedule(config).items()
+            key.value: row.signals
+            for key, row in prompt_pass_schedule(config).items()
+            if key is not PromptKey.GROOMING_PASS or not operation.organize_scopes
         }
     )
     if github_api is not None and any(
@@ -575,7 +589,7 @@ def _session_running(kind: RunKind) -> SessionType:
     be added without answering this question for it.
     """
     match kind:
-        case RunKind.FIRE_PREP | RunKind.GROOMING:
+        case RunKind.FIRE_PREP | RunKind.GROOMING | RunKind.AUDIT:
             return SessionType.SCHEDULED_PASS
         case RunKind.FIRE:
             return SessionType.TICKET_FIRE
@@ -593,7 +607,7 @@ def _knowledge_surfaces(operation: OperationConfig) -> list[tuple[str, SessionTy
 
     The reader is not the same for all three.  Documents and the map are a
     scheduled pass's; a record belongs to whichever session runs its KIND,
-    and the fire's row is a fire's (KOD-265).
+    and the fire's row is a fire's.
     """
     surfaces = [
         (f"documents.{key} ({entry.name})", SessionType.SCHEDULED_PASS)
@@ -614,7 +628,7 @@ def _knowledge_surfaces(operation: OperationConfig) -> list[tuple[str, SessionTy
 
 def _verify_knowledge_destinations(
     *,
-    config: AppConfig,
+    knowledge: KnowledgeSettings,
     operation: OperationConfig | None,
 ) -> None:
     """Refuse to boot when a session is sent to a store it cannot open.
@@ -631,7 +645,7 @@ def _verify_knowledge_destinations(
     the scheduled pass, so a granted scheduled pass answered for every
     surface in the operation and a fire declaring a knowledge-side record
     booted with its own capability unchecked — the arm that carries the
-    session's prose contribution to the Fire Log (KOD-265).
+    session's prose contribution to the Fire Log.
 
     Checked HERE, on the same predicate the prompt-pass wiring below uses:
     a deployment that schedules no prompt pass reaches none of these, and
@@ -646,7 +660,7 @@ def _verify_knowledge_destinations(
     """
     if operation is None:
         return
-    granted = set(config.knowledge_session_grants)
+    granted = set(knowledge.session_grants)
     unreachable = [
         (surface, session_type)
         for surface, session_type in _knowledge_surfaces(operation)
@@ -657,7 +671,7 @@ def _verify_knowledge_destinations(
     ungranted = sorted({session_type.value for _, session_type in unreachable})
     raise PassKnowledgeCapabilityError(
         f"the operation declares {DocumentSystem.KNOWLEDGE.value} surfaces read "
-        f"by sessions knowledge_session_grants does not name ({', '.join(ungranted)}), "
+        f"by sessions knowledge.session_grants does not name ({', '.join(ungranted)}), "
         f"so the session that reaches one holds no capability for it",
         destinations=[
             f"{surface} → {session_type.value}" for surface, session_type in unreachable
@@ -672,6 +686,7 @@ async def verify_pass_preflight(
     tracker: TrackerPort | None,
     github_api: DeliveryProbe | None,
     prompts: PromptSetProvider,
+    audit_forge: PRStateReader | None = None,
 ) -> None:
     """Every boot refusal the scheduled passes can raise, before anything runs.
 
@@ -692,7 +707,13 @@ async def verify_pass_preflight(
     :func:`build_prompt_passes`), and rendering a template it will never
     send would refuse a boot over a hole nothing reaches.
     """
-    _verify_knowledge_destinations(config=config, operation=operation)
+    organize = verify_organize_configuration(
+        config=config, operation=operation, tracker=tracker
+    )
+    verify_audit_configuration(
+        config=config, operation=operation, tracker=tracker, forge=audit_forge
+    )
+    _verify_knowledge_destinations(knowledge=config.knowledge, operation=operation)
     await _verify_wired_gates(
         config=config,
         operation=operation,
@@ -702,6 +723,8 @@ async def verify_pass_preflight(
     if operation is None or absent_roster(operation):
         return
     for key in prompt_pass_schedule(config):
+        if organize and key is PromptKey.GROOMING_PASS:
+            continue
         _assert_renders(key=key, prompts=prompts)
 
 
@@ -716,11 +739,14 @@ async def build_dispatch_runtime(
     gate: OutboundContentGate,
     git: GitService,
     cache: RepoCache,
+    workspace: WorkspaceProvider,
     prompts: PromptSetProvider,
     runner: AgentRunner,
     skills: SkillsSelection,
     recorder: RunRecorder,
     log: BoundLogger,
+    audit_forge: PRStateReader | None = None,
+    audit_ci: CIMonitor | None = None,
 ) -> DispatchRuntime:
     """The scheduler, wired to every pass this deployment can actually run.
 
@@ -737,7 +763,7 @@ async def build_dispatch_runtime(
     own writes, as the one value boot produced.  Taking the two halves
     separately gave this a fourth state nobody named: a ledger absent
     beside a live port skipped every dispatch pass and ran every prompt
-    pass ungated, and the log said the tracker was present (KOD-289).
+    pass ungated, and the log said the tracker was present.
     """
     # Cadence is scheduler configuration and nothing else. Three
     # states, none silent: no tracker, or no delivery probe to answer
@@ -756,7 +782,7 @@ async def build_dispatch_runtime(
             gate=gate,
             git=git,
             cache=cache,
-            integration_workspace_dir=config.integration_workspace_dir,
+            integration_workspace_dir=config.git.integration_workspace_dir,
             recorder=recorder,
         )
     else:
@@ -770,6 +796,49 @@ async def build_dispatch_runtime(
     # the tracker itself. They need one only to be GATED. What they cannot
     # do without is the operation config their prompts render from.
     scheduled: list[ScheduledPass] = [] if built is None else list(built.passes)
+    if config.audit is not None:
+        # Preflight has already required every collaborator before queue start.
+        # Keep an explicit refusal for direct callers of this public factory.
+        verify_audit_configuration(
+            config=config,
+            operation=operation,
+            tracker=None if dialled is None else dialled.tracker,
+            forge=audit_forge,
+        )
+        if operation is None or dialled is None or audit_forge is None:
+            raise ValueError("configured audit lacks its preflight collaborators")
+        audit = build_audit_pass(
+            config=config,
+            operation=operation,
+            tracker=dialled.tracker,
+            forge=audit_forge,
+            ci=audit_ci,
+            git=git,
+            cache=cache,
+            workspace=workspace,
+            runner=runner,
+            prompts=prompts,
+            skills=skills,
+            gate=gate,
+        )
+        scheduled.append(
+            ScheduledPass(
+                name="audit",
+                interval_seconds=config.audit_sweep_interval_seconds,
+                timeout_seconds=config.audit.timeout_seconds,
+                run=audit.run,
+                report=run_report(recorder, RunKind.AUDIT, "audit"),
+            )
+        )
+    else:
+        # A declared roster without policy also refuses direct factory calls.
+        verify_audit_configuration(
+            config=config,
+            operation=operation,
+            tracker=None if dialled is None else dialled.tracker,
+            forge=audit_forge,
+        )
+        await log.ainfo("audit_pass_not_wired", reason="audit_unconfigured")
     if operation is not None:
         if dialled is None and (
             config.fire_prep_pass_gate_signals or config.grooming_pass_gate_signals
@@ -796,6 +865,17 @@ async def build_dispatch_runtime(
                 runner=runner,
                 skills=skills,
                 recorder=recorder,
+                organize=build_organize_tick(
+                    config=config,
+                    operation=operation,
+                    tracker=None if dialled is None else dialled.tracker,
+                    runner=runner,
+                    workspace=workspace,
+                    git=git,
+                    prompts=prompts,
+                    skills=skills,
+                    gate=gate,
+                ),
             ),
         )
     else:

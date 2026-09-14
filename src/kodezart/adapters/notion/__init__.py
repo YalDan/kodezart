@@ -1,0 +1,1 @@
+"""Notion adapters: record sink."""

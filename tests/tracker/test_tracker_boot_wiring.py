@@ -16,9 +16,9 @@ from pathlib import Path
 
 import pytest
 
-from kodezart.adapters.linear_mcp_tracker import LinearMcpTracker
+from kodezart.adapters.linear.tracker import LinearMcpTracker
 from kodezart.composition.prompts import boot_prompts
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.core.errors import (
     PassKnowledgeCapabilityError,
     TrackerBootValidationError,

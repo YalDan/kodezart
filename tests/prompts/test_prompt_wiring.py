@@ -16,7 +16,7 @@ from kodezart.adapters.in_repo_prompt_registry import (
     InRepoPromptRegistry,
     default_sets_root,
 )
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.core.errors import PromptRenderError, PromptResolutionError
 from kodezart.core.prompt_rendering import (
     PromptTemplate,
@@ -622,7 +622,7 @@ def test_physical_layout_is_set_toml_plus_one_md_per_member() -> None:
 
 def test_set_name_is_not_a_code_enum() -> None:
     """A set is named by an open configuration string, never a code enum."""
-    config_source = (REPO_ROOT / "src" / "kodezart" / "core" / "config.py").read_text(
+    config_source = (REPO_ROOT / "src" / "kodezart" / "config" / "app.py").read_text(
         encoding="utf-8"
     )
     assert "prompt_set: str" in config_source

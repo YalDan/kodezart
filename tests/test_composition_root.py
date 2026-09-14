@@ -34,7 +34,7 @@ from pydantic import SecretStr
 from structlog.typing import EventDict
 
 from kodezart.adapters.asyncio_job_queue import AsyncioJobQueue
-from kodezart.adapters.http_mcp_tool_caller import HttpMcpToolCaller
+from kodezart.adapters.mcp.http_tool_caller import HttpMcpToolCaller
 from kodezart.composition import engine as composition_engine
 from kodezart.composition.passes import (
     build_dispatch_runtime,
@@ -43,7 +43,7 @@ from kodezart.composition.passes import (
 )
 from kodezart.composition.records import _knowledge_caller
 from kodezart.composition.tracker import DialledTracker, make_mcp_tool_caller
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.core.errors import McpSessionClosedError
 from kodezart.services.claim_heartbeat import ClaimHeartbeat
 from kodezart.services.lifecycle_watcher import LifecycleWatcher

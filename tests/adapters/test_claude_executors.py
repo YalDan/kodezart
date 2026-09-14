@@ -17,22 +17,27 @@ import structlog
 from claude_agent_sdk import ClaudeAgentOptions, ProcessError
 from pydantic import ValidationError
 
-from kodezart.adapters._agents_mapping import (
+from kodezart.adapters.claude.agent_executor import ClaudeAgentExecutor
+from kodezart.adapters.claude.agents_mapping import (
     map_agents,
     map_effort,
     map_settings,
     map_system_prompt,
     map_workflow_env,
 )
-from kodezart.adapters._mcp_mapping import map_knowledge_mcp
-from kodezart.adapters._skills_mapping import map_skills
-from kodezart.adapters.claude_agent_executor import ClaudeAgentExecutor
-from kodezart.adapters.claude_client_executor import ClaudeClientExecutor
+from kodezart.adapters.claude.client_executor import ClaudeClientExecutor
+from kodezart.adapters.claude.skills_mapping import map_skills
+from kodezart.adapters.mcp.mapping import map_knowledge_mcp
 from kodezart.core.protocols import AgentExecutor
 from kodezart.domain.errors import AgentSDKError
 from kodezart.types.domain.agent import AgentEvent
 from kodezart.types.domain.credentials import REDACTION_SENTINEL
-from kodezart.types.domain.session import KnowledgeGrant, SessionType
+from kodezart.types.domain.session import (
+    HttpKnowledge,
+    KnowledgeGrant,
+    PermissionMode,
+    SessionType,
+)
 from kodezart.types.domain.skills import SkillsMode, SkillsSelection
 from kodezart.types.domain.subagents import (
     NO_SUBAGENTS,
@@ -134,7 +139,7 @@ async def test_process_error_round_trips_exit_code_and_stderr_on_re_raise() -> N
         knowledge_grant=NO_KNOWLEDGE_GRANT,
     )
     with patch(
-        "kodezart.adapters.claude_client_executor.ClaudeSDKClient",
+        "kodezart.adapters.claude.client_executor.ClaudeSDKClient",
         lambda **_: _FakeSDKClient(boom),
     ):
         with pytest.raises(AgentSDKError) as excinfo:
@@ -144,7 +149,7 @@ async def test_process_error_round_trips_exit_code_and_stderr_on_re_raise() -> N
                     session_type=FAKE_SESSION_TYPE,
                     prompt="x",
                     cwd="/tmp",
-                    permission_mode="default",
+                    permission_mode=PermissionMode.INTERACTIVE,
                     allowed_tools=[],
                 )
             )
@@ -165,7 +170,7 @@ async def test_process_error_with_none_stderr_does_not_crash() -> None:
         knowledge_grant=NO_KNOWLEDGE_GRANT,
     )
     with patch(
-        "kodezart.adapters.claude_client_executor.ClaudeSDKClient",
+        "kodezart.adapters.claude.client_executor.ClaudeSDKClient",
         lambda **_: _FakeSDKClient(boom),
     ):
         with pytest.raises(AgentSDKError) as excinfo:
@@ -175,7 +180,7 @@ async def test_process_error_with_none_stderr_does_not_crash() -> None:
                     session_type=FAKE_SESSION_TYPE,
                     prompt="x",
                     cwd="/tmp",
-                    permission_mode="default",
+                    permission_mode=PermissionMode.INTERACTIVE,
                     allowed_tools=[],
                 )
             )
@@ -207,7 +212,7 @@ async def test_process_error_redacts_token_in_warning_log() -> None:
         knowledge_grant=NO_KNOWLEDGE_GRANT,
     )
     with patch(
-        "kodezart.adapters.claude_client_executor.ClaudeSDKClient",
+        "kodezart.adapters.claude.client_executor.ClaudeSDKClient",
         lambda **_: _FakeSDKClient(boom),
     ):
         with structlog.testing.capture_logs() as captured:
@@ -218,7 +223,7 @@ async def test_process_error_redacts_token_in_warning_log() -> None:
                         session_type=FAKE_SESSION_TYPE,
                         prompt="x",
                         cwd="/tmp",
-                        permission_mode="default",
+                        permission_mode=PermissionMode.INTERACTIVE,
                         allowed_tools=[],
                     )
                 )
@@ -246,7 +251,7 @@ async def test_process_error_stderr_tail_on_agent_sdk_error_is_redacted() -> Non
         knowledge_grant=NO_KNOWLEDGE_GRANT,
     )
     with patch(
-        "kodezart.adapters.claude_client_executor.ClaudeSDKClient",
+        "kodezart.adapters.claude.client_executor.ClaudeSDKClient",
         lambda **_: _FakeSDKClient(boom),
     ):
         with pytest.raises(AgentSDKError) as excinfo:
@@ -256,7 +261,7 @@ async def test_process_error_stderr_tail_on_agent_sdk_error_is_redacted() -> Non
                     session_type=FAKE_SESSION_TYPE,
                     prompt="x",
                     cwd="/tmp",
-                    permission_mode="default",
+                    permission_mode=PermissionMode.INTERACTIVE,
                     allowed_tools=[],
                 )
             )
@@ -281,7 +286,7 @@ def _capture(module: str):
         msg = "stop after options"
         raise RuntimeError(msg)
 
-    target = "ClaudeSDKClient" if module.endswith("claude_client_executor") else "query"
+    target = "ClaudeSDKClient" if module.endswith("client_executor") else "query"
     return recorded, patch(f"{module}.{target}", sink)
 
 
@@ -302,7 +307,7 @@ async def _options_for(
             executor.stream(
                 prompt="p",
                 cwd="/tmp/fake",
-                permission_mode="plan",
+                permission_mode=PermissionMode.PLAN,
                 allowed_tools=[],
                 skills=SUPPRESS_ALL_SKILLS,
                 session_type=session_type,
@@ -354,7 +359,7 @@ async def test_both_executors_pass_the_mapped_skills_never_none(
             executor.stream(
                 prompt="p",
                 cwd="/tmp/fake",
-                permission_mode="plan",
+                permission_mode=PermissionMode.PLAN,
                 allowed_tools=[],
                 skills=selection,
                 session_type=FAKE_SESSION_TYPE,
@@ -382,7 +387,7 @@ async def test_setting_sources_come_from_config_in_every_mode(
             executor.stream(
                 prompt="p",
                 cwd="/tmp/fake",
-                permission_mode="plan",
+                permission_mode=PermissionMode.PLAN,
                 allowed_tools=[],
                 skills=selection,
                 session_type=FAKE_SESSION_TYPE,
@@ -395,7 +400,7 @@ async def test_setting_sources_come_from_config_in_every_mode(
 def test_no_skill_name_literal_lives_in_the_adapters() -> None:
     """D-2: the configured skill set is data — no hardcoded lists in adapters."""
     adapters = Path(__file__).resolve().parents[2] / "src" / "kodezart" / "adapters"
-    for path in adapters.glob("*.py"):
+    for path in adapters.rglob("*.py"):
         source = path.read_text(encoding="utf-8")
         assert "skills=[" not in source
         assert 'skills = ["' not in source
@@ -409,7 +414,7 @@ def test_no_skill_name_literal_lives_in_the_adapters() -> None:
 #: non-granted session can be compared against them argument for argument
 #: rather than against a rebuilt copy of itself.
 _PRE_FIRE_OPTIONS: dict[str, ClaudeAgentOptions] = {
-    "kodezart.adapters.claude_client_executor": ClaudeAgentOptions(
+    "kodezart.adapters.claude.client_executor": ClaudeAgentOptions(
         cwd="/tmp/fake",
         permission_mode="plan",
         allowed_tools=[],
@@ -419,7 +424,7 @@ _PRE_FIRE_OPTIONS: dict[str, ClaudeAgentOptions] = {
         skills=map_skills(SUPPRESS_ALL_SKILLS),
         setting_sources=["user", "project", "local"],
     ),
-    "kodezart.adapters.claude_agent_executor": ClaudeAgentOptions(
+    "kodezart.adapters.claude.agent_executor": ClaudeAgentOptions(
         cwd="/tmp/fake",
         permission_mode="plan",
         allowed_tools=[],
@@ -446,9 +451,12 @@ async def test_a_granted_session_carries_the_knowledge_server(module) -> None:
     assert set(options.mcp_servers) == {FIXTURE_KNOWLEDGE_SERVER}
     definition = options.mcp_servers[FIXTURE_KNOWLEDGE_SERVER]
     assert definition["type"] == "http"
-    assert definition["url"] == grant.server_url
+    assert definition["url"] == grant.connection.server_url
     assert definition["headers"] == {
-        grant.auth_header: f"{grant.auth_scheme} {grant.credential.get_secret_value()}",
+        grant.connection.auth_header: (
+            f"{grant.connection.auth_scheme} "
+            f"{grant.connection.credential.get_secret_value()}"
+        ),
     }
 
 
@@ -545,7 +553,7 @@ async def test_the_unwired_executor_is_covered_by_the_same_grant_logic() -> None
         assert "map_knowledge_mcp(self._knowledge_grant, session_type)" in source
 
     granted = await _options_for(
-        "kodezart.adapters.claude_agent_executor",
+        "kodezart.adapters.claude.agent_executor",
         grant=knowledge_grant_for(SessionType.TICKET_FIRE),
         session_type=SessionType.TICKET_FIRE,
     )
@@ -555,7 +563,8 @@ async def test_the_unwired_executor_is_covered_by_the_same_grant_logic() -> None
             "url": "https://knowledge.invalid/mcp",
             "headers": {
                 "Authorization": (
-                    f"Bearer {knowledge_grant_for().credential.get_secret_value()}"
+                    "Bearer "
+                    + knowledge_grant_for().connection.credential.get_secret_value()
                 )
             },
         },
@@ -564,18 +573,13 @@ async def test_the_unwired_executor_is_covered_by_the_same_grant_logic() -> None
 
 def test_a_grant_without_a_credential_never_builds_a_header() -> None:
     """The dead configuration fails loudly rather than dialling unauthenticated."""
-    grant = KnowledgeGrant(
-        granted=(SessionType.TICKET_FIRE,),
-        server_name=FIXTURE_KNOWLEDGE_SERVER,
-        server_url="https://knowledge.invalid/mcp",
-        auth_header="Authorization",
-        auth_scheme="Bearer",
-        credential=None,
-        knowledge_map=FIXTURE_KNOWLEDGE_MAP,
-    )
-
-    with pytest.raises(ValueError, match="carries no credential"):
-        map_knowledge_mcp(grant, SessionType.TICKET_FIRE)
+    with pytest.raises(ValueError, match="authenticated knowledge connection"):
+        KnowledgeGrant(
+            granted=(SessionType.TICKET_FIRE,),
+            server_name=FIXTURE_KNOWLEDGE_SERVER,
+            connection=HttpKnowledge(server_url="https://knowledge.invalid/mcp"),
+            knowledge_map=FIXTURE_KNOWLEDGE_MAP,
+        )
 
 
 def test_the_mapping_describes_no_server_for_a_type_the_grant_does_not_name() -> None:
@@ -744,7 +748,7 @@ async def test_declaring_nothing_leaves_the_pre_existing_options_intact(
 # KOD-87-AC-2 — the per-call model overrides the construction-time one
 # ---------------------------------------------------------------------------
 
-CLIENT_MODULE = "kodezart.adapters.claude_client_executor"
+CLIENT_MODULE = "kodezart.adapters.claude.client_executor"
 
 
 async def test_per_call_model_overrides_construction_model() -> None:
@@ -762,7 +766,7 @@ async def test_per_call_model_overrides_construction_model() -> None:
 
 async def test_the_one_shot_executor_gains_the_per_call_model_path() -> None:
     """It passed no model at all before; a declared one now reaches the SDK."""
-    module = "kodezart.adapters.claude_agent_executor"
+    module = "kodezart.adapters.claude.agent_executor"
     session = await recorded_session(module, session_policy=SessionPolicy(model="b"))
     assert options_of(session).model == "b"
     assert options_of(await recorded_session(module)).model is None

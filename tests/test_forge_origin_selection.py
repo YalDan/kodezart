@@ -20,15 +20,15 @@ from pathlib import Path
 
 import pytest
 
-from kodezart.adapters.github_api import GitHubAPIClient
+from kodezart.adapters.github.api import GitHubAPIClient
 from kodezart.chains.ralph_workflow import RalphWorkflowEngine
 from kodezart.composition.engine import (
     OriginRoutedWorkflowEngine,
     build_workflow_engine,
 )
 from kodezart.composition.forge import build_forge_client
+from kodezart.config.app import AppConfig
 from kodezart.core import protocols
-from kodezart.core.config import AppConfig
 from kodezart.core.protocols import (
     CIMonitor,
     DeliveryProbe,

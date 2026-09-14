@@ -2,7 +2,7 @@
 
 import pytest
 
-from kodezart.adapters.git_ref_publisher import GitRefPublisher
+from kodezart.adapters.git.ref_publisher import GitRefPublisher
 from kodezart.core.protocols import RefPublisher
 from kodezart.domain.agent import best_iteration_ref
 from tests.fakes import FakeGitService, FakeWorkspaceProvider

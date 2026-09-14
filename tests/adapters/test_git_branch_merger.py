@@ -6,10 +6,10 @@ from pathlib import Path
 import pytest
 import structlog
 
-from kodezart.adapters.git_branch_merger import GitBranchMerger
-from kodezart.adapters.git_worktree_provider import GitWorktreeProvider
-from kodezart.adapters.local_bare_repo_cache import LocalBareRepoCache
-from kodezart.adapters.subprocess_git_service import SubprocessGitService
+from kodezart.adapters.git.bare_repo_cache import LocalBareRepoCache
+from kodezart.adapters.git.branch_merger import GitBranchMerger
+from kodezart.adapters.git.service import SubprocessGitService
+from kodezart.adapters.git.worktree_provider import GitWorktreeProvider
 from kodezart.types.domain.consolidation import ConsolidationStatus
 
 
@@ -89,8 +89,6 @@ async def test_consolidate_fast_forwarded_creates_feature_branch(
     workspace = GitWorktreeProvider(
         git=git,
         cache=cache,
-        committer_name="test",
-        committer_email="test@test.dev",
     )
     merger = GitBranchMerger(git=git, workspace=workspace, remote="origin")
 
@@ -252,8 +250,6 @@ async def test_consolidate_fast_forwarded_deletes_source_internally(
     workspace = GitWorktreeProvider(
         git=git,
         cache=cache,
-        committer_name="test",
-        committer_email="test@test.dev",
     )
     merger = GitBranchMerger(git=git, workspace=workspace, remote="origin")
 
@@ -393,8 +389,6 @@ async def test_consolidate_against_real_bare_clone_resolves_is_ancestor(
     workspace = GitWorktreeProvider(
         git=git,
         cache=cache,
-        committer_name="test",
-        committer_email="test@test.dev",
     )
     merger = GitBranchMerger(git=git, workspace=workspace, remote="origin")
 
@@ -580,8 +574,6 @@ async def test_an_unchanged_source_branch_is_deleted_against_real_git(
     workspace = GitWorktreeProvider(
         git=git,
         cache=cache,
-        committer_name="test",
-        committer_email="test@test.dev",
     )
 
     # The comparison itself, over one real commit: what ls-remote reports

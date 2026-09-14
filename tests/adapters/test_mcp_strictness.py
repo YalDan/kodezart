@@ -331,8 +331,8 @@ def test_the_scan_actually_ranges_over_both_executor_sites() -> None:
     origins = server_sites(package_sources())
 
     assert origins == {
-        "kodezart/adapters/claude_client_executor.py",
-        "kodezart/adapters/claude_agent_executor.py",
+        "kodezart/adapters/claude/client_executor.py",
+        "kodezart/adapters/claude/agent_executor.py",
     }
 
 
@@ -647,7 +647,7 @@ def test_the_mapping_names_every_session_kind_and_carries_no_default_arm() -> No
     makes it do so, so the guarantee cannot be lost to a wildcard arm that
     silently answers for a member nobody classified.
     """
-    tree = ast.parse((SRC / "adapters" / "_mcp_mapping.py").read_text("utf-8"))
+    tree = ast.parse((SRC / "adapters" / "mcp" / "mapping.py").read_text("utf-8"))
     statements = [node for node in ast.walk(tree) if isinstance(node, ast.Match)]
 
     assert len(statements) == 1
