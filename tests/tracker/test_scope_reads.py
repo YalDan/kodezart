@@ -7,6 +7,7 @@ Milestone payloads deliberately carry no URL, as in that measurement.
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from inspect import isawaitable
 
 import pytest
 
@@ -25,10 +26,17 @@ from kodezart.types.domain.tracker import (
     TrackerIssue,
     WorkflowStateKind,
 )
-from tests.fakes import FakeLinearMcpServer, FakeMcpIssue, FakeTrackerPort
+from tests.fakes import (
+    FakeLinearMcpServer,
+    FakeMcpDocument,
+    FakeMcpIssue,
+    FakeTrackerPort,
+)
 from tests.tracker.conftest import (
+    DOCUMENT_CONTENT,
+    DOCUMENT_KEY,
+    DOCUMENT_TITLE,
     FIXTURE_NOW,
-    TRACKER_ADAPTERS,
     TRACKER_IMPLEMENTATIONS,
     FixtureClock,
     TrackerWorkspace,
@@ -143,6 +151,16 @@ class ScopeMcpServer(FakeLinearMcpServer):
         ]
         super().__init__(
             issues=issues,
+            # The shared workspace's checkpoint document, restated here so
+            # a registered double that seeds itself by reading this server
+            # finds the same surfaces every other workspace offers.
+            documents=[
+                FakeMcpDocument(
+                    id=DOCUMENT_KEY,
+                    title=DOCUMENT_TITLE,
+                    content=DOCUMENT_CONTENT,
+                ),
+            ],
             projects={
                 PROJECT.key: _project(PROJECT, [INITIATIVE]),
                 OTHER_PROJECT: _project(
@@ -296,36 +314,105 @@ class ScopeFixture:
     fake: FakeTrackerPort
 
 
-@pytest.fixture(params=sorted(TRACKER_IMPLEMENTATIONS))
-def scope_fixture(request: pytest.FixtureRequest, clock: FixtureClock) -> ScopeFixture:
-    """Every registered implementation, over one stated scope workspace.
+async def scope_tracker(name: str, workspace: TrackerWorkspace) -> TrackerPort:
+    """The port the registry's factory for *name* builds over *workspace*.
 
-    Parametrised over the conformance registry rather than over a pair
-    named here, so an adapter that joins ``TRACKER_ADAPTERS`` is put
-    through these container reads without a case being copied.
+    The one way either scope fixture obtains a port.  A registry entry
+    that cannot serve the workspace surfaces its refusal here, rather
+    than being quietly replaced by a double seeded beside the registry.
+    """
+    built = TRACKER_IMPLEMENTATIONS[name](workspace)
+    return await built if isawaitable(built) else built
+
+
+def stated_scope(
+    tracker: TrackerPort,
+    *,
+    issues: Sequence[TrackerIssue],
+    containers: Sequence[ScopeContainer],
+    memberships: Mapping[ScopeRef, Sequence[str]] | None = None,
+) -> FakeTrackerPort:
+    """Tell a registered domain double what this module's workspace holds.
+
+    The registry's workspace is stated in vendor shape and has no
+    vocabulary for scope containers, so a double its factory built holds
+    none.  The double the factory returned is the one the cases run
+    against — it is told what the workspace behind it contains rather
+    than being swapped for a second double built here, so a registered
+    double that cannot be built at all fails the case instead of being
+    silently replaced.
+    """
+    assert isinstance(tracker, FakeTrackerPort)
+    tracker.issues = {issue.issue_key: issue for issue in issues}
+    # The double derives a revision per issue from the issue set it was
+    # seeded with, so restating the issues restates that too — a reader
+    # asking when an issue last moved must not fall off the workspace.
+    tracker.issue_state_changes = {
+        issue.issue_key: issue.created_at for issue in issues
+    }
+    tracker.scope_containers = {container.ref: container for container in containers}
+    tracker.scope_memberships = {
+        ref: tuple(keys) for ref, keys in (memberships or {}).items()
+    }
+    tracker.scope_label_members = {}
+    return tracker
+
+
+async def scope_fixture_over(name: str, *, clock: FixtureClock) -> ScopeFixture:
+    """This module's scope workspace, served by the registry entry *name*.
+
+    Stated as the fixture's whole body so the routing a case runs over is
+    reachable by a case of its own: an arm that fell through to a double
+    seeded here instead of dialling the registry would be invisible to
+    every container read, which cannot tell one port from another.
     """
     server = ScopeMcpServer()
-    fake = FakeTrackerPort(
-        issues=[_domain_issue(issue) for issue in server.issues.values()],
-        scope_containers=[
-            _container(INITIATIVE),
-            _container(PROJECT, INITIATIVE),
-            _container(MILESTONE, PROJECT),
-            _container(EMPTY_PROJECT),
-            _container(EMPTY_INITIATIVE),
-        ],
-        scope_memberships={
-            INITIATIVE: list(server.issues),
-            PROJECT: [ROOT.key, "FIX-2", "FIX-4"],
-            MILESTONE: [ROOT.key, "FIX-2"],
-            EMPTY_PROJECT: [],
-            EMPTY_INITIATIVE: [],
-        },
+    issues = [_domain_issue(issue) for issue in server.issues.values()]
+    containers = [
+        _container(INITIATIVE),
+        _container(PROJECT, INITIATIVE),
+        _container(MILESTONE, PROJECT),
+        _container(EMPTY_PROJECT),
+        _container(EMPTY_INITIATIVE),
+    ]
+    memberships: dict[ScopeRef, Sequence[str]] = {
+        INITIATIVE: list(server.issues),
+        PROJECT: [ROOT.key, "FIX-2", "FIX-4"],
+        MILESTONE: [ROOT.key, "FIX-2"],
+        EMPTY_PROJECT: [],
+        EMPTY_INITIATIVE: [],
+    }
+    tracker = await scope_tracker(name, TrackerWorkspace(server=server, clock=clock))
+    # Reads a registered factory makes to seed itself are fixture setup,
+    # not traffic the case caused: the call log starts where the case does.
+    server.calls.clear()
+    fake = (
+        stated_scope(
+            tracker, issues=issues, containers=containers, memberships=memberships
+        )
+        if isinstance(tracker, FakeTrackerPort)
+        else FakeTrackerPort(
+            issues=issues,
+            scope_containers=containers,
+            scope_memberships=memberships,
+        )
     )
-    adapter = TRACKER_ADAPTERS.get(request.param)
-    workspace = TrackerWorkspace(server=server, clock=clock)
-    tracker = fake if adapter is None else adapter(workspace)
     return ScopeFixture(tracker=tracker, server=server, fake=fake)
+
+
+@pytest.fixture(params=sorted(TRACKER_IMPLEMENTATIONS))
+async def scope_fixture(
+    request: pytest.FixtureRequest, clock: FixtureClock
+) -> ScopeFixture:
+    """Every registered implementation, over one stated scope workspace.
+
+    Each arm is built by the factory the registry holds for it — adapters
+    and doubles alike — so an implementation that joins the registry is
+    put through these container reads without a case being copied, and a
+    factory that refuses to build fails the case rather than falling
+    through to a double seeded here.
+    """
+    return await scope_fixture_over(request.param, clock=clock)
 
 
 async def test_issue_scope_includes_root_and_all_descendants_across_containers(
@@ -784,3 +871,24 @@ async def test_linear_container_metadata_refuses_a_parent_cycle(ref: ScopeRef) -
         await linear_over_fake_mcp(server).container_metadata(ref=ref)
 
     assert caught.value.ref == ref
+
+
+async def test_a_registry_entry_that_cannot_be_built_fails_the_container_reads(
+    monkeypatch: pytest.MonkeyPatch, clock: FixtureClock
+) -> None:
+    """No arm of these reads may fall through to a double seeded here.
+
+    A registered implementation whose factory refuses is the only way to
+    tell a routed arm from a replaced one: an arm served by a double
+    built beside the registry would run green under the refusing entry's
+    own id and report a container read the entry never performed.
+    """
+    refusal = "this implementation cannot serve the scope workspace"
+
+    def refusing(workspace: TrackerWorkspace) -> TrackerPort:
+        raise RuntimeError(refusal)
+
+    monkeypatch.setitem(TRACKER_IMPLEMENTATIONS, "refusing-double", refusing)
+
+    with pytest.raises(RuntimeError, match=refusal):
+        await scope_fixture_over("refusing-double", clock=clock)

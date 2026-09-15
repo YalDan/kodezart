@@ -478,13 +478,25 @@ def clock() -> FixtureClock:
 
 
 @pytest.fixture(params=sorted(TRACKER_IMPLEMENTATIONS))
+def implementation(request: pytest.FixtureRequest) -> str:
+    """The registered implementation this case runs over, by name.
+
+    The parametrisation lives here rather than on ``tracker`` so a case
+    that has to build a SECOND port over the same workspace — a restart,
+    say — reaches the same registered factory instead of naming a backend
+    of its own.
+    """
+    return str(request.param)
+
+
+@pytest.fixture
 async def tracker(
-    request: pytest.FixtureRequest,
+    implementation: str,
     server: FakeLinearMcpServer,
     clock: FixtureClock,
 ) -> TrackerPort:
     """Every registered adapter AND double, over one fixture workspace."""
-    factory = TRACKER_IMPLEMENTATIONS[request.param]
+    factory = TRACKER_IMPLEMENTATIONS[implementation]
     port = factory(TrackerWorkspace(server=server, clock=clock))
     return await port if isawaitable(port) else port
 

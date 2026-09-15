@@ -19,7 +19,6 @@ from kodezart.types.domain.operation import OperationMemberAbsentError, ScopeLab
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from tests.fakes import FakeTrackerPort
 from tests.tracker.conftest import (
-    TRACKER_ADAPTERS,
     TRACKER_IMPLEMENTATIONS,
     FixtureClock,
     TrackerWorkspace,
@@ -36,6 +35,8 @@ from tests.tracker.test_scope_reads import (
     _domain_issue,
     _initiative,
     _project,
+    scope_tracker,
+    stated_scope,
 )
 from tests.tracker.test_scope_tool_arguments import SCOPE_INPUT_SCHEMAS
 from tests.tracker.test_tracker_boot import operation_config
@@ -81,13 +82,13 @@ class ApprovalFixture:
         )
 
 
-@pytest.fixture(params=sorted(TRACKER_IMPLEMENTATIONS))
-def approval(request: pytest.FixtureRequest, clock: FixtureClock) -> ApprovalFixture:
-    """Every registered implementation, over one remapped label vocabulary.
+async def approval_over(name: str, *, clock: FixtureClock) -> ApprovalFixture:
+    """This module's remapped vocabulary, served by the registry entry *name*.
 
-    Parametrised over the conformance registry rather than over a pair
-    named here, so an adapter that joins ``TRACKER_ADAPTERS`` is put
-    through these meta-label reads without a case being copied.
+    Stated as the fixture's whole body so the routing a case runs over is
+    reachable by a case of its own: an arm that fell through to a double
+    seeded here instead of dialling the registry would be invisible to
+    every admission read, which cannot tell one port from another.
     """
     server = ScopeMcpServer()
     issues = []
@@ -101,20 +102,39 @@ def approval(request: pytest.FixtureRequest, clock: FixtureClock) -> ApprovalFix
                 }
             )
         )
-    fake = FakeTrackerPort(
-        issues=issues,
-        scope_containers=[
-            _container(PROJECT, INITIATIVE),
-            _container(OTHER, INITIATIVE),
-            _container(INITIATIVE),
-        ],
+    containers = [
+        _container(PROJECT, INITIATIVE),
+        _container(OTHER, INITIATIVE),
+        _container(INITIATIVE),
+    ]
+    tracker = await scope_tracker(
+        name,
+        TrackerWorkspace(server=server, clock=clock, scope_labels=APPROVAL_LABELS),
     )
-    adapter = TRACKER_ADAPTERS.get(request.param)
-    workspace = TrackerWorkspace(
-        server=server, clock=clock, scope_labels=APPROVAL_LABELS
+    # Reads a registered factory makes to seed itself are fixture setup,
+    # not traffic the case caused: the call log starts where the case does.
+    server.calls.clear()
+    fake = (
+        stated_scope(tracker, issues=issues, containers=containers)
+        if isinstance(tracker, FakeTrackerPort)
+        else FakeTrackerPort(issues=issues, scope_containers=containers)
     )
-    tracker = fake if adapter is None else adapter(workspace)
     return ApprovalFixture(tracker=tracker, server=server, fake=fake)
+
+
+@pytest.fixture(params=sorted(TRACKER_IMPLEMENTATIONS))
+async def approval(
+    request: pytest.FixtureRequest, clock: FixtureClock
+) -> ApprovalFixture:
+    """Every registered implementation, over one remapped label vocabulary.
+
+    Each arm is built by the factory the registry holds for it — adapters
+    and doubles alike — so an implementation that joins the registry is
+    put through these meta-label reads without a case being copied, and a
+    factory that refuses to build fails the case rather than falling
+    through to a double seeded here.
+    """
+    return await approval_over(request.param, clock=clock)
 
 
 @pytest.mark.parametrize("ref", [CHILD, PARENT, ROOT, OTHER, INITIATIVE])
@@ -402,3 +422,25 @@ async def test_native_cancellation_propagates_without_answer_or_write(
             server, scope_labels=APPROVAL_LABELS
         ).execution_approved(issue_key=CHILD.key)
     assert all(name.startswith("get_") for name, _ in server.calls)
+
+
+async def test_a_registry_entry_that_cannot_be_built_fails_the_label_reads(
+    monkeypatch: pytest.MonkeyPatch, clock: FixtureClock
+) -> None:
+    """No arm of these reads may fall through to a double seeded here.
+
+    A registered implementation whose factory refuses the remapped
+    vocabulary is the only way to tell a routed arm from a replaced one:
+    an arm served by a double built beside the registry would run green
+    under the refusing entry's own id and report an admission the entry
+    never read.
+    """
+    refusal = "this implementation cannot serve the remapped vocabulary"
+
+    def refusing(workspace: TrackerWorkspace) -> TrackerPort:
+        raise RuntimeError(refusal)
+
+    monkeypatch.setitem(TRACKER_IMPLEMENTATIONS, "refusing-double", refusing)
+
+    with pytest.raises(RuntimeError, match=refusal):
+        await approval_over("refusing-double", clock=clock)

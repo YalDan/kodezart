@@ -11,8 +11,13 @@ from kodezart.domain.errors import DuplicateIssueIdentityError, StaleWriteError
 from kodezart.types.domain.issue_identity import IssueIdentity
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.tracker import IssuePriority, IssueQuery, TrackerIssue
-from tests.fakes import FakeTrackerPort
-from tests.tracker.conftest import FIXTURE_NOW, linear_over_fake_mcp
+from tests.fakes import FakeLinearMcpServer, FakeTrackerPort
+from tests.tracker.conftest import (
+    FIXTURE_NOW,
+    TRACKER_ADAPTERS,
+    FixtureClock,
+    TrackerWorkspace,
+)
 
 SCOPE = ScopeRef(kind=ScopeKind.PROJECT, key="scope-one")
 DELIVERABLE = "deliverable-one"
@@ -37,15 +42,30 @@ async def issue_count(tracker: TrackerPort) -> int:
 
 
 @pytest.fixture
-def reopened_tracker(tracker, server):
-    def reopen():
+def reopened_tracker(
+    tracker: TrackerPort,
+    implementation: str,
+    server: FakeLinearMcpServer,
+    clock: FixtureClock,
+) -> Callable[[], TrackerPort]:
+    """A second port over the same workspace — the process started again.
+
+    The adapter arm is rebuilt by the SAME registered factory the first
+    port came from, so an adapter joining the registry is reopened as
+    itself rather than as the backend named here.  A domain double holds
+    its state in memory, so restarting it is restating what it persisted.
+    """
+
+    def reopen() -> TrackerPort:
         if isinstance(tracker, FakeTrackerPort):
             return FakeTrackerPort(
                 issues=tuple(tracker.issues.values()),
                 issue_identities=tracker.issue_identities,
                 clock=lambda: FIXTURE_NOW,
             )
-        return linear_over_fake_mcp(server)
+        return TRACKER_ADAPTERS[implementation](
+            TrackerWorkspace(server=server, clock=clock)
+        )
 
     return reopen
 
