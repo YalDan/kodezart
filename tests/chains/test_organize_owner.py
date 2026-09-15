@@ -898,3 +898,66 @@ async def test_removed_mandate_leaves_the_same_authoring_step_dry(monkeypatch):
     assert {"graph complete", "body complete", "criteria complete"} <= set(
         parent.labels
     )
+
+
+ESCALATION_MARKER = "[organize-question:"
+
+
+def stage_report_step(monkeypatch, board, *, raises=None):
+    """Record every stage-report construction in the call log, optionally failing."""
+    from kodezart.services import organize_owner
+
+    base = organize_owner.StageHaltReport
+
+    class StageReportStep:
+        def __call__(self, *args, **kwargs):
+            return self._step(base, *args, **kwargs)
+
+        def model_validate(self, *args, **kwargs):
+            return self._step(base.model_validate, *args, **kwargs)
+
+        def _step(self, construct, *args, **kwargs):
+            board.calls.append(("stage_report", {}))
+            if raises is not None:
+                raise raises
+            return construct(*args, **kwargs)
+
+    monkeypatch.setattr(organize_owner, "StageHaltReport", StageReportStep())
+
+
+async def test_escalation_and_its_classification_land_before_the_stage_report(
+    monkeypatch,
+):
+    owner, board, _ = factory(refuse_forever=True, bound=1)
+    stage_report_step(monkeypatch, board)
+    report = await run_owner(owner)
+    assert report.halt.cause == "admission_exhausted"
+    names = [name for name, _ in board.calls]
+    question = next(
+        index
+        for index, (name, args) in enumerate(board.calls)
+        if name == "save_comment"
+        and str(args.get("body", "")).startswith(ESCALATION_MARKER)
+    )
+    classification = next(
+        index
+        for index, (name, args) in enumerate(board.calls)
+        if name == "save_issue" and "needs decision" in args.get("addLabels", ())
+    )
+    assert names.count("stage_report") == 1
+    assert question < classification < names.index("stage_report")
+
+
+async def test_a_raising_stage_report_leaves_the_escalation_recorded(monkeypatch):
+    owner, board, _ = factory(refuse_forever=True, bound=1)
+    stage_report_step(monkeypatch, board, raises=RuntimeError("stage report failed"))
+    with pytest.raises(RuntimeError, match="stage report failed"):
+        await run_owner(owner)
+    escalations = [
+        comment
+        for comment in board.server.comments
+        if comment.body.startswith(ESCALATION_MARKER)
+    ]
+    assert len(escalations) == 1
+    assert "The current body omits the required source." in escalations[0].body
+    assert "needs decision" in board.server.issues[CLAIMED_ISSUE].labels
