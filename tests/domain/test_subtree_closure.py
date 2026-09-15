@@ -15,9 +15,15 @@ import inspect
 import pytest
 
 from kodezart.domain import issue_tree
+from kodezart.domain.criterion_evidence import (
+    parse_criterion_evidence,
+    render_evidence_field,
+)
 from kodezart.domain.errors import ScopeSupersessionReadError
-from kodezart.domain.gap import compute_gap
+from kodezart.domain.gap import compute_gap, in_gap
 from kodezart.domain.issue_tree import SubtreeClosure, open_criteria
+from kodezart.types.domain.criterion_evidence import CriterionEvidence
+from kodezart.types.domain.lapse import GradedState, graded_state
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.tracker import TrackerIssue, WorkflowStateKind
 from tests.fakes import make_tracker_issue
@@ -217,3 +223,121 @@ def test_a_parked_criterion_still_owes_while_a_decision_record_owes_nothing():
     assert closure.gap("lane") == (parked,)
     assert closure.gap("lane-decision") == ()
     assert closure.is_closed("lane") is False
+
+
+GRADED_SHA = "c" * 40
+HEAD_SHA = "d" * 40
+GRADED_TEST = "tests/domain/test_subtree_closure.py::test_case"
+
+
+def graded_body(sha: str) -> str:
+    """A criterion body whose Evidence row records one complete grading."""
+    return "**Check:** The contract.\n**Do:** The mechanism.\n" + render_evidence_field(
+        CriterionEvidence(graded_sha=sha, test=GRADED_TEST)
+    )
+
+
+def a_fire_over_one_lane_check(
+    *,
+    check_state: WorkflowStateKind,
+    check_state_name: str,
+    check_body: str,
+    child_state: WorkflowStateKind,
+) -> dict[str, TrackerIssue]:
+    """One board: a fire, its three own checks, and a deliverable child.
+
+    Only the lane check under test and the child's criterion move between
+    the arms; everything else is Done, so whatever the rollup answers is
+    answered by those two records alone.
+    """
+    lane = make_tracker_issue("lane")
+    met = criterion("lane-AC-1", parent="lane", state=WorkflowStateKind.COMPLETED)
+    also_met = criterion("lane-AC-2", parent="lane", state=WorkflowStateKind.COMPLETED)
+    lane_check = make_tracker_issue(
+        "lane-AC-3",
+        parent_key="lane",
+        issue_labels=CRITERION,
+        state_kind=check_state,
+        state_name=check_state_name,
+        body=check_body,
+    )
+    child = make_tracker_issue("child", parent_key="lane")
+    child_check = criterion("child-AC-1", parent="child", state=child_state)
+    return facts_of(lane, met, also_met, lane_check, child, child_check)
+
+
+def test_the_rollup_over_the_subtree_answers_one_lane_check_four_ways():
+    """Failed, Done, lapsed and owed-below: one board, four readings.
+
+    The fire's state is the rollup over its whole subtree.  A lane check a
+    failing grade moved back to Todo is named; the same check Done closes
+    the fire; the same check lapsed out of Done (Done -> In Review) is owed
+    again and reported exactly as a criterion nobody ever graded is —
+    its record carried through untouched, with no verdict attached and
+    nothing calling it refuted; and with every one of the fire's own checks
+    Done, one criterion still open under the deliverable child is named by
+    its own key, which an implementation that never looks below the parent
+    could not do.
+    """
+    failed = SubtreeClosure(
+        facts=a_fire_over_one_lane_check(
+            check_state=WorkflowStateKind.UNSTARTED,
+            check_state_name="Todo",
+            check_body=RULING_MARK,
+            child_state=WorkflowStateKind.COMPLETED,
+        ),
+        ref=REF,
+    )
+    assert tuple(issue.issue_key for issue in failed.gap("lane")) == ("lane-AC-3",)
+    assert failed.is_closed("lane") is False
+
+    graded = SubtreeClosure(
+        facts=a_fire_over_one_lane_check(
+            check_state=WorkflowStateKind.COMPLETED,
+            check_state_name="Done",
+            check_body=graded_body(GRADED_SHA),
+            child_state=WorkflowStateKind.COMPLETED,
+        ),
+        ref=REF,
+    )
+    assert graded.gap("lane") == ()
+    assert graded.is_closed("lane") is True
+
+    lapsed_facts = a_fire_over_one_lane_check(
+        check_state=WorkflowStateKind.STARTED,
+        check_state_name="In Review",
+        check_body=graded_body(GRADED_SHA),
+        child_state=WorkflowStateKind.COMPLETED,
+    )
+    lapsed = SubtreeClosure(facts=lapsed_facts, ref=REF)
+    (owed,) = lapsed.gap("lane")
+    assert lapsed.is_closed("lane") is False
+    assert owed == lapsed_facts["lane-AC-3"]
+    assert owed.state_kind is WorkflowStateKind.STARTED
+    assert owed.state_name == "In Review"
+    assert in_gap(owed, supersession_ref=None) is in_gap(
+        failed.gap("lane")[0], supersession_ref=None
+    )
+    assert parse_criterion_evidence(owed.body).graded_sha == GRADED_SHA
+    assert (
+        graded_state(
+            graded_sha=parse_criterion_evidence(owed.body).graded_sha,
+            head_sha=HEAD_SHA,
+        )
+        is GradedState.lapsed
+    )
+    with pytest.raises(TypeError):
+        bool(graded_state(graded_sha=GRADED_SHA, head_sha=HEAD_SHA))
+
+    owed_below = SubtreeClosure(
+        facts=a_fire_over_one_lane_check(
+            check_state=WorkflowStateKind.COMPLETED,
+            check_state_name="Done",
+            check_body=graded_body(GRADED_SHA),
+            child_state=WorkflowStateKind.UNSTARTED,
+        ),
+        ref=REF,
+    )
+    assert tuple(issue.issue_key for issue in owed_below.gap("lane")) == ("child-AC-1",)
+    assert owed_below.is_closed("lane") is False
+    assert open_criteria(owed_below.criteria("lane"), ref=REF) == ()
