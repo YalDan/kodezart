@@ -250,4 +250,25 @@ async def test_the_state_move_owes_a_criterion_a_sha_behind_head_alone_does_not(
         graded_sha=parse_criterion_evidence(carried.body).graded_sha,
         head_sha=HEAD_SHA,
     )
+
+    never = await ready_fixture(subtree(kind="unstarted", body=UNGRADED_BODY))
+    never.state_named(DEEP_CHECK, "In Review")
+    ungraded = await read_scope_ready(ref=PROJECT, tracker=never.tracker)
+
+    assert {
+        lane.issue.issue_key: [item.issue_key for item in lane.gap]
+        for lane in ungraded.ready
+    } == {
+        lane.issue.issue_key: [item.issue_key for item in lane.gap]
+        for lane in selection.ready
+    }
+    (never_graded,) = ungraded.ready[0].gap
+    assert never_graded.state_kind is owed.state_kind
+    assert never_graded.state_name == owed.state_name
+    assert never_graded.model_dump(exclude={"body"}) == owed.model_dump(
+        exclude={"body"}
+    )
+    with pytest.raises(ValueError, match="Evidence"):
+        parse_criterion_evidence(never_graded.body)
     fixture.assert_read_only()
+    never.assert_read_only()
