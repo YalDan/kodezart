@@ -705,7 +705,9 @@ async def test_a_flag_the_post_merge_reviewer_raised_reaches_the_body() -> None:
     pr_creator = FakePRCreator()
     events = await _run(_engine_over_a_real_loop(executor, pr_creator))
 
-    assert [e for e in events if isinstance(e, WorkflowPREvent)], "a PR was opened"
+    # Restored (KOD-827): exactly one PR event for a shipping run.
+    pr_events = [e for e in events if isinstance(e, WorkflowPREvent)]
+    assert len(pr_events) == 1, "a PR was opened"
     assert executor.eval_calls == 2, "the loop graded once, the review once"
 
     body = str(

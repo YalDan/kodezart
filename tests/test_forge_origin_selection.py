@@ -98,6 +98,13 @@ ENGINE_FORGE_SLOTS: frozenset[str] = frozenset(
     {"visibility_resolver", "pr_creator", "ci_monitor"},
 )
 
+#: The keyword slots a forge-backed READ capability reaches the native
+#: delivery lane through.  Bound as a set at exactly one site too, so a
+#: read cannot be selected apart from the writes it travels with.
+ENGINE_FORGE_READ_SLOTS: frozenset[str] = frozenset(
+    {"pr_state_reader", "forge_query"},
+)
+
 #: The forge client parameter of the composition root.  Its presence is
 #: what used to decide every capability above, and must decide none.
 FORGE_CLIENT_PARAM = "github_api"
@@ -473,15 +480,19 @@ async def test_the_forge_adapter_answers_exactly_the_covered_capability_set() ->
     assert answered == set(COVERED_BY_ORIGIN)
 
 
-def _forge_slot_keywords(module: Path) -> list[ast.keyword]:
-    """Every keyword argument in *module* naming an engine forge slot."""
+def _forge_slot_keywords(
+    module: Path,
+    *,
+    slots: frozenset[str] = ENGINE_FORGE_SLOTS,
+) -> list[ast.keyword]:
+    """Every keyword argument in *module* naming one of *slots*."""
     tree = ast.parse(module.read_text(encoding="utf-8"))
     return [
         keyword
         for node in ast.walk(tree)
         if isinstance(node, ast.Call)
         for keyword in node.keywords
-        if keyword.arg in ENGINE_FORGE_SLOTS
+        if keyword.arg in slots
     ]
 
 
@@ -509,6 +520,7 @@ def test_no_engine_forge_slot_is_bound_to_the_forge_client() -> None:
 
 def test_only_delivery_builders_bind_the_engine_forge_slots() -> None:
     """Authored and native builders receive the one selected capability set."""
+    # Restored (KOD-827): the set of modules binding an engine forge slot is closed.
     binding = sorted(
         module.name
         for module in COMPOSITION.glob("*.py")
@@ -520,6 +532,30 @@ def test_only_delivery_builders_bind_the_engine_forge_slots() -> None:
         ast.unparse(keyword.value)
         for keyword in _forge_slot_keywords(COMPOSITION / "delivery.py")
     } == {"forge"}
+
+
+def test_only_the_delivery_builder_binds_a_forge_read_slot() -> None:
+    """One selection site for the forge reads, findable by this test.
+
+    The exclusivity the engine's write slots carry above, restated for
+    the read capabilities that joined the covered set after it: the PR
+    lifecycle reader and the forge query reach the lane from a single
+    composition module, bound to the one selected client.
+    """
+    # Restored (KOD-827): the set of modules binding a forge read slot is closed.
+    binding = sorted(
+        module.name
+        for module in COMPOSITION.glob("*.py")
+        if _forge_slot_keywords(module, slots=ENGINE_FORGE_READ_SLOTS)
+    )
+
+    assert binding == ["delivery.py"]
+    keywords = _forge_slot_keywords(
+        COMPOSITION / "delivery.py",
+        slots=ENGINE_FORGE_READ_SLOTS,
+    )
+    assert {keyword.arg for keyword in keywords} == ENGINE_FORGE_READ_SLOTS
+    assert {ast.unparse(keyword.value) for keyword in keywords} == {"forge"}
 
 
 def test_the_delivery_capability_is_selected_by_the_same_predicate() -> None:
