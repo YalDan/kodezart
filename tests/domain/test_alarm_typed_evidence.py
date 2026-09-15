@@ -32,7 +32,6 @@ def test_every_evidence_arm_roundtrips_without_reparsing_domain_payloads():
         LaneGraphSnapshot,
         LaneRulingSnapshot,
     )
-    from kodezart.types.domain.operation import LifecycleStage
     from kodezart.types.domain.run_alarm import (
         AlarmEvidence,
         CommitsEvidence,
@@ -94,7 +93,6 @@ def test_every_evidence_arm_roundtrips_without_reparsing_domain_payloads():
             value=CriterionStateMove(
                 member_id="criterion",
                 from_kind=WorkflowStateKind.COMPLETED,
-                from_stage=LifecycleStage.DONE,
                 to_kind=WorkflowStateKind.UNSTARTED,
             )
         ),

@@ -1,7 +1,6 @@
 """A criterion's regression and its lapse are separate replayable readings."""
 
 import pytest
-from pydantic import ValidationError
 
 from kodezart.domain.criterion_tally import lapse_undischarged, tally_regressed
 from kodezart.domain.errors import RunShapeReadError
@@ -49,7 +48,6 @@ def move(
     return CriterionStateMove(
         member_id=member,
         from_kind=DONE,
-        from_stage=LifecycleStage.DONE,
         to_kind=to_kind,
         to_stage=to_stage,
     )
@@ -223,16 +221,6 @@ def test_moves_that_leave_no_completed_state_for_todo_are_quiet(
     state_move: CriterionStateMove,
 ) -> None:
     assert regression((move_reading(state_move), events_reading())) is None
-
-
-def test_a_stage_that_is_not_a_named_state_of_its_kind_is_unreadable() -> None:
-    with pytest.raises(ValidationError):
-        CriterionStateMove(
-            member_id=MEMBER,
-            from_kind=DONE,
-            to_kind=TODO,
-            to_stage=LifecycleStage.IN_REVIEW,
-        )
 
 
 @pytest.mark.parametrize(

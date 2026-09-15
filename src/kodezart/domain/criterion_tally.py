@@ -8,13 +8,19 @@ is the loop carrying the criterion round again, and collapsing them would
 report ordinary re-derivation as a regression.
 """
 
-from kodezart.domain.run_shape import _unreadable, read_alarm_value
+from kodezart.domain.run_shape import (
+    read_alarm_value,
+    unique_membership,
+    unreadable_reading,
+)
 from kodezart.types.domain.operation import LifecycleStage
 from kodezart.types.domain.run_alarm import (
     AlarmReading,
     AlarmSignal,
     AlarmSubject,
     AlarmSubjectKind,
+    CriterionStateMove,
+    CriterionSubject,
     GraphEvidence,
     PresenceEvidence,
     RunAlarm,
@@ -23,6 +29,34 @@ from kodezart.types.domain.run_alarm import (
 )
 from kodezart.types.domain.run_event import RunEventKind
 from kodezart.types.domain.tracker import TrackerIssue, WorkflowStateKind
+
+
+def _criterion_move(
+    subject: AlarmSubject, move_reading: AlarmReading, signal: AlarmSignal
+) -> tuple[CriterionSubject, CriterionStateMove]:
+    """Read the one criterion sub-issue's move both signals are answers about.
+
+    Three identities have to be the same criterion: the subject the answer
+    is reported against, the key the move was read at, and the key the move
+    itself carries. A move read at another sub-issue's key is that
+    sub-issue's move whatever the subject claims, and a subject of any
+    other kind names no criterion at all. The criterion subject is returned
+    beside the move, because everything read after this point is read about
+    that one criterion.
+    """
+    move = read_alarm_value(move_reading, StateMoveEvidence, signal)
+    if (
+        subject.kind is not AlarmSubjectKind.CRITERION
+        or subject.member_id != move.member_id
+    ):
+        raise unreadable_reading(
+            signal, move_reading.source_ref, "subject identifies another criterion"
+        )
+    if move_reading.source_ref != move.member_id:
+        raise unreadable_reading(
+            signal, move_reading.source_ref, "the move identifies another criterion"
+        )
+    return subject, move
 
 
 def tally_regressed(
@@ -51,22 +85,16 @@ def tally_regressed(
     try:
         move_reading, events_reading = readings
     except ValueError as exc:
-        raise _unreadable(signal, subject.scope_key, "incomplete readings") from exc
-    move = read_alarm_value(move_reading, StateMoveEvidence, signal)
+        raise unreadable_reading(
+            signal, subject.scope_key, "incomplete readings"
+        ) from exc
+    criterion_subject, move = _criterion_move(subject, move_reading, signal)
     events = read_alarm_value(events_reading, RunEventsEvidence, signal)
     if (
-        subject.kind is not AlarmSubjectKind.CRITERION
-        or subject.member_id != move.member_id
+        criterion_subject.lane_key is None
+        or events_reading.source_ref != criterion_subject.lane_key
     ):
-        raise _unreadable(
-            signal, move_reading.source_ref, "subject identifies another criterion"
-        )
-    if move_reading.source_ref != move.member_id:
-        raise _unreadable(
-            signal, move_reading.source_ref, "the move identifies another criterion"
-        )
-    if subject.lane_key is None or events_reading.source_ref != subject.lane_key:
-        raise _unreadable(
+        raise unreadable_reading(
             signal,
             events_reading.source_ref,
             "the event stream identifies another lane",
@@ -83,7 +111,7 @@ def tally_regressed(
     ):
         return None
     return RunAlarm(
-        subject=subject,
+        subject=criterion_subject,
         signal=signal,
         readings=readings,
         bound=None,
@@ -118,26 +146,20 @@ def _subtree_owner(
             graph_reading.source_ref != snapshot.lane_key
             or claim_reading.source_ref != snapshot.lane_key
         ):
-            raise _unreadable(
+            raise unreadable_reading(
                 signal, graph_reading.source_ref, "lane readings identify other lanes"
             )
         if snapshot.lane_key in holders:
-            raise _unreadable(
+            raise unreadable_reading(
                 signal, snapshot.lane_key, "one lane is observed more than once"
             )
         holders[snapshot.lane_key] = holds_claim
-        members = {issue.issue_key: issue for issue in snapshot.subtree}
-        if len(members) != len(snapshot.subtree):
-            raise _unreadable(
-                signal,
-                graph_reading.source_ref,
-                "membership read repeats an issue identity",
-            )
+        members = unique_membership(snapshot.subtree, graph_reading, signal)
         held = members.get(member_id)
         if held is not None:
             owners[snapshot.lane_key] = held
     if len(owners) != 1:
-        raise _unreadable(
+        raise unreadable_reading(
             signal, member_id, "no single lane subtree holds this criterion"
         )
     lane_key, criterion = next(iter(owners.items()))
@@ -171,32 +193,31 @@ def lapse_undischarged(
     try:
         move_reading, *lane_readings = readings
     except ValueError as exc:
-        raise _unreadable(signal, subject.scope_key, "incomplete readings") from exc
+        raise unreadable_reading(
+            signal, subject.scope_key, "incomplete readings"
+        ) from exc
     if not lane_readings or len(lane_readings) % 2:
-        raise _unreadable(signal, subject.scope_key, "incomplete lane readings")
-    move = read_alarm_value(move_reading, StateMoveEvidence, signal)
-    if (
-        subject.kind is not AlarmSubjectKind.CRITERION
-        or subject.member_id != move.member_id
-    ):
-        raise _unreadable(
-            signal, move_reading.source_ref, "subject identifies another criterion"
-        )
-    if move_reading.source_ref != move.member_id:
-        raise _unreadable(
-            signal, move_reading.source_ref, "the move identifies another criterion"
-        )
+        raise unreadable_reading(signal, subject.scope_key, "incomplete lane readings")
+    criterion_subject, move = _criterion_move(subject, move_reading, signal)
     lane_key, criterion, holders = _subtree_owner(
         lane_readings=lane_readings, member_id=move.member_id, signal=signal
     )
     if criterion.state_kind is not move.to_kind:
-        raise _unreadable(
+        raise unreadable_reading(
             signal, lane_key, "the membership read disagrees about the criterion"
         )
-    if criterion.parent_key is None or subject.issue_id != criterion.parent_key:
-        raise _unreadable(signal, lane_key, "subject identifies another owning issue")
-    if subject.lane_key is not None and subject.lane_key != lane_key:
-        raise _unreadable(signal, lane_key, "subject identifies another lane")
+    if (
+        criterion.parent_key is None
+        or criterion_subject.issue_id != criterion.parent_key
+    ):
+        raise unreadable_reading(
+            signal, lane_key, "subject identifies another owning issue"
+        )
+    if (
+        criterion_subject.lane_key is not None
+        and criterion_subject.lane_key != lane_key
+    ):
+        raise unreadable_reading(signal, lane_key, "subject identifies another lane")
     if (
         move.from_kind is not WorkflowStateKind.COMPLETED
         or move.to_stage is not LifecycleStage.IN_REVIEW
@@ -205,7 +226,7 @@ def lapse_undischarged(
     if holders[lane_key]:
         return None
     return RunAlarm(
-        subject=subject,
+        subject=criterion_subject,
         signal=signal,
         readings=readings,
         bound=None,

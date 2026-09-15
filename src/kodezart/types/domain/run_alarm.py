@@ -1,9 +1,9 @@
 """Immutable typed observations of a run's recorded shape."""
 
 from enum import StrEnum
-from typing import Annotated, Literal, Self
+from typing import Annotated, Literal
 
-from pydantic import ConfigDict, Field, model_validator
+from pydantic import ConfigDict, Field
 
 from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.escalation import EscalationResolution
@@ -124,22 +124,15 @@ class LaneFieldValue(CamelCaseModel):
     value: str
 
 
-#: The state kind each configured lifecycle stage is a named state of.
-STAGE_STATE_KINDS: dict[LifecycleStage, WorkflowStateKind] = {
-    LifecycleStage.IN_PROGRESS: WorkflowStateKind.STARTED,
-    LifecycleStage.IN_REVIEW: WorkflowStateKind.STARTED,
-    LifecycleStage.DONE: WorkflowStateKind.COMPLETED,
-}
-
-
 class CriterionStateMove(CamelCaseModel):
     """One criterion sub-issue's observed move between two workflow states.
 
     This is an observation input, not a tracker read. Each end arrives
-    already resolved by its producer: the backend's own state kind, and
-    the configured lifecycle stage that state is a named member of when
-    the mapping names one. No state name is interpreted here, and an end
-    whose stage contradicts its kind is refused rather than reconciled.
+    already resolved by its producer: the backend's own state kind, and,
+    where the move's destination is a configured lifecycle stage, the
+    stage that state is a named member of. No state name is interpreted
+    here, and the absent stage is an end the configuration names nothing
+    for, never an unread one.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -147,18 +140,7 @@ class CriterionStateMove(CamelCaseModel):
     member_id: Identity
     from_kind: WorkflowStateKind
     to_kind: WorkflowStateKind
-    from_stage: LifecycleStage | None = None
     to_stage: LifecycleStage | None = None
-
-    @model_validator(mode="after")
-    def _stages_are_named_states_of_their_kinds(self) -> Self:
-        for stage, kind in (
-            (self.from_stage, self.from_kind),
-            (self.to_stage, self.to_kind),
-        ):
-            if stage is not None and STAGE_STATE_KINDS[stage] is not kind:
-                raise ValueError(f"the {stage.value} stage is not a {kind.value} state")
-        return self
 
 
 class RunEventProjection(CamelCaseModel):
