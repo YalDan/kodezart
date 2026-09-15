@@ -3,7 +3,7 @@
 What a server may answer with is a property of the PROTOCOL, not of the
 wire it arrived on: an HTTP session and a spawned stdio process deliver
 the same ``CallToolResult`` shape, and duplicating the decoding per
-transport is two places for the KOD-143 lessons to drift apart.  The
+transport lets their handling of the same payload drift apart.  The
 transports differ only in how a session is opened, which stays in their
 own modules.
 """
@@ -23,7 +23,7 @@ def error_detail(result: CallToolResult, *, limit: int) -> str:
     the field that was wrong, the type it wanted, the status it answered.
     Dropping it and raising a bare "the server reported a tool error"
     leaves a caller knowing only that something failed, which cost a whole
-    boot cycle to recover once (KOD-143): the server had said "teamId must
+    boot cycle to recover once: the server had said "teamId must
     be a UUID" and nothing carried it.
     """
     text = " ".join(
@@ -48,7 +48,7 @@ def structured_result(
     block whose text parses as a JSON object OR a JSON array — the spec
     makes the first optional and the vendor's live server sends only the
     second.  An array is a shape a tool really answers with
-    (``list_issue_statuses``, measured under KOD-143), so refusing one
+    (``list_issue_statuses``), so refusing one
     here would make that tool unreachable from every adapter.  Every
     other shape is a refusal naming exactly what was absent or
     undecodable, never a guessed-at result.

@@ -4,14 +4,27 @@ Git operations via subprocess.
 """
 
 import asyncio
+import hashlib
 import os
 import re
+import signal
+import stat
+from contextlib import ExitStack
 from pathlib import Path
 
+from pydantic import ValidationError
+
+from kodezart.core.owned_tasks import finish_owned
 from kodezart.core.protocols import GitAuth
-from kodezart.domain.errors import MergeConflictError
+from kodezart.domain.errors import (
+    GitOperationError,
+    GitRepositoryError,
+    MergeConflictError,
+    WorkspaceError,
+)
 from kodezart.types.domain.consolidation import ChangesetDigest
 from kodezart.types.domain.git import LsRemoteEntry
+from kodezart.types.domain.workspace import GitWorktreeIdentity
 
 _UNKNOWN_EXIT_CODE = -1
 
@@ -46,10 +59,191 @@ class SubprocessGitService:
         repo = Path(repo_path)
         if not repo.is_dir():
             msg = f"Repository path does not exist: {repo_path}"
-            raise ValueError(msg)
+            raise GitRepositoryError(msg)
         if not ((repo / ".git").exists() or (repo / "HEAD").exists()):
             msg = f"Not a git repository: {repo_path}"
-            raise ValueError(msg)
+            raise GitRepositoryError(msg)
+
+    async def worktree_identity(
+        self, cwd: str, *, repository_path: str
+    ) -> GitWorktreeIdentity:
+        """Read actual worktree, index and working content without changing Git.
+
+        Ignored untracked files are outside ``git add --all`` and this identity.
+        Gitlinks refuse: their nested working copies require a separate ownership
+        contract. NUL-delimited Git inventories retain arbitrary native filenames.
+        """
+        try:
+            return await self._worktree_identity(cwd, repository_path=repository_path)
+        except (OSError, ValidationError) as exc:
+            raise WorkspaceError("The native worktree identity cannot be read") from exc
+
+    async def _identity_git(self, cwd: str, *args: str) -> bytes:
+        spawning = asyncio.create_task(
+            asyncio.create_subprocess_exec(
+                "git",
+                *args,
+                cwd=cwd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                start_new_session=True,
+            )
+        )
+        communication: asyncio.Task[tuple[bytes, bytes]] | None = None
+        try:
+            proc = await asyncio.shield(spawning)
+            communication = asyncio.create_task(proc.communicate())
+            stdout, _ = await asyncio.shield(communication)
+        except BaseException:
+            proc, _ = await finish_owned(spawning)
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            if communication is None:
+                communication = asyncio.create_task(proc.communicate())
+            await finish_owned(communication)
+            raise
+        if proc.returncode != 0:
+            raise WorkspaceError(
+                f"Native worktree identity read failed: git {args[0]} exited "
+                f"{proc.returncode}"
+            )
+        return stdout
+
+    async def _worktree_identity(
+        self, cwd: str, *, repository_path: str
+    ) -> GitWorktreeIdentity:
+        if Path(cwd).is_symlink():
+            raise WorkspaceError("A native workspace cannot be a substituted symlink")
+
+        async def path(flag: str) -> Path:
+            raw = await self._identity_git(
+                cwd, "rev-parse", "--path-format=absolute", flag
+            )
+            return Path(os.fsdecode(raw.removesuffix(b"\n"))).resolve(strict=True)
+
+        root = await path("--show-toplevel")
+        if root != Path(cwd).resolve(strict=True):
+            raise WorkspaceError("The native workspace is not its worktree root")
+        common = await path("--git-common-dir")
+        repository_common = Path(
+            os.fsdecode(
+                (
+                    await self._identity_git(
+                        repository_path,
+                        "rev-parse",
+                        "--path-format=absolute",
+                        "--git-common-dir",
+                    )
+                ).removesuffix(b"\n")
+            )
+        ).resolve(strict=True)
+        if repository_common != common:
+            raise WorkspaceError("The retained worktree belongs to another repository")
+        git_dir = await path("--git-dir")
+        branch = os.fsdecode(
+            (
+                await self._identity_git(cwd, "symbolic-ref", "--short", "HEAD")
+            ).removesuffix(b"\n")
+        )
+        head = (await self._identity_git(cwd, "rev-parse", "HEAD")).decode().strip()
+        index = await self._identity_git(cwd, "ls-files", "--stage", "-v", "-z")
+        untracked = await self._identity_git(
+            cwd, "ls-files", "--others", "--exclude-standard", "-z"
+        )
+        paths: set[bytes] = set(untracked.split(b"\0")) - {b""}
+        for entry in index.split(b"\0"):
+            if not entry:
+                continue
+            if b"\t" not in entry:
+                raise WorkspaceError("Git returned a malformed index entry")
+            metadata, name = entry.split(b"\t", 1)
+            fields = metadata.split(b" ")
+            if len(fields) != 4:
+                raise WorkspaceError("Git returned malformed index metadata")
+            if fields[1] == b"160000":
+                raise WorkspaceError(
+                    "Native checkpoint ownership of gitlinks is unavailable"
+                )
+            paths.add(name)
+        digest = hashlib.sha256()
+
+        def add(value: bytes) -> None:
+            digest.update(len(value).to_bytes(8, "big"))
+            digest.update(value)
+
+        add(index)
+        for name in sorted(paths):
+            if name.startswith(b"/") or any(
+                part in {b"", b".", b".."} for part in name.split(b"/")
+            ):
+                raise WorkspaceError("Git returned an invalid relative worktree path")
+            add(name)
+            # Open every directory component without following links. Protecting
+            # only the final file would still traverse a substituted parent link.
+            with ExitStack() as descriptors:
+                directory = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+                descriptors.callback(os.close, directory)
+                parts = name.split(b"/")
+                try:
+                    for part in parts[:-1]:
+                        directory = os.open(
+                            part,
+                            os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                            dir_fd=directory,
+                        )
+                        descriptors.callback(os.close, directory)
+                    leaf = parts[-1]
+                    info = os.stat(leaf, dir_fd=directory, follow_symlinks=False)
+                except FileNotFoundError:
+                    add(b"missing")
+                    continue
+                add(str(info.st_mode).encode())
+                if stat.S_ISLNK(info.st_mode):
+                    add(os.readlink(leaf, dir_fd=directory))
+                elif stat.S_ISREG(info.st_mode):
+                    descriptor = os.open(
+                        leaf, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=directory
+                    )
+                    with os.fdopen(descriptor, "rb") as content:
+                        file_digest = hashlib.file_digest(content, "sha256").digest()
+                    add(file_digest)
+                elif not stat.S_ISDIR(info.st_mode):
+                    raise WorkspaceError(
+                        "A native worktree contains an unsupported file type"
+                    )
+        roster = await self._identity_git(
+            repository_path, "worktree", "list", "--porcelain", "-z"
+        )
+        registrations = [
+            record.split(b"\0")
+            for record in roster.split(b"\0\0")
+            if record.split(b"\0", 1)[0] == b"worktree " + os.fsencode(root)
+        ]
+        if (
+            len(registrations) != 1
+            or b"HEAD " + head.encode("ascii") not in registrations[0]
+            or b"branch refs/heads/" + os.fsencode(branch) not in registrations[0]
+        ):
+            raise WorkspaceError(
+                "The native path is not the repository's registered branch worktree"
+            )
+        root_stat, common_stat, git_stat = root.stat(), common.stat(), git_dir.stat()
+        return GitWorktreeIdentity(
+            root=str(root),
+            root_device=root_stat.st_dev,
+            root_inode=root_stat.st_ino,
+            common_dir=str(common),
+            common_device=common_stat.st_dev,
+            common_inode=common_stat.st_ino,
+            git_dir=str(git_dir),
+            git_device=git_stat.st_dev,
+            git_inode=git_stat.st_ino,
+            branch=branch,
+            head_sha=head,
+            content_digest=digest.hexdigest(),
+        )
 
     def is_repo(self, path: str) -> bool:
         """Check if path is an existing git repo (regular or bare)."""
@@ -61,7 +255,7 @@ class SubprocessGitService:
         Path(target).parent.mkdir(parents=True, exist_ok=True)
         effective_url = self._auth.authenticated_url(url) if self._auth else url
         await self._run(
-            ["git", "clone", "--bare", effective_url, target],
+            ["git", "clone", "--bare", "--origin", self._remote, effective_url, target],
             cwd=str(Path(target).parent),
             env=self._auth.subprocess_env() if self._auth else None,
         )
@@ -139,6 +333,11 @@ class SubprocessGitService:
         output = await self._run_output(["git", "status", "--porcelain"], cwd=cwd)
         return len(output) > 0
 
+    async def has_replace_refs(self, cwd: str) -> bool:
+        """Read replacement refs from Git's active replacement namespace."""
+        output = await self._run_output(["git", "replace", "--list"], cwd=cwd)
+        return bool(output)
+
     async def is_path_ignored(self, cwd: str, path: str) -> bool:
         """Return True iff *path* is excluded by the repository's ignore rules.
 
@@ -195,11 +394,55 @@ class SubprocessGitService:
         """
         try:
             await self._run(["git", "merge", "--ff-only", source_branch], cwd=cwd)
-        except RuntimeError as exc:
+        except GitOperationError as exc:
             raise MergeConflictError(
                 f"merge of {source_branch} could not be completed",
                 source_branch=source_branch,
                 paths=_conflicting_paths(str(exc)),
+            ) from exc
+
+    async def merge_scratch_head(
+        self, *, cwd: str, head_sha: str, author_name: str, author_email: str
+    ) -> None:
+        """Compose a commit without updating any named branch.
+
+        Sibling heads require a real merge; the existing fast-forward-only
+        consolidation operation deliberately retains its separate contract.
+        """
+        if re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", head_sha) is None:
+            raise ValueError("scratch merge requires a full immutable commit SHA")
+        attached, _ = await self._run_with_exit_codes(
+            ["git", "symbolic-ref", "--quiet", "HEAD"],
+            cwd=cwd,
+            allowed=frozenset({0, 1}),
+        )
+        if attached == 0:
+            raise ValueError("scratch merge requires detached HEAD")
+        try:
+            await self._run(
+                [
+                    "git",
+                    "merge",
+                    "--no-ff",
+                    "--no-edit",
+                    "--no-gpg-sign",
+                    "--",
+                    head_sha,
+                ],
+                cwd=cwd,
+                env=self._author_env(author_name, author_email),
+            )
+        except GitOperationError as exc:
+            unmerged = await self._run_output(
+                ["git", "diff", "--name-only", "--diff-filter=U"],
+                cwd=cwd,
+            )
+            if not unmerged:
+                raise
+            raise MergeConflictError(
+                f"scratch merge of {head_sha} could not be completed",
+                source_branch=head_sha,
+                paths=tuple(unmerged.splitlines()),
             ) from exc
 
     async def current_sha(self, cwd: str) -> str:
@@ -303,7 +546,7 @@ class SubprocessGitService:
         parts = first_line.split("\t")
         if len(parts) != 2:
             msg = f"Unexpected ls-remote output: {first_line!r}"
-            raise RuntimeError(msg)
+            raise GitOperationError(msg)
         return parts[0]
 
     async def diff_summary(
@@ -400,7 +643,7 @@ class SubprocessGitService:
                 cwd=repo_path,
             )
             return True
-        except RuntimeError:
+        except GitOperationError:
             return False
 
     async def _run_output(
@@ -423,7 +666,7 @@ class SubprocessGitService:
         if proc.returncode != 0:
             detail = self._failure_detail(stdout, stderr, proc.returncode)
             msg = f"{' '.join(cmd[:3])} failed: {detail}"
-            raise RuntimeError(msg)
+            raise GitOperationError(msg)
         return stdout.decode().strip()
 
     async def _run(
@@ -446,7 +689,7 @@ class SubprocessGitService:
         if proc.returncode != 0:
             detail = self._failure_detail(stdout, stderr, proc.returncode)
             msg = f"{' '.join(cmd[:3])} failed: {detail}"
-            raise RuntimeError(msg)
+            raise GitOperationError(msg)
 
     async def _run_with_exit_codes(
         self,
@@ -457,7 +700,7 @@ class SubprocessGitService:
     ) -> tuple[int, str]:
         """Run *cmd*, allow declared exit codes, return ``(exit_code, stdout)``.
 
-        Raises ``RuntimeError`` if the exit code is not in *allowed*.  Used
+        Raises ``GitOperationError`` if the exit code is not in *allowed*.  Used
         by ``is_ancestor`` (exit 1 valid) and ``remote_branch_sha``
         (exit 2 valid) — the existing ``_run`` and ``_run_output`` continue
         to raise on any non-zero exit.
@@ -482,5 +725,5 @@ class SubprocessGitService:
                 f"{' '.join(cmd[:3])} exited {returncode} "
                 f"(allowed {sorted(allowed)}): {detail}"
             )
-            raise RuntimeError(msg)
+            raise GitOperationError(msg)
         return returncode, stdout.decode().strip()
