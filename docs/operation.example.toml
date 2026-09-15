@@ -372,16 +372,3 @@ node_session_started = "NO_TRANSITION"
 run_alarm_cleared = "NO_TRANSITION"
 
 run_alarm_raised = "NO_TRANSITION"
-
-
-
-# Initiatives the operation is steering toward. `target_date` is OPTIONAL and
-# omitting it is the ordinary case: most real initiatives carry none, and a
-# config that had to invent one would make its passes report a distance to a
-# commitment the tracker does not hold.
-[[initiatives]]
-id = "example-initiative"
-target_date = 2026-12-31
-
-[[initiatives]]
-id = "example-initiative-without-a-target-date"

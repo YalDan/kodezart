@@ -289,6 +289,48 @@ class MandateSpec(CamelCaseModel):
             raise ValueError("an organize phase terminates on an issue_labels marker")
         return value
 
+class MandatePhaseRole(CamelCaseModel):
+    """One phase's differences that no operation configures.
+
+    The generative role that drafts a phase's writes, and what its
+    completion marker attests to the readers downstream, belong to the
+    lane rather than to an operator's label spellings.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    author_prompt_key: PromptKey
+    marks_specification_body: bool
+    marks_execution_stage: bool
+
+MANDATE_PHASE_ROLES: Mapping[MandateKind, MandatePhaseRole] = {
+    MandateKind.GROOM: MandatePhaseRole(
+        author_prompt_key=PromptKey.ORGANIZE_AUTHOR,
+        marks_specification_body=False,
+        marks_execution_stage=False,
+    ),
+    MandateKind.TICKET: MandatePhaseRole(
+        author_prompt_key=PromptKey.ORGANIZE_AUTHOR,
+        marks_specification_body=True,
+        marks_execution_stage=False,
+    ),
+    MandateKind.CRITERIA: MandatePhaseRole(
+        author_prompt_key=PromptKey.ORGANIZE_CRITERIA_AUTHOR,
+        marks_specification_body=False,
+        marks_execution_stage=True,
+    ),
+}
+
+def phase_marker_source(phase: str) -> str:
+    """The configuration address of one phase's completion marker."""
+    return f"organize_mandates.{phase}.terminal_marker_key"
+
+def phase_successor(phase: MandateKind) -> MandateKind | None:
+    """The phase the governed sequence runs after *phase*, where there is one."""
+    sequence = tuple(MANDATE_PHASE_ROLES)
+    following = sequence.index(phase) + 1
+    return sequence[following] if following < len(sequence) else None
+
 class ResolvedMandateSpec(CamelCaseModel):
     """A validated phase specification, its labels and its lane role."""
 
@@ -297,3 +339,19 @@ class ResolvedMandateSpec(CamelCaseModel):
     spec: MandateSpec
     gate_label: str
     terminal_marker: str
+    role: MandatePhaseRole
+    marker_source: str
+
+class OrganizeAdmissionRequest(CamelCaseModel):
+    """Source identity, rubric and repository base for one fresh judgment."""
+
+    model_config = ConfigDict(frozen=True)
+
+    issue_key: str = Field(min_length=1)
+    scope: ScopeRef
+    mandate_rubric: str = Field(min_length=1)
+    repo_url: str = Field(min_length=1)
+    base_ref: str = Field(min_length=1)
+    cache_key: str | None = None
+    defect_classes: tuple[str, ...] = ()
+    admission_prompt_key: PromptKey = PromptKey.ORGANIZE_ASSESS

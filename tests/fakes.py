@@ -1203,6 +1203,40 @@ class FakeAgentRunner:
         )
         for event in self._events:
             yield event
+
+    async def stream_workflow(
+        self,
+        *,
+        prompt: str,
+        repo_path: str | None = None,
+        repo_url: str | None = None,
+        base_branch: str = "main",
+        branch_name: str | None = None,
+        ralph_branch: str | None = None,
+        permission_mode: PermissionMode,
+        allowed_tools: list[str],
+        skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+        session_type: SessionType = FAKE_SESSION_TYPE,
+        run_identity: RunIdentity | None = None,
+        agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+        session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
+        visibility: RepoVisibility = RepoVisibility.UNKNOWN,
+        create_branch: bool = True,
+        cache_key: str | None = None,
+        native_guard: NativeWriteGuard | None = None,
+    ) -> AsyncGenerator[AgentEvent, None]:
+        self.calls.append(
+            {
+                "method": "stream_workflow",
+                "prompt": prompt,
+                "skills": skills,
+                "visibility": visibility,
+                "base_branch": base_branch,
+                "native_guard": native_guard,
+            },
+        )
+        for event in self._events:
+            yield event
     async def stream_in_workspace(
         self,
         *,
@@ -1474,17 +1508,11 @@ def as_validated(
     ]
 
 
-def make_minted_criteria(
-    *texts: str,
-    criterion_class: CriterionClass = CriterionClass.hard_gate,
-) -> list[GeneratedCriterion]:
+def make_minted_criteria(*texts: str) -> list[GeneratedCriterion]:
     """Mint AC-n identities for *texts* the way the generation node does."""
     return list(
         mint_criteria(
-            [
-                DraftedCriterion(text=text, criterion_class=criterion_class)
-                for text in (texts or ("Tests pass",))
-            ]
+            [DraftedCriterion(text=text) for text in (texts or ("Tests pass",))]
         )
     )
 
@@ -2316,6 +2344,7 @@ class FakeMcpIssue:
     documents: list[FakeMcpAsset] = field(default_factory=list)
     parent_id: str | None = None
     project_id: str | None = None
+    milestone_id: str | None = None
     assignee: str | None = None
     #: The member the workspace attributes the issue to.  ``None`` is the
     #: fixture declining to name one, and the server answers such a read
@@ -3533,6 +3562,13 @@ class FakeTrackerPort:
         issue = await self.read_issue(issue_key=issue_key)
         return TrackerIssueStateChange(
             issue=issue, state_changed_at=self.issue_state_changes[issue_key]
+        )
+
+    async def read_issue_revision(self, *, issue_key: str) -> TrackerIssueRevision:
+        issue = await self.read_issue(issue_key=issue_key)
+        return TrackerIssueRevision(
+            issue=issue,
+            body_digest=sha256(issue.body.encode("utf-8")).hexdigest(),
         )
 
     async def scope_issues(self, *, ref: ScopeRef) -> Sequence[TrackerIssue]:
