@@ -3,7 +3,7 @@
 import json, subprocess, sys
 S = "/private/tmp/claude-503/-Users-kodezart-Projects-kodezart/f325c30b-eb65-4b5e-83ca-1ef5846ade2d/scratchpad/"
 REPO = "/Users/kodezart/Projects/kodezart"
-UNION = "a96fa31205b396b9fdbd76efc164aa63a44dbc90"
+UNION = "9e7b420a78e7e5e5bb6c174a2bcbed9286207ba5"
 BASE0 = "e1544ed749b994b2863b16b6318c61863fa4aa3e"
 INITIATIVE = ("https://linear.app/duckburg/initiative/kodezart-v03-loop-orchestration-scopes-as-input-"
               "the-tracker-as-live-97c2509ef1b8/activity#initiative-update-0a70962b")
@@ -40,8 +40,8 @@ as the union blob, and every file shared with another milestone receives only th
 It is stacked on `{base}` and is **expected NOT to be independently green** — it does not have to
 type-check, import, or pass tests on its own, because a restriction of a coherent tree is not itself a
 coherent tree. **CI on this branch is informational only.** Correctness is asserted on the union branch
-`v03/union` @ `{UNION[:8]}` (the donor `eae9a940` plus one harvested test file and the two pure structural
-moves of #132), where the full gate is green and per-criterion grading happens. Nothing here merges alone:
+`v03/union` @ `{UNION[:8]}` (the donor `eae9a940`, the two pure structural moves of #132, the harvested tests and the
+gap slices landed since; lineage on KOD-830), where the full gate is green and per-criterion grading happens. Nothing here merges alone:
 the merge path is the union, after the restructure base #132 and all seven views have been reviewed.
 A view is a pure restriction of the union — any edit that is not such a restriction does not belong on this
 branch, including edits made to turn CI green.

@@ -14797,7 +14797,8 @@
    "keep_main": [],
    "new_at_this_milestone": [
     "import:from collections.abc import Sequence",
-    "organize_gap"
+    "organize_gap",
+    "organize_at_rest"
    ],
    "remove": [],
    "take_from_donor": [
@@ -14808,7 +14809,8 @@
     "import:from kodezart.types.domain.tracker import ( TrackerIssue, TrackerIssueRevision, WorkflowStateKind, )",
     "is_admission_live",
     "is_organize_subject",
-    "organize_gap"
+    "organize_gap",
+    "organize_at_rest"
    ]
   },
   "src/kodezart/domain/outcome.py": {

@@ -30173,6 +30173,13 @@
    "owner": "M2",
    "owner_grep_only": "M2",
    "sym_kind": "function"
+  },
+  "organize_at_rest": {
+   "consumers": {},
+   "kind": "added",
+   "note": "introduced f575b2e8..9e7b420a",
+   "owner": "M2",
+   "sym_kind": "symbol"
   }
  },
  "src/kodezart/domain/outcome.py": {

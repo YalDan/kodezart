@@ -20,6 +20,7 @@
   "src/kodezart/composition/scope_runtime.py",
   "src/kodezart/core/node_sessions.py",
   "src/kodezart/domain/dispatch.py",
+  "src/kodezart/domain/fire_plateau.py",
   "src/kodezart/domain/gap.py",
   "src/kodezart/domain/issue_tree.py",
   "src/kodezart/domain/outcome.py",
@@ -84,6 +85,7 @@
   "tests/domain/test_amendment.py",
   "tests/domain/test_base_resolution.py",
   "tests/domain/test_base_scope.py",
+  "tests/domain/test_fire_plateau.py",
   "tests/domain/test_fire_spec_arm_reads.py",
   "tests/domain/test_fire_spec_formatter.py",
   "tests/domain/test_fire_spec_purity.py",
@@ -158,7 +160,7 @@
  "preserved": [
   [
    "src/kodezart/types/domain/workflow.py",
-   "WorkflowState.ci_summary",
+   "WorkflowState.ticket",
    "M3",
    "M5"
   ],
@@ -170,13 +172,7 @@
   ],
   [
    "src/kodezart/types/domain/workflow.py",
-   "WorkflowState.pr_number",
-   "M3",
-   "M5"
-  ],
-  [
-   "src/kodezart/types/domain/workflow.py",
-   "WorkflowState.ticket",
+   "WorkflowState.ci_status",
    "M3",
    "M5"
   ],
@@ -188,7 +184,13 @@
   ],
   [
    "src/kodezart/types/domain/workflow.py",
-   "WorkflowState.ci_status",
+   "WorkflowState.ci_summary",
+   "M3",
+   "M5"
+  ],
+  [
+   "src/kodezart/types/domain/workflow.py",
+   "WorkflowState.pr_number",
    "M3",
    "M5"
   ]

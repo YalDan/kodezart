@@ -11747,5 +11747,23 @@
   "kind": "test_py",
   "first_seen": "union-f575b2e8",
   "imports": []
+ },
+ {
+  "path": "src/kodezart/domain/fire_plateau.py",
+  "status": "A",
+  "added": 100,
+  "deleted": 0,
+  "kind": "src_py",
+  "first_seen": "union-9e7b420a",
+  "imports": []
+ },
+ {
+  "path": "tests/domain/test_fire_plateau.py",
+  "status": "A",
+  "added": 194,
+  "deleted": 0,
+  "kind": "test_py",
+  "first_seen": "union-9e7b420a",
+  "imports": []
  }
 ]

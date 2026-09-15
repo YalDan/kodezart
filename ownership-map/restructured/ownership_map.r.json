@@ -4088,5 +4088,15 @@
   "owner": "M2",
   "reason": "introduced a96fa312..f575b2e8 by a M2 commit",
   "split": null
+ },
+ "src/kodezart/domain/fire_plateau.py": {
+  "owner": "M3",
+  "reason": "introduced f575b2e8..9e7b420a by a M3 commit",
+  "split": null
+ },
+ "tests/domain/test_fire_plateau.py": {
+  "owner": "M3",
+  "reason": "introduced f575b2e8..9e7b420a by a M3 commit",
+  "split": null
  }
 }

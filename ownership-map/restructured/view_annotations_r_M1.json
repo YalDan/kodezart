@@ -2,7 +2,7 @@
  "milestone": "M1",
  "branch": "origin/v03/m1-scope-ports",
  "base": "origin/v03/restructure",
- "head": "37ea59ec6e6968057d29a746e30c22d7f949c322",
+ "head": "854cbbe1c08f686cc51e640a878eb2221877fdd5",
  "later_members_shown_here": [
   {
    "file": "src/kodezart/adapters/git/service.py",
