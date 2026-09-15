@@ -12,13 +12,15 @@ import importlib
 import inspect
 import textwrap
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import pytest
 
 from kodezart.chains import scope_walker
-from kodezart.domain import issue_tree, topology
+from kodezart.domain import dispatch, issue_tree, topology
 from kodezart.domain.errors import ScopeSupersessionReadError
-from kodezart.services import scope_dispatcher
+from kodezart.services import fire_dispatcher as fire_dispatcher_module
+from kodezart.services import scope_dispatcher, scope_planning
 from kodezart.services.base_resolver import BaseResolver
 from kodezart.services.claim_heartbeat import ClaimHeartbeat
 from kodezart.services.dispatch_pass import GatedDispatchPass
@@ -583,24 +585,154 @@ def outcome_references(source: str) -> frozenset[str]:
     return frozenset(found)
 
 
-def dispatchability_predicate_sources() -> tuple[tuple[str, str], ...]:
+PREDICATE_PACKAGES = ("services", "chains", "domain", "types/domain")
+
+SRC = Path(__file__).resolve().parents[2] / "src" / "kodezart"
+
+EXCLUDED_UNITS = frozenset({"record_run_outcome"})
+
+
+class ExcludedUnitsRemoved(ast.NodeTransformer):
+    """Drops every deliberately excluded unit out of a unit that carries it.
+
+    ``record_run_outcome`` is the one excluded name: it records how a fire
+    that already ran ended, which is the one place a run outcome belongs,
+    and it decides nothing about which lane is dispatchable next.  A class
+    that happens to carry it is therefore scanned without it rather than
+    dropped from the scan altogether.
+    """
+
+    def visit_FunctionDef(self, node):
+        if node.name in EXCLUDED_UNITS:
+            return None
+        self.generic_visit(node)
+        return node
+
+    def visit_AsyncFunctionDef(self, node):
+        return self.visit_FunctionDef(node)
+
+
+def predicate_source_tree():
+    """Every module the decision could reach, by its path relative to the root."""
+    return {
+        path.relative_to(SRC).as_posix(): path.read_text(encoding="utf-8")
+        for package in PREDICATE_PACKAGES
+        for path in sorted((SRC / package).rglob("*.py"))
+    }
+
+
+def module_relative(module):
+    """The supplied module's path, spelled the way the source map keys it."""
+    return Path(module.__file__).resolve().relative_to(SRC).as_posix()
+
+
+def unit_source(node):
+    """One unit's source, with any excluded unit nested inside it removed."""
+    return ast.unparse(ExcludedUnitsRemoved().visit(ast.parse(ast.unparse(node))))
+
+
+def imported_relatives(tree, sources):
+    """Every supplied module the parsed module imports, by relative path."""
+    found = set()
+    for node in ast.walk(tree):
+        dotted = []
+        if isinstance(node, ast.Import):
+            dotted.extend(alias.name for alias in node.names)
+        if isinstance(node, ast.ImportFrom) and node.module is not None:
+            dotted.append(node.module)
+            dotted.extend(f"{node.module}.{alias.name}" for alias in node.names)
+        for name in dotted:
+            if not name.startswith("kodezart."):
+                continue
+            relative = name[len("kodezart.") :].replace(".", "/") + ".py"
+            if relative in sources:
+                found.add(relative)
+    return found
+
+
+def reachable_modules(sources, *, start):
+    """Every supplied module reachable from *start* by following its imports."""
+    found = set()
+    frontier = [start]
+    while frontier:
+        relative = frontier.pop()
+        if relative in found or relative not in sources:
+            continue
+        found.add(relative)
+        frontier.extend(imported_relatives(ast.parse(sources[relative]), sources))
+    return found
+
+
+def defined_units(sources, modules):
+    """Every function, method and class the named modules define, by its name."""
+    units = {}
+    for relative in sorted(modules):
+        for node in ast.walk(ast.parse(sources[relative])):
+            if not isinstance(
+                node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef
+            ):
+                continue
+            if node.name in EXCLUDED_UNITS:
+                continue
+            units.setdefault(node.name, []).append((f"{relative}::{node.name}", node))
+    return units
+
+
+def called_names(node):
+    """Every name and attribute the parsed unit calls."""
+    found = set()
+    for called in ast.walk(node):
+        if not isinstance(called, ast.Call):
+            continue
+        if isinstance(called.func, ast.Name):
+            found.add(called.func.id)
+        elif isinstance(called.func, ast.Attribute):
+            found.add(called.func.attr)
+    return found
+
+
+def dispatchability_predicate_sources(sources):
     """The source of everything that decides whether a lane is dispatchable.
 
-    The decision is the ready set and the gap arithmetic under it, plus the
-    pass that walks the result: the subtree closure that says what a
-    candidate still owes, the topology that partitions candidates into ready
-    and blocked, the walker that assembles the ready set from both, the type
-    that carries it, and the one pass method that turns it into a launch.
-    ``record_run_outcome`` is deliberately absent — it records how a fire
-    that already ran ended, which is the one place a run outcome belongs.
+    Derived from the supplied code rather than listed by hand: start at the
+    one pass method that turns a ready set into a launch, resolve every
+    name it calls against the functions, methods and classes defined by the
+    modules its own imports reach, and repeat until nothing new is found.
+    Resolution is by name, so the walk over-reaches — a distinct unit that
+    merely shares a callee's name is scanned too — and that is the safe
+    direction: a clause added to the predicate tomorrow is scanned without
+    this helper being touched, whereas a pinned list only ever covers what
+    the author of the list happened to know about.  ``record_run_outcome``
+    is excluded by name: it records how a fire that already ran ended,
+    which is not part of deciding what to dispatch next.
     """
-    return (
-        ("SubtreeClosure", inspect.getsource(issue_tree.SubtreeClosure)),
-        ("plan_topology", inspect.getsource(topology.plan_topology)),
-        ("scope_ready", inspect.getsource(scope_ready)),
-        ("scope_walker", inspect.getsource(scope_walker)),
-        ("run_pass", inspect.getsource(ScopeDispatcher.run_pass)),
-    )
+    entry = module_relative(scope_dispatcher)
+    units = defined_units(sources, reachable_modules(sources, start=entry))
+    scanned = {}
+    frontier = [
+        unit
+        for unit in units[ScopeDispatcher.run_pass.__name__]
+        if unit[0] == f"{entry}::{ScopeDispatcher.run_pass.__name__}"
+    ]
+    while frontier:
+        label, node = frontier.pop()
+        if label in scanned:
+            continue
+        scanned[label] = unit_source(node)
+        for name in called_names(node):
+            frontier.extend(
+                unit for unit in units.get(name, ()) if unit[0] not in scanned
+            )
+    return tuple(sorted(scanned.items()))
+
+
+def units_reading_a_fire_outcome(sources):
+    """The units of the derived predicate that name a fire outcome at all."""
+    return {
+        label: outcome_references(source)
+        for label, source in dispatchability_predicate_sources(sources)
+        if outcome_references(source)
+    }
 
 
 def test_the_detector_flags_a_dispatch_decision_that_reads_a_fire_outcome():
@@ -637,19 +769,70 @@ def test_no_fire_outcome_is_read_anywhere_the_dispatch_decision_is_made():
     from nothing else, so a run that ended ``loop_not_accepted`` can never be
     read as a lane finished, and one that ended ``shutdown_abandoned`` can
     never be read as a lane abandoned: the arithmetic has no access to either
-    fact in the first place.
+    fact in the first place.  The scanned surface is derived from the pass
+    itself, so the clauses it reaches — the standing exclusions, the launch,
+    the plan read, the blocker edge — are covered as surely as the ready-set
+    arithmetic is.
     """
-    scanned = dispatchability_predicate_sources()
+    sources = predicate_source_tree()
+    scanned = dispatchability_predicate_sources(sources)
+    labels = {label for label, _ in scanned}
+    clauses = module_relative(fire_dispatcher_module)
 
-    assert {label for label, _ in scanned} == {
-        "SubtreeClosure",
-        "plan_topology",
-        "scope_ready",
-        "scope_walker",
-        "run_pass",
-    }
+    assert {
+        f"{module_relative(issue_tree)}::SubtreeClosure",
+        f"{module_relative(topology)}::plan_topology",
+        f"{module_relative(scope_dispatcher)}::run_pass",
+        f"{clauses}::standing_exclusion",
+        f"{clauses}::launch",
+        f"{clauses}::_team_exclusion",
+        f"{clauses}::_route_exclusion",
+        f"{clauses}::_memory_exclusion",
+        f"{clauses}::_backoff_exclusion",
+        f"{clauses}::_in_flight_exclusion",
+        f"{clauses}::_delivery_exclusion",
+        f"{module_relative(scope_planning)}::read_scope_plan",
+        f"{module_relative(dispatch)}::blocker_keys",
+    } <= labels
+    for module in (scope_ready, scope_walker):
+        assert {
+            f"{module_relative(module)}::{node.name}"
+            for node in ast.walk(ast.parse(sources[module_relative(module)]))
+            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef)
+        } <= labels
     for label, source in scanned:
         assert outcome_references(source) == frozenset(), label
+
+
+def test_the_guard_reddens_when_a_reached_exclusion_clause_reads_a_fire_outcome():
+    """The derived scan is only worth its verdict if a plant inside it goes red.
+
+    The plant sits in a clause the pass reaches rather than in the pass
+    itself — the exact place a hand-listed scan would have missed — and the
+    scan is run over the planted sources, so what is proved is that the
+    derivation reaches that far.
+    """
+    member = next(iter(WorkflowOutcome))
+    relative = module_relative(fire_dispatcher_module)
+    anchor = (
+        "        team_keys = self._operation.team_keys_for_repo(self._repo_url)\n"
+        "        return (\n"
+    )
+    planted = (
+        f"        if issue.last_outcome is WorkflowOutcome.{member.name}:\n"
+        "            return None\n"
+    ) + anchor
+    sources = predicate_source_tree()
+    assert sources[relative].count(anchor) == 1
+    assert units_reading_a_fire_outcome(sources) == {}
+
+    sources[relative] = sources[relative].replace(anchor, planted)
+
+    assert units_reading_a_fire_outcome(sources) == {
+        f"{relative}::standing_exclusion": frozenset(
+            {WorkflowOutcome.__name__, member.name}
+        )
+    }
 
 
 def re_entry_board():
