@@ -7,6 +7,10 @@ from kodezart.domain.comment_markers import compose_comment_marker
 from kodezart.domain.tracker_writes import marked_comment_body
 from kodezart.types.domain.run_state import LaneRunState
 
+#: The marker purpose the lane's own branch-state record is keyed by, named
+#: once so a reader addressing that record never restates the string.
+LANE_RECORD_PURPOSE = "run_state"
+
 REENTRY_SECTION = """## Re-entry
 
 Resume the branch identified by the LOOP role and the record's branch field.
@@ -32,7 +36,9 @@ def render_lane_record(
     Criterion satisfaction stays on the owning criterion issues.
     """
     marker = compose_comment_marker(
-        prefixes=marker_prefixes, purpose="run_state", lane=record.lane_key
+        prefixes=marker_prefixes,
+        purpose=LANE_RECORD_PURPOSE,
+        lane=record.lane_key,
     )
     return marked_comment_body(
         marker=marker,
@@ -52,7 +58,7 @@ def parse_lane_record(
     their prose is not a substitute for the recorded fields.
     """
     marker = compose_comment_marker(
-        prefixes=marker_prefixes, purpose="run_state", lane=lane_key
+        prefixes=marker_prefixes, purpose=LANE_RECORD_PURPOSE, lane=lane_key
     )
     prefix = f"{marker}\n```json\n"
     suffix = f"\n```\n\n{REENTRY_SECTION}"

@@ -1,16 +1,29 @@
 """Retired terminal wrappers do not remove already public outcome values."""
 
+import ast
+import inspect
 import json
+import re
+import textwrap
 from typing import get_args
 
 import pytest
 from pydantic import BaseModel, ValidationError
 
 from kodezart.config.app import AppConfig
-from kodezart.domain.scope_terminal import BOUND_CONFIG_FIELD, stopping_rule_of
+from kodezart.domain import scope_terminal
+from kodezart.domain.errors import ScopeTerminalDerivationError
+from kodezart.domain.scope_terminal import (
+    BOUND_CONFIG_FIELD,
+    derive_scope_outcome,
+    lane_act_complete,
+    lane_residual,
+    stopping_rule_of,
+)
 from kodezart.types.domain.ci import CIStatus
 from kodezart.types.domain.organize_owner import OrganizeBoundEvidence
 from kodezart.types.domain.outcome import WorkflowOutcome
+from kodezart.types.domain.pr_state import PRLifecycle
 from kodezart.types.domain.run_state import LanePR
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.scope_terminal import (
@@ -558,3 +571,331 @@ def test_a_converged_scope_states_its_empty_residual_and_absent_stop_on_the_wire
     assert dumped["residual"]["items"] == ()
     assert "stoppingRule" in dumped
     assert dumped["stoppingRule"] is None
+
+
+MARKER_PREFIXES = {"run_state": "kz-run-state"}
+
+
+def open_pr_lane(index: int, **overrides: object) -> ScopeLaneEntry:
+    """One lane that did its own terminal act: an open PR whose checks ran."""
+    data: dict[str, object] = {
+        "lane_key": f"lane:{index}",
+        "issue_id": f"EXT/{index}",
+        "pr": LanePR(
+            url=f"https://example.invalid/pr/{index}",
+            number=index,
+            state=PRLifecycle.OPEN.value,
+        ),
+        "branch": f"kodezart/ext-{index}",
+        "checks": CIStatus.passed,
+    }
+    return lane(**(data | overrides))
+
+
+def parallel_open_lanes() -> tuple[ScopeLaneEntry, ...]:
+    """Fixture A: three lanes at once, every one holding an open pull request.
+
+    Nothing in the fixture says anything about what a person later does
+    with any of them, and the two stacked lanes share a base branch, which
+    is the ordinary shape of several pull requests open together.
+    """
+    return (
+        open_pr_lane(1),
+        open_pr_lane(2, checks=CIStatus.failed),
+        open_pr_lane(3, branch="kodezart/ext-2-stacked"),
+    )
+
+
+def one_lane_without_an_open_pull_request() -> tuple[ScopeLaneEntry, ...]:
+    """Fixture B: the same scope, with the middle lane's PR no longer open."""
+    return (
+        open_pr_lane(1),
+        open_pr_lane(
+            2,
+            pr=LanePR(
+                url="https://example.invalid/pr/2",
+                number=2,
+                state=PRLifecycle.CLOSED.value,
+            ),
+        ),
+        open_pr_lane(3),
+    )
+
+
+def test_every_lane_holding_an_open_pull_request_is_a_converged_scope() -> None:
+    lanes = parallel_open_lanes()
+
+    assert all(lane_act_complete(entry) for entry in lanes)
+
+    items = lane_residual(lanes, marker_prefixes=MARKER_PREFIXES)
+    assert items == ()
+
+    residual = ScopeResidual(items=items)
+    outcome = derive_scope_outcome(lanes=lanes, residual=residual, stopping_rule=None)
+    assert outcome is WorkflowOutcome.scope_converged
+
+    event = terminal(lanes=lanes, residual=residual, outcome=outcome)
+    assert event.outcome is WorkflowOutcome.scope_converged
+    assert event.residual.items == ()
+
+
+def test_a_lane_holding_no_open_pull_request_owes_one_residual_item() -> None:
+    lanes = one_lane_without_an_open_pull_request()
+
+    items = lane_residual(lanes, marker_prefixes=MARKER_PREFIXES)
+    assert len(items) == 1
+    owed = items[0]
+    assert owed.residual_class is ScopeResidualClass.LANE_WITHOUT_OPEN_PR
+    assert owed.issue_id == "EXT/2"
+    assert owed.detail == "lane:2"
+    assert owed.owner.kind is ScopeResidualOwnerKind.THIS_LANE
+    assert owed.owner.key == "lane:2"
+    assert owed.record.kind is SurfaceKind.MARKER_COMMENT
+    assert owed.record.issue_key == "EXT/2"
+    assert owed.record.marker == "[kz-run-state:lane%3A2]"
+    assert owed.act
+
+    residual = ScopeResidual(items=items)
+    outcome = derive_scope_outcome(lanes=lanes, residual=residual, stopping_rule=None)
+    assert outcome is WorkflowOutcome.scope_converged_with_residual
+
+    event = terminal(lanes=lanes, residual=residual, outcome=outcome)
+    assert event.stopping_rule is None
+    assert event.residual.by_class(ScopeResidualClass.LANE_WITHOUT_OPEN_PR) == (owed,)
+
+
+@pytest.mark.parametrize(
+    "checks",
+    [CIStatus.passed, CIStatus.failed, CIStatus.not_configured],
+)
+def test_a_watched_open_pull_request_completes_the_lane_act(
+    checks: CIStatus,
+) -> None:
+    assert lane_act_complete(open_pr_lane(1, checks=checks))
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"checks": CIStatus.not_monitored},
+        {
+            "pr": LanePR(
+                url="https://example.invalid/pr/1",
+                number=1,
+                state=PRLifecycle.CLOSED.value,
+            )
+        },
+        {
+            "report_state": LaneReportState.HALTED,
+            "outcome": WorkflowOutcome.loop_plateaued,
+            "pr": None,
+            "branch": None,
+            "checks": CIStatus.not_monitored,
+        },
+    ],
+)
+def test_an_unwatched_or_absent_open_pull_request_leaves_the_act_owed(
+    overrides: dict[str, object],
+) -> None:
+    entry = open_pr_lane(1, **overrides)
+
+    assert not lane_act_complete(entry)
+    assert lane_residual((entry,), marker_prefixes=MARKER_PREFIXES)
+
+
+def test_a_silent_lane_owes_no_lane_without_open_pr_item() -> None:
+    lanes = (open_pr_lane(1), silent_lane(lane_key="lane:2", issue_id="EXT/2"))
+
+    assert lane_residual(lanes, marker_prefixes=MARKER_PREFIXES) == ()
+
+
+def declared_stop() -> ScopeStoppingRule:
+    return ScopeStoppingRule(
+        config_field="KODEZART_ORGANIZE__MAX_ADMISSION_ROUNDS",
+        configured_value=3,
+        rounds_used=3,
+    )
+
+
+def owed_item() -> ScopeResidualItem:
+    return item(residual_class=ScopeResidualClass.LANE_WITHOUT_OPEN_PR)
+
+
+def blocking_item() -> ScopeResidualItem:
+    return item(
+        issue_id="EXT/44",
+        residual_class=ScopeResidualClass.LANE_UNREPORTED,
+        record=record(issue_key="EXT/44"),
+    )
+
+
+@pytest.mark.parametrize(
+    ("report_states", "items", "stopping_rule", "expected"),
+    [
+        (
+            (LaneReportState.UNREPORTED, LaneReportState.CONVERGED),
+            (owed_item(),),
+            declared_stop(),
+            WorkflowOutcome.scope_stopped_short,
+        ),
+        (
+            (LaneReportState.UNREPORTED,),
+            (),
+            None,
+            WorkflowOutcome.scope_stopped_short,
+        ),
+        (
+            (LaneReportState.IN_GAP,),
+            (owed_item(),),
+            declared_stop(),
+            WorkflowOutcome.scope_converged_with_residual,
+        ),
+        (
+            (LaneReportState.CONVERGED,),
+            (blocking_item(),),
+            declared_stop(),
+            WorkflowOutcome.scope_converged_with_residual,
+        ),
+        (
+            (LaneReportState.IN_GAP, LaneReportState.CONVERGED),
+            (),
+            None,
+            WorkflowOutcome.scope_stopped_short,
+        ),
+        (
+            (LaneReportState.HALTED,),
+            (owed_item(),),
+            None,
+            WorkflowOutcome.scope_stopped_short,
+        ),
+        (
+            (LaneReportState.CONVERGED,),
+            (blocking_item(),),
+            None,
+            WorkflowOutcome.scope_stopped_short,
+        ),
+        (
+            (LaneReportState.CONVERGED, LaneReportState.CONVERGED),
+            (),
+            None,
+            WorkflowOutcome.scope_converged,
+        ),
+        (
+            (LaneReportState.CONVERGED,),
+            (owed_item(),),
+            None,
+            WorkflowOutcome.scope_converged_with_residual,
+        ),
+    ],
+)
+def test_the_terminal_outcome_follows_one_fixed_order_of_questions(
+    report_states: tuple[LaneReportState, ...],
+    items: tuple[ScopeResidualItem, ...],
+    stopping_rule: ScopeStoppingRule | None,
+    expected: WorkflowOutcome,
+) -> None:
+    lanes = tuple(
+        silent_lane(lane_key=f"lane:{index}", issue_id=f"EXT/{index}")
+        if state is LaneReportState.UNREPORTED
+        else open_pr_lane(index, report_state=state)
+        for index, state in enumerate(report_states, start=1)
+    )
+
+    assert (
+        derive_scope_outcome(
+            lanes=lanes,
+            residual=ScopeResidual(items=items),
+            stopping_rule=stopping_rule,
+        )
+        is expected
+    )
+
+
+def test_a_declared_stop_owing_nothing_is_a_typed_refusal() -> None:
+    with pytest.raises(ScopeTerminalDerivationError) as raised:
+        derive_scope_outcome(
+            lanes=(open_pr_lane(1),),
+            residual=ScopeResidual(),
+            stopping_rule=declared_stop(),
+        )
+
+    assert raised.value.config_field == "KODEZART_ORGANIZE__MAX_ADMISSION_ROUNDS"
+
+
+def test_an_empty_scope_owing_nothing_has_converged() -> None:
+    assert (
+        derive_scope_outcome(lanes=(), residual=ScopeResidual(), stopping_rule=None)
+        is WorkflowOutcome.scope_converged
+    )
+
+
+def outcome_vocabulary() -> frozenset[str]:
+    """Every way the outcome enum can be named, read off the enum itself."""
+    return frozenset(
+        {WorkflowOutcome.__name__}
+        | {member.name for member in WorkflowOutcome}
+        | {member.value for member in WorkflowOutcome}
+    )
+
+
+def outcome_references(source: str) -> frozenset[str]:
+    """Every outcome the parsed *source* names, however it names it."""
+    vocabulary = outcome_vocabulary()
+    found: set[str] = set()
+    for node in ast.walk(ast.parse(textwrap.dedent(source))):
+        if isinstance(node, ast.Name) and node.id in vocabulary:
+            found.add(node.id)
+        if isinstance(node, ast.Attribute) and node.attr in vocabulary:
+            found.add(node.attr)
+        if isinstance(node, ast.ImportFrom | ast.Import):
+            found |= {
+                alias.name.rsplit(".", 1)[-1] for alias in node.names
+            } & vocabulary
+        if isinstance(node, ast.Constant) and node.value in vocabulary:
+            found.add(node.value)
+    return frozenset(found)
+
+
+def test_the_detector_flags_a_lane_predicate_that_reads_an_outcome() -> None:
+    """The positive control: the same scan over a predicate that does read one."""
+    member = next(iter(WorkflowOutcome))
+    reading_enum = f"""
+        from kodezart.types.domain.outcome import WorkflowOutcome
+
+        def complete(entry):
+            return entry.outcome is WorkflowOutcome.{member.name}
+    """
+    reading_wire_string = f"""
+        def complete(entry):
+            return entry.outcome == "{member.value}"
+    """
+
+    assert outcome_references(reading_enum) >= {
+        WorkflowOutcome.__name__,
+        member.name,
+    }
+    assert outcome_references(reading_wire_string) >= {member.value}
+
+
+def test_no_outcome_is_read_where_the_lane_act_is_decided() -> None:
+    """Whether a lane finished its act follows from its PR and its checks.
+
+    A fire that ended ``loop_plateaued`` and one that ended ``ci_passed``
+    are the same lane to this predicate: it has no access to either fact.
+    """
+    assert outcome_references(inspect.getsource(lane_act_complete)) == frozenset()
+
+
+def test_no_machine_outcome_is_a_function_of_a_landed_pull_request() -> None:
+    """The word the criterion forbids appears nowhere in the arithmetic.
+
+    Read as a word, not as a substring of a longer one, so the assertion
+    says what it means rather than accidentally forbidding a spelling that
+    merely contains it.
+    """
+    source = inspect.getsource(scope_terminal)
+    words = set(re.findall(r"[a-z]+", source.lower()))
+
+    assert "merge" not in words
+    assert "merged" not in words
+    assert "pr" in words

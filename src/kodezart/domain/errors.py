@@ -841,3 +841,14 @@ class OrganizeDecisionRequiredError(Exception):
         super().__init__(
             f"organize author for {issue_key!r} needs a decision: {question}"
         )
+
+
+class ScopeTerminalDerivationError(Exception):
+    """A scope terminal cannot be derived from the facts the run carries."""
+
+    def __init__(self, *, config_field: str, reason: str) -> None:
+        self.config_field = config_field
+        self.reason = reason
+        super().__init__(
+            f"the scope terminal under {config_field!r} could not be derived: {reason}"
+        )
