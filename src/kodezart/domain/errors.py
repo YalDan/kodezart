@@ -32,8 +32,21 @@ class GitSourceReadError(Exception):
         self.reason = reason
         super().__init__(f"source {ref!r}:{path!r} could not be read: {reason}")
 
+class AssertionComparisonError(Exception):
+    """A protected comparison cannot establish a readable, unambiguous pair."""
+
+    def __init__(self, *, source_ref: str, reason: str) -> None:
+        self.source_ref = source_ref
+        self.reason = reason
+        super().__init__(f"assertion comparison for {source_ref!r} refused: {reason}")
+
 class AuditEvidenceReadError(Exception):
     """A criterion's recorded grading cannot establish one current observation."""
+
+    def __init__(self, *, criterion_key: str, reason: str) -> None:
+        self.criterion_key = criterion_key
+        self.reason = reason
+        super().__init__(f"Evidence for {criterion_key!r} could not be read: {reason}")
 
 
 class WorkspaceError(Exception):
@@ -251,6 +264,15 @@ class CriterionReadError(Exception):
 
 class CriterionResolutionError(ValueError):
     """A native criterion key has no unique current child in the addressed family."""
+
+    def __init__(self, *, issue_key: str, criterion_key: str, reason: str) -> None:
+        self.issue_key = issue_key
+        self.criterion_key = criterion_key
+        self.reason = reason
+        super().__init__(
+            f"criterion {criterion_key!r} of {issue_key!r} could not be resolved: "
+            f"{reason}"
+        )
 
 class FireSpecEntryError(Exception):
     """The current subject lacks its machine completion or human approval."""

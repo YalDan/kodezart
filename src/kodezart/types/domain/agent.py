@@ -667,12 +667,19 @@ class ContentAuditFinding(CamelCaseModel):
     excise, and the gate blocks rather than redacting such a finding.
     """
 
+    category: Literal[RedactionCategory.ORG_PRIVATE] | DurabilityCategory = Field(
+        description=(
+            "org_private for an organization privacy disclosure; object_count for "
+            "a tracker-object count claim; identifier_roster for a tracker roster. "
+            "Durability reasons are distinct from privacy redaction."
+        ),
+    )
     start: int | None = Field(
         default=None,
         ge=0,
         description=(
-            "Character offset where the leaking span starts, counted from the "
-            "start of the payload. Absent when the leak is carried by a "
+            "Character offset where the finding span starts, counted from the "
+            "start of the payload. Absent when the finding is carried by a "
             "passage rather than a substring."
         ),
     )
@@ -1114,7 +1121,10 @@ DRAFT_CRITIQUE_SCHEMA: dict[str, object] = DraftCritiqueOutput.model_json_schema
 
 AUDIT_MANDATE_SCHEMA: dict[str, object] = AuditMandateJudgment.model_json_schema()
 
+AUDIT_OVERCLAIM_SCHEMA: dict[str, object] = AuditOverclaimJudgment.model_json_schema()
+
 AUDIT_CLAIM_SCHEMA: dict[str, object] = AuditClaimJudgment.model_json_schema()
+DETECTOR_REMOVAL_SCHEMA: dict[str, object] = DetectorRemovalJudgment.model_json_schema()
 
 ORGANIZE_ADMISSION_SCHEMA: dict[str, object] = AdmissionJudgment.model_json_schema()
 
@@ -1131,14 +1141,25 @@ WRITE_BACK_SCHEMA: dict[str, object] = WriteBackFinding.model_json_schema()
 #: wire-contract tests and the dispatch-site guard both read this rather
 #: than keeping their own list.
 WIRE_SCHEMAS: dict[str, dict[str, object]] = {
+    "NATIVE_WRITER_SCHEMA": NATIVE_WRITER_SCHEMA,
+    "AMENDMENT_JUDGMENT_SCHEMA": AMENDMENT_JUDGMENT_SCHEMA,
+    "AMENDMENT_TEXT_SCHEMA": AMENDMENT_TEXT_SCHEMA,
     "COMMIT_MESSAGE_SCHEMA": COMMIT_MESSAGE_SCHEMA,
     "ACCEPTANCE_CRITERIA_SCHEMA": ACCEPTANCE_CRITERIA_SCHEMA,
     "BRANCH_NAME_SCHEMA": BRANCH_NAME_SCHEMA,
     "GENERATED_CRITERIA_SCHEMA": GENERATED_CRITERIA_SCHEMA,
     "CRITERIA_VALIDATION_SCHEMA": CRITERIA_VALIDATION_SCHEMA,
     "TICKET_DRAFT_SCHEMA": TICKET_DRAFT_SCHEMA,
+    "REMEDIATION_SCHEMA": REMEDIATION_SCHEMA,
     "TICKET_REVIEW_SCHEMA": TICKET_REVIEW_SCHEMA,
     "PR_DESCRIPTION_SCHEMA": PR_DESCRIPTION_SCHEMA,
     "CONTENT_AUDIT_SCHEMA": CONTENT_AUDIT_SCHEMA,
     "DRAFT_CRITIQUE_SCHEMA": DRAFT_CRITIQUE_SCHEMA,
+    "ORGANIZE_ADMISSION_SCHEMA": ORGANIZE_ADMISSION_SCHEMA,
+    "ORGANIZE_PROPOSAL_SCHEMA": ORGANIZE_PROPOSAL_SCHEMA,
+    "WRITE_BACK_SCHEMA": WRITE_BACK_SCHEMA,
+    "AUDIT_CLAIM_SCHEMA": AUDIT_CLAIM_SCHEMA,
+    "AUDIT_OVERCLAIM_SCHEMA": AUDIT_OVERCLAIM_SCHEMA,
+    "DETECTOR_REMOVAL_SCHEMA": DETECTOR_REMOVAL_SCHEMA,
+    "AUDIT_MANDATE_SCHEMA": AUDIT_MANDATE_SCHEMA,
 }
