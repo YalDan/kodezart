@@ -593,3 +593,20 @@ class LaneRosterArityError(Exception):
             f"dispatched={self.dispatched_lane_keys!r}, "
             f"reported={self.reported_lane_keys!r}"
         )
+
+
+class OutboundFragmentDigestError(Exception):
+    """Raised when outbound admission is constructed without a fragment digest.
+
+    The digest of the configured private surface is part of the memo key, so
+    an empty one folds every configured surface onto the SAME key: a verdict
+    reached under one surface description would be served for another.  The
+    adapter refuses at construction rather than memoizing an answer whose
+    question it cannot state.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(
+            "outbound admission requires a non-empty fragment digest; the memo "
+            "key cannot distinguish configured surfaces without one"
+        )

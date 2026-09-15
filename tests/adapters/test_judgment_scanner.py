@@ -19,7 +19,7 @@ test that needed the model to be right would be measuring the wrong thing.
 
 import asyncio
 import inspect
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Callable, Sequence
 from pathlib import Path
 
 import pytest
@@ -27,11 +27,12 @@ import pytest
 from kodezart.adapters.agent_content_scanner import AgentContentScanner
 from kodezart.adapters.git.change_persister import GitChangePersister
 from kodezart.adapters.outbound_admission import OutboundAdmission
+from kodezart.adapters.reference_content_scanner import ReferenceContentScanner
 from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.composition.gating import build_outbound_gate
 from kodezart.config.app import AppConfig
 from kodezart.core.backoff import RetryPolicy
-from kodezart.core.errors import ContentScannerBootError
+from kodezart.core.errors import ContentScannerBootError, OutboundFragmentDigestError
 from kodezart.core.logging import get_logger
 from kodezart.core.outbound_write import gated_write
 from kodezart.core.protocols import ContentJudgment, OutboundContentGate
@@ -46,6 +47,7 @@ from kodezart.types.domain.gating import (
     WriterShape,
 )
 from kodezart.types.domain.operation import OperationConfig
+from kodezart.types.domain.privacy import PrivateSurface
 from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.session import (
     PermissionMode,
@@ -489,6 +491,23 @@ async def test_a_changed_fragment_digest_invalidates_the_answer() -> None:
             content_class=ContentClass.AUTHORED,
         )
     assert len(scanner.calls) == 2
+
+
+@pytest.mark.parametrize("fragment_digest", ["", "   \n "])
+def test_an_empty_fragment_digest_is_refused(fragment_digest: str) -> None:
+    """D: a blank digest would fold every configured surface onto one key."""
+    with pytest.raises(OutboundFragmentDigestError):
+        make_admission(fragment_digest=fragment_digest)
+
+
+def test_admission_cannot_be_constructed_without_a_fragment_digest() -> None:
+    """D: the digest has no default, so an omitted one never reaches the memo."""
+    construct: Callable[..., OutboundAdmission] = OutboundAdmission
+    with pytest.raises(TypeError):
+        construct(
+            references=ReferenceContentScanner(private_surface=PrivateSurface()),
+            judgment=FakeContentJudgment(hits=[]),
+        )
 
 
 async def test_a_changed_destination_is_a_different_question() -> None:

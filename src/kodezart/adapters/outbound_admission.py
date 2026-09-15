@@ -4,6 +4,7 @@ import re
 from collections.abc import Sequence
 
 from kodezart.adapters.reference_content_scanner import ReferenceContentScanner
+from kodezart.core.errors import OutboundFragmentDigestError
 from kodezart.core.protocols import ContentJudgment
 from kodezart.types.domain.credentials import CREDENTIAL_SHAPES
 from kodezart.types.domain.gating import (
@@ -55,8 +56,10 @@ class OutboundAdmission:
         *,
         references: ReferenceContentScanner,
         judgment: ContentJudgment,
-        fragment_digest: str = "",
+        fragment_digest: str,
     ) -> None:
+        if not fragment_digest.strip():
+            raise OutboundFragmentDigestError
         self._references = references
         self._judgment = judgment
         self._fragment_digest = fragment_digest

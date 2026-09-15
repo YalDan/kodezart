@@ -17,7 +17,7 @@ def make_admission(
     judgment: ContentJudgment | None = None,
     *,
     private_surface: PrivateSurface | None = None,
-    fragment_digest: str = "",
+    fragment_digest: str = "fragment-digest",
 ) -> OutboundAdmission:
     return OutboundAdmission(
         references=ReferenceContentScanner(
