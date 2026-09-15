@@ -1,29 +1,33 @@
 """Application configuration via Pydantic Settings."""
 
 from typing import Self
-
-from pydantic import Field, SecretStr, field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
-
-from kodezart.types.domain.credentials import CREDENTIAL_SHAPES
+from pydantic import Field, model_validator
+from pydantic_settings import (
+    BaseSettings,
+    EnvSettingsSource,
+    InitSettingsSource,
+    PydanticBaseSettingsSource,
+    SecretsSettingsSource,
+    SettingsConfigDict,
+)
+from kodezart.config.agent import AgentSettings
+from kodezart.config.audit import AuditSettings
+from kodezart.config.git import GitSettings
+from kodezart.config.http import HttpSettings
+from kodezart.config.job_queue import JobQueueSettings
+from kodezart.config.knowledge import KnowledgeSettings
+from kodezart.config.logging import LoggingSettings
+from kodezart.config.organize import OrganizeSettings
+from kodezart.config.tracker import TrackerSettings
+from kodezart.config.write_back import WriteBackSettings
 from kodezart.types.domain.dispatch import PassSignal
-from kodezart.types.domain.gating import (
-    PATTERNLESS_CATEGORIES,
-    GateVerdict,
-    RedactionCategory,
-)
-from kodezart.types.domain.prompts import PromptKey
-from kodezart.types.domain.session import (
-    KnowledgeGrant,
-    KnowledgeTransport,
-    SessionType,
-)
-from kodezart.types.domain.skills import SettingSource, SkillsMode, SkillsSelection
 from kodezart.types.domain.ticket_review import (
     DEFAULT_MAX_REVIEWS,
     TicketReviewMode,
 )
-from kodezart.types.domain.tracker import TrackerBackend
+
+
+
 
 
 class AppConfig(BaseSettings):
@@ -36,6 +40,7 @@ class AppConfig(BaseSettings):
 
     model_config = SettingsConfigDict(
         env_prefix="KODEZART_",
+        env_nested_delimiter="__",
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
@@ -48,21 +53,112 @@ class AppConfig(BaseSettings):
         hide_input_in_errors=True,
     )
 
-    project_name: str = Field(
-        default="kodezart",
-        description="FastAPI application title.",
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        """Keep normal precedence; expose retired settings to extra-field refusal."""
+
+        def retired(key: str, prefix: str) -> bool:
+            key, prefix = key.casefold(), prefix.casefold()
+            if not key.startswith(prefix):
+                return False
+            name = key.removeprefix(prefix)
+            return name in {
+                "tracker_mcp_server_name",
+                "tracker_mcp_server_url",
+                "tracker_mcp_auth_header",
+                "tracker_mcp_auth_scheme",
+                "tracker_token",
+                "tracker_timeout_seconds",
+                "tracker_mcp_call_timeout_seconds",
+                "tracker_mcp_sse_read_timeout_seconds",
+                "tracker_mcp_error_detail_limit",
+                "tracker_max_retries",
+                "tracker_retry_backoff_factor",
+                "tracker_surface_lease_seconds",
+                "organize_max_admission_rounds",
+                "organize_max_convergence_rounds",
+                "write_back_max_verify_rounds",
+                "union_check_cleanup_poll_interval_seconds",
+                "git_remote",
+                "git_base_url",
+                "clone_cache_dir",
+                "integration_workspace_dir",
+                "git_committer_name",
+                "git_committer_email",
+                "model",
+                "fallback_model",
+                "session_models",
+                "claude_output_style",
+                "claude_home_dir",
+                "setting_sources",
+                "skills_mode",
+                "skills_allowlist",
+                "project_name",
+                "debug",
+                "api_v1_prefix",
+                "log_level",
+                "log_pretty",
+                "queue_max_concurrent_runs_per_lane",
+                "queue_max_depth_per_lane",
+                "queue_terminal_retention_seconds",
+                "queue_event_buffer_retention_seconds",
+                "queue_event_buffer_capacity",
+                "deny_patterns",
+                "deny_pattern_verdicts",
+                "aggregate_count_token_distance",
+                "aggregate_identifier_roster_min_length",
+                "aggregate_tracker_object_nouns",
+                "aggregate_issue_identifier_pattern",
+                "aggregate_identifier_separator_pattern",
+            } or (name.startswith("knowledge_") and not name.startswith("knowledge__"))
+
+        def checked(source: PydanticBaseSettingsSource) -> InitSettingsSource:
+            values = source()
+            if isinstance(source, EnvSettingsSource):
+                for key, value in source.env_vars.items():
+                    if retired(key, source.env_prefix):
+                        # Preserve retired names for extra=forbid; never expose values.
+                        values[key] = value
+            if (
+                isinstance(source, SecretsSettingsSource)
+                and source.secrets_dir is not None
+            ):
+                for directory in source.secrets_paths:
+                    for path in directory.iterdir():
+                        key = path.name
+                        if retired(key, source.env_prefix):
+                            # Reject the retired name without reading its secret value.
+                            values[key] = None
+            return InitSettingsSource(settings_cls, init_kwargs=values)
+
+        return (
+            init_settings,
+            checked(env_settings),
+            checked(dotenv_settings),
+            checked(file_secret_settings),
+        )
+    organize: OrganizeSettings | None = None
+    write_back: WriteBackSettings | None = None
+    audit: AuditSettings | None = None
+    http: HttpSettings = Field(
+        default_factory=HttpSettings,
+        description="HTTP application metadata, debug behavior and route prefix.",
     )
-    debug: bool = Field(
-        default=False,
-        description="Enable /docs and /redoc Swagger UI.",
+    logging: LoggingSettings = Field(
+        default_factory=LoggingSettings,
+        description="Logging severity and output format.",
     )
+
     log_level: str = Field(
         default="INFO",
         description="Logging level (DEBUG, INFO, WARNING, ERROR).",
-    )
-    log_pretty: bool = Field(
-        default=False,
-        description="Colorized console output when true, JSON lines when false.",
     )
     api_v1_prefix: str = Field(
         default="/api/v1",
@@ -79,32 +175,13 @@ class AppConfig(BaseSettings):
             "one code path and the other on the next."
         ),
     )
-    clone_cache_dir: str = Field(
-        default="/tmp/kodezart-clones",
-        description="Local directory for bare repository cache.",
-    )
+    git: GitSettings = Field(default_factory=GitSettings)
     integration_workspace_dir: str = Field(
         default="/tmp/kodezart-integration",
         description=(
             "Local directory the base resolver builds integration refs in. "
             "One worktree per construction, removed when the ref is pushed."
         ),
-    )
-    git_base_url: str = Field(
-        default="https://github.com",
-        description="Base URL for resolving owner/repo shorthand.",
-    )
-    git_remote: str = Field(
-        default="origin",
-        description="Git remote name for fetch/push operations and remote-ref probes.",
-    )
-    git_committer_name: str = Field(
-        default="kodezart",
-        description="Git committer name for auto-generated commits.",
-    )
-    git_committer_email: str = Field(
-        default="kodezart@noreply.dev",
-        description="Git committer email for auto-generated commits.",
     )
     max_iterations: int = Field(
         default=5,
@@ -211,15 +288,11 @@ class AppConfig(BaseSettings):
     agentic_content_scanner_enabled: bool = Field(
         default=False,
         description=(
-            "Whether the judgment half of the outbound gate is registered. "
-            "Ships disabled: the mechanism ships and the policy is operator "
-            "configuration. Enabling it without an OperationConfig "
-            "private_surface description aborts boot rather than degrading."
+            "Whether organization-privacy judgment is enabled. Requires an "
+            "OperationConfig private_surface description when enabled. "
+            "Authored aggregate admission on durable PUBLIC/UNKNOWN writes "
+            "always runs independently of this setting."
         ),
-    )
-    model: str | None = Field(
-        default=None,
-        description="Claude model override. None uses SDK default.",
     )
     fallback_model: str | None = Field(
         default=None,
@@ -243,29 +316,6 @@ class AppConfig(BaseSettings):
         ),
     )
 
-    @field_validator("session_models", mode="before")
-    @classmethod
-    def _session_model_keys_name_prompt_keys(cls, value: object) -> object:
-        """Name every offending key, deliberately and safely.
-
-        The same carve-out ``knowledge_session_grants`` documents: the
-        legal vocabulary is the closed ``PromptKey`` enum, so an offender
-        is by definition not a secret, and naming it is what turns a typo
-        into a one-line fix instead of a key nothing ever reads.
-        """
-        if not isinstance(value, dict):
-            return value
-        legal = {member.value for member in PromptKey}
-        offending = [str(key) for key in value if str(key) not in legal]
-        if offending:
-            named = ", ".join(repr(entry) for entry in offending)
-            allowed = ", ".join(sorted(legal))
-            msg = (
-                f"session_models names no prompt function key: {named} "
-                f"(allowed: {allowed})"
-            )
-            raise ValueError(msg)
-        return value
 
     claude_output_style: str | None = Field(
         default=None,
@@ -298,6 +348,33 @@ class AppConfig(BaseSettings):
         ge=5.0,
         le=300.0,
         description="Seconds between CI status check polls.",
+    )
+    audit_sweep_interval_seconds: float = Field(
+        default=3600.0,
+        ge=60.0,
+        le=86400.0,
+        description="Seconds between audit delta ticks on the existing scheduler.",
+    )
+    audit_full_sweep_interval_seconds: float = Field(
+        default=86400.0,
+        ge=60.0,
+        le=86400.0,
+        description="Maximum seconds between full audit coverage attempts.",
+    )
+    delivery_max_concurrent_watches: int = Field(
+        default=4,
+        ge=1,
+        le=32,
+        description="Maximum lanes whose PR checks are watched concurrently.",
+    )
+    delivery_red_rerun_max_attempts: int = Field(
+        default=1,
+        ge=0,
+        le=5,
+        description=(
+            "Times a red check set is re-run at one sha "
+            "before the red is treated as reproduced."
+        ),
     )
     ci_poll_max_attempts: int = Field(
         default=60,
@@ -377,13 +454,7 @@ class AppConfig(BaseSettings):
         default="https://api.github.com",
         description="Base URL for code hosting platform REST API.",
     )
-    tracker: TrackerBackend = Field(
-        default=TrackerBackend.LINEAR,
-        description=(
-            "Which tracker adapter implements TrackerPort. Adding a backend "
-            "is a new adapter plus a member here — never a consumer change."
-        ),
-    )
+    tracker: TrackerSettings = Field(default_factory=TrackerSettings)
     tracker_mcp_server_name: str = Field(
         default="linear",
         description=(
@@ -394,20 +465,6 @@ class AppConfig(BaseSettings):
             "(KOD-170), whose verification refusals carry the same name."
         ),
     )
-    tracker_mcp_server_url: str = Field(
-        default="https://mcp.linear.app/mcp",
-        description="Endpoint of the vendor MCP server the tracker adapter dials.",
-    )
-    tracker_mcp_auth_header: str = Field(
-        default="Authorization",
-        min_length=1,
-        description="Request header the tracker credential is presented in.",
-    )
-    tracker_mcp_auth_scheme: str = Field(
-        default="Bearer",
-        min_length=1,
-        description="Scheme prefixing the tracker credential in its auth header.",
-    )
     tracker_token: SecretStr | None = Field(
         default=None,
         exclude=True,
@@ -415,34 +472,6 @@ class AppConfig(BaseSettings):
             "Tracker credential for the MCP server. Environment only, "
             "excluded from serialization, and masked in repr: a dumped "
             "config is copied into logs, fixtures and error payloads."
-        ),
-    )
-    tracker_timeout_seconds: float = Field(
-        default=30.0,
-        ge=5.0,
-        le=120.0,
-        description=(
-            "Timeout the tracker MCP transport gives one HTTP exchange with "
-            "the server, on every phase but the session stream's read: a "
-            "streamable-HTTP response stays open across quiet minutes, and "
-            "that phase is bounded by "
-            "KODEZART_TRACKER_MCP_SSE_READ_TIMEOUT_SECONDS instead."
-        ),
-    )
-    tracker_mcp_call_timeout_seconds: float = Field(
-        default=60.0,
-        ge=1.0,
-        le=120.0,
-        description=(
-            "Seconds one tracker MCP tool call may wait for its answer "
-            "before it is abandoned as the typed transport failure. A "
-            "session torn down mid-call — the shape a refused credential "
-            "arrives in, measured 2026-09-01 (KOD-171) — never sends the "
-            "close its reader is waiting for, so without this bound the "
-            "call in flight waits forever and the pass holding it never "
-            "returns. Separate from KODEZART_TRACKER_TIMEOUT_SECONDS: that "
-            "bound is the transport's, on the HTTP exchange; this one is the "
-            "session's, on the wait for one answer."
         ),
     )
     tracker_mcp_sse_read_timeout_seconds: float = Field(
@@ -460,28 +489,6 @@ class AppConfig(BaseSettings):
             "at all. The default is the value the session ran on while the "
             "bound came from a private vendor constant."
         ),
-    )
-    tracker_mcp_error_detail_limit: int = Field(
-        default=500,
-        ge=80,
-        le=8000,
-        description=(
-            "Characters of the server's OWN error text carried into a "
-            "tracker MCP transport failure. A refusal that drops the "
-            "vendor's diagnosis costs a whole boot cycle to recover it."
-        ),
-    )
-    tracker_max_retries: int = Field(
-        default=3,
-        ge=0,
-        le=10,
-        description="Maximum retry attempts for a transient tracker MCP failure.",
-    )
-    tracker_retry_backoff_factor: float = Field(
-        default=1.0,
-        ge=0.1,
-        le=30.0,
-        description="Base backoff multiplier in seconds for tracker MCP retries.",
     )
     tracker_claim_lease_seconds: float = Field(
         default=900.0,
@@ -684,6 +691,11 @@ class AppConfig(BaseSettings):
         le=300.0,
         description="Time one asset fetch may take before the fire fails to build.",
     )
+    knowledge: KnowledgeSettings = Field(
+        default_factory=KnowledgeSettings,
+        description="Knowledge session grants and typed MCP connection.",
+    )
+    agent: AgentSettings = Field(default_factory=AgentSettings)
     knowledge_mcp_token: SecretStr | None = Field(
         default=None,
         exclude=True,
@@ -705,39 +717,6 @@ class AppConfig(BaseSettings):
         ),
     )
 
-    @field_validator("knowledge_session_grants", mode="before")
-    @classmethod
-    def _grant_entries_name_session_types(cls, value: object) -> object:
-        """Name every offending grant entry, deliberately and safely.
-
-        ``hide_input_in_errors`` keeps raw input out of every validation
-        message because an arbitrary env value can be a credential.  A
-        grant entry is the one input that must come BACK in the error —
-        the boot contract names the offender and the legal values — and
-        it is safe to name, because the legal vocabulary is a closed enum
-        and an offender is by definition not a secret this field accepts.
-        So this field names its own offenders before the enum coercion
-        would hide them, and the global rule stays intact for every
-        other field.
-        """
-        if not isinstance(value, list):
-            return value
-        legal = {member.value for member in SessionType}
-        offending = [
-            str(entry)
-            for entry in value
-            if not isinstance(entry, SessionType)
-            if str(entry) not in legal
-        ]
-        if offending:
-            named = ", ".join(repr(entry) for entry in offending)
-            allowed = ", ".join(sorted(legal))
-            msg = (
-                f"knowledge_session_grants names no session type: {named} "
-                f"— the legal values are: {allowed}"
-            )
-            raise ValueError(msg)
-        return value
 
     knowledge_mcp_server_name: str = Field(
         default="notion",
@@ -870,15 +849,6 @@ class AppConfig(BaseSettings):
             "because a server that dies says why in its last lines."
         ),
     )
-    knowledge_mcp_interactive_auth_hosts: list[str] = Field(
-        default_factory=lambda: ["mcp.notion.com"],
-        description=(
-            "Hosts that authenticate interactively (OAuth) and accept no "
-            "static credential. A granted endpoint on one of these paired "
-            "with a static credential aborts boot, naming the conflict. The "
-            "vendor lives in the value, never in the schema."
-        ),
-    )
     checkpoint_url: str | None = Field(
         default=None,
         description="LangGraph checkpoint URL. :memory: or PostgreSQL.",
@@ -992,10 +962,6 @@ class AppConfig(BaseSettings):
             "operation config is loaded and its binding namespace is empty."
         ),
     )
-    claude_home_dir: str = Field(
-        default="~/.claude",
-        description="Host directory holding user-scope skills and plugins.",
-    )
     loop_plateau_window: int = Field(
         default=2,
         ge=2,
@@ -1005,6 +971,19 @@ class AppConfig(BaseSettings):
             "loop is considered plateaued and stops."
         ),
     )
+    queue: JobQueueSettings = Field(
+        default_factory=JobQueueSettings,
+        description="Job queue capacity and record/replay retention.",
+    )
+    @model_validator(mode="after")
+    def _audit_full_interval_includes_tick(self) -> Self:
+        """A full-coverage interval cannot be shorter than its scheduler tick."""
+        if self.audit_full_sweep_interval_seconds < self.audit_sweep_interval_seconds:
+            raise ValueError(
+                "audit_full_sweep_interval_seconds must not be shorter than "
+                "audit_sweep_interval_seconds"
+            )
+        return self
     queue_max_concurrent_runs_per_lane: int = Field(
         default=1,
         ge=1,
@@ -1046,211 +1025,11 @@ class AppConfig(BaseSettings):
         description="Events retained per job for replay on attach.",
     )
 
-    @model_validator(mode="after")
-    def _buffer_retention_within_record_retention(self) -> Self:
-        """Reject a replay buffer that would outlive its own job record.
 
-        Replayable frames for a job the registry can no longer name are
-        incoherent, so the configuration is rejected at boot rather than
-        clamped.
-        """
-        if self.queue_event_buffer_retention_seconds > (
-            self.queue_terminal_retention_seconds
-        ):
-            msg = (
-                "queue_event_buffer_retention_seconds "
-                f"({self.queue_event_buffer_retention_seconds}) must not exceed "
-                "queue_terminal_retention_seconds "
-                f"({self.queue_terminal_retention_seconds}): a replay buffer "
-                "cannot outlive the job record that names it"
-            )
-            raise ValueError(msg)
-        return self
 
-    @model_validator(mode="after")
-    def _reject_a_pattern_list_for_a_patternless_category(self) -> Self:
-        """A category describing the organisation can never carry a pattern.
 
-        Enforced rather than remembered: the deny-pattern mechanism defeats
-        itself for this class, because writing the pattern publishes the
-        string it protects.  A configuration that tries it aborts boot.
-        """
-        offenders = sorted(
-            category.value
-            for category in self.deny_patterns
-            if category in PATTERNLESS_CATEGORIES
-        )
-        if offenders:
-            msg = (
-                f"KODEZART_DENY_PATTERNS must not carry a pattern list for "
-                f"{', '.join(offenders)}: a pattern describing this "
-                f"organisation contains the string it describes, so it "
-                f"cannot live in a repository. Describe the class in "
-                f"OperationConfig.private_surface instead."
-            )
-            raise ValueError(msg)
-        return self
 
-    @model_validator(mode="after")
-    def _check_skills_configuration(self) -> Self:
-        """Reject the two contradictory skill configurations at load time."""
-        if self.skills_mode is SkillsMode.EXPLICIT and not self.skills_allowlist:
-            msg = (
-                "KODEZART_SKILLS_MODE=EXPLICIT requires a non-empty "
-                "KODEZART_SKILLS_ALLOWLIST"
-            )
-            raise ValueError(msg)
-        if self.skills_mode is not SkillsMode.EXPLICIT and self.skills_allowlist:
-            msg = (
-                f"KODEZART_SKILLS_ALLOWLIST must be empty when "
-                f"KODEZART_SKILLS_MODE={self.skills_mode.value}"
-            )
-            raise ValueError(msg)
-        return self
 
-    @model_validator(mode="after")
-    def _check_knowledge_grant_carries_its_credential(self) -> Self:
-        """A granted session without a credential aborts boot.
-
-        The alternative is a session configured with a knowledge server it
-        cannot authenticate against, which fails at the first tool call
-        with a vendor error rather than at boot with a configuration one.
-        """
-        if (
-            self.knowledge_session_grants
-            and self.knowledge_mcp_token is None
-            and self.knowledge_mcp_gateway_token is None
-        ):
-            granted = ", ".join(
-                session_type.value for session_type in self.knowledge_session_grants
-            )
-            msg = (
-                f"KODEZART_KNOWLEDGE_SESSION_GRANTS names {granted} but "
-                f"KODEZART_KNOWLEDGE_MCP_TOKEN is unset: a granted session would "
-                f"attach an unauthenticated knowledge server. Set the "
-                f"credential (or, for a self-hosted http server holding its "
-                f"own upstream token, KODEZART_KNOWLEDGE_MCP_GATEWAY_TOKEN), "
-                f"or empty the grant list."
-            )
-            raise ValueError(msg)
-        return self
-
-    @model_validator(mode="after")
-    def _check_the_knowledge_transport_reads_what_is_set(self) -> Self:
-        """A field the declared route never reads is refused, never ignored.
-
-        Configuration dialled by nothing is the defect class the knowledge
-        connection was refiled over, so a stray member under the wrong
-        transport aborts boot naming it.  Fields that carry shipped
-        defaults are judged by whether a source actually SET them — an
-        inert default under the other route is legal, an explicit value is
-        not.
-
-        BOTH arms ask the same question, of the set rather than of the
-        value.  A truthiness test cannot tell an unset list from one an
-        operator wrote ``[]`` into, so the empty collections a source
-        explicitly declared under the route that never reads them used to
-        pass as untouched defaults — the exact escape this docstring
-        promises to refuse.
-        """
-        if self.knowledge_mcp_transport is KnowledgeTransport.HTTP:
-            stray = [
-                name
-                for field, name in (
-                    ("knowledge_mcp_command", "KODEZART_KNOWLEDGE_MCP_COMMAND"),
-                    (
-                        "knowledge_mcp_credential_env",
-                        "KODEZART_KNOWLEDGE_MCP_CREDENTIAL_ENV",
-                    ),
-                    ("knowledge_mcp_args", "KODEZART_KNOWLEDGE_MCP_ARGS"),
-                    ("knowledge_mcp_env", "KODEZART_KNOWLEDGE_MCP_ENV"),
-                )
-                if field in self.model_fields_set
-            ]
-            if stray:
-                msg = (
-                    f"the http knowledge transport reads none of: "
-                    f"{', '.join(stray)}. These belong to the stdio "
-                    f"transport; set KODEZART_KNOWLEDGE_MCP_TRANSPORT=stdio "
-                    f"or unset them."
-                )
-                raise ValueError(msg)
-            return self
-        if self.knowledge_mcp_command is None:
-            msg = (
-                "KODEZART_KNOWLEDGE_MCP_TRANSPORT is stdio but "
-                "KODEZART_KNOWLEDGE_MCP_COMMAND is unset: there is no process "
-                "for a granted session to spawn."
-            )
-            raise ValueError(msg)
-        if self.knowledge_mcp_gateway_token is not None:
-            msg = (
-                "KODEZART_KNOWLEDGE_MCP_GATEWAY_TOKEN is set under the stdio "
-                "knowledge transport: a spawned process has no headers to "
-                "present a gateway credential in."
-            )
-            raise ValueError(msg)
-        stray = [
-            name
-            for field, name in (
-                ("knowledge_mcp_server_url", "KODEZART_KNOWLEDGE_MCP_SERVER_URL"),
-                ("knowledge_mcp_auth_header", "KODEZART_KNOWLEDGE_MCP_AUTH_HEADER"),
-                ("knowledge_mcp_auth_scheme", "KODEZART_KNOWLEDGE_MCP_AUTH_SCHEME"),
-            )
-            if field in self.model_fields_set
-        ]
-        if stray:
-            msg = (
-                f"the stdio knowledge transport has no endpoint and no "
-                f"headers, so it reads none of: {', '.join(stray)}. Unset "
-                f"them, or use the http transport."
-            )
-            raise ValueError(msg)
-        return self
-
-    @model_validator(mode="after")
-    def _check_a_stdio_credential_has_exactly_one_delivery_entry(self) -> Self:
-        """The credential and its landing entry are a pair, both or neither.
-
-        A credential with nowhere to land and an entry with nothing to
-        deliver are the two half-shapes; a delivery entry that collides
-        with a declared env member is two writers of one entry.
-        """
-        if self.knowledge_mcp_transport is not KnowledgeTransport.STDIO:
-            return self
-        if (
-            self.knowledge_mcp_token is not None
-            and self.knowledge_mcp_credential_env is None
-        ):
-            msg = (
-                "KODEZART_KNOWLEDGE_MCP_TOKEN is set under the stdio "
-                "knowledge transport but KODEZART_KNOWLEDGE_MCP_CREDENTIAL_ENV "
-                "is not: the credential has no environment entry to be "
-                "delivered under."
-            )
-            raise ValueError(msg)
-        if (
-            self.knowledge_mcp_credential_env is not None
-            and self.knowledge_mcp_token is None
-        ):
-            msg = (
-                "KODEZART_KNOWLEDGE_MCP_CREDENTIAL_ENV is set but "
-                "KODEZART_KNOWLEDGE_MCP_TOKEN is not: a delivery entry with "
-                "no credential to deliver."
-            )
-            raise ValueError(msg)
-        if (
-            self.knowledge_mcp_credential_env is not None
-            and self.knowledge_mcp_credential_env in self.knowledge_mcp_env
-        ):
-            msg = (
-                f"KODEZART_KNOWLEDGE_MCP_ENV already carries "
-                f"{self.knowledge_mcp_credential_env!r}, the entry "
-                f"KODEZART_KNOWLEDGE_MCP_CREDENTIAL_ENV names: two writers "
-                f"of one environment entry."
-            )
-            raise ValueError(msg)
-        return self
 
     def skills_selection(self) -> SkillsSelection:
         """The typed three-state selection threaded to executor sessions."""
