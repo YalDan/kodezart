@@ -22,6 +22,22 @@ def classification_surface(issue: TrackerIssue) -> WritableSurface:
     )
 
 
+def description_surface(issue: TrackerIssue) -> WritableSurface:
+    """The surface a body replacement on this issue addresses.
+
+    The same parentage rule as the classification above, asked of the
+    other half of a criterion's surface: its body is not separable from
+    its state and labels, so a criterion's description is written under
+    its whole sub-issue grant and an ordinary issue's under its own.
+    """
+    return WritableSurface(
+        kind=SurfaceKind.CRITERION_SUB_ISSUE
+        if "criterion" in issue.issue_labels
+        else SurfaceKind.ISSUE_DESCRIPTION,
+        ref=ScopeRef(kind=ScopeKind.ISSUE, key=issue.issue_key),
+    )
+
+
 def marked_comment_body(*, marker: str, body: str) -> str:
     """The caller's marker is one complete, nonempty first line."""
     if not marker or marker.splitlines() != [marker]:

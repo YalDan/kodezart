@@ -1,15 +1,20 @@
 """The write contract, run unchanged over every tracker implementation."""
 
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 
 import pytest
 
 from kodezart.core.protocols import TrackerPort
 from kodezart.domain.errors import DuplicateCommentMarkerError, StaleWriteError
 from kodezart.types.domain.operation import LifecycleStage, QueueState
+from kodezart.types.domain.surface import DescriptionWriteAuthority
 from kodezart.types.domain.tracker_writes import DescriptionEditResult
 from tests.tracker.conftest import APPROVED_ISSUE, CLAIMED_ISSUE
-from tests.tracker.lease_fixtures import lease_for_comment, leased_comment
+from tests.tracker.lease_fixtures import (
+    lease_for_comment,
+    lease_for_description,
+    leased_comment,
+)
 
 MARKER = "[fixture:lane:decision-1]"
 #: A holder for the cases whose refusal precedes the lease check: the
@@ -125,8 +130,23 @@ class TestCommentUpsert:
 
 
 class TestDescriptionEdit:
-    async def test_exact_description_is_replaced_preserving_other_issue_fields(
+    """Every case here writes the body under an actually held grant.
+
+    The port offers one description write and it is leased, so the grant
+    is acquired once per case, before the mutations each case counts.
+    """
+
+    @pytest.fixture
+    async def authority(
         self, tracker: TrackerPort
+    ) -> AsyncIterator[DescriptionWriteAuthority]:
+        async with lease_for_description(tracker, issue_key=APPROVED_ISSUE) as granted:
+            yield granted
+
+    async def test_exact_description_is_replaced_preserving_other_issue_fields(
+        self,
+        tracker: TrackerPort,
+        authority: DescriptionWriteAuthority,
     ):
         before = await tracker.update_issue(
             issue_key=APPROVED_ISSUE, body="before\nexpected anchor\nafter"
@@ -135,6 +155,7 @@ class TestDescriptionEdit:
             target=APPROVED_ISSUE,
             expected=before.body,
             replacement="before\nreplacement text\nafter",
+            authorization=authority,
         )
         after = await tracker.read_issue(issue_key=APPROVED_ISSUE)
         assert result is DescriptionEditResult.EDITED
@@ -144,22 +165,34 @@ class TestDescriptionEdit:
         assert after.title == before.title
 
     async def test_replacement_already_present_is_unchanged_without_writes(
-        self, tracker: TrackerPort, tracker_writes: Callable[[], tuple[object, ...]]
+        self,
+        tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
+        authority: DescriptionWriteAuthority,
     ):
         await tracker.edit_description(
-            target=APPROVED_ISSUE, expected="body", replacement="amended description"
+            target=APPROVED_ISSUE,
+            expected="body",
+            replacement="amended description",
+            authorization=authority,
         )
         before = await tracker.read_issue(issue_key=APPROVED_ISSUE)
         calls = tracker_writes()
         result = await tracker.edit_description(
-            target=APPROVED_ISSUE, expected="body", replacement="amended description"
+            target=APPROVED_ISSUE,
+            expected="body",
+            replacement="amended description",
+            authorization=authority,
         )
         assert result is DescriptionEditResult.UNCHANGED
         assert (await tracker.read_issue(issue_key=APPROVED_ISSUE)) == before
         assert tracker_writes() == calls
 
     async def test_neither_anchor_nor_replacement_refuses_without_writes(
-        self, tracker: TrackerPort, tracker_writes: Callable[[], tuple[object, ...]]
+        self,
+        tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
+        authority: DescriptionWriteAuthority,
     ):
         before = await tracker.read_issue(issue_key=APPROVED_ISSUE)
         calls = tracker_writes()
@@ -168,6 +201,7 @@ class TestDescriptionEdit:
                 target=APPROVED_ISSUE,
                 expected="outdated anchor",
                 replacement="amended description",
+                authorization=authority,
             )
         assert raised.value.target == APPROVED_ISSUE
         assert raised.value.expected == "outdated anchor"
@@ -177,7 +211,10 @@ class TestDescriptionEdit:
         assert tracker_writes() == calls
 
     async def test_changed_anchor_is_detected_on_a_fresh_tracker_read(
-        self, tracker: TrackerPort, tracker_writes: Callable[[], tuple[object, ...]]
+        self,
+        tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
+        authority: DescriptionWriteAuthority,
     ):
         initial = await tracker.read_issue(issue_key=APPROVED_ISSUE)
         await tracker.update_issue(issue_key=APPROVED_ISSUE, body="concurrent edit")
@@ -187,6 +224,7 @@ class TestDescriptionEdit:
                 target=APPROVED_ISSUE,
                 expected=initial.body,
                 replacement="amended description",
+                authorization=authority,
             )
         assert (
             await tracker.read_issue(issue_key=APPROVED_ISSUE)
@@ -194,14 +232,23 @@ class TestDescriptionEdit:
         assert tracker_writes() == calls
 
     async def test_overlapping_anchor_replay_leaves_desired_description_unchanged(
-        self, tracker: TrackerPort, tracker_writes: Callable[[], tuple[object, ...]]
+        self,
+        tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
+        authority: DescriptionWriteAuthority,
     ):
         first = await tracker.edit_description(
-            target=APPROVED_ISSUE, expected="body", replacement="new body"
+            target=APPROVED_ISSUE,
+            expected="body",
+            replacement="new body",
+            authorization=authority,
         )
         calls = tracker_writes()
         second = await tracker.edit_description(
-            target=APPROVED_ISSUE, expected="body", replacement="new body"
+            target=APPROVED_ISSUE,
+            expected="body",
+            replacement="new body",
+            authorization=authority,
         )
         assert first is DescriptionEditResult.EDITED
         assert second is DescriptionEditResult.UNCHANGED
@@ -211,13 +258,21 @@ class TestDescriptionEdit:
     @pytest.mark.parametrize("current", ["body", "unrelated", ""])
     @pytest.mark.parametrize("same", ["body", ""])
     async def test_identical_expected_and_replacement_is_a_write_free_noop(
-        self, tracker, tracker_writes, current, same
+        self,
+        tracker,
+        tracker_writes,
+        current,
+        same,
+        authority,
     ):
         before = await tracker.update_issue(issue_key=APPROVED_ISSUE, body=current)
         writes = tracker_writes()
         assert (
             await tracker.edit_description(
-                target=APPROVED_ISSUE, expected=same, replacement=same
+                target=APPROVED_ISSUE,
+                expected=same,
+                replacement=same,
+                authorization=authority,
             )
             is DescriptionEditResult.UNCHANGED
         )
@@ -236,13 +291,20 @@ class TestDescriptionEdit:
         ],
     )
     async def test_partial_or_incidental_target_never_authorizes_a_write(
-        self, tracker, tracker_writes, current
+        self,
+        tracker,
+        tracker_writes,
+        current,
+        authority,
     ):
         before = await tracker.update_issue(issue_key=APPROVED_ISSUE, body=current)
         writes = tracker_writes()
         with pytest.raises(StaleWriteError) as caught:
             await tracker.edit_description(
-                target=APPROVED_ISSUE, expected="body", replacement="new body"
+                target=APPROVED_ISSUE,
+                expected="body",
+                replacement="new body",
+                authorization=authority,
             )
         assert caught.value.target == APPROVED_ISSUE
         assert caught.value.expected == "body"
@@ -251,16 +313,26 @@ class TestDescriptionEdit:
 
     @pytest.mark.parametrize("current", ["body plus body", "", "é\r\nbody"])
     async def test_full_description_disambiguates_repeated_and_empty_text(
-        self, tracker, tracker_writes, current
+        self,
+        tracker,
+        tracker_writes,
+        current,
+        authority,
     ):
         await tracker.update_issue(issue_key=APPROVED_ISSUE, body=current)
         desired = "new " + current
         first = await tracker.edit_description(
-            target=APPROVED_ISSUE, expected=current, replacement=desired
+            target=APPROVED_ISSUE,
+            expected=current,
+            replacement=desired,
+            authorization=authority,
         )
         writes = tracker_writes()
         second = await tracker.edit_description(
-            target=APPROVED_ISSUE, expected=current, replacement=desired
+            target=APPROVED_ISSUE,
+            expected=current,
+            replacement=desired,
+            authorization=authority,
         )
         assert first is DescriptionEditResult.EDITED
         assert second is DescriptionEditResult.UNCHANGED

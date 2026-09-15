@@ -57,6 +57,8 @@ from tests.fakes import (
 from tests.prompts.sets import OPUS_SET, V5_SET
 from tests.prompts.test_organize_mandate_bindings import declared_operation
 from tests.prompts.test_prompt_wiring import load_registry
+from tests.tracker.conftest import FIXTURE_NOW
+from tests.tracker.lease_fixtures import leased_description
 from tests.tracker.test_linear_mcp_tracker import tracker_over
 
 SUBJECT = "subject/42"
@@ -372,7 +374,8 @@ async def test_surface_liveness_reads_never_retest_or_restamp():
     assert await admission.is_live(results["criterion/a"]) is False
     writes = list(source.issue_writes)
     assert (
-        await source.edit_description(
+        await leased_description(
+            source,
             target="criterion/a",
             expected=original_body,
             replacement="An amended Check body.",
@@ -1067,6 +1070,7 @@ def organized_port(request):
                 for revision in revisions
             ],
             state_types={"Todo": "unstarted", "Done": "completed"},
+            comment_clock=lambda: FIXTURE_NOW,
         )
         source = tracker_over(
             server,
@@ -1125,7 +1129,8 @@ async def test_port_criterion_changes_use_only_surface_digests_for_parent_gap(
         )
     elif change == "unchanged_body":
         assert (
-            await source.edit_description(
+            await leased_description(
+                source,
                 target=child_key,
                 expected="prior body no longer present",
                 replacement=before.body,

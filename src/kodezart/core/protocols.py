@@ -1065,11 +1065,15 @@ class TrackerPort(
         body: str,
         team_key: str,
         priority: IssuePriority,
+        holder: str,
     ) -> TrackerIssue:
         """Find the persisted identity before creating an issue for it.
 
         Team and priority govern creation. On a hit, converge title and
-        description, with description changes going through edit_description.
+        description, with description changes going through edit_description
+        under *holder*: this call carries no authority of its own, so a
+        convergence the caller does not hold the found issue's description
+        surface for raises ``SurfaceLeaseError`` before any mutation.
         Duplicate identities refuse before any write. Callers serialize
         concurrent creation of the same identity. The backend owns the
         identity carrier; descriptions retain its raw representation.
@@ -1110,7 +1114,7 @@ class TrackerPort(
         target: str,
         expected: str,
         replacement: str,
-        authorization: DescriptionWriteAuthority | None = None,
+        authorization: DescriptionWriteAuthority,
     ) -> DescriptionEditResult:
         """Replace the complete expected description; state moves separately.
 
@@ -1125,9 +1129,16 @@ class TrackerPort(
         off a principal's own text is not authority to replace it: what
         the machine may rewrite is what the tracker records as its own.
 
-        Explicit authorization selects its own ISSUE_DESCRIPTION or
-        CRITERION_SUB_ISSUE grant. Reject a target mismatch before reads,
-        and repeat expected source and lease checks on every unsent retry.
+        The authorization is required, and it carries the only description
+        write this port offers: there is no unleased second path to the
+        same surface, so a run holding some other surface of the issue —
+        one of its marker-keyed comments, say — has no way to rewrite the
+        body. The authority names its own ISSUE_DESCRIPTION or
+        CRITERION_SUB_ISSUE grant. An absent, expired or different holder
+        raises ``SurfaceLeaseError`` carrying the surface and the observed
+        current holder, before any mutation is sent. Reject a target
+        mismatch before reads, and repeat expected source and lease checks
+        on every unsent retry.
 
         No write on this port carries a body and a workflow state
         together, and a backend offering to do both in one act is refused

@@ -7,6 +7,7 @@ from kodezart.types.domain.tracker import EnsureAction, MappingKind, MappingRef
 from kodezart.types.domain.tracker_writes import DescriptionEditResult
 from tests.fakes import FakeMcpIssue, FakeTrackerPort
 from tests.tracker.conftest import fixture_server
+from tests.tracker.lease_fixtures import leased_description
 
 PARENT = "parent/42"
 FIRST = "condition/alpha"
@@ -127,8 +128,8 @@ async def test_parent_rewrite_preserves_every_criterion_key_state_and_evidence(
     assert any(EVIDENCE in criterion.body for criterion in before)
     assert {criterion.state_name for criterion in before} == {"Backlog", "Done"}
 
-    result = await tracker.edit_description(
-        target=PARENT, expected=parent.body, replacement=replacement
+    result = await leased_description(
+        tracker, target=PARENT, expected=parent.body, replacement=replacement
     )
 
     assert result is DescriptionEditResult.EDITED

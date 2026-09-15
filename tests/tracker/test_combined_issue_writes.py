@@ -28,10 +28,13 @@ from kodezart.types.domain.operation import LifecycleStage
 from tests.fakes import FakeLinearMcpServer
 from tests.tracker.conftest import (
     APPROVED_ISSUE,
+    FIXTURE_NOW,
+    ISSUE_LABELS,
     QUEUE_STATE_LABELS,
     WORKFLOW_STATE_NAMES,
     fixture_server,
 )
+from tests.tracker.lease_fixtures import leased_description
 from tests.tracker.marker_config import MARKER_PREFIXES
 
 SAVE_ISSUE = "save_issue"
@@ -48,7 +51,7 @@ def adapter(server: FakeLinearMcpServer) -> LinearMcpTracker:
     """The shipped adapter, typed concretely: this module names the vendor."""
     return LinearMcpTracker(
         marker_prefixes=MARKER_PREFIXES,
-        issue_labels={},
+        issue_labels=ISSUE_LABELS,
         criteria_stage_label_key=None,
         scope_labels={},
         caller=server,
@@ -56,6 +59,7 @@ def adapter(server: FakeLinearMcpServer) -> LinearMcpTracker:
         workflow_state_names=WORKFLOW_STATE_NAMES,
         team_identifiers={"engineering": "fixture-team"},
         retry=RetryPolicy(attempts=1, initial_delay=1.0),
+        clock=lambda: FIXTURE_NOW,
         ledger=SelfWriteLedger(),
     )
 
@@ -74,8 +78,11 @@ class TestTheTwoWritesAsSent:
     ) -> None:
         current = await adapter.read_issue(issue_key=APPROVED_ISSUE)
 
-        await adapter.edit_description(
-            target=APPROVED_ISSUE, expected=current.body, replacement=REPLACEMENT
+        await leased_description(
+            adapter,
+            target=APPROVED_ISSUE,
+            expected=current.body,
+            replacement=REPLACEMENT,
         )
         await adapter.set_workflow_state(
             issue_key=APPROVED_ISSUE, stage=LifecycleStage.IN_REVIEW
@@ -94,7 +101,8 @@ class TestTheTwoWritesAsSent:
     ) -> None:
         """The edit is first so its refusal stops the pair before the move."""
         with pytest.raises(StaleWriteError):
-            await adapter.edit_description(
+            await leased_description(
+                adapter,
                 target=APPROVED_ISSUE,
                 expected="a body nobody ever wrote",
                 replacement=REPLACEMENT,

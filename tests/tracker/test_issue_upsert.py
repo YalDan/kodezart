@@ -13,13 +13,21 @@ from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.tracker import IssuePriority, IssueQuery, TrackerIssue
 from tests.fakes import FakeTrackerPort
 from tests.tracker.conftest import FIXTURE_NOW, linear_over_fake_mcp
+from tests.tracker.lease_fixtures import lease_for_description
 
 SCOPE = ScopeRef(kind=ScopeKind.PROJECT, key="scope-one")
 DELIVERABLE = "deliverable-one"
 BODY = "The user's description."
+#: A holder for the cases whose convergence rewrites no body: the port
+#: never reaches the description write, so naming a grant it would have
+#: needed would say this case is about one.
+UNHELD_HOLDER = "job-without-a-lease"
 
 
-async def upsert(tracker: TrackerPort, **changes: object) -> TrackerIssue:
+async def upsert(
+    tracker: TrackerPort, *, holder: str = UNHELD_HOLDER, **changes: object
+) -> TrackerIssue:
+    """Converge the fixture identity under *holder*'s description grant."""
     values = {
         "scope_key": SCOPE,
         "deliverable_key": DELIVERABLE,
@@ -29,7 +37,7 @@ async def upsert(tracker: TrackerPort, **changes: object) -> TrackerIssue:
         "priority": IssuePriority.HIGH,
         **changes,
     }
-    return await tracker.upsert_issue(**values)
+    return await tracker.upsert_issue(**values, holder=holder)
 
 
 async def issue_count(tracker: TrackerPort) -> int:
@@ -104,7 +112,13 @@ async def test_changed_hit_uses_guarded_description_edit_and_updates_title(
     first = await upsert(tracker)
     guarded = AsyncMock(wraps=tracker.edit_description)
     monkeypatch.setattr(tracker, "edit_description", guarded)
-    second = await upsert(tracker, title="Changed title", body="Changed description")
+    async with lease_for_description(tracker, issue_key=first.issue_key) as authority:
+        second = await upsert(
+            tracker,
+            title="Changed title",
+            body="Changed description",
+            holder=authority.holder,
+        )
     assert second.issue_key == first.issue_key
     assert second.title == "Changed title"
     assert second.body.endswith("Changed description")
@@ -234,12 +248,23 @@ async def test_changed_upsert_replay_keeps_one_issue_and_performs_zero_second_wr
     tracker, tracker_writes
 ):
     first = await upsert(tracker, body="body plus body")
-    amended = await upsert(tracker, body="new body plus body", title="Revised")
-    writes = tracker_writes()
-    repeated = await upsert(tracker, body="new body plus body", title="Revised")
-    assert first.issue_key == amended.issue_key == repeated.issue_key
-    assert repeated == amended
-    assert tracker_writes() == writes
+    async with lease_for_description(tracker, issue_key=first.issue_key) as authority:
+        amended = await upsert(
+            tracker,
+            body="new body plus body",
+            title="Revised",
+            holder=authority.holder,
+        )
+        writes = tracker_writes()
+        repeated = await upsert(
+            tracker,
+            body="new body plus body",
+            title="Revised",
+            holder=authority.holder,
+        )
+        assert first.issue_key == amended.issue_key == repeated.issue_key
+        assert repeated == amended
+        assert tracker_writes() == writes
 
 
 async def test_upsert_stale_full_body_cannot_edit_a_matching_fragment(
@@ -260,7 +285,15 @@ async def test_upsert_stale_full_body_cannot_edit_a_matching_fragment(
         return await edit(**arguments)
 
     monkeypatch.setattr(tracker, "edit_description", interleaved)
-    with pytest.raises(StaleWriteError):
-        await upsert(tracker, body="A replacement", title="Must not be applied")
-    assert await tracker.read_issue(issue_key=original.issue_key) == foreign
-    assert tracker_writes() == writes
+    async with lease_for_description(
+        tracker, issue_key=original.issue_key
+    ) as authority:
+        with pytest.raises(StaleWriteError):
+            await upsert(
+                tracker,
+                body="A replacement",
+                title="Must not be applied",
+                holder=authority.holder,
+            )
+        assert await tracker.read_issue(issue_key=original.issue_key) == foreign
+        assert tracker_writes() == writes

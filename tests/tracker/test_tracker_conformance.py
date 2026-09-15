@@ -75,7 +75,11 @@ from tests.tracker.conftest import (
     TrackerWorkspace,
     observed_writes,
 )
-from tests.tracker.lease_fixtures import leased_comment
+from tests.tracker.lease_fixtures import (
+    lease_for_description,
+    leased_comment,
+    leased_description,
+)
 from tests.tracker.marker_config import MARKER_PREFIXES
 
 LEASE_SECONDS = 600.0
@@ -159,6 +163,9 @@ def aliasing_writes(
 #: under the writing run's job id.
 JOB_A = "job-a"
 JOB_B = "job-b"
+#: A third run, for the case that needs one holder per surface of the
+#: same issue: two names cannot say that three surfaces are held apart.
+JOB_C = "job-c"
 #: The two holder vocabularies, side by side: a deployment's process
 #: identity holds a fire claim, a run's job id holds a write lease.
 PROCESS_HOLDER = "kodezart-process"
@@ -1581,6 +1588,167 @@ class TestALeasedWriteWithoutItsHolder:
         assert tracker_writes() != written
 
 
+#: The two marker-keyed comments of the issue whose description the cases
+#: below reach for.  Named as a table so each refusal is stated once over
+#: both of them: "a holder of one may not write the others" is a rule
+#: about the addressing, not about whichever marker a case picked.
+MARKER_SURFACES: Mapping[str, WritableSurface] = {
+    "A": MARKER_A,
+    "B": MARKER_B,
+}
+
+
+class TestOneIssuesThreeSurfacesAreHeldApart:
+    """One issue's description and its two marker comments, held separately.
+
+    Same issue, same read, one field apart — which is exactly why the
+    description is the surface worth stating over its neighbours.  A
+    holder of marker A has already been granted something on this issue
+    and has the body in hand from its own read; if the body had a second,
+    unleased way in, holding the comment would be holding the issue.  It
+    has one way in and it is leased, so it does not.
+
+    Each refusal is observed either side by mutations, because a refusal
+    raised after the backend took the write is not a refusal.
+    """
+
+    @pytest.mark.parametrize("held", sorted(MARKER_SURFACES))
+    async def test_a_marker_holder_is_refused_the_description(
+        self,
+        tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
+        held: str,
+    ) -> None:
+        """A grant over one comment carries nothing over the body."""
+        await tracker.acquire_surfaces(
+            surfaces=frozenset({MARKER_SURFACES[held]}),
+            holder=JOB_A,
+            lease_seconds=LEASE_SECONDS,
+        )
+        before = await tracker.read_issue(issue_key=CLAIMED_ISSUE)
+        written = tracker_writes()
+
+        with pytest.raises(SurfaceLeaseError) as refused:
+            await tracker.edit_description(
+                target=CLAIMED_ISSUE,
+                expected=before.body,
+                replacement="a body a neighbouring holder wanted to write",
+                authorization=DescriptionWriteAuthority(
+                    holder=JOB_A, surface=CLAIMED_DESCRIPTION
+                ),
+            )
+
+        assert refused.value.surface_kind == SurfaceKind.ISSUE_DESCRIPTION.value
+        assert refused.value.scope_key == CLAIMED_ISSUE
+        assert refused.value.marker is None
+        assert refused.value.current_holder is None
+        assert (await tracker.read_issue(issue_key=CLAIMED_ISSUE)).body == before.body
+        assert tracker_writes() == written
+
+    @pytest.mark.parametrize("wanted", sorted(MARKER_SURFACES))
+    async def test_the_description_holder_is_refused_each_marker_comment(
+        self,
+        tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
+        wanted: str,
+    ) -> None:
+        """The same independence read from the other side of the issue."""
+        surface = MARKER_SURFACES[wanted]
+        await tracker.acquire_surfaces(
+            surfaces=frozenset({CLAIMED_DESCRIPTION}),
+            holder=JOB_C,
+            lease_seconds=LEASE_SECONDS,
+        )
+        await tracker.acquire_surfaces(
+            surfaces=frozenset({surface}),
+            holder=JOB_A,
+            lease_seconds=LEASE_SECONDS,
+        )
+        before = await tracker.list_comments(issue_key=CLAIMED_ISSUE)
+        written = tracker_writes()
+
+        with pytest.raises(SurfaceLeaseError) as refused:
+            await tracker.upsert_comment(
+                target=CLAIMED_ISSUE,
+                marker=wanted,
+                body="a record the body's holder wanted to keep",
+                holder=JOB_C,
+            )
+
+        assert refused.value.surface_kind == SurfaceKind.MARKER_COMMENT.value
+        assert refused.value.marker == surface.marker
+        assert refused.value.current_holder == JOB_A
+        assert await tracker.list_comments(issue_key=CLAIMED_ISSUE) == before
+        assert tracker_writes() == written
+
+    async def test_the_body_has_no_write_that_omits_its_grant(
+        self,
+        tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
+    ) -> None:
+        """The description write names a grant or it does not run at all.
+
+        The hole this closes was not a wrong holder but a missing one: an
+        authorization that could be left out made the lease opt-in, and a
+        run holding a marker comment rewrote the body by simply omitting
+        it.  Asked here of the write itself rather than of the holder,
+        because the second, unleased path is what a holder of a
+        neighbouring surface would have reached for.
+        """
+        before = await tracker.read_issue(issue_key=CLAIMED_ISSUE)
+        written = tracker_writes()
+
+        with pytest.raises(TypeError):
+            await tracker.edit_description(
+                target=CLAIMED_ISSUE,
+                expected=before.body,
+                replacement="a body written with no grant named",
+            )
+
+        assert (await tracker.read_issue(issue_key=CLAIMED_ISSUE)).body == before.body
+        assert tracker_writes() == written
+
+    async def test_three_holders_each_write_their_own_surface_of_one_issue(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        """Independently held is independently WRITABLE, or it says nothing."""
+        await tracker.acquire_surfaces(
+            surfaces=frozenset({MARKER_A}), holder=JOB_A, lease_seconds=LEASE_SECONDS
+        )
+        await tracker.acquire_surfaces(
+            surfaces=frozenset({MARKER_B}), holder=JOB_B, lease_seconds=LEASE_SECONDS
+        )
+        await tracker.acquire_surfaces(
+            surfaces=frozenset({CLAIMED_DESCRIPTION}),
+            holder=JOB_C,
+            lease_seconds=LEASE_SECONDS,
+        )
+        before = await tracker.read_issue(issue_key=CLAIMED_ISSUE)
+
+        first = await tracker.upsert_comment(
+            target=CLAIMED_ISSUE, marker="A", body="A's record", holder=JOB_A
+        )
+        second = await tracker.upsert_comment(
+            target=CLAIMED_ISSUE, marker="B", body="B's record", holder=JOB_B
+        )
+        edited = await tracker.edit_description(
+            target=CLAIMED_ISSUE,
+            expected=before.body,
+            replacement="a body its own holder wrote",
+            authorization=DescriptionWriteAuthority(
+                holder=JOB_C, surface=CLAIMED_DESCRIPTION
+            ),
+        )
+
+        assert edited is DescriptionEditResult.EDITED
+        assert (await tracker.read_issue(issue_key=CLAIMED_ISSUE)).body == (
+            "a body its own holder wrote"
+        )
+        assert first.body.splitlines() == ["A", "A's record"]
+        assert second.body.splitlines() == ["B", "B's record"]
+
+
 class TestAssets:
     """Attachment and document metadata, and document reads."""
 
@@ -2508,7 +2676,8 @@ class TestTheEditAndTheTransitionAreSeparateWrites:
     ) -> None:
         before = await tracker.read_issue(issue_key=APPROVED_ISSUE)
 
-        edited = await tracker.edit_description(
+        edited = await leased_description(
+            tracker,
             target=APPROVED_ISSUE,
             expected=before.body,
             replacement="a body written by its owner",
@@ -2540,18 +2709,22 @@ class TestTheEditAndTheTransitionAreSeparateWrites:
     ) -> None:
         """The edit goes first precisely so its refusal can stop the pair."""
         before = await tracker.read_issue(issue_key=APPROVED_ISSUE)
-        written = tracker_writes()
+        async with lease_for_description(
+            tracker, issue_key=APPROVED_ISSUE
+        ) as authority:
+            written = tracker_writes()
 
-        with pytest.raises(StaleWriteError):
-            await tracker.edit_description(
-                target=APPROVED_ISSUE,
-                expected="a body nobody ever wrote",
-                replacement="a body written by its owner",
-            )
+            with pytest.raises(StaleWriteError):
+                await tracker.edit_description(
+                    target=APPROVED_ISSUE,
+                    expected="a body nobody ever wrote",
+                    replacement="a body written by its owner",
+                    authorization=authority,
+                )
 
-        after = await tracker.read_issue(issue_key=APPROVED_ISSUE)
-        assert (after.body, after.state_name) == (before.body, before.state_name)
-        assert tracker_writes() == written
+            after = await tracker.read_issue(issue_key=APPROVED_ISSUE)
+            assert (after.body, after.state_name) == (before.body, before.state_name)
+            assert tracker_writes() == written
 
 
 class TestApprovalLabelWrites:
@@ -2689,21 +2862,28 @@ class TestPrincipalAuthoredBodies:
         tracker: TrackerPort,
         tracker_writes: Callable[[], tuple[object, ...]],
     ) -> None:
-        """The anchor matches, the lease is irrelevant, and nothing moves."""
+        """The anchor matches, the grant is held, and nothing moves.
+
+        Holding the surface is what makes this case about authorship:
+        the writer has every authority this port asks of it and the
+        principal's words are still not its to replace.
+        """
         before = await tracker.read_issue(issue_key=ASSET_ISSUE)
-        written = tracker_writes()
+        async with lease_for_description(tracker, issue_key=ASSET_ISSUE) as authority:
+            written = tracker_writes()
 
-        with pytest.raises(PrincipalAuthoredSurfaceError) as refused:
-            await tracker.edit_description(
-                target=ASSET_ISSUE,
-                expected=before.body,
-                replacement="a body this writer would have preferred",
-            )
+            with pytest.raises(PrincipalAuthoredSurfaceError) as refused:
+                await tracker.edit_description(
+                    target=ASSET_ISSUE,
+                    expected=before.body,
+                    replacement="a body this writer would have preferred",
+                    authorization=authority,
+                )
 
-        assert refused.value.scope_key == ASSET_ISSUE
-        after = await tracker.read_issue(issue_key=ASSET_ISSUE)
-        assert after.body == before.body
-        assert tracker_writes() == written
+            assert refused.value.scope_key == ASSET_ISSUE
+            after = await tracker.read_issue(issue_key=ASSET_ISSUE)
+            assert after.body == before.body
+            assert tracker_writes() == written
 
     async def test_a_raw_body_update_cannot_replace_it_either(
         self,
@@ -2728,17 +2908,19 @@ class TestPrincipalAuthoredBodies:
     ) -> None:
         """Writing the bytes already there takes nothing from their author."""
         before = await tracker.read_issue(issue_key=ASSET_ISSUE)
-        written = tracker_writes()
+        async with lease_for_description(tracker, issue_key=ASSET_ISSUE) as authority:
+            written = tracker_writes()
 
-        result = await tracker.edit_description(
-            target=ASSET_ISSUE,
-            expected=before.body,
-            replacement=before.body,
-        )
+            result = await tracker.edit_description(
+                target=ASSET_ISSUE,
+                expected=before.body,
+                replacement=before.body,
+                authorization=authority,
+            )
 
-        assert result is DescriptionEditResult.UNCHANGED
-        assert (await tracker.read_issue(issue_key=ASSET_ISSUE)).body == before.body
-        assert tracker_writes() == written
+            assert result is DescriptionEditResult.UNCHANGED
+            assert (await tracker.read_issue(issue_key=ASSET_ISSUE)).body == before.body
+            assert tracker_writes() == written
 
     async def test_a_machine_authored_body_is_still_replaceable(
         self,
@@ -2747,7 +2929,8 @@ class TestPrincipalAuthoredBodies:
         """The refusal reaches one surface, not every description write."""
         before = await tracker.read_issue(issue_key=CLAIMED_ISSUE)
 
-        result = await tracker.edit_description(
+        result = await leased_description(
+            tracker,
             target=CLAIMED_ISSUE,
             expected=before.body,
             replacement="a body this writer wrote and may rewrite",

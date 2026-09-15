@@ -118,6 +118,7 @@ from kodezart.domain.tracker_writes import (
     classification_surface,
     comment_under_marker,
     description_replacement,
+    description_surface,
     marked_comment_body,
     require_expected_comment,
 )
@@ -2086,6 +2087,7 @@ class LinearMcpTracker:
         body: str,
         team_key: str,
         priority: IssuePriority,
+        holder: str,
     ) -> TrackerIssue:
         identity = IssueIdentity(scope_key=scope_key, deliverable_key=deliverable_key)
         self._issue_identity.require_prefix()
@@ -2099,7 +2101,12 @@ class LinearMcpTracker:
             )
         if current.body != content:
             await self.edit_description(
-                target=current.issue_key, expected=current.body, replacement=content
+                target=current.issue_key,
+                expected=current.body,
+                replacement=content,
+                authorization=DescriptionWriteAuthority(
+                    holder=holder, surface=description_surface(current)
+                ),
             )
         if current.title != title:
             await self.update_issue(issue_key=current.issue_key, title=title)
@@ -2170,86 +2177,82 @@ class LinearMcpTracker:
         target: str,
         expected: str,
         replacement: str,
-        authorization: DescriptionWriteAuthority | None = None,
+        authorization: DescriptionWriteAuthority,
     ) -> DescriptionEditResult:
-        """Assert the complete expected body before a description-only write."""
-        if authorization is not None:
-            surface = authorization.surface
-            if surface.ref.key != target:
-                raise ValueError("description authority addresses another target")
-            self._classification_label(
-                "criterion", stops="cannot select protected description authority"
-            )
-            original = await self.read_planning_issue(issue_key=target)
+        """Assert the complete expected body before a description-only write.
 
-            def require_surface(issue: TrackerIssue) -> None:
-                if (
-                    surface.kind is SurfaceKind.ISSUE_DESCRIPTION
-                    and "criterion" in issue.issue_labels
-                ):
-                    raise ValueError(
-                        "description authority must match the target's "
-                        "current native surface"
-                    )
-
-            require_surface(original)
-
-            async def attempt() -> DescriptionEditResult:
-                markers = await self._markers_on(
-                    _GrantKind.LEASE, targets=(_LEASE_ADDRESSING.target(surface),)
-                )
-                current_wire = await self._read_planning_wire(target)
-                current = self._to_issue(current_wire)
-                require_surface(current)
-                if surface.kind is SurfaceKind.CRITERION_SUB_ISSUE:
-                    require_criterion_source(
-                        expected=TrackerIssue.model_validate(
-                            {**original.model_dump(), "body": current.body}
-                        ),
-                        current=current,
-                    )
-                elif original.model_dump(
-                    exclude={"body", "updated_at"}
-                ) != current.model_dump(exclude={"body", "updated_at"}):
-                    raise TrackerProtocolError(
-                        "description target facts changed",
-                        tool=_TOOL_GET_ISSUE,
-                        detail=target,
-                    )
-                body = description_replacement(
-                    target=target,
-                    body=current.body,
-                    expected=expected,
-                    replacement=replacement,
-                )
-                self._assert_surface_holder(
-                    surface=surface, holder=authorization.holder, markers=markers
-                )
-                if body is None:
-                    return DescriptionEditResult.UNCHANGED
-                await self._require_machine_authored(surface=surface, wire=current_wire)
-                identity = self._issue_identity.decode(current.body, issue_key=target)
-                if identity is not None:
-                    body = self._issue_identity.encode(
-                        identity, body=body, issue_key=target
-                    )
-                payload = await self._send(
-                    _TOOL_SAVE_ISSUE, {"id": target, "description": body}
-                )
-                self._saved_issue(payload, written={"description": body})
-                return DescriptionEditResult.EDITED
-
-            return await self._retry_call(
-                _TOOL_SAVE_ISSUE, attempt, revalidate=authorization.revalidate
-            )
-        current = await self.read_issue(issue_key=target)
-        body = description_replacement(
-            target=target, body=current.body, expected=expected, replacement=replacement
+        The authority is the only way in: this surface has one write
+        path, and it is leased, so holding a marker-keyed comment on the
+        same issue grants nothing here.
+        """
+        surface = authorization.surface
+        if surface.ref.key != target:
+            raise ValueError("description authority addresses another target")
+        self._classification_label(
+            "criterion", stops="cannot select protected description authority"
         )
-        if body is None:
-            return DescriptionEditResult.UNCHANGED
-        await self.update_issue(issue_key=target, body=body)
-        return DescriptionEditResult.EDITED
+        original = await self.read_planning_issue(issue_key=target)
+
+        def require_surface(issue: TrackerIssue) -> None:
+            if (
+                surface.kind is SurfaceKind.ISSUE_DESCRIPTION
+                and "criterion" in issue.issue_labels
+            ):
+                raise ValueError(
+                    "description authority must match the target's "
+                    "current native surface"
+                )
+
+        require_surface(original)
+
+        async def attempt() -> DescriptionEditResult:
+            markers = await self._markers_on(
+                _GrantKind.LEASE, targets=(_LEASE_ADDRESSING.target(surface),)
+            )
+            current_wire = await self._read_planning_wire(target)
+            current = self._to_issue(current_wire)
+            require_surface(current)
+            if surface.kind is SurfaceKind.CRITERION_SUB_ISSUE:
+                require_criterion_source(
+                    expected=TrackerIssue.model_validate(
+                        {**original.model_dump(), "body": current.body}
+                    ),
+                    current=current,
+                )
+            elif original.model_dump(
+                exclude={"body", "updated_at"}
+            ) != current.model_dump(exclude={"body", "updated_at"}):
+                raise TrackerProtocolError(
+                    "description target facts changed",
+                    tool=_TOOL_GET_ISSUE,
+                    detail=target,
+                )
+            body = description_replacement(
+                target=target,
+                body=current.body,
+                expected=expected,
+                replacement=replacement,
+            )
+            self._assert_surface_holder(
+                surface=surface, holder=authorization.holder, markers=markers
+            )
+            if body is None:
+                return DescriptionEditResult.UNCHANGED
+            await self._require_machine_authored(surface=surface, wire=current_wire)
+            identity = self._issue_identity.decode(current.body, issue_key=target)
+            if identity is not None:
+                body = self._issue_identity.encode(
+                    identity, body=body, issue_key=target
+                )
+            payload = await self._send(
+                _TOOL_SAVE_ISSUE, {"id": target, "description": body}
+            )
+            self._saved_issue(payload, written={"description": body})
+            return DescriptionEditResult.EDITED
+
+        return await self._retry_call(
+            _TOOL_SAVE_ISSUE, attempt, revalidate=authorization.revalidate
+        )
 
     async def set_workflow_state(
         self,

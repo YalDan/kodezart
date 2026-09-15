@@ -83,6 +83,7 @@ from kodezart.domain.tracker_writes import (
     classification_surface,
     comment_under_marker,
     description_replacement,
+    description_surface,
     marked_comment_body,
     require_expected_comment,
 )
@@ -3883,6 +3884,7 @@ class FakeTrackerPort:
             body=body,
             team_key=source.team_key,
             priority=IssuePriority.NONE,
+            holder=holder,
         )
         child = TrackerIssue.model_validate(
             {
@@ -4082,6 +4084,7 @@ class FakeTrackerPort:
         body: str,
         team_key: str,
         priority: IssuePriority,
+        holder: str,
     ) -> TrackerIssue:
         identity = IssueIdentity(scope_key=scope_key, deliverable_key=deliverable_key)
         keys = [
@@ -4100,7 +4103,12 @@ class FakeTrackerPort:
         current = await self.read_issue(issue_key=keys[0])
         if current.body != body:
             await self.edit_description(
-                target=current.issue_key, expected=current.body, replacement=body
+                target=current.issue_key,
+                expected=current.body,
+                replacement=body,
+                authorization=DescriptionWriteAuthority(
+                    holder=holder, surface=description_surface(current)
+                ),
             )
         if current.title != title:
             await self.update_issue(issue_key=current.issue_key, title=title)
@@ -4154,47 +4162,42 @@ class FakeTrackerPort:
         target: str,
         expected: str,
         replacement: str,
-        authorization: DescriptionWriteAuthority | None = None,
+        authorization: DescriptionWriteAuthority,
     ) -> DescriptionEditResult:
-        if authorization is not None and authorization.revalidate is not None:
+        if authorization.revalidate is not None:
             await authorization.revalidate()
-        if authorization is not None and authorization.surface.ref.key != target:
+        if authorization.surface.ref.key != target:
             raise ValueError("description authority addresses another target")
         current = await self.read_issue(issue_key=target)
-        if authorization is not None:
-            surface = authorization.surface
-            if surface.kind is SurfaceKind.CRITERION_SUB_ISSUE:
-                require_criterion_source(expected=current, current=current)
-            elif "criterion" in current.issue_labels:
-                raise ValueError(
-                    "description authority must match the target's "
-                    "current native surface"
-                )
-            grant = self.leases.get(surface)
-            owner = (
-                grant.holder
-                if grant is not None and grant.expires_at > self._clock()
-                else None
+        surface = authorization.surface
+        if surface.kind is SurfaceKind.CRITERION_SUB_ISSUE:
+            require_criterion_source(expected=current, current=current)
+        elif "criterion" in current.issue_labels:
+            raise ValueError(
+                "description authority must match the target's current native surface"
             )
-            if authorization.holder != owner:
-                raise SurfaceLeaseError(
-                    "native criterion amendment requires its grant",
-                    surface=surface,
-                    current_holder=owner,
-                )
         body = description_replacement(
             target=target, body=current.body, expected=expected, replacement=replacement
         )
+        # The grant is read last, in the order the shipped adapter reads
+        # it: ownership is asked as close to the write as the
+        # implementation can ask it, and a no-op still has to hold the
+        # surface it declined to write.
+        grant = self.leases.get(surface)
+        owner = (
+            grant.holder
+            if grant is not None and grant.expires_at > self._clock()
+            else None
+        )
+        if authorization.holder != owner:
+            raise SurfaceLeaseError(
+                "the writing job does not hold this live surface",
+                surface=surface,
+                current_holder=owner,
+            )
         if body is None:
             return DescriptionEditResult.UNCHANGED
-        self._require_machine_authored(
-            surface=authorization.surface
-            if authorization is not None
-            else WritableSurface(
-                kind=SurfaceKind.ISSUE_DESCRIPTION,
-                ref=ScopeRef(kind=ScopeKind.ISSUE, key=target),
-            ),
-        )
+        self._require_machine_authored(surface=surface)
         await self.update_issue(issue_key=target, body=body)
         return DescriptionEditResult.EDITED
 

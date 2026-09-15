@@ -48,7 +48,11 @@ from tests.tracker.connected_app_label_contract import (
     CONNECTED_APP_LABEL_ARGUMENTS,
     CONNECTED_APP_LABEL_REQUIRED,
 )
-from tests.tracker.lease_fixtures import leased_classification, leased_comment
+from tests.tracker.lease_fixtures import (
+    leased_classification,
+    leased_comment,
+    leased_description,
+)
 
 
 @dataclass(frozen=True)
@@ -344,12 +348,10 @@ async def sent_arguments() -> Mapping[str, set[str]]:
         body="keyed body",
         team_key="engineering",
         priority=IssuePriority.LOW,
+        holder="holder",
     )
     await tracker.read_issue_identity(issue_key=keyed.issue_key)
     await tracker.read_criteria(issue_key=keyed.issue_key)
-    await leased_classification(
-        tracker, issue_key=CLAIMED_ISSUE, classification="criterion"
-    )
     await tracker.create_issue(
         title="t",
         body="b",
@@ -357,7 +359,12 @@ async def sent_arguments() -> Mapping[str, set[str]]:
         priority=IssuePriority.LOW,
     )
     await tracker.update_issue(issue_key=CLAIMED_ISSUE, title="x", body="y")
-    await tracker.edit_description(target=CLAIMED_ISSUE, expected="y", replacement="z")
+    await leased_description(
+        tracker, target=CLAIMED_ISSUE, expected="y", replacement="z"
+    )
+    await leased_classification(
+        tracker, issue_key=CLAIMED_ISSUE, classification="criterion"
+    )
     await tracker.set_workflow_state(
         issue_key=CLAIMED_ISSUE,
         stage=LifecycleStage.DONE,
@@ -572,8 +579,11 @@ async def test_guarded_description_write_sends_no_state_or_unrelated_fields():
     server = fixture_server()
     tracker = linear_over_fake_mcp(server)
     current = await tracker.read_issue(issue_key=CLAIMED_ISSUE)
-    await tracker.edit_description(
-        target=CLAIMED_ISSUE, expected=current.body, replacement="amended description"
+    await leased_description(
+        tracker,
+        target=CLAIMED_ISSUE,
+        expected=current.body,
+        replacement="amended description",
     )
     assert server.tool_calls("save_issue") == [
         {"id": CLAIMED_ISSUE, "description": "amended description"}

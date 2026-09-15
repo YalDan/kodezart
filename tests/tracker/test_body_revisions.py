@@ -9,6 +9,7 @@ from kodezart.types.domain.tracker import TrackerIssueRevision
 from kodezart.types.domain.tracker_writes import DescriptionEditResult
 from tests.fakes import FakeMcpIssue
 from tests.tracker.conftest import fixture_server, linear_over_fake_mcp
+from tests.tracker.lease_fixtures import lease_for_description
 
 PARENT = "body/parent"
 CRITERION = "body/condition"
@@ -74,22 +75,29 @@ async def test_body_change_moves_only_its_surface_and_unchanged_replay_moves_non
 ):
     before = await tracker.read_issue_revision(issue_key=issue_key)
     other = await tracker.read_issue_revision(issue_key=other_key)
-    result = await tracker.edit_description(
-        target=issue_key, expected=before.issue.body, replacement=REPLACEMENT
-    )
-    assert result is DescriptionEditResult.EDITED
-    after = await tracker.read_issue_revision(issue_key=issue_key)
-    assert after.issue.body == REPLACEMENT
-    assert after.body_digest != before.body_digest
-    assert await tracker.read_issue_revision(issue_key=other_key) == other
-    writes = tracker_writes()
-    replay = await tracker.edit_description(
-        target=issue_key, expected=before.issue.body, replacement=REPLACEMENT
-    )
-    assert replay is DescriptionEditResult.UNCHANGED
-    assert await tracker.read_issue_revision(issue_key=issue_key) == after
-    assert await tracker.read_issue_revision(issue_key=other_key) == other
-    assert tracker_writes() == writes
+    async with lease_for_description(tracker, issue_key=issue_key) as authority:
+        result = await tracker.edit_description(
+            target=issue_key,
+            expected=before.issue.body,
+            replacement=REPLACEMENT,
+            authorization=authority,
+        )
+        assert result is DescriptionEditResult.EDITED
+        after = await tracker.read_issue_revision(issue_key=issue_key)
+        assert after.issue.body == REPLACEMENT
+        assert after.body_digest != before.body_digest
+        assert await tracker.read_issue_revision(issue_key=other_key) == other
+        writes = tracker_writes()
+        replay = await tracker.edit_description(
+            target=issue_key,
+            expected=before.issue.body,
+            replacement=REPLACEMENT,
+            authorization=authority,
+        )
+        assert replay is DescriptionEditResult.UNCHANGED
+        assert await tracker.read_issue_revision(issue_key=issue_key) == after
+        assert await tracker.read_issue_revision(issue_key=other_key) == other
+        assert tracker_writes() == writes
 
 
 @pytest.mark.parametrize("body", ["", " ", "\n", "A\n", "A\r\n", "é", "é"])
