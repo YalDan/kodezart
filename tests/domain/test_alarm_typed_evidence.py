@@ -32,10 +32,12 @@ def test_every_evidence_arm_roundtrips_without_reparsing_domain_payloads():
         LaneGraphSnapshot,
         LaneRulingSnapshot,
     )
+    from kodezart.types.domain.operation import LifecycleStage
     from kodezart.types.domain.run_alarm import (
         AlarmEvidence,
         CommitsEvidence,
         CountEvidence,
+        CriterionStateMove,
         EscalationEvidence,
         GraphEvidence,
         LabelsEvidence,
@@ -45,13 +47,18 @@ def test_every_evidence_arm_roundtrips_without_reparsing_domain_payloads():
         ReferencesEvidence,
         ResolutionEvidence,
         RulingsEvidence,
+        RunEventProjection,
+        RunEventsEvidence,
         ScopeEvidence,
+        StateMoveEvidence,
         SurfaceEvidence,
         TextEvidence,
     )
+    from kodezart.types.domain.run_event import RunEventKind
     from kodezart.types.domain.run_state import LaneCommit, LaneEscalation
     from kodezart.types.domain.scope import ScopeKind, ScopeRef
     from kodezart.types.domain.surface import SurfaceKind, WritableSurface
+    from kodezart.types.domain.tracker import WorkflowStateKind
 
     scope = ScopeRef(kind=ScopeKind.MILESTONE, key="actual-milestone")
     values = (
@@ -82,6 +89,21 @@ def test_every_evidence_arm_roundtrips_without_reparsing_domain_payloads():
         CommitsEvidence(value=(LaneCommit(sha="head", subject="", issue_id="issue"),)),
         LaneFieldEvidence(
             value=LaneFieldValue(lane_key="lane", field_key="quality", value="red")
+        ),
+        StateMoveEvidence(
+            value=CriterionStateMove(
+                member_id="criterion",
+                from_kind=WorkflowStateKind.COMPLETED,
+                from_stage=LifecycleStage.DONE,
+                to_kind=WorkflowStateKind.UNSTARTED,
+            )
+        ),
+        RunEventsEvidence(
+            value=(
+                RunEventProjection(
+                    kind=RunEventKind.CRITERION_REFUTED, subject_key="criterion"
+                ),
+            )
         ),
         ScopeEvidence(value=scope),
         RulingsEvidence(

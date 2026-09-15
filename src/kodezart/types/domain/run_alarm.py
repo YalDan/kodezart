@@ -1,16 +1,19 @@
 """Immutable typed observations of a run's recorded shape."""
 
 from enum import StrEnum
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self
 
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, model_validator
 
 from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.escalation import EscalationResolution
 from kodezart.types.domain.mandate_graph import LaneGraphSnapshot, LaneRulingSnapshot
+from kodezart.types.domain.operation import LifecycleStage
+from kodezart.types.domain.run_event import RunEventKind
 from kodezart.types.domain.run_state import LaneCommit, LaneEscalation
 from kodezart.types.domain.scope import ScopeRef
 from kodezart.types.domain.surface import WritableSurface
+from kodezart.types.domain.tracker import WorkflowStateKind
 
 Identity = Annotated[str, Field(min_length=1, pattern=r"\S")]
 
@@ -121,6 +124,59 @@ class LaneFieldValue(CamelCaseModel):
     value: str
 
 
+#: The state kind each configured lifecycle stage is a named state of.
+STAGE_STATE_KINDS: dict[LifecycleStage, WorkflowStateKind] = {
+    LifecycleStage.IN_PROGRESS: WorkflowStateKind.STARTED,
+    LifecycleStage.IN_REVIEW: WorkflowStateKind.STARTED,
+    LifecycleStage.DONE: WorkflowStateKind.COMPLETED,
+}
+
+
+class CriterionStateMove(CamelCaseModel):
+    """One criterion sub-issue's observed move between two workflow states.
+
+    This is an observation input, not a tracker read. Each end arrives
+    already resolved by its producer: the backend's own state kind, and
+    the configured lifecycle stage that state is a named member of when
+    the mapping names one. No state name is interpreted here, and an end
+    whose stage contradicts its kind is refused rather than reconciled.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    member_id: Identity
+    from_kind: WorkflowStateKind
+    to_kind: WorkflowStateKind
+    from_stage: LifecycleStage | None = None
+    to_stage: LifecycleStage | None = None
+
+    @model_validator(mode="after")
+    def _stages_are_named_states_of_their_kinds(self) -> Self:
+        for stage, kind in (
+            (self.from_stage, self.from_kind),
+            (self.to_stage, self.to_kind),
+        ):
+            if stage is not None and STAGE_STATE_KINDS[stage] is not kind:
+                raise ValueError(f"the {stage.value} stage is not a {kind.value} state")
+        return self
+
+
+class RunEventProjection(CamelCaseModel):
+    """One posted lane event, projected to its kind and the key it carries.
+
+    An observation input supplied by the stream's own reader; the posted
+    event itself is the stream's. ``subject_key`` absent is the STATE of
+    an event addressed to the lane as a whole, never a missing value, so
+    a reader that substituted the lane key there would report a lane-wide
+    event as one about a member.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    kind: RunEventKind
+    subject_key: Identity | None = None
+
+
 class Evidence[T](CamelCaseModel):
     """One already-typed projection, never a serialized domain payload."""
 
@@ -188,6 +244,18 @@ class LaneFieldEvidence(Evidence[LaneFieldValue]):
     kind: Literal["lane_field"] = "lane_field"
 
 
+class StateMoveEvidence(Evidence[CriterionStateMove]):
+    """The typed move one criterion sub-issue's state reader observed."""
+
+    kind: Literal["state_move"] = "state_move"
+
+
+class RunEventsEvidence(Evidence[tuple[RunEventProjection, ...]]):
+    """A lane's posted events, in the order the backend recorded them."""
+
+    kind: Literal["run_events"] = "run_events"
+
+
 class ScopeEvidence(Evidence[ScopeRef]):
     """The native scope address supplied by its current reader."""
 
@@ -217,6 +285,8 @@ AlarmEvidence = Annotated[
     | ResolutionEvidence
     | CommitsEvidence
     | LaneFieldEvidence
+    | StateMoveEvidence
+    | RunEventsEvidence
     | ScopeEvidence
     | RulingsEvidence
     | GraphEvidence,
