@@ -25,6 +25,7 @@ from kodezart.types.domain.audit_terminal import (
     AuditTerminalObservation,
     AuditTerminalReport,
 )
+from kodezart.types.domain.lapse import GradedState, graded_state
 from kodezart.types.domain.operation import RunKind
 from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.scope import ScopeRef
@@ -56,7 +57,12 @@ class AuditForgePublication(CamelCaseModel):
 
     @model_validator(mode="after")
     def _recorded_revision_matches_report(self) -> Self:
-        if self.report.claim.head_sha != self.graded_sha:
+        if (
+            graded_state(
+                graded_sha=self.graded_sha, head_sha=self.report.claim.head_sha
+            )
+            is GradedState.lapsed
+        ):
             raise ValueError("the forge report differs from its recorded Evidence SHA")
         return self
 

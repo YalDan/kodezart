@@ -13,6 +13,7 @@ from kodezart.services.repo_observations import ensure_repository
 from kodezart.types.domain.audit import AuditClaimRequest, AuditVerdict
 from kodezart.types.domain.audit_evidence import AuditEvidenceObservation
 from kodezart.types.domain.criterion_evidence import CriterionEvidence
+from kodezart.types.domain.lapse import GradedState, graded_state
 from kodezart.types.domain.operation import LifecycleStage, OperationConfig
 from kodezart.types.domain.tracker import TrackerIssue, WorkflowStateKind
 
@@ -136,7 +137,10 @@ class AuditEvidenceVerifier:
         )
         claim = None
         verdict = AuditVerdict.UNVERIFIABLE
-        if not completed or evidence.graded_sha == head:
+        if not completed or (
+            graded_state(graded_sha=evidence.graded_sha, head_sha=head)
+            is GradedState.current
+        ):
             claim = await self._claims.verify(
                 AuditClaimRequest.model_validate(
                     {**request.model_dump(), "record_ref": comment.comment_key}
