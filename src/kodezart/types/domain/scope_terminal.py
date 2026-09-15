@@ -1,7 +1,7 @@
 """Lane report facts consumed by native terminal readback."""
 
 from enum import StrEnum
-from typing import Self
+from typing import Annotated, Literal, Self
 
 from pydantic import (
     ConfigDict,
@@ -10,6 +10,11 @@ from pydantic import (
 )
 
 from kodezart.types.base import CamelCaseModel
+from kodezart.types.domain.agent import AgentEvent
+from kodezart.types.domain.ci import CIStatus
+from kodezart.types.domain.outcome import WorkflowOutcome
+from kodezart.types.domain.run_state import LanePR
+from kodezart.types.domain.scope import ScopeRef
 from kodezart.types.domain.surface import SurfaceKind
 
 
@@ -223,4 +228,135 @@ class ScopeStoppingRule(CamelCaseModel):
     def _exhausted_exactly(self) -> Self:
         if self.rounds_used != self.configured_value:
             raise ValueError("a stopping rule must record the actual exhausted bound")
+        return self
+
+
+class ScopeLaneEntry(CamelCaseModel):
+    """One dispatched lane's terminal facts, silence included.
+
+    ``report_state`` is the lane-report vocabulary this module already
+    owns, consumed here rather than restated. A lane that never reported
+    has no outcome, no branch and no pull request to carry; a lane that
+    converged has both a branch and a pull request. There is no merge
+    field: an open pull request whose checks the run watched is as far as
+    a lane's act goes.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    lane_key: str = Field(min_length=1, pattern=r"\S")
+    issue_id: str = Field(min_length=1, pattern=r"\S")
+    report_state: LaneReportState
+    outcome: WorkflowOutcome | None = None
+    pr: LanePR | None = None
+    branch: Annotated[str, Field(min_length=1, pattern=r"\S")] | None = None
+    checks: CIStatus = CIStatus.not_monitored
+
+    @model_validator(mode="after")
+    def _silence_is_exactly_an_absent_outcome(self) -> Self:
+        unreported = self.report_state is LaneReportState.UNREPORTED
+        if unreported != (self.outcome is None):
+            raise ValueError("a lane is unreported exactly when it carries no outcome")
+        if unreported and (self.pr is not None or self.branch is not None):
+            raise ValueError("an unreported lane carries no branch and no pull request")
+        return self
+
+    @model_validator(mode="after")
+    def _a_converged_lane_shows_its_branch_and_pull_request(self) -> Self:
+        if self.report_state is LaneReportState.CONVERGED and (
+            self.branch is None or self.pr is None
+        ):
+            raise ValueError(
+                "a converged lane carries both a branch and a pull request"
+            )
+        return self
+
+
+#: The members of ``WorkflowOutcome`` that classify a scope rather than a
+#: fire, stated once so the terminal event admits no fire outcome.
+SCOPE_TERMINAL_OUTCOMES: frozenset[WorkflowOutcome] = frozenset(
+    {
+        WorkflowOutcome.scope_converged,
+        WorkflowOutcome.scope_converged_with_residual,
+        WorkflowOutcome.scope_stopped_short,
+    },
+)
+
+
+class ScopeTerminalEvent(AgentEvent):
+    """The one terminal judgment of a scope run, convergence on the wire.
+
+    Every inconsistent combination of outcome, residual and stopping rule
+    is refused here, so a consumer reading this event never has to
+    reconcile the three by convention.
+
+    Clause 2 of KOD-473's Check ("``scope_converged_with_residual`` with
+    no stopping rule raises") is enforced under the orchestrator's
+    provisional reading recorded in comment ``1f5b44d6`` on KOD-473: it
+    raises when the residual carries an ``UNCONVERGED_DEFECT_CLASS``
+    item, the one class that arises only from a fired configured bound.
+    Read literally the clause contradicts KOD-477 and KOD-480, where a
+    scope finishes carrying recorded residual work and no bound fired.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    type: Literal["scope_terminal"] = "scope_terminal"
+    scope: ScopeRef
+    lanes: tuple[ScopeLaneEntry, ...] = ()
+    residual: ScopeResidual
+    stopping_rule: ScopeStoppingRule | None = None
+    resumed_without_terminal: bool = False
+    outcome: WorkflowOutcome
+
+    @model_validator(mode="after")
+    def _outcome_classifies_a_scope(self) -> Self:
+        if self.outcome not in SCOPE_TERMINAL_OUTCOMES:
+            raise ValueError(
+                f"a scope terminal carries a scope outcome, not {self.outcome.value}"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _convergence_owes_nothing(self) -> Self:
+        if self.outcome is WorkflowOutcome.scope_converged and self.residual.items:
+            raise ValueError("a converged scope carries an empty residual")
+        return self
+
+    @model_validator(mode="after")
+    def _a_fired_bound_is_named_where_one_fired(self) -> Self:
+        if (
+            self.outcome is WorkflowOutcome.scope_converged_with_residual
+            and self.stopping_rule is None
+            and self.residual.by_class(ScopeResidualClass.UNCONVERGED_DEFECT_CLASS)
+        ):
+            raise ValueError(
+                "an unconverged defect class is residual only under a "
+                "declared stopping rule"
+            )
+        if (
+            self.outcome is WorkflowOutcome.scope_stopped_short
+            and self.stopping_rule is not None
+        ):
+            raise ValueError("a scope stopped short reached no configured bound")
+        return self
+
+    @model_validator(mode="after")
+    def _convergence_read_every_lane_and_record(self) -> Self:
+        if self.outcome is not WorkflowOutcome.scope_converged:
+            return self
+        if any(lane.report_state is LaneReportState.UNREPORTED for lane in self.lanes):
+            raise ValueError("a scope with a silent lane has not converged")
+        if self.residual.blocking:
+            raise ValueError("a scope with an unread record has not converged")
+        return self
+
+    @model_validator(mode="after")
+    def _each_lane_appears_once_under_one_issue(self) -> Self:
+        lane_keys = [lane.lane_key for lane in self.lanes]
+        issue_ids = [lane.issue_id for lane in self.lanes]
+        if len(set(lane_keys)) != len(lane_keys):
+            raise ValueError("duplicate lane key in the terminal lane vector")
+        if len(set(issue_ids)) != len(issue_ids):
+            raise ValueError("duplicate issue in the terminal lane vector")
         return self

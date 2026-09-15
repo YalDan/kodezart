@@ -231,7 +231,7 @@ stopped externally reports `killed` only here. `terminal` is resolved
 against the SDK's own terminal-status set, so a consumer tracking task
 ids clears them on `terminal` from either frame.
 
-### Workflow Events (18)
+### Workflow Events (19)
 
 | Event Type                     | Key Fields                                      |
 | ------------------------------ | ----------------------------------------------- |
@@ -253,11 +253,15 @@ ids clears them on `terminal` from either frame.
 | `workflow_complete`            | `featureBranch`, `ralphBranch`, `totalIterations`, `accepted`, `outcome`, `merged`, `finalCommitSha`, `ciStatus`, `mergeError` |
 | `scope_walk`                   | `observation`: scope, tick, ready/dispatched/skipped lane keys, unresolved criterion keys, unapproved lane keys and exclusions |
 | `scope_lane`                   | `laneKey`, `event`: the complete typed inner event, including its discriminator |
+| `scope_terminal`               | `scope`, `lanes`: per-lane report state, outcome, pr, branch and checks, `residual`, `stoppingRule`, `resumedWithoutTerminal`, `outcome` |
 
 An addressed scope request uses one queue job. Each fresh walk reports current
 readiness and remaining obligations; approved lanes run through the native fire
 and delivery graphs. `scope_lane.event` preserves iteration, review and native
-session fields. An inner fire's `workflow_complete` is not a scope terminal event.
+session fields. An inner fire's `workflow_complete` is not a scope terminal event. The
+`scope_terminal` shape above is the declared wire contract for that verdict,
+whose combinations of outcome, residual and stopping rule the model refuses
+inconsistently; no route emits it yet.
 Nested events use their concrete discriminator and retain required null fields,
 so the scope envelope validates against the same schema it emits.
 When this controller invocation finishes, the job is `terminal` with a null

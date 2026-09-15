@@ -7,10 +7,16 @@ from pydantic import BaseModel, ValidationError
 
 from kodezart.config.app import AppConfig
 from kodezart.domain.scope_terminal import BOUND_CONFIG_FIELD, stopping_rule_of
+from kodezart.types.domain.ci import CIStatus
 from kodezart.types.domain.organize_owner import OrganizeBoundEvidence
 from kodezart.types.domain.outcome import WorkflowOutcome
+from kodezart.types.domain.run_state import LanePR
+from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.scope_terminal import (
     BLOCKING_RESIDUAL_CLASSES,
+    SCOPE_TERMINAL_OUTCOMES,
+    LaneReportState,
+    ScopeLaneEntry,
     ScopeRecordRef,
     ScopeResidual,
     ScopeResidualClass,
@@ -18,6 +24,7 @@ from kodezart.types.domain.scope_terminal import (
     ScopeResidualOwner,
     ScopeResidualOwnerKind,
     ScopeStoppingRule,
+    ScopeTerminalEvent,
 )
 from kodezart.types.domain.surface import SurfaceKind
 
@@ -352,3 +359,184 @@ def test_each_configured_env_field_addresses_a_declared_setting() -> None:
         )
         assert field in nested.model_fields
         assert config_field == f"{prefix}{section}{delimiter}{field}".upper()
+
+
+def lane(**overrides: object) -> ScopeLaneEntry:
+    data: dict[str, object] = {
+        "lane_key": "lane:alpha",
+        "issue_id": "EXT/42",
+        "report_state": LaneReportState.CONVERGED,
+        "outcome": WorkflowOutcome.ci_passed,
+        "pr": LanePR(url="https://example.invalid/pr/1", number=1, state="open"),
+        "branch": "kodezart/ext-42",
+        "checks": CIStatus.passed,
+    }
+    return ScopeLaneEntry.model_validate(data | overrides)
+
+
+def silent_lane(**overrides: object) -> ScopeLaneEntry:
+    return lane(
+        report_state=LaneReportState.UNREPORTED,
+        outcome=None,
+        pr=None,
+        branch=None,
+        checks=CIStatus.not_monitored,
+        **overrides,
+    )
+
+
+def terminal(**overrides: object) -> ScopeTerminalEvent:
+    data: dict[str, object] = {
+        "scope": ScopeRef(kind=ScopeKind.PROJECT, key="project-address"),
+        "lanes": (lane(),),
+        "residual": ScopeResidual(),
+        "outcome": WorkflowOutcome.scope_converged,
+    }
+    return ScopeTerminalEvent.model_validate(data | overrides)
+
+
+def test_a_converged_scope_owing_work_is_refused() -> None:
+    with pytest.raises(ValidationError):
+        terminal(residual=ScopeResidual(items=(item(),)))
+
+    converged = terminal()
+    assert converged.outcome is WorkflowOutcome.scope_converged
+    assert converged.residual.items == ()
+    assert converged.stopping_rule is None
+    assert converged.resumed_without_terminal is False
+
+
+def test_an_unconverged_defect_class_without_a_declared_stop_is_refused() -> None:
+    with pytest.raises(ValidationError):
+        terminal(
+            outcome=WorkflowOutcome.scope_converged_with_residual,
+            residual=ScopeResidual(items=(item(),)),
+        )
+
+    declared = terminal(
+        outcome=WorkflowOutcome.scope_converged_with_residual,
+        residual=ScopeResidual(items=(item(),)),
+        stopping_rule=ScopeStoppingRule(
+            config_field="KODEZART_ORGANIZE__MAX_ADMISSION_ROUNDS",
+            configured_value=3,
+            rounds_used=3,
+        ),
+    )
+    assert declared.stopping_rule is not None
+    assert declared.stopping_rule.rounds_used == 3
+
+
+def test_recorded_residual_work_alone_needs_no_declared_stop() -> None:
+    recorded = terminal(
+        outcome=WorkflowOutcome.scope_converged_with_residual,
+        residual=ScopeResidual(
+            items=(
+                item(residual_class=ScopeResidualClass.LANE_WITHOUT_OPEN_PR),
+                item(
+                    issue_id="EXT/44",
+                    residual_class=ScopeResidualClass.LANE_WITHOUT_OPEN_PR,
+                    record=record(issue_key="EXT/44"),
+                ),
+            )
+        ),
+    )
+
+    assert recorded.stopping_rule is None
+    assert len(recorded.residual.by_class(ScopeResidualClass.LANE_WITHOUT_OPEN_PR)) == 2
+
+
+def test_a_scope_stopped_short_carrying_a_declared_stop_is_refused() -> None:
+    rule = ScopeStoppingRule(
+        config_field="KODEZART_ORGANIZE__MAX_ADMISSION_ROUNDS",
+        configured_value=3,
+        rounds_used=3,
+    )
+    with pytest.raises(ValidationError):
+        terminal(outcome=WorkflowOutcome.scope_stopped_short, stopping_rule=rule)
+
+    stopped = terminal(
+        outcome=WorkflowOutcome.scope_stopped_short,
+        lanes=(silent_lane(),),
+        residual=ScopeResidual(
+            items=(item(residual_class=ScopeResidualClass.LANE_UNREPORTED),)
+        ),
+    )
+    assert stopped.stopping_rule is None
+
+
+@pytest.mark.parametrize(
+    "outcome",
+    sorted(set(WorkflowOutcome) - set(SCOPE_TERMINAL_OUTCOMES)),
+)
+def test_no_fire_outcome_classifies_a_scope(outcome: WorkflowOutcome) -> None:
+    with pytest.raises(ValidationError):
+        terminal(outcome=outcome)
+
+
+def test_a_silent_lane_or_an_unread_record_forbids_convergence() -> None:
+    with pytest.raises(ValidationError):
+        terminal(lanes=(silent_lane(),))
+    with pytest.raises(ValidationError):
+        terminal(
+            residual=ScopeResidual(
+                items=(item(residual_class=ScopeResidualClass.UNRECORDED_AT_TERMINAL),)
+            ),
+        )
+
+    unread = terminal(
+        outcome=WorkflowOutcome.scope_stopped_short,
+        lanes=(silent_lane(),),
+        residual=ScopeResidual(
+            items=(item(residual_class=ScopeResidualClass.UNRECORDED_AT_TERMINAL),)
+        ),
+    )
+    assert unread.residual.blocking
+
+
+def test_one_lane_key_and_one_issue_appear_once_in_the_vector() -> None:
+    with pytest.raises(ValidationError):
+        terminal(lanes=(lane(), lane(issue_id="EXT/44")))
+    with pytest.raises(ValidationError):
+        terminal(lanes=(lane(), lane(lane_key="lane:beta")))
+
+    vector = terminal(
+        lanes=(
+            lane(),
+            lane(lane_key="lane:beta", issue_id="EXT/44"),
+        )
+    )
+    assert len(vector.lanes) == 2
+
+
+def test_a_lane_is_unreported_exactly_when_it_carries_no_outcome() -> None:
+    with pytest.raises(ValidationError):
+        lane(report_state=LaneReportState.UNREPORTED)
+    with pytest.raises(ValidationError):
+        lane(report_state=LaneReportState.IN_GAP, outcome=None, pr=None, branch=None)
+
+    silent = silent_lane()
+    assert silent.outcome is None
+    assert silent.pr is None
+    assert silent.branch is None
+    assert silent.checks is CIStatus.not_monitored
+
+
+@pytest.mark.parametrize("absent", [{"branch": None}, {"pr": None}])
+def test_a_converged_lane_shows_its_branch_and_pull_request(
+    absent: dict[str, object],
+) -> None:
+    with pytest.raises(ValidationError):
+        lane(**absent)
+
+    halted = lane(
+        report_state=LaneReportState.HALTED,
+        outcome=WorkflowOutcome.loop_plateaued,
+        pr=None,
+        branch=None,
+        checks=CIStatus.not_monitored,
+    )
+    assert halted.pr is None
+
+
+def test_a_terminal_lane_entry_records_no_merge() -> None:
+    assert "merge" not in " ".join(ScopeLaneEntry.model_fields)
