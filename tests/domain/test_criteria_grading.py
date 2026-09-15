@@ -5,7 +5,8 @@ denominator) and KOD-53/AC-20 (an echoed-text mutation changes neither the
 keying nor the text carried forward) are demonstrated here.
 """
 
-from kodezart.domain.criteria import mint_criteria
+from kodezart.domain.criteria import build_artifact, mint_criteria
+from kodezart.domain.criteria_feasibility import sweep
 from kodezart.domain.criteria_grading import (
     DUPLICATE_RESULT_REASONING,
     MISSING_RESULT_REASONING,
@@ -14,9 +15,14 @@ from kodezart.domain.criteria_grading import (
 from kodezart.types.domain.accept import AcceptVerdict
 from kodezart.types.domain.agent import AcceptanceCriteriaOutput, CriterionResult
 from kodezart.types.domain.criteria import (
+    CostClaim,
+    CostMeasurement,
+    CriteriaValidationOutput,
     CriterionFeasibility,
+    CriterionFinding,
     CriterionVerdict,
     DraftedCriterion,
+    RepairKind,
     ValidatedCriterion,
 )
 from tests.fakes import as_validated
@@ -265,3 +271,100 @@ def test_an_ungraded_criterion_answered_as_passing_is_still_not_counted() -> Non
 
     assert grade.passed_count == 1
     assert grade.verdict is AcceptVerdict.ship_with_flags
+
+
+# ---------------------------------------------------------------------------
+# A price is not an absence — the expensive arm beside the exclusion arm
+# (KOD-76/AC-21)
+# ---------------------------------------------------------------------------
+
+
+def _priced_beside_blocked() -> list[ValidatedCriterion]:
+    """Two criteria out of one sweep: an expensive one and a blocked one.
+
+    They differ in one thing — the first's demonstration RAN and cost nine
+    hours, the second's cannot run at all because a resource the finding
+    names is absent.  The verdicts are the sweep's own, so a derivation
+    that reads a price as an absence is what this fixture catches.
+    """
+    criteria = mint_criteria(
+        [
+            DraftedCriterion(text="The full regression sweep passes at head."),
+            DraftedCriterion(text="The migration applies against a live database."),
+        ]
+    )
+    validation = sweep(
+        criteria,
+        CriteriaValidationOutput(
+            findings=[
+                CriterionFinding(
+                    criterion_id="AC-1",
+                    verdict=CriterionVerdict.feasible,
+                    smallest_repair=RepairKind.none,
+                    cost_claim=CostClaim(
+                        assertion="the full sweep is uneconomic to demonstrate",
+                        measurement=CostMeasurement(
+                            observed="9h of runner time",
+                            affordable=False,
+                        ),
+                    ),
+                ),
+                CriterionFinding(
+                    criterion_id="AC-2",
+                    verdict=CriterionVerdict.unverifiable,
+                    smallest_repair=RepairKind.environment_supply,
+                    missing_resource="a PostgreSQL server reachable from the runner",
+                ),
+            ],
+        ),
+    )
+    return list(build_artifact(criteria, validation).criteria)
+
+
+def _answers(*results: tuple[str, bool]) -> AcceptanceCriteriaOutput:
+    """One evaluator answer per criterion id, in the order given."""
+    return AcceptanceCriteriaOutput(
+        criteria_results=[
+            CriterionResult(
+                criterion_id=criterion_id,
+                criterion="echo",
+                passed=passed,
+                reasoning="verified",
+            )
+            for criterion_id, passed in results
+        ],
+    )
+
+
+def test_an_uneconomic_demonstration_grades_while_a_named_absence_is_excluded() -> None:
+    """KOD-76/AC-21 — the expensive arm drives the next iteration, the other does not.
+
+    The expensive criterion fails and is carried into ``failures``, which
+    is what the next iteration is driven by; it passes on the second
+    grading and is counted.  Neither grading gives the uneconomic claim
+    the exclusion the absent resource earns: only the criterion whose
+    finding NAMED a resource it lacks seats in neither count nor feedback.
+    """
+    priced, blocked = _priced_beside_blocked()
+
+    assert priced.feasibility.verdict is CriterionVerdict.feasible
+    assert priced.feasibility.verdict is not CriterionVerdict.unverifiable
+    assert priced.feasibility.cost_measurement is not None
+    assert priced.feasibility.cost_measurement.affordable is False
+    assert blocked.feasibility.verdict is CriterionVerdict.unverifiable
+    assert blocked.feasibility.missing_resource is not None
+
+    criteria = [priced, blocked]
+    failing = grade_iteration(
+        criteria, _answers((priced.id, False), (blocked.id, True))
+    )
+
+    assert [failure.criterion_id for failure in failing.failures] == [priced.id]
+    assert failing.passed_count == 0
+    assert failing.verdict is AcceptVerdict.rejected
+
+    passing = grade_iteration(criteria, _answers((priced.id, True), (blocked.id, True)))
+
+    assert [failure.criterion_id for failure in passing.failures] == []
+    assert passing.passed_count == 1
+    assert passing.verdict is AcceptVerdict.ship_with_flags

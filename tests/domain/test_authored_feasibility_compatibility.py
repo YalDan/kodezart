@@ -16,18 +16,21 @@ from kodezart.types.domain.criteria import (
     [
         (
             CriterionFinding,
-            "2ef057be09f5787863cb9274da5a811fa114401b526c007c1ba2d7073ad3fff0",
+            "45b59afffe78fa8254d442c598a0d96b2aec34cbcbe8e4068c91de5613f12ecf",
         ),
         (
             CriteriaValidationOutput,
-            "1e49292eb7a9c7b364fb7f30db016c2c2ab9505cf51bfaa6b9b1e0f532f327bc",
+            "d058c4f007684edd901118aee41a1af29715b3f2918d018aa159f894274e34c9",
         ),
     ],
 )
 def test_authored_wire_schemas_equal_the_captured_dispatch_base(model, digest):
-    # Captured before extracting shared evidence at fbc4daa; moved once, when
-    # the criterion class was deleted and ForbiddenCriterionClass stopped
-    # describing the downgrade in the description these schemas ship.
+    # Captured before extracting shared evidence at fbc4daa; moved twice, each
+    # time because a description these schemas SHIP changed: once when the
+    # criterion class was deleted and ForbiddenCriterionClass stopped
+    # describing the downgrade, and once when CostClaim stopped telling the
+    # refuter that a measured uneconomic cost survives as environment-side
+    # evidence — a price no longer reaches the undemonstrable verdict.
     value = json.dumps(
         model.model_json_schema(),
         sort_keys=True,

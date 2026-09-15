@@ -52,6 +52,8 @@ Every one of those except `literal_count` describes something the loop CANNOT GR
 
 **A measurement is of a demonstration that ACTUALLY RAN.** If a quota, a rate limit or a budget prevented the demonstration from running, you have no measurement of its cost — what you established is that the runner lacks something. Report `environment_supply` naming that limit as the missing resource, and never dress it up as an uneconomic demonstration.
 
+**An expensive demonstration is still a demonstration.** A demonstration that ran and priced itself uneconomic is one this environment CAN perform, so the criterion is graded like any other: report `feasible` with `smallest_repair: none` and the `cost_claim` beside it, and let the run grade it. `unverifiable` is never reached by a price — it requires a resource you can NAME as absent. Reporting a cost as `unverifiable` takes a gradeable criterion out of the run's arithmetic and out of the next iteration's work, and that is not yours to do.
+
 ── NEITHER OUTCOME IS A RESTING PLACE ──
 
 A `criterion_text` repair with no `refutation`, or an `environment_supply` repair with no `missing_resource`, is not a finding. If you established nothing and can name nothing, you have not done the work — go back and do it. `unverifiable` is not where an inconclusive pass comes to rest: it is a claim about a NAMED absent resource, and it costs the run its clean acceptance.

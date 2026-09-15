@@ -699,14 +699,14 @@ class UngroundedVerdictError(Exception):
     """Raised when a verdict or a resource claim arrives without its grounds.
 
     Two raise surfaces.  The feasibility sweep raises it before anything
-    is recorded, on three grounds: a stated verdict its own evidence does
+    is recorded, on two grounds: a stated verdict its own evidence does
     not derive (``_grounded``, comparing the statement with the derivation
-    ``classify_finding`` computed beside it), a repair demanded on a
-    criterion demonstrated satisfied at base (``classify_finding``), and a
-    measured uneconomic cost filed anywhere but the environment arm (both
-    ``_classify_criterion_side`` and ``_classify_no_repair``).  The accept
-    gate raises it at ``accept_gate.named_resource`` — the last check
-    before a resource name reaches a pull-request body.
+    ``classify_finding`` computed beside it), and a repair demanded on a
+    criterion demonstrated satisfied at base (``classify_finding``).  A
+    cost is not a third ground: a measured uneconomic demonstration is one
+    that RAN, so it grades like any other criterion wherever it was filed.
+    The accept gate raises it at ``accept_gate.named_resource`` — the last
+    check before a resource name reaches a pull-request body.
 
     A single finding's completeness — a verdict arriving with its own
     repair and its evidence fields filled — is checked earlier still, on

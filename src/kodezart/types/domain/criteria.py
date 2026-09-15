@@ -107,9 +107,11 @@ class LimitArm(StrEnum):
     ``resource_absent`` and ``uneconomic`` partition the environment-side
     arm by the presence of a measurement: a demonstration a limit stopped
     from running has no measurement of its cost, a demonstration that ran
-    and priced itself uneconomic has one.  A derivation component, never a
-    persisted field — the wire carries the same distinction as
-    ``costMeasurement``'s presence.
+    and priced itself uneconomic has one.  Which arm a NAMED limit is —
+    never whether there is one.  The environment-side verdict rests on the
+    named absent resource alone, so no arm here makes a criterion
+    undemonstrable.  A derivation component, never a persisted field — the
+    wire carries the same distinction as ``costMeasurement``'s presence.
     """
 
     not_a_limit = "not_a_limit"
@@ -196,10 +198,11 @@ class CostClaim(CamelCaseModel):
 
     ``measurement`` is ``None`` when the cost was argued rather than
     measured, and the refuter is told an argued cost may not carry a
-    verdict.  The sweep's derivation weighs the claim rather than reading
-    it past: an unmeasured claim and an affordable measurement are both
-    struck and support no repair; only a measured, uneconomic one
-    survives, and it is environment-side.
+    verdict.  No claim here carries one: a price supports no repair, and a
+    demonstration that ran and proved expensive is one the environment can
+    perform, so it is graded rather than recorded undemonstrable.  What a
+    measured, uneconomic one still says is which arm a named environment
+    limit is.
     """
 
     model_config = ConfigDict(frozen=True, populate_by_name=True)

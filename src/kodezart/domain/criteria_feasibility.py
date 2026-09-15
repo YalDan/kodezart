@@ -18,11 +18,15 @@ Two rules keep that line from drifting:
   members and elapsed time is not among them, so a lack that clears with
   time is an absent resource — ``unverifiable`` here, cleared empirically
   on a later grading, never ``feasible`` at this gate.
-* **A cost claim is measured, not argued.**  An unmeasured cost assertion
-  is struck and can support no repair, so it never stands as
-  ``infeasible``.  A measured demonstration that ran and proved
-  affordable is likewise struck.  Only a measured, genuinely uneconomic
-  demonstration survives, and it is environment-side.
+* **A cost claim is measured, not argued, and it decides nothing.**  An
+  unmeasured cost assertion is struck and can support no repair, so it
+  never stands as ``infeasible``.  Neither does a measured one, however
+  uneconomic: a demonstration that RAN is one the environment can
+  perform, so it grades like any other criterion and drives the next
+  iteration.  ``unverifiable`` — the one verdict nothing can grade — is
+  reached only by a finding naming the resource whose absence blocks the
+  demonstration, never by a price.  What a surviving measurement still
+  says is which arm a NAMED limit is.
 
 A criterion the base ALREADY SATISFIES is satisfied by every
 implementation, so it is ``feasible`` under the same definition, and a
@@ -131,10 +135,14 @@ def classify_finding(
     cost claim, the base demonstration, the pinned literals, the forbidden
     class and the undeclared arms are the whole input.  Raises when the
     evidence contradicts itself — a repair demanded on a criterion
-    demonstrated satisfied at base, or a measured uneconomic cost filed
-    anywhere but the environment arm.
+    demonstrated satisfied at base.
+
+    A cost never decides the verdict.  ``unverifiable`` is the environment
+    arm's verdict and rests on the resource the finding names as absent;
+    an expensive demonstration is one the environment CAN perform, so it
+    derives ``feasible``, grades like any other criterion and drives the
+    next iteration.
     """
-    surviving_cost = _weigh_cost(finding.cost_claim)
     flags = tuple(_observed_flags(finding))
 
     if _ungradeable(finding):
@@ -155,29 +163,27 @@ def classify_finding(
         raise UngroundedVerdictError(msg, criterion_id=finding.criterion_id)
 
     if finding.smallest_repair is RepairKind.criterion_text:
-        return _classify_criterion_side(finding, surviving_cost, flags)
+        return _classify_criterion_side(finding, flags)
     if finding.smallest_repair is RepairKind.environment_supply:
-        return _classify_environment_side(surviving_cost, flags)
-    return _classify_no_repair(finding, surviving_cost, flags)
+        return _classify_environment_side(_weigh_cost(finding.cost_claim), flags)
+    return DerivedFeasibility(
+        verdict=CriterionVerdict.feasible,
+        limit_arm=LimitArm.not_a_limit,
+        flags=flags,
+    )
 
 
 def _classify_criterion_side(
     finding: CriterionFinding,
-    surviving_cost: CostMeasurement | None,
     flags: tuple[CriterionFlag, ...],
 ) -> DerivedFeasibility:
     """A criterion-text repair stands on its refutation, never on a cost.
 
-    A struck cost claim — unmeasured, or measured and affordable — was
-    filed as the finding's support, and supports nothing: the criterion
+    A cost claim was filed as the finding's support and supports nothing,
+    whatever it says: argued or measured, affordable or uneconomic, a
+    price is not a fault in the criterion's own text.  The criterion
     stands unrefuted and derives ``feasible``.
     """
-    if surviving_cost is not None:
-        msg = (
-            "A measured uneconomic demonstration is environment-side and must "
-            "be filed as an environment supply naming the resource"
-        )
-        raise UngroundedVerdictError(msg, criterion_id=finding.criterion_id)
     if finding.cost_claim is not None:
         return DerivedFeasibility(
             verdict=CriterionVerdict.feasible,
@@ -195,31 +201,20 @@ def _classify_environment_side(
     surviving_cost: CostMeasurement | None,
     flags: tuple[CriterionFlag, ...],
 ) -> DerivedFeasibility:
-    """The arm a limit is, discriminated by the presence of a measurement."""
+    """The arm a limit is, discriminated by the presence of a measurement.
+
+    The VERDICT here is the environment arm's own and rests on the
+    resource the finding names absent — a stated ``unverifiable`` carries
+    one or the model boundary refuses it.  The measurement only says
+    which arm the named limit is: a demonstration a limit stopped from
+    running carries none, one that ran and priced itself has one.
+    """
     arm = (
         LimitArm.uneconomic if surviving_cost is not None else LimitArm.resource_absent
     )
     return DerivedFeasibility(
         verdict=CriterionVerdict.unverifiable,
         limit_arm=arm,
-        flags=flags,
-    )
-
-
-def _classify_no_repair(
-    finding: CriterionFinding,
-    surviving_cost: CostMeasurement | None,
-    flags: tuple[CriterionFlag, ...],
-) -> DerivedFeasibility:
-    if surviving_cost is not None:
-        msg = (
-            "A measured uneconomic demonstration is a repair and must be filed "
-            "as an environment supply naming the resource"
-        )
-        raise UngroundedVerdictError(msg, criterion_id=finding.criterion_id)
-    return DerivedFeasibility(
-        verdict=CriterionVerdict.feasible,
-        limit_arm=LimitArm.not_a_limit,
         flags=flags,
     )
 

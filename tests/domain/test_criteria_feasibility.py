@@ -791,34 +791,53 @@ def test_a_measured_affordable_cost_leaves_the_criterion_text_untouched() -> Non
     assert artifact.criteria[0].text.encode() == text_before.encode()
 
 
-def test_a_measured_uneconomic_cost_filed_off_the_environment_arm_raises() -> None:
-    """A surviving measurement is environment-side evidence and nothing else."""
-    with pytest.raises(UngroundedVerdictError):
-        classify_finding(
-            _refuted(
-                "AC-1",
-                "the demonstration is uneconomic",
-                cost_claim=CostClaim(
-                    assertion="the demonstration is uneconomic",
-                    measurement=CostMeasurement(
-                        observed="9h of runner time",
-                        affordable=False,
-                    ),
+def test_a_measured_uneconomic_cost_carries_no_verdict_on_any_arm() -> None:
+    """KOD-76/AC-21 — a price never takes a criterion out of the run.
+
+    The demonstration RAN, so this environment can perform it however it
+    priced itself: on the criterion-text arm the cost refutes nothing and
+    on the bare arm it demands nothing, and neither reaches the one
+    verdict nothing can grade.
+    """
+    uneconomic = CostClaim(
+        assertion="the demonstration is uneconomic",
+        measurement=CostMeasurement(
+            observed="9h of runner time",
+            affordable=False,
+        ),
+    )
+
+    filed_as_a_refutation = classify_finding(
+        _refuted("AC-1", "the demonstration is uneconomic", cost_claim=uneconomic)
+    )
+    filed_bare = classify_finding(_feasible("AC-1", cost_claim=uneconomic))
+
+    for derived in (filed_as_a_refutation, filed_bare):
+        assert derived.verdict is CriterionVerdict.feasible
+        assert derived.verdict is not CriterionVerdict.unverifiable
+        assert derived.limit_arm is LimitArm.not_a_limit
+
+
+def test_undemonstrability_is_reached_by_a_named_absence_and_not_by_a_cost() -> None:
+    """KOD-76/AC-21 — the exclusion arm's own grounds, asserted directly.
+
+    ``unverifiable`` is the verdict that costs a criterion its seat, and
+    the only evidence that reaches it is the resource the finding names as
+    absent: an environment-supply finding carrying nothing but a measured
+    uneconomic cost is refused at the boundary, before any derivation.
+    """
+    with pytest.raises(ValidationError):
+        CriterionFinding(
+            criterion_id="AC-1",
+            verdict=CriterionVerdict.unverifiable,
+            smallest_repair=RepairKind.environment_supply,
+            cost_claim=CostClaim(
+                assertion="the demonstration is uneconomic",
+                measurement=CostMeasurement(
+                    observed="9h of runner time",
+                    affordable=False,
                 ),
-            )
-        )
-    with pytest.raises(UngroundedVerdictError):
-        classify_finding(
-            _feasible(
-                "AC-1",
-                cost_claim=CostClaim(
-                    assertion="the demonstration is uneconomic",
-                    measurement=CostMeasurement(
-                        observed="9h of runner time",
-                        affordable=False,
-                    ),
-                ),
-            )
+            ),
         )
 
 
