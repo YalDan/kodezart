@@ -4,6 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from kodezart.config.app import AppConfig
+from kodezart.core.protocols import CIMonitor
 from kodezart.services.check_classification import classify_red_checks
 from kodezart.types.domain.check_observation import AbsentChecks, ObservedChecks
 from kodezart.types.domain.delivery import CheckRedClass
@@ -144,15 +145,69 @@ def test_rerun_bound_environment(monkeypatch):
 
 
 def test_check_monitor_has_exact_declared_method_set():
-    assert {
+    methods = {
         name
         for name, value in vars(CheckMonitor).items()
         if callable(value) and not name.startswith("_")
-    } == {
+    }
+    assert methods == {
         "wait_for_checks",
         "checks_declared",
         "rerun_checks",
     }
+    assert methods == {
+        name
+        for name, value in vars(CIMonitor).items()
+        if callable(value) and not name.startswith("_")
+    }
+    assert not hasattr(CheckMonitor, "failed_check_names")
+
+
+ENVIRONMENT_REPOSITORY = repo(
+    checks=(
+        CheckStep(
+            name="guard",
+            command="check",
+            forge_check="history",
+            requires=(CheckPrerequisite.REPOSITORY_HISTORY,),
+        ),
+    ),
+    runner_environment={CheckPrerequisite.REPOSITORY_HISTORY: False},
+)
+
+
+@pytest.mark.parametrize(
+    "observations,names,repository,bound,expected",
+    [
+        ([True], [{"test"}], None, 1, CheckRedClass.RUNNER_FLAKE),
+        ([None], [{"test"}], None, 1, CheckRedClass.RUNNER_FLAKE),
+        ([], [{"test"}], None, 0, CheckRedClass.WORK_DEFECT),
+        ([False, False], [{"a"}, {"a"}, {"a"}], None, 2, CheckRedClass.WORK_DEFECT),
+        ([False, False], [{"a"}, {"b"}, {"a"}], None, 2, CheckRedClass.UNCLASSIFIED),
+        ([False, False], [{"a"}, {"a"}, {"b"}], None, 2, CheckRedClass.UNCLASSIFIED),
+        (
+            [True],
+            [{"history"}],
+            ENVIRONMENT_REPOSITORY,
+            1,
+            CheckRedClass.ENVIRONMENT_PREREQUISITE_UNMET,
+        ),
+    ],
+)
+async def test_blanking_every_summary_establishes_the_same_classification(
+    observations, names, repository, bound, expected
+):
+    classified = []
+    for summary in ("credentials broken; shallow checkout; flaky runner", ""):
+        ci = CheckMonitor(
+            observations=list(observations),
+            names=map(frozenset, names),
+            summary=summary,
+        )
+        result = await classify(ci, repository, bound=bound)
+        assert result.checks_summary == summary
+        classified.append(result.red_class)
+    assert classified == [expected, expected]
 
 
 @pytest.mark.parametrize("names", [[frozenset()], [frozenset({"test"}), frozenset()]])
