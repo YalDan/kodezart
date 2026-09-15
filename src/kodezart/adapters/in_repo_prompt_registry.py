@@ -224,7 +224,7 @@ class InRepoPromptRegistry:
         One object per dispatch rather than four parallel parameters: the
         house rules the set appends, the effort its role runs at, the
         configured refusal fallback, and the engine the deployment pins
-        THIS key to (KOD-161) all arrive together, and a set that declares
+        THIS key to all arrive together, and a set that declares
         no roles and a deployment that pins no key produce exactly the
         policy every dispatch expressed before this existed.  The engine
         table is deployment configuration injected here — the registry

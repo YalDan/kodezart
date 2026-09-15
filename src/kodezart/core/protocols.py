@@ -109,6 +109,20 @@ class LogEmitter(Protocol):
 
     async def aexception(self, event: str, **kwargs: object) -> None: ...
 
+@runtime_checkable
+class GitSourceReader(Protocol):
+    """Read pinned Git objects without checking out or running repository code."""
+
+    async def resolve_commit(self, *, cwd: str, ref: str) -> str:
+        """Resolve a commit-ish once to its complete immutable object identity."""
+        ...
+
+    async def read_source(
+        self, *, cwd: str, commit_sha: str, path: str
+    ) -> GitSourceBlob:
+        """Read exact regular-file bytes; missing/unsupported objects refuse."""
+        ...
+
 
 @runtime_checkable
 class GitService(Protocol):
@@ -660,6 +674,28 @@ class ManagedMcpToolCaller(McpToolCaller, Protocol):
 
     async def close(self) -> None:
         """Close the session. Closing a closed caller is a no-op."""
+        ...
+
+@runtime_checkable
+class TrackerCommentReader(Protocol):
+    """Read complete native comments without granting a writer."""
+
+    async def list_comments(self, *, issue_key: str) -> Sequence[TrackerComment]:
+        """Every comment on the issue, oldest first."""
+        ...
+
+@runtime_checkable
+class TrackerCriteriaReader(Protocol):
+    """Read current native criterion families with their full source."""
+
+    async def read_criteria(self, *, issue_key: str) -> Sequence[TrackerIssue]:
+        """Read exactly the currently labelled direct criterion sub-issues.
+
+        Their own issue keys carry identity; full bodies and workflow states
+        carry specification and evidence. A successful empty read returns
+        an empty sequence. A failed or incomplete lookup raises; it never
+        becomes an empty answer. No parent-body syntax supplies membership.
+        """
         ...
 
 
@@ -1497,6 +1533,41 @@ class NativeWriteGuard(Protocol):
         """Restore the same original authority and recheck its actual sources."""
         ...
 
+    async def judge(
+        self,
+        *,
+        workspace_path: str,
+        start: NativeWriterStart,
+        output: NativeWriterOutput,
+    ) -> AmendmentReport:
+        """Independently reconcile actual writer claims before persistence."""
+        ...
+    async def require_current(
+        self,
+        *,
+        workspace_path: str,
+        start: NativeWriterStart,
+    ) -> None:
+        """Refuse changed HEAD, Checks or rulings after an awaited boundary."""
+        ...
+    async def require_publishable(
+        self,
+        *,
+        workspace_path: str,
+        start: NativeWriterStart,
+        authorized_commit_sha: str,
+    ) -> None:
+        """Recheck current authority against the harness's actual commit receipt."""
+        ...
+    async def require_unchanged_head(
+        self,
+        *,
+        workspace_path: str,
+        start: NativeWriterStart,
+    ) -> None:
+        """Check local evidence before failed writer cleanup, without tracker I/O."""
+        ...
+
 
 @runtime_checkable
 class GitAuth(Protocol):
@@ -1508,6 +1579,18 @@ class GitAuth(Protocol):
 
     def subprocess_env(self) -> dict[str, str]:
         """Return env vars for git subprocess (e.g. GIT_ASKPASS). Empty if none."""
+        ...
+
+@runtime_checkable
+class FireCriteriaReader(Protocol):
+    """Read current native obligations against the run's frozen subject spec.
+
+    This is a runtime dependency. Checkpoints carry the spec and criterion
+    data only; transport failures refuse instead of returning cached Checks.
+    """
+
+    async def read_current(self, *, spec: TrackerSpec) -> TrackerCriterionSet:
+        """Return one complete current Check snapshot or a typed refusal."""
         ...
 
 @runtime_checkable

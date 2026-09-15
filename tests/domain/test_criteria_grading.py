@@ -14,7 +14,6 @@ from kodezart.domain.criteria_grading import (
 from kodezart.types.domain.accept import AcceptVerdict
 from kodezart.types.domain.agent import AcceptanceCriteriaOutput, CriterionResult
 from kodezart.types.domain.criteria import (
-    CriterionClass,
     CriterionFeasibility,
     CriterionVerdict,
     DraftedCriterion,
@@ -33,10 +32,7 @@ def _criteria(count: int) -> list[ValidatedCriterion]:
     return as_validated(
         mint_criteria(
             [
-                DraftedCriterion(
-                    text=f"Criterion number {n}",
-                    criterion_class=CriterionClass.hard_gate,
-                )
+                DraftedCriterion(text=f"Criterion number {n}")
                 for n in range(1, count + 1)
             ]
         )
@@ -99,11 +95,9 @@ def test_echoed_text_mutation_changes_neither_keying_nor_reinjected_text() -> No
             [
                 DraftedCriterion(
                     text='The rendered node carries class="kz-row", spaced exactly.',
-                    criterion_class=CriterionClass.hard_gate,
                 ),
                 DraftedCriterion(
                     text="A path of the form C:\\\\Users\\\\x survives the round trip.",
-                    criterion_class=CriterionClass.hard_gate,
                 ),
             ]
         )
