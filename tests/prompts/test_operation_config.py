@@ -73,6 +73,17 @@ ORG_SHAPED_PATTERNS: dict[RedactionCategory, list[str]] = {
     RedactionCategory.CROSS_REPO_NAMES: [r"\b\d{4}-\d{2}-\d{2}\b"],
 }
 
+#: The OperationConfig fields no placeholder in the mapping table reaches,
+#: named here rather than read off the document so the document cannot
+#: excuse a field by listing it:
+#:   ``organize_scopes`` — read natively by the organize tick's composition,
+#:   never rendered into a pass template.
+#:   ``audit_scopes`` — read natively by the audit pass's composition, the
+#:   same way.
+#: ``workflow_states`` has a native consumer too and is deliberately NOT
+#: here: a placeholder reaches it as well, so it is no exclusion.
+NATIVELY_CONSUMED_FIELDS = frozenset({"organize_scopes", "audit_scopes"})
+
 CADENCE_WORDS = (
     "hourly",
     "daily",
@@ -641,6 +652,15 @@ def test_placeholder_mapping_is_total_in_both_directions() -> None:
         "workflow_states.done": "adapters/linear/tracker.py::set_workflow_state",
     }
     assert set(mapped).isdisjoint(native)
+    # KOD-827 restored: the table reaches every OperationConfig field, bar
+    # the exactly two named above — an equality in both directions, so a
+    # new field is unreachable-by-default until it is placed on one side.
+    assert set(OperationConfig.model_fields) - set(mapped.values()) == (
+        NATIVELY_CONSUMED_FIELDS
+    )
+    assert set(mapped.values()) == (
+        set(OperationConfig.model_fields) - NATIVELY_CONSUMED_FIELDS
+    )
     assert set(mapped.values()) | {name.split(".")[0] for name in native} == set(
         OperationConfig.model_fields
     )

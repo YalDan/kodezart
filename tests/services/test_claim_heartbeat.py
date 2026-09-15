@@ -19,7 +19,7 @@ from datetime import datetime, timedelta
 import pytest
 import structlog
 
-from kodezart.core.errors import TrackerAccessDeniedError
+from kodezart.core.errors import McpCredentialRefusedError, TrackerAccessDeniedError
 from kodezart.domain.errors import TransientAPIError
 from kodezart.services.claim_heartbeat import ClaimHeartbeat
 from kodezart.services.lifecycle_watcher import LifecycleWatcher
@@ -40,6 +40,9 @@ from tests.fakes import (
 ISSUE = "K-1"
 HOLDER = "pass-a"
 PRE_CLAIM_STATE = "Todo"
+
+#: The MCP server a refused credential is reported against.
+REFUSING_SERVER = "fixture-tracker"
 
 #: Short enough that the run below outlives it several times over.
 LEASE_SECONDS = 60.0
@@ -133,8 +136,18 @@ class RefusedCredentialTracker(FakeTrackerPort):
     ) -> ClaimResult | None:
         self.renewals.append((issue_key, holder))
         await asyncio.sleep(0)
+        # Refused the way the adapter refuses: an MCP-layer refusal reaches
+        # the caller as the typed tracker error carrying that error's own
+        # message, which is where the refusing server survives the
+        # boundary (``TrackerAccessDeniedError(str(exc))``).
         raise TrackerAccessDeniedError(
-            "the tracker refused the configured authority",
+            str(
+                McpCredentialRefusedError(
+                    "the MCP server refused the configured credential",
+                    server_name=REFUSING_SERVER,
+                    tool_name="save_comment",
+                )
+            ),
         )
 
 
@@ -430,6 +443,9 @@ class TestARenewalThatMeetsARefusedCredential:
         assert len(refused) == 1
         assert refused[0]["issue_key"] == ISSUE
         assert refused[0]["holder"] == HOLDER
+        # KOD-827 restored: the record names the server that refused, so an
+        # operator can act on it without reading the adapter's own log.
+        assert REFUSING_SERVER in refused[0]["error"]
         assert not [entry for entry in logs if entry["event"] == "claim_renewal_failed"]
 
     async def test_the_loop_stops_on_it_rather_than_repeating_it_every_interval(
