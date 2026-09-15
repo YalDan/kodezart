@@ -556,6 +556,32 @@ def test_a_terminal_lane_entry_records_no_merge() -> None:
     assert "merge" not in " ".join(ScopeLaneEntry.model_fields)
 
 
+def test_a_lane_entry_is_frozen_and_rejects_unknown_fields() -> None:
+    entry = lane()
+    with pytest.raises(ValidationError, match="frozen"):
+        entry.branch = "kodezart/ext-99"
+    with pytest.raises(ValidationError, match="Extra inputs"):
+        ScopeLaneEntry.model_validate(
+            {
+                "lane_key": "lane:alpha",
+                "issue_id": "EXT/42",
+                "report_state": LaneReportState.HALTED,
+                "outcome": WorkflowOutcome.loop_plateaued,
+                "merged": True,
+            }
+        )
+
+
+def test_the_terminal_event_is_frozen_and_rejects_unknown_fields() -> None:
+    converged = terminal()
+    with pytest.raises(ValidationError, match="frozen"):
+        converged.outcome = WorkflowOutcome.scope_stopped_short
+    with pytest.raises(ValidationError, match="frozen"):
+        converged.residual = ScopeResidual(items=(item(),))
+    with pytest.raises(ValidationError, match="Extra inputs"):
+        terminal(merged_lanes=1)
+
+
 def test_a_converged_scope_states_its_empty_residual_and_absent_stop_on_the_wire() -> (
     None
 ):
