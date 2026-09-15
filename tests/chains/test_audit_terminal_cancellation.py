@@ -16,6 +16,7 @@ server = fixtures.server
 forge = fixtures.forge
 tracker = fixtures.tracker
 clock = fixtures.clock
+scope_labels = fixtures.scope_labels
 
 
 @pytest.mark.parametrize("existing", [False, True])

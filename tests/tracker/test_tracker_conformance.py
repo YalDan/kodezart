@@ -12,7 +12,6 @@ workspace anywhere in this module and none may be introduced.
 import asyncio
 from collections.abc import Callable
 from datetime import timedelta
-from inspect import isawaitable
 
 import pytest
 
@@ -33,6 +32,7 @@ from kodezart.types.domain.operation import LifecycleStage, QueueState, ScopeLab
 from kodezart.types.domain.run_event import RunEventKind
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.surface import (
+    DescriptionWriteAuthority,
     SurfaceAuthorship,
     SurfaceKind,
     SurfaceLease,
@@ -59,6 +59,8 @@ from tests.tracker.conftest import (
     ASSET_ISSUE,
     BYSTANDER,
     CLAIMED_ISSUE,
+    CRITERION_BODY,
+    CRITERION_ISSUE,
     DOCUMENT_CONTENT,
     DOCUMENT_KEY,
     FIXTURE_NOW,
@@ -69,10 +71,7 @@ from tests.tracker.conftest import (
     ISSUE_LABELS,
     SCOPE_DIAGNOSIS,
     TEAM_IDENTIFIERS,
-    TRACKER_IMPLEMENTATIONS,
     FixtureClock,
-    TrackerWorkspace,
-    observed_writes,
 )
 from tests.tracker.lease_fixtures import leased_comment
 from tests.tracker.marker_config import MARKER_PREFIXES
@@ -118,40 +117,26 @@ CLAIMED_LABEL_SET = WritableSurface(
     ref=CLAIMED_REF,
 )
 
+#: The criterion sub-issue whose body a member of the workspace wrote,
+#: addressed as the surface a run amends it under.
+CRITERION_REF = ScopeRef(kind=ScopeKind.ISSUE, key=CRITERION_ISSUE)
+CRITERION_SURFACE = WritableSurface(
+    kind=SurfaceKind.CRITERION_SUB_ISSUE,
+    ref=CRITERION_REF,
+)
 
-@pytest.fixture(params=sorted(TRACKER_IMPLEMENTATIONS))
-async def aliasing_tracker(
-    request: pytest.FixtureRequest,
-    server: FakeLinearMcpServer,
-    clock: FixtureClock,
-) -> TrackerPort:
-    """Every implementation, over a workspace that spells one label twice.
-
-    The operation's criterion classification and the admission
-    vocabulary's approved member resolve to the SAME tracker label here.
-    That is the only shape in which an ordinary classification write can
-    name the approver's own member at all: a workspace where the two
-    namespaces spell different labels cannot express the write this
-    refusal exists for, so a case stated over it would pass without
-    exercising anything.
-    """
-    factory = TRACKER_IMPLEMENTATIONS[request.param]
-    port = factory(
-        TrackerWorkspace(
-            server=server,
-            clock=clock,
-            scope_labels={ScopeLabel.APPROVED.value: ISSUE_LABELS["criterion"]},
-        ),
-    )
-    return await port if isawaitable(port) else port
-
-
-@pytest.fixture
-def aliasing_writes(
-    aliasing_tracker: TrackerPort, server: FakeLinearMcpServer
-) -> Callable[[], tuple[object, ...]]:
-    """Mutations made against the aliased workspace, by either arm."""
-    return observed_writes(aliasing_tracker, server)
+#: The workspace that spells one label twice: the operation's criterion
+#: classification and the admission vocabulary's approved member resolve
+#: to the SAME tracker label.  That is the only shape in which an
+#: ordinary classification write can name the approver's own member at
+#: all, so a case about that refusal dials it and every other case keeps
+#: the vocabulary the workspace always had.
+ALIASING_VOCABULARY: dict[str, str] = {
+    ScopeLabel.APPROVED.value: ISSUE_LABELS["criterion"]
+}
+aliasing_workspace = pytest.mark.parametrize(
+    "scope_labels", [ALIASING_VOCABULARY], indirect=True
+)
 
 
 #: Holders are shaped as the identities the contract names: a lease is held
@@ -2413,10 +2398,11 @@ class TestApprovalLabelWrites:
     granting the run its own authorization.
     """
 
+    @aliasing_workspace
     async def test_a_run_holders_label_write_naming_approval_is_refused(
         self,
-        aliasing_tracker: TrackerPort,
-        aliasing_writes: Callable[[], tuple[object, ...]],
+        tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
         server: FakeLinearMcpServer,
     ) -> None:
         """Holding the label surface is authority over labels, not admission.
@@ -2425,17 +2411,17 @@ class TestApprovalLabelWrites:
         merely before it is asked to write: a run that got as far as a
         read has already spent the authority this refusal denies it.
         """
-        before = await aliasing_tracker.read_issue(issue_key=CLAIMED_ISSUE)
-        await aliasing_tracker.acquire_surfaces(
+        before = await tracker.read_issue(issue_key=CLAIMED_ISSUE)
+        await tracker.acquire_surfaces(
             surfaces=frozenset({CLAIMED_LABEL_SET}),
             holder=JOB_A,
             lease_seconds=LEASE_SECONDS,
         )
-        written = aliasing_writes()
+        written = tracker_writes()
         asked = len(server.calls)
 
         with pytest.raises(ApprovalLabelWriteError) as refused:
-            await aliasing_tracker.set_issue_classification(
+            await tracker.set_issue_classification(
                 issue_key=CLAIMED_ISSUE,
                 classification="criterion",
                 holder=JOB_A,
@@ -2446,31 +2432,32 @@ class TestApprovalLabelWrites:
             CLAIMED_ISSUE,
             "criterion",
         )
-        after = await aliasing_tracker.read_issue(issue_key=CLAIMED_ISSUE)
+        after = await tracker.read_issue(issue_key=CLAIMED_ISSUE)
         assert after.issue_labels == before.issue_labels
-        assert aliasing_writes() == written
+        assert tracker_writes() == written
 
+    @aliasing_workspace
     async def test_the_same_write_under_no_holder_at_all_is_refused_too(
         self,
-        aliasing_tracker: TrackerPort,
-        aliasing_writes: Callable[[], tuple[object, ...]],
+        tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
         server: FakeLinearMcpServer,
     ) -> None:
         """The refusal is about the member, not about who asked for it."""
-        before = await aliasing_tracker.read_issue(issue_key=CLAIMED_ISSUE)
-        written = aliasing_writes()
+        before = await tracker.read_issue(issue_key=CLAIMED_ISSUE)
+        written = tracker_writes()
         asked = len(server.calls)
 
         with pytest.raises(ApprovalLabelWriteError):
-            await aliasing_tracker.set_issue_classification(
+            await tracker.set_issue_classification(
                 issue_key=CLAIMED_ISSUE,
                 classification="criterion",
             )
 
         assert len(server.calls) == asked
-        after = await aliasing_tracker.read_issue(issue_key=CLAIMED_ISSUE)
+        after = await tracker.read_issue(issue_key=CLAIMED_ISSUE)
         assert after.issue_labels == before.issue_labels
-        assert aliasing_writes() == written
+        assert tracker_writes() == written
 
     async def test_a_classification_that_is_not_the_approval_member_still_writes(
         self,
@@ -2600,3 +2587,98 @@ class TestPrincipalAuthoredBodies:
         assert (await tracker.read_issue(issue_key=CLAIMED_ISSUE)).body == (
             "a body this writer wrote and may rewrite"
         )
+
+    async def test_a_criterion_body_another_member_wrote_reads_as_principal_authored(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        """A criterion's body is asked about at the surface a run amends it."""
+        assert (
+            await tracker.read_surface_authorship(surface=CRITERION_SURFACE)
+            is SurfaceAuthorship.PRINCIPAL_AUTHORED
+        )
+
+    async def test_replacing_a_principal_authored_criterion_body_is_refused_intact(
+        self,
+        tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
+    ) -> None:
+        """A criterion a person wrote is that person's text, not a run's."""
+        written = tracker_writes()
+
+        with pytest.raises(PrincipalAuthoredSurfaceError) as refused:
+            await tracker.edit_description(
+                target=CRITERION_ISSUE,
+                expected=CRITERION_BODY,
+                replacement="**Check:** a predicate this run preferred\n",
+            )
+
+        assert refused.value.scope_key == CRITERION_ISSUE
+        assert (await tracker.read_issue(issue_key=CRITERION_ISSUE)).body == (
+            CRITERION_BODY
+        )
+        assert tracker_writes() == written
+
+    async def test_a_grant_over_the_criterion_does_not_authorize_replacing_it(
+        self,
+        tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
+    ) -> None:
+        """The grant is exclusivity over a surface, not title to its words.
+
+        This is the way a lease-holding run actually amends a criterion:
+        under its own authority over that surface.  The refusal has to
+        reach it there, or it reaches only the seam no run writes through.
+        """
+        await tracker.acquire_surfaces(
+            surfaces=frozenset({CRITERION_SURFACE}),
+            holder=JOB_A,
+            lease_seconds=LEASE_SECONDS,
+        )
+        written = tracker_writes()
+
+        with pytest.raises(PrincipalAuthoredSurfaceError) as refused:
+            await tracker.edit_description(
+                target=CRITERION_ISSUE,
+                expected=CRITERION_BODY,
+                replacement="**Check:** a predicate this run preferred\n",
+                authorization=DescriptionWriteAuthority(
+                    holder=JOB_A, surface=CRITERION_SURFACE
+                ),
+            )
+
+        assert (refused.value.scope_key, refused.value.surface_kind) == (
+            CRITERION_ISSUE,
+            SurfaceKind.CRITERION_SUB_ISSUE.value,
+        )
+        assert (await tracker.read_issue(issue_key=CRITERION_ISSUE)).body == (
+            CRITERION_BODY
+        )
+        assert tracker_writes() == written
+
+    async def test_a_grant_over_an_issue_body_does_not_authorize_replacing_it(
+        self,
+        tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
+    ) -> None:
+        """The same holds for the plain issue body under its own grant."""
+        before = await tracker.read_issue(issue_key=ASSET_ISSUE)
+        await tracker.acquire_surfaces(
+            surfaces=frozenset({PRINCIPAL_DESCRIPTION}),
+            holder=JOB_A,
+            lease_seconds=LEASE_SECONDS,
+        )
+        written = tracker_writes()
+
+        with pytest.raises(PrincipalAuthoredSurfaceError):
+            await tracker.edit_description(
+                target=ASSET_ISSUE,
+                expected=before.body,
+                replacement="a body this writer would have preferred",
+                authorization=DescriptionWriteAuthority(
+                    holder=JOB_A, surface=PRINCIPAL_DESCRIPTION
+                ),
+            )
+
+        assert (await tracker.read_issue(issue_key=ASSET_ISSUE)).body == before.body
+        assert tracker_writes() == written

@@ -71,6 +71,7 @@ from kodezart.core.errors import (
 )
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import McpToolCaller, McpToolResult
+from kodezart.domain.approval_alias import aliases_approval_member
 from kodezart.domain.criterion_amendment import require_criterion_source
 from kodezart.domain.criterion_creation import criterion_body, existing_criterion
 from kodezart.domain.errors import (
@@ -1807,7 +1808,7 @@ class LinearMcpTracker:
                 raise OperationMemberAbsentError(
                     missing="issue_labels.criterion", stops="criterion creation"
                 )
-            if label == self._scope_labels.get("approved"):
+            if aliases_approval_member(label=label, scope_labels=self._scope_labels):
                 raise CriterionReadError(
                     issue_key=parent_key,
                     reason="criterion classification aliases human approval",
@@ -2379,7 +2380,7 @@ class LinearMcpTracker:
         label = self._classification_label(
             classification, stops="this issue classification cannot be written"
         )
-        if label == self._scope_labels.get(ScopeLabel.APPROVED.value):
+        if aliases_approval_member(label=label, scope_labels=self._scope_labels):
             raise ApprovalLabelWriteError(
                 issue_key=issue_key, classification=classification
             )

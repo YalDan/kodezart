@@ -11,6 +11,7 @@ from kodezart.services.audit_sources import AuditSourceReader
 from kodezart.services.lane_records import LaneRecordReader
 from tests.tracker import test_audit_evidence as fixtures
 from tests.tracker.conftest import clock as clock
+from tests.tracker.conftest import scope_labels as scope_labels
 from tests.tracker.conftest import tracker as tracker
 from tests.tracker.conftest import tracker_writes as tracker_writes
 from tests.tracker.lease_fixtures import leased_comment

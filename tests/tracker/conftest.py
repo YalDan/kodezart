@@ -16,6 +16,7 @@ import pytest
 from kodezart.adapters.linear.tracker import LinearMcpTracker
 from kodezart.core.backoff import RetryPolicy
 from kodezart.core.protocols import TrackerPort
+from kodezart.domain.approval_alias import aliases_approval_member
 from kodezart.types.domain.dispatch import PassSignal, SelfWriteLedger
 from kodezart.types.domain.operation import LifecycleStage, ScopeLabel
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
@@ -113,6 +114,14 @@ STATE_TYPES: dict[str, str] = {
 CLAIMED_ISSUE = "FIX-1"
 APPROVED_ISSUE = "FIX-2"
 ASSET_ISSUE = "FIX-3"
+#: A criterion sub-issue of the asset-carrying issue, whose body a member
+#: of the workspace wrote.  A criterion's body is the surface a run amends
+#: under its own grant, so a workspace holding none written by a person
+#: cannot express what replacing a principal's criterion would be.
+CRITERION_ISSUE = "FIX-4"
+CRITERION_BODY = (
+    "**Check:** a member's predicate\n\n**Do:** their guidance\n\n**Evidence:**\n"
+)
 #: An issue on a team the configuration does not declare.  A workspace
 #: holds more than one operation's board, and a fixture holding only one
 #: cannot express a container boundary at all — every scan would be trivially
@@ -238,6 +247,19 @@ def fixture_server(
                 updated_at=FIXTURE_NOW,
             ),
             FakeMcpIssue(
+                id=CRITERION_ISSUE,
+                title="a criterion a member wrote",
+                description=CRITERION_BODY,
+                created_by=BYSTANDER,
+                priority_raw=2,
+                status="Todo",
+                status_type="unstarted",
+                parent_id=ASSET_ISSUE,
+                labels=[ISSUE_LABELS["criterion"]],
+                created_at=FIXTURE_NOW - timedelta(days=2),
+                updated_at=FIXTURE_NOW,
+            ),
+            FakeMcpIssue(
                 id=FOREIGN_ISSUE,
                 title="another board's issue",
                 description="approved by the same person, on another team",
@@ -360,11 +382,11 @@ def approval_classifications(scope_labels: Mapping[str, str] | None) -> frozense
     ordinary classification write that would grant admission, and every
     implementation has to know which one that is.
     """
-    approved = (scope_labels or SCOPE_LABELS).get(ScopeLabel.APPROVED.value)
+    vocabulary = scope_labels if scope_labels is not None else SCOPE_LABELS
     return frozenset(
         key
         for key, label in ISSUE_LABELS.items()
-        if approved is not None and label == approved
+        if aliases_approval_member(label=label, scope_labels=vocabulary)
     )
 
 
@@ -477,15 +499,33 @@ def clock() -> FixtureClock:
     return FixtureClock()
 
 
+@pytest.fixture
+def scope_labels(request: pytest.FixtureRequest) -> Mapping[str, str] | None:
+    """The admission vocabulary this workspace is dialled with.
+
+    ``None`` unless a case says otherwise, which it does by parametrizing
+    this fixture indirectly.  Stated as a fixture rather than as a second
+    tracker so a case needing a differently dialled workspace — one that
+    spells the approved member the same as a semantic classification, say
+    — still runs against every registered implementation, over the one
+    ``tracker`` fixture.
+    """
+    param: Mapping[str, str] | None = getattr(request, "param", None)
+    return param
+
+
 @pytest.fixture(params=sorted(TRACKER_IMPLEMENTATIONS))
 async def tracker(
     request: pytest.FixtureRequest,
     server: FakeLinearMcpServer,
     clock: FixtureClock,
+    scope_labels: Mapping[str, str] | None,
 ) -> TrackerPort:
     """Every registered adapter AND double, over one fixture workspace."""
     factory = TRACKER_IMPLEMENTATIONS[request.param]
-    port = factory(TrackerWorkspace(server=server, clock=clock))
+    port = factory(
+        TrackerWorkspace(server=server, clock=clock, scope_labels=scope_labels)
+    )
     return await port if isawaitable(port) else port
 
 
@@ -505,18 +545,6 @@ def tracker_writes(
     tracker: TrackerPort, server: FakeLinearMcpServer
 ) -> Callable[[], tuple[object, ...]]:
     """Observe actual mutation calls independently of the port's return values."""
-    return observed_writes(tracker, server)
-
-
-def observed_writes(
-    tracker: TrackerPort, server: FakeLinearMcpServer
-) -> Callable[[], tuple[object, ...]]:
-    """The same observation, for a case dialling its own workspace.
-
-    Stated as a function beside the fixture so a case parametrised over
-    the registry with a remapped vocabulary observes mutations the one
-    way, rather than growing a second idea of what a write is.
-    """
     if isinstance(tracker, FakeTrackerPort):
         return lambda: (
             *tracker.comment_writes,
