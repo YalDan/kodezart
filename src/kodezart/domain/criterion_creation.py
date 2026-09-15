@@ -1,23 +1,32 @@
-"""Exact native criterion creation identity and its initial empty evidence."""
+"""Exact native criterion creation identity and its initial unfilled evidence."""
 
 from collections.abc import Sequence
 from typing import Literal
 
+from kodezart.domain.criterion_evidence import unfilled_evidence_body
 from kodezart.domain.errors import CriterionReadError
 from kodezart.domain.fire_spec import criterion_check, criterion_field_bodies
 from kodezart.types.domain.tracker import TrackerIssue
 
 
-def criterion_body(*, parent_key: str, check: str, do: str) -> str:
-    if not check.strip() or not do.strip():
+def criterion_body(*, parent_key: str, check: str, do: str, demonstration: str) -> str:
+    """The body a new criterion is created with, demonstration included.
+
+    The Evidence row stays unfilled — nothing has graded this criterion —
+    but it names what will grade it, so a reader of the child alone can see
+    what it is to be judged by.
+    """
+    if not check.strip() or not do.strip() or not demonstration.strip():
         raise CriterionReadError(
-            issue_key=parent_key, reason="Check and Do must be nonempty"
+            issue_key=parent_key,
+            reason="Check, Do and the demonstration must be nonempty",
         )
-    body = f"**Check:** {check}\n\n**Do:** {do}\n\n**Evidence:**\n"
+    evidence = unfilled_evidence_body(demonstration=demonstration.strip())
+    body = f"**Check:** {check}\n\n**Do:** {do}\n\n**Evidence:**\n{evidence}"
     fields: tuple[tuple[Literal["Check", "Do", "Evidence"], str], ...] = (
         ("Check", check.strip()),
         ("Do", do.strip()),
-        ("Evidence", ""),
+        ("Evidence", evidence),
     )
     if any(
         criterion_field_bodies(body, field=field) != (expected,)

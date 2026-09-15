@@ -24,7 +24,10 @@ from kodezart.core.owned_tasks import settle
 from kodezart.core.protocols import OutboundContentGate, PromptSetProvider, TrackerPort
 from kodezart.domain.comment_markers import compose_comment_marker
 from kodezart.domain.criterion_creation import criterion_body, existing_criterion
-from kodezart.domain.criterion_evidence import evidence_is_fillable
+from kodezart.domain.criterion_evidence import (
+    declared_demonstration,
+    evidence_is_fillable,
+)
 from kodezart.domain.errors import (
     CriterionEvidenceUnfillableError,
     OrganizeDecisionRequiredError,
@@ -73,6 +76,7 @@ from kodezart.types.domain.organize_graph import (
 from kodezart.types.domain.organize_owner import (
     BodyProposal,
     CriteriaProposal,
+    CriterionProposal,
     EscalationUnrecordedHalt,
     OrganizeBoundEvidence,
     OrganizePolicy,
@@ -104,6 +108,29 @@ class _WriteStep:
 
     async def write(self, *, finding: WriteBackFinding | None) -> None:
         await self.apply(finding)
+
+
+def _admission_escalation(result: AdmissionResult) -> tuple[str, str]:
+    """The question one admission raises, and the reading that supports it.
+
+    A refusal whose gradability arm failed carries a repair nothing else
+    does: the environments the scope declares were searched and could not
+    demonstrate the deliverable, and the place its demonstration goes
+    instead. That repair is the whole point of refusing rather than
+    admitting, so it travels on the durable escalation instead of expiring
+    with the judgment object that carried it.
+    """
+    question = result.invented_decision or result.missing_artifact or result.evidence
+    gradability = result.undemonstrable
+    if gradability is None:
+        return question, result.evidence
+    return (
+        f"{question}\n\nNo environment this scope declares demonstrates the "
+        f"deliverable; its demonstration is relocated to: "
+        f"{gradability.relocated_demonstration}",
+        f"{result.evidence}\n\nEnvironments searched: "
+        f"{gradability.searched_environments}",
+    )
 
 
 def _created_context(context: OrganizeContext, child: TrackerIssue) -> OrganizeContext:
@@ -446,7 +473,6 @@ class OrganizeOwner:
                 # having been written.
                 for item in value.criteria:
                     if not evidence_is_fillable(
-                        graded_sha=request.base_ref,
                         runnable_test=item.runnable_test,
                         named_observation=item.named_observation,
                     ):
@@ -625,9 +651,22 @@ class OrganizeOwner:
                         issue_key=request.issue_key,
                         reason="duplicate proposed Check identities",
                     )
+                prepared: list[tuple[CriterionProposal, str]] = []
                 for item in missing:
+                    demonstration = declared_demonstration(
+                        runnable_test=item.runnable_test,
+                        named_observation=item.named_observation,
+                    )
+                    if demonstration is None:
+                        raise CriterionEvidenceUnfillableError(
+                            issue_key=request.issue_key, check=item.check
+                        )
+                    prepared.append((item, demonstration))
                     body = criterion_body(
-                        parent_key=request.issue_key, check=item.check, do=item.do
+                        parent_key=request.issue_key,
+                        check=item.check,
+                        do=item.do,
+                        demonstration=demonstration,
                     )
                     gated = await gated_write(
                         gate=self._gate,
@@ -659,7 +698,7 @@ class OrganizeOwner:
                     surfaces=frozenset({surface}),
                     lease_seconds=self._lease_seconds,
                 ) as lease:
-                    for item in missing:
+                    for item, demonstration in prepared:
                         await lease.renew()
                         await authorize(
                             ProposedWrite(
@@ -675,6 +714,7 @@ class OrganizeOwner:
                                 title=item.title,
                                 check=item.check,
                                 do=item.do,
+                                demonstration=demonstration,
                                 holder=job_id,
                                 revalidate=partial(
                                     authorize,
@@ -811,13 +851,7 @@ class OrganizeOwner:
         base_ref: str,
         visibility: RepoVisibility,
     ) -> StageHaltReport:
-        records = {
-            r.issue_id: (
-                r.invented_decision or r.missing_artifact or r.evidence,
-                r.evidence,
-            )
-            for r in results
-        }
+        records = {r.issue_id: _admission_escalation(r) for r in results}
         records.update(
             {
                 f.issue_id: (f.mandate_text or f.defect_class, f.evidence)

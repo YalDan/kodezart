@@ -16,6 +16,9 @@ from tests.tracker.conftest import CLAIMED_ISSUE
 JOB = "criterion-preparation-job"
 CHECK = "The prepared artifact is byte-identical to the declared input."
 DO = "Compare the committed bytes to the declared input."
+DEMONSTRATION = "tests/tracker/test_prepared_bytes.py::test_bytes_are_preserved"
+#: The row a criterion is created with: unfilled, and naming its grader.
+EVIDENCE = f"— (graded sha · {DEMONSTRATION} · fire session/comment id)"
 
 
 def surface(kind=SurfaceKind.CRITERION_CHILD_SET):
@@ -30,6 +33,7 @@ async def create(tracker, **changes):
         "title": "Preserve input bytes",
         "check": CHECK,
         "do": DO,
+        "demonstration": DEMONSTRATION,
         "holder": JOB,
     }
     fields.update(changes)
@@ -50,7 +54,10 @@ async def test_native_create_initializes_a_new_todo_criterion_then_replays_no_wr
     assert created.parent_key == CLAIMED_ISSUE
     assert created.state_kind is WorkflowStateKind.UNSTARTED
     assert created.issue_labels == frozenset({"criterion"})
-    assert created.body == f"**Check:** {CHECK}\n\n**Do:** {DO}\n\n**Evidence:**\n"
+    assert (
+        created.body
+        == f"**Check:** {CHECK}\n\n**Do:** {DO}\n\n**Evidence:**\n{EVIDENCE}"
+    )
     assert len(saves(board)) == 1
     assert saves(board)[0] == {
         "title": "Preserve input bytes",
@@ -112,7 +119,9 @@ async def test_duplicate_check_identity_refuses_before_any_write():
             id=key,
             parent_id=CLAIMED_ISSUE,
             labels=["acceptance-condition"],
-            description=f"**Check:** {CHECK}\n\n**Do:** {DO}\n\n**Evidence:**\n",
+            description=(
+                f"**Check:** {CHECK}\n\n**Do:** {DO}\n\n**Evidence:**\n{EVIDENCE}"
+            ),
         )
     with pytest.raises(CriterionReadError, match="duplicate current Check"):
         await create(board.tracker())

@@ -3903,12 +3903,15 @@ class FakeTrackerPort:
         title: str,
         check: str,
         do: str,
+        demonstration: str,
         holder: str,
         revalidate: WriteRevalidation | None = None,
     ) -> TrackerIssue:
         if revalidate is not None:
             await revalidate()
-        body = criterion_body(parent_key=parent_key, check=check, do=do)
+        body = criterion_body(
+            parent_key=parent_key, check=check, do=do, demonstration=demonstration
+        )
         children = await self.read_criteria(issue_key=parent_key)
         existing = existing_criterion(
             parent_key=parent_key, check=check, children=children

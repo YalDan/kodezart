@@ -5,8 +5,8 @@ from pydantic import ConfigDict, Field
 from kodezart.types.base import CamelCaseModel
 
 #: A complete commit identity, in either of the two hash lengths git writes.
-#: The Evidence field and the authoring-time fillability check answer the
-#: same question about a sha, so they read the same expression for it.
+#: The Evidence record is the one place a graded sha is read, so this is the
+#: one expression for it; nothing outside the record re-states the shape.
 GRADED_SHA_PATTERN = r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
 
 

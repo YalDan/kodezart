@@ -7,17 +7,22 @@ import re
 from itertools import groupby
 
 import pytest
+from pydantic import ValidationError
 
 from kodezart.composition.organize import build_organize_owner, build_organize_tick
 from kodezart.config.app import AppConfig
 from kodezart.config.organize import OrganizeSettings
 from kodezart.core.prompt_namespaces import operation_bindings
-from kodezart.domain.criterion_evidence import evidence_is_fillable
+from kodezart.domain.criterion_evidence import (
+    evidence_is_fillable,
+    parse_criterion_evidence,
+)
 from kodezart.domain.errors import (
     CriterionEvidenceUnfillableError,
     OrganizeAdmissionIdentityError,
 )
 from kodezart.services.agent_service import AgentService
+from kodezart.types.domain.criterion_evidence import CriterionEvidence
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.operation import OperationConfig
 from kodezart.types.domain.organize import (
@@ -60,6 +65,8 @@ async def test_source_identity_is_checked_before_any_session(monkeypatch, method
         await getattr(boundary, method)(request())
     assert executor.calls == []
 
+
+ESCALATION_MARKER = "[organize-question:"
 
 #: What the scripted criteria author says will fill each criterion's Evidence.
 #: A demonstrable criterion names one of the two; a fixture passing an empty
@@ -258,7 +265,9 @@ async def test_actual_factory_runs_all_configured_phases_and_reentry_writes_noth
     ]
     assert len(children) == 1
     assert children[0].status_type == "unstarted"
-    assert children[0].description.endswith("**Evidence:**\n")
+    assert SCRIPTED_DEMONSTRATION["runnable_test"] in children[0].description
+    with pytest.raises(ValueError):
+        parse_criterion_evidence(children[0].description)
     assert "approved scope" not in parent.labels
     assert all(
         call["session_id"] is None and call["allowed_tools"] is ToolPreset.EVALUATION
@@ -430,6 +439,14 @@ async def test_undemonstrable_deliverable_refuses_and_relocates_its_demonstratio
     assert gradability is not None
     assert gradability.searched_environments.strip() == SEARCHED_ENVIRONMENTS
     assert gradability.relocated_demonstration.strip() == RELOCATED_DEMONSTRATION
+    escalations = [
+        comment
+        for comment in board.server.comments
+        if comment.body.startswith(ESCALATION_MARKER)
+    ]
+    assert len(escalations) == 1
+    assert RELOCATED_DEMONSTRATION in escalations[0].body
+    assert SEARCHED_ENVIRONMENTS in escalations[0].body
     judged = [
         call["prompt"]
         for call in executor.calls
@@ -472,6 +489,13 @@ async def test_a_buildability_refusal_carries_no_relocated_demonstration():
     ]
     assert [result.verdict for result in refusals] == [AdmissionVerdict.NOT_BUILDABLE]
     assert [result.undemonstrable for result in refusals] == [None]
+    escalations = [
+        comment
+        for comment in board.server.comments
+        if comment.body.startswith(ESCALATION_MARKER)
+    ]
+    assert len(escalations) == 1
+    assert "relocated to" not in escalations[0].body
     assert "body complete" not in board.server.issues[CLAIMED_ISSUE].labels
 
 
@@ -522,24 +546,23 @@ async def test_unfillable_criterion_evidence_refuses_before_the_child_exists(
     assert "criteria complete" not in board.server.issues[CLAIMED_ISSUE].labels
 
 
-def test_criterion_evidence_needs_a_graded_commit_as_well_as_a_demonstration():
-    """The conjunct the owner path cannot reach, read off the check itself.
+def test_authoring_asks_only_what_authoring_can_settle():
+    """Fillability at authoring is the declared demonstration, and nothing else.
 
-    A base that is not a complete commit is refused by the write-back
-    verifier before any phase proposes a criterion, so the first half of the
-    Evidence shape is asserted here directly.
+    No commit has been graded when a criterion is authored, so the identity
+    of the one that eventually is stays the Evidence record's own question:
+    the record refuses anything that is not a complete commit, and the
+    authoring predicate does not ask a second time.
     """
     demonstrated = {
         "runnable_test": "tests/chains/test_prepared_bytes.py::test_bytes_match",
         "named_observation": None,
     }
-    assert evidence_is_fillable(graded_sha="a" * 40, **demonstrated)
-    assert not evidence_is_fillable(
-        graded_sha="refs/heads/selected-base", **demonstrated
-    )
-    assert not evidence_is_fillable(
-        graded_sha="a" * 40, runnable_test=None, named_observation=None
-    )
+    assert evidence_is_fillable(**demonstrated)
+    assert not evidence_is_fillable(runnable_test=None, named_observation=None)
+    assert CriterionEvidence(graded_sha="a" * 40, test="t").graded_sha == "a" * 40
+    with pytest.raises(ValidationError):
+        CriterionEvidence(graded_sha="refs/heads/selected-base", test="t")
 
 
 FILLABLE_DEMONSTRATIONS = (
@@ -573,7 +596,10 @@ async def test_fillable_criterion_evidence_is_admitted_and_its_child_prepared(
         if issue.parent_id == CLAIMED_ISSUE
     ]
     assert len(children) == 1
-    assert children[0].description.endswith("**Evidence:**\n")
+    declared = next(iter(demonstration.values()))
+    assert declared in children[0].description
+    with pytest.raises(ValueError):
+        parse_criterion_evidence(children[0].description)
     assert "criteria complete" in board.server.issues[CLAIMED_ISSUE].labels
 
 
@@ -1122,9 +1148,6 @@ async def test_removed_mandate_leaves_the_same_authoring_step_dry(monkeypatch):
     assert {"graph complete", "body complete", "criteria complete"} <= set(
         parent.labels
     )
-
-
-ESCALATION_MARKER = "[organize-question:"
 
 
 def stage_report_step(monkeypatch, board, *, raises=None):

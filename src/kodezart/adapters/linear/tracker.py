@@ -1781,10 +1781,13 @@ class LinearMcpTracker:
         title: str,
         check: str,
         do: str,
+        demonstration: str,
         holder: str,
         revalidate: WriteRevalidation | None = None,
     ) -> TrackerIssue:
-        body = criterion_body(parent_key=parent_key, check=check, do=do)
+        body = criterion_body(
+            parent_key=parent_key, check=check, do=do, demonstration=demonstration
+        )
         if not title.strip():
             raise CriterionReadError(
                 issue_key=parent_key, reason="criterion title is empty"

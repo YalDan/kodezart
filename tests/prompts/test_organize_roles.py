@@ -81,3 +81,71 @@ def test_organize_roles_inherit_the_existing_authorship_and_judgment_policies() 
         assert (
             registry.session_policy(key).effort is metadata.session_roles[role].effort
         )
+
+
+def _flowed(rendered: str) -> str:
+    """Prompt prose is hard-wrapped; a sentence is read across its line breaks."""
+    return " ".join(rendered.split())
+
+
+def _render(set_name: str, name: str) -> str:
+    return (
+        load_registry(default_set=set_name)
+        .template_for(PromptKey[name])
+        .render(ORGANIZE_CASE)
+    )
+
+
+#: KOD-74-AC-32 — the gradability question, as a rendered judging prompt must
+#: carry it: the environments this scope declares are searched, a deliverable
+#: none of them demonstrates is refused rather than admitted, and the refusal
+#: names where the demonstration goes instead.
+GRADABILITY_INSTRUCTION = (
+    "gradability as well as buildability",
+    "environments its work runs and is demonstrated in",
+    "demonstrable in none of them is not_buildable",
+    "undemonstrable refusal",
+    "names the environments searched",
+    "demonstration is relocated to",
+)
+
+#: The same for the criteria author: a criterion is authored only with the
+#: thing that will grade it named.
+DEMONSTRATION_INSTRUCTION = (
+    "Evidence can actually be filled",
+    "exact runnable test that will demonstrate it at the graded commit",
+    "observation that will be recorded instead",
+    "names neither is refused before it is created",
+)
+
+
+@pytest.mark.parametrize("set_name", [OPUS_SET, V5_SET])
+@pytest.mark.parametrize("name", ["ORGANIZE_ASSESS", "ORGANIZE_VERIFY"])
+@pytest.mark.parametrize("instruction", GRADABILITY_INSTRUCTION)
+def test_each_judging_prompt_asks_gradability_over_the_declared_environments(
+    set_name: str, name: str, instruction: str
+) -> None:
+    """A wiring claim about the rendered prompt, never a compliance one.
+
+    That the question is asked is not that the answer obeys it; what the
+    typed refusal carries once it is answered is asserted over the owner in
+    ``tests/chains/test_organize_owner.py``.
+    """
+    assert instruction in _flowed(_render(set_name, name))
+
+
+@pytest.mark.parametrize("set_name", [OPUS_SET, V5_SET])
+@pytest.mark.parametrize("instruction", DEMONSTRATION_INSTRUCTION)
+def test_the_criteria_author_is_asked_for_a_test_or_an_observation(
+    set_name: str, instruction: str
+) -> None:
+    """The author names what will fill Evidence, or the criterion is refused."""
+    assert instruction in _flowed(_render(set_name, "ORGANIZE_CRITERIA_AUTHOR"))
+
+
+@pytest.mark.parametrize("set_name", [OPUS_SET, V5_SET])
+def test_the_body_author_is_asked_neither_question(set_name: str) -> None:
+    """The negative control: neither instruction is corpus-wide boilerplate."""
+    rendered = _flowed(_render(set_name, "ORGANIZE_AUTHOR"))
+    assert "gradability as well as buildability" not in rendered
+    assert "Evidence can actually be filled" not in rendered

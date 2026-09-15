@@ -5,11 +5,12 @@ import json
 import pytest
 from pydantic import ValidationError
 
+from kodezart.domain.criterion_creation import criterion_body
 from kodezart.domain.criterion_evidence import (
     parse_criterion_evidence,
     render_evidence_field,
 )
-from kodezart.domain.fire_spec import criterion_check
+from kodezart.domain.fire_spec import criterion_check, criterion_field_bodies
 from kodezart.types.domain.criterion_evidence import CriterionEvidence
 from tests.fakes import make_tracker_issue
 
@@ -101,3 +102,23 @@ def test_quoted_rows_and_comments_are_not_evidence_but_fenced_string_bytes_are()
     )
     assert parse_criterion_evidence(body) == evidence()
     assert parse_criterion_evidence(body.replace("\n", "\r\n")) == evidence()
+
+
+def test_a_created_criterion_names_its_demonstration_and_still_reads_as_unfilled():
+    """The row a criterion is born with: nothing graded, one grader named.
+
+    A created criterion has been graded by nothing, so the codec must keep
+    refusing it — that refusal is how an ungraded criterion is told from a
+    graded one. What the row carries meanwhile is the demonstration its
+    author declared, which no later reader can reconstruct from the Check.
+    """
+    demonstration = "tests/domain/test_prepared_bytes.py::test_bytes_are_preserved"
+    body = criterion_body(
+        parent_key="native/parent",
+        check="The prepared bytes match the declared source.",
+        do="Compare the source and the prepared bytes.",
+        demonstration=demonstration,
+    )
+    assert demonstration in criterion_field_bodies(body, field="Evidence")[0]
+    with pytest.raises(ValueError, match="explicit fenced JSON record"):
+        parse_criterion_evidence(body)

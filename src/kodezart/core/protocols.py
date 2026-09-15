@@ -1006,6 +1006,7 @@ class TrackerPort(
         title: str,
         check: str,
         do: str,
+        demonstration: str,
         holder: str,
         revalidate: WriteRevalidation | None = None,
     ) -> TrackerIssue:
@@ -1013,9 +1014,10 @@ class TrackerPort(
 
         Exact parent + current Check identifies a replay. Duplicate matches
         refuse; an existing child is returned without rewriting any field.
-        New content has Check, Do and empty Evidence, configured criterion
-        classification and the team's unique unstarted state. Existing
-        child edits require their own CRITERION_SUB_ISSUE authority.
+        New content has Check, Do and an unfilled Evidence row naming the
+        supplied demonstration, configured criterion classification and the
+        team's unique unstarted state. Existing child edits require their
+        own CRITERION_SUB_ISSUE authority.
         """
         ...
 

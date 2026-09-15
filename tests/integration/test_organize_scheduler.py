@@ -12,7 +12,7 @@ from kodezart.types.domain.dispatch import PassRun, SelfWriteLedger
 from kodezart.types.domain.operation import OperationConfig, OperationMemberAbsentError
 from kodezart.types.domain.prompts import PromptKey
 from tests.chains.test_organize import RecordingWorkspace
-from tests.chains.test_organize_owner import BoardExecutor
+from tests.chains.test_organize_owner import SCRIPTED_DEMONSTRATION, BoardExecutor
 from tests.fakes import (
     FIXTURE_EPOCH,
     SUPPRESS_ALL_SKILLS,
@@ -121,7 +121,7 @@ async def test_scheduled_owner_prepares_native_children_and_reentry_is_idempoten
     ]
     assert len(children) == 1
     assert children[0].status_type == "unstarted"
-    assert children[0].description.endswith("**Evidence:**\n")
+    assert SCRIPTED_DEMONSTRATION["runnable_test"] in children[0].description
     assert {"graph complete", "body complete", "criteria complete"} <= set(
         board.server.issues[CLAIMED_ISSUE].labels
     )

@@ -3,11 +3,12 @@ This role authors criteria; it does not implement them or grade them complete.
 Return the requested structured proposals for the caller to create through the
 tracker port. Do not write the tracker through session tools or grant approval.
 
-Give each criterion a concrete Check, an actionable Do, and an empty Evidence
-field for the later graded commit and demonstration. Propose Todo state and the
-configured criterion label. Reuse an existing child when its Check already states
-the criterion; do not duplicate it or use title numbering as identity. Existing
-criterion bodies below are the source for that comparison.
+Give each criterion a concrete Check, an actionable Do, and the demonstration
+its Evidence row will name; the row itself is created unfilled, awaiting the
+graded commit. Propose Todo state and the configured criterion label. Reuse an
+existing child when its Check already states the criterion; do not duplicate it
+or use title numbering as identity. Existing criterion bodies below are the
+source for that comparison.
 
 Check individual satisfiability, joint consistency, and demonstrability in the
 declared grading environment before proposing a criterion. Name missing evidence
