@@ -17,14 +17,21 @@ it is chosen by the same predicate.
 import ast
 import asyncio
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from pathlib import Path
+from types import UnionType
+from typing import Union, get_args, get_origin, get_type_hints
 
 import httpx
 import pytest
 
 from kodezart.adapters.github.api import GitHubAPIClient
+from kodezart.chains.authored_checks import AuthoredChecks
 from kodezart.chains.authored_delivery import AuthoredDeliveryCoordinator
+from kodezart.chains.authored_publication import AuthoredPublication
+from kodezart.chains.fire_specification import FireSpecification
+from kodezart.chains.lane_delivery import LaneDeliveryCoordinator
+from kodezart.composition.delivery import build_native_lane_workflow
 from kodezart.composition.engine import (
     OriginRoutedWorkflowEngine,
     build_workflow_engine,
@@ -34,6 +41,7 @@ from kodezart.composition.forge import (
     pr_state_reader_for_origin,
 )
 from kodezart.composition.jobs import build_job_queue
+from kodezart.composition.scope_runtime import build_scope_runtime
 from kodezart.config.app import AppConfig
 from kodezart.core import protocols
 from kodezart.core.constants import DEFAULT_LANE
@@ -91,18 +99,26 @@ SETTLE_SECONDS = 5.0
 SRC = Path(__file__).resolve().parents[1] / "src" / "kodezart"
 COMPOSITION = SRC / "composition"
 
-#: The keyword slots the workflow engine takes a forge-backed capability
-#: through.  Bound as a set at exactly one site, so a capability cannot be
-#: selected apart from its peers.
-ENGINE_FORGE_SLOTS: frozenset[str] = frozenset(
-    {"visibility_resolver", "pr_creator", "ci_monitor"},
+#: The authored arm's forge-touching consumers.  The engine binds every
+#: forge capability they take to one value, so no capability can be
+#: chosen apart from its peers.
+AUTHORED_FORGE_CONSUMERS: tuple[Callable[..., object], ...] = (
+    FireSpecification.__init__,
+    AuthoredPublication.__init__,
+    AuthoredChecks.__init__,
 )
 
-#: The keyword slots a forge-backed READ capability reaches the native
-#: delivery lane through.  Bound as a set at exactly one site too, so a
-#: read cannot be selected apart from the writes it travels with.
-ENGINE_FORGE_READ_SLOTS: frozenset[str] = frozenset(
-    {"pr_state_reader", "forge_query"},
+#: The native lane's forge-touching consumer: one coordinator taking the
+#: pull-request writes and the forge reads it travels with.
+LANE_FORGE_CONSUMERS: tuple[Callable[..., object], ...] = (
+    LaneDeliveryCoordinator.__init__,
+)
+
+#: The builders the composition root hands a whole selected forge to, for
+#: the native lane and for the dispatch tick's probe.
+LANE_FORGE_BUILDERS: tuple[Callable[..., object], ...] = (
+    build_native_lane_workflow,
+    build_scope_runtime,
 )
 
 #: The forge client parameter of the composition root.  Its presence is
@@ -480,11 +496,49 @@ async def test_the_forge_adapter_answers_exactly_the_covered_capability_set() ->
     assert answered == set(COVERED_BY_ORIGIN)
 
 
-def _forge_slot_keywords(
-    module: Path,
-    *,
-    slots: frozenset[str] = ENGINE_FORGE_SLOTS,
-) -> list[ast.keyword]:
+def _annotated_types(annotation: object) -> set[type]:
+    """The classes *annotation* admits, unwrapping an optional capability."""
+    if get_origin(annotation) in (Union, UnionType):
+        return {
+            argument for argument in get_args(annotation) if isinstance(argument, type)
+        }
+    return {annotation} if isinstance(annotation, type) else set()
+
+
+async def _forge_answered_types() -> frozenset[type]:
+    """Every type the built forge adapter answers, the adapter itself included.
+
+    The adapter's own class counts: a builder that takes the whole forge
+    rather than one of its ports selects a capability just as much.
+    """
+    client = build_forge_client(config=AppConfig(github_token=FAKE_TOKEN))
+    assert client is not None
+    try:
+        return frozenset(_answered_protocols(client) | {type(client)})
+    finally:
+        await client.close()
+
+
+async def _forge_slots(*consumers: Callable[..., object]) -> frozenset[str]:
+    """The keyword slots *consumers* take a forge-answered capability through.
+
+    Read from the signatures, never typed out here: a capability added to
+    a consumer joins the covered set without an edit to this module, and
+    the exclusivity checks below go red until its binding is accounted
+    for.
+    """
+    answered = await _forge_answered_types()
+    slots = frozenset(
+        name
+        for consumer in consumers
+        for name, annotation in get_type_hints(consumer).items()
+        if name != "return" and _annotated_types(annotation) & answered
+    )
+    assert slots, "a forge consumer with no forge-answered parameter is a defect here"
+    return slots
+
+
+def _forge_slot_keywords(module: Path, *, slots: frozenset[str]) -> list[ast.keyword]:
     """Every keyword argument in *module* naming one of *slots*."""
     tree = ast.parse(module.read_text(encoding="utf-8"))
     return [
@@ -496,11 +550,37 @@ def _forge_slot_keywords(
     ]
 
 
-def test_the_engine_forge_slots_are_bound_as_one_set() -> None:
-    """All three, one expression: no capability moves on its own."""
-    keywords = _forge_slot_keywords(COMPOSITION / "engine.py")
+def _binding_modules(slots: frozenset[str]) -> dict[str, frozenset[str]]:
+    """Every composition module binding one of *slots*, with the slots it binds.
 
-    assert {keyword.arg for keyword in keywords} == ENGINE_FORGE_SLOTS
+    The whole enumeration for every exclusivity check below, so a new
+    selection site is one that this mapping does not already name.
+    """
+    found = {
+        module.name: frozenset(
+            keyword.arg
+            for keyword in _forge_slot_keywords(module, slots=slots)
+            if keyword.arg is not None
+        )
+        for module in sorted(COMPOSITION.glob("*.py"))
+    }
+    return {name: bound for name, bound in found.items() if bound}
+
+
+def _bound_values(module: Path, *, slots: frozenset[str]) -> set[str]:
+    """The distinct expressions *module* binds *slots* to."""
+    return {
+        ast.unparse(keyword.value)
+        for keyword in _forge_slot_keywords(module, slots=slots)
+    }
+
+
+async def test_the_engine_forge_slots_are_bound_as_one_set() -> None:
+    """All of them, one expression: no capability moves on its own."""
+    slots = await _forge_slots(*AUTHORED_FORGE_CONSUMERS)
+    keywords = _forge_slot_keywords(COMPOSITION / "engine.py", slots=slots)
+
+    assert {keyword.arg for keyword in keywords} == slots
     bound = {ast.unparse(keyword.value) for keyword in keywords}
     assert len(bound) == 1, (
         f"the engine's forge capabilities are bound to {sorted(bound)}; "
@@ -508,54 +588,80 @@ def test_the_engine_forge_slots_are_bound_as_one_set() -> None:
     )
 
 
-def test_no_engine_forge_slot_is_bound_to_the_forge_client() -> None:
+async def test_no_engine_forge_slot_is_bound_to_the_forge_client() -> None:
     """Client presence selects nothing. Origin selects everything."""
+    slots = await _forge_slots(*AUTHORED_FORGE_CONSUMERS, *LANE_FORGE_CONSUMERS)
     for module in sorted(COMPOSITION.glob("*.py")):
-        for keyword in _forge_slot_keywords(module):
+        for keyword in _forge_slot_keywords(module, slots=slots):
             assert ast.unparse(keyword.value) != FORGE_CLIENT_PARAM, (
                 f"{module.name} binds {keyword.arg} to {FORGE_CLIENT_PARAM}, "
                 "which is the defect KOD-148 exists to remove."
             )
 
 
-def test_only_delivery_builders_bind_the_engine_forge_slots() -> None:
+async def test_only_delivery_builders_bind_the_engine_forge_slots() -> None:
     """Authored and native builders receive the one selected capability set."""
     # Restored (KOD-827): the set of modules binding an engine forge slot is closed.
-    binding = sorted(
-        module.name
-        for module in COMPOSITION.glob("*.py")
-        if _forge_slot_keywords(module)
-    )
+    slots = await _forge_slots(*AUTHORED_FORGE_CONSUMERS)
 
-    assert binding == ["delivery.py", "engine.py"]
-    assert {
-        ast.unparse(keyword.value)
-        for keyword in _forge_slot_keywords(COMPOSITION / "delivery.py")
-    } == {"forge"}
+    assert _binding_modules(slots) == {
+        "delivery.py": frozenset({"pr_creator"}),
+        "engine.py": frozenset({"visibility_resolver", "pr_creator", "ci_monitor"}),
+    }
+    assert _bound_values(COMPOSITION / "delivery.py", slots=slots) == {"forge"}
 
 
-def test_only_the_delivery_builder_binds_a_forge_read_slot() -> None:
-    """One selection site for the forge reads, findable by this test.
+async def test_every_lane_forge_slot_is_bound_only_where_a_lane_is_composed() -> None:
+    """One selection site for the lane's whole forge surface, reads included.
 
     The exclusivity the engine's write slots carry above, restated for
-    the read capabilities that joined the covered set after it: the PR
-    lifecycle reader and the forge query reach the lane from a single
-    composition module, bound to the one selected client.
+    every capability the lane coordinator takes: the pull-request writes,
+    the checks surface, the PR lifecycle reader and the forge query reach
+    the lane from a single composition module, bound to the one selected
+    client.  The other two modules named here bind only the checks
+    surface, for the audit sweep, and neither can reach the lane.
     """
-    # Restored (KOD-827): the set of modules binding a forge read slot is closed.
-    binding = sorted(
-        module.name
-        for module in COMPOSITION.glob("*.py")
-        if _forge_slot_keywords(module, slots=ENGINE_FORGE_READ_SLOTS)
-    )
+    # Restored (KOD-827): the set of modules binding a lane forge slot is closed.
+    slots = await _forge_slots(*LANE_FORGE_CONSUMERS)
 
-    assert binding == ["delivery.py"]
-    keywords = _forge_slot_keywords(
-        COMPOSITION / "delivery.py",
-        slots=ENGINE_FORGE_READ_SLOTS,
-    )
-    assert {keyword.arg for keyword in keywords} == ENGINE_FORGE_READ_SLOTS
-    assert {ast.unparse(keyword.value) for keyword in keywords} == {"forge"}
+    assert _binding_modules(slots) == {
+        "audit.py": frozenset({"ci"}),
+        "delivery.py": frozenset(
+            {"pr_creator", "pr_state_reader", "forge_query", "ci"},
+        ),
+        "engine.py": frozenset({"pr_creator"}),
+        "passes.py": frozenset({"ci"}),
+    }
+    assert _bound_values(COMPOSITION / "delivery.py", slots=slots) == {"forge"}
+
+
+async def test_the_lane_builders_are_handed_a_forge_from_one_composition_site() -> None:
+    """The selected forge itself travels to the lane and the probe once.
+
+    The originally dropped check, in the shape the composition now has.
+    Only the engine root hands a builder the whole client, and it calls
+    the lane builder twice — once with the client for the forge-shaped
+    origins, once with nothing for the rest, which is the selection the
+    probe then repeats per origin.  The other two modules named here bind
+    a keyword of the same name for the audit sweep and the dispatch tick,
+    never to one of these builders.
+    """
+    # Restored (KOD-827): the set of modules handing a builder a whole forge is closed.
+    slots = await _forge_slots(*LANE_FORGE_BUILDERS)
+    engine = COMPOSITION / "engine.py"
+
+    assert _binding_modules(slots) == {
+        "audit.py": frozenset({"forge"}),
+        "engine.py": frozenset({"forge", "forge_probe"}),
+        "passes.py": frozenset({"forge"}),
+    }
+    assert _bound_values(engine, slots=frozenset({"forge"})) == {
+        FORGE_CLIENT_PARAM,
+        "None",
+    }
+    assert _bound_values(engine, slots=frozenset({"forge_probe"})) == {
+        FORGE_CLIENT_PARAM
+    }
 
 
 def test_the_delivery_capability_is_selected_by_the_same_predicate() -> None:
