@@ -31,7 +31,12 @@ from kodezart.domain.errors import (
     SurfaceLeaseError,
     WriteBackReadError,
 )
-from kodezart.domain.organize import admission_route, is_organize_subject, organize_gap
+from kodezart.domain.organize import (
+    admission_route,
+    is_organize_subject,
+    organize_at_rest,
+    organize_gap,
+)
 from kodezart.domain.organize_graph import (
     graph_peers,
     graph_snapshot,
@@ -170,6 +175,19 @@ class OrganizeOwner:
         )
         self._admissions: dict[MandateKind, dict[str, AdmissionResult]] = {}
         self._log = get_logger(__name__)
+
+    def _judged_surfaces(self) -> tuple[AdmissionResult, ...]:
+        """The latest judgment this owner holds for each surface it has judged.
+
+        Phases record their verdicts apart, and a later phase re-judges
+        the surfaces an earlier one saw. A surface therefore has one
+        current judgment, the last recorded in configured phase order,
+        and this returns exactly that — no read, and no re-judgment.
+        """
+        latest: dict[str, AdmissionResult] = {}
+        for phase in self._phases:
+            latest.update(self._admissions.get(phase.spec.kind, {}))
+        return tuple(latest.values())
 
     async def _snapshot(self, scope: ScopeRef) -> tuple[TrackerIssueRevision, ...]:
         members = await self._tracker.scope_issues(ref=scope)
@@ -966,12 +984,28 @@ class OrganizeOwner:
         visibility: RepoVisibility,
     ) -> OrganizeReport:
         completed: list[MandateKind] = []
+        # One obligation read opens the pass. The delta pre-query is that
+        # read counted by the gap itself, so a scope at rest is answered
+        # and left alone here; a scope with work carries the very same
+        # snapshot into the first round rather than reading it again.
+        opening = await self._snapshot(scope)
+        if organize_at_rest(
+            revisions=opening,
+            admissions=self._judged_surfaces(),
+            open_findings=(),
+            body_marker_key=self._body_marker,
+        ):
+            return OrganizeReport(completed_phases=())
+        unspent: tuple[TrackerIssueRevision, ...] | None = opening
         for phase in self._phases:
             admissions = self._admissions.setdefault(phase.spec.kind, {})
             classes: set[str] = set()
             findings: tuple[SpecFinding, ...] = ()
             for _convergence_round in range(self._policy.max_convergence_rounds):
-                snapshot = await self._snapshot(scope)
+                snapshot = (
+                    unspent if unspent is not None else await self._snapshot(scope)
+                )
+                unspent = None
                 members = {r.issue.issue_key for r in snapshot}
                 if snapshot and all(
                     [

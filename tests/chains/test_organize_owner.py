@@ -4,6 +4,7 @@
 # current native board and the requested wire type, not a canned verdict order.
 import json
 import re
+from datetime import UTC, datetime
 from itertools import groupby
 
 import pytest
@@ -14,6 +15,7 @@ from kodezart.config.organize import OrganizeSettings
 from kodezart.core.prompt_namespaces import operation_bindings
 from kodezart.domain.errors import OrganizeAdmissionIdentityError
 from kodezart.services.agent_service import AgentService
+from kodezart.types.domain.dispatch import PassRun
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.operation import OperationConfig
 from kodezart.types.domain.organize import AdmissionVerdict, SpecFinding
@@ -244,6 +246,33 @@ async def test_actual_factory_runs_all_configured_phases_and_reentry_writes_noth
     board.calls.clear()
     await run_owner(owner)
     assert not [(name, args) for name, args in board.calls if name.startswith("save_")]
+
+
+async def test_a_scope_at_rest_costs_the_tick_one_obligation_read():
+    """Re-entering an unchanged scope reads its obligations once and stops.
+
+    The delta pre-query is the gap counted over that one read, so the
+    pass answers "nothing to do" from it: no second membership read, no
+    re-judgment of surfaces nothing happened to, and no write.
+    """
+    tick, board, executor = factory(tick=True)
+    instant = datetime(2026, 9, 12, tzinfo=UTC)
+    assert await tick.run(instant) is PassRun.RAN
+    assert executor.calls, "the first tick never organized the scope"
+
+    board.calls.clear()
+    executor.calls.clear()
+    assert await tick.run(instant) is PassRun.RAN
+    obligation_reads = [
+        args
+        for name, args in board.calls
+        if name == "list_issues"
+        and args.get("parentId") == CLAIMED_ISSUE
+        and "fields" not in args
+    ]
+    assert len(obligation_reads) == 1
+    assert {name for name, _ in board.calls} == {"list_issues", "get_issue"}
+    assert executor.calls == []
 
 
 async def test_single_admission_round_stops_with_durable_refusal_and_no_completion():

@@ -145,3 +145,28 @@ def organize_gap(
         ):
             gap.append(issue)
     return tuple(gap)
+
+
+def organize_at_rest(
+    *,
+    revisions: Sequence[TrackerIssueRevision],
+    admissions: Sequence[AdmissionResult],
+    open_findings: Sequence[SpecFinding],
+    body_marker_key: str,
+) -> bool:
+    """Answer "nothing to organize" as the gap's own cardinality.
+
+    This pre-query is the gap counted, not a second opinion about it. It
+    takes the one snapshot the gap takes, spends no tracker read of its
+    own, judges no text and reaches no backend: a caller that asks it
+    first and stops on ``True`` gets exactly the decision the whole gap
+    would have handed it, for the price of the read already made.
+
+    An incoherent snapshot refuses here for the reason it refuses there.
+    """
+    return not organize_gap(
+        revisions=revisions,
+        admissions=admissions,
+        open_findings=open_findings,
+        body_marker_key=body_marker_key,
+    )
