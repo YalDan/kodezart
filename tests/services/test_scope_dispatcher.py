@@ -12,6 +12,7 @@ import importlib
 import inspect
 import textwrap
 from datetime import datetime, timedelta
+from enum import Enum
 from pathlib import Path
 
 import pytest
@@ -32,6 +33,7 @@ from kodezart.services.run_recorder import RunRecorder
 from kodezart.services.scope_dispatcher import ScopeDispatcher
 from kodezart.services.tracker_lifecycle import TrackerLifecycleWriter
 from kodezart.types.domain import scope_ready
+from kodezart.types.domain import tracker as tracker_module
 from kodezart.types.domain.branch import WorkRef, WorkRefRole
 from kodezart.types.domain.dispatch import (
     DispatchOutcome,
@@ -43,6 +45,7 @@ from kodezart.types.domain.dispatch import (
 from kodezart.types.domain.job import JobState
 from kodezart.types.domain.operation import ScopeLabel
 from kodezart.types.domain.outcome import WorkflowOutcome
+from kodezart.types.domain.run_event import RunEventKind
 from kodezart.types.domain.scope import ScopeContainer, ScopeKind, ScopeRef
 from kodezart.types.domain.tracker import (
     IssuePriority,
@@ -546,70 +549,121 @@ def test_ready_set_and_walker_modules_hold_no_merge_state_call_site():
     }
 
 
-def fire_outcome_vocabulary() -> frozenset[str]:
-    """The fire-level outcome vocabulary, read off the enum rather than listed.
+OUTCOME_MODULE = "kodezart.types.domain.outcome"
 
-    A member appended later is covered by the assertion below without the
-    assertion being touched, which is the whole point of deriving the set
-    from the enum: a hand-written list would only forbid what the author of
-    the list happened to know about.
+
+def enum_bound_names(tree):
+    """Every local name the parsed module binds to the fire-outcome enum.
+
+    The enum's own spelling always counts, and so does whatever an import
+    renamed it to here: a clause that imported it ``as Outcome`` reads a
+    fire outcome exactly as loudly as one that did not.
     """
-    return frozenset(
-        {WorkflowOutcome.__name__}
-        | {member.name for member in WorkflowOutcome}
-        | {member.value for member in WorkflowOutcome}
-    )
+    bound = {WorkflowOutcome.__name__}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ImportFrom) or node.module != OUTCOME_MODULE:
+            continue
+        bound |= {
+            alias.asname or alias.name
+            for alias in node.names
+            if alias.name == WorkflowOutcome.__name__
+        }
+    return bound
+
+
+def names_the_enum(node, bound):
+    """Whether the parsed attribute base is one of the enum's local names."""
+    if isinstance(node, ast.Name):
+        return node.id in bound
+    if isinstance(node, ast.Attribute):
+        return node.attr in bound
+    return False
+
+
+def names_an_enum(node):
+    """Whether the parsed class base names an enumeration."""
+    if isinstance(node, ast.Name):
+        return node.id.endswith(Enum.__name__)
+    if isinstance(node, ast.Attribute):
+        return node.attr.endswith(Enum.__name__)
+    return False
+
+
+def foreign_enum_members(tree):
+    """Every string another enum's own member table binds, by node identity.
+
+    An enum spells its own values, and two of them may spell the same
+    thing: ``RunEventKind`` calls the moment a pull request opened
+    ``pr_opened``, and so does ``WorkflowOutcome``.  A class DEFINING its
+    own vocabulary is not a predicate READING the fire outcome, and
+    counting it as one would make every verdict this scan returns noise.
+    The fire-outcome enum's own table is never exempted: a predicate that
+    reached it would be reading exactly what the Check forbids.
+    """
+    bound = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ClassDef) or node.name == WorkflowOutcome.__name__:
+            continue
+        if not any(names_an_enum(base) for base in node.bases):
+            continue
+        bound |= {
+            id(statement.value)
+            for statement in node.body
+            if isinstance(statement, ast.Assign)
+            and isinstance(statement.value, ast.Constant)
+        }
+    return bound
 
 
 def outcome_references(source: str) -> frozenset[str]:
     """Every fire-level outcome the parsed *source* names, however it names it.
 
-    Imports, bare names, attribute reads and the wire strings themselves all
-    count: a predicate that compared ``report.outcome == "scope_converged"``
-    would be reading a fire outcome just as surely as one that imported the
-    enum.
+    The vocabulary is read off the enum rather than listed, so a member
+    appended later is covered without this helper being touched — a
+    hand-written list would only forbid what its author happened to know
+    about — and each way of naming one is recognised: the import, the
+    enum's own name, a member read off it, and the wire string itself,
+    because a clause comparing ``report.outcome == "scope_converged"``
+    reads a fire outcome just as surely as one that imported the enum.
+
+    What the vocabulary alone cannot do is tell whose member it is.  A
+    member is counted only when it is read off the fire-outcome enum — off
+    its own name or off whatever an import renamed it to — so a member of
+    another enum that happens to share a spelling is not reported as a
+    fire-outcome read, and neither is the line where that other enum binds
+    it.  ``RunEventKind`` spells the moment a pull request opened
+    ``pr_opened`` and so does ``WorkflowOutcome``; the predicate may read
+    the event vocabulary all it likes.  A bare name counts only when it was
+    imported from the outcome module, and a bare string when it is a
+    member's wire value, which is the one form that carries no base to
+    resolve.
     """
-    vocabulary = fire_outcome_vocabulary()
+    tree = ast.parse(textwrap.dedent(source))
+    members = {member.name for member in WorkflowOutcome}
+    values = {member.value for member in WorkflowOutcome}
+    bound = enum_bound_names(tree)
+    defined = foreign_enum_members(tree)
     found: set[str] = set()
-    for node in ast.walk(ast.parse(textwrap.dedent(source))):
-        if isinstance(node, ast.Name) and node.id in vocabulary:
-            found.add(node.id)
-        if isinstance(node, ast.Attribute) and node.attr in vocabulary:
-            found.add(node.attr)
-        if isinstance(node, ast.ImportFrom | ast.Import):
-            found |= {
-                alias.name.rsplit(".", 1)[-1] for alias in node.names
-            } & vocabulary
-        if isinstance(node, ast.Constant) and node.value in vocabulary:
-            found.add(node.value)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module == OUTCOME_MODULE:
+            found |= {alias.name for alias in node.names} & (
+                members | {WorkflowOutcome.__name__}
+            )
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+            if node.id in bound:
+                found.add(WorkflowOutcome.__name__)
+        if isinstance(node, ast.Attribute) and node.attr in members | values:
+            if names_the_enum(node.value, bound):
+                found.add(node.attr)
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            if node.value in values and id(node) not in defined:
+                found.add(node.value)
     return frozenset(found)
 
 
 PREDICATE_PACKAGES = ("services", "chains", "domain", "types/domain")
 
 SRC = Path(__file__).resolve().parents[2] / "src" / "kodezart"
-
-EXCLUDED_UNITS = frozenset({"record_run_outcome"})
-
-
-class ExcludedUnitsRemoved(ast.NodeTransformer):
-    """Drops every deliberately excluded unit out of a unit that carries it.
-
-    ``record_run_outcome`` is the one excluded name: it records how a fire
-    that already ran ended, which is the one place a run outcome belongs,
-    and it decides nothing about which lane is dispatchable next.  A class
-    that happens to carry it is therefore scanned without it rather than
-    dropped from the scan altogether.
-    """
-
-    def visit_FunctionDef(self, node):
-        if node.name in EXCLUDED_UNITS:
-            return None
-        self.generic_visit(node)
-        return node
-
-    def visit_AsyncFunctionDef(self, node):
-        return self.visit_FunctionDef(node)
 
 
 def predicate_source_tree():
@@ -624,11 +678,6 @@ def predicate_source_tree():
 def module_relative(module):
     """The supplied module's path, spelled the way the source map keys it."""
     return Path(module.__file__).resolve().relative_to(SRC).as_posix()
-
-
-def unit_source(node):
-    """One unit's source, with any excluded unit nested inside it removed."""
-    return ast.unparse(ExcludedUnitsRemoved().visit(ast.parse(ast.unparse(node))))
 
 
 def imported_relatives(tree, sources):
@@ -672,22 +721,24 @@ def defined_units(sources, modules):
                 node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef
             ):
                 continue
-            if node.name in EXCLUDED_UNITS:
-                continue
             units.setdefault(node.name, []).append((f"{relative}::{node.name}", node))
     return units
 
 
-def called_names(node):
-    """Every name and attribute the parsed unit calls."""
+def referenced_names(node):
+    """Every name and attribute the parsed unit reads, by the spelling it reads.
+
+    Calls are not the only way a unit reaches code: a property is read as a
+    plain attribute, a class is named in an annotation, a helper is passed
+    by name to be called elsewhere.  Every load counts, so every one of
+    those is resolved.
+    """
     found = set()
-    for called in ast.walk(node):
-        if not isinstance(called, ast.Call):
-            continue
-        if isinstance(called.func, ast.Name):
-            found.add(called.func.id)
-        elif isinstance(called.func, ast.Attribute):
-            found.add(called.func.attr)
+    for read in ast.walk(node):
+        if isinstance(read, ast.Name) and isinstance(read.ctx, ast.Load):
+            found.add(read.id)
+        if isinstance(read, ast.Attribute):
+            found.add(read.attr)
     return found
 
 
@@ -696,15 +747,15 @@ def dispatchability_predicate_sources(sources):
 
     Derived from the supplied code rather than listed by hand: start at the
     one pass method that turns a ready set into a launch, resolve every
-    name it calls against the functions, methods and classes defined by the
-    modules its own imports reach, and repeat until nothing new is found.
-    Resolution is by name, so the walk over-reaches — a distinct unit that
-    merely shares a callee's name is scanned too — and that is the safe
-    direction: a clause added to the predicate tomorrow is scanned without
-    this helper being touched, whereas a pinned list only ever covers what
-    the author of the list happened to know about.  ``record_run_outcome``
-    is excluded by name: it records how a fire that already ran ended,
-    which is not part of deciding what to dispatch next.
+    name and attribute it reads against the functions, methods and classes
+    defined by the modules its own imports reach, and repeat until nothing
+    new is found.  Resolution is by name and covers reads rather than
+    calls alone, so the walk over-reaches — a distinct unit that merely
+    shares a name with something read is scanned too — and that is the
+    safe direction: the verdict is about what the predicate CANNOT touch,
+    so scanning too much can only make the guard stricter, while missing a
+    property read off a type the predicate receives would let the very
+    read the Check forbids pass green.
     """
     entry = module_relative(scope_dispatcher)
     units = defined_units(sources, reachable_modules(sources, start=entry))
@@ -718,8 +769,8 @@ def dispatchability_predicate_sources(sources):
         label, node = frontier.pop()
         if label in scanned:
             continue
-        scanned[label] = unit_source(node)
-        for name in called_names(node):
+        scanned[label] = ast.unparse(node)
+        for name in referenced_names(node):
             frontier.extend(
                 unit for unit in units.get(name, ()) if unit[0] not in scanned
             )
@@ -733,6 +784,62 @@ def units_reading_a_fire_outcome(sources):
         for label, source in dispatchability_predicate_sources(sources)
         if outcome_references(source)
     }
+
+
+class UnitBodyPlanted(ast.NodeTransformer):
+    """Puts the supplied statements at the head of the named unit's body."""
+
+    def __init__(self, *, unit, statements):
+        self._unit = unit
+        self._statements = statements
+
+    def visit_FunctionDef(self, node):
+        self.generic_visit(node)
+        if node.name == self._unit:
+            node.body = [*self._statements, *node.body]
+        return node
+
+    def visit_AsyncFunctionDef(self, node):
+        return self.visit_FunctionDef(node)
+
+
+class ClassBodyPlanted(ast.NodeTransformer):
+    """Puts the supplied members at the foot of the named class's body."""
+
+    def __init__(self, *, name, statements):
+        self._name = name
+        self._statements = statements
+
+    def visit_ClassDef(self, node):
+        self.generic_visit(node)
+        if node.name == self._name:
+            node.body = [*node.body, *self._statements]
+        return node
+
+
+def planted_in_unit(source, *, unit, statements):
+    """*source* with *statements* planted at the head of the named unit.
+
+    Planted through the tree rather than into the text: a positive control
+    anchored on two verbatim lines stops proving anything the moment the
+    unit it aims at is reformatted, and stops loudly only if the anchor is
+    also asserted.  The unit is named, so the plant lands wherever it moved
+    to.
+    """
+    return ast.unparse(
+        UnitBodyPlanted(
+            unit=unit, statements=ast.parse(textwrap.dedent(statements)).body
+        ).visit(ast.parse(source))
+    )
+
+
+def planted_in_class(source, *, name, statements):
+    """*source* with *statements* planted at the foot of the named class."""
+    return ast.unparse(
+        ClassBodyPlanted(
+            name=name, statements=ast.parse(textwrap.dedent(statements)).body
+        ).visit(ast.parse(source))
+    )
 
 
 def test_the_detector_flags_a_dispatch_decision_that_reads_a_fire_outcome():
@@ -762,6 +869,43 @@ def test_the_detector_flags_a_dispatch_decision_that_reads_a_fire_outcome():
     assert outcome_references(reading_the_gap) == frozenset()
 
 
+def test_the_detector_reads_no_fire_outcome_in_another_enum_of_the_same_spelling():
+    """A shared spelling is not a shared meaning, and the scan says so.
+
+    ``RunEventKind`` and ``WorkflowOutcome`` both spell the moment a pull
+    request opened ``pr_opened``: one as an event this run emitted, the
+    other as the disposition that run ended in.  A detector matching the
+    spelling alone reports the event vocabulary — which the predicate is
+    entitled to read — as a forbidden outcome read, and a guard that is
+    red over code that is fine is a guard nobody can act on.  Neither the
+    other enum's member table nor a member read off the other enum's own
+    name is a fire-outcome read here.
+    """
+    member = next(iter(WorkflowOutcome))
+    shared = {kind.value for kind in RunEventKind} & {
+        outcome.value for outcome in WorkflowOutcome
+    }
+    assert shared
+
+    another_enums_table = Path(RunEventKind.__module__.replace(".", "/") + ".py")
+    reading_another_enum = f"""
+        from kodezart.types.domain.run_event import RunEventKind
+
+        def dispatchable(lane):
+            return lane.last_event is not RunEventKind.{RunEventKind.PR_OPENED.name}
+    """
+    reading_a_lookalike_attribute = f"""
+        def dispatchable(lane):
+            return lane.last_event is not RunEventKind.{member.name}
+    """
+
+    assert outcome_references((SRC.parent / another_enums_table).read_text()) == (
+        frozenset()
+    )
+    assert outcome_references(reading_another_enum) == frozenset()
+    assert outcome_references(reading_a_lookalike_attribute) == frozenset()
+
+
 def test_no_fire_outcome_is_read_anywhere_the_dispatch_decision_is_made():
     """A lane's admissibility is decided without any fire's ending being read.
 
@@ -772,7 +916,7 @@ def test_no_fire_outcome_is_read_anywhere_the_dispatch_decision_is_made():
     fact in the first place.  The scanned surface is derived from the pass
     itself, so the clauses it reaches — the standing exclusions, the launch,
     the plan read, the blocker edge — are covered as surely as the ready-set
-    arithmetic is.
+    arithmetic is, and so is everything they in turn read.
     """
     sources = predicate_source_tree()
     scanned = dispatchability_predicate_sources(sources)
@@ -793,6 +937,7 @@ def test_no_fire_outcome_is_read_anywhere_the_dispatch_decision_is_made():
         f"{clauses}::_delivery_exclusion",
         f"{module_relative(scope_planning)}::read_scope_plan",
         f"{module_relative(dispatch)}::blocker_keys",
+        f"{module_relative(tracker_module)}::TrackerIssue",
     } <= labels
     for module in (scope_ready, scope_walker):
         assert {
@@ -814,24 +959,61 @@ def test_the_guard_reddens_when_a_reached_exclusion_clause_reads_a_fire_outcome(
     """
     member = next(iter(WorkflowOutcome))
     relative = module_relative(fire_dispatcher_module)
-    anchor = (
-        "        team_keys = self._operation.team_keys_for_repo(self._repo_url)\n"
-        "        return (\n"
-    )
-    planted = (
-        f"        if issue.last_outcome is WorkflowOutcome.{member.name}:\n"
-        "            return None\n"
-    ) + anchor
     sources = predicate_source_tree()
-    assert sources[relative].count(anchor) == 1
     assert units_reading_a_fire_outcome(sources) == {}
 
-    sources[relative] = sources[relative].replace(anchor, planted)
+    sources[relative] = planted_in_unit(
+        sources[relative],
+        unit="standing_exclusion",
+        statements=f"""
+            if issue.last_outcome is WorkflowOutcome.{member.name}:
+                return None
+        """,
+    )
+
+    reading = units_reading_a_fire_outcome(sources)
+    assert reading[f"{relative}::standing_exclusion"] == frozenset(
+        {WorkflowOutcome.__name__, member.name}
+    )
+
+
+def test_the_guard_reddens_when_a_property_the_clauses_read_reads_a_fire_outcome():
+    """The escape a call-following scan leaves open, closed and proved closed.
+
+    Nothing is called here: a property is planted on the very type the
+    clauses receive, it compares the issue's workflow state against a fire
+    outcome's wire value, and a clause reads it as a plain attribute.  A
+    derivation that followed call targets alone would never leave
+    ``_memory_exclusion`` for the property, and the forbidden read would
+    sit in the predicate's reach with the guard still green.
+    """
+    outcome = WorkflowOutcome.scope_converged
+    clauses = module_relative(fire_dispatcher_module)
+    types = module_relative(tracker_module)
+    sources = predicate_source_tree()
+    assert units_reading_a_fire_outcome(sources) == {}
+
+    sources[types] = planted_in_class(
+        sources[types],
+        name=TrackerIssue.__name__,
+        statements=f"""
+            @property
+            def finished(self) -> bool:
+                return self.state_name == "{outcome.value}"
+        """,
+    )
+    sources[clauses] = planted_in_unit(
+        sources[clauses],
+        unit="_memory_exclusion",
+        statements="""
+            if issue.finished:
+                return None
+        """,
+    )
 
     assert units_reading_a_fire_outcome(sources) == {
-        f"{relative}::standing_exclusion": frozenset(
-            {WorkflowOutcome.__name__, member.name}
-        )
+        f"{types}::{TrackerIssue.__name__}": frozenset({outcome.value}),
+        f"{types}::finished": frozenset({outcome.value}),
     }
 
 
