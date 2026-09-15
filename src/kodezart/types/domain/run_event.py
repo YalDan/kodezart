@@ -59,6 +59,19 @@ RUN_EVENT_PUBLISHERS = {
     RunEventKind.NODE_SESSION_STARTED: RunEventPublisher.RAISER,
 }
 
+#: The events that claim the lane's work is accepted as delivered.  Each
+#: one asserts an outcome rather than a step towards it: an evaluator
+#: accepting the run, an issue crossed off, a delivery landed and verified.
+#: A gate or a check turning green is not one of them — it says a pipeline
+#: passed, never that the work it ran on was accepted.
+ACCEPT_CLASS_RUN_EVENTS = frozenset(
+    {
+        RunEventKind.EVALUATOR_ACCEPTED,
+        RunEventKind.ISSUE_CROSSED_OFF,
+        RunEventKind.LANDED_AND_VERIFIED,
+    }
+)
+
 DERIVED_RUN_EVENTS = frozenset(
     {
         RunEventKind.EVALUATOR_ACCEPTED,

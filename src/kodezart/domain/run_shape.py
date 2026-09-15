@@ -18,16 +18,21 @@ from kodezart.types.domain.run_alarm import (
     CountEvidence,
     EscalationEvidence,
     Evidence,
+    GraphEvidence,
     LabelsEvidence,
     LaneFieldEvidence,
+    LaneSubject,
     PresenceEvidence,
     ReferencesEvidence,
     ResolutionEvidence,
     RunAlarm,
+    RunEventsEvidence,
     ScopeEvidence,
     SurfaceEvidence,
     TextEvidence,
 )
+from kodezart.types.domain.run_event import ACCEPT_CLASS_RUN_EVENTS
+from kodezart.types.domain.tracker import WorkflowStateKind
 
 ESCALATION_COMMITS_BOUND = "run_alarm_escalation_age_max_commits"
 ESCALATION_TICKS_BOUND = "run_alarm_escalation_age_max_ticks"
@@ -458,6 +463,139 @@ TICKET_MARKER_SOURCE = phase_marker_source("ticket")
 CRITERIA_MARKER_SOURCE = phase_marker_source("criteria")
 
 
+#: The semantic classification a criterion sub-issue carries; the label
+#: spelling it resolves to belongs to the operation's configuration.
+CRITERION_CLASSIFICATION = "criterion"
+
+
+def _lane_input[T](reading: AlarmReading, expected: type[Evidence[T]]) -> T:
+    """One of the two readings the lane tally is shaped by, or its absence.
+
+    A reading of another evidence kind here is not a malformed value of
+    the right one: it is the lane arm being handed the other arm's inputs,
+    or none at all, which this signal states as such rather than reading
+    past.
+    """
+    if not isinstance(reading.value, expected):
+        raise _unreadable(
+            AlarmSignal.TALLY_UNMOVED,
+            reading.source_ref,
+            "lane tally inputs are unreadable",
+        )
+    return reading.value.value
+
+
+def _lane_tally_unmoved(
+    *,
+    subject: LaneSubject,
+    readings: tuple[AlarmReading, ...],
+    raised_at_sha: str,
+    raised_by: str,
+) -> RunAlarm | None:
+    """Observe an acceptance claim against the subtree's own criterion states.
+
+    Readings are the lane's posted events and its complete subtree
+    membership, both sourced at the lane, followed by one escalation
+    record and its resolution per observed question, each pair sourced at
+    the record they were read from. Readings of another shape are the
+    lane tally's inputs missing rather than a quiet answer.
+
+    A criterion's satisfaction is its sub-issue's state, so the tally is
+    over every criterion sub-issue the subtree holds: one hanging from a
+    deliverable child is the lane's own work, and reading only the fire's
+    direct children would report a lane whose progress was one level down
+    as a lane with no progress at all. Any criterion that left its
+    unstarted state is movement, whatever else is open.
+
+    A criterion still unstarted is not counted against the lane while a
+    recorded question about that sub-issue is unanswered: the escalation's
+    own record names the sub-issue it was raised over, and its resolution
+    is read at the same address. An unanswered question observed anywhere
+    else on the lane excludes nothing, and a question that has been
+    answered leaves its criterion in the tally.
+    """
+    signal = AlarmSignal.TALLY_UNMOVED
+    try:
+        events_reading, subtree_reading, *questions = readings
+    except ValueError as exc:
+        raise _unreadable(
+            signal, subject.lane_key, "lane tally inputs are incomplete"
+        ) from exc
+    if len(questions) % 2:
+        raise _unreadable(signal, subject.lane_key, "lane tally inputs are incomplete")
+    events = _lane_input(events_reading, RunEventsEvidence)
+    snapshot = _lane_input(subtree_reading, GraphEvidence)
+    if events_reading.source_ref != subject.lane_key:
+        raise _unreadable(
+            signal,
+            events_reading.source_ref,
+            "the event stream identifies another lane",
+        )
+    if (
+        snapshot.lane_key != subject.lane_key
+        or subtree_reading.source_ref != subject.lane_key
+    ):
+        raise _unreadable(
+            signal,
+            subtree_reading.source_ref,
+            "the membership read identifies another lane",
+        )
+    members = {issue.issue_key: issue for issue in snapshot.subtree}
+    if len(members) != len(snapshot.subtree):
+        raise _unreadable(
+            signal,
+            subtree_reading.source_ref,
+            "membership read repeats an issue identity",
+        )
+    open_questions: set[str] = set()
+    observed: set[str] = set()
+    for record_reading, answer_reading in zip(
+        questions[::2], questions[1::2], strict=True
+    ):
+        record = read_alarm_value(record_reading, EscalationEvidence, signal)
+        answer = read_alarm_value(answer_reading, ResolutionEvidence, signal)
+        if answer_reading.source_ref != record_reading.source_ref:
+            raise _unreadable(
+                signal,
+                answer_reading.source_ref,
+                "the resolution identifies another escalation",
+            )
+        if record.escalation_key in observed:
+            raise _unreadable(
+                signal,
+                record_reading.source_ref,
+                "one escalation is observed more than once",
+            )
+        observed.add(record.escalation_key)
+        if record.issue_id not in members:
+            raise _unreadable(
+                signal,
+                record_reading.source_ref,
+                "the escalation names an issue outside this subtree",
+            )
+        if answer.state is EscalationResolutionState.UNRESOLVED:
+            open_questions.add(record.issue_id)
+    if not any(event.kind in ACCEPT_CLASS_RUN_EVENTS for event in events):
+        return None
+    criteria = [
+        issue
+        for issue in members.values()
+        if CRITERION_CLASSIFICATION in issue.issue_labels
+    ]
+    if any(issue.state_kind is not WorkflowStateKind.UNSTARTED for issue in criteria):
+        return None
+    if all(issue.issue_key in open_questions for issue in criteria):
+        return None
+    return RunAlarm(
+        subject=subject,
+        signal=signal,
+        readings=readings,
+        bound=None,
+        raised_at_sha=raised_at_sha,
+        raised_by=raised_by,
+    )
+
+
 def tally_unmoved(
     *,
     subject: AlarmSubject,
@@ -465,19 +603,31 @@ def tally_unmoved(
     raised_at_sha: str,
     raised_by: str,
 ) -> RunAlarm | None:
-    """Observe a configured adjacent ORGANIZE marker barrier over its roster.
+    """Observe a phase barrier over a scope roster, or a lane's own criteria.
 
-    Readings retain two qualified configuration keys, the native scope
+    One signal with two arms, because what goes unmoved differs with the
+    subject and neither arm is the other's evidence. Over a SCOPE the
+    readings retain two qualified configuration keys, the native scope
     address, its ORGANIZE work-target keys, then per-member semantic label
-    sets. An absent member reading or a absent label set counts as open;
-    malformed or foreign readings refuse. This is the scope arm of the
-    shared signal. The lane arm and execution-entry event reader are not
-    implemented by substituting other tracker facts.
+    sets: an absent member reading or an absent label set counts as open,
+    and malformed or foreign readings refuse.
+
+    Over a LANE an accept-class event is observed against the criterion
+    sub-issue states of the whole subtree; that arm states its own
+    readings. Neither arm substitutes the other's tracker facts, and a
+    subject of any other kind names no roster this signal can read.
     """
     signal = AlarmSignal.TALLY_UNMOVED
+    if subject.kind is AlarmSubjectKind.LANE:
+        return _lane_tally_unmoved(
+            subject=subject,
+            readings=readings,
+            raised_at_sha=raised_at_sha,
+            raised_by=raised_by,
+        )
     if subject.kind is not AlarmSubjectKind.SCOPE:
         raise _unreadable(
-            signal, subject.scope_key, "lane tally inputs are unavailable"
+            signal, subject.scope_key, "neither scope nor lane tally inputs are named"
         )
     try:
         current, following, scope_reading, roster_reading, *members = readings
