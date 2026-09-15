@@ -1203,6 +1203,35 @@ class FakeAgentRunner:
         )
         for event in self._events:
             yield event
+    async def stream_in_workspace(
+        self,
+        *,
+        prompt: str,
+        workspace_path: str,
+        permission_mode: PermissionMode,
+        allowed_tools: list[str],
+        skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+        session_type: SessionType = FAKE_SESSION_TYPE,
+        run_identity: RunIdentity | None = None,
+        agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+        session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
+        session_id: str | None = None,
+        output_format: dict[str, object] | None = None,
+    ) -> AsyncGenerator[AgentEvent, None]:
+        self.calls.append(
+            {
+                "method": "stream_in_workspace",
+                "prompt": prompt,
+                "workspace_path": workspace_path,
+                "session_id": session_id,
+                "session_type": session_type,
+                "run_identity": run_identity,
+                "skills": skills,
+                "session_policy": session_policy,
+            }
+        )
+        for event in self._events:
+            yield event
 
 
 class ScriptedFakeExecutor:
@@ -1460,12 +1489,9 @@ def make_minted_criteria(
     )
 
 
-def make_criteria(
-    *texts: str,
-    criterion_class: CriterionClass = CriterionClass.hard_gate,
-) -> list[ValidatedCriterion]:
+def make_criteria(*texts: str) -> list[ValidatedCriterion]:
     """The dispatch shape: minted, then carrying a sweep verdict."""
-    return as_validated(make_minted_criteria(*texts, criterion_class=criterion_class))
+    return as_validated(make_minted_criteria(*texts))
 
 
 def make_dispatched_criteria() -> list[ValidatedCriterion]:
@@ -4658,6 +4684,16 @@ class FakeDeliveryProbe:
     observation about the consumer rather than about an unreachable double.
     """
 
+    def __init__(
+        self,
+        *,
+        delivered: Sequence[str] = (),
+        pr_states: Mapping[tuple[str, int], PRState] | None = None,
+    ) -> None:
+        self.delivered: set[str] = set(delivered)
+        self.calls: list[str] = []
+        self.merge_state = FakePRStateReader(records=dict(pr_states or {}))
+
     async def open_delivery_exists(self, *, repo_url: str, issue_key: str) -> bool:
         self.calls.append(issue_key)
         return issue_key in self.delivered
@@ -4737,6 +4773,21 @@ class FakeJobQueue:
         self._states: dict[str, JobState] = dict(states or {})
         self._events: tuple[AgentEvent, ...] = tuple(events)
         self._sequence: int = 0
+
+    async def submit(self, *, lane: str, request: WorkflowSubmission) -> JobRecord:
+        await asyncio.sleep(0)
+        self._sequence += 1
+        job_id = f"job-{self._sequence:04d}"
+        record = JobRecord(
+            job_id=job_id,
+            lane=lane,
+            state=self._states.get(job_id, JobState.QUEUED),
+            queue_position=len(self.submissions) + 1,
+            submitted_at=FIXTURE_EPOCH,
+        )
+        self.submissions.append((lane, request))
+        self.records[job_id] = record
+        return record
     def attach(self, *, job_id: str) -> AsyncGenerator[AgentEvent, None]:
         """Replay the scripted run, exactly as the real queue's stream does.
 
