@@ -123,7 +123,8 @@ async def test_actual_before_write_guard_stops_each_write_after_internal_waits(
 @pytest.mark.parametrize("issued", ["comment", "classification"])
 async def test_cancelled_caller_settles_exact_issued_mutation_before_releasing(issued):
     board, writer = actual_writer()
-    board.after = True
+    # The board pauses the issued call before the backend applies it, so the
+    # cancellation lands between the write leaving the writer and its effect.
     if issued == "comment":
         board.pause = lambda name, arguments: (
             name == "save_comment"
@@ -143,7 +144,8 @@ async def test_cancelled_caller_settles_exact_issued_mutation_before_releasing(i
     )
     try:
         await asyncio.wait_for(board.reached.wait(), timeout=5)
-        assert len(questions(board)) == 1
+        assert len(questions(board)) == (1 if issued == "classification" else 0)
+        assert "decision-needed" not in board.server.issues[CLAIMED_ISSUE].labels
         task.cancel()
         await asyncio.sleep(0)
         task.cancel()

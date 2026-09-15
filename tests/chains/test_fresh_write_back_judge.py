@@ -149,10 +149,13 @@ async def test_refutation_cannot_fill_the_citation_requirement_with_blank_refs(
 async def test_git_read_settles_before_workspace_release(
     monkeypatch, tmp_path, phase, read_number
 ):
-    judge, _, workspace = build({"verdict": "holds", "evidence": "Source checked."})
+    git = FakeGitService()
+    judge, _, workspace = build(
+        {"verdict": "holds", "evidence": "Source checked."}, git=git
+    )
     await assert_git_read_settles_before_release(
         invoke=partial(judge.judge, artifact=ARTIFACT, ref=HEAD),
-        git=judge._git,
+        git=git,
         workspace=workspace,
         monkeypatch=monkeypatch,
         tmp_path=tmp_path,
