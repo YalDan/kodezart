@@ -13,6 +13,7 @@ from kodezart.core.protocols import TrackerCommentReader
 from kodezart.domain.comment_markers import (
     compose_comment_marker,
     configured_marker_prefix,
+    in_marker_namespace,
 )
 from kodezart.domain.errors import RulingRecordReadError, TransientAPIError
 from kodezart.domain.rulings import parse_ruling
@@ -90,14 +91,10 @@ class RulingRecordReader:
             first_line = comment.body.partition("\n")[0]
             observed_lane = lane_key
             if lane_marker is not None:
-                if first_line != lane_marker and not first_line.startswith(
-                    f"{lane_marker[:-1]}:"
-                ):
+                if not in_marker_namespace(first_line=first_line, marker=lane_marker):
                     continue
             else:
-                if first_line != f"[{prefix}]" and not first_line.startswith(
-                    f"[{prefix}:"
-                ):
+                if not in_marker_namespace(first_line=first_line, marker=f"[{prefix}]"):
                     continue
                 components = first_line[1:-1].split(":")
                 if (

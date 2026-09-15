@@ -35,3 +35,15 @@ def compose_comment_marker(
     if occurrence_key is not None:
         parts.append(quote(occurrence_key, safe=""))
     return f"[{':'.join(parts)}]"
+
+
+def in_marker_namespace(*, first_line: str, marker: str) -> bool:
+    """Whether a comment's opening line is *marker* or an occurrence under it.
+
+    A marker composed without an occurrence key names a namespace, and the
+    occurrences recorded inside it carry that same identity with one more
+    component appended after the delimiter. Selecting them is one rule,
+    stated here once, so two readers of two purposes cannot disagree about
+    what "inside this namespace" means.
+    """
+    return first_line == marker or first_line.startswith(f"{marker[:-1]}:")

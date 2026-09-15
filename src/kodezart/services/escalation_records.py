@@ -1,6 +1,7 @@
 """Read the existing escalation writer's addressed, current native record."""
 
 import json
+from collections.abc import Callable, Sequence
 
 from pydantic import ValidationError
 
@@ -10,7 +11,7 @@ from kodezart.core.errors import (
     TrackerUnavailableError,
 )
 from kodezart.core.protocols import TrackerCommentReader
-from kodezart.domain.comment_markers import compose_comment_marker
+from kodezart.domain.comment_markers import compose_comment_marker, in_marker_namespace
 from kodezart.domain.errors import (
     DuplicateCommentMarkerError,
     EscalationReadError,
@@ -21,6 +22,9 @@ from kodezart.types.domain.operation import OperationConfig
 from kodezart.types.domain.run_state import LaneEscalation
 from kodezart.types.domain.tracker import TrackerComment
 
+#: How one read states why the address it was given cannot answer.
+type Refusal = Callable[[str], EscalationReadError]
+
 
 class EscalationRecordReader:
     """An occurrence is identified by its configured marker, never its prose."""
@@ -30,6 +34,30 @@ class EscalationRecordReader:
     ) -> None:
         self._tracker = tracker
         self._prefixes = dict(operation.marker_prefixes)
+
+    async def _issue_comments(
+        self, *, issue_key: str, refusal: Refusal
+    ) -> Sequence[TrackerComment]:
+        """List the addressed issue's comments, or state why they cannot answer.
+
+        Both reads need the same two facts before any marker is matched: the
+        listing itself succeeded, and every comment it returned belongs to the
+        issue addressed. A listing carrying another issue's comment is not a
+        partial answer to this address, so neither read continues past it.
+        """
+        try:
+            comments = await self._tracker.list_comments(issue_key=issue_key)
+        except (
+            TrackerUnavailableError,
+            TrackerAccessDeniedError,
+            TrackerProtocolError,
+            TransientAPIError,
+            ValidationError,
+        ) as exc:
+            raise refusal("the tracker comment read failed or was incomplete") from exc
+        if any(comment.issue_key != issue_key for comment in comments):
+            raise refusal("the listing contains a comment from another issue")
+        return comments
 
     async def read(
         self,
@@ -57,18 +85,7 @@ class EscalationRecordReader:
             lane=lane_key,
             occurrence_key=escalation_key,
         )
-        try:
-            comments = await self._tracker.list_comments(issue_key=issue_key)
-        except (
-            TrackerUnavailableError,
-            TrackerAccessDeniedError,
-            TrackerProtocolError,
-            TransientAPIError,
-            ValidationError,
-        ) as exc:
-            raise refusal("the tracker comment read failed or was incomplete") from exc
-        if any(comment.issue_key != issue_key for comment in comments):
-            raise refusal("the listing contains a comment from another issue")
+        comments = await self._issue_comments(issue_key=issue_key, refusal=refusal)
         try:
             comment = comment_under_marker(
                 target=issue_key, marker=marker, comments=comments
@@ -82,11 +99,7 @@ class EscalationRecordReader:
         if comment.reply_to is not None:
             raise refusal("the escalation marker belongs to a reply")
         try:
-            # The writer emits one JSON object directly below the marker.
-            # Duplicate keys, extra fields and old prose cannot supply a fact.
-            payload = comment.body.partition("\n")[2]
-            json.loads(payload, object_pairs_hook=_unique_object)
-            record = LaneEscalation.model_validate_json(payload, strict=True)
+            record = _decode_record(comment.body.partition("\n")[2])
             if record.issue_id != issue_key or record.escalation_key != escalation_key:
                 raise ValueError(
                     "the recorded issue or occurrence differs from the address"
@@ -109,8 +122,10 @@ class EscalationRecordReader:
         A malformed record inside the namespace refuses the whole read:
         an occurrence nothing can decode is corruption in the namespace,
         and dropping it would answer "which questions are open here" with
-        a shorter list than the issue carries. A successful read that
-        finds none returns an empty tuple.
+        a shorter list than the issue carries. The namespace's own marker
+        with nothing appended is inside it too — an occurrence nothing can
+        address rather than a comment of some other purpose. A successful
+        read that finds none returns an empty tuple.
         """
         namespace = compose_comment_marker(
             prefixes=self._prefixes, purpose="escalation", lane=lane_key
@@ -128,32 +143,20 @@ class EscalationRecordReader:
 
         if not issue_key or not lane_key:
             raise refusal("issue and lane identities must be nonempty")
-        try:
-            comments = await self._tracker.list_comments(issue_key=issue_key)
-        except (
-            TrackerUnavailableError,
-            TrackerAccessDeniedError,
-            TrackerProtocolError,
-            TransientAPIError,
-            ValidationError,
-        ) as exc:
-            raise refusal("the tracker comment read failed or was incomplete") from exc
-        if any(comment.issue_key != issue_key for comment in comments):
-            raise refusal("the listing contains a comment from another issue")
-        inside = namespace[:-1] + ":"
+        comments = await self._issue_comments(issue_key=issue_key, refusal=refusal)
         selected = tuple(
             comment
             for comment in comments
-            if comment.body.partition("\n")[0][: len(inside)] == inside
+            if in_marker_namespace(
+                first_line=comment.body.partition("\n")[0], marker=namespace
+            )
         )
         if any(comment.reply_to is not None for comment in selected):
             raise refusal("an escalation marker belongs to a reply")
         occurrences: dict[str, tuple[TrackerComment, LaneEscalation]] = {}
         for comment in selected:
-            payload = comment.body.partition("\n")[2]
             try:
-                json.loads(payload, object_pairs_hook=_unique_object)
-                record = LaneEscalation.model_validate_json(payload, strict=True)
+                record = _decode_record(comment.body.partition("\n")[2])
             except ValueError as exc:
                 raise refusal(f"a recorded escalation is invalid: {exc}") from exc
             if record.issue_id != issue_key:
@@ -169,6 +172,17 @@ class EscalationRecordReader:
                 raise refusal("several comments carry one escalation marker")
             occurrences[record.escalation_key] = (comment, record)
         return tuple(occurrences[key] for key in occurrences)
+
+
+def _decode_record(payload: str) -> LaneEscalation:
+    """Decode the one JSON object the writer emits directly below the marker.
+
+    Duplicate keys, extra fields and old prose cannot supply a fact, so the
+    strict model read is preceded by a decode that refuses a repeated key
+    rather than keeping whichever copy of it happened to come last.
+    """
+    json.loads(payload, object_pairs_hook=_unique_object)
+    return LaneEscalation.model_validate_json(payload, strict=True)
 
 
 def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:

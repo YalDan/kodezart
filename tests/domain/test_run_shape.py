@@ -3,12 +3,18 @@
 import pytest
 
 from kodezart.domain.comment_markers import compose_comment_marker
+from kodezart.domain.errors import RunShapeReadError
 from kodezart.domain.run_event_stream import LaneRunEvent
 from kodezart.domain.run_shape import tally_unmoved
 from kodezart.domain.tracker_writes import marked_comment_body
 from kodezart.services.lane_tally import observe_lane_tally
 from kodezart.types.domain.operation import OperationConfig
-from kodezart.types.domain.run_alarm import AlarmSignal, LaneSubject, RunAlarm
+from kodezart.types.domain.run_alarm import (
+    AlarmSignal,
+    CriterionStateMove,
+    LaneSubject,
+    RunAlarm,
+)
 from kodezart.types.domain.run_event import RunEventKind
 from kodezart.types.domain.run_state import LaneEscalation
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
@@ -149,7 +155,16 @@ def escalate(
     )
 
 
-async def observe(tracker: FakeTrackerPort) -> RunAlarm | None:
+def moved_back(
+    key: str, *, was: WorkflowStateKind = DONE, now: WorkflowStateKind = TODO
+) -> CriterionStateMove:
+    """One criterion's observed move, as its own state reader supplies it."""
+    return CriterionStateMove(member_id=key, from_kind=was, to_kind=now)
+
+
+async def observe(
+    tracker: FakeTrackerPort, *, moves: tuple[CriterionStateMove, ...] = ()
+) -> RunAlarm | None:
     return await observe_lane_tally(
         tracker=tracker,
         operation=OPERATION,
@@ -158,6 +173,7 @@ async def observe(tracker: FakeTrackerPort) -> RunAlarm | None:
         fire_key=FIRE,
         milestone=MILESTONE,
         supersession_refs={},
+        moves=moves,
         raised_at_sha="tick-sha",
         raised_by="supervisor/holder",
     )
@@ -175,7 +191,9 @@ async def test_an_acceptance_claim_with_every_criterion_still_in_todo_alarms() -
 
 
 async def test_the_alarm_replays_from_the_readings_it_carries() -> None:
-    alarm = await observe(await lane())
+    tracker = await lane()
+    escalate(tracker, issue_key=DIRECT)
+    alarm = await observe(tracker, moves=(moved_back(DIRECT),))
 
     assert alarm is not None
     stored = RunAlarm.model_validate_json(alarm.model_dump_json(by_alias=True))
@@ -204,19 +222,49 @@ async def test_the_only_moved_criterion_under_a_deliverable_child_is_movement(
     assert await observe(await lane(nested=state)) is None
 
 
-async def test_criteria_held_by_unanswered_questions_are_not_counted() -> None:
+async def test_criteria_moved_back_under_unanswered_questions_are_not_counted() -> None:
     tracker = await lane()
     escalate(tracker, issue_key=DIRECT)
     escalate(tracker, issue_key=NESTED)
 
-    assert await observe(tracker) is None
+    assert (
+        await observe(tracker, moves=(moved_back(DIRECT), moved_back(NESTED))) is None
+    )
+
+
+async def test_a_criterion_never_moved_back_is_counted_however_open_its_question() -> (
+    None
+):
+    tracker = await lane()
+    escalate(tracker, issue_key=DIRECT)
+    escalate(tracker, issue_key=NESTED)
+
+    assert await observe(tracker, moves=(moved_back(DIRECT),)) is not None
+
+
+async def test_a_criterion_that_never_left_todo_was_not_moved_back_into_it() -> None:
+    tracker = await lane()
+    escalate(tracker, issue_key=DIRECT)
+    escalate(tracker, issue_key=NESTED)
+    stayed = moved_back(NESTED, was=TODO)
+
+    assert await observe(tracker, moves=(moved_back(DIRECT), stayed)) is not None
+
+
+async def test_a_move_back_without_a_question_leaves_its_criterion_counted() -> None:
+    tracker = await lane()
+
+    assert (
+        await observe(tracker, moves=(moved_back(DIRECT), moved_back(NESTED)))
+        is not None
+    )
 
 
 async def test_one_held_criterion_does_not_excuse_the_criterion_beside_it() -> None:
     tracker = await lane()
     escalate(tracker, issue_key=DIRECT)
 
-    assert await observe(tracker) is not None
+    assert await observe(tracker, moves=(moved_back(DIRECT),)) is not None
 
 
 async def test_an_answered_question_leaves_its_criterion_in_the_tally() -> None:
@@ -224,14 +272,20 @@ async def test_an_answered_question_leaves_its_criterion_in_the_tally() -> None:
     escalate(tracker, issue_key=DIRECT, answered=True)
     escalate(tracker, issue_key=NESTED, answered=True)
 
-    assert await observe(tracker) is not None
+    assert (
+        await observe(tracker, moves=(moved_back(DIRECT), moved_back(NESTED)))
+        is not None
+    )
 
 
 async def test_an_unanswered_question_over_the_fire_holds_no_criterion() -> None:
     tracker = await lane()
     escalate(tracker, issue_key=FIRE)
 
-    assert await observe(tracker) is not None
+    assert (
+        await observe(tracker, moves=(moved_back(DIRECT), moved_back(NESTED)))
+        is not None
+    )
 
 
 async def test_a_question_recorded_in_another_lane_holds_no_criterion() -> None:
@@ -239,7 +293,19 @@ async def test_a_question_recorded_in_another_lane_holds_no_criterion() -> None:
     escalate(tracker, issue_key=DIRECT, lane_key="lane/two")
     escalate(tracker, issue_key=NESTED, lane_key="lane/two")
 
-    assert await observe(tracker) is not None
+    assert (
+        await observe(tracker, moves=(moved_back(DIRECT), moved_back(NESTED)))
+        is not None
+    )
+
+
+async def test_a_move_read_outside_the_subtree_refuses_the_observation() -> None:
+    tracker = await lane()
+
+    with pytest.raises(RunShapeReadError) as caught:
+        await observe(tracker, moves=(moved_back("KOD-404"),))
+
+    assert caught.value.signal == AlarmSignal.TALLY_UNMOVED.value
 
 
 async def test_nothing_is_observed_without_an_acceptance_claim() -> None:

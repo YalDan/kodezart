@@ -9,20 +9,31 @@ from kodezart.domain.run_shape import (
     TICKET_MARKER_SOURCE,
     tally_unmoved,
 )
+from kodezart.types.domain.mandate_graph import LaneGraphSnapshot
 from kodezart.types.domain.run_alarm import (
     AlarmReading,
     AlarmSignal,
+    GraphEvidence,
     LabelsEvidence,
     LaneSubject,
     ReferencesEvidence,
+    RunEventProjection,
+    RunEventsEvidence,
     ScopeEvidence,
     ScopeSubject,
     TextEvidence,
 )
+from kodezart.types.domain.run_event import RunEventKind
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
+from kodezart.types.domain.tracker import IssuePriority, TrackerIssue, WorkflowStateKind
+from tests.tracker.conftest import FIXTURE_NOW
 
 SCOPE = ScopeRef(kind=ScopeKind.PROJECT, key="scope/opaque")
 SUBJECT = ScopeSubject(scope_key=SCOPE.key)
+MILESTONE = ScopeRef(kind=ScopeKind.MILESTONE, key="milestone/one")
+LANE = "lane/one"
+FIRE = "KOD-900"
+CRITERION = "KOD-901"
 
 
 def reading(source, value):
@@ -174,10 +185,79 @@ def test_incomplete_malformed_or_foreign_data_refuses(damage):
     assert caught.value.signal == AlarmSignal.TALLY_UNMOVED.value
 
 
-def test_lane_arm_is_explicitly_unavailable_not_a_second_signal():
-    subject = LaneSubject(scope_key=SCOPE.key, lane_key="lane/one")
-    with pytest.raises(RunShapeReadError, match="lane tally inputs"):
+def lane_issue(key, state, *, parent=None, labels=frozenset()):
+    return TrackerIssue(
+        issue_key=key,
+        title=key,
+        body="body",
+        priority=IssuePriority.NONE,
+        state_name=state.value,
+        state_kind=state,
+        queue_states=frozenset(),
+        issue_labels=labels,
+        team_key=None,
+        created_at=FIXTURE_NOW,
+        updated_at=FIXTURE_NOW,
+        url=f"https://tracker.invalid/{key}",
+        parent_key=parent,
+        milestone_key=MILESTONE.key,
+    )
+
+
+def lane_inputs():
+    """The lane arm's own shape: the lane's posted events, then its subtree."""
+    fire = lane_issue(FIRE, WorkflowStateKind.STARTED)
+    criterion = lane_issue(
+        CRITERION,
+        WorkflowStateKind.UNSTARTED,
+        parent=FIRE,
+        labels=frozenset({"criterion"}),
+    )
+    subtree = (fire, criterion)
+    return (
+        reading(
+            LANE,
+            RunEventsEvidence(
+                value=(
+                    RunEventProjection(
+                        kind=RunEventKind.EVALUATOR_ACCEPTED, subject_key=None
+                    ),
+                )
+            ),
+        ),
+        reading(
+            LANE,
+            GraphEvidence(
+                value=LaneGraphSnapshot(
+                    lane_key=LANE,
+                    fire_key=FIRE,
+                    milestone=MILESTONE,
+                    subtree=subtree,
+                    milestone_members=subtree,
+                    supersessions=(),
+                )
+            ),
+        ),
+    )
+
+
+def test_the_lane_arm_computes_from_its_own_readings():
+    subject = LaneSubject(scope_key=SCOPE.key, lane_key=LANE)
+    readings = lane_inputs()
+    alarm = observe(readings, subject=subject)
+    assert alarm is not None
+    assert alarm.subject == subject
+    assert alarm.signal is AlarmSignal.TALLY_UNMOVED
+    assert alarm.readings == readings
+    assert observe(alarm.readings, subject=subject) == alarm
+
+
+def test_scope_readings_handed_to_the_lane_arm_are_named_as_its_inputs_missing():
+    subject = LaneSubject(scope_key=SCOPE.key, lane_key=LANE)
+    with pytest.raises(RunShapeReadError) as caught:
         observe(inputs(), subject=subject)
+    assert caught.value.reason == "lane tally inputs are unreadable"
+    assert caught.value.signal == AlarmSignal.TALLY_UNMOVED.value
 
 
 def test_graph_to_body_uses_the_same_signal_and_governed_source_pair():

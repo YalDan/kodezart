@@ -1,6 +1,6 @@
 """Collect a lane's acceptance claims, criterion states and open questions."""
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 
 from kodezart.core.protocols import TrackerPort
 from kodezart.domain.run_shape import (
@@ -14,6 +14,7 @@ from kodezart.types.domain.operation import OperationConfig
 from kodezart.types.domain.run_alarm import (
     AlarmReading,
     AlarmSignal,
+    CriterionStateMove,
     EscalationEvidence,
     GraphEvidence,
     LaneSubject,
@@ -21,6 +22,7 @@ from kodezart.types.domain.run_alarm import (
     RunAlarm,
     RunEventProjection,
     RunEventsEvidence,
+    StateMoveEvidence,
 )
 from kodezart.types.domain.scope import ScopeRef
 
@@ -34,6 +36,7 @@ async def observe_lane_tally(
     fire_key: str,
     milestone: ScopeRef,
     supersession_refs: Mapping[str, str],
+    moves: Sequence[CriterionStateMove],
     raised_at_sha: str,
     raised_by: str,
 ) -> RunAlarm | None:
@@ -45,6 +48,14 @@ async def observe_lane_tally(
     the resolution read at that same occurrence's address. The reads are
     what this function does; the observation over them is the shared
     signal's own lane arm, replayable from the readings it returns.
+
+    *moves* are the criterion state moves already observed by the reader
+    that produces them, carried in as readings sourced at each criterion's
+    own key. They are an input rather than a fourth read because no
+    tracker read in this tree reports a move: the port reports a
+    criterion's current state and when it entered it, and deriving where
+    it came from would be this collector inventing the fact the signal
+    turns on. The same values feed the criterion-state signals.
 
     Questions are collected for criterion sub-issues only, because they
     are the sub-issues the tally counts; a question recorded on the fire
@@ -97,9 +108,13 @@ async def observe_lane_tally(
             )
         ),
     )
+    observed_moves = tuple(
+        AlarmReading(source_ref=move.member_id, value=StateMoveEvidence(value=move))
+        for move in moves
+    )
     return tally_unmoved(
         subject=LaneSubject(scope_key=scope_key, lane_key=lane_key),
-        readings=(events, subtree, *questions),
+        readings=(events, subtree, *observed_moves, *questions),
         raised_at_sha=raised_at_sha,
         raised_by=raised_by,
     )

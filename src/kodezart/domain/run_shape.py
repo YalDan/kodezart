@@ -28,6 +28,7 @@ from kodezart.types.domain.run_alarm import (
     RunAlarm,
     RunEventsEvidence,
     ScopeEvidence,
+    StateMoveEvidence,
     SurfaceEvidence,
     TextEvidence,
 )
@@ -57,14 +58,22 @@ def unreadable_reading(
 
 
 def read_alarm_value[T](
-    reading: AlarmReading, expected: type[Evidence[T]], signal: AlarmSignal
+    reading: AlarmReading,
+    expected: type[Evidence[T]],
+    signal: AlarmSignal,
+    *,
+    reason: str = "another evidence kind was recorded",
 ) -> T:
-    """Extract a typed projection or refuse with its observed source identity."""
+    """Extract a typed projection or refuse with its observed source identity.
+
+    A signal whose reading of the wrong kind means something more specific
+    than a malformed value states that in *reason*: a whole arm handed the
+    other arm's inputs is not the same observation as one field recorded
+    under the wrong evidence kind.
+    """
     value = reading.value
     if not isinstance(value, expected):
-        raise unreadable_reading(
-            signal, reading.source_ref, "another evidence kind was recorded"
-        )
+        raise unreadable_reading(signal, reading.source_ref, reason)
     return value.value
 
 
@@ -510,81 +519,83 @@ CRITERIA_MARKER_SOURCE = phase_marker_source("criteria")
 CRITERION_CLASSIFICATION = "criterion"
 
 
-def _lane_input[T](reading: AlarmReading, expected: type[Evidence[T]]) -> T:
-    """One of the two readings the lane tally is shaped by, or its absence.
-
-    A reading of another evidence kind here is not a malformed value of
-    the right one: it is the lane arm being handed the other arm's inputs,
-    or none at all, which this signal states as such rather than reading
-    past.
-    """
-    if not isinstance(reading.value, expected):
-        raise unreadable_reading(
-            AlarmSignal.TALLY_UNMOVED,
-            reading.source_ref,
-            "lane tally inputs are unreadable",
-        )
-    return reading.value.value
+#: What the lane arm says when it is handed readings of another shape:
+#: not a malformed value of the right one, but the other arm's inputs,
+#: or none at all.
+LANE_INPUTS_UNREADABLE = "lane tally inputs are unreadable"
 
 
-def _lane_tally_unmoved(
+def _lane_state_moves(
     *,
-    subject: LaneSubject,
-    readings: tuple[AlarmReading, ...],
-    raised_at_sha: str,
-    raised_by: str,
-) -> RunAlarm | None:
-    """Observe an acceptance claim against the subtree's own criterion states.
+    move_readings: list[AlarmReading],
+    members: dict[str, TrackerIssue],
+    signal: AlarmSignal,
+) -> set[str]:
+    """The subtree members observed moving back into their unstarted state.
 
-    Readings are the lane's posted events and its complete subtree
-    membership, both sourced at the lane, followed by one escalation
-    record and its resolution per observed question, each pair sourced at
-    the record they were read from. Readings of another shape are the
-    lane tally's inputs missing rather than a quiet answer.
+    Each move is read at the key it names, is a member of the subtree the
+    membership read returned, and agrees with that read about the state
+    the criterion is now in: a move whose destination the subtree does not
+    show is a stale reading, and taking it would hold a criterion out of
+    the tally on a state it has since left. One member's move is observed
+    once, because two moves for one criterion cannot both be its latest.
 
-    A criterion's satisfaction is its sub-issue's state, so the tally is
-    over every criterion sub-issue the subtree holds: one hanging from a
-    deliverable child is the lane's own work, and reading only the fire's
-    direct children would report a lane whose progress was one level down
-    as a lane with no progress at all. Any criterion that left its
-    unstarted state is movement, whatever else is open.
-
-    A criterion still unstarted is not counted against the lane while a
-    recorded question about that sub-issue is unanswered: the escalation's
-    own record names the sub-issue it was raised over, and its resolution
-    is read at the same address. An unanswered question observed anywhere
-    else on the lane excludes nothing, and a question that has been
-    answered leaves its criterion in the tally.
+    A move back is a move whose origin is some other state and whose
+    destination is the unstarted one. A criterion that never left its
+    unstarted state has not been moved back into it, however many times
+    its state was written.
     """
-    signal = AlarmSignal.TALLY_UNMOVED
-    try:
-        events_reading, subtree_reading, *questions = readings
-    except ValueError as exc:
-        raise unreadable_reading(
-            signal, subject.lane_key, "lane tally inputs are incomplete"
-        ) from exc
-    if len(questions) % 2:
-        raise unreadable_reading(
-            signal, subject.lane_key, "lane tally inputs are incomplete"
+    moved_back: set[str] = set()
+    observed: set[str] = set()
+    for move_reading in move_readings:
+        move = read_alarm_value(
+            move_reading, StateMoveEvidence, signal, reason=LANE_INPUTS_UNREADABLE
         )
-    events = _lane_input(events_reading, RunEventsEvidence)
-    snapshot = _lane_input(subtree_reading, GraphEvidence)
-    if events_reading.source_ref != subject.lane_key:
-        raise unreadable_reading(
-            signal,
-            events_reading.source_ref,
-            "the event stream identifies another lane",
-        )
-    if (
-        snapshot.lane_key != subject.lane_key
-        or subtree_reading.source_ref != subject.lane_key
-    ):
-        raise unreadable_reading(
-            signal,
-            subtree_reading.source_ref,
-            "the membership read identifies another lane",
-        )
-    members = unique_membership(snapshot.subtree, subtree_reading, signal)
+        if move_reading.source_ref != move.member_id:
+            raise unreadable_reading(
+                signal, move_reading.source_ref, "the move identifies another criterion"
+            )
+        if move.member_id in observed:
+            raise unreadable_reading(
+                signal, move_reading.source_ref, "one criterion moves more than once"
+            )
+        observed.add(move.member_id)
+        member = members.get(move.member_id)
+        if member is None:
+            raise unreadable_reading(
+                signal,
+                move_reading.source_ref,
+                "the move names an issue outside this subtree",
+            )
+        if member.state_kind is not move.to_kind:
+            raise unreadable_reading(
+                signal,
+                move_reading.source_ref,
+                "the membership read disagrees about the criterion",
+            )
+        if (
+            move.from_kind is not WorkflowStateKind.UNSTARTED
+            and move.to_kind is WorkflowStateKind.UNSTARTED
+        ):
+            moved_back.add(move.member_id)
+    return moved_back
+
+
+def _lane_open_questions(
+    *,
+    questions: list[AlarmReading],
+    members: dict[str, TrackerIssue],
+    signal: AlarmSignal,
+) -> set[str]:
+    """The subtree members carrying a recorded question with no answer.
+
+    One escalation record and its resolution per observed question, each
+    pair sourced at the record it was read from, so the answer is read at
+    the same address as the question it answers. An escalation naming an
+    issue this subtree does not hold answers nothing about this lane, and
+    one occurrence observed twice cannot be resolved and unresolved at
+    once.
+    """
     open_questions: set[str] = set()
     observed: set[str] = set()
     for record_reading, answer_reading in zip(
@@ -613,6 +624,92 @@ def _lane_tally_unmoved(
             )
         if answer.state is EscalationResolutionState.UNRESOLVED:
             open_questions.add(record.issue_id)
+    return open_questions
+
+
+def _lane_tally_unmoved(
+    *,
+    subject: LaneSubject,
+    readings: tuple[AlarmReading, ...],
+    raised_at_sha: str,
+    raised_by: str,
+) -> RunAlarm | None:
+    """Observe an acceptance claim against the subtree's own criterion states.
+
+    The readings are the lane's posted events and its complete subtree
+    membership, both sourced at the lane; then one state move per criterion
+    observed moving, each sourced at that criterion's key; then one
+    escalation record and its resolution per observed question, each pair
+    sourced at the record they were read from. Readings of another shape
+    are the lane tally's inputs missing rather than a quiet answer.
+
+    A criterion's satisfaction is its sub-issue's state, so the tally is
+    over every criterion sub-issue the subtree holds: one hanging from a
+    deliverable child is the lane's own work, and reading only the fire's
+    direct children would report a lane whose progress was one level down
+    as a lane with no progress at all. Any criterion that left its
+    unstarted state is movement, whatever else is open.
+
+    A criterion is held out of the tally only when BOTH readings say so:
+    it was observed moving back to its unstarted state, and a question
+    recorded over that same sub-issue is unanswered. Either one alone
+    leaves it counted — a criterion that never moved is unstarted because
+    nothing has started it, and its open question does not turn that into
+    work undone and asked about; an answered question leaves the criterion
+    it was raised over in the tally, and an unanswered one observed
+    anywhere else on the lane holds nothing.
+
+    The escalation that holds a criterion out is the record the port read
+    over that sub-issue. This tree records no escalation class, so no
+    reading here can say the question was raised by an observation rather
+    than by the lane itself, and nothing substitutes another tracker fact
+    for one.
+    """
+    signal = AlarmSignal.TALLY_UNMOVED
+    try:
+        events_reading, subtree_reading, *rest = readings
+    except ValueError as exc:
+        raise unreadable_reading(
+            signal, subject.lane_key, "lane tally inputs are incomplete"
+        ) from exc
+    events = read_alarm_value(
+        events_reading, RunEventsEvidence, signal, reason=LANE_INPUTS_UNREADABLE
+    )
+    snapshot = read_alarm_value(
+        subtree_reading, GraphEvidence, signal, reason=LANE_INPUTS_UNREADABLE
+    )
+    if events_reading.source_ref != subject.lane_key:
+        raise unreadable_reading(
+            signal,
+            events_reading.source_ref,
+            "the event stream identifies another lane",
+        )
+    if (
+        snapshot.lane_key != subject.lane_key
+        or subtree_reading.source_ref != subject.lane_key
+    ):
+        raise unreadable_reading(
+            signal,
+            subtree_reading.source_ref,
+            "the membership read identifies another lane",
+        )
+    moved = 0
+    for reading in rest:
+        if not isinstance(reading.value, StateMoveEvidence):
+            break
+        moved += 1
+    questions = rest[moved:]
+    if len(questions) % 2:
+        raise unreadable_reading(
+            signal, subject.lane_key, "lane tally inputs are incomplete"
+        )
+    members = unique_membership(snapshot.subtree, subtree_reading, signal)
+    moved_back = _lane_state_moves(
+        move_readings=rest[:moved], members=members, signal=signal
+    )
+    open_questions = _lane_open_questions(
+        questions=questions, members=members, signal=signal
+    )
     if not any(event.kind in ACCEPT_CLASS_RUN_EVENTS for event in events):
         return None
     criteria = [
@@ -622,7 +719,8 @@ def _lane_tally_unmoved(
     ]
     if any(issue.state_kind is not WorkflowStateKind.UNSTARTED for issue in criteria):
         return None
-    if all(issue.issue_key in open_questions for issue in criteria):
+    held = moved_back & open_questions
+    if all(issue.issue_key in held for issue in criteria):
         return None
     return RunAlarm(
         subject=subject,

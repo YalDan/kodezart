@@ -149,6 +149,10 @@ def test_actual_collector_declares_only_tracker_reads_and_pure_observation_calls
     allowed = {
         "self._tracker.list_comments",
         "refusal",
+        # The reader's own pure helpers, shared by its two reads.
+        "self._issue_comments",
+        "_decode_record",
+        "in_marker_namespace",
         "compose_comment_marker",
         "comment_under_marker",
         "EscalationReadError",
