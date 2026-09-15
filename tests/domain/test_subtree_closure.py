@@ -191,3 +191,29 @@ def test_issue_tree_module_imports_no_adapters_and_does_no_io():
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
     }
     assert not called & forbidden
+
+
+def test_a_parked_criterion_still_owes_while_a_decision_record_owes_nothing():
+    """Parking classifies with the criterion arm, not with the record arm.
+
+    An escalation adds `decision` to a criterion sub-issue and leaves it in
+    Todo.  That sub-issue is still a criterion the subtree owes, so the
+    rollup counts it; the `decision`-labelled record issue beside it is a
+    different object and owes nothing.  Collapsing the two would close a
+    subtree that still owes its parked check.
+    """
+    lane = make_tracker_issue("lane")
+    parked = make_tracker_issue(
+        "lane-AC-1",
+        parent_key="lane",
+        issue_labels=frozenset({"criterion", "decision"}),
+        state_name="Todo",
+    )
+    record = make_tracker_issue(
+        "lane-decision", parent_key="lane", issue_labels=frozenset({"decision"})
+    )
+    closure = SubtreeClosure(facts=facts_of(lane, parked, record), ref=REF)
+
+    assert closure.gap("lane") == (parked,)
+    assert closure.gap("lane-decision") == ()
+    assert closure.is_closed("lane") is False

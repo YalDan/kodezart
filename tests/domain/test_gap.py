@@ -151,3 +151,75 @@ def test_purity_guard_rejects_builtin_io_without_executing_it(monkeypatch, call)
     monkeypatch.setattr(inspect, "getsource", lambda _: source)
     with pytest.raises(AssertionError):
         test_gap_module_has_only_pure_dependencies_and_no_fallback_state_arm()
+
+
+SUPERSESSION_NOTE = "superseded by KOD-999"
+
+
+def parked_criterion(key="parked-criterion", state=WorkflowStateKind.UNSTARTED):
+    """A criterion sub-issue an escalation parked: Todo, carrying `decision`."""
+    return make_tracker_issue(key, state_kind=state, state_name="Todo").model_copy(
+        update={"issue_labels": frozenset({"criterion", "decision"})}
+    )
+
+
+@pytest.mark.parametrize(
+    "state,expected",
+    [
+        (WorkflowStateKind.TRIAGE, True),
+        (WorkflowStateKind.BACKLOG, True),
+        (WorkflowStateKind.UNSTARTED, True),
+        (WorkflowStateKind.STARTED, True),
+        (WorkflowStateKind.COMPLETED, False),
+        (WorkflowStateKind.CANCELED, True),
+        (WorkflowStateKind.DUPLICATE, True),
+    ],
+)
+def test_the_parking_classification_reads_only_the_state(state, expected):
+    """Parking a criterion moves no arm: the state alone classifies it."""
+    assert gap.in_gap(parked_criterion(state=state), supersession_ref=None) is expected
+
+
+def test_the_cancellation_is_not_owed_and_the_parking_state_is():
+    """The two recordings, named apart.
+
+    A Canceled criterion carrying a supersession note is not counted as
+    owed.  A Todo criterion carrying `decision` — the parking state — is
+    counted, and stays counted even where the same note is supplied for
+    it, so an implementation that classified the parking state with the
+    cancellation fails here rather than passing on the shared note.
+    """
+    canceled = criterion("canceled", state=WorkflowStateKind.CANCELED)
+    parked = parked_criterion()
+
+    assert gap.in_gap(canceled, supersession_ref=SUPERSESSION_NOTE) is False
+    assert gap.in_gap(parked, supersession_ref=None) is True
+    assert gap.in_gap(parked, supersession_ref=SUPERSESSION_NOTE) is True
+    assert gap.compute_gap(
+        [canceled, parked],
+        supersession_refs={
+            "canceled": SUPERSESSION_NOTE,
+            "parked-criterion": SUPERSESSION_NOTE,
+        },
+    ) == (parked,)
+
+
+def test_membership_names_every_state_with_no_wildcard_arm():
+    """The classification enumerates the vocabulary; nothing falls through."""
+    module = ast.parse(inspect.getsource(gap))
+    membership = next(
+        node
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name == "in_gap"
+    )
+    matches = [node for node in ast.walk(membership) if isinstance(node, ast.Match)]
+    assert len(matches) == 1
+    cases = matches[0].cases
+    assert all(case.guard is None for case in cases)
+    named = []
+    for case in cases:
+        assert isinstance(case.pattern, ast.MatchValue), "a wildcard arm classifies"
+        value = case.pattern.value
+        assert isinstance(value, ast.Attribute)
+        named.append(value.attr)
+    assert sorted(named) == sorted(WorkflowStateKind.__members__)
