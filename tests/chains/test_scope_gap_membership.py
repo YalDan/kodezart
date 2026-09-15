@@ -24,6 +24,7 @@ from kodezart.domain.criterion_evidence import (
 )
 from kodezart.domain.errors import ScopePlanRefusalError, ScopeSupersessionReadError
 from kodezart.types.domain.criterion_evidence import CriterionEvidence
+from kodezart.types.domain.lapse import GradedState, graded_state
 from kodezart.types.domain.tracker import WorkflowStateKind
 from tests.chains.test_scope_ready import PROJECT, row
 from tests.chains.test_scope_ready import ready_fixture as ready_fixture
@@ -33,6 +34,9 @@ NESTED = "nested"
 DEEP_CHECK = "deep-check"
 
 GRADED_SHA = "c" * 40
+#: The revision both arms below are read at.  Neither criterion was
+#: graded at it, which is what makes the pair tell the two facts apart.
+HEAD_SHA = "d" * 40
 GRADED_TEST = "tests/chains/test_scope_gap_membership.py::test_case"
 
 #: What the subtree read does with the one criterion under test.
@@ -197,3 +201,53 @@ async def test_the_two_ungraded_readings_are_told_apart_by_the_sha_alone(
     with pytest.raises(ValueError, match="Evidence"):
         parse_criterion_evidence(from_nothing.body)
     assert from_lapse != from_nothing
+
+
+async def test_the_state_move_owes_a_criterion_a_sha_behind_head_alone_does_not(
+    ready_fixture,
+) -> None:
+    """The lapse is the move back, not the distance from head.
+
+    Both arms hold the same grading, recorded at a revision the tree has
+    left behind, so the one reading of a graded sha against a head sha
+    says the same thing about each of them.  What separates them is the
+    board: the criterion a reviewer moved Done -> In Review is not Done,
+    and its issue owes it again, reported exactly as a criterion nobody
+    ever graded is — ungraded, with no verdict attached and nothing
+    calling it refuted.  The criterion left where its grading put it stays
+    Done and keeps counting, however far behind head that grading sits.
+
+    A read that decided membership by weighing the recorded sha against
+    head could not tell these two apart at all: it would owe both.
+    """
+    fixture = await ready_fixture(
+        subtree(kind="completed", body=graded_body(GRADED_SHA))
+    )
+    assert graded_state(graded_sha=GRADED_SHA, head_sha=HEAD_SHA) is GradedState.lapsed
+
+    carried = await fixture.tracker.read_issue(issue_key=DEEP_CHECK)
+    assert carried.state_kind is WorkflowStateKind.COMPLETED
+    assert parse_criterion_evidence(carried.body).graded_sha == GRADED_SHA
+    assert (await read_scope_ready(ref=PROJECT, tracker=fixture.tracker)).ready == ()
+
+    fixture.state_named(DEEP_CHECK, "In Review")
+    selection = await read_scope_ready(ref=PROJECT, tracker=fixture.tracker)
+
+    assert {
+        lane.issue.issue_key: [item.issue_key for item in lane.gap]
+        for lane in selection.ready
+    } == {LANE: [DEEP_CHECK], NESTED: [DEEP_CHECK]}
+    (owed,) = selection.ready[0].gap
+    assert owed.state_kind is WorkflowStateKind.STARTED
+    assert owed.state_name == "In Review"
+    assert owed.state_kind is not WorkflowStateKind.COMPLETED
+    assert owed == await fixture.tracker.read_issue(issue_key=DEEP_CHECK)
+    assert parse_criterion_evidence(owed.body).graded_sha == GRADED_SHA
+    assert graded_state(
+        graded_sha=parse_criterion_evidence(owed.body).graded_sha,
+        head_sha=HEAD_SHA,
+    ) is graded_state(
+        graded_sha=parse_criterion_evidence(carried.body).graded_sha,
+        head_sha=HEAD_SHA,
+    )
+    fixture.assert_read_only()

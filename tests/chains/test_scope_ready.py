@@ -89,6 +89,17 @@ class ReadyFixture:
 
     def state(self, key, kind):
         name = next(name for name, value in READY_STATES.items() if value == kind)
+        self.state_named(key, name)
+
+    def state_named(self, key, name):
+        """Move one issue to a NAMED board state, the way a board names them.
+
+        A kind is not enough to say where a board put an issue: this one
+        runs two started states, and "In Review" is the one a reviewer
+        moves a finished criterion back to.  Naming the state is the only
+        way a caller can say which of them it means.
+        """
+        kind = READY_STATES[name]
         self.server.issues[key].status = name
         self.server.issues[key].status_type = kind
         self.fake.issues[key] = self.fake.issues[key].model_copy(
