@@ -374,3 +374,31 @@ def test_an_amended_ruling_keeps_its_identity_on_the_surface_it_was_pinned_to():
     ]:
         with pytest.raises(ValidationError):
             AmendedAmendment.model_validate(dumped | changes)
+
+
+def test_the_upheld_reason_members_are_exactly_these():
+    assert [(member.name, member.value) for member in UpheldReason] == [
+        ("GROUND_NOT_REPRODUCED", "ground_not_reproduced"),
+        ("ENVIRONMENT_LACKS_CAPABILITY", "environment_lacks_capability"),
+        ("COST_MEASURED_AFFORDABLE", "cost_measured_affordable"),
+        ("COST_MEASURED_UNECONOMIC", "cost_measured_uneconomic"),
+    ]
+
+
+def test_a_verdict_and_its_reason_cannot_be_constructed_apart():
+    upheld = record().model_dump()
+    assert UpheldAmendment.model_validate(upheld).reason is (
+        UpheldReason.GROUND_NOT_REPRODUCED
+    )
+    without_reason = {key: value for key, value in upheld.items() if key != "reason"}
+    with pytest.raises(ValidationError):
+        UpheldAmendment.model_validate(without_reason)
+    with pytest.raises(ValidationError):
+        UpheldAmendment.model_validate(upheld | {"reason": None})
+    amended_value = amended().model_dump()
+    assert AmendedAmendment.model_validate(amended_value).verdict == "amended"
+    for reason in UpheldReason:
+        with pytest.raises(ValidationError):
+            AmendedAmendment.model_validate(amended_value | {"reason": reason.value})
+    with pytest.raises(ValidationError):
+        AmendedAmendment.model_validate(amended_value | {"reason": None})
