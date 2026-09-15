@@ -272,3 +272,33 @@ async def test_memo_keeps_identifier_admission_distinct_from_prose():
         GateVerdict.REDACTED,
         GateVerdict.BLOCKED,
     ]
+
+
+async def test_scan_hits_are_returned_in_payload_order() -> None:
+    """Ordered hits make the redaction rewrite deterministic.
+
+    The scripted findings arrive in category order, which is NOT the order
+    they occur in the payload: a gate that passed them straight through
+    would rewrite the second span first and corrupt the placeholder text.
+    """
+    decision = await make_gate(
+        {
+            RedactionCategory.TRACKER_URLS: ["TRACKER-2"],
+            RedactionCategory.CROSS_REPO_NAMES: ["acme/one"],
+        }
+    ).gate(
+        content="acme/one then TRACKER-2",
+        visibility=RepoVisibility.PUBLIC,
+        shape=WriterShape.PROSE,
+        destination=OutboundDestination.PR_BODY,
+        content_class=ContentClass.AUTHORED,
+    )
+
+    starts = [hit.start for hit in decision.hits]
+    assert len(starts) == 2
+    # restored: assert [hit.start for hit in hits] == sorted(hit.start for hit in hits)
+    # (KOD-827)
+    assert starts == sorted(starts)
+    assert decision.content == (
+        "[REDACTED:cross_repo_names] then [REDACTED:tracker_urls]"
+    )

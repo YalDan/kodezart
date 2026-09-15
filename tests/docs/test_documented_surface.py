@@ -282,6 +282,50 @@ def test_the_sse_event_table_has_rows_at_all() -> None:
     assert len(_documented_event_types()) > 10
 
 
+def _tracker_server_name_reads() -> list[str]:
+    """Every module under ``src/`` that reads the tracker settings' server name.
+
+    The setting is nested now, so its attribute name is no longer unique in
+    the tree: a module counts only where it reads ``<...>.tracker.server_name``
+    or reads the attribute off a value in a module that takes a
+    ``TrackerSettings`` at all.
+    """
+    sites: list[str] = []
+    for source in sorted((REPO_ROOT / "src").rglob("*.py")):
+        tree = ast.parse(source.read_text(encoding="utf-8"))
+        takes_settings = any(
+            isinstance(node, ast.ImportFrom)
+            and any(alias.name == "TrackerSettings" for alias in node.names)
+            for node in ast.walk(tree)
+        )
+        for node in ast.walk(tree):
+            if not (isinstance(node, ast.Attribute) and node.attr == "server_name"):
+                continue
+            base = node.value
+            if (isinstance(base, ast.Attribute) and base.attr == "tracker") or (
+                takes_settings and isinstance(base, ast.Name)
+            ):
+                sites.append(source.relative_to(REPO_ROOT).as_posix())
+                break
+    return sites
+
+
+def test_the_tracker_server_name_has_exactly_the_consumers_it_claims() -> None:
+    """Two consumers: the MCP caller factory and the record sink's wiring.
+
+    The factory's own docstring says "one server definition, one consumer";
+    the second reader hands the same name to the run recorder.  A reader
+    appearing or vanishing makes this red until the claim tells the truth
+    again.
+    """
+    # restored: assert _attribute_reads_of("tracker_mcp_server_name") == [...]
+    # (KOD-827), restated for the nested TrackerSettings.server_name field.
+    assert _tracker_server_name_reads() == [
+        "src/kodezart/composition/tracker.py",
+        "src/kodezart/main.py",
+    ]
+
+
 def _documented_protocols() -> set[str]:
     """Every protocol named in the architecture doc's Protocol Map."""
     section = ARCHITECTURE_DOC.read_text(encoding="utf-8").split("## Protocol Map")[1]

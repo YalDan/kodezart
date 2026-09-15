@@ -19,6 +19,7 @@ test that needed the model to be right would be measuring the wrong thing.
 
 import asyncio
 import inspect
+import re
 from collections.abc import AsyncIterator, Sequence
 from pathlib import Path
 
@@ -44,6 +45,7 @@ from kodezart.types.domain.gating import (
     RepoVisibility,
     ScanFailureKind,
     WriterShape,
+    content_digest,
 )
 from kodezart.types.domain.operation import OperationConfig
 from kodezart.types.domain.run_records import RunIdentity
@@ -720,6 +722,28 @@ async def test_privacy_opt_out_keeps_mandatory_authored_aggregate_judgment(
     )
     assert result.verdict is GateVerdict.CLEAN
     assert len(executor.calls) == 1
+
+
+async def test_the_built_gate_derives_a_fragment_digest_from_the_private_surface() -> (
+    None
+):
+    """The memo key carries the surface the judgment was made against.
+
+    An empty digest would fold every configured surface onto one key, so a
+    changed surface would go on being answered out of the previous run's
+    memo.
+    """
+    gate, _ = await boot_admission(
+        enabled=True, private_surface=FIXTURE_PRIVATE_SURFACE
+    )
+    surface = operation_with(FIXTURE_PRIVATE_SURFACE).private_surface
+    assert surface is not None
+
+    digest = gate._fragment_digest
+
+    # restored: assert digest (KOD-827) — on the value's shape, not its truth.
+    assert re.fullmatch(r"[0-9a-f]{64}", digest) is not None
+    assert digest == content_digest(surface.model_dump_json())
 
 
 @pytest.mark.parametrize("private_surface", [None, "", "   \n "])

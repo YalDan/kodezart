@@ -9,6 +9,7 @@ what THIS adapter does to get there.
 
 import json
 from collections.abc import Mapping
+from datetime import timedelta
 from http import HTTPStatus
 
 import httpx
@@ -29,6 +30,7 @@ from kodezart.types.domain.branch import BaseSpec, WorkRef, WorkRefRole
 from kodezart.types.domain.dispatch import PassSignal, SelfWriteLedger
 from kodezart.types.domain.operation import LifecycleStage, QueueState
 from kodezart.types.domain.tracker import (
+    ClaimStatus,
     EnsureAction,
     IssuePriority,
     IssueQuery,
@@ -1087,6 +1089,51 @@ class TestACommentTheVendorAttributesToNobody:
         assert attributed.author_key == APPROVER
         assert unattributed.author_key is None
         assert unattributed.body == "nobody wrote this"
+
+
+class TestClaimMechanism:
+    """What the claim marker log means to a reader, over this adapter."""
+
+    async def test_an_expired_lease_frees_the_issue(self) -> None:
+        """A lease nobody renewed is gone the moment it lapses."""
+        server = fixture_server()
+        early = linear_over_fake_mcp(server)
+        await early.claim_issue(
+            issue_key=CLAIMED_ISSUE,
+            holder="pass-a",
+            lease_seconds=60.0,
+        )
+        later = tracker_over(
+            server,
+            clock=lambda: FIXTURE_NOW + timedelta(seconds=120),
+        )
+
+        # restored: assert await later.active_claim(issue_key=CLAIMED_ISSUE) is None
+        # (KOD-827)
+        assert await later.active_claim(issue_key=CLAIMED_ISSUE) is None
+
+    async def test_a_losing_claimant_never_moves_the_winners_expiry(self) -> None:
+        """The loser came and went; the reader still sees the granted lease."""
+        server = fixture_server()
+        tracker = linear_over_fake_mcp(server)
+        won = await tracker.claim_issue(
+            issue_key=CLAIMED_ISSUE,
+            holder="pass-a",
+            lease_seconds=60.0,
+        )
+        lost = await tracker.claim_issue(
+            issue_key=CLAIMED_ISSUE,
+            holder="pass-b",
+            lease_seconds=60.0,
+        )
+
+        held = await tracker.active_claim(issue_key=CLAIMED_ISSUE)
+
+        assert lost.status is ClaimStatus.LOST
+        assert held is not None
+        assert held.holder == "pass-a"
+        # restored: assert held.expires_at == won.expires_at (KOD-827)
+        assert held.expires_at == won.expires_at
 
 
 class TestInitiativeIdentifiers:

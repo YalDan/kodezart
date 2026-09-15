@@ -117,6 +117,10 @@ def test_a_non_empty_grant_without_the_credential_aborts_boot(
     reported = str(excinfo.value)
     assert "credential" in reported
     assert "session_grants" in reported
+    # restored: assert _TOKEN_VAR in reported (KOD-827) — every segment of the
+    # credential environment name, which is nested now rather than flat.
+    for segment in _TOKEN_VAR.removeprefix("KODEZART_").lower().split("__"):
+        assert segment in reported
 
 
 def test_the_credential_rule_does_not_mask_the_vocabulary_rule(

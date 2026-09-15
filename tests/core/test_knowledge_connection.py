@@ -136,7 +136,7 @@ def test_two_credentials_cannot_share_a_case_insensitive_http_header(header):
 
 
 def test_interactive_hosts_still_refuse_static_authentication():
-    with pytest.raises(ValidationError, match="interactively"):
+    with pytest.raises(ValidationError) as caught:
         AppConfig(
             knowledge={
                 "connection": http(
@@ -145,6 +145,29 @@ def test_interactive_hosts_still_refuse_static_authentication():
                 )
             }
         )
+
+    reported = str(caught.value)
+    assert "interactively" in reported
+    # restored: assert _URL_VAR in reported (KOD-827)
+    assert "server_url" in reported
+    # restored: assert _TOKEN_VAR in reported (KOD-827)
+    assert "credential" in reported
+
+
+def test_a_grant_with_neither_credential_still_aborts_boot():
+    """The cross-field rule names both ways of authenticating, not one."""
+    with pytest.raises(ValidationError) as caught:
+        AppConfig(
+            knowledge={
+                "session_grants": ["ticket_fire"],
+                "connection": http(credential=None),
+            }
+        )
+
+    reported = str(caught.value)
+    assert "credential" in reported
+    # restored: assert _GATEWAY_VAR in reported (KOD-827)
+    assert "gateway_credential" in reported
 
 
 def test_gateway_and_upstream_credentials_survive_only_in_delivery_headers():
@@ -281,6 +304,11 @@ def test_http_defaults_retain_the_actual_record_transport_bounds():
     connection = AppConfig(knowledge={"connection": http()}).knowledge.connection
     assert connection.timeout_seconds == 30
     assert connection.sse_read_timeout_seconds == 300
+    # restored: assert config.knowledge_mcp_auth_header == "Authorization" (KOD-827)
+    assert connection.auth_header == "Authorization"
+    # restored: assert config.knowledge_mcp_auth_scheme == "Bearer" (KOD-827)
+    assert connection.auth_scheme == "Bearer"
+    assert connection.headers() == {"Authorization": f"Bearer {TOKEN}"}
 
 
 @pytest.mark.parametrize("arm", [http, stdio])
@@ -340,3 +368,29 @@ def test_a_gateway_credential_aimed_at_an_interactive_host_also_aborts_boot():
                 ),
             }
         )
+
+
+async def test_an_unconfigured_knowledge_store_is_named_at_boot_and_starts(
+    monkeypatch, capsys, tmp_path
+):
+    """Boot names the unused capability and substitutes no local store."""
+    from kodezart.main import create_app, lifespan
+
+    monkeypatch.chdir(tmp_path)
+    for name in (
+        "KODEZART_KNOWLEDGE__SESSION_GRANTS",
+        "KODEZART_KNOWLEDGE__CONNECTION__TRANSPORT",
+        "KODEZART_KNOWLEDGE__CONNECTION__SERVER_URL",
+        "KODEZART_KNOWLEDGE__CONNECTION__CREDENTIAL",
+        "KODEZART_KNOWLEDGE__CONNECTION__GATEWAY_CREDENTIAL",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+    app = create_app()
+    async with lifespan(app):
+        assert app.state.workflow_engine is not None
+
+    emitted = capsys.readouterr().out + capsys.readouterr().err
+    assert "knowledge_capability_unconfigured" in emitted
+    # restored: assert list(tmp_path.iterdir()) == [] (KOD-827)
+    assert list(tmp_path.iterdir()) == []
