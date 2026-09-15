@@ -765,3 +765,136 @@ async def test_remediation_round_input_is_the_accumulated_defect_class_set(monke
     )
     assert from_previous_findings.defect_classes != scoped.defect_classes
     assert from_previous_findings != scoped
+
+
+MANDATE_SENTENCE = (
+    "Every child criterion must restate the source version in its own prose."
+)
+REGROWTH_CLASS = "source_version_restated_in_prose"
+DRAFT_BODY = "Hand-drafted source awaiting preparation."
+GROUNDED_BODY = "Prepared body grounded in the source."
+
+
+def regrowth(monkeypatch, *, mandate):
+    """Script one authoring step that carries any mandating sentence forward."""
+    from tests.fakes import FakeMcpIssue
+
+    owner, board, executor = factory(
+        body=f"{MANDATE_SENTENCE} {DRAFT_BODY}" if mandate else DRAFT_BODY,
+        convergence_bound=2,
+    )
+    board.server.issues["restating-criterion"] = FakeMcpIssue(
+        id="restating-criterion",
+        parent_id=CLAIMED_ISSUE,
+        description="The child restates the source version in its own prose.",
+        labels=["check"],
+    )
+    observed = []
+    original = executor.stream
+
+    async def scripted(**kwargs):
+        title = kwargs["output_format"]["schema"].get("title")
+        async for event in original(**kwargs):
+            payload = event.structured_output
+            if title == "OrganizeProposal" and payload.get("kind") == "body":
+                source = board.server.issues[payload["issue_id"]].description
+                carried = f"{MANDATE_SENTENCE} " if MANDATE_SENTENCE in source else ""
+                event = result(
+                    structured_output={**payload, "body": f"{carried}{GROUNDED_BODY}"}
+                )
+            elif (
+                title == "AdmissionJudgment"
+                and payload["issue_id"] == CLAIMED_ISSUE
+                and DRAFT_BODY in board.server.issues[CLAIMED_ISSUE].description
+            ):
+                event = result(
+                    structured_output={
+                        "issue_id": CLAIMED_ISSUE,
+                        "verdict": "not_buildable",
+                        "evidence": "The hand-drafted source is not prepared.",
+                        "refusal_kind": "spec_gap",
+                        "invented_decision": "Prepare the drafted source.",
+                    }
+                )
+            elif (
+                title == "AdmissionJudgment"
+                and payload["issue_id"] == "restating-criterion"
+                and "Adversarially verify the current issue" in kwargs["prompt"]
+                and MANDATE_SENTENCE in board.server.issues[CLAIMED_ISSUE].description
+            ):
+                event = result(
+                    structured_output={
+                        **payload,
+                        "findings": [
+                            {
+                                "issue_id": "restating-criterion",
+                                "defect_class": REGROWTH_CLASS,
+                                "evidence": (
+                                    "The child's prose restates the source version."
+                                ),
+                                "role": "mandate",
+                                "mandate_text": MANDATE_SENTENCE,
+                            }
+                        ],
+                    }
+                )
+            if title == "AdmissionJudgment":
+                observed.extend(
+                    f["defect_class"]
+                    for f in event.structured_output.get("findings", ())
+                )
+            yield event
+
+    monkeypatch.setattr(executor, "stream", scripted)
+    return owner, board, executor, observed
+
+
+async def test_live_mandate_regrows_the_class_and_the_pass_does_not_converge(
+    monkeypatch,
+):
+    owner, board, executor, observed = regrowth(monkeypatch, mandate=True)
+    report = await run_owner(owner)
+    assert observed == [REGROWTH_CLASS, REGROWTH_CLASS]
+    assert report.halt.cause == "convergence_exhausted"
+    assert report.halt.bound.setting == "organize.max_convergence_rounds"
+    assert report.halt.bound.value == report.halt.bound.rounds_used == 2
+    assert report.completed_phases == ()
+    surviving = report.halt.surviving_findings
+    assert [f.defect_class for f in surviving] == [REGROWTH_CLASS]
+    assert surviving[0].mandate_text == MANDATE_SENTENCE
+    assert (
+        board.server.issues[CLAIMED_ISSUE].description
+        == f"{MANDATE_SENTENCE} {GROUNDED_BODY}"
+    )
+    assert any(
+        REGROWTH_CLASS in call["prompt"]
+        for call in executor.calls
+        if call["output_format"]["schema"].get("title") == "OrganizeProposal"
+    )
+    assert not set(board.server.issues[CLAIMED_ISSUE].labels) & {
+        "graph complete",
+        "body complete",
+        "criteria complete",
+    }
+
+
+async def test_removed_mandate_leaves_the_same_authoring_step_dry(monkeypatch):
+    owner, board, executor, observed = regrowth(monkeypatch, mandate=False)
+    report = await run_owner(owner)
+    assert REGROWTH_CLASS not in observed
+    assert report.halt is None
+    assert [phase.value for phase in report.completed_phases] == [
+        "groom",
+        "ticket",
+        "criteria",
+    ]
+    parent = board.server.issues[CLAIMED_ISSUE]
+    assert parent.description == GROUNDED_BODY
+    assert [
+        call
+        for call in executor.calls
+        if call["output_format"]["schema"].get("title") == "OrganizeProposal"
+    ]
+    assert {"graph complete", "body complete", "criteria complete"} <= set(
+        parent.labels
+    )
