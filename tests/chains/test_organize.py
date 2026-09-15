@@ -13,7 +13,7 @@ from pydantic import ValidationError
 from kodezart.chains.organize import OrganizeAdmission
 from kodezart.core.errors import NoStructuredOutputError, RateLimitedSoftFailureError
 from kodezart.domain.errors import OrganizeAdmissionIdentityError
-from kodezart.domain.organize import organize_gap
+from kodezart.domain.organize import organize_at_rest, organize_gap
 from kodezart.services.agent_service import AgentService
 from kodezart.services.audit_sessions import judge_in_workspace
 from kodezart.services.organize_context import OrganizeContextReader
@@ -914,6 +914,135 @@ def test_open_child_surface_finding_routes_to_parent_only(role):
     assert gap_of(
         (parent, child, *organized_family("other/17")), findings=(finding,)
     ) == (parent.issue,)
+
+
+DELIVERABLE = "deliverable/child"
+SUPERSEDED = "superseded/check"
+
+
+def at_rest_of(revisions, *, admissions=None, findings=(), marker=BODY_MARKER):
+    return organize_at_rest(
+        revisions=revisions,
+        admissions=(
+            tuple(gap_admission(revision) for revision in revisions)
+            if admissions is None
+            else admissions
+        ),
+        open_findings=findings,
+        body_marker_key=marker,
+    )
+
+
+def open_criterion_family(key=SUBJECT):
+    """A specification whose one criterion has not been executed yet."""
+    parent, check = organized_family(key)
+    return parent, check.model_copy(
+        update={
+            "issue": check.issue.model_copy(
+                update={
+                    "state_kind": WorkflowStateKind.UNSTARTED,
+                    "state_name": "Todo",
+                }
+            )
+        }
+    )
+
+
+def superseded_criterion(key=SUBJECT):
+    return gap_revision(
+        SUPERSEDED,
+        parent_key=key,
+        issue_labels=["criterion"],
+        state_kind=WorkflowStateKind.CANCELED,
+    )
+
+
+def scope_fixture(name):
+    """One scope snapshot with the admissions standing over it."""
+    parent, check = organized_family()
+    deliverable = gap_revision(
+        DELIVERABLE, parent_key=SUBJECT, issue_labels=[BODY_MARKER]
+    )
+    match name:
+        case "at_rest":
+            return (*organized_family(), *organized_family("other/17")), None
+        case "open_criterion":
+            return open_criterion_family(), None
+        case "open_criterion_under_deliverable":
+            return (
+                parent,
+                check,
+                deliverable,
+                gap_revision(
+                    f"{DELIVERABLE}/check",
+                    parent_key=DELIVERABLE,
+                    issue_labels=["criterion"],
+                ),
+            ), None
+        case "deliverable_child_without_criterion":
+            return (parent, check, deliverable), None
+        case "canceled_criterion_superseded":
+            return (parent, superseded_criterion(), check), None
+        case "canceled_criterion_alone":
+            return (parent, superseded_criterion()), None
+    assert name == "criterion_body_moved_on"
+    judged = open_criterion_family()
+    admissions = tuple(gap_admission(revision) for revision in judged)
+    moved = judged[1].model_copy(update={"body_digest": "later criterion body"})
+    return (judged[0], moved), admissions
+
+
+#: Every scope shape in the table, with the issues its gap holds.
+SCOPE_FIXTURES = {
+    "at_rest": (),
+    "open_criterion": (),
+    "open_criterion_under_deliverable": (),
+    "canceled_criterion_superseded": (),
+    "canceled_criterion_alone": (SUBJECT,),
+    "criterion_body_moved_on": (SUBJECT,),
+    "deliverable_child_without_criterion": (DELIVERABLE,),
+}
+
+
+@pytest.mark.parametrize("name", sorted(SCOPE_FIXTURES))
+def test_the_pre_query_answers_the_gap_cardinality_over_each_scope(name):
+    revisions, admissions = scope_fixture(name)
+    before = tuple(revision.model_dump_json() for revision in revisions)
+    gap = gap_of(revisions, admissions=admissions)
+    assert tuple(item.issue_key for item in gap) == SCOPE_FIXTURES[name]
+    assert at_rest_of(revisions, admissions=admissions) is (gap == ())
+    assert tuple(revision.model_dump_json() for revision in revisions) == before
+
+
+def test_the_scope_table_answers_both_ways_so_the_agreement_is_not_vacuous():
+    answered = set()
+    for name in SCOPE_FIXTURES:
+        revisions, admissions = scope_fixture(name)
+        answered.add(at_rest_of(revisions, admissions=admissions))
+    assert answered == {True, False}
+
+
+@pytest.mark.parametrize(
+    "malformed",
+    ["duplicate_revision", "duplicate_admission", "orphan_criterion", "empty_marker"],
+)
+def test_the_pre_query_refuses_an_incoherent_snapshot_instead_of_answering_rest(
+    malformed,
+):
+    parent, child = organized_family()
+    revisions = (parent, child)
+    admissions = tuple(gap_admission(revision) for revision in revisions)
+    marker = BODY_MARKER
+    if malformed == "duplicate_revision":
+        revisions += (parent,)
+    elif malformed == "duplicate_admission":
+        admissions += (admissions[0],)
+    elif malformed == "orphan_criterion":
+        revisions = (child,)
+    else:
+        marker = "  "
+    with pytest.raises(ValueError, match="organize gap requires"):
+        at_rest_of(revisions, admissions=admissions, marker=marker)
 
 
 @pytest.fixture(params=["fake", "linear"])
