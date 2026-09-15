@@ -21,10 +21,23 @@ The run under observation is the composed one: the real Organize owner off
 ``build_organize_owner`` over its tracker (bodies, edges, criterion
 sub-issues and phase markers), and the real criterion evaluator's amendment
 write-back (a criterion's evidence, its body and its state flip).
+
+An observed run answers for the writes that run makes.  The clause is
+about CALL SITES, so the second half puts the same question to the
+production tree: every call of that derived write surface is read out of
+the source, and the function holding it must be one the verifier drives —
+a step's own body, or a writer every one of whose callers is a step body.
+Two registers stand against that, both compared exactly so a stale entry
+fails as loudly as a new bypass: the state moves the founder's ruling
+KOD-806 holds outside this seam, and the writes that still reach the port
+from processes holding no judged commit — none of which may put authored
+content on a surface.
 """
 
+import ast
 import inspect
 import json
+import pathlib
 import re
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
@@ -33,10 +46,12 @@ from typing import Protocol
 
 import pytest
 
+import kodezart
 from kodezart.chains import write_back_verifier as verifier_module
-from kodezart.chains.write_back_verifier import WriteBackVerifier
+from kodezart.chains.write_back_verifier import WriteBackStep, WriteBackVerifier
 from kodezart.core.protocols import TrackerPort
 from kodezart.types.domain.audit import TrackerArtifact
+from kodezart.types.domain.gating import ContentClass
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.surface import SurfaceKind, WritableSurface
 from kodezart.types.domain.write_back import WriteBackFinding
@@ -481,3 +496,385 @@ async def test_every_criterion_evaluator_write_passes_the_verifier(
     assert {"edit_description", "reset_criterion_pending", "upsert_comment"} <= {
         write.method for write in journal.writes
     }
+
+
+# The runs above answer for the writes those runs happen to make.  The
+# Check is about CALL SITES: a step wired straight at the port, in a path
+# neither run walks, is a bypass the observed journal never sees.  So the
+# same question is put to the production tree itself — every call of the
+# derived artifact-write surface, and whether the function holding it is
+# one the verifier drives.
+
+#: The production tree the static half reads.
+PACKAGE = pathlib.Path(kodezart.__file__).parent
+#: The two shapes a function definition takes in a parsed module.
+FUNCTIONS = (ast.FunctionDef, ast.AsyncFunctionDef)
+
+
+def production_sources() -> dict[str, str]:
+    """Every production module, keyed by its path inside the package."""
+    return {
+        path.relative_to(PACKAGE).as_posix(): path.read_text()
+        for path in sorted(PACKAGE.rglob("*.py"))
+    }
+
+
+def step_members(step: type = WriteBackStep) -> frozenset[str]:
+    """What a class must define to be a step the verifier can drive.
+
+    Read off the protocol, for the reason the write surface is read off
+    the port: a step that grows an obligation grows this with it.
+    """
+    return frozenset(name for name in dir(step) if not name.startswith("_"))
+
+
+@dataclass(frozen=True)
+class Source:
+    """One production function, addressed by module and qualified name."""
+
+    module: str
+    function: str
+
+
+@dataclass(frozen=True)
+class CallSite:
+    """One production call of a port write, at the function holding it."""
+
+    module: str
+    function: str
+    method: str
+
+
+def defines(node: ast.ClassDef, member: str) -> bool:
+    """Whether *node* states *member* itself, as a method or a field."""
+    return any(
+        (isinstance(item, FUNCTIONS) and item.name == member)
+        or (
+            isinstance(item, ast.AnnAssign)
+            and isinstance(item.target, ast.Name)
+            and item.target.id == member
+        )
+        for item in node.body
+    )
+
+
+def direct_calls(node: ast.AST) -> Iterator[ast.Call]:
+    """The calls this body makes itself, not the ones its nested defs make."""
+    for child in ast.iter_child_nodes(node):
+        if isinstance(child, (*FUNCTIONS, ast.ClassDef)):
+            continue
+        if isinstance(child, ast.Call):
+            yield child
+        yield from direct_calls(child)
+
+
+def called_name(call: ast.Call) -> str | None:
+    """The name a call names, whether through an object or on its own."""
+    if isinstance(call.func, ast.Attribute):
+        return call.func.attr
+    if isinstance(call.func, ast.Name):
+        return call.func.id
+    return None
+
+
+def composes_authored(node: ast.AST) -> bool:
+    """Whether this body composes content it authored rather than derived."""
+    authored = ContentClass.AUTHORED
+    return any(
+        isinstance(item, ast.Attribute)
+        and item.attr == authored.name
+        and isinstance(item.value, ast.Name)
+        and item.value.id == type(authored).__name__
+        for item in ast.walk(node)
+    )
+
+
+class Production:
+    """Production source, read as functions, their calls, and their steps."""
+
+    def __init__(self, sources: Mapping[str, str]) -> None:
+        self.trees = {module: ast.parse(text) for module, text in sources.items()}
+        self.functions: dict[Source, ast.FunctionDef | ast.AsyncFunctionDef] = {}
+        self.owner: dict[Source, ast.ClassDef | None] = {}
+        self.step_classes: set[tuple[str, str]] = set()
+        members = step_members()
+        for module, tree in self.trees.items():
+            self._index(module, tree, (), None, members)
+
+    def _index(
+        self,
+        module: str,
+        node: ast.AST,
+        quals: tuple[str, ...],
+        owner: ast.ClassDef | None,
+        members: frozenset[str],
+    ) -> None:
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, FUNCTIONS):
+                source = Source(module=module, function=".".join((*quals, child.name)))
+                self.functions[source] = child
+                self.owner[source] = owner
+                self._index(module, child, (*quals, child.name), owner, members)
+            elif isinstance(child, ast.ClassDef):
+                if all(defines(child, member) for member in members):
+                    self.step_classes.add((module, child.name))
+                self._index(module, child, (*quals, child.name), child, members)
+            else:
+                self._index(module, child, quals, owner, members)
+
+    def _enclosed(self, source: Source, name: str) -> Source | None:
+        """The function *name* refers to where *source* stands."""
+        parts = source.function.split(".")
+        while True:
+            candidate = Source(module=source.module, function=".".join((*parts, name)))
+            if candidate in self.functions:
+                return candidate
+            if not parts:
+                return None
+            parts.pop()
+
+    def step_bodies(self) -> frozenset[Source]:
+        """The functions the verifier itself drives.
+
+        A step's own write is one by construction.  So is every function a
+        step is built around: the applier a writing step hands over IS the
+        write the loop re-reads, whatever the step type is called.
+        """
+        bodies = {
+            source
+            for source, node in self.functions.items()
+            if node.name == "write"
+            and (owner := self.owner[source]) is not None
+            and (source.module, owner.name) in self.step_classes
+        }
+        for source, node in self.functions.items():
+            for call in direct_calls(node):
+                if not (
+                    isinstance(call.func, ast.Name)
+                    and (source.module, call.func.id) in self.step_classes
+                ):
+                    continue
+                for argument in (*call.args, *(word.value for word in call.keywords)):
+                    if isinstance(argument, ast.Name):
+                        applier = self._enclosed(source, argument.id)
+                        if applier is not None:
+                            bodies.add(applier)
+        return frozenset(bodies)
+
+    def verified(self) -> frozenset[Source]:
+        """The functions that only ever run inside a write-back.
+
+        A step body is one by construction.  So is a function every one of
+        whose production callers is already one — which is how a writer a
+        step delegates to inherits the window it was called in, and how a
+        writer with one caller outside a step does not.
+        """
+        callers: dict[Source, set[Source]] = {
+            source: set() for source in self.functions
+        }
+        named: dict[str, set[Source]] = {}
+        for source, node in self.functions.items():
+            named.setdefault(node.name, set()).add(source)
+        for source, node in self.functions.items():
+            for call in direct_calls(node):
+                name = called_name(call)
+                for target in named.get(name, ()) if name is not None else ():
+                    callers[target].add(source)
+        verified = set(self.step_bodies())
+        while True:
+            grown = {
+                source
+                for source in self.functions
+                if source not in verified
+                and callers[source]
+                and callers[source] <= verified
+            }
+            if not grown:
+                return frozenset(verified)
+            verified |= grown
+
+    def call_sites(self, writes: frozenset[str]) -> frozenset[CallSite]:
+        """Every production call of *writes* made THROUGH the port.
+
+        A class that states one of these writes itself is the port's own
+        implementation of it; calling a sibling method there is the
+        backend seam, not a step reaching for it.
+        """
+        sites: set[CallSite] = set()
+        for source, node in self.functions.items():
+            owner = self.owner[source]
+            for call in direct_calls(node):
+                name = called_name(call)
+                if (
+                    name is None
+                    or name not in writes
+                    or not isinstance(call.func, ast.Attribute)
+                    or (owner is not None and defines(owner, name))
+                ):
+                    continue
+                sites.add(
+                    CallSite(
+                        module=source.module, function=source.function, method=name
+                    )
+                )
+        return frozenset(sites)
+
+    def outside_a_write_back(self, writes: frozenset[str]) -> frozenset[CallSite]:
+        """The call sites whose function the verifier does not drive."""
+        verified = self.verified()
+        return frozenset(
+            site
+            for site in self.call_sites(writes)
+            if Source(module=site.module, function=site.function) not in verified
+        )
+
+    def authored(self, site: CallSite) -> bool:
+        """Whether the writer holding *site* composes content it authored."""
+        owner = self.owner[Source(module=site.module, function=site.function)]
+        return composes_authored(
+            owner if owner is not None else self.trees[site.module]
+        )
+
+
+LIFECYCLE = "services/tracker_lifecycle.py"
+#: The founder's ruling KOD-806 holds the lifecycle writer's state moves
+#: outside this check while the seam it covers is undecided.  They are
+#: named as call sites and compared exactly: once the ruling is lifted and
+#: the moves run inside a write-back, these entries stop matching what the
+#: tree holds and this check says so rather than quietly passing.
+KOD_806_STATE_MOVES = frozenset(
+    {
+        CallSite(
+            module=LIFECYCLE,
+            function="TrackerLifecycleWriter.on_dequeue",
+            method="set_workflow_state",
+        ),
+        CallSite(
+            module=LIFECYCLE,
+            function="TrackerLifecycleWriter.on_pull_request",
+            method="set_workflow_state",
+        ),
+        CallSite(
+            module=LIFECYCLE,
+            function="TrackerLifecycleWriter.on_verified_merge",
+            method="set_queue_state",
+        ),
+        CallSite(
+            module=LIFECYCLE,
+            function="TrackerLifecycleWriter.on_run_failed",
+            method="restore_workflow_state",
+        ),
+    }
+)
+#: The writes that still reach the port with no write-back around them,
+#: every one of them in a process that holds no judged commit to verify
+#: against: the dispatch pass that resolves a base before a run exists,
+#: the lifecycle watcher's notes about a run that has already ended, and
+#: boot-time vocabulary instatement.  None of them puts authored content
+#: on a surface — which is asserted below, not asserted here, so an
+#: authored write cannot be added under one of these entries.
+UNVERIFIED_WRITES = frozenset(
+    {
+        CallSite(
+            module=LIFECYCLE,
+            function="TrackerLifecycleWriter.on_run_failed",
+            method="post_comment",
+        ),
+        CallSite(
+            module=LIFECYCLE,
+            function="TrackerLifecycleWriter.on_terminal_outcome",
+            method="upsert_comment",
+        ),
+        CallSite(
+            module=LIFECYCLE,
+            function="TrackerLifecycleWriter._record_deliverable",
+            method="record_work_ref",
+        ),
+        CallSite(
+            module="services/base_resolver.py",
+            function="BaseResolver._construct",
+            method="record_work_ref",
+        ),
+        CallSite(
+            module="services/fire_dispatcher.py",
+            function="FireDispatcher.launch",
+            method="record_base_spec",
+        ),
+        CallSite(
+            module="services/tracker_boot.py",
+            function="reconcile_tracker_mappings",
+            method="ensure_mappings",
+        ),
+    }
+)
+
+
+def test_every_production_write_of_the_port_runs_inside_a_write_back():
+    production = Production(production_sources())
+    sites = production.call_sites(artifact_writes())
+    assert sites, "a tree with no port writes states nothing about adoption"
+    assert KOD_806_STATE_MOVES.isdisjoint(UNVERIFIED_WRITES)
+    assert (
+        production.outside_a_write_back(artifact_writes())
+        == KOD_806_STATE_MOVES | UNVERIFIED_WRITES
+    )
+
+
+def test_a_writer_a_step_delegates_to_is_verified_with_it():
+    """The window belongs to the write, not to the function that holds it."""
+    production = Production(production_sources())
+    delegated = CallSite(
+        module="services/lane_escalation.py",
+        function="LaneEscalationWriter.raise_escalation",
+        method="upsert_comment",
+    )
+    assert delegated in production.call_sites(artifact_writes())
+    assert delegated not in production.outside_a_write_back(artifact_writes())
+
+
+def test_no_write_outside_a_write_back_puts_authored_content_on_a_surface():
+    production = Production(production_sources())
+    writes = artifact_writes()
+    authored = {
+        site for site in production.call_sites(writes) if production.authored(site)
+    }
+    assert authored, "a tree that authors nothing states nothing about authorship"
+    assert authored.isdisjoint(production.outside_a_write_back(writes))
+
+
+DRIVEN = """
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class Step:
+    surface: object
+    apply: object
+
+    async def write(self, *, finding):
+        await self.apply(finding)
+
+
+class Writer:
+    async def publish(self):
+        async def put(finding):
+            await self._tracker.post_comment(issue_key=self._key, body=self._body)
+
+        await self._verifier.write_back(step=Step(self._surface, put), ref=self._ref)
+"""
+DIRECT = """
+class Writer:
+    async def publish(self):
+        await self._tracker.post_comment(issue_key=self._key, body=self._body)
+"""
+
+
+def test_a_step_wired_straight_at_the_port_fails_the_static_check():
+    production = Production({"driven.py": DRIVEN, "direct.py": DIRECT})
+    outside = production.outside_a_write_back(artifact_writes())
+    assert outside == {
+        CallSite(module="direct.py", function="Writer.publish", method="post_comment")
+    }
+    assert CallSite(
+        module="driven.py", function="Writer.publish.put", method="post_comment"
+    ) in production.call_sites(artifact_writes())
