@@ -472,6 +472,32 @@ async def test_the_criteria_a_fire_owes_are_its_subtrees_todo_criteria() -> None
     }
 
 
+async def test_the_fires_criterion_read_records_no_write_and_takes_no_lease() -> None:
+    """Entry reads every criterion the subject owes and takes none of them.
+
+    A criterion sub-issue is a leased write surface, and the fire's own
+    barrier read visits one for every criterion under the subject.  A read
+    that took those grants would hold the whole subtree against the state
+    moves entitled to them for the length of the run it opens, so the
+    barrier leaves the ledgers and the lease table as it found them.
+    """
+    port = tracker()
+
+    owed = await TrackerCriteria(tracker=port).read_owed_criteria(issue_key=SUBJECT)
+
+    assert set(owed) == {DIRECT_OWED, NESTED_OWED, DIRECT_OWED_TOO}
+    assert port.comment_writes == []
+    assert port.issue_writes == []
+    assert port.issue_creations == []
+    assert port.workflow_writes == []
+    assert port.restored_states == []
+    assert port.queue_writes == []
+    assert port.classification_writes == []
+    assert port.claim_writes == []
+    assert port.lease_acquisitions == []
+    assert port.leases == {}
+
+
 async def test_only_the_check_reaches_the_fire_never_the_recorded_evidence() -> None:
     stage = TrackerCriteria(tracker=tracker())
 
