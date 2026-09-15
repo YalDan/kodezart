@@ -116,6 +116,7 @@ class ReadyFixture:
         assert not self.fake.queue_writes
         assert not self.fake.comment_writes
         assert not self.fake.claim_writes
+        assert not self.fake.lease_acquisitions
         assert {name for name, _ in self.server.calls} <= {
             "get_issue",
             "get_project",
@@ -191,6 +192,28 @@ async def test_blocker_subtree_recomputed_across_ticks_without_parent_state(
     assert keys(await read_scope_ready(ref=PROJECT, tracker=fixture.tracker)) == [
         "blocker"
     ]
+    fixture.assert_read_only()
+
+
+async def test_the_walk_reads_every_criterion_without_taking_its_write_lease(
+    ready_fixture,
+):
+    """The walk reads criterion sub-issues; it leaves every grant untaken.
+
+    A criterion sub-issue is a leased write surface, and the walk visits one
+    under every candidate on every tick.  A read that took those grants
+    would hold the whole scope's criteria against the state moves entitled
+    to them, so the readiness answer leaves the lease table exactly as it
+    found it.
+    """
+    fixture = await ready_fixture(pair())
+    selection = await read_scope_ready(ref=PROJECT, tracker=fixture.tracker)
+    assert [item.issue_key for item in selection.criteria] == [
+        "blocker-check",
+        "lane-check",
+    ]
+    assert fixture.fake.lease_acquisitions == []
+    assert fixture.fake.leases == {}
     fixture.assert_read_only()
 
 
