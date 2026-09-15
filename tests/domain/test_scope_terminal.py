@@ -855,6 +855,161 @@ def test_an_empty_scope_owing_nothing_has_converged() -> None:
     )
 
 
+#: The two classes that say a remaining obligation was demonstrated
+#: nowhere here rather than left unrecorded: neither blocks.
+UNDEMONSTRABLE_CLASSES: tuple[ScopeResidualClass, ...] = (
+    ScopeResidualClass.UNDEMONSTRABLE_HERE,
+    ScopeResidualClass.OWNED_ELSEWHERE,
+)
+
+
+def undemonstrable_item(
+    index: int,
+    residual_class: ScopeResidualClass,
+    owner: ScopeResidualOwner,
+) -> ScopeResidualItem:
+    """One remaining obligation recorded on its own criterion sub-issue."""
+    return item(
+        issue_id=f"EXT/{index}",
+        residual_class=residual_class,
+        record=criterion_record(f"EXT/{index}"),
+        detail="The criterion is not demonstrable inside this scope's run.",
+        act="Record the disposition on the criterion sub-issue.",
+        owner=owner,
+    )
+
+
+def undemonstrable_residual(
+    *owners: ScopeResidualOwner,
+) -> ScopeResidual:
+    """A residual of nothing but undemonstrable and elsewhere-owned work."""
+    return ScopeResidual(
+        items=tuple(
+            undemonstrable_item(index, residual_class, owner)
+            for index, (residual_class, owner) in enumerate(
+                (
+                    (residual_class, owner)
+                    for owner in owners
+                    for residual_class in UNDEMONSTRABLE_CLASSES
+                ),
+                start=10,
+            )
+        )
+    )
+
+
+def test_an_undemonstrable_obligation_leaves_a_scope_converged_with_residual() -> None:
+    lanes = parallel_open_lanes()
+    residual = undemonstrable_residual(
+        ScopeResidualOwner(kind=ScopeResidualOwnerKind.OPERATOR, key="founder"),
+        ScopeResidualOwner(kind=ScopeResidualOwnerKind.ANOTHER_LANE, key="lane:beta"),
+    )
+
+    assert residual.blocking == ()
+    assert lane_residual(lanes, marker_prefixes=MARKER_PREFIXES) == ()
+
+    outcome = derive_scope_outcome(lanes=lanes, residual=residual, stopping_rule=None)
+    assert outcome is WorkflowOutcome.scope_converged_with_residual
+    assert outcome is not WorkflowOutcome.scope_stopped_short
+
+    event = terminal(lanes=lanes, residual=residual, outcome=outcome)
+    assert event.outcome is WorkflowOutcome.scope_converged_with_residual
+    assert event.stopping_rule is None
+    assert len(event.residual.items) == len(residual.items)
+    for residual_class in UNDEMONSTRABLE_CLASSES:
+        assert event.residual.by_class(residual_class)
+
+
+@pytest.mark.parametrize(
+    "owner_kind",
+    list(ScopeResidualOwnerKind),
+)
+@pytest.mark.parametrize(
+    "residual_class",
+    list(UNDEMONSTRABLE_CLASSES),
+)
+def test_no_owner_of_an_undemonstrable_obligation_stops_a_scope_short(
+    residual_class: ScopeResidualClass,
+    owner_kind: ScopeResidualOwnerKind,
+) -> None:
+    lanes = parallel_open_lanes()
+    residual = ScopeResidual(
+        items=(
+            undemonstrable_item(
+                11,
+                residual_class,
+                ScopeResidualOwner(kind=owner_kind, key="owner-address"),
+            ),
+        )
+    )
+
+    outcome = derive_scope_outcome(lanes=lanes, residual=residual, stopping_rule=None)
+    assert outcome is WorkflowOutcome.scope_converged_with_residual
+
+    event = terminal(lanes=lanes, residual=residual, outcome=outcome)
+    assert event.residual.by_owner(owner_kind)
+
+
+@pytest.mark.parametrize(
+    "residual_class",
+    list(UNDEMONSTRABLE_CLASSES),
+)
+def test_an_undemonstrable_obligation_is_no_missing_terminal_record(
+    residual_class: ScopeResidualClass,
+) -> None:
+    operator = ScopeResidualOwner(kind=ScopeResidualOwnerKind.OPERATOR, key="founder")
+    with pytest.raises(ValidationError):
+        item(
+            issue_id="EXT/12",
+            residual_class=residual_class,
+            record=record(issue_key="EXT/12"),
+            owner=operator,
+        )
+    with pytest.raises(ValidationError):
+        item(
+            issue_id="EXT/12",
+            residual_class=ScopeResidualClass.UNRECORDED_AT_TERMINAL,
+            record=criterion_record("EXT/12"),
+            owner=operator,
+        )
+    with pytest.raises(ValidationError):
+        item(
+            issue_id="EXT/12",
+            residual_class=ScopeResidualClass.UNRECORDED_AT_TERMINAL,
+            record=record(issue_key="EXT/12"),
+            owner=operator,
+        )
+
+    assert residual_class not in BLOCKING_RESIDUAL_CLASSES
+    assert ScopeResidualClass.UNRECORDED_AT_TERMINAL in BLOCKING_RESIDUAL_CLASSES
+
+
+def test_a_missing_terminal_record_still_stops_a_scope_short() -> None:
+    lanes = parallel_open_lanes()
+    unrecorded = item(
+        issue_id="EXT/13",
+        residual_class=ScopeResidualClass.UNRECORDED_AT_TERMINAL,
+        record=record(issue_key="EXT/13"),
+        owner=ScopeResidualOwner(kind=ScopeResidualOwnerKind.THIS_LANE, key="lane:1"),
+    )
+    residual = ScopeResidual(
+        items=(
+            undemonstrable_item(
+                14,
+                ScopeResidualClass.UNDEMONSTRABLE_HERE,
+                ScopeResidualOwner(kind=ScopeResidualOwnerKind.OPERATOR, key="founder"),
+            ),
+            unrecorded,
+        )
+    )
+
+    assert residual.blocking == (unrecorded,)
+    assert (
+        derive_scope_outcome(lanes=lanes, residual=residual, stopping_rule=None)
+        is WorkflowOutcome.scope_stopped_short
+    )
+
+
 def outcome_vocabulary() -> frozenset[str]:
     """Every way the outcome enum can be named, read off the enum itself."""
     return frozenset(
