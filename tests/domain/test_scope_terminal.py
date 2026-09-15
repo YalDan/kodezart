@@ -1,8 +1,13 @@
 """Retired terminal wrappers do not remove already public outcome values."""
 
-import pytest
-from pydantic import ValidationError
+from typing import get_args
 
+import pytest
+from pydantic import BaseModel, ValidationError
+
+from kodezart.config.app import AppConfig
+from kodezart.domain.scope_terminal import BOUND_CONFIG_FIELD, stopping_rule_of
+from kodezart.types.domain.organize_owner import OrganizeBoundEvidence
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.scope_terminal import (
     BLOCKING_RESIDUAL_CLASSES,
@@ -12,6 +17,7 @@ from kodezart.types.domain.scope_terminal import (
     ScopeResidualItem,
     ScopeResidualOwner,
     ScopeResidualOwnerKind,
+    ScopeStoppingRule,
 )
 from kodezart.types.domain.surface import SurfaceKind
 
@@ -248,3 +254,101 @@ def test_machine_complete_versus_complete_is_a_query_over_class_and_owner() -> N
     stopped = ScopeResidual(items=(undemonstrable, elsewhere, silent))
     assert stopped.blocking == (silent,)
     assert stopped.by_class(ScopeResidualClass.LANE_UNREPORTED) == (silent,)
+
+
+def bound(**overrides: object) -> OrganizeBoundEvidence:
+    data: dict[str, object] = {
+        "setting": "organize.max_admission_rounds",
+        "value": 3,
+        "rounds_used": 3,
+        "loop": "admission",
+    }
+    return OrganizeBoundEvidence.model_validate(data | overrides)
+
+
+@pytest.mark.parametrize(
+    "config_field",
+    [
+        "organize.max_admission_rounds",
+        "MAX_ADMISSION_ROUNDS",
+        "KODEZART_organize__max_admission_rounds",
+        "KODEZART__ORGANIZE",
+        "KODEZART_ORGANIZE__MAX ADMISSION ROUNDS",
+    ],
+)
+def test_a_stop_reached_by_no_configured_env_field_is_no_declared_stop(
+    config_field: str,
+) -> None:
+    with pytest.raises(ValidationError):
+        ScopeStoppingRule(config_field=config_field, configured_value=3, rounds_used=3)
+
+
+@pytest.mark.parametrize(("configured_value", "rounds_used"), [(3, 2), (3, 4)])
+def test_a_stop_short_of_or_past_its_bound_is_refused(
+    configured_value: int, rounds_used: int
+) -> None:
+    with pytest.raises(ValidationError):
+        ScopeStoppingRule(
+            config_field="KODEZART_ORGANIZE__MAX_ADMISSION_ROUNDS",
+            configured_value=configured_value,
+            rounds_used=rounds_used,
+        )
+
+
+@pytest.mark.parametrize(
+    ("setting", "loop", "config_field"),
+    [
+        (
+            "organize.max_admission_rounds",
+            "admission",
+            "KODEZART_ORGANIZE__MAX_ADMISSION_ROUNDS",
+        ),
+        (
+            "organize.max_convergence_rounds",
+            "convergence",
+            "KODEZART_ORGANIZE__MAX_CONVERGENCE_ROUNDS",
+        ),
+        (
+            "write_back.max_verify_rounds",
+            "write_back",
+            "KODEZART_WRITE_BACK__MAX_VERIFY_ROUNDS",
+        ),
+    ],
+)
+def test_each_bound_names_its_own_configured_env_field_value_and_rounds(
+    setting: str, loop: str, config_field: str
+) -> None:
+    rule = stopping_rule_of(bound(setting=setting, loop=loop, value=5, rounds_used=5))
+
+    assert rule is not None
+    assert rule.config_field == config_field
+    assert rule.configured_value == 5
+    assert rule.rounds_used == 5
+
+
+def test_a_halt_reached_by_no_bound_declares_no_stopping_rule() -> None:
+    assert stopping_rule_of(None) is None
+
+
+def test_every_bound_a_halt_can_name_has_a_configured_env_field() -> None:
+    settings = get_args(OrganizeBoundEvidence.model_fields["setting"].annotation)
+
+    assert set(settings)
+    assert set(BOUND_CONFIG_FIELD) == set(settings)
+
+
+def test_each_configured_env_field_addresses_a_declared_setting() -> None:
+    prefix = AppConfig.model_config["env_prefix"]
+    delimiter = AppConfig.model_config["env_nested_delimiter"]
+    assert prefix is not None and delimiter is not None
+
+    for setting, config_field in BOUND_CONFIG_FIELD.items():
+        section, _, field = setting.partition(".")
+        annotation = AppConfig.model_fields[section].annotation
+        nested = next(
+            arm
+            for arm in get_args(annotation)
+            if isinstance(arm, type) and issubclass(arm, BaseModel)
+        )
+        assert field in nested.model_fields
+        assert config_field == f"{prefix}{section}{delimiter}{field}".upper()

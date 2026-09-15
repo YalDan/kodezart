@@ -194,3 +194,33 @@ class ScopeResidual(CamelCaseModel):
     def by_owner(self, owner: ScopeResidualOwnerKind) -> tuple[ScopeResidualItem, ...]:
         """Every item owed by one kind of owner, assembly order preserved."""
         return tuple(item for item in self.items if item.owner.kind is owner)
+
+
+class ScopeStoppingRule(CamelCaseModel):
+    """The configured bound a declared stop was reached by, as data.
+
+    A stop is declared only when a ``KODEZART_``-prefixed configuration
+    field fixed before the run was exhausted, so the rule names that
+    environment field, the value it carried and the rounds the run spent.
+    The rounds must equal the value exactly: a run that stopped with
+    rounds to spare was stopped by something other than this bound, and a
+    run past it never ran.  Anything reached by no configured field is
+    arithmetic, not a declared stop.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    #: The env spelling ``AppConfig`` loads: the ``KODEZART_`` prefix, a
+    #: section whose own words are joined by single underscores, and the
+    #: ``__`` nesting delimiter between section and field.
+    config_field: str = Field(
+        pattern=r"^KODEZART_[A-Z0-9]+(?:_[A-Z0-9]+)*(?:__[A-Z0-9]+(?:_[A-Z0-9]+)*)*$"
+    )
+    configured_value: int = Field(ge=1)
+    rounds_used: int = Field(ge=1)
+
+    @model_validator(mode="after")
+    def _exhausted_exactly(self) -> Self:
+        if self.rounds_used != self.configured_value:
+            raise ValueError("a stopping rule must record the actual exhausted bound")
+        return self
