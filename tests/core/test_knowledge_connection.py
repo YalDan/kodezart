@@ -1,6 +1,7 @@
 """Typed knowledge configuration through the actual settings and grant boundary."""
 
 import json
+import sys
 
 import pytest
 from pydantic import ValidationError
@@ -310,6 +311,27 @@ def test_credentials_are_excluded_from_settings_and_grant_serialization(connecti
 INTERACTIVE_HOST = "hosted.invalid"
 
 
+def emitted_log_surface(capsys) -> str:
+    """Everything just written, over BOTH streams, in ONE snapshot.
+
+    One snapshot because ``capsys.readouterr()`` clears what it returns:
+    reading it twice scans an already-emptied buffer for the second stream
+    and silently narrows the guard below to stdout alone.
+    """
+    captured = capsys.readouterr()
+    return captured.out + captured.err
+
+
+def test_the_scanned_boot_surface_catches_a_credential_on_stderr(capsys):
+    """The control for the guard below: a stderr leak must be visible.
+
+    Without it the guard can narrow back to stdout and keep passing, which
+    is how a credential-leak check turns into a check of nothing.
+    """
+    print(f'{{"event": "boot", "header": "Bearer {GATEWAY}"}}', file=sys.stderr)
+    assert GATEWAY in emitted_log_surface(capsys)
+
+
 async def test_no_boot_log_line_carries_the_gateway_credential(monkeypatch, capsys):
     from kodezart.main import create_app, lifespan
 
@@ -321,7 +343,7 @@ async def test_no_boot_log_line_carries_the_gateway_credential(monkeypatch, caps
     async with lifespan(app):
         pass
 
-    emitted = capsys.readouterr().out + capsys.readouterr().err
+    emitted = emitted_log_surface(capsys)
     assert '"event"' in emitted
     assert GATEWAY not in emitted
 
