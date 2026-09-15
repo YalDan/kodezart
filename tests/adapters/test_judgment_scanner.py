@@ -739,7 +739,7 @@ async def test_the_built_gate_derives_a_fragment_digest_from_the_private_surface
     surface = operation_with(FIXTURE_PRIVATE_SURFACE).private_surface
     assert surface is not None
 
-    digest = gate._fragment_digest
+    digest = gate.fragment_digest
 
     # restored: assert digest (KOD-827) — on the value's shape, not its truth.
     assert re.fullmatch(r"[0-9a-f]{64}", digest) is not None

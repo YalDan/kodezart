@@ -62,6 +62,11 @@ class OutboundAdmission:
         self._fragment_digest = fragment_digest
         self._memo: dict[_MemoKey, GateDecision] = {}
 
+    @property
+    def fragment_digest(self) -> str:
+        """Digest of the private-surface fragment this gate was built from."""
+        return self._fragment_digest
+
     async def gate(
         self,
         *,
