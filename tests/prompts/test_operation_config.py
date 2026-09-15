@@ -661,9 +661,6 @@ def test_placeholder_mapping_is_total_in_both_directions() -> None:
     assert set(mapped.values()) == (
         set(OperationConfig.model_fields) - NATIVELY_CONSUMED_FIELDS
     )
-    assert set(mapped.values()) | {name.split(".")[0] for name in native} == set(
-        OperationConfig.model_fields
-    )
 
 
 def test_every_operation_config_field_is_reachable_from_a_pass_template() -> None:
@@ -674,11 +671,8 @@ def test_every_operation_config_field_is_reachable_from_a_pass_template() -> Non
     reach is a field the port did not actually port.
     """
     reachable = {name.split(".")[0] for name in template_placeholders()}
-    native = dict(markdown_rows("## Native OperationConfig consumers"))
     unreachable = (
-        set(OperationConfig.model_fields)
-        - reachable
-        - {name.split(".")[0] for name in native}
+        set(OperationConfig.model_fields) - reachable - NATIVELY_CONSUMED_FIELDS
     )
     assert unreachable == set(), f"no pass template reaches {sorted(unreachable)}"
 

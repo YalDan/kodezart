@@ -19,7 +19,7 @@ from datetime import datetime, timedelta
 import pytest
 import structlog
 
-from kodezart.core.errors import McpCredentialRefusedError, TrackerAccessDeniedError
+from kodezart.core.errors import TrackerAccessDeniedError
 from kodezart.domain.errors import TransientAPIError
 from kodezart.services.claim_heartbeat import ClaimHeartbeat
 from kodezart.services.lifecycle_watcher import LifecycleWatcher
@@ -136,18 +136,13 @@ class RefusedCredentialTracker(FakeTrackerPort):
     ) -> ClaimResult | None:
         self.renewals.append((issue_key, holder))
         await asyncio.sleep(0)
-        # Refused the way the adapter refuses: an MCP-layer refusal reaches
-        # the caller as the typed tracker error carrying that error's own
-        # message, which is where the refusing server survives the
-        # boundary (``TrackerAccessDeniedError(str(exc))``).
+        # The typed error the adapter raises, carrying the server that
+        # refused on the attribute the adapter sets — not a message
+        # composed here, which would let the adapter's own translation
+        # drift while this test stayed green.
         raise TrackerAccessDeniedError(
-            str(
-                McpCredentialRefusedError(
-                    "the MCP server refused the configured credential",
-                    server_name=REFUSING_SERVER,
-                    tool_name="save_comment",
-                )
-            ),
+            "the tracker refused the configured authority",
+            server_name=REFUSING_SERVER,
         )
 
 
@@ -445,7 +440,7 @@ class TestARenewalThatMeetsARefusedCredential:
         assert refused[0]["holder"] == HOLDER
         # KOD-827 restored: the record names the server that refused, so an
         # operator can act on it without reading the adapter's own log.
-        assert REFUSING_SERVER in refused[0]["error"]
+        assert refused[0]["server_name"] == REFUSING_SERVER
         assert not [entry for entry in logs if entry["event"] == "claim_renewal_failed"]
 
     async def test_the_loop_stops_on_it_rather_than_repeating_it_every_interval(

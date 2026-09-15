@@ -310,7 +310,17 @@ class TrackerUnavailableError(Exception):
 
 
 class TrackerAccessDeniedError(Exception):
-    """The tracker refused the configured authority; retrying cannot fix it."""
+    """The tracker refused the configured authority; retrying cannot fix it.
+
+    Carries the name of the backend server that refused, when the adapter
+    that translated the refusal knew it.  An operator reading a refusal
+    record above the adapter can then act on the right credential without
+    parsing it back out of the message text.
+    """
+
+    def __init__(self, message: str, *, server_name: str | None = None) -> None:
+        super().__init__(message)
+        self.server_name: str | None = server_name
 
 
 class TrackerProtocolError(Exception):

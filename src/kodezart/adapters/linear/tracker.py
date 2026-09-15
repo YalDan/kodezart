@@ -4490,7 +4490,10 @@ class LinearMcpTracker:
                     tool=tool,
                     server_name=exc.server_name,
                 )
-                raise TrackerAccessDeniedError(str(exc)) from exc
+                raise TrackerAccessDeniedError(
+                    str(exc),
+                    server_name=exc.server_name,
+                ) from exc
             except (McpTransportError, TransientAPIError) as exc:
                 if attempt + 1 >= self._retry.attempts or not _may_resend(tool, exc):
                     raise TrackerUnavailableError(str(exc)) from exc

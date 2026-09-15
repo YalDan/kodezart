@@ -543,6 +543,25 @@ class TestARefusedCredentialIsNeverRetried:
         assert named[0]["tool"] == "get_issue"
         assert not [entry for entry in logs if entry["event"] == "tracker_mcp_retry"]
 
+    async def test_the_translated_refusal_carries_the_refusing_server(self) -> None:
+        """The name survives the boundary on the error, not only in the log.
+
+        A caller above the adapter — the claim heartbeat among them — reports
+        the refusal itself, and reads the server off the raised error rather
+        than the adapter's own log line.
+        """
+        server = FakeLinearMcpServer(
+            issues=[FakeMcpIssue(id="T-9")],
+            state_types=STATE_TYPES,
+            credential_refused_after={"get_issue": 0},
+        )
+        tracker = tracker_over(server, max_retries=3)
+
+        with pytest.raises(TrackerAccessDeniedError) as refusal:
+            await tracker.read_issue(issue_key="T-9")
+
+        assert refusal.value.server_name == "fake-linear"
+
     async def test_a_transport_failure_is_still_retried_beside_it(self) -> None:
         """The paired positive: the retried class did not narrow."""
         server = FakeLinearMcpServer(

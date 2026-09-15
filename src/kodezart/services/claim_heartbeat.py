@@ -135,6 +135,7 @@ class ClaimHeartbeat:
                     issue_key=issue_key,
                     holder=self._holder,
                     error=str(exc),
+                    server_name=exc.server_name,
                 )
                 return
             except Exception as exc:
