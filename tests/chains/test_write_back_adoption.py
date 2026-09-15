@@ -68,6 +68,7 @@ from tests.services.test_native_amendments import (
     repository,
 )
 from tests.tracker.conftest import CLAIMED_ISSUE
+from tests.tracker.lease_fixtures import lease_for_classification
 
 __all__ = ["repository"]
 
@@ -436,9 +437,16 @@ class DirectWriteStep:
     classification: str
 
     async def write(self, *, finding: WriteBackFinding | None) -> None:
-        await self.tracker.set_issue_classification(
-            issue_key=self.surface.ref.key, classification=self.classification
-        )
+        # The bypass under test is the missing verifier, not a missing
+        # lease: the write holds its surface exactly as a wired step does.
+        async with lease_for_classification(
+            self.tracker, issue_key=self.surface.ref.key
+        ) as holder:
+            await self.tracker.set_issue_classification(
+                issue_key=self.surface.ref.key,
+                classification=self.classification,
+                holder=holder,
+            )
 
 
 @pytest.mark.parametrize(

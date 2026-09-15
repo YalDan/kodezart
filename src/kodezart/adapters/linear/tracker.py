@@ -2374,7 +2374,7 @@ class LinearMcpTracker:
         )
 
     async def set_issue_classification(
-        self, *, issue_key: str, classification: str, holder: str | None = None
+        self, *, issue_key: str, classification: str, holder: str
     ) -> TrackerIssue:
         label = self._classification_label(
             classification, stops="this issue classification cannot be written"
@@ -2383,10 +2383,9 @@ class LinearMcpTracker:
             raise ApprovalLabelWriteError(
                 issue_key=issue_key, classification=classification
             )
-        if holder is not None:
-            self._classification_label(
-                "criterion", stops="the classification write surface cannot be read"
-            )
+        self._classification_label(
+            "criterion", stops="the classification write surface cannot be read"
+        )
 
         async def read_current() -> TrackerIssue:
             current = await self.read_planning_issue(issue_key=issue_key)
@@ -2399,19 +2398,16 @@ class LinearMcpTracker:
 
         async def attempt() -> TrackerIssue:
             current = await read_current()
-            if holder is not None:
-                markers = await self._markers_on(
-                    _GrantKind.LEASE,
-                    targets=(
-                        _LEASE_ADDRESSING.target(classification_surface(current)),
-                    ),
-                )
-                current = await read_current()
-                self._assert_surface_holder(
-                    surface=classification_surface(current),
-                    holder=holder,
-                    markers=markers,
-                )
+            markers = await self._markers_on(
+                _GrantKind.LEASE,
+                targets=(_LEASE_ADDRESSING.target(classification_surface(current)),),
+            )
+            current = await read_current()
+            self._assert_surface_holder(
+                surface=classification_surface(current),
+                holder=holder,
+                markers=markers,
+            )
             if classification in current.issue_labels:
                 return current
             payload = await self._send(
@@ -2420,9 +2416,7 @@ class LinearMcpTracker:
             )
             return self._saved_issue(payload, written={"addLabels": [label]})
 
-        receipt = await self._retry_call(_TOOL_SAVE_ISSUE, attempt)
-        if holder is None:
-            return receipt
+        await self._retry_call(_TOOL_SAVE_ISSUE, attempt)
         # This read is outside the mutation retry. Failure cannot resend a
         # classification that the server already accepted.
         current = await self.read_planning_issue(issue_key=issue_key)
@@ -2572,7 +2566,7 @@ class LinearMcpTracker:
         target: str,
         marker: str,
         body: str,
-        holder: str | None = None,
+        holder: str,
         expected: TrackerComment | None = None,
     ) -> TrackerComment:
         """Resolve the marker through the single attributed, leased writer."""

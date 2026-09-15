@@ -771,7 +771,9 @@ class OrganizeOwner:
                 await self._may_write(request.issue_key, phase=phase, scope=scope)
                 await settle(
                     self._tracker.set_issue_classification(
-                        issue_key=request.issue_key, classification=classification
+                        issue_key=request.issue_key,
+                        classification=classification,
+                        holder=job_id,
                     )
                 )
 

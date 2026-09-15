@@ -12,6 +12,10 @@ from tests.tracker.conftest import APPROVED_ISSUE, CLAIMED_ISSUE
 from tests.tracker.lease_fixtures import lease_for_comment, leased_comment
 
 MARKER = "[fixture:lane:decision-1]"
+#: A holder for the cases whose refusal precedes the lease check: the
+#: write never reaches that check, and naming one keeps the case about
+#: the precondition it is stated over.
+UNHELD_HOLDER = "job-without-a-lease"
 
 
 class TestCommentUpsert:
@@ -72,7 +76,10 @@ class TestCommentUpsert:
         calls = tracker_writes()
         with pytest.raises(DuplicateCommentMarkerError) as raised:
             await tracker.upsert_comment(
-                target=APPROVED_ISSUE, marker=MARKER, body="ambiguous"
+                target=APPROVED_ISSUE,
+                marker=MARKER,
+                body="ambiguous",
+                holder=UNHELD_HOLDER,
             )
         assert raised.value.target == APPROVED_ISSUE
         assert raised.value.marker == MARKER
@@ -109,7 +116,10 @@ class TestCommentUpsert:
         calls = tracker_writes()
         with pytest.raises(ValueError, match="one nonempty line"):
             await tracker.upsert_comment(
-                target=APPROVED_ISSUE, marker=marker, body="invalid"
+                target=APPROVED_ISSUE,
+                marker=marker,
+                body="invalid",
+                holder=UNHELD_HOLDER,
             )
         assert tracker_writes() == calls
 

@@ -4260,27 +4260,26 @@ class FakeTrackerPort:
         return updated
 
     async def set_issue_classification(
-        self, *, issue_key: str, classification: str, holder: str | None = None
+        self, *, issue_key: str, classification: str, holder: str
     ) -> TrackerIssue:
         if classification in self.approval_classifications:
             raise ApprovalLabelWriteError(
                 issue_key=issue_key, classification=classification
             )
         issue = await self.read_issue(issue_key=issue_key)
-        if holder is not None:
-            surface = classification_surface(issue)
-            grant = self.leases.get(surface)
-            owner = (
-                grant.holder
-                if grant is not None and grant.expires_at > self._clock()
-                else None
+        surface = classification_surface(issue)
+        grant = self.leases.get(surface)
+        owner = (
+            grant.holder
+            if grant is not None and grant.expires_at > self._clock()
+            else None
+        )
+        if not holder.strip() or holder != owner:
+            raise SurfaceLeaseError(
+                "classification requires the actual issue surface holder",
+                surface=surface,
+                current_holder=owner,
             )
-            if not holder.strip() or holder != owner:
-                raise SurfaceLeaseError(
-                    "classification requires the actual issue surface holder",
-                    surface=surface,
-                    current_holder=owner,
-                )
         if classification in issue.issue_labels:
             return issue
         self.classification_writes.append((issue_key, classification))
@@ -4311,7 +4310,7 @@ class FakeTrackerPort:
         target: str,
         marker: str,
         body: str,
-        holder: str | None = None,
+        holder: str,
         expected: TrackerComment | None = None,
     ) -> TrackerComment:
         """Resolve the marker through the single attributed, leased writer."""

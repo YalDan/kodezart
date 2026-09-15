@@ -25,6 +25,7 @@ from tests.fakes import (
 )
 from tests.services.test_tracker_lifecycle import BlockingGate
 from tests.tracker.conftest import FIXTURE_NOW
+from tests.tracker.lease_fixtures import leased_classification
 from tests.tracker.test_linear_mcp_tracker import tracker_over
 
 ISSUE = "work/42"
@@ -189,9 +190,14 @@ async def test_unrelated_label_added_between_read_and_write_survives():
             self.issues[ISSUE].labels.append("concurrently-added")
             return super()._tool_save_issue(arguments)
 
-    server = ConcurrentLabelServer(issues=[FakeMcpIssue(id=ISSUE, labels=["existing"])])
+    # The lease this write is made under is arbitrated by the backend's own
+    # comment stamps, so the log runs on the clock the adapter reads.
+    server = ConcurrentLabelServer(
+        issues=[FakeMcpIssue(id=ISSUE, labels=["existing"])],
+        comment_clock=lambda: FIXTURE_NOW,
+    )
     tracker = tracker_over(server, issue_labels=LABELS)
-    await tracker.set_issue_classification(issue_key=ISSUE, classification="decision")
+    await leased_classification(tracker, issue_key=ISSUE, classification="decision")
     assert server.issues[ISSUE].labels == [
         "existing",
         "concurrently-added",

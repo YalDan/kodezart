@@ -48,7 +48,7 @@ from tests.tracker.connected_app_label_contract import (
     CONNECTED_APP_LABEL_ARGUMENTS,
     CONNECTED_APP_LABEL_REQUIRED,
 )
-from tests.tracker.lease_fixtures import leased_comment
+from tests.tracker.lease_fixtures import leased_classification, leased_comment
 
 
 @dataclass(frozen=True)
@@ -347,8 +347,8 @@ async def sent_arguments() -> Mapping[str, set[str]]:
     )
     await tracker.read_issue_identity(issue_key=keyed.issue_key)
     await tracker.read_criteria(issue_key=keyed.issue_key)
-    await tracker.set_issue_classification(
-        issue_key=CLAIMED_ISSUE, classification="criterion"
+    await leased_classification(
+        tracker, issue_key=CLAIMED_ISSUE, classification="criterion"
     )
     await tracker.create_issue(
         title="t",

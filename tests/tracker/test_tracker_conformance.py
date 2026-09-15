@@ -10,7 +10,7 @@ workspace anywhere in this module and none may be introduced.
 """
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable, Mapping
 from datetime import timedelta
 from inspect import isawaitable
 
@@ -33,6 +33,7 @@ from kodezart.types.domain.operation import LifecycleStage, QueueState, ScopeLab
 from kodezart.types.domain.run_event import RunEventKind
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.surface import (
+    DescriptionWriteAuthority,
     SurfaceAuthorship,
     SurfaceKind,
     SurfaceLease,
@@ -1430,6 +1431,156 @@ class TestSurfaceLease:
         assert lost.status is ClaimStatus.LOST
 
 
+async def _classification_write(tracker: TrackerPort, holder: str) -> None:
+    """Add a semantic classification under the issue's label surface."""
+    await tracker.set_issue_classification(
+        issue_key=CLAIMED_ISSUE, classification="criterion", holder=holder
+    )
+
+
+async def _comment_write(tracker: TrackerPort, holder: str) -> None:
+    """Write the marker-keyed record this run keeps on the issue."""
+    await tracker.upsert_comment(
+        target=CLAIMED_ISSUE,
+        marker="A",
+        body="a record this run keeps",
+        holder=holder,
+    )
+
+
+async def _description_write(tracker: TrackerPort, holder: str) -> None:
+    """Replace the body the issue currently carries, under its own grant."""
+    current = await tracker.read_issue(issue_key=CLAIMED_ISSUE)
+    await tracker.edit_description(
+        target=CLAIMED_ISSUE,
+        expected=current.body,
+        replacement="a body written under this run's own grant",
+        authorization=DescriptionWriteAuthority(
+            holder=holder, surface=CLAIMED_DESCRIPTION
+        ),
+    )
+
+
+#: Every leased write this port offers, each beside the surface it
+#: addresses.  The refusals below are stated ONCE over this table rather
+#: than against whichever write a case happened to pick: the rule is
+#: universal over the port's leased surfaces, and a write that carried an
+#: unheld holder past the backend would be last-write-wins however
+#: carefully its neighbours were gated.
+LEASED_WRITES: Mapping[
+    str, tuple[WritableSurface, Callable[[TrackerPort, str], Awaitable[None]]]
+] = {
+    "issue classification": (CLAIMED_LABEL_SET, _classification_write),
+    "issue description": (CLAIMED_DESCRIPTION, _description_write),
+    "marker comment": (MARKER_A, _comment_write),
+}
+
+
+class TestALeasedWriteWithoutItsHolder:
+    """Writing a surface this run does not hold raises, and writes nothing.
+
+    Three ways to not hold a surface: nobody holds it, this run's own
+    grant has lapsed, and another run holds it live.  The first two name
+    no current holder — there is none to name, and a refusal that named
+    the run that asked would be saying it holds the surface.  Each case
+    observes mutations either side of the refusal, because a refusal
+    raised after the backend already took the write is not a refusal.
+    """
+
+    @pytest.mark.parametrize("leased", sorted(LEASED_WRITES))
+    async def test_a_write_nobody_holds_the_surface_for_is_refused(
+        self,
+        tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
+        leased: str,
+    ) -> None:
+        """No lease exists at all, so the absence is what the refusal reports."""
+        surface, write = LEASED_WRITES[leased]
+        written = tracker_writes()
+
+        with pytest.raises(SurfaceLeaseError) as refused:
+            await write(tracker, JOB_A)
+
+        assert refused.value.surface_kind == surface.kind.value
+        assert refused.value.scope_kind == surface.ref.kind.value
+        assert refused.value.scope_key == surface.ref.key
+        assert refused.value.marker == surface.marker
+        assert refused.value.current_holder is None
+        assert tracker_writes() == written
+
+    @pytest.mark.parametrize("leased", sorted(LEASED_WRITES))
+    async def test_a_write_under_the_writers_own_expired_lease_is_refused(
+        self,
+        tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
+        clock: FixtureClock,
+        leased: str,
+    ) -> None:
+        """A lapsed grant is not a grant: expiry needs no successor to bite."""
+        surface, write = LEASED_WRITES[leased]
+        await tracker.acquire_surfaces(
+            surfaces=frozenset({surface}),
+            holder=JOB_A,
+            lease_seconds=LEASE_SECONDS,
+        )
+        clock.advance(seconds=LEASE_SECONDS + 1)
+        written = tracker_writes()
+
+        with pytest.raises(SurfaceLeaseError) as refused:
+            await write(tracker, JOB_A)
+
+        assert refused.value.surface_kind == surface.kind.value
+        assert refused.value.scope_key == surface.ref.key
+        assert refused.value.marker == surface.marker
+        assert refused.value.current_holder is None
+        assert tracker_writes() == written
+
+    @pytest.mark.parametrize("leased", sorted(LEASED_WRITES))
+    async def test_a_write_by_a_second_run_while_another_holds_it_is_refused(
+        self,
+        tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
+        leased: str,
+    ) -> None:
+        """The live holder is named, so the refused run can route on it."""
+        surface, write = LEASED_WRITES[leased]
+        await tracker.acquire_surfaces(
+            surfaces=frozenset({surface}),
+            holder=JOB_B,
+            lease_seconds=LEASE_SECONDS,
+        )
+        written = tracker_writes()
+
+        with pytest.raises(SurfaceLeaseError) as refused:
+            await write(tracker, JOB_A)
+
+        assert refused.value.surface_kind == surface.kind.value
+        assert refused.value.scope_key == surface.ref.key
+        assert refused.value.marker == surface.marker
+        assert refused.value.current_holder == JOB_B
+        assert tracker_writes() == written
+
+    @pytest.mark.parametrize("leased", sorted(LEASED_WRITES))
+    async def test_the_same_write_lands_once_its_own_holder_holds_it(
+        self,
+        tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
+        leased: str,
+    ) -> None:
+        """The refusals above are about the lease, not about the write."""
+        surface, write = LEASED_WRITES[leased]
+        await tracker.acquire_surfaces(
+            surfaces=frozenset({surface}),
+            holder=JOB_A,
+            lease_seconds=LEASE_SECONDS,
+        )
+        written = tracker_writes()
+
+        await write(tracker, JOB_A)
+
+        assert tracker_writes() != written
+
+
 class TestAssets:
     """Attachment and document metadata, and document reads."""
 
@@ -2450,13 +2601,18 @@ class TestApprovalLabelWrites:
         assert after.issue_labels == before.issue_labels
         assert aliasing_writes() == written
 
-    async def test_the_same_write_under_no_holder_at_all_is_refused_too(
+    async def test_the_same_write_holding_no_lease_at_all_is_refused_too(
         self,
         aliasing_tracker: TrackerPort,
         aliasing_writes: Callable[[], tuple[object, ...]],
         server: FakeLinearMcpServer,
     ) -> None:
-        """The refusal is about the member, not about who asked for it."""
+        """The refusal is about the member, not about who asked for it.
+
+        A run that holds nothing is refused for naming the approver's
+        member, not for the lease it lacks: this refusal comes first, so
+        no ordering of the two can let the write through.
+        """
         before = await aliasing_tracker.read_issue(issue_key=CLAIMED_ISSUE)
         written = aliasing_writes()
         asked = len(server.calls)
@@ -2465,6 +2621,7 @@ class TestApprovalLabelWrites:
             await aliasing_tracker.set_issue_classification(
                 issue_key=CLAIMED_ISSUE,
                 classification="criterion",
+                holder=JOB_B,
             )
 
         assert len(server.calls) == asked

@@ -16,6 +16,10 @@ from tests.tracker.conftest import (
 from tests.tracker.lease_fixtures import lease_for_comment
 
 MARKER = "[fixture:record]"
+#: A holder for the cases whose refusal precedes the lease check: the
+#: write never reaches that check, and naming one keeps the case about
+#: the paging precondition it is stated over.
+UNHELD_HOLDER = "job-without-a-lease"
 
 
 class CommentPageServer(FakeLinearMcpServer):
@@ -102,6 +106,7 @@ async def test_duplicate_on_later_page_prevents_any_write():
             target=APPROVED_ISSUE,
             marker=MARKER,
             body="same",
+            holder=UNHELD_HOLDER,
         )
     assert server.tool_calls("save_comment") == []
 
@@ -119,6 +124,7 @@ async def test_missing_or_repeated_cursor_refuses_before_creation(cursor):
             target=APPROVED_ISSUE,
             marker=MARKER,
             body="new",
+            holder=UNHELD_HOLDER,
         )
     assert server.tool_calls("save_comment") == []
 

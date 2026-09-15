@@ -21,7 +21,7 @@ from tests.adapters.test_tracker_self_writes import (
     _tracker,
 )
 from tests.fakes import FakeLinearMcpServer
-from tests.tracker.lease_fixtures import leased_comment
+from tests.tracker.lease_fixtures import leased_classification, leased_comment
 
 
 class NativeBoundary:
@@ -161,7 +161,7 @@ async def test_mixed_declared_issue_fields_and_comment_churn_stay_quiet() -> Non
     await tracker.update_issue(issue_key=ISSUE, title="our title", body="our body")
     await tracker.set_queue_state(issue_key=ISSUE, state=QueueState.PROPOSED)
     await tracker.set_queue_state(issue_key=ISSUE, state=QueueState.APPROVED)
-    await tracker.set_issue_classification(issue_key=ISSUE, classification="criterion")
+    await leased_classification(tracker, issue_key=ISSUE, classification="criterion")
     await _legacy_claim(tracker)
     await _legacy_claim(tracker)
     await tracker.release_claim(issue_key=ISSUE, holder=HOLDER)
@@ -436,7 +436,7 @@ async def test_label_addition_never_claims_other_labels_from_the_response(
         await server.call_tool(
             name="save_issue", arguments={"id": ISSUE, "addLabels": ["principal label"]}
         )
-    await tracker.set_issue_classification(issue_key=ISSUE, classification="criterion")
+    await leased_classification(tracker, issue_key=ISSUE, classification="criterion")
     await tracker.post_comment(issue_key=ISSUE, body="ours after the issue stamp")
     assert (await gate.delta()).changed == ((ISSUE,) if foreign else ())
 
