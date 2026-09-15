@@ -309,6 +309,10 @@ async def test_second_child_retry_retains_context_with_first_owned_creation(
                                 f"Compare source property {i} "
                                 "with the current artifact."
                             ),
+                            "runnable_test": (
+                                f"tests/chains/test_source_property.py::"
+                                f"test_source_property_{i}_holds"
+                            ),
                         }
                         for i in [1, 2]
                     ],

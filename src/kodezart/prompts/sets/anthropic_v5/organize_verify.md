@@ -12,6 +12,14 @@ membership to the caller. Report all surviving and newly discovered defect
 classes. A mandate finding quotes its causal mandate verbatim; an instance finding
 carries no mandate text. A label alone is not evidence that the issue is sufficient.
 
+Ask gradability as well as buildability. Read what this scope states about the
+environments its work runs and is demonstrated in — the issue and its linked
+bodies, the graph context, and the repository at the supplied base ref — and try
+the demonstration in each. A deliverable demonstrable in none of them is
+not_buildable carrying the undemonstrable refusal, which names the environments
+searched and the issue or environment its demonstration is relocated to. Do not
+admit such an issue and leave its demonstration to a runtime residual to absorb.
+
 Use the supplied mandate rubric to judge the issue. Read repository evidence
 at the supplied base ref before making repository claims.
 

@@ -26,6 +26,12 @@ with capability `criterion_edit` and concrete evidence. This is the only declare
 unavailable capability. Reserve `unresolved` for a real unruled human decision;
 a missing write capability does not grant approval or constitute that decision.
 
+A criterion is admissible only when its Evidence can actually be filled: name
+the exact runnable test that will demonstrate it at the graded commit, or, where
+no test can run it, the observation that will be recorded instead. A criterion
+that names neither is refused before it is created; re-grain it until one of the
+two is nameable, preserving the underlying requirement.
+
 Use the supplied mandate rubric to judge the issue. Read repository evidence
 at the supplied base ref before making repository claims.
 

@@ -24,7 +24,9 @@ from kodezart.core.owned_tasks import settle
 from kodezart.core.protocols import OutboundContentGate, PromptSetProvider, TrackerPort
 from kodezart.domain.comment_markers import compose_comment_marker
 from kodezart.domain.criterion_creation import criterion_body, existing_criterion
+from kodezart.domain.criterion_evidence import evidence_is_fillable
 from kodezart.domain.errors import (
+    CriterionEvidenceUnfillableError,
     OrganizeDecisionRequiredError,
     OrganizeWriteRefusalError,
     OutboundContentBlockedError,
@@ -437,6 +439,20 @@ class OrganizeOwner:
                     issue_key=request.issue_key,
                     reason="author returned another write surface",
                 )
+            if isinstance(value, CriteriaProposal):
+                # A criterion whose Evidence cannot be filled is refused here,
+                # before the first read of the children it would be created
+                # beside: an ungradable criterion is not made admissible by
+                # having been written.
+                for item in value.criteria:
+                    if not evidence_is_fillable(
+                        graded_sha=request.base_ref,
+                        runnable_test=item.runnable_test,
+                        named_observation=item.named_observation,
+                    ):
+                        raise CriterionEvidenceUnfillableError(
+                            issue_key=request.issue_key, check=item.check
+                        )
             if isinstance(value, GraphProposal):
                 for change in value.changes:
                     if (

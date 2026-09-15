@@ -281,6 +281,24 @@ class CriterionReadError(Exception):
         super().__init__(f"criteria of {issue_key!r} could not be read: {reason}")
 
 
+class CriterionEvidenceUnfillableError(Exception):
+    """A proposed criterion's Evidence has no parts to be filled with.
+
+    Raised at authoring, before the criterion child exists: a criterion
+    admitted with nothing to record in Evidence can never be graded, and the
+    absence is arithmetic over the proposal rather than a reading of its
+    prose.
+    """
+
+    def __init__(self, *, issue_key: str, check: str) -> None:
+        self.issue_key = issue_key
+        self.check = check
+        super().__init__(
+            f"criterion {check!r} of {issue_key!r} refused: its Evidence names "
+            f"neither a runnable test nor an observation at a graded commit"
+        )
+
+
 class CriterionResolutionError(ValueError):
     """A native criterion key has no unique current child in the addressed family."""
 

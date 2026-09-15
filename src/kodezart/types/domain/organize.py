@@ -44,6 +44,41 @@ class DefectRole(StrEnum):
     MANDATE = "mandate"
 
 
+class UndemonstrableRefusal(CamelCaseModel):
+    """The gradability arm of a refusal, present only when that arm fails.
+
+    Buildability and gradability are separate questions about one issue: a
+    deliverable can be implementable from its own specification and still be
+    demonstrable in no environment the scope declares. This member is the
+    typed class of that second failure. It is absent from a refusal about
+    buildability alone, and it never rides on a judgment that admits the
+    issue, because admitting one and leaving its demonstration to a runtime
+    residual to absorb is exactly the outcome it exists to refuse.
+
+    The repair is a relocation, so the member carries where the
+    demonstration goes rather than only that it is missing.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    searched_environments: str = Field(
+        min_length=1,
+        pattern=r"\S",
+        description=(
+            "The environments this scope states it runs in, and what each of "
+            "them could not demonstrate."
+        ),
+    )
+    relocated_demonstration: str = Field(
+        min_length=1,
+        pattern=r"\S",
+        description=(
+            "Where this deliverable's demonstration is relocated to: the "
+            "issue or environment that can actually run it."
+        ),
+    )
+
+
 class SpecFinding(CamelCaseModel):
     """Evidence for a class in the selected rubric, with any mandate verbatim."""
 
@@ -132,6 +167,14 @@ class RefusedAdmission(_AdmissionFields):
             "must settle the choice."
         )
     )
+    undemonstrable: UndemonstrableRefusal | None = Field(
+        default=None,
+        description=(
+            "Present exactly when no environment the scope declares can "
+            "demonstrate the deliverable; absent when the refusal is about "
+            "buildability alone."
+        ),
+    )
 
 
 class UnverifiableAdmission(_AdmissionFields):
@@ -192,6 +235,14 @@ class _AdmissionView[T: _AdmissionFields](RootModel[T]):
     def invented_decision(self) -> str | None:
         return (
             self.root.invented_decision
+            if isinstance(self.root, RefusedAdmission)
+            else None
+        )
+
+    @property
+    def undemonstrable(self) -> UndemonstrableRefusal | None:
+        return (
+            self.root.undemonstrable
             if isinstance(self.root, RefusedAdmission)
             else None
         )

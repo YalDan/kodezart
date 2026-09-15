@@ -12,11 +12,19 @@ from kodezart.composition.organize import build_organize_owner, build_organize_t
 from kodezart.config.app import AppConfig
 from kodezart.config.organize import OrganizeSettings
 from kodezart.core.prompt_namespaces import operation_bindings
-from kodezart.domain.errors import OrganizeAdmissionIdentityError
+from kodezart.domain.criterion_evidence import evidence_is_fillable
+from kodezart.domain.errors import (
+    CriterionEvidenceUnfillableError,
+    OrganizeAdmissionIdentityError,
+)
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.operation import OperationConfig
-from kodezart.types.domain.organize import AdmissionVerdict, SpecFinding
+from kodezart.types.domain.organize import (
+    AdmissionVerdict,
+    RefusalKind,
+    SpecFinding,
+)
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.session import ToolPreset
 from tests.chains.test_organize import (
@@ -53,15 +61,32 @@ async def test_source_identity_is_checked_before_any_session(monkeypatch, method
     assert executor.calls == []
 
 
+#: What the scripted criteria author says will fill each criterion's Evidence.
+#: A demonstrable criterion names one of the two; a fixture passing an empty
+#: mapping scripts the author that names neither.
+SCRIPTED_DEMONSTRATION = {
+    "runnable_test": "tests/chains/test_prepared_bytes.py::test_prepared_bytes_match"
+}
+
+
 class BoardExecutor:
     def __init__(
-        self, board, *, refuse_forever=False, wrong_proposal=False, refusal=None
+        self,
+        board,
+        *,
+        refuse_forever=False,
+        wrong_proposal=False,
+        refusal=None,
+        demonstration=None,
     ):
         self.board = board
         self.calls = []
         self.refuse_forever = refuse_forever
         self.wrong_proposal = wrong_proposal
         self.refusal = refusal
+        self.demonstration = (
+            SCRIPTED_DEMONSTRATION if demonstration is None else demonstration
+        )
 
     async def stream(self, **kwargs):
         self.calls.append(kwargs)
@@ -97,6 +122,7 @@ class BoardExecutor:
                                 "title": "Check prepared bytes",
                                 "check": "Prepared bytes match the declared source.",
                                 "do": "Compare the source and prepared bytes.",
+                                **self.demonstration,
                             }
                         ],
                     }
@@ -129,6 +155,7 @@ def factory(
     refuse_forever=False,
     wrong_proposal=False,
     refusal=None,
+    demonstration=None,
     body=None,
     bound=2,
     convergence_bound=2,
@@ -168,6 +195,7 @@ def factory(
         refuse_forever=refuse_forever,
         wrong_proposal=wrong_proposal,
         refusal=refusal,
+        demonstration=demonstration,
     )
     workspace = RecordingWorkspace()
     constructor = build_organize_tick if tick else build_organize_owner
@@ -351,6 +379,202 @@ async def test_measured_refusal_class_refuses_without_marker_or_criterion(
         for name, args in board.calls
         if name == "save_issue" and args.get("parentId") == CLAIMED_ISSUE
     ]
+
+
+#: KOD-74-AC-32 — the admission asks gradability as well as buildability.
+#: An undemonstrable deliverable carries its own environment evidence and the
+#: place its demonstration is relocated to; the phase neither marks nor
+#: prepares a criterion on top of it.
+UNDEMONSTRABLE_DELIVERABLE = (
+    "The queue-depth dashboard renders in a browser for an operator to read, "
+    "and every environment this scope declares runs headless under pytest."
+)
+SEARCHED_ENVIRONMENTS = (
+    "The scope states one environment: the headless pytest run at the base "
+    "ref, which renders nothing an operator reads."
+)
+RELOCATED_DEMONSTRATION = (
+    "The rendered dashboard is demonstrated in the delivery scope that "
+    "declares a browser environment, not here."
+)
+
+
+async def test_undemonstrable_deliverable_refuses_and_relocates_its_demonstration():
+    """No environment this scope declares can demonstrate the deliverable."""
+    owner, board, executor = factory(
+        refuse_forever=True,
+        bound=1,
+        body=UNDEMONSTRABLE_DELIVERABLE,
+        refusal={
+            "evidence": (
+                "Every environment the scope declares runs headless; none of "
+                "them can open the browser the deliverable is read in."
+            ),
+            "invented_decision": "Where the rendered dashboard is demonstrated.",
+            "undemonstrable": {
+                "searched_environments": SEARCHED_ENVIRONMENTS,
+                "relocated_demonstration": RELOCATED_DEMONSTRATION,
+            },
+        },
+    )
+    report = await run_owner(owner)
+    assert report.completed_phases == ()
+    refusals = [
+        result
+        for result in report.halt.admission_results
+        if result.issue_id == CLAIMED_ISSUE
+    ]
+    assert [result.verdict for result in refusals] == [AdmissionVerdict.NOT_BUILDABLE]
+    assert [result.refusal_kind for result in refusals] == [RefusalKind.SPEC_GAP]
+    gradability = refusals[0].undemonstrable
+    assert gradability is not None
+    assert gradability.searched_environments.strip() == SEARCHED_ENVIRONMENTS
+    assert gradability.relocated_demonstration.strip() == RELOCATED_DEMONSTRATION
+    judged = [
+        call["prompt"]
+        for call in executor.calls
+        if call["output_format"]["schema"].get("title") == "AdmissionJudgment"
+    ]
+    assert any(UNDEMONSTRABLE_DELIVERABLE in prompt for prompt in judged)
+    parent = board.server.issues[CLAIMED_ISSUE]
+    assert not set(parent.labels) & {
+        "graph complete",
+        "body complete",
+        "criteria complete",
+        "approved scope",
+    }
+    assert not any(
+        issue.parent_id == CLAIMED_ISSUE for issue in board.server.issues.values()
+    )
+    assert not [
+        args
+        for name, args in board.calls
+        if name == "save_issue" and args.get("parentId") == CLAIMED_ISSUE
+    ]
+
+
+async def test_a_buildability_refusal_carries_no_relocated_demonstration():
+    """The negative control: only the gradability arm relocates anything."""
+    owner, board, _ = factory(
+        refuse_forever=True,
+        bound=1,
+        body=UNDEMONSTRABLE_DELIVERABLE.replace("browser", "log"),
+        refusal={
+            "evidence": "The body names no queue the depth is read from.",
+            "invented_decision": "Which queue the dashboard reads.",
+        },
+    )
+    report = await run_owner(owner)
+    refusals = [
+        result
+        for result in report.halt.admission_results
+        if result.issue_id == CLAIMED_ISSUE
+    ]
+    assert [result.verdict for result in refusals] == [AdmissionVerdict.NOT_BUILDABLE]
+    assert [result.undemonstrable for result in refusals] == [None]
+    assert "body complete" not in board.server.issues[CLAIMED_ISSUE].labels
+
+
+async def test_a_demonstrable_deliverable_completes_its_phases_and_prepares_a_child():
+    """The other arm: the scope that can demonstrate it is admitted as before."""
+    owner, board, _ = factory(body=UNDEMONSTRABLE_DELIVERABLE.replace("browser", "log"))
+    report = await run_owner(owner)
+    assert report.halt is None
+    assert [phase.value for phase in report.completed_phases] == [
+        "groom",
+        "ticket",
+        "criteria",
+    ]
+    parent = board.server.issues[CLAIMED_ISSUE]
+    assert "criteria complete" in parent.labels
+    assert [
+        issue.parent_id
+        for issue in board.server.issues.values()
+        if issue.parent_id == CLAIMED_ISSUE
+    ] == [CLAIMED_ISSUE]
+
+
+#: The Evidence of a criterion holds a graded commit and the test or recorded
+#: observation that commit is judged by. An author naming neither leaves the
+#: second half with nothing to put in it.
+UNFILLABLE_DEMONSTRATIONS = (
+    pytest.param({}, id="neither_a_test_nor_an_observation"),
+    pytest.param({"runnable_test": "   "}, id="a_test_path_of_whitespace"),
+    pytest.param({"named_observation": ""}, id="an_empty_observation"),
+)
+
+
+@pytest.mark.parametrize("demonstration", UNFILLABLE_DEMONSTRATIONS)
+async def test_unfillable_criterion_evidence_refuses_before_the_child_exists(
+    demonstration,
+):
+    owner, board, _ = factory(demonstration=demonstration)
+    with pytest.raises(CriterionEvidenceUnfillableError):
+        await run_owner(owner)
+    assert not any(
+        issue.parent_id == CLAIMED_ISSUE for issue in board.server.issues.values()
+    )
+    assert not [
+        args
+        for name, args in board.calls
+        if name == "save_issue" and args.get("parentId") == CLAIMED_ISSUE
+    ]
+    assert "criteria complete" not in board.server.issues[CLAIMED_ISSUE].labels
+
+
+def test_criterion_evidence_needs_a_graded_commit_as_well_as_a_demonstration():
+    """The conjunct the owner path cannot reach, read off the check itself.
+
+    A base that is not a complete commit is refused by the write-back
+    verifier before any phase proposes a criterion, so the first half of the
+    Evidence shape is asserted here directly.
+    """
+    demonstrated = {
+        "runnable_test": "tests/chains/test_prepared_bytes.py::test_bytes_match",
+        "named_observation": None,
+    }
+    assert evidence_is_fillable(graded_sha="a" * 40, **demonstrated)
+    assert not evidence_is_fillable(
+        graded_sha="refs/heads/selected-base", **demonstrated
+    )
+    assert not evidence_is_fillable(
+        graded_sha="a" * 40, runnable_test=None, named_observation=None
+    )
+
+
+FILLABLE_DEMONSTRATIONS = (
+    pytest.param(
+        {"runnable_test": "tests/chains/test_prepared_bytes.py::test_bytes_match"},
+        id="a_runnable_test_path",
+    ),
+    pytest.param(
+        {
+            "named_observation": (
+                "The prepared bytes read back byte-identical in the recorded "
+                "delivery transcript."
+            )
+        },
+        id="a_named_observation",
+    ),
+)
+
+
+@pytest.mark.parametrize("demonstration", FILLABLE_DEMONSTRATIONS)
+async def test_fillable_criterion_evidence_is_admitted_and_its_child_prepared(
+    demonstration,
+):
+    """The negative control: either half of the demonstration admits it."""
+    owner, board, _ = factory(demonstration=demonstration)
+    report = await run_owner(owner)
+    assert report.halt is None
+    children = [
+        issue
+        for issue in board.server.issues.values()
+        if issue.parent_id == CLAIMED_ISSUE
+    ]
+    assert len(children) == 1
+    assert children[0].description.endswith("**Evidence:**\n")
+    assert "criteria complete" in board.server.issues[CLAIMED_ISSUE].labels
 
 
 async def test_wrong_author_identity_refuses_before_native_issue_write():
