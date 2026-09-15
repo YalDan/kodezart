@@ -160,6 +160,11 @@ def test_check_monitor_has_exact_declared_method_set():
         for name, value in vars(CIMonitor).items()
         if callable(value) and not name.startswith("_")
     }
+    assert methods == {
+        name
+        for name in dir(CheckMonitor(names=[frozenset({"test"})]))
+        if not name.startswith("_") and callable(getattr(CheckMonitor, name, None))
+    }
     assert not hasattr(CheckMonitor, "failed_check_names")
 
 

@@ -156,3 +156,47 @@ def test_every_classifiable_lane_delivery_maps_to_a_member():
             classified += 1
     assert classified > 0
     assert refused > 0
+
+
+def _blanked(observation):
+    """The same structural observation with its prose summary emptied."""
+    return observation.model_copy(update={"summary": ""})
+
+
+def test_blanking_every_summary_changes_no_lane_classification():
+    """KOD-77-AC-9: the lane classifier reads no failure text at all.
+
+    The whole finite routing-fact space is swept twice, once with the
+    fixtures' real summaries and once with every summary blanked, and each
+    pair must agree on its outcome or on its refusal.
+    """
+    assert all(observation.summary for observation in _OBSERVATIONS)
+
+    def classification(observation, red_class, no_run_at_ref, stalled, pending):
+        try:
+            return classify_lane_delivery(
+                observation=observation,
+                red_class=red_class,
+                no_run_at_ref=no_run_at_ref,
+                stalled=stalled,
+                remediation_pending=pending,
+            )
+        except ValueError as error:
+            return str(error)
+
+    swept = 0
+    for (
+        observation,
+        red_class,
+        no_run_at_ref,
+        stalled,
+        remediation_pending,
+    ) in itertools.product(
+        _OBSERVATIONS, _RED_CLASSES, (True, False), (True, False), (True, False)
+    ):
+        facts = (red_class, no_run_at_ref, stalled, remediation_pending)
+        assert classification(_blanked(observation), *facts) == classification(
+            observation, *facts
+        )
+        swept += 1
+    assert swept > 0
