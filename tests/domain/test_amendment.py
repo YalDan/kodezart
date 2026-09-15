@@ -8,7 +8,9 @@ from kodezart.handlers.agent_handler import _queued_event_payload
 from kodezart.types.domain.agent import NativeAmendmentEvent
 from kodezart.types.domain.agent import RulingId as ExistingRulingId
 from kodezart.types.domain.amendment import (
+    AmendedAmendment,
     AmendmentClaim,
+    AmendmentGround,
     AmendmentJudgment,
     AmendmentReport,
     AmendmentSubject,
@@ -267,3 +269,108 @@ def test_completed_reports_refuse_missing_or_unrelated_canonical_evidence(mutati
         AmendmentReport.model_validate(
             {"verdicts": [value, value] if mutation == "duplicate" else [value]}
         )
+
+
+def amended(identity="registry/ruling/7"):
+    subject = TypeAdapter(AmendmentSubject).validate_python(
+        {"kind": "ruling", "id": identity}
+    )
+    pinned = WritableSurface(
+        kind=SurfaceKind.MARKER_COMMENT,
+        ref=ScopeRef(kind=ScopeKind.ISSUE, key="KOD-97"),
+        marker="[ruling:fixture-pinned]",
+    )
+    prior = TrackerArtifact(
+        surface=pinned,
+        native_ref="native-comment-1",
+        content="The pinned ruling as it stood before this amendment.",
+    )
+
+    def result(artifact):
+        return WriteBackResult(
+            verdict="holds",
+            artifact=artifact,
+            rounds=(
+                WriteBackFinding(
+                    verdict="holds", evidence="Fixture verified.", cited_refs=()
+                ),
+            ),
+        )
+
+    return AmendedAmendment(
+        claim=AmendmentClaim(
+            subject=subject,
+            stage="implementation",
+            ground="premise_false_at_base",
+            departure="A proposed change to the pinned ruling",
+            claimed_capability=None,
+        ),
+        judgment=AmendmentJudgment(
+            subject=subject,
+            base_sha="b" * 40,
+            ground="premise_false_at_base",
+            reproduced=True,
+            finding={
+                "verdict": "infeasible",
+                "smallest_repair": "criterion_text",
+                "refutation": "The premise the ruling rests on is false at base.",
+            },
+            citations=({"path": "src/module.py", "quote": "actual base bytes"},),
+            measured_by=None,
+        ),
+        prior=prior,
+        archive=result(
+            TrackerArtifact(
+                surface=pinned,
+                native_ref="native-comment-2",
+                content="The archived prior text of the pinned ruling.",
+            )
+        ),
+        applied=result(
+            TrackerArtifact(
+                surface=pinned,
+                native_ref="native-comment-1",
+                content="The amended ruling text.",
+            )
+        ),
+    )
+
+
+def test_ground_vocabulary_gained_no_member_when_the_subject_widened():
+    assert [(member.name, member.value) for member in AmendmentGround] == [
+        ("UNSATISFIABLE_AT_BASE", "unsatisfiable_at_base"),
+        ("MUTUALLY_UNSATISFIABLE", "mutually_unsatisfiable"),
+        ("PREMISE_FALSE_AT_BASE", "premise_false_at_base"),
+        ("REQUIRES_BREAKING_HOUSE_RULE", "requires_breaking_house_rule"),
+    ]
+    with pytest.raises(ValidationError):
+        AmendmentClaim.model_validate(
+            amended().claim.model_dump() | {"ground": "a_fifth_ground"}
+        )
+
+
+def test_an_amended_ruling_keeps_its_identity_on_the_surface_it_was_pinned_to():
+    value = amended()
+    assert value.subject.kind == "ruling"
+    assert value.subject.id == "registry/ruling/7"
+    assert value.judgment.subject == value.subject
+    assert value.applied.artifact.surface == value.prior.surface
+    assert value.applied.artifact.native_ref == value.prior.native_ref
+    assert value.archive.artifact.surface.ref == value.prior.surface.ref
+    dumped = value.model_dump()
+    for changes in [
+        {"claim": dumped["claim"] | {"subject": {"kind": "ruling", "id": "x"}}},
+        {
+            "applied": dumped["applied"]
+            | {
+                "artifact": dumped["applied"]["artifact"]
+                | {"native_ref": "another-comment"}
+            }
+        },
+        {
+            "prior": dumped["prior"]
+            | {"surface": dumped["prior"]["surface"] | {"kind": "criterion_sub_issue"}}
+        },
+    ]:
+        with pytest.raises(ValidationError):
+            AmendedAmendment.model_validate(dumped | changes)
