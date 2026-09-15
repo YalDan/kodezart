@@ -93,3 +93,39 @@ def test_queued_egress_preserves_authored_shape_and_required_native_nulls():
     payload = _queued_event_payload(addressed)
     assert payload["event"]["baseRole"] is None
     assert ScopeLaneEvent.model_validate(payload) == addressed
+
+
+def test_queued_egress_keeps_the_terminal_stopping_rule_null_on_the_wire():
+    from kodezart.handlers.agent_handler import _queued_event_payload
+    from kodezart.types.domain.ci import CIStatus
+    from kodezart.types.domain.run_state import LanePR
+    from kodezart.types.domain.scope import ScopeKind, ScopeRef
+    from kodezart.types.domain.scope_terminal import (
+        LaneReportState,
+        ScopeLaneEntry,
+        ScopeResidual,
+        ScopeTerminalEvent,
+    )
+
+    converged = ScopeTerminalEvent(
+        scope=ScopeRef(kind=ScopeKind.PROJECT, key="project-address"),
+        lanes=(
+            ScopeLaneEntry(
+                lane_key="lane:alpha",
+                issue_id="EXT/42",
+                report_state=LaneReportState.CONVERGED,
+                outcome=WorkflowOutcome.ci_passed,
+                pr=LanePR(url="https://example.invalid/pr/1", number=1, state="open"),
+                branch="kodezart/ext-42",
+                checks=CIStatus.passed,
+            ),
+        ),
+        residual=ScopeResidual(),
+        outcome=WorkflowOutcome.scope_converged,
+    )
+
+    payload = _queued_event_payload(converged)
+    assert payload["residual"] == {"items": []}
+    assert "stoppingRule" in payload
+    assert payload["stoppingRule"] is None
+    assert ScopeTerminalEvent.model_validate(payload) == converged

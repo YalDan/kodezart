@@ -1,5 +1,6 @@
 """Retired terminal wrappers do not remove already public outcome values."""
 
+import json
 from typing import get_args
 
 import pytest
@@ -540,3 +541,20 @@ def test_a_converged_lane_shows_its_branch_and_pull_request(
 
 def test_a_terminal_lane_entry_records_no_merge() -> None:
     assert "merge" not in " ".join(ScopeLaneEntry.model_fields)
+
+
+def test_a_converged_scope_states_its_empty_residual_and_absent_stop_on_the_wire() -> (
+    None
+):
+    converged = terminal()
+
+    encoded = json.loads(converged.model_dump_json(by_alias=True))
+    assert "residual" in encoded
+    assert encoded["residual"]["items"] == []
+    assert "stoppingRule" in encoded
+    assert encoded["stoppingRule"] is None
+
+    dumped = converged.model_dump(by_alias=True, exclude_none=False)
+    assert dumped["residual"]["items"] == ()
+    assert "stoppingRule" in dumped
+    assert dumped["stoppingRule"] is None

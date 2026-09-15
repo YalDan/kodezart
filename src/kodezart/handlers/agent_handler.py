@@ -12,6 +12,7 @@ from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.job import JobRecord
 from kodezart.types.domain.scope import ScopeRef
 from kodezart.types.domain.scope_runtime import ScopeLaneEvent
+from kodezart.types.domain.scope_terminal import ScopeTerminalEvent
 from kodezart.types.domain.session import PermissionMode, SessionType
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.workflow import WorkflowSubmission
@@ -30,7 +31,9 @@ _HTTP_PERMISSIONS: dict[HttpPermissionMode, PermissionMode] = {
 def _queued_event_payload(event: AgentEvent) -> dict[str, object]:
     """Keep required nulls inside the new typed scope envelope on JSON egress."""
     return event.model_dump(
-        mode="json", by_alias=True, exclude_none=not isinstance(event, ScopeLaneEvent)
+        mode="json",
+        by_alias=True,
+        exclude_none=not isinstance(event, ScopeLaneEvent | ScopeTerminalEvent),
     )
 
 
