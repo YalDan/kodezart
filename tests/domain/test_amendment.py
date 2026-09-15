@@ -3,12 +3,18 @@
 import pytest
 from pydantic import TypeAdapter, ValidationError
 
-from kodezart.domain.amendment import repeated_upheld, upheld_reason
+from kodezart.domain.amendment import (
+    NativeWriteRefusalError,
+    repeated_upheld,
+    upheld_reason,
+)
 from kodezart.handlers.agent_handler import _queued_event_payload
 from kodezart.types.domain.agent import NativeAmendmentEvent
 from kodezart.types.domain.agent import RulingId as ExistingRulingId
 from kodezart.types.domain.amendment import (
+    AmendedAmendment,
     AmendmentClaim,
+    AmendmentGround,
     AmendmentJudgment,
     AmendmentReport,
     AmendmentSubject,
@@ -84,6 +90,89 @@ def record(
             )
         ),
     )
+
+
+RULING = "pinned/ruling/1"
+PINNED_ISSUE = "native/issue"
+
+
+def holds(artifact):
+    return WriteBackResult(
+        verdict="holds",
+        artifact=artifact,
+        rounds=(
+            WriteBackFinding(
+                verdict="holds", evidence="Fixture verified.", cited_refs=()
+            ),
+        ),
+    )
+
+
+def amended(
+    ground="premise_false_at_base",
+    identity=RULING,
+    citations=(("policy.py", "The base text the pinned ruling assumed."),),
+):
+    subject = {"kind": "ruling", "id": identity}
+    ref = ScopeRef(kind=ScopeKind.ISSUE, key=PINNED_ISSUE)
+    pinned = WritableSurface(
+        kind=SurfaceKind.MARKER_COMMENT, ref=ref, marker="[ruling:fixture-pinned]"
+    )
+    prior = TrackerArtifact(
+        surface=pinned,
+        native_ref="pinned-comment",
+        content="The prior pinned ruling body.",
+    )
+    judgment = AmendmentJudgment(
+        subject=subject,
+        base_sha="b" * 40,
+        ground=ground,
+        reproduced=True,
+        finding={
+            "verdict": "infeasible",
+            "smallest_repair": "criterion_text",
+            "refutation": "Independently refuted at the exact base commit.",
+        },
+        citations=[{"path": path, "quote": quote} for path, quote in citations],
+        measured_by=None,
+    )
+    claim = AmendmentClaim(
+        subject=subject,
+        stage="implementation",
+        ground=ground,
+        departure="The corrected pinned answer.",
+        claimed_capability=None,
+    )
+    return AmendedAmendment(
+        claim=claim,
+        judgment=judgment,
+        prior=prior,
+        archive=holds(
+            TrackerArtifact(
+                surface=WritableSurface(
+                    kind=SurfaceKind.MARKER_COMMENT,
+                    ref=ref,
+                    marker="[amendment:fixture]",
+                ),
+                native_ref="archive-comment",
+                content="Fixture of the archived prior pinned ruling.",
+            )
+        ),
+        applied=holds(
+            TrackerArtifact(
+                surface=pinned,
+                native_ref="pinned-comment",
+                content="The amended pinned ruling body.",
+            )
+        ),
+    )
+
+
+def upheld_ruling(ground, identity=RULING):
+    value = record(kind="ruling", identity=identity).model_dump()
+    value["claim"]["ground"] = ground
+    value["judgment"]["ground"] = ground
+    return UpheldAmendment.model_validate(value)
 
 
 def test_same_ruling_newtype_object_reexported_and_native_ids_remain_opaque():
@@ -267,3 +356,136 @@ def test_completed_reports_refuse_missing_or_unrelated_canonical_evidence(mutati
         AmendmentReport.model_validate(
             {"verdicts": [value, value] if mutation == "duplicate" else [value]}
         )
+
+
+def test_the_ground_vocabulary_has_exactly_the_four_named_grounds():
+    assert [(ground.name, ground.value) for ground in AmendmentGround] == [
+        ("UNSATISFIABLE_AT_BASE", "unsatisfiable_at_base"),
+        ("MUTUALLY_UNSATISFIABLE", "mutually_unsatisfiable"),
+        ("PREMISE_FALSE_AT_BASE", "premise_false_at_base"),
+        ("REQUIRES_BREAKING_HOUSE_RULE", "requires_breaking_house_rule"),
+    ]
+    for absent in ["a_quote_exists", "cost_measured_uneconomic", "subject_widened"]:
+        with pytest.raises(ValueError):
+            AmendmentGround(absent)
+        with pytest.raises(ValidationError):
+            AmendmentClaim.model_validate(
+                amended().claim.model_dump() | {"ground": absent}
+            )
+
+
+@pytest.mark.parametrize("ground", list(AmendmentGround))
+def test_a_ruling_amends_on_every_ground_only_on_reproduced_cited_refutation(ground):
+    applied = amended(ground=ground)
+    assert applied.verdict == "amended"
+    assert (applied.subject.kind, applied.subject.id) == ("ruling", RULING)
+    assert applied.claim.ground is ground
+    assert applied.judgment.ground is ground
+    assert upheld_reason(applied.claim, applied.judgment, environment={}) is None
+    value = applied.model_dump()
+    assert AmendedAmendment.model_validate(value) == applied
+    for change in [
+        {"reproduced": False},
+        {"citations": []},
+        {
+            "finding": {
+                "verdict": "feasible",
+                "smallest_repair": "none",
+            }
+        },
+    ]:
+        with pytest.raises(ValidationError):
+            AmendedAmendment.model_validate(
+                value | {"judgment": value["judgment"] | change}
+            )
+    with pytest.raises(NativeWriteRefusalError):
+        upheld_reason(
+            applied.claim,
+            AmendmentJudgment.model_validate(value["judgment"] | {"citations": []}),
+            environment={},
+        )
+
+
+@pytest.mark.parametrize("ground", list(AmendmentGround))
+def test_a_ruling_upholds_on_every_ground_when_the_ground_is_not_reproduced(ground):
+    refusal = upheld_ruling(ground)
+    assert refusal.verdict == "upheld"
+    assert (refusal.subject.kind, refusal.subject.id) == ("ruling", RULING)
+    assert refusal.claim.ground is ground
+    assert refusal.judgment.ground is ground
+    assert not refusal.judgment.reproduced
+    assert (
+        upheld_reason(refusal.claim, refusal.judgment, environment={})
+        is UpheldReason.GROUND_NOT_REPRODUCED
+    )
+    value = amended(ground=ground).model_dump()
+    with pytest.raises(ValidationError):
+        AmendedAmendment.model_validate(
+            value
+            | {
+                "judgment": value["judgment"]
+                | {
+                    "reproduced": False,
+                    "finding": refusal.judgment.finding.model_dump(),
+                    "citations": [],
+                }
+            }
+        )
+    other = next(item for item in AmendmentGround if item is not ground)
+    with pytest.raises(ValidationError):
+        UpheldAmendment.model_validate(
+            refusal.model_dump()
+            | {"judgment": refusal.judgment.model_dump() | {"ground": other}}
+        )
+
+
+def test_a_mutually_unsatisfiable_ruling_amendment_cites_its_conflicting_subset():
+    subset = (
+        ("checks/first.md", "The first pinned answer's exact demand."),
+        ("checks/second.md", "The second pinned answer's contradicting demand."),
+    )
+    applied = amended(ground=AmendmentGround.MUTUALLY_UNSATISFIABLE, citations=subset)
+    assert (
+        tuple(
+            (citation.path, citation.quote) for citation in applied.judgment.citations
+        )
+        == subset
+    )
+    assert upheld_reason(applied.claim, applied.judgment, environment={}) is None
+    without = AmendmentJudgment.model_validate(
+        applied.judgment.model_dump() | {"citations": []}
+    )
+    with pytest.raises(NativeWriteRefusalError):
+        upheld_reason(applied.claim, without, environment={})
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "ruling_id",
+        "applied_native_ref",
+        "applied_issue",
+        "archive_issue",
+        "unpinned_surface",
+    ],
+)
+def test_an_amended_ruling_keeps_its_identity_on_the_surface_it_was_pinned_to(mutation):
+    value = amended().model_dump()
+    assert AmendedAmendment.model_validate(value).prior.native_ref == "pinned-comment"
+    if mutation == "ruling_id":
+        value["claim"]["subject"]["id"] = "another/ruling"
+    elif mutation == "applied_native_ref":
+        value["applied"]["artifact"]["native_ref"] = "another-comment"
+    elif mutation == "applied_issue":
+        value["applied"]["artifact"]["surface"]["ref"]["key"] = "another/issue"
+    elif mutation == "archive_issue":
+        value["archive"]["artifact"]["surface"]["ref"]["key"] = "another/issue"
+    else:
+        for artifact in [value["prior"], value["applied"]["artifact"]]:
+            artifact["surface"] = {
+                "kind": "criterion_sub_issue",
+                "ref": artifact["surface"]["ref"],
+                "marker": None,
+            }
+    with pytest.raises(ValidationError):
+        AmendedAmendment.model_validate(value)
