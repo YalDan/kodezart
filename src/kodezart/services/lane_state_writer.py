@@ -1,7 +1,7 @@
 """The lane writes its own state: one record, rewritten where it stands."""
 
 from kodezart.core.logging import get_logger
-from kodezart.core.outbound_write import gated_write
+from kodezart.core.outbound_write import gated_exact
 from kodezart.core.owned_tasks import settle
 from kodezart.core.protocols import (
     ForgeQuery,
@@ -10,21 +10,16 @@ from kodezart.core.protocols import (
     OutboundContentGate,
 )
 from kodezart.domain.comment_markers import compose_comment_marker
-from kodezart.domain.errors import LaneRecordWriteError
+from kodezart.domain.errors import LaneRecordReadError, LaneRecordWriteError
 from kodezart.domain.git_url import is_forge_less_origin
 from kodezart.domain.lane_record import (
     RUN_STATE_PURPOSE,
     lane_record_body,
     next_lane_record,
-    parse_lane_record,
 )
 from kodezart.domain.run_event_stream import LaneRunEvent
-from kodezart.domain.tracker_writes import comment_under_marker
-from kodezart.types.domain.gating import (
-    ContentClass,
-    OutboundDestination,
-    WriterShape,
-)
+from kodezart.services.lane_records import LaneRecordReader
+from kodezart.types.domain.gating import ContentClass, OutboundDestination
 from kodezart.types.domain.operation import OperationConfig
 from kodezart.types.domain.persist import PersistResult
 from kodezart.types.domain.run_event import RunEventKind
@@ -51,6 +46,10 @@ class TrackerLaneStateWriter:
     ) -> None:
         self._tracker = tracker
         self._prefixes = dict(operation.marker_prefixes)
+        # One locate-and-parse of the record, shared with every other reader
+        # of it: a second copy here would drift from the refusals that one
+        # makes, and would hand a reply or a foreign comment to the write.
+        self._records = LaneRecordReader(tracker=tracker, operation=operation)
         self._git = git
         self._git_remote = git_remote
         self._forge = forge
@@ -83,24 +82,16 @@ class TrackerLaneStateWriter:
         marker = compose_comment_marker(
             prefixes=self._prefixes, purpose=RUN_STATE_PURPOSE, lane=lane.lane_key
         )
-        prior_comment = comment_under_marker(
-            target=lane.lane_key,
-            marker=marker,
-            comments=await self._tracker.list_comments(issue_key=lane.lane_key),
-        )
-        prior: LaneRunState | None = None
-        if prior_comment is not None:
-            try:
-                prior = parse_lane_record(
-                    body=prior_comment.body,
-                    lane_key=lane.lane_key,
-                    marker_prefixes=self._prefixes,
-                )
-            except ValueError as exc:
-                raise LaneRecordWriteError(
-                    lane_key=lane.lane_key,
-                    reason=f"the recorded lane state could not be read: {exc}",
-                ) from exc
+        try:
+            located = await self._records.find(
+                issue_key=lane.lane_key, lane_key=lane.lane_key
+            )
+        except LaneRecordReadError as exc:
+            raise LaneRecordWriteError(
+                lane_key=lane.lane_key,
+                reason=f"the recorded lane state could not be read: {exc}",
+            ) from exc
+        prior_comment, prior = located if located is not None else (None, None)
         record = next_lane_record(
             prior=prior,
             lane=lane,
@@ -110,11 +101,7 @@ class TrackerLaneStateWriter:
             changeset=changeset,
             subject=receipt.message.partition("\n")[0],
         )
-        body = await self._gate_exact(
-            body=lane_record_body(record=record),
-            lane=lane,
-            destination=OutboundDestination.TRACKER_COMMENT,
-        )
+        body = await self._gate_exact(body=lane_record_body(record=record), lane=lane)
         await settle(
             self._tracker.upsert_comment(
                 target=lane.lane_key,
@@ -161,21 +148,16 @@ class TrackerLaneStateWriter:
             )
         return address
 
-    async def _gate_exact(
-        self, *, body: str, lane: LaneBinding, destination: OutboundDestination
-    ) -> str:
-        result = await gated_write(
+    async def _gate_exact(self, *, body: str, lane: LaneBinding) -> str:
+        return await gated_exact(
             gate=self._gate,
             log=self._log,
             content=body,
             visibility=lane.visibility,
-            shape=WriterShape.PROSE,
-            destination=destination,
+            destination=OutboundDestination.TRACKER_COMMENT,
             content_class=ContentClass.DERIVED,
-        )
-        if result != body:
-            raise LaneRecordWriteError(
+            refusal=lambda: LaneRecordWriteError(
                 lane_key=lane.lane_key,
                 reason="the outbound gate changed the recorded lane facts",
-            )
-        return result
+            ),
+        )

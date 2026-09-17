@@ -14,7 +14,7 @@ from kodezart.domain.errors import (
     LaneRecordReadError,
     TransientAPIError,
 )
-from kodezart.domain.lane_record import parse_lane_record
+from kodezart.domain.lane_record import RUN_STATE_PURPOSE, parse_lane_record
 from kodezart.domain.tracker_writes import comment_under_marker
 from kodezart.types.domain.operation import OperationConfig
 from kodezart.types.domain.run_state import LaneRunState
@@ -39,8 +39,32 @@ class LaneRecordReader:
         reference must supply it, and an unrelated replacement is refused.
         Absence, ambiguity and unreadability never become an empty lane.
         """
+        located = await self.find(
+            issue_key=issue_key, lane_key=lane_key, record_ref=record_ref
+        )
+        if located is None:
+            raise LaneRecordReadError(
+                issue_key=issue_key,
+                lane_key=lane_key,
+                record_ref=record_ref,
+                reason="no comment carries the configured lane marker",
+            )
+        return located
+
+    async def find(
+        self, *, issue_key: str, lane_key: str, record_ref: str | None = None
+    ) -> tuple[TrackerComment, LaneRunState] | None:
+        """The same read, with an unmarked lane as an answer rather than a fault.
+
+        Every way the read can be wrong stays a refusal: a listing carrying
+        another issue's comment, a duplicated marker, a marker on a reply, a
+        reference that is not the current record and a body that will not
+        parse. Only a lane no comment addresses at all returns ``None``, so
+        a writer composing the next record can tell "no record yet" from
+        "the record is there and unreadable".
+        """
         marker = compose_comment_marker(
-            prefixes=self._prefixes, purpose="run_state", lane=lane_key
+            prefixes=self._prefixes, purpose=RUN_STATE_PURPOSE, lane=lane_key
         )
 
         def refusal(reason: str) -> LaneRecordReadError:
@@ -72,7 +96,7 @@ class LaneRecordReader:
         except DuplicateCommentMarkerError as exc:
             raise refusal("several comments carry the lane marker") from exc
         if comment is None:
-            raise refusal("no comment carries the configured lane marker")
+            return None
         if record_ref is not None and comment.comment_key != record_ref:
             raise refusal(
                 "the current marker comment is not the supplied record reference"

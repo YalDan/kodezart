@@ -55,7 +55,7 @@ def run_alarm_marker(
     )
 
 
-def require_alarm_holder(*, issue_key: str, marker: str, holder: str) -> None:
+def require_alarm_holder(*, issue_key: str, marker: str, holder: str | None) -> None:
     """Refuse a leased alarm write that names no holder, before any read.
 
     The record is kept under a live lease, so the holder is part of the

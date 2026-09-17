@@ -13,7 +13,7 @@ from kodezart.chains.write_back_verifier import (
     WriteBackVerifier,
 )
 from kodezart.core.logging import get_logger
-from kodezart.core.outbound_write import gated_write
+from kodezart.core.outbound_write import gated_exact
 from kodezart.core.owned_tasks import settle
 from kodezart.core.protocols import (
     AgentRunner,
@@ -268,20 +268,17 @@ class AmendmentWriteBack:
     async def _gate_exact(
         self, *, body: str, visibility: RepoVisibility, destination: OutboundDestination
     ) -> str:
-        result = await gated_write(
+        return await gated_exact(
             gate=self._gate,
             log=self._log,
             content=body,
             visibility=visibility,
-            shape=WriterShape.PROSE,
             destination=destination,
             content_class=ContentClass.AUTHORED,
-        )
-        if result != body:
-            raise NativeWriteRefusalError(
+            refusal=lambda: NativeWriteRefusalError(
                 "The outbound gate changed the exact amendment evidence or text"
-            )
-        return result
+            ),
+        )
 
     async def _verify(
         self, *, step: _Step, base: str, authority: AmendmentWriteAuthority

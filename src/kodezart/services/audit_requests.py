@@ -10,6 +10,7 @@ from kodezart.domain.comment_markers import (
 )
 from kodezart.domain.dispatch import clause_recorded_repository
 from kodezart.domain.errors import AuditClaimReadError, DuplicateCommentMarkerError
+from kodezart.domain.lane_record import RUN_STATE_PURPOSE
 from kodezart.domain.tracker_writes import comment_under_marker
 from kodezart.services.audit_collection import (
     AuditCandidateSnapshot,
@@ -63,7 +64,7 @@ class AuditRequestReader:
 
     async def _lane(self, issue: TrackerIssue) -> AuditLaneSource:
         prefixes = self._operation.marker_prefixes
-        prefix = configured_marker_prefix(prefixes, purpose="run_state")
+        prefix = configured_marker_prefix(prefixes, purpose=RUN_STATE_PURPOSE)
         comments = await self._tracker.list_comments(issue_key=issue.issue_key)
         if any(item.issue_key != issue.issue_key for item in comments):
             raise AuditClaimReadError("lane discovery returned a foreign comment")
@@ -84,7 +85,7 @@ class AuditRequestReader:
         encoded = marker[len(prefix) + 2 : -1]
         lane_key = unquote(encoded, errors="strict")
         if marker != compose_comment_marker(
-            prefixes=prefixes, purpose="run_state", lane=lane_key
+            prefixes=prefixes, purpose=RUN_STATE_PURPOSE, lane=lane_key
         ):
             raise AuditClaimReadError("the lane marker has no canonical identity")
         comment, record = await self._records.read(

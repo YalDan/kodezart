@@ -811,10 +811,11 @@ UNVERIFIED_WRITES = frozenset(
 
 LANE_STATE = "services/lane_state_writer.py"
 #: The lane's own writes about the commit it has just made.  Every fact
-#: they carry is DERIVED — a sha the workspace was read at, a remote tip,
-#: counts off the changeset — and the judgement behind them is the
-#: evaluation session that graded that commit, so a second session
-#: re-reading a sha string would add no judgement of its own.
+#: they carry is DERIVED — the head sha the workspace was read at, the
+#: remote tip, the changeset counts, the commit subject — and all of it is
+#: written in the persisting phase, before that commit is evaluated, so no
+#: judgement stands behind these bytes and a second session re-reading the
+#: same git observations would add none (KOD-806).
 LANE_STATE_WRITES = frozenset(
     {
         CallSite(

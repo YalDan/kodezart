@@ -48,8 +48,8 @@ class LaneRepo:
 class LaneGit(FakeGitService):
     """The git reads of one lane, answered from the repository itself."""
 
-    def __init__(self, repo: LaneRepo, **kwargs: object) -> None:
-        super().__init__(**kwargs)  # type: ignore[arg-type]
+    def __init__(self, repo: LaneRepo) -> None:
+        super().__init__()
         self.repo = repo
 
     async def current_sha(self, cwd: str) -> str:

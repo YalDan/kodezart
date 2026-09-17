@@ -2,17 +2,21 @@
 
 import pytest
 
-from kodezart.domain.errors import LaneRecordWriteError
+from kodezart.domain.errors import LaneRecordWriteError, StaleCommentWriteError
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.services.lane_state_writer import TrackerLaneStateWriter
 from kodezart.types.domain.branch import BranchRole
 from kodezart.types.domain.gating import (
     ContentClass,
+    GateDecision,
+    GateVerdict,
     OutboundDestination,
     RepoVisibility,
+    WriterShape,
 )
 from kodezart.types.domain.persist import PersistResult, PersistSource
 from kodezart.types.domain.run_state import LaneBinding
+from kodezart.types.domain.tracker import TrackerComment
 from tests.fakes import FakeTrackerPort, PassThroughGate, make_tracker_issue
 from tests.lane_fixture import LaneGit, LaneRepo, lane_operation
 
@@ -149,6 +153,77 @@ async def test_a_damaged_record_is_refused_and_never_overwritten():
     with pytest.raises(LaneRecordWriteError, match="could not be read"):
         await make_commit(lane_state, repo, 2)
     assert record_comments(port)[0].body.count('"commitsAhead": []') == 1
+
+
+class RewritingBoard(FakeTrackerPort):
+    """A board whose record comment is edited between the read and the write."""
+
+    async def upsert_comment(
+        self,
+        *,
+        target: str,
+        marker: str,
+        body: str,
+        holder: str | None = None,
+        expected: TrackerComment | None = None,
+    ) -> TrackerComment:
+        for stored in record_comments(self):
+            self.comments[self.comments.index(stored)] = stored.model_copy(
+                update={"body": stored.body.replace('"filesChanged"', '"changed"')}
+            )
+        return await super().upsert_comment(
+            target=target, marker=marker, body=body, holder=holder, expected=expected
+        )
+
+
+class AlteringGate(PassThroughGate):
+    """A gate that returns a redacted body rather than the bytes it was given."""
+
+    async def gate(
+        self,
+        *,
+        content: str,
+        visibility: RepoVisibility,
+        shape: WriterShape,
+        destination: OutboundDestination,
+        content_class: ContentClass,
+    ) -> GateDecision:
+        await super().gate(
+            content=content,
+            visibility=visibility,
+            shape=shape,
+            destination=destination,
+            content_class=content_class,
+        )
+        return GateDecision(
+            verdict=GateVerdict.REDACTED, content=content.replace('"', "*", 1)
+        )
+
+
+async def test_a_record_altered_after_the_read_refuses_and_is_left_as_it_stands():
+    port, repo = (
+        RewritingBoard(
+            issues=[make_tracker_issue(LANE)],
+            marker_prefixes=lane_operation().marker_prefixes,
+        ),
+        LaneRepo(),
+    )
+    lane_state = writer(port, repo)
+    await make_commit(lane_state, repo, 1)
+
+    with pytest.raises(StaleCommentWriteError):
+        await make_commit(lane_state, repo, 2)
+
+    body = record_comments(port)[0].body
+    assert '"changed"' in body
+    assert repo.shas[1] not in body
+
+
+async def test_a_gate_that_alters_the_recorded_facts_refuses_the_whole_write():
+    port, repo = board(), LaneRepo()
+    with pytest.raises(LaneRecordWriteError, match="the outbound gate changed"):
+        await make_commit(writer(port, repo, AlteringGate()), repo, 1)
+    assert port.comments == []
 
 
 async def test_pushed_head_is_absent_when_the_remote_read_returns_nothing():
