@@ -226,18 +226,30 @@ async def test_a_gate_that_alters_the_recorded_facts_refuses_the_whole_write():
     assert port.comments == []
 
 
+async def stored_record(port: FakeTrackerPort):
+    """The record as the board holds it, read back the way a cold lane reads it."""
+    _, record = await LaneRecordReader(tracker=port, operation=lane_operation()).read(
+        issue_key=LANE, lane_key=LANE
+    )
+    return record
+
+
 async def test_pushed_head_is_absent_when_the_remote_read_returns_nothing():
     port, repo = board(), LaneRepo()
     record = await make_commit(writer(port, repo), repo, 1, publish=False)
+    stored = await stored_record(port)
     assert repo.pushed is None
-    assert record.pushed_head_sha is None
-    assert record.head_sha == repo.head
+    assert stored == record
+    assert stored.pushed_head_sha is None
+    assert stored.head_sha == repo.head
 
 
 async def test_pushed_head_equals_head_after_a_push():
     port, repo = board(), LaneRepo()
     record = await make_commit(writer(port, repo), repo, 1)
-    assert record.pushed_head_sha == record.head_sha == repo.head
+    stored = await stored_record(port)
+    assert stored == record
+    assert stored.pushed_head_sha == stored.head_sha == repo.head
 
 
 async def test_pushed_head_behind_head_is_kept_as_its_own_value():
@@ -245,6 +257,9 @@ async def test_pushed_head_behind_head_is_kept_as_its_own_value():
     lane_state = writer(port, repo)
     pushed = await make_commit(lane_state, repo, 1)
     record = await make_commit(lane_state, repo, 2, publish=False)
-    assert record.head_sha == repo.head
-    assert record.pushed_head_sha == pushed.head_sha
+    stored = await stored_record(port)
+    assert stored == record
+    assert stored.head_sha == repo.head
+    assert stored.pushed_head_sha == pushed.head_sha
+    assert stored.pushed_head_sha != stored.head_sha
     assert record.pushed_head_sha != record.head_sha

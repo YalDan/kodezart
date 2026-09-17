@@ -3,7 +3,7 @@
 import dataclasses
 import json
 from pathlib import Path
-from typing import get_args
+from typing import Literal, get_args, get_type_hints
 
 import pytest
 from pydantic import BaseModel, ValidationError, create_model
@@ -572,42 +572,87 @@ def test_a_later_run_adds_its_own_association_pair_beside_the_first():
 
 
 def declared_fields(owner: type) -> dict[str, object]:
-    """Every declared field of a run-state type, model or dataclass alike."""
+    """Every declared field of a run-state type, model or dataclass alike.
+
+    Read through ``get_type_hints`` rather than off the raw annotation, so a
+    quoted annotation — and every annotation in a module with postponed
+    evaluation — is the type it names rather than the string that spells it.
+    """
+    hints = get_type_hints(owner, include_extras=True)
     if issubclass(owner, BaseModel):
-        return {name: field.annotation for name, field in owner.model_fields.items()}
-    return {field.name: field.type for field in dataclasses.fields(owner)}
+        return {name: hints[name] for name in owner.model_fields}
+    return {field.name: hints[field.name] for field in dataclasses.fields(owner)}
 
 
 def annotation_types(annotation: object) -> set[object]:
-    """The annotation itself and every type it is composed of."""
+    """The annotation itself and every type it is composed of.
+
+    A ``Literal`` carries values where other annotations carry types, so a
+    literal ``True`` or ``False`` among its arguments is reported as ``bool``:
+    a flag spelled that way is still a flag.
+    """
+    if isinstance(annotation, bool):
+        return {bool}
     arguments = get_args(annotation)
     return {annotation}.union(
         *(annotation_types(argument) for argument in arguments), set()
     )
 
 
-def test_no_run_state_type_declares_a_boolean_field():
-    declared = [
+def reached_types(roots: list[type]) -> dict[type, dict[str, object]]:
+    """Every model or dataclass the *roots* reach through their own fields.
+
+    The surface is walked out of the annotations themselves: whatever type a
+    field names, wherever it is declared, is visited and its own fields are
+    read the same way, so nothing enters this guard as a named file.
+    """
+    reached: dict[type, dict[str, object]] = {}
+    pending = list(roots)
+    while pending:
+        owner = pending.pop()
+        if owner in reached:
+            continue
+        reached[owner] = declared_fields(owner)
+        pending.extend(
+            component
+            for annotation in reached[owner].values()
+            for component in annotation_types(annotation)
+            if isinstance(component, type)
+            and (
+                issubclass(component, BaseModel) or dataclasses.is_dataclass(component)
+            )
+        )
+    return reached
+
+
+def boolean_fields(reached: dict[type, dict[str, object]]) -> list[str]:
+    """Every declared field of the walked types whose annotation admits a bool."""
+    return sorted(
+        f"{owner.__name__}.{name}"
+        for owner, fields in reached.items()
+        for name, annotation in fields.items()
+        if bool in annotation_types(annotation)
+    )
+
+
+def run_state_types() -> list[type]:
+    return [
         member
         for member in vars(run_state).values()
         if isinstance(member, type) and member.__module__ == run_state.__name__
     ]
-    assert {member.__name__ for member in declared} >= {
-        "LaneBinding",
-        "LaneCommit",
-        "LanePR",
-        "LaneRunState",
-    }
-    boolean = [
-        f"{member.__name__}.{name}"
-        for member in declared
-        for name, annotation in declared_fields(member).items()
-        if bool in annotation_types(annotation)
-    ]
-    assert boolean == []
 
 
-@pytest.mark.parametrize("annotation", [bool, bool | None, tuple[bool, ...]])
+def test_no_type_the_lane_record_reaches_declares_a_boolean_field():
+    reached = reached_types([LaneRunState, *run_state_types()])
+    assert set(run_state_types()) <= set(reached)
+    assert BranchAssociation in reached, "the walk stops short of the nested facts"
+    assert boolean_fields(reached) == []
+
+
+@pytest.mark.parametrize(
+    "annotation", [bool, bool | None, tuple[bool, ...], Literal[True, False]]
+)
 def test_the_boolean_guard_sees_a_flag_however_it_is_wrapped(annotation):
     flag = create_model("Flag", pushed=(annotation, ...))
     assert [
@@ -615,3 +660,24 @@ def test_the_boolean_guard_sees_a_flag_however_it_is_wrapped(annotation):
         for name, declared in declared_fields(flag).items()
         if bool in annotation_types(declared)
     ] == ["pushed"]
+
+
+def test_the_walk_reports_a_flag_on_a_model_declared_somewhere_else():
+    elsewhere = create_model("Elsewhere", pushed=(bool, False))
+    root = create_model("Root", nested=(list[elsewhere], ...))
+    assert boolean_fields(reached_types([root])) == ["Elsewhere.pushed"]
+
+
+@dataclasses.dataclass(frozen=True)
+class PlainFlag:
+    pushed: bool = False
+
+
+@dataclasses.dataclass(frozen=True)
+class QuotedFlag:
+    pushed: "bool" = False
+
+
+@pytest.mark.parametrize("owner", [PlainFlag, QuotedFlag])
+def test_the_walk_reports_a_dataclass_flag_however_its_annotation_is_spelled(owner):
+    assert boolean_fields(reached_types([owner])) == [f"{owner.__name__}.pushed"]
