@@ -9,6 +9,7 @@ from pydantic import ValidationError
 from kodezart.chains.native_execution import NativeExecutionGraph, NativeExecutionState
 from kodezart.core.logging import get_logger
 from kodezart.core.protocols import (
+    AfterPublish,
     AgentExecutor,
     ChangePersister,
     NativeWriteGuard,
@@ -73,10 +74,12 @@ class NativeExecution:
         workspace: WorkspaceProvider,
         persister: ChangePersister,
         guard: NativeWriteGuard,
+        after_publish: AfterPublish,
         request: NativeExecutionRequest,
     ) -> None:
         self._executor, self._workspace = executor, workspace
         self._persister, self._guard, self._request = persister, guard, request
+        self._after_publish = after_publish
         self._active_workspace: str | None = None
         self._release_incomplete_workspace = False
         self._log = get_logger(__name__)
@@ -263,6 +266,11 @@ class NativeExecution:
             before_commit=before_commit,
             before_publish=before_publish,
         )
+        # The commit act is not complete until it has been recorded: a
+        # phase that yielded its sha first would leave a pushed commit no
+        # reader of the tracker can find.
+        if receipt is not None:
+            await self._after_publish(path, receipt)
         payload = {
             **phase.model_dump(exclude={"phase"}),
             "workspace": await self._workspace.capture(

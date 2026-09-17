@@ -14,6 +14,7 @@ from kodezart.types.domain.surface import SurfaceKind
 from kodezart.types.domain.tracker import WorkflowStateKind
 from tests.chains.test_native_fire import DIRECT_DONE, tracker
 from tests.fakes import SUPPRESS_ALL_SKILLS
+from tests.lane_fixture import RecordingAfterPublish
 from tests.services.test_native_amendments import (
     Executor,
     build,
@@ -132,6 +133,7 @@ async def test_interrupted_amendment_preserves_history_across_fresh_reentry(
                 session_type=SessionType.TICKET_FIRE,
                 visibility=RepoVisibility.PUBLIC,
                 native_guard=fresh_guard,
+                after_publish=RecordingAfterPublish(),
             )
         ]
         assert any(isinstance(e, ResultEvent) and e.commit_sha for e in events)

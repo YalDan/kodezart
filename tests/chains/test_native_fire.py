@@ -30,6 +30,7 @@ from kodezart.domain.errors import (
 from kodezart.domain.thread_id import workflow_thread_id
 from kodezart.domain.workflow_state import validated_criteria
 from kodezart.services.agent_service import AgentService
+from kodezart.services.lane_state_writer import TrackerLaneStateWriter
 from kodezart.services.native_amendments import NativeAmendments
 from kodezart.types.domain.accept import AcceptVerdict
 from kodezart.types.domain.agent import (
@@ -207,6 +208,18 @@ def engine(
                     gate=gate,
                     max_verify_rounds=2,
                     lease_seconds=900,
+                )
+                if criteria is not None
+                else None
+            ),
+            lane_state=(
+                TrackerLaneStateWriter(
+                    tracker=criteria._tracker,
+                    operation=native_operation(),
+                    git=git,
+                    git_remote="origin",
+                    forge=None,
+                    gate=gate,
                 )
                 if criteria is not None
                 else None
@@ -568,6 +581,8 @@ def native_operation():
             "ruling": "native-fixture-ruling",
             "amendment": "native-amendment",
             "escalation": "native-escalation",
+            "run_state": "native-run-state",
+            "run_event": "native-run-event",
         },
         issue_labels={"decision": "decision"},
     )

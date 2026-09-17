@@ -53,6 +53,8 @@ async def make_runtime(repository, executor, *, configured=True, max_iterations=
             "ruling": "fixture-pinned",
             "amendment": "fixture-amendment",
             "escalation": "fixture-escalation",
+            "run_state": "fixture-run-state",
+            "run_event": "fixture-run-event",
         },
         issue_labels={"decision": "decision"},
     )

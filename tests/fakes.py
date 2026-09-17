@@ -31,6 +31,7 @@ from kodezart.core.errors import (
 )
 from kodezart.core.prompt_rendering import PromptTemplate
 from kodezart.core.protocols import (
+    AfterPublish,
     AgentExecutor,
     McpToolResult,
     NativeWriteGuard,
@@ -1010,7 +1011,11 @@ class FakeWorkspaceProvider:
         fail_acquire: str | None = None,
         fail_after: int = 0,
         workspace_path: str = "/tmp/fake-workspace",
+        git: FakeGitService | None = None,
     ) -> None:
+        # The captured identity is read through the same Git double the rest
+        # of the fixture reads, so a repository that moves is one repository.
+        self._git = git if git is not None else FakeGitService()
         self._fail_acquire = fail_acquire
         self._fail_after = fail_after
         self._acquire_count = 0
@@ -1046,7 +1051,7 @@ class FakeWorkspaceProvider:
         branch = self._branches.get(workspace_path)
         if branch is None:
             raise WorkspaceError("The fixture has no acquired native branch")
-        identity = await FakeGitService().worktree_identity(
+        identity = await self._git.worktree_identity(
             workspace_path, repository_path=self._repositories[workspace_path]
         )
         snapshot = WorkspaceSnapshot(
@@ -1238,6 +1243,7 @@ class FakeAgentRunner:
         create_branch: bool = True,
         cache_key: str | None = None,
         native_guard: NativeWriteGuard | None = None,
+        after_publish: AfterPublish | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
         self.calls.append(
             {

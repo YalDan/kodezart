@@ -6,6 +6,7 @@ from collections.abc import AsyncGenerator, Sequence
 from kodezart.core.error_egress import build_error_event
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import (
+    AfterPublish,
     AgentExecutor,
     ChangePersister,
     NativeWriteGuard,
@@ -145,6 +146,7 @@ class AgentService:
         create_branch: bool = True,
         cache_key: str | None = None,
         native_guard: NativeWriteGuard | None = None,
+        after_publish: AfterPublish | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
         """Workflow mode: acquire, execute, persist, release."""
         effective_branch = branch_name or ""
@@ -167,6 +169,7 @@ class AgentService:
             persist_branch=effective_ralph,
             cache_key=cache_key,
             native_guard=native_guard,
+            after_publish=after_publish,
         ):
             if isinstance(event, ResultEvent):
                 event = event.model_copy(
@@ -196,6 +199,7 @@ class AgentService:
         persist_branch: str | None = None,
         cache_key: str | None = None,
         native_guard: NativeWriteGuard | None = None,
+        after_publish: AfterPublish | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
         if repo_url is not None:
             repo_url = resolve_repo_url(repo_url, self._git_base_url)
@@ -209,11 +213,16 @@ class AgentService:
                 raise NativeWriteRefusalError(
                     "Native persistence is not configured for this branch"
                 )
+            if after_publish is None:
+                raise NativeWriteRefusalError(
+                    "Native persistence requires its lane record write"
+                )
             execution = NativeExecution(
                 executor=self._executor,
                 workspace=self._workspace,
                 persister=self._persister,
                 guard=native_guard,
+                after_publish=after_publish,
                 request=NativeExecutionRequest(
                     prompt=prompt,
                     repo_path=repo_path,

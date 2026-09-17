@@ -25,6 +25,7 @@ from tests.chains.test_native_fire import DIRECT_OWED, SUBJECT, tracker
 from tests.chains.test_organize import result
 from tests.domain.test_rulings import ruling_data
 from tests.fakes import SUPPRESS_ALL_SKILLS, FakeRepoCache, PassThroughGate
+from tests.lane_fixture import RecordingAfterPublish
 from tests.prompts.test_prompt_wiring import load_registry
 
 REPO_URL = "https://example.invalid/owner/repo"
@@ -247,6 +248,7 @@ async def drive(service, guard, repository):
             session_type=SessionType.TICKET_FIRE,
             visibility=RepoVisibility.PUBLIC,
             native_guard=guard,
+            after_publish=RecordingAfterPublish(),
         )
     ]
 

@@ -54,6 +54,8 @@ async def actual_fire(repository, executor, port, saver):
                 "ruling": "fixture-pinned",
                 "amendment": "fixture-amendment",
                 "escalation": "fixture-escalation",
+                "run_state": "fixture-run-state",
+                "run_event": "fixture-run-event",
             },
             issue_labels={"decision": "decision"},
         ),

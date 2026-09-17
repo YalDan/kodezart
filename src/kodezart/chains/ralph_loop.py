@@ -18,10 +18,12 @@ from kodezart.core.errors import soft_failure
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.node_sessions import NodeSessionObserver
 from kodezart.core.protocols import (
+    AfterPublish,
     AgentRunner,
     FireCriteriaReader,
     GitService,
     GitSourceReader,
+    LaneStateWriter,
     PromptSetProvider,
     RepoCache,
 )
@@ -56,6 +58,7 @@ from kodezart.types.domain.fire_spec import TrackerSpec
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.grading import IterationGrade
 from kodezart.types.domain.node_session import NodeInvocation
+from kodezart.types.domain.persist import PersistResult
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.ralph_outcome import (
     EvaluatedRalphOutcome,
@@ -65,6 +68,7 @@ from kodezart.types.domain.ralph_outcome import (
     RefusedRalphOutcome,
 )
 from kodezart.types.domain.run_records import RunIdentity
+from kodezart.types.domain.run_state import LaneBinding
 from kodezart.types.domain.session import (
     AllowedTools,
     PermissionMode,
@@ -101,11 +105,13 @@ class RalphLoop:
         criteria_reader: FireCriteriaReader | None = None,
         amendments: NativeAmendments | None = None,
         source: GitSourceReader | None = None,
+        lane_state: LaneStateWriter | None = None,
     ) -> None:
         self._service = service
         self._criteria_reader = criteria_reader
         self._amendments = amendments
         self._source = source
+        self._lane_state = lane_state
         self._max_iterations = max_iterations
         self._plateau_window = plateau_window
         self._fan_in_max_attempts = fan_in_max_attempts
@@ -313,6 +319,7 @@ class RalphLoop:
             prompt += "\n\n" + tracker_checks_section(native_criteria)
 
         native_guard = None
+        after_publish: AfterPublish | None = None
         reports = state.get("amendment_reports", [])
         blocked = False
         refusal: NativeAmendmentEvent | None = None
@@ -334,6 +341,7 @@ class RalphLoop:
                 prompt += "\n\nPrior independent amendment reports:\n" + "\n".join(
                     report.model_dump_json() for report in reports
                 )
+            after_publish = self._record_commit(ctx)
 
         commit_sha: str | None = None
         async for event in self._service.stream_workflow(
@@ -353,6 +361,7 @@ class RalphLoop:
             create_branch=is_first,
             cache_key=ctx.cache_key,
             native_guard=native_guard,
+            after_publish=after_publish,
         ):
             if isinstance(event, NativeAmendmentEvent):
                 reports = [*reports, event.report]
@@ -388,6 +397,42 @@ class RalphLoop:
                     event=refusal, last_iteration=last
                 )
         return update
+
+    def _lane_binding(self, ctx: RalphLoopContext) -> LaneBinding:
+        """The lane this node commits for, as the record write needs it."""
+        if ctx.tracker_spec is None or ctx.surface_holder is None:
+            raise NativeWriteRefusalError(
+                "The lane state record has no lane and holder to name"
+            )
+        return LaneBinding(
+            lane_key=ctx.tracker_spec.subject,
+            loop_branch=ctx.ralph_branch,
+            deliverable_branch=ctx.feature_branch,
+            base_ref=ctx.base_branch,
+            repo_url=ctx.repo_url,
+            repo_path=ctx.repo_path,
+            run_id=ctx.surface_holder,
+            visibility=ctx.repo_visibility,
+        )
+
+    def _record_commit(self, ctx: RalphLoopContext) -> AfterPublish:
+        """The record write this node's commit act completes with.
+
+        Handed to the persisting phase rather than performed after it, so
+        no commit of this loop can reach a branch without its record.
+        """
+        lane_state, lane = self._lane_state, self._lane_binding(ctx)
+        if lane_state is None:
+            raise NativeWriteRefusalError(
+                "Native execution requires the lane state writer"
+            )
+
+        async def record(workspace_path: str, receipt: PersistResult) -> None:
+            await lane_state.record_commit(
+                lane=lane, workspace_path=workspace_path, receipt=receipt
+            )
+
+        return record
 
     async def _evaluate_node(
         self,

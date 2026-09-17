@@ -44,6 +44,7 @@ from kodezart.core.retry import DelayFloor
 from kodezart.domain.errors import RateLimitError, ScopedExecutionUnavailableError
 from kodezart.domain.git_url import is_forge_less_origin
 from kodezart.services.agent_service import AgentService
+from kodezart.services.lane_state_writer import TrackerLaneStateWriter
 from kodezart.services.native_amendments import NativeAmendments
 from kodezart.types.domain.agent import AgentEvent
 from kodezart.types.domain.branch import BaseSpec
@@ -205,6 +206,18 @@ def build_workflow_engine(
     native_source = SubprocessGitSourceReader()
     ralph_loop = RalphLoop(
         source=native_source,
+        lane_state=(
+            TrackerLaneStateWriter(
+                tracker=scope_tracker,
+                operation=operation,
+                git=git,
+                git_remote=config.git.remote,
+                forge=github_api,
+                gate=gate,
+            )
+            if scope_tracker is not None and operation is not None
+            else None
+        ),
         amendments=(
             NativeAmendments(
                 tracker=scope_tracker,

@@ -1478,6 +1478,11 @@ class TrackerPort(
         ...
 
 
+#: Called with the workspace a commit was made in and the receipt it
+#: returned, between the push and the completion of the persisting phase.
+AfterPublish = Callable[[str, PersistResult], Awaitable[None]]
+
+
 @runtime_checkable
 class LaneStateTracker(TrackerCommentReader, Protocol):
     """Exactly the tracker calls the lane state writer makes.
@@ -1598,8 +1603,14 @@ class AgentRunner(Protocol):
         create_branch: bool = True,
         cache_key: str | None = None,
         native_guard: "NativeWriteGuard | None" = None,
+        after_publish: AfterPublish | None = None,
     ) -> AsyncIterator[AgentEvent]:
-        """Workflow mode with branch creation and persistence."""
+        """Workflow mode with branch creation and persistence.
+
+        On the native arm *after_publish* is required and runs inside the
+        persisting phase: the commit and what it is recorded as are one
+        operation, not two steps a caller may perform separately.
+        """
         ...
 
     def stream_in_workspace(

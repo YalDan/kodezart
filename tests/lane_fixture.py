@@ -6,9 +6,20 @@ or a comment — every recorded fact has to come from a real observation of
 this repository through the production reader it is written by.
 """
 
+from collections.abc import Awaitable, Callable
+
 from kodezart.types.domain.consolidation import ChangesetDigest
+from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.operation import OperationConfig
-from tests.fakes import FakeGitService
+from kodezart.types.domain.persist import PersistResult, PersistSource
+from kodezart.types.domain.subagents import NO_SUBAGENTS, UNCONFIGURED_SESSION_POLICY
+from tests.chains.test_native_fire import NativeSourceReader
+from tests.fakes import (
+    FAKE_SESSION_TYPE,
+    SUPPRESS_ALL_SKILLS,
+    FakeChangePersister,
+    FakeGitService,
+)
 
 #: The shas a trunk-shaped ref resolves to, as ``RemoteGit`` already spells it.
 TRUNK_SHA = "b" * 40
@@ -85,3 +96,63 @@ def lane_operation() -> OperationConfig:
         },
         issue_labels={"decision": "decision"},
     )
+
+
+class RecordingAfterPublish:
+    """The record write's place in a test whose subject is the commit path."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, PersistResult]] = []
+
+    async def __call__(self, workspace_path: str, receipt: PersistResult) -> None:
+        self.calls.append((workspace_path, receipt))
+
+
+class LaneSource(NativeSourceReader):
+    """Resolves this lane's refs, HEAD included, against the repository."""
+
+    def __init__(self, repo: LaneRepo) -> None:
+        self.repo = repo
+
+    async def resolve_commit(self, *, cwd: str, ref: str) -> str:
+        if ref in TRUNK_BRANCHES:
+            return TRUNK_SHA
+        return ref if ref in self.repo.shas else self.repo.head
+
+
+class LanePersister(FakeChangePersister):
+    """Commits and pushes this lane's branch and returns the real receipt shape."""
+
+    def __init__(self, repo: LaneRepo) -> None:
+        super().__init__()
+        self.repo = repo
+
+    async def persist(
+        self,
+        *,
+        workspace_path: str,
+        branch: str,
+        executor: object,
+        backup_ref_id_prefix: str,
+        skills: object = SUPPRESS_ALL_SKILLS,
+        session_type: object = FAKE_SESSION_TYPE,
+        run_identity: object = None,
+        agents: object = NO_SUBAGENTS,
+        session_policy: object = UNCONFIGURED_SESSION_POLICY,
+        visibility: RepoVisibility = RepoVisibility.UNKNOWN,
+        before_commit: Callable[[], Awaitable[None]] | None = None,
+        before_publish: Callable[[str], Awaitable[None]] | None = None,
+    ) -> PersistResult | None:
+        if before_commit is not None:
+            await before_commit()
+        self.calls.append({"workspace_path": workspace_path, "branch": branch})
+        sha = self.repo.commit()
+        if before_publish is not None:
+            await before_publish(sha)
+        self.repo.publish()
+        return PersistResult(
+            commit_sha=sha,
+            branch=branch,
+            message=f"feat: commit {len(self.repo.shas)}\n\nthe body of that commit",
+            source=PersistSource.WORKING_TREE_COMMIT,
+        )
