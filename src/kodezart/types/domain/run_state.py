@@ -1,11 +1,31 @@
 """Shared lane records and durable questions raised while work is in flight."""
 
+from dataclasses import dataclass
 from typing import Annotated, Self
 
 from pydantic import ConfigDict, Field, model_validator
 
 from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.branch import BranchAssociation, BranchRole
+from kodezart.types.domain.gating import RepoVisibility
+
+
+@dataclass(frozen=True, slots=True)
+class LaneBinding:
+    """The lane facts the committing node knows and the record needs.
+
+    Call arguments rather than wire or checkpoint data: the committing node
+    rebuilds one per run from its own context, so it never enters graph state.
+    """
+
+    lane_key: str
+    loop_branch: str
+    deliverable_branch: str
+    base_ref: str
+    repo_url: str | None
+    repo_path: str | None
+    run_id: str
+    visibility: RepoVisibility
 
 
 class LaneCommit(CamelCaseModel):

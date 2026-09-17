@@ -5,7 +5,9 @@ from collections.abc import Mapping
 
 from kodezart.domain.comment_markers import compose_comment_marker
 from kodezart.domain.tracker_writes import marked_comment_body
-from kodezart.types.domain.run_state import LaneRunState
+from kodezart.types.domain.branch import BranchAssociation, BranchRole
+from kodezart.types.domain.consolidation import ChangesetDigest
+from kodezart.types.domain.run_state import LaneBinding, LaneCommit, LaneRunState
 
 REENTRY_SECTION = """## Re-entry
 
@@ -23,23 +25,78 @@ verification instructions, reading satisfaction and Evidence on that sub-issue.
 Let only failing criteria drive new work."""
 
 
-def render_lane_record(
-    *, record: LaneRunState, marker_prefixes: Mapping[str, str]
-) -> str:
-    """Render a configured marker and one explicit, human-readable JSON record.
+def lane_record_body(*, record: LaneRunState) -> str:
+    """The comment content after the marker line: the facts and the re-entry.
 
     The code block is the sole representation of the facts in this comment.
     Criterion satisfaction stays on the owning criterion issues.
     """
+    return (
+        f"```json\n{record.model_dump_json(by_alias=True, indent=2)}\n```"
+        f"\n\n{REENTRY_SECTION}"
+    )
+
+
+def render_lane_record(
+    *, record: LaneRunState, marker_prefixes: Mapping[str, str]
+) -> str:
+    """Render a configured marker and one explicit, human-readable JSON record."""
     marker = compose_comment_marker(
         prefixes=marker_prefixes, purpose="run_state", lane=record.lane_key
     )
-    return marked_comment_body(
-        marker=marker,
-        body=(
-            f"```json\n{record.model_dump_json(by_alias=True, indent=2)}\n```"
-            f"\n\n{REENTRY_SECTION}"
+    return marked_comment_body(marker=marker, body=lane_record_body(record=record))
+
+
+def next_lane_record(
+    *,
+    prior: LaneRunState | None,
+    lane: LaneBinding,
+    branch_url: str,
+    head_sha: str,
+    pushed_head_sha: str | None,
+    changeset: ChangesetDigest,
+    subject: str,
+) -> LaneRunState:
+    """The record this commit leaves behind, from the prior one and this receipt.
+
+    The only construction site of ``LaneRunState`` in the source tree (KOD-685):
+    every fact is arithmetic over the prior record and the observed commit, so
+    no second writer can grow the record along another route. Recording the
+    same head twice leaves the rows and the associations unchanged.
+    """
+    commits = list(prior.commits) if prior is not None else []
+    if not commits or commits[-1].sha != head_sha:
+        commits.append(
+            LaneCommit(sha=head_sha, subject=subject, issue_id=lane.lane_key)
+        )
+    associations = list(prior.associations) if prior is not None else []
+    for association in (
+        BranchAssociation(
+            branch=lane.deliverable_branch,
+            role=BranchRole.DELIVERABLE,
+            derived_from=lane.base_ref,
+            run_id=lane.run_id,
         ),
+        BranchAssociation(
+            branch=lane.loop_branch,
+            role=BranchRole.LOOP,
+            derived_from=lane.deliverable_branch,
+            run_id=lane.run_id,
+        ),
+    ):
+        if association not in associations:
+            associations.append(association)
+    return LaneRunState(
+        lane_key=lane.lane_key,
+        branch=lane.loop_branch,
+        branch_url=branch_url,
+        head_sha=head_sha,
+        pushed_head_sha=pushed_head_sha,
+        commits_ahead=changeset.commit_count,
+        files_changed=len(changeset.file_paths),
+        commits=commits,
+        pr=prior.pr if prior is not None else None,
+        associations=associations,
     )
 
 

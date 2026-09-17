@@ -1,14 +1,51 @@
 """The lane record retains branch facts without another satisfaction carrier."""
 
 import json
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
 
-from kodezart.domain.lane_record import render_lane_record
+from kodezart.domain.lane_record import (
+    lane_record_body,
+    next_lane_record,
+    render_lane_record,
+)
 from kodezart.types.domain.branch import BranchAssociation, BranchRole, WorkRefRole
+from kodezart.types.domain.consolidation import ChangesetDigest
+from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.operation import OperationMemberAbsentError
-from kodezart.types.domain.run_state import LaneCommit, LanePR, LaneRunState
+from kodezart.types.domain.run_state import (
+    LaneBinding,
+    LaneCommit,
+    LanePR,
+    LaneRunState,
+)
+from tests.identity_guards import construction_sites
+
+SOURCE_ROOT = Path(__file__).parents[2] / "src" / "kodezart"
+RECORD = "LaneRunState"
+
+
+def binding() -> LaneBinding:
+    return LaneBinding(
+        lane_key="lane:alpha",
+        loop_branch="ordinary-name",
+        deliverable_branch="has-ralph-in-its-name",
+        base_ref="trunk",
+        repo_url="https://forge.example/repo",
+        repo_path=None,
+        run_id="run-current",
+        visibility=RepoVisibility.PRIVATE,
+    )
+
+
+def changeset(*, commits: int = 2, files: int = 3) -> ChangesetDigest:
+    return ChangesetDigest(
+        file_paths=[f"file-{index}.py" for index in range(files)],
+        commit_subjects=[f"Change {index}" for index in range(commits)],
+        commit_count=commits,
+    )
 
 
 def record_data() -> dict[str, object]:
@@ -228,3 +265,136 @@ verification instructions, reading satisfaction and Evidence on that sub-issue.
 Let only failing criteria drive new work."""
     assert rendered.endswith("\n\n" + expected)
     assert rendered.count("## Re-entry") == 1
+
+
+def test_the_marker_and_the_body_compose_the_whole_rendered_record():
+    record = LaneRunState.model_validate(record_data())
+    rendered = render_lane_record(
+        record=record, marker_prefixes={"run_state": "fixture-record"}
+    )
+    assert rendered == "[fixture-record:lane%3Aalpha]\n" + lane_record_body(
+        record=record
+    )
+
+
+def test_exactly_one_site_constructs_the_lane_run_state():
+    sites = [
+        (path, line)
+        for path in SOURCE_ROOT.rglob("*.py")
+        for line in construction_sites(path.read_text(), identity=RECORD)
+    ]
+    assert len(sites) == 1, sites
+    assert sites[0][0] == SOURCE_ROOT / "domain" / "lane_record.py"
+    owner = (SOURCE_ROOT / "domain" / "lane_record.py").read_text()
+    second = f"{owner}\n{RECORD}(lane_key='second')\n"
+    assert len(construction_sites(second, identity=RECORD)) == 2
+
+
+def test_next_record_appends_one_row_and_keeps_prior_associations():
+    lane = binding()
+    first = next_lane_record(
+        prior=None,
+        lane=lane,
+        branch_url="https://forge.example/branch/ordinary-name",
+        head_sha="a" * 40,
+        pushed_head_sha="a" * 40,
+        changeset=changeset(commits=1, files=1),
+        subject="First change",
+    )
+    assert first.lane_key == lane.lane_key
+    assert first.branch == lane.loop_branch
+    assert first.commits_ahead == 1
+    assert first.files_changed == 1
+    assert first.pr is None
+    assert [row.sha for row in first.commits] == ["a" * 40]
+    assert [(row.subject, row.issue_id) for row in first.commits] == [
+        ("First change", lane.lane_key)
+    ]
+    assert [
+        (item.branch, item.role, item.derived_from) for item in first.associations
+    ] == [
+        (lane.deliverable_branch, BranchRole.DELIVERABLE, lane.base_ref),
+        (lane.loop_branch, BranchRole.LOOP, lane.deliverable_branch),
+    ]
+    assert {item.run_id for item in first.associations} == {lane.run_id}
+
+    second = next_lane_record(
+        prior=first,
+        lane=lane,
+        branch_url="https://forge.example/branch/ordinary-name",
+        head_sha="b" * 40,
+        pushed_head_sha=None,
+        changeset=changeset(commits=2, files=3),
+        subject="Second change",
+    )
+    assert [row.sha for row in second.commits] == ["a" * 40, "b" * 40]
+    assert second.associations == first.associations
+    assert second.pushed_head_sha is None
+    assert second.commits_ahead == 2
+    assert second.files_changed == 3
+
+
+def test_recording_the_same_head_twice_leaves_the_record_unchanged():
+    lane = binding()
+    first = next_lane_record(
+        prior=None,
+        lane=lane,
+        branch_url="https://forge.example/branch/ordinary-name",
+        head_sha="a" * 40,
+        pushed_head_sha="a" * 40,
+        changeset=changeset(commits=1, files=1),
+        subject="First change",
+    )
+    assert (
+        next_lane_record(
+            prior=first,
+            lane=lane,
+            branch_url="https://forge.example/branch/ordinary-name",
+            head_sha="a" * 40,
+            pushed_head_sha="a" * 40,
+            changeset=changeset(commits=1, files=1),
+            subject="First change",
+        )
+        == first
+    )
+
+
+def test_a_later_run_adds_its_own_association_pair_beside_the_first():
+    lane = binding()
+    first = next_lane_record(
+        prior=None,
+        lane=lane,
+        branch_url="https://forge.example/branch/ordinary-name",
+        head_sha="a" * 40,
+        pushed_head_sha="a" * 40,
+        changeset=changeset(commits=1, files=1),
+        subject="First change",
+    )
+    remediation = LaneBinding(
+        lane_key=lane.lane_key,
+        loop_branch="second-loop",
+        deliverable_branch=lane.deliverable_branch,
+        base_ref=lane.base_ref,
+        repo_url=lane.repo_url,
+        repo_path=lane.repo_path,
+        run_id="run-later",
+        visibility=lane.visibility,
+    )
+    later = next_lane_record(
+        prior=first,
+        lane=remediation,
+        branch_url="https://forge.example/branch/second-loop",
+        head_sha="c" * 40,
+        pushed_head_sha="c" * 40,
+        changeset=changeset(commits=2, files=1),
+        subject="Later change",
+    )
+    assert later.branch == "second-loop"
+    assert later.associations[:2] == first.associations
+    assert [
+        (item.branch, item.role, item.run_id) for item in later.associations[2:]
+    ] == [
+        (lane.deliverable_branch, BranchRole.DELIVERABLE, "run-later"),
+        ("second-loop", BranchRole.LOOP, "run-later"),
+    ]
+    assert [row.sha for row in later.commits] == ["a" * 40, "c" * 40]
