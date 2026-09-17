@@ -1,7 +1,10 @@
 """What a lane's own commits leave on its issue, driven through the real loop."""
 
+import pytest
+
 from kodezart.chains.criteria import TrackerCriteria
 from kodezart.services.lane_records import LaneRecordReader
+from kodezart.types.domain.agent import ResultEvent
 from kodezart.types.domain.branch import BranchRole, trunk_base
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.run_event import RunEventKind
@@ -44,28 +47,28 @@ class Lane:
         )
         self.loop = self.fire.implementation._quality_gate
 
-    async def run(self):
+    async def run(self, events=None):
         spec = await self.criteria.read_spec(issue_key=SUBJECT)
         current = await self.criteria.read_current(spec=spec)
-        return [
-            event
-            async for event in self.loop.run(
-                prompt="Implement the current Checks.",
-                repo_path=None,
-                repo_url=REPO_URL,
-                feature_branch=FEATURE,
-                ralph_branch=BRANCH,
-                base_spec=trunk_base("main"),
-                work_base_ref="main",
-                permission_mode=PermissionMode.UNATTENDED,
-                allowed_tools=ToolPreset.IMPLEMENTATION,
-                acceptance_criteria=list(current.criteria),
-                tracker_spec=spec,
-                cache_key=JOB,
-                surface_holder=JOB,
-                repo_visibility=RepoVisibility.PUBLIC,
-            )
-        ]
+        seen = [] if events is None else events
+        async for event in self.loop.run(
+            prompt="Implement the current Checks.",
+            repo_path=None,
+            repo_url=REPO_URL,
+            feature_branch=FEATURE,
+            ralph_branch=BRANCH,
+            base_spec=trunk_base("main"),
+            work_base_ref="main",
+            permission_mode=PermissionMode.UNATTENDED,
+            allowed_tools=ToolPreset.IMPLEMENTATION,
+            acceptance_criteria=list(current.criteria),
+            tracker_spec=spec,
+            cache_key=JOB,
+            surface_holder=JOB,
+            repo_visibility=RepoVisibility.PUBLIC,
+        ):
+            seen.append(event)
+        return seen
 
     async def record(self):
         _, record = await LaneRecordReader(
@@ -140,3 +143,41 @@ async def test_a_second_commit_edits_the_record_and_posts_no_second_event():
         BranchRole.DELIVERABLE,
         BranchRole.LOOP,
     ]
+
+
+async def test_a_lane_killed_mid_loop_is_located_from_the_tracker_alone():
+    lane = Lane(
+        evaluations=[native_evaluation(failed=True), native_evaluation()],
+        max_iterations=3,
+    )
+
+    def die(evaluation: int) -> None:
+        if evaluation == 2:
+            raise ConnectionResetError("the lane was killed mid-loop")
+
+    lane.executor.on_evaluation = die
+    events: list[object] = []
+    with pytest.raises(ConnectionResetError):
+        await lane.run(events)
+
+    # Everything the run held is dropped: only the board survives the kill.
+    at_kill = (lane.repo.head, lane.repo.pushed, tuple(lane.repo.shas))
+    streamed = [
+        event.commit_sha
+        for event in events
+        if isinstance(event, ResultEvent) and event.commit_sha
+    ]
+    port = lane.port
+    del lane
+
+    comment, record = await LaneRecordReader(
+        tracker=port, operation=native_operation()
+    ).read(issue_key=SUBJECT, lane_key=SUBJECT)
+    assert comment.issue_key == SUBJECT
+    assert record.branch == BRANCH
+    assert record.head_sha == at_kill[0]
+    assert record.pushed_head_sha == at_kill[1]
+    assert [row.sha for row in record.commits] == list(at_kill[2])
+    assert len(record.commits) == 2
+    assert record.pr is None
+    assert [row.sha for row in record.commits] == streamed
