@@ -158,11 +158,19 @@ class LaneSource(NativeSourceReader):
 
 
 class LanePersister(FakeChangePersister):
-    """Commits and pushes this lane's branch and returns the real receipt shape."""
+    """Commits and pushes this lane's branch and returns the real receipt shape.
 
-    def __init__(self, repo: LaneRepo) -> None:
+    *publishes* answers, for the count of commits made so far, whether this
+    one reaches the remote: a lane whose push is withheld holds a head the
+    remote does not, which is the state a push status has to survive.
+    """
+
+    def __init__(
+        self, repo: LaneRepo, *, publishes: Callable[[int], bool] | None = None
+    ) -> None:
         super().__init__()
         self.repo = repo
+        self.publishes = publishes
 
     async def persist(
         self,
@@ -186,7 +194,8 @@ class LanePersister(FakeChangePersister):
         sha = self.repo.commit()
         if before_publish is not None:
             await before_publish(sha)
-        self.repo.publish()
+        if self.publishes is None or self.publishes(len(self.repo.shas)):
+            self.repo.publish()
         return PersistResult(
             commit_sha=sha,
             branch=branch,
