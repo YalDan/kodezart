@@ -53,10 +53,11 @@ def writer(port: FakeTrackerPort, repo: LaneRepo, gate=None) -> TrackerLaneState
     )
 
 
-async def make_commit(lane_state, repo: LaneRepo, index: int):
+async def make_commit(lane_state, repo: LaneRepo, index: int, *, publish: bool = True):
     """Commit, push, and record it the way the persist phase does."""
     sha = repo.commit()
-    repo.publish()
+    if publish:
+        repo.publish()
     return await lane_state.record_commit(
         lane=binding(),
         workspace_path="/workspace/lane",
@@ -148,3 +149,27 @@ async def test_a_damaged_record_is_refused_and_never_overwritten():
     with pytest.raises(LaneRecordWriteError, match="could not be read"):
         await make_commit(lane_state, repo, 2)
     assert record_comments(port)[0].body.count('"commitsAhead": []') == 1
+
+
+async def test_pushed_head_is_absent_when_the_remote_read_returns_nothing():
+    port, repo = board(), LaneRepo()
+    record = await make_commit(writer(port, repo), repo, 1, publish=False)
+    assert repo.pushed is None
+    assert record.pushed_head_sha is None
+    assert record.head_sha == repo.head
+
+
+async def test_pushed_head_equals_head_after_a_push():
+    port, repo = board(), LaneRepo()
+    record = await make_commit(writer(port, repo), repo, 1)
+    assert record.pushed_head_sha == record.head_sha == repo.head
+
+
+async def test_pushed_head_behind_head_is_kept_as_its_own_value():
+    port, repo = board(), LaneRepo()
+    lane_state = writer(port, repo)
+    pushed = await make_commit(lane_state, repo, 1)
+    record = await make_commit(lane_state, repo, 2, publish=False)
+    assert record.head_sha == repo.head
+    assert record.pushed_head_sha == pushed.head_sha
+    assert record.pushed_head_sha != record.head_sha

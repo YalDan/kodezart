@@ -1,16 +1,19 @@
 """The lane record retains branch facts without another satisfaction carrier."""
 
+import dataclasses
 import json
 from pathlib import Path
+from typing import get_args
 
 import pytest
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError, create_model
 
 from kodezart.domain.lane_record import (
     lane_record_body,
     next_lane_record,
     render_lane_record,
 )
+from kodezart.types.domain import run_state
 from kodezart.types.domain.branch import BranchAssociation, BranchRole, WorkRefRole
 from kodezart.types.domain.consolidation import ChangesetDigest
 from kodezart.types.domain.gating import RepoVisibility
@@ -398,3 +401,49 @@ def test_a_later_run_adds_its_own_association_pair_beside_the_first():
         ("second-loop", BranchRole.LOOP, "run-later"),
     ]
     assert [row.sha for row in later.commits] == ["a" * 40, "c" * 40]
+
+
+def declared_fields(owner: type) -> dict[str, object]:
+    """Every declared field of a run-state type, model or dataclass alike."""
+    if issubclass(owner, BaseModel):
+        return {name: field.annotation for name, field in owner.model_fields.items()}
+    return {field.name: field.type for field in dataclasses.fields(owner)}
+
+
+def annotation_types(annotation: object) -> set[object]:
+    """The annotation itself and every type it is composed of."""
+    arguments = get_args(annotation)
+    return {annotation}.union(
+        *(annotation_types(argument) for argument in arguments), set()
+    )
+
+
+def test_no_run_state_type_declares_a_boolean_field():
+    declared = [
+        member
+        for member in vars(run_state).values()
+        if isinstance(member, type) and member.__module__ == run_state.__name__
+    ]
+    assert {member.__name__ for member in declared} >= {
+        "LaneBinding",
+        "LaneCommit",
+        "LanePR",
+        "LaneRunState",
+    }
+    boolean = [
+        f"{member.__name__}.{name}"
+        for member in declared
+        for name, annotation in declared_fields(member).items()
+        if bool in annotation_types(annotation)
+    ]
+    assert boolean == []
+
+
+@pytest.mark.parametrize("annotation", [bool, bool | None, tuple[bool, ...]])
+def test_the_boolean_guard_sees_a_flag_however_it_is_wrapped(annotation):
+    flag = create_model("Flag", pushed=(annotation, ...))
+    assert [
+        name
+        for name, declared in declared_fields(flag).items()
+        if bool in annotation_types(declared)
+    ] == ["pushed"]
