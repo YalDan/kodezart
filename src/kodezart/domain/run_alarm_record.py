@@ -11,12 +11,14 @@ from collections.abc import Mapping
 from pydantic import TypeAdapter
 
 from kodezart.domain.comment_markers import compose_comment_marker
+from kodezart.domain.errors import SurfaceLeaseError
 from kodezart.types.domain.run_alarm import (
     AlarmSignal,
     AlarmSubject,
     RunAlarm,
 )
-from kodezart.types.domain.surface import WritableSurface
+from kodezart.types.domain.scope import ScopeKind, ScopeRef
+from kodezart.types.domain.surface import SurfaceKind, WritableSurface
 
 _SUBJECT: TypeAdapter[AlarmSubject] = TypeAdapter(AlarmSubject)
 _SURFACE = TypeAdapter(WritableSurface)
@@ -50,6 +52,27 @@ def run_alarm_marker(
         purpose=MARKER_PURPOSE,
         lane=alarm_subject_key(subject),
         occurrence_key=signal.value,
+    )
+
+
+def require_alarm_holder(*, issue_key: str, marker: str, holder: str) -> None:
+    """Refuse a leased alarm write that names no holder, before any read.
+
+    The record is kept under a live lease, so the holder is part of the
+    call rather than a lease the write may or may not find: an absent or
+    blank one is refused here and never reaches the comment upsert, whose
+    own holder is optional for the writes that have no lease at all.
+    """
+    if holder and holder.strip():
+        return
+    raise SurfaceLeaseError(
+        "a leased record write names no holder",
+        surface=WritableSurface(
+            kind=SurfaceKind.MARKER_COMMENT,
+            ref=ScopeRef(kind=ScopeKind.ISSUE, key=issue_key),
+            marker=marker,
+        ),
+        current_holder=None,
     )
 
 

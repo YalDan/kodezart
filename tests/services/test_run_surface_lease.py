@@ -242,16 +242,29 @@ async def test_composed_writer_missing_marker_purpose_refuses_before_tracker_mut
     assert not board.calls
 
 
-@pytest.mark.parametrize("holder", [None, "job-with-no-lease"])
-async def test_unheld_marker_write_refuses_with_absent_owner(holder):
+async def test_unheld_marker_write_refuses_with_absent_owner():
     board = _Board()
     with pytest.raises(SurfaceLeaseError) as caught:
         await board.tracker().upsert_comment(
-            target=CLAIMED_ISSUE, marker="A", body="attempt", holder=holder
+            target=CLAIMED_ISSUE,
+            marker="A",
+            body="attempt",
+            holder="job-with-no-lease",
         )
     assert caught.value.current_holder is None
     assert caught.value.marker == "A"
     assert not board.holds_at_write
+
+
+async def test_a_write_with_no_holder_consults_no_lease():
+    """A supplied holder is checked; an absent one names no lease to check."""
+    board = _Board()
+    written = await board.tracker().upsert_comment(
+        target=CLAIMED_ISSUE, marker="A", body="attempt", holder=None
+    )
+    assert written.body == "A\nattempt"
+    assert "A\nattempt" in [comment.body for comment in board.server.comments]
+    assert board.grants() == []
 
 
 async def test_two_disjoint_sets_both_acquire_and_both_write():

@@ -809,14 +809,33 @@ UNVERIFIED_WRITES = frozenset(
 )
 
 
+LANE_STATE = "services/lane_state_writer.py"
+#: The lane's own writes about the commit it has just made.  Every fact
+#: they carry is DERIVED — a sha the workspace was read at, a remote tip,
+#: counts off the changeset — and the judgement behind them is the
+#: evaluation session that graded that commit, so a second session
+#: re-reading a sha string would add no judgement of its own.
+LANE_STATE_WRITES = frozenset(
+    {
+        CallSite(
+            module=LANE_STATE,
+            function="TrackerLaneStateWriter.record_commit",
+            method="upsert_comment",
+        ),
+    }
+)
+
+
 def test_every_production_write_of_the_port_runs_inside_a_write_back():
     production = Production(production_sources())
     sites = production.call_sites(artifact_writes())
     assert sites, "a tree with no port writes states nothing about adoption"
     assert KOD_806_STATE_MOVES.isdisjoint(UNVERIFIED_WRITES)
+    assert KOD_806_STATE_MOVES.isdisjoint(LANE_STATE_WRITES)
+    assert UNVERIFIED_WRITES.isdisjoint(LANE_STATE_WRITES)
     assert (
         production.outside_a_write_back(artifact_writes())
-        == KOD_806_STATE_MOVES | UNVERIFIED_WRITES
+        == KOD_806_STATE_MOVES | UNVERIFIED_WRITES | LANE_STATE_WRITES
     )
 
 

@@ -48,6 +48,7 @@ from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run import RunState
 from kodezart.types.domain.run_alarm import AlarmSignal, AlarmSubject, RunAlarm
 from kodezart.types.domain.run_records import RunIdentity, RunOutcome, RunRecord
+from kodezart.types.domain.run_state import LaneBinding, LaneRunState
 from kodezart.types.domain.scope import ScopeContainer, ScopeRef
 from kodezart.types.domain.self_writes import IssueMovementSnapshot
 from kodezart.types.domain.session import AllowedTools, PermissionMode, SessionType
@@ -1207,9 +1208,10 @@ class TrackerPort(
         writes nothing. Several comments under the marker raise
         ``DuplicateCommentMarkerError`` before any write. Callers compose
         the marker and serialize concurrent writers to the same target.
-        The writing queue job must hold its marker surface under ``holder``;
-        an absent, expired or different holder raises ``SurfaceLeaseError``
-        carrying the surface and the observed current holder.
+        A supplied ``holder`` must hold the marker surface live, else
+        ``SurfaceLeaseError`` carrying the surface and the observed current
+        holder. ``holder=None`` is the single-writer write: no lease is
+        consulted, and every other refusal on this call still applies.
         When ``expected`` is supplied, re-read after authority waits and require
         that exact native root comment/provenance and its expected or desired
         body. Missing or changed records raise ``StaleCommentWriteError``;
@@ -1472,6 +1474,41 @@ class TrackerPort(
         never renamed, recoloured or repurposed; an ensure that would alter
         an existing definition raises ``TrackerEnsureConflictError`` and
         performs no write.  One outcome per ref, in the order given.
+        """
+        ...
+
+
+@runtime_checkable
+class LaneStateTracker(TrackerCommentReader, Protocol):
+    """Exactly the tracker calls the lane state writer makes.
+
+    A role narrowed out of the port rather than a widening of it: the
+    writer states what it needs, and ``TrackerPort`` satisfies this
+    structurally without declaring one more member.
+    """
+
+    async def upsert_comment(
+        self,
+        *,
+        target: str,
+        marker: str,
+        body: str,
+        holder: str | None = None,
+        expected: TrackerComment | None = None,
+    ) -> TrackerComment: ...
+
+
+@runtime_checkable
+class LaneStateWriter(Protocol):
+    """The lane's own tracker writes; the committing loop needs nothing else."""
+
+    async def record_commit(
+        self, *, lane: LaneBinding, workspace_path: str, receipt: PersistResult
+    ) -> LaneRunState:
+        """Record the commit *receipt* just pushed, as the lane's one record.
+
+        The record is the whole answer to "where is this lane now", so it
+        is rewritten in place under its own marker and never appended to.
         """
         ...
 

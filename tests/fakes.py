@@ -70,6 +70,7 @@ from kodezart.domain.organize_graph import (
 from kodezart.domain.run_alarm_record import (
     parse_run_alarm,
     render_run_alarm,
+    require_alarm_holder,
     run_alarm_marker,
 )
 from kodezart.domain.run_event_stream import (
@@ -4360,7 +4361,7 @@ class FakeTrackerPort:
             if lease is not None and lease.expires_at > self._clock()
             else None
         )
-        if holder is None or holder != owner:
+        if holder is not None and holder != owner:
             raise SurfaceLeaseError(
                 "the writing job does not hold this live surface",
                 surface=surface,
@@ -4401,6 +4402,12 @@ class FakeTrackerPort:
         self, *, issue_key: str, alarm: RunAlarm, holder: str
     ) -> None:
         """Keep one whole-subject record under the existing leased upsert policy."""
+        marker = run_alarm_marker(
+            subject=alarm.subject,
+            signal=alarm.signal,
+            marker_prefixes=self.marker_prefixes,
+        )
+        require_alarm_holder(issue_key=issue_key, marker=marker, holder=holder)
         await self.read_run_alarm(
             issue_key=issue_key, subject=alarm.subject, signal=alarm.signal
         )
@@ -4412,11 +4419,7 @@ class FakeTrackerPort:
 
         await self._upsert_comment(
             target=issue_key,
-            marker=run_alarm_marker(
-                subject=alarm.subject,
-                signal=alarm.signal,
-                marker_prefixes=self.marker_prefixes,
-            ),
+            marker=marker,
             body=render_run_alarm(alarm=alarm),
             holder=holder,
             validate_existing=validate_existing,

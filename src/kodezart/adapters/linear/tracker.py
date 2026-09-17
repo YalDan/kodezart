@@ -98,6 +98,7 @@ from kodezart.domain.organize_graph import (
 from kodezart.domain.run_alarm_record import (
     parse_run_alarm,
     render_run_alarm,
+    require_alarm_holder,
     run_alarm_marker,
 )
 from kodezart.domain.run_event_stream import (
@@ -2452,6 +2453,12 @@ class LinearMcpTracker:
         self, *, issue_key: str, alarm: RunAlarm, holder: str
     ) -> None:
         """Keep one whole-subject record under the existing leased upsert policy."""
+        marker = run_alarm_marker(
+            subject=alarm.subject,
+            signal=alarm.signal,
+            marker_prefixes=self._marker_prefixes,
+        )
+        require_alarm_holder(issue_key=issue_key, marker=marker, holder=holder)
         await self.read_run_alarm(
             issue_key=issue_key, subject=alarm.subject, signal=alarm.signal
         )
@@ -2463,11 +2470,7 @@ class LinearMcpTracker:
 
         await self._upsert_comment(
             target=issue_key,
-            marker=run_alarm_marker(
-                subject=alarm.subject,
-                signal=alarm.signal,
-                marker_prefixes=self._marker_prefixes,
-            ),
+            marker=marker,
             body=render_run_alarm(alarm=alarm),
             holder=holder,
             validate_existing=validate_existing,
@@ -2640,13 +2643,16 @@ class LinearMcpTracker:
                 )
         address = _LEASE_ADDRESSING.target(surface)
         wires = await self._comment_wires(address.key, parent_field=address.field)
-        self._assert_surface_holder(
-            surface=surface,
-            holder=holder,
-            markers=self._markers_from_wires(
-                _GrantKind.LEASE, target=address, wires=wires
-            ),
-        )
+        # An absent holder is the single-writer write, not an unheld one:
+        # the lease is observability, so only a supplied holder is checked.
+        if holder is not None:
+            self._assert_surface_holder(
+                surface=surface,
+                holder=holder,
+                markers=self._markers_from_wires(
+                    _GrantKind.LEASE, target=address, wires=wires
+                ),
+            )
         current_comments = tuple(
             self._to_comment(wire, issue_key=target) for wire in wires
         )

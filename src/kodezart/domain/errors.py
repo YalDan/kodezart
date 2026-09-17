@@ -256,6 +256,20 @@ class LaneRecordReadError(Exception):
         )
 
 
+class LaneRecordWriteError(Exception):
+    """A lane's branch record cannot be written from the observed commit.
+
+    Raised before the write whenever the facts the record would state are
+    not the facts the workspace holds, so a record is never composed from
+    an unread prior or from a head the receipt did not name.
+    """
+
+    def __init__(self, *, lane_key: str, reason: str) -> None:
+        self.lane_key = lane_key
+        self.reason = reason
+        super().__init__(f"lane record for {lane_key!r} could not be written: {reason}")
+
+
 class EscalationReadError(Exception):
     """Resolution cannot be established from a readable, unique escalation."""
 

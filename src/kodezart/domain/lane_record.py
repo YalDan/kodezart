@@ -9,6 +9,9 @@ from kodezart.types.domain.branch import BranchAssociation, BranchRole
 from kodezart.types.domain.consolidation import ChangesetDigest
 from kodezart.types.domain.run_state import LaneBinding, LaneCommit, LaneRunState
 
+#: The marker purpose an operation configures this record's prefix under.
+RUN_STATE_PURPOSE = "run_state"
+
 REENTRY_SECTION = """## Re-entry
 
 Resume the branch identified by the LOOP role and the record's branch field.
@@ -42,7 +45,7 @@ def render_lane_record(
 ) -> str:
     """Render a configured marker and one explicit, human-readable JSON record."""
     marker = compose_comment_marker(
-        prefixes=marker_prefixes, purpose="run_state", lane=record.lane_key
+        prefixes=marker_prefixes, purpose=RUN_STATE_PURPOSE, lane=record.lane_key
     )
     return marked_comment_body(marker=marker, body=lane_record_body(record=record))
 
@@ -109,7 +112,7 @@ def parse_lane_record(
     their prose is not a substitute for the recorded fields.
     """
     marker = compose_comment_marker(
-        prefixes=marker_prefixes, purpose="run_state", lane=lane_key
+        prefixes=marker_prefixes, purpose=RUN_STATE_PURPOSE, lane=lane_key
     )
     prefix = f"{marker}\n```json\n"
     suffix = f"\n```\n\n{REENTRY_SECTION}"
