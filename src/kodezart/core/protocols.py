@@ -1502,6 +1502,10 @@ class LaneStateTracker(TrackerCommentReader, Protocol):
         expected: TrackerComment | None = None,
     ) -> TrackerComment: ...
 
+    async def post_run_event(
+        self, *, issue_key: str, event: LaneRunEvent
+    ) -> LaneRunEvent: ...
+
 
 @runtime_checkable
 class LaneStateWriter(Protocol):

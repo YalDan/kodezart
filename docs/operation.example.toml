@@ -62,8 +62,15 @@ base_spec = "kodezart-basespec"
 repository = "kodezart-repo"
 issue_identity = "kodezart-issue"
 run_state = "run-state"
+# Appended once each and never rewritten: the lane's own run-event stream.
+run_event = "run-event"
 # One idempotent terminal outcome comment per queued job.
 run_outcome = "run-outcome"
+# One record per (subject, signal) run-shape alarm, rewritten in place.
+run_alarm = "run-alarm"
+# The amendment write-back's archive comments, and the audit's own records.
+amendment = "kodezart-amendment"
+audit = "kodezart-audit"
 decision = "decision"
 # Record-shaped issues carry history and are never scope fire candidates.
 tracker = "tracker"

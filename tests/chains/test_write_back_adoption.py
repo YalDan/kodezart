@@ -822,6 +822,11 @@ LANE_STATE_WRITES = frozenset(
             function="TrackerLaneStateWriter.record_commit",
             method="upsert_comment",
         ),
+        CallSite(
+            module=LANE_STATE,
+            function="TrackerLaneStateWriter.record_commit",
+            method="post_run_event",
+        ),
     }
 )
 

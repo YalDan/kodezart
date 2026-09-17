@@ -18,6 +18,7 @@ from kodezart.domain.lane_record import (
     next_lane_record,
     parse_lane_record,
 )
+from kodezart.domain.run_event_stream import LaneRunEvent
 from kodezart.domain.tracker_writes import comment_under_marker
 from kodezart.types.domain.gating import (
     ContentClass,
@@ -26,6 +27,7 @@ from kodezart.types.domain.gating import (
 )
 from kodezart.types.domain.operation import OperationConfig
 from kodezart.types.domain.persist import PersistResult
+from kodezart.types.domain.run_event import RunEventKind
 from kodezart.types.domain.run_state import LaneBinding, LaneRunState
 
 
@@ -122,6 +124,18 @@ class TrackerLaneStateWriter:
                 expected=prior_comment,
             )
         )
+        if prior is None:
+            # The record is rewritten in place and says nothing about when a
+            # lane first reached the remote; the first push is that instant,
+            # so it is posted once, as an event nobody edits afterwards.
+            await settle(
+                self._tracker.post_run_event(
+                    issue_key=lane.lane_key,
+                    event=LaneRunEvent(
+                        kind=RunEventKind.FIRST_PUSH, lane_key=lane.lane_key
+                    ),
+                )
+            )
         return record
 
     def _branch_url(self, lane: LaneBinding) -> str:

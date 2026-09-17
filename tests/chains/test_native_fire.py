@@ -159,6 +159,9 @@ def tracker(
     return FakeTrackerPort(
         issues=issues,
         criteria_stage_label_key=STAGE_KEY,
+        # The board reads its markers under the same operation the engine
+        # writes them under; a port with no prefixes could answer no lane.
+        marker_prefixes=native_operation().marker_prefixes,
         scope_label_members={
             ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT): (
                 frozenset({ScopeLabel.APPROVED}) if approved else frozenset()
@@ -177,20 +180,32 @@ def engine(
     max_iterations: int = 1,
     fan_in_max_attempts: int = 1,
     checkpointer=None,
+    persister=None,
+    git=None,
+    source=None,
+    forge=None,
 ) -> RalphWorkflowEngine:
-    """The fire engine, wired the way composition wires it, plus the stage."""
-    workspace = FakeWorkspaceProvider()
+    """The fire engine, wired the way composition wires it, plus the stage.
+
+    The Git, source and persister doubles default to today's no-commit ones;
+    a test about what a commit leaves behind supplies its own repository.
+    """
+    git = (
+        git
+        if git is not None
+        else FakeGitService(remote_branch_shas={"main": "b" * 40})
+    )
+    workspace = FakeWorkspaceProvider(git=git)
     service = AgentService(
         git_base_url="https://github.com",
         executor=executor or FakeAgentExecutor(events=[]),
         workspace=workspace,
-        persister=FakeChangePersister(),
+        persister=persister if persister is not None else FakeChangePersister(),
     )
     prompts = make_prompt_provider()
     gate = PassThroughGate()
-    git = FakeGitService(remote_branch_shas={"main": "b" * 40})
     if real_loop:
-        source = NativeSourceReader()
+        source = source if source is not None else NativeSourceReader()
         quality_gate = RalphLoop(
             source=source,
             amendments=(
@@ -218,7 +233,7 @@ def engine(
                     operation=native_operation(),
                     git=git,
                     git_remote="origin",
-                    forge=None,
+                    forge=forge,
                     gate=gate,
                 )
                 if criteria is not None

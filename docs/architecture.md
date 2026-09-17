@@ -80,6 +80,8 @@ does not exist.
 | FireCriteriaReader | TrackerCriteria | Refreshes current native criterion obligations at execution, retry and replay barriers |
 | FireCriteriaSource | TrackerCriteria | Captures the typed native subject specification and supplies current criterion reads |
 | TrackerContextReader | LinearMcpTracker | Referenced assets and document bodies for fire context |
+| LaneStateTracker | LinearMcpTracker | Exactly the tracker calls the lane's own state writer makes, narrowed out of the port rather than added to it |
+| LaneStateWriter | TrackerLaneStateWriter | Records the lane's run state in the same act as the commit that changed it |
 | ArtifactPersister | GitArtifactPersister     | Writes and cleans named files under `.kodezart/`     |
 | AgentRunner       | AgentService             | Orchestrates workspace lifecycle around executor     |
 | NativeWriteGuard | _NativeWriterGuard | Reads current native Checks and ruling records, routes claims through independent judgment and canonical verified amendment writes, and guards harness commit and publication |
@@ -209,6 +211,18 @@ An existing `record_ref` must still identify that marker comment. Missing,
 duplicate, malformed or misaddressed records raise `LaneRecordReadError`;
 transport failure never becomes an empty record. Every call reads again, so a
 fresh client needs no process cache, repository, trajectory or forge connection.
+
+`TrackerLaneStateWriter` is the write side of that same record. Its one call,
+`record_commit`, runs inside the persisting phase of a native execution, between
+the push and the completion of the phase, so a commit and what it is recorded as
+are one operation: a record write that fails takes the phase with it. It reads
+the workspace head, the remote branch tip and the base..head changeset, parses
+the prior record before composing the next one, and edits the marker comment in
+place under `marker_prefixes.run_state`. That edit is unleased — the lane is the
+record's single writer, and the comment's own preconditions (one comment per
+marker, machine authorship, the expected prior body) are what protect it. The
+first push also posts one `first_push` event under `marker_prefixes.run_event`;
+later commits post nothing, so the lane's comment count stops growing after it.
 
 `render_lane_record` places one readable JSON value under that marker, followed
 by fixed re-entry guidance. The record preserves three-state remote head facts,
