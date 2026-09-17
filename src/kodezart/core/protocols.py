@@ -1506,10 +1506,25 @@ class LaneStateTracker(TrackerCommentReader, Protocol):
         self, *, issue_key: str, event: LaneRunEvent
     ) -> LaneRunEvent: ...
 
+    async def lane_run_events(
+        self, *, issue_key: str, lane_key: str
+    ) -> Sequence[LaneRunEvent]: ...
+
 
 @runtime_checkable
 class LaneStateWriter(Protocol):
     """The lane's own tracker writes; the committing loop needs nothing else."""
+
+    def require_writable(self, *, lane: LaneBinding) -> None:
+        """Refuse now whatever would refuse at the write, and read nothing.
+
+        Everything this answers is knowable from the binding and the
+        configuration: the two marker identities the lane writes under and
+        the address its branch is recorded at.  A caller asks before it
+        opens a session, so a lane that could not record its commit is
+        refused before there is a commit to record.
+        """
+        ...
 
     async def record_commit(
         self, *, lane: LaneBinding, workspace_path: str, receipt: PersistResult

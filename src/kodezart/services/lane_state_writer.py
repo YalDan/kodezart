@@ -9,7 +9,10 @@ from kodezart.core.protocols import (
     LaneStateTracker,
     OutboundContentGate,
 )
-from kodezart.domain.comment_markers import compose_comment_marker
+from kodezart.domain.comment_markers import (
+    compose_comment_marker,
+    configured_marker_prefix,
+)
 from kodezart.domain.errors import LaneRecordReadError, LaneRecordWriteError
 from kodezart.domain.git_url import is_forge_less_origin
 from kodezart.domain.lane_record import (
@@ -17,7 +20,7 @@ from kodezart.domain.lane_record import (
     lane_record_body,
     next_lane_record,
 )
-from kodezart.domain.run_event_stream import LaneRunEvent
+from kodezart.domain.run_event_stream import RUN_EVENT_PURPOSE, LaneRunEvent
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.types.domain.gating import ContentClass, OutboundDestination
 from kodezart.types.domain.operation import OperationConfig
@@ -32,6 +35,11 @@ class TrackerLaneStateWriter:
     The record's facts are read from the workspace the commit was made in,
     so the writer never reports a head, a push or a count it did not
     observe, and a record it cannot read first is never overwritten.
+
+    The record goes through the outbound gate and is refused if a byte of
+    it changes; the first-push event does not, because its body is rendered
+    by the port out of a closed event kind and the lane key, and this
+    service cannot gate bytes it does not compose.
     """
 
     def __init__(
@@ -56,17 +64,33 @@ class TrackerLaneStateWriter:
         self._gate = gate
         self._log = get_logger(__name__)
 
+    def require_writable(self, *, lane: LaneBinding) -> None:
+        """Resolve everything this lane's writes need from configuration alone.
+
+        Both marker identities and the recorded branch address are decided
+        by the binding and the operation, so an operation missing either
+        purpose, and a lane naming no repository, are faults the caller can
+        be told about before it opens a session and before it pushes.
+        """
+        self._markers(lane)
+        self._branch_url(lane)
+
     async def record_commit(
         self, *, lane: LaneBinding, workspace_path: str, receipt: PersistResult
     ) -> LaneRunState:
         """Record the pushed commit, editing the lane's one record in place.
 
-        The three git reads are observations of the workspace this commit
-        was made in: the head the receipt names, the remote branch tip as
-        its own three-state value, and the base..head changeset. The prior
-        record is parsed before the new one is composed, so a damaged
-        record refuses rather than being replaced by a fresh one.
+        Everything configuration decides is resolved first, before any git
+        or tracker call, so a lane that cannot be recorded refuses without
+        having written half of it. The three git reads are then observations
+        of the workspace this commit was made in: the head the receipt
+        names, the remote branch tip as its own three-state value, and the
+        base..head changeset. The prior record is parsed before the new one
+        is composed, so a damaged record refuses rather than being replaced
+        by a fresh one.
         """
+        marker, _ = self._markers(lane)
+        branch_url = self._branch_url(lane)
         head_sha = await self._git.current_sha(workspace_path)
         if head_sha != receipt.commit_sha:
             raise LaneRecordWriteError(
@@ -79,8 +103,11 @@ class TrackerLaneStateWriter:
         changeset = await self._git.diff_summary(
             workspace_path, lane.base_ref, head_sha
         )
-        marker = compose_comment_marker(
-            prefixes=self._prefixes, purpose=RUN_STATE_PURPOSE, lane=lane.lane_key
+        first_push = not any(
+            event.kind is RunEventKind.FIRST_PUSH
+            for event in await self._tracker.lane_run_events(
+                issue_key=lane.lane_key, lane_key=lane.lane_key
+            )
         )
         try:
             located = await self._records.find(
@@ -95,7 +122,7 @@ class TrackerLaneStateWriter:
         record = next_lane_record(
             prior=prior,
             lane=lane,
-            branch_url=self._branch_url(lane),
+            branch_url=branch_url,
             head_sha=head_sha,
             pushed_head_sha=pushed_head_sha,
             changeset=changeset,
@@ -111,10 +138,12 @@ class TrackerLaneStateWriter:
                 expected=prior_comment,
             )
         )
-        if prior is None:
+        if first_push:
             # The record is rewritten in place and says nothing about when a
             # lane first reached the remote; the first push is that instant,
-            # so it is posted once, as an event nobody edits afterwards.
+            # so it is posted once, as an event nobody edits afterwards. The
+            # stream itself says whether it was: a record already written
+            # would report the event as posted when the post had failed.
             await settle(
                 self._tracker.post_run_event(
                     issue_key=lane.lane_key,
@@ -124,6 +153,20 @@ class TrackerLaneStateWriter:
                 )
             )
         return record
+
+    def _markers(self, lane: LaneBinding) -> tuple[str, str]:
+        """This lane's record marker and the prefix its event stream is under.
+
+        Both are resolved together because both are written in the same act:
+        resolving only the one the first write needs would push the other
+        operation's absence past a push and past a comment.
+        """
+        return (
+            compose_comment_marker(
+                prefixes=self._prefixes, purpose=RUN_STATE_PURPOSE, lane=lane.lane_key
+            ),
+            configured_marker_prefix(self._prefixes, purpose=RUN_EVENT_PURPOSE),
+        )
 
     def _branch_url(self, lane: LaneBinding) -> str:
         """The page a person opens for this branch, or the repository itself.

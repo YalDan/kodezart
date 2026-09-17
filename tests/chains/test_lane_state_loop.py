@@ -3,13 +3,14 @@
 import pytest
 
 from kodezart.chains.criteria import TrackerCriteria
+from kodezart.domain.run_event_stream import RUN_EVENT_PURPOSE
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.types.domain.agent import ResultEvent
 from kodezart.types.domain.branch import BranchRole, trunk_base
 from kodezart.types.domain.gating import RepoVisibility
+from kodezart.types.domain.operation import OperationConfig, OperationMemberAbsentError
 from kodezart.types.domain.run_event import RunEventKind
 from kodezart.types.domain.session import PermissionMode, ToolPreset
-from tests.adapters.test_github_api import _make_client
 from tests.chains.test_native_fire import (
     SUBJECT,
     NativeExecutor,
@@ -18,7 +19,13 @@ from tests.chains.test_native_fire import (
     native_operation,
     tracker,
 )
-from tests.lane_fixture import LaneGit, LanePersister, LaneRepo, LaneSource
+from tests.lane_fixture import (
+    LaneGit,
+    LanePersister,
+    LaneRepo,
+    LaneSource,
+    lane_forge,
+)
 
 BRANCH = "ralph/fire-subject"
 FEATURE = "feature/fire-subject"
@@ -29,9 +36,17 @@ REPO_URL = "https://github.com/owner/repo"
 class Lane:
     """One lane: its repository, its board, and the real loop over both."""
 
-    def __init__(self, *, evaluations, forge=None, max_iterations=1):
+    def __init__(
+        self,
+        *,
+        evaluations,
+        forge=None,
+        max_iterations=1,
+        lane_operation=None,
+        port=None,
+    ):
         self.repo = LaneRepo()
-        self.port = tracker()
+        self.port = tracker() if port is None else port
         self.criteria = TrackerCriteria(tracker=self.port)
         self.executor = NativeExecutor(evaluations)
         self.persister = LanePersister(self.repo)
@@ -44,6 +59,7 @@ class Lane:
             git=LaneGit(self.repo),
             source=LaneSource(self.repo),
             forge=forge,
+            lane_operation=lane_operation,
         )
         self.loop = self.fire.implementation._quality_gate
 
@@ -86,7 +102,7 @@ class Lane:
 
 
 async def test_first_push_leaves_the_record_and_the_first_push_event():
-    lane = Lane(evaluations=[native_evaluation()])
+    lane = Lane(evaluations=[native_evaluation()], forge=lane_forge())
     await lane.run()
 
     assert len(lane.record_comments()) == 1
@@ -97,7 +113,7 @@ async def test_first_push_leaves_the_record_and_the_first_push_event():
     record = await lane.record()
     assert record.lane_key == SUBJECT
     assert record.branch == BRANCH
-    assert record.branch_url == REPO_URL
+    assert record.branch_url == f"{REPO_URL}/tree/{BRANCH}"
     assert record.head_sha == lane.repo.head
     assert record.pushed_head_sha == record.head_sha
     assert record.commits_ahead == 1
@@ -115,15 +131,35 @@ async def test_first_push_leaves_the_record_and_the_first_push_event():
 
 
 async def test_the_recorded_branch_url_is_the_forges_own_branch_page():
-    def unasked(request):
-        raise AssertionError("composing a branch address asks the forge nothing")
-
-    lane = Lane(
-        evaluations=[native_evaluation()],
-        forge=_make_client(unasked),
-    )
+    lane = Lane(evaluations=[native_evaluation()], forge=lane_forge())
     await lane.run()
     assert (await lane.record()).branch_url == f"{REPO_URL}/tree/{BRANCH}"
+
+
+async def test_an_operation_with_no_event_purpose_refuses_before_the_session():
+    port = tracker()
+    lane = Lane(
+        evaluations=[native_evaluation()],
+        port=port,
+        lane_operation=OperationConfig(
+            operation_name="native-fixture",
+            workspace="fixture",
+            marker_prefixes={
+                purpose: prefix
+                for purpose, prefix in native_operation().marker_prefixes.items()
+                if purpose != RUN_EVENT_PURPOSE
+            },
+            issue_labels={"decision": "decision"},
+        ),
+    )
+
+    with pytest.raises(OperationMemberAbsentError, match=RUN_EVENT_PURPOSE):
+        await lane.run()
+
+    assert lane.executor.execution_prompts == []
+    assert lane.persister.calls == []
+    assert lane.repo.shas == []
+    assert port.comments == []
 
 
 async def test_a_second_commit_edits_the_record_and_posts_no_second_event():

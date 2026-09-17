@@ -419,13 +419,17 @@ class RalphLoop:
         """The record write this node's commit act completes with.
 
         Handed to the persisting phase rather than performed after it, so
-        no commit of this loop can reach a branch without its record.
+        no commit of this loop can reach a branch without its record. What
+        the write needs from configuration is resolved here, before the
+        implementation session opens: a lane that could not record its
+        commit refuses before it makes one.
         """
         lane_state, lane = self._lane_state, self._lane_binding(ctx)
         if lane_state is None:
             raise NativeWriteRefusalError(
                 "Native execution requires the lane state writer"
             )
+        lane_state.require_writable(lane=lane)
 
         async def record(workspace_path: str, receipt: PersistResult) -> None:
             await lane_state.record_commit(

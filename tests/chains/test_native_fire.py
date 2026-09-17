@@ -184,6 +184,7 @@ def engine(
     git=None,
     source=None,
     forge=None,
+    lane_operation=None,
 ) -> RalphWorkflowEngine:
     """The fire engine, wired the way composition wires it, plus the stage.
 
@@ -230,7 +231,7 @@ def engine(
             lane_state=(
                 TrackerLaneStateWriter(
                     tracker=criteria._tracker,
-                    operation=native_operation(),
+                    operation=lane_operation or native_operation(),
                     git=git,
                     git_remote="origin",
                     forge=forge,

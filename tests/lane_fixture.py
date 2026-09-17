@@ -8,6 +8,10 @@ this repository through the production reader it is written by.
 
 from collections.abc import Awaitable, Callable
 
+import httpx
+
+from kodezart.adapters.github.api import GitHubAPIClient
+from kodezart.core.backoff import RetryPolicy
 from kodezart.types.domain.consolidation import ChangesetDigest
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.operation import OperationConfig
@@ -24,6 +28,10 @@ from tests.fakes import (
 #: The shas a trunk-shaped ref resolves to, as ``RemoteGit`` already spells it.
 TRUNK_SHA = "b" * 40
 TRUNK_BRANCHES = ("trunk", "main")
+#: The API host the forge double is configured against and never asked at.
+FORGE_API = "https://api.github.com"
+#: The credential that host would need, for a client that never reaches it.
+FORGE_CREDENTIAL = "lane-fixture-credential"
 
 
 class LaneRepo:
@@ -83,6 +91,35 @@ class LaneGit(FakeGitService):
             and descendant_ref in shas
             and shas.index(ancestor_ref) <= shas.index(descendant_ref)
         )
+
+
+def lane_forge() -> GitHubAPIClient:
+    """The forge a lane records its branch page from, answering no request.
+
+    Composing a branch address asks the forge nothing, so every request
+    this client's transport receives is a failure: a record carrying the
+    branch page proves the address was composed and not fetched.
+    """
+
+    def unasked(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("composing a branch address asks the forge nothing")
+
+    return GitHubAPIClient(
+        token=FORGE_CREDENTIAL,
+        base_url=FORGE_API,
+        ci_poll_interval_seconds=0.0,
+        ci_poll_max_attempts=1,
+        ci_no_checks_grace_polls=1,
+        ci_no_workflows_grace_polls=1,
+        ci_grace_poll_interval_seconds=0.0,
+        ci_ref_not_found_grace_polls=1,
+        ci_check_runs_max_pages=1,
+        timeout_seconds=5.0,
+        retry=RetryPolicy(attempts=1, initial_delay=0.0, jitter=0.0),
+        client=httpx.AsyncClient(
+            transport=httpx.MockTransport(unasked), base_url=FORGE_API
+        ),
+    )
 
 
 def lane_operation() -> OperationConfig:

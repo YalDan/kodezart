@@ -1,8 +1,15 @@
 """The lane's record is one comment the committing act keeps current."""
 
+import json
+
 import pytest
 
-from kodezart.domain.errors import LaneRecordWriteError, StaleCommentWriteError
+from kodezart.domain.errors import (
+    LaneRecordWriteError,
+    StaleCommentWriteError,
+    TransientAPIError,
+)
+from kodezart.domain.run_event_stream import LaneRunEvent
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.services.lane_state_writer import TrackerLaneStateWriter
 from kodezart.types.domain.branch import BranchRole
@@ -14,7 +21,9 @@ from kodezart.types.domain.gating import (
     RepoVisibility,
     WriterShape,
 )
+from kodezart.types.domain.operation import OperationConfig, OperationMemberAbsentError
 from kodezart.types.domain.persist import PersistResult, PersistSource
+from kodezart.types.domain.run_event import RunEventKind
 from kodezart.types.domain.run_state import LaneBinding
 from kodezart.types.domain.tracker import TrackerComment
 from tests.fakes import FakeTrackerPort, PassThroughGate, make_tracker_issue
@@ -223,6 +232,117 @@ async def test_a_gate_that_alters_the_recorded_facts_refuses_the_whole_write():
     port, repo = board(), LaneRepo()
     with pytest.raises(LaneRecordWriteError, match="the outbound gate changed"):
         await make_commit(writer(port, repo, AlteringGate()), repo, 1)
+    assert port.comments == []
+
+
+class DroppingBoard(FakeTrackerPort):
+    """A board that loses the first event post, after the record is written."""
+
+    dropped = 0
+
+    async def post_run_event(self, *, issue_key: str, event):
+        if self.dropped == 0:
+            self.dropped += 1
+            raise TransientAPIError("the event post was lost")
+        return await super().post_run_event(issue_key=issue_key, event=event)
+
+
+def event_comments(port: FakeTrackerPort) -> list:
+    prefix = lane_operation().marker_prefixes["run_event"]
+    return [
+        comment for comment in port.comments if comment.body.startswith(f"[{prefix}:")
+    ]
+
+
+async def test_an_event_lost_after_the_record_is_posted_by_the_next_commit():
+    port = DroppingBoard(
+        issues=[make_tracker_issue(LANE)],
+        marker_prefixes=lane_operation().marker_prefixes,
+    )
+    repo = LaneRepo()
+    lane_state = writer(port, repo)
+
+    with pytest.raises(TransientAPIError):
+        await make_commit(lane_state, repo, 1)
+    assert await port.lane_run_events(issue_key=LANE, lane_key=LANE) == ()
+    assert len(record_comments(port)) == 1
+
+    await make_commit(lane_state, repo, 2)
+    events = await port.lane_run_events(issue_key=LANE, lane_key=LANE)
+    assert [event.kind for event in events] == [RunEventKind.FIRST_PUSH]
+
+    await make_commit(lane_state, repo, 3)
+    assert await port.lane_run_events(issue_key=LANE, lane_key=LANE) == events
+
+
+async def test_the_posted_event_carries_the_marker_and_the_codec_fields_alone():
+    port, repo = board(), LaneRepo()
+    await make_commit(writer(port, repo), repo, 1)
+
+    prefix = lane_operation().marker_prefixes["run_event"]
+    marker, _, block = event_comments(port)[0].body.partition("\n")
+    assert marker == f"[{prefix}:{LANE}]"
+    assert block.startswith("```json\n")
+    assert block.endswith("\n```")
+    payload = json.loads(block[len("```json\n") : -len("\n```")])
+    assert payload == {
+        "kind": RunEventKind.FIRST_PUSH.value,
+        "laneKey": LANE,
+        "subjectKey": None,
+    }
+    assert set(payload) == {
+        field.alias or name for name, field in LaneRunEvent.model_fields.items()
+    }
+
+
+async def test_an_operation_with_no_event_purpose_refuses_before_any_read():
+    port, repo = board(), LaneRepo()
+    git = LaneGit(repo)
+    lane_state = TrackerLaneStateWriter(
+        tracker=port,
+        operation=OperationConfig(
+            operation_name="lane-fixture",
+            workspace="fixture",
+            marker_prefixes={"run_state": "lane-fixture-record"},
+            issue_labels={"decision": "decision"},
+        ),
+        git=git,
+        git_remote=REMOTE,
+        forge=None,
+        gate=PassThroughGate(),
+    )
+    with pytest.raises(OperationMemberAbsentError, match="run_event"):
+        lane_state.require_writable(lane=binding())
+    with pytest.raises(OperationMemberAbsentError, match="run_event"):
+        await make_commit(lane_state, repo, 1)
+    assert git.calls == []
+    assert port.comments == []
+
+
+async def test_a_lane_naming_no_repository_refuses_before_any_read():
+    port, repo = board(), LaneRepo()
+    git = LaneGit(repo)
+    lane_state = TrackerLaneStateWriter(
+        tracker=port,
+        operation=lane_operation(),
+        git=git,
+        git_remote=REMOTE,
+        forge=None,
+        gate=PassThroughGate(),
+    )
+    homeless = LaneBinding(
+        lane_key=LANE,
+        loop_branch="ralph/LANE-1",
+        deliverable_branch="feature/LANE-1",
+        base_ref="trunk",
+        repo_url=None,
+        repo_path=None,
+        run_id="queue-job-1",
+        visibility=RepoVisibility.PRIVATE,
+    )
+    with pytest.raises(LaneRecordWriteError, match="names no repository"):
+        lane_state.require_writable(lane=homeless)
+    assert git.calls == []
     assert port.comments == []
 
 

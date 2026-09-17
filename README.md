@@ -388,12 +388,18 @@ role, a queue key, the checkpoint document — refuses at the point of need with
 a typed error naming what is missing and what stops working, never as a boot
 failure. Structural validation applies to what IS present.
 
-Tracker carriers take their identity prefixes from `marker_prefixes`.
-Declare `claim`, `work_ref`, `base_spec` and `repository` for the corresponding
-tracker operations. When upgrading an existing operation, copy the example's
-values for these keys to keep addressing its stored markers. Additional
-purposes such as `run_state`, `decision`, `ruling` and `escalation` use the same mapping;
-missing purposes are refused when read or written.
+Tracker carriers take their identity prefixes from `marker_prefixes`. Copy the
+whole `[marker_prefixes]` table of `docs/operation.example.toml` into the
+operation: that table is the complete list of purposes this tree writes under,
+and a test derives the purposes from the source and fails when the table
+declares fewer than the code needs, so there is no second list to consult and
+no purpose to work out by reading the code. A purpose the table omits is not a
+boot failure — it is refused at the point it is read or written, so a partial
+table starts and then refuses mid-run. A tracker-native lane needs both
+`run_state`, the one record it rewrites in place, and `run_event`, the stream
+it appends its first push to. The values are addresses: when upgrading an
+operation that already has recorded work, keep the prefixes it stored, because
+changing one addresses a different marker.
 
 Fire-time ruling records declare a distinct `ruling` purpose. Its configured
 prefix, explicit lane and deterministic `RulingId` occurrence address one
