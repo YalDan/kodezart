@@ -2,9 +2,16 @@
 
 import ast
 
+#: The model methods that make a value without naming its class.  A guard
+#: counting only the class call would miss every one of them, and the copy
+#: is the house idiom, so it is the shape a second writer would take.
+BUILDING_METHODS = frozenset({"model_construct", "model_copy"})
+#: The model methods that make a value out of serialized bytes or a mapping.
+PARSING_METHODS = frozenset({"model_validate", "model_validate_json"})
 
-def construction_sites(source: str, *, identity: str = "RulingId") -> tuple[int, ...]:
-    tree = ast.parse(source)
+
+def _constructor_names(tree: ast.AST, identity: str) -> set[str]:
+    """Every local name that resolves to *identity*, aliases included."""
     constructors = {identity}
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom):
@@ -14,7 +21,7 @@ def construction_sites(source: str, *, identity: str = "RulingId") -> tuple[int,
                 if alias.name == identity
             )
 
-    def is_constructor(node: ast.AST) -> bool:
+    def names(node: ast.AST) -> bool:
         return (isinstance(node, ast.Name) and node.id in constructors) or (
             isinstance(node, ast.Attribute) and node.attr == identity
         )
@@ -25,7 +32,7 @@ def construction_sites(source: str, *, identity: str = "RulingId") -> tuple[int,
     while changed:
         previous = set(constructors)
         for node in ast.walk(tree):
-            if isinstance(node, ast.Assign) and is_constructor(node.value):
+            if isinstance(node, ast.Assign) and names(node.value):
                 constructors.update(
                     target.id for target in node.targets if isinstance(target, ast.Name)
                 )
@@ -33,15 +40,134 @@ def construction_sites(source: str, *, identity: str = "RulingId") -> tuple[int,
                 isinstance(node, ast.AnnAssign)
                 and node.value is not None
                 and isinstance(node.target, ast.Name)
-                and is_constructor(node.value)
+                and names(node.value)
             ):
                 constructors.add(node.target.id)
         changed = constructors != previous
+    return constructors
+
+
+def construction_sites(source: str, *, identity: str = "RulingId") -> tuple[int, ...]:
+    constructors = _constructor_names(tree := ast.parse(source), identity)
+
+    def is_constructor(node: ast.AST) -> bool:
+        return (isinstance(node, ast.Name) and node.id in constructors) or (
+            isinstance(node, ast.Attribute) and node.attr == identity
+        )
+
     return tuple(
         node.lineno
         for node in ast.walk(tree)
         if isinstance(node, ast.Call) and is_constructor(node.func)
     )
+
+
+def _stated_types(tree: ast.AST) -> dict[str, set[str]]:
+    """Every annotation each name is declared with, by the name it addresses."""
+    stated: dict[str, set[str]] = {}
+
+    def note(name: str, annotation: ast.expr | None) -> None:
+        if annotation is not None:
+            stated.setdefault(name, set()).add(ast.unparse(annotation))
+
+    returns: dict[str, ast.expr] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+            if node.returns is not None:
+                returns[node.name] = node.returns
+            for argument in (
+                *node.args.posonlyargs,
+                *node.args.args,
+                *node.args.kwonlyargs,
+                node.args.vararg,
+                node.args.kwarg,
+            ):
+                if argument is not None:
+                    note(argument.arg, argument.annotation)
+        elif isinstance(node, ast.AnnAssign):
+            note(ast.unparse(node.target), node.annotation)
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Assign)
+            and isinstance(node.value, ast.Call)
+            and isinstance(node.value.func, ast.Name)
+            and node.value.func.id in returns
+        ):
+            for target in node.targets:
+                note(ast.unparse(target), returns[node.value.func.id])
+    return stated
+
+
+def model_value_sites(source: str, *, identity: str) -> dict[str, tuple[str, ...]]:
+    """Where a module holding *identity* builds one of its values, and parses one.
+
+    Derived from the source rather than from a list of names: a module
+    counts when it imports or declares the identity, and inside such a
+    module a receiver is excused only where its own annotation states a
+    different type.  An unannotated receiver is reported, because a guard
+    that trusted silence would be answered by dropping the annotation.
+    Each site is named by the function that encloses it, so the assertion
+    reads as the surface rather than as line numbers.
+    """
+    tree = ast.parse(source)
+    if not any(
+        (
+            isinstance(node, ast.ImportFrom)
+            and any(alias.name == identity for alias in node.names)
+        )
+        or (isinstance(node, ast.ClassDef) and node.name == identity)
+        for node in ast.walk(tree)
+    ):
+        return {"build": (), "parse": ()}
+    constructors = _constructor_names(tree, identity)
+    stated = _stated_types(tree)
+    parents = {
+        id(child): parent
+        for parent in ast.walk(tree)
+        for child in ast.iter_child_nodes(parent)
+    }
+
+    def enclosing(node: ast.AST) -> str:
+        while id(node) in parents:
+            node = parents[id(node)]
+            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+                return node.name
+        return "<module>"
+
+    def is_constructor(node: ast.AST) -> bool:
+        return (isinstance(node, ast.Name) and node.id in constructors) or (
+            isinstance(node, ast.Attribute) and node.attr == identity
+        )
+
+    def holds_another_type(node: ast.expr) -> bool:
+        annotations = stated.get(ast.unparse(node))
+        return annotations is not None and all(
+            identity not in annotation for annotation in annotations
+        )
+
+    def form(node: ast.Call) -> str | None:
+        if is_constructor(node.func):
+            return "build"
+        if (
+            isinstance(node.func, ast.Call)
+            and isinstance(node.func.func, ast.Name)
+            and node.func.func.id == "type"
+        ):
+            return "build"
+        if isinstance(node.func, ast.Attribute) and not holds_another_type(
+            node.func.value
+        ):
+            if node.func.attr in BUILDING_METHODS:
+                return "build"
+            if node.func.attr in PARSING_METHODS:
+                return "parse"
+        return None
+
+    sites: dict[str, list[str]] = {"build": [], "parse": []}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and (found := form(node)) is not None:
+            sites[found].append(enclosing(node))
+    return {name: tuple(found) for name, found in sites.items()}
 
 
 def invalid_ruling_fields(source: str) -> tuple[int, ...]:

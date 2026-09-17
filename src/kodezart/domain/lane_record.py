@@ -4,6 +4,7 @@ import json
 from collections.abc import Mapping
 
 from kodezart.domain.comment_markers import compose_comment_marker
+from kodezart.domain.errors import LaneRecordWriteError
 from kodezart.domain.tracker_writes import marked_comment_body
 from kodezart.types.domain.branch import BranchAssociation, BranchRole
 from kodezart.types.domain.consolidation import ChangesetDigest
@@ -62,11 +63,15 @@ def next_lane_record(
 ) -> LaneRunState:
     """The record this commit leaves behind, from the prior one and this receipt.
 
-    The only construction site of ``LaneRunState`` in the source tree (KOD-685):
-    every fact is arithmetic over the prior record and the observed commit, so
-    no second writer can grow the record along another route. Recording the
-    same head twice leaves the rows and the associations unchanged.
+    The only ``LaneRunState(...)`` call in the source tree (KOD-685); the
+    static guard in tests/domain/test_lane_record.py asserts that, for this
+    and for every other form the value could be built by. Every fact here is
+    arithmetic over the prior record and the observed commit. A commit whose
+    head is already the last recorded row appends no second row; the rows are
+    the commit acts this lane recorded, so a head that returns to an earlier
+    sha is a new act and takes a row of its own.
     """
+    _require_one_binding_per_run(prior=prior, lane=lane)
     commits = list(prior.commits) if prior is not None else []
     if not commits or commits[-1].sha != head_sha:
         commits.append(
@@ -101,6 +106,34 @@ def next_lane_record(
         pr=prior.pr if prior is not None else None,
         associations=associations,
     )
+
+
+def _require_one_binding_per_run(
+    *, prior: LaneRunState | None, lane: LaneBinding
+) -> None:
+    """Refuse a run rebound to another deliverable before composing a record.
+
+    One run delivers onto one branch from one base. A remediation round that
+    rebinds a run the record already carries is knowable from these two
+    arguments alone, so it is refused here with both readings named rather
+    than left to surface as a cardinality failure inside the model.
+    """
+    for item in prior.associations if prior is not None else ():
+        if (
+            item.role is BranchRole.DELIVERABLE
+            and item.run_id == lane.run_id
+            and (item.branch, item.derived_from)
+            != (lane.deliverable_branch, lane.base_ref)
+        ):
+            raise LaneRecordWriteError(
+                lane_key=lane.lane_key,
+                reason=(
+                    f"run {lane.run_id!r} is recorded as delivering "
+                    f"{item.branch!r} from {item.derived_from!r} and this "
+                    f"commit binds it to {lane.deliverable_branch!r} from "
+                    f"{lane.base_ref!r}"
+                ),
+            )
 
 
 def parse_lane_record(

@@ -8,6 +8,7 @@ from typing import get_args
 import pytest
 from pydantic import BaseModel, ValidationError, create_model
 
+from kodezart.domain.errors import LaneRecordWriteError
 from kodezart.domain.lane_record import (
     lane_record_body,
     next_lane_record,
@@ -24,7 +25,7 @@ from kodezart.types.domain.run_state import (
     LanePR,
     LaneRunState,
 )
-from tests.identity_guards import construction_sites
+from tests.identity_guards import construction_sites, model_value_sites
 
 SOURCE_ROOT = Path(__file__).parents[2] / "src" / "kodezart"
 RECORD = "LaneRunState"
@@ -293,6 +294,49 @@ def test_exactly_one_site_constructs_the_lane_run_state():
     assert len(construction_sites(second, identity=RECORD)) == 2
 
 
+def record_value_sites() -> dict[str, list[str]]:
+    """Every place the source builds a lane record, and every place it parses one."""
+    found: dict[str, list[str]] = {"build": [], "parse": []}
+    for path in sorted(SOURCE_ROOT.rglob("*.py")):
+        sites = model_value_sites(path.read_text(), identity=RECORD)
+        for form, functions in sites.items():
+            found[form].extend(
+                f"{path.relative_to(SOURCE_ROOT).as_posix()}::{function}"
+                for function in functions
+            )
+    return found
+
+
+def test_one_site_builds_the_lane_run_state_and_one_site_parses_it():
+    assert record_value_sites() == {
+        "build": ["domain/lane_record.py::next_lane_record"],
+        "parse": ["domain/lane_record.py::parse_lane_record"],
+    }
+
+
+@pytest.mark.parametrize(
+    "form",
+    [
+        f"{RECORD}(lane_key='second')",
+        f"{RECORD}.model_validate({{'laneKey': 'second'}})",
+        f"{RECORD}.model_validate_json('{{}}')",
+        f"{RECORD}.model_construct(lane_key='second')",
+        "prior.model_copy(update={'head_sha': sha})",
+        "type(prior)(lane_key='second')",
+    ],
+)
+def test_a_second_site_in_any_of_the_construction_forms_is_reported(form):
+    owner = (SOURCE_ROOT / "domain" / "lane_record.py").read_text()
+    poller = f"{owner}\n\ndef _poll(prior, sha):\n    return {form}\n"
+    sites = model_value_sites(poller, identity=RECORD)
+    assert "_poll" in sites["build"] + sites["parse"]
+
+
+def test_a_module_that_does_not_hold_the_record_states_nothing_about_it():
+    borrowed = "def _poll(prior, sha):\n    return prior.model_copy(update={})\n"
+    assert model_value_sites(borrowed, identity=RECORD) == {"build": (), "parse": ()}
+
+
 def test_next_record_appends_one_row_and_keeps_prior_associations():
     lane = binding()
     first = next_lane_record(
@@ -306,6 +350,9 @@ def test_next_record_appends_one_row_and_keeps_prior_associations():
     )
     assert first.lane_key == lane.lane_key
     assert first.branch == lane.loop_branch
+    assert first.head_sha == "a" * 40
+    assert first.pushed_head_sha == "a" * 40
+    assert first.branch_url == "https://forge.example/branch/ordinary-name"
     assert first.commits_ahead == 1
     assert first.files_changed == 1
     assert first.pr is None
@@ -324,7 +371,7 @@ def test_next_record_appends_one_row_and_keeps_prior_associations():
     second = next_lane_record(
         prior=first,
         lane=lane,
-        branch_url="https://forge.example/branch/ordinary-name",
+        branch_url="https://forge.example/branch/renamed",
         head_sha="b" * 40,
         pushed_head_sha=None,
         changeset=changeset(commits=2, files=3),
@@ -332,9 +379,130 @@ def test_next_record_appends_one_row_and_keeps_prior_associations():
     )
     assert [row.sha for row in second.commits] == ["a" * 40, "b" * 40]
     assert second.associations == first.associations
+    assert second.head_sha == "b" * 40
+    assert second.branch_url == "https://forge.example/branch/renamed"
     assert second.pushed_head_sha is None
     assert second.commits_ahead == 2
     assert second.files_changed == 3
+
+
+def test_the_pull_request_the_prior_record_carries_survives_the_next_commit():
+    prior = LaneRunState.model_validate(record_data())
+    lane = LaneBinding(
+        lane_key=prior.lane_key,
+        loop_branch=prior.branch,
+        deliverable_branch="has-ralph-in-its-name",
+        base_ref="trunk",
+        repo_url="https://forge.example/repo",
+        repo_path=None,
+        run_id="run-fix",
+        visibility=RepoVisibility.PRIVATE,
+    )
+    later = next_lane_record(
+        prior=prior,
+        lane=lane,
+        branch_url="https://forge.example/branch/ordinary-name",
+        head_sha="d" * 40,
+        pushed_head_sha=None,
+        changeset=changeset(commits=3, files=2),
+        subject="Third change",
+    )
+    assert prior.pr is not None
+    assert later.pr == prior.pr
+
+
+def test_a_run_rebound_to_another_deliverable_refuses_before_composing_a_record():
+    lane = binding()
+    first = next_lane_record(
+        prior=None,
+        lane=lane,
+        branch_url="https://forge.example/branch/ordinary-name",
+        head_sha="a" * 40,
+        pushed_head_sha="a" * 40,
+        changeset=changeset(commits=1, files=1),
+        subject="First change",
+    )
+    rebound = LaneBinding(
+        lane_key=lane.lane_key,
+        loop_branch=lane.loop_branch,
+        deliverable_branch="another-deliverable",
+        base_ref=lane.base_ref,
+        repo_url=lane.repo_url,
+        repo_path=lane.repo_path,
+        run_id=lane.run_id,
+        visibility=lane.visibility,
+    )
+    with pytest.raises(LaneRecordWriteError) as refusal:
+        next_lane_record(
+            prior=first,
+            lane=rebound,
+            branch_url="https://forge.example/branch/ordinary-name",
+            head_sha="b" * 40,
+            pushed_head_sha=None,
+            changeset=changeset(commits=2, files=1),
+            subject="Second change",
+        )
+    assert lane.deliverable_branch in str(refusal.value)
+    assert "another-deliverable" in str(refusal.value)
+
+
+def test_a_run_rebased_onto_another_base_refuses_before_composing_a_record():
+    lane = binding()
+    first = next_lane_record(
+        prior=None,
+        lane=lane,
+        branch_url="https://forge.example/branch/ordinary-name",
+        head_sha="a" * 40,
+        pushed_head_sha="a" * 40,
+        changeset=changeset(commits=1, files=1),
+        subject="First change",
+    )
+    rebased = LaneBinding(
+        lane_key=lane.lane_key,
+        loop_branch=lane.loop_branch,
+        deliverable_branch=lane.deliverable_branch,
+        base_ref="another-base",
+        repo_url=lane.repo_url,
+        repo_path=lane.repo_path,
+        run_id=lane.run_id,
+        visibility=lane.visibility,
+    )
+    with pytest.raises(LaneRecordWriteError, match="another-base"):
+        next_lane_record(
+            prior=first,
+            lane=rebased,
+            branch_url="https://forge.example/branch/ordinary-name",
+            head_sha="b" * 40,
+            pushed_head_sha=None,
+            changeset=changeset(commits=2, files=1),
+            subject="Second change",
+        )
+
+
+def test_a_head_that_returns_to_an_earlier_sha_is_recorded_as_its_own_act():
+    lane = binding()
+    record = None
+    for head, subject in (
+        ("a", "First change"),
+        ("b", "Second change"),
+        ("a", "Reset"),
+    ):
+        record = next_lane_record(
+            prior=record,
+            lane=lane,
+            branch_url="https://forge.example/branch/ordinary-name",
+            head_sha=head * 40,
+            pushed_head_sha=None,
+            changeset=changeset(commits=1, files=1),
+            subject=subject,
+        )
+    assert record is not None
+    assert [row.sha for row in record.commits] == ["a" * 40, "b" * 40, "a" * 40]
+    assert [row.subject for row in record.commits] == [
+        "First change",
+        "Second change",
+        "Reset",
+    ]
 
 
 def test_recording_the_same_head_twice_leaves_the_record_unchanged():
