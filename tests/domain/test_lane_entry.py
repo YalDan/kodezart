@@ -7,13 +7,16 @@ merely both derived from the same expression.
 
 import pytest
 
-from kodezart.domain.errors import LaneEntryError
+from kodezart.domain.errors import LaneEntryError, SubjectAmendedError
+from kodezart.domain.fire_spec import body_digest
 from kodezart.domain.lane_entry import (
     RecordedBranches,
     decide_lane_entry,
     recorded_branches,
+    require_unamended_subject,
 )
 from kodezart.types.domain.branch import BranchAssociation, BranchRole
+from kodezart.types.domain.fire_spec import TrackerSpec
 from kodezart.types.domain.lane_entry import DeliverOnlyLane, NewLane, ResumedLane
 from kodezart.types.domain.run_state import LaneCommit, LanePR, LaneRunState
 
@@ -160,6 +163,45 @@ def test_a_record_written_before_the_pin_carries_no_digest_to_compare() -> None:
     )
     assert isinstance(entry, ResumedLane)
     assert entry.body_digest is None
+
+
+def spec(body: str) -> TrackerSpec:
+    """The subject text a fire read at its entry, as the reader hands it over."""
+    return TrackerSpec(
+        subject=LANE, body=body, criteria=(), read_at_version="read-at-entry"
+    )
+
+
+def test_a_digest_less_record_is_entered_without_a_comparison() -> None:
+    """A record written before the pin existed is not compared against anything.
+
+    Every lane record written before the digest field existed carries none, so
+    this is the reading a resumed lane meets first; comparing it would refuse
+    every such lane for good, with no text to blame for the difference.
+    """
+    entry = decide(
+        recorded=recorded(record(digest=None)),
+        remote_loop_head=REMOTE_HEAD,
+        open_criteria=("KOD-684/check",),
+    )
+
+    require_unamended_subject(issue_key=LANE, entry=entry, spec=spec("any text at all"))
+
+    # Not vacuous: the same reading with a digest on the record refuses, so the
+    # absent digest is what the comparison was skipped for.
+    compared = decide(
+        recorded=recorded(record()),
+        remote_loop_head=REMOTE_HEAD,
+        open_criteria=("KOD-684/check",),
+    )
+    with pytest.raises(
+        SubjectAmendedError, match="differs from the recorded"
+    ) as caught:
+        require_unamended_subject(
+            issue_key=LANE, entry=compared, spec=spec("any text at all")
+        )
+    assert caught.value.recorded_digest == DIGEST
+    assert caught.value.current_digest == body_digest("any text at all")
 
 
 def test_a_resumed_lane_carries_the_remote_head_not_the_recorded_one() -> None:

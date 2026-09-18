@@ -1537,6 +1537,63 @@ async def test_the_digest_is_pinned_at_the_first_record_write(monkeypatch):
     assert reads == ["A"]
 
 
+def unpin_digest(port, key: str) -> None:
+    """Rewrite one lane's record the way a record written before the pin reads.
+
+    The field is dropped from the stored JSON rather than set to null: every
+    record a board carried before the pin existed has no such field at all, and
+    that is the record a resumed lane meets first.
+    """
+    prefix = native_operation().marker_prefixes["run_state"]
+    for index, comment in enumerate(port.comments):
+        if comment.body.startswith(f"[{prefix}:{key}]"):
+            port.comments[index] = comment.model_copy(
+                update={
+                    "body": "\n".join(
+                        line
+                        for line in comment.body.splitlines()
+                        if '"bodyDigest"' not in line
+                    )
+                }
+            )
+
+
+async def test_a_record_with_no_digest_is_entered_and_pinned_by_its_next_write(
+    monkeypatch,
+):
+    """A lane whose record predates the pin re-enters and leaves one behind.
+
+    Every record written before the digest existed carries none, so this is the
+    path production takes first: the entry has nothing to compare, the lane
+    resumes on its recorded branch without minting, reads its subject once, and
+    the commit that follows pins the digest of the text it read.
+    """
+    repos = WalkRepos()
+    port = board(lanes=("A",), checks=TWO_CHECKS)
+    _, before = await first_fire(port, repos)
+    assert before.body_digest is not None
+    unpin_digest(port, "A")
+    assert (await lane_record(port, "A")).body_digest is None
+
+    minted = mint_spy(monkeypatch)
+    second = resumable(port=port, repos=repos, evaluations=echoes(passed=set(A_KEYS)))
+    reads = subject_reads(port, monkeypatch)
+    events = [event async for event in drive(second, job="second-job")]
+
+    # Not refused, and not re-entered by minting a second branch beside the
+    # record: the lane ran, on the branch the record names.
+    assert lane_failures(events) == ()
+    assert minted == []
+    assert reads == ["A"]
+    assert len(second.executor.execution_prompts) == 1
+    assert "Exact native subject A" in second.executor.execution_prompts[0]
+    after = await lane_record(port, "A")
+    assert (
+        after.body_digest
+        == hashlib.sha256(port.issues["A"].body.encode("utf-8")).hexdigest()
+    )
+
+
 async def test_a_subject_amended_between_runs_is_refused_by_digest_not_re_read(
     monkeypatch,
 ):

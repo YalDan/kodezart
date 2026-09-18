@@ -207,6 +207,18 @@ def test_optional_reference_absence_is_none_not_an_empty_string():
         LaneRunState.model_validate(data)
 
 
+@pytest.mark.parametrize("digest", ["a" * 40, "A" * 64, "g" * 64])
+def test_a_digest_of_another_shape_refuses_at_the_read(digest):
+    """The recorded digest carries the shape of the algorithm that made it.
+
+    A value of some other length, case or alphabet is not a digest of this
+    lane's subject and would compare unequal at every later entry, refusing
+    the lane for good; it refuses here, where the record is read.
+    """
+    with pytest.raises(ValidationError, match="bodyDigest"):
+        LaneRunState.model_validate({**record_data(), "bodyDigest": digest})
+
+
 def test_nonloop_current_branch_and_second_deliverable_in_one_run_refuse():
     data = record_data()
     with pytest.raises(ValidationError, match="LOOP"):
