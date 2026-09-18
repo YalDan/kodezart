@@ -1366,19 +1366,23 @@ async def test_delivery_proceeds_when_every_held_criterion_is_done():
 async def test_a_native_remediation_round_keeps_its_roster():
     """A remediation round entered after the work finished still revalidates.
 
-    The round re-enters the pre-loop step, which reads the board afresh. It
-    carries the roster the run holds, so a subtree whose criteria are all
-    finished revalidates against them instead of refusing for having no Todo
-    criterion left.
+    The loop accepts and crosses every criterion off, the post-merge review
+    rejects, and the round opens on a subtree with nothing left in Todo. Both
+    boards the round reads — the remediation draft's own read and the
+    pre-loop step it re-enters at — carry the roster the run holds, so they
+    revalidate against it instead of refusing for having no Todo criterion
+    left, and the drafted round is told the Checks it is still owed.
     """
     port = CountingTracker()
     executor = NativeExecutor(
         [
+            # The loop's own iteration, the review that rejects what it
+            # produced, then the round's iteration and the review after it.
+            native_evaluation(),
             native_evaluation(failed=True),
             native_evaluation(),
             native_evaluation(),
-        ],
-        on_remediation=lambda: [finished(port, key) for key in OWED_KEYS],
+        ]
     )
     fire = engine(
         criteria=TrackerCriteria(tracker=port),
@@ -1391,9 +1395,17 @@ async def test_a_native_remediation_round_keeps_its_roster():
 
     iterations = [e for e in events if isinstance(e, WorkflowIterationEvent)]
     assert len(iterations) == 2
-    assert iterations[0].verdict is AcceptVerdict.rejected
-    assert iterations[1].verdict is AcceptVerdict.accepted
+    assert [event.verdict for event in iterations] == [
+        AcceptVerdict.accepted,
+        AcceptVerdict.accepted,
+    ]
+    reviews = [event for event in events if isinstance(event, WorkflowReviewEvent)]
+    assert [review.passed for review in reviews] == [False, True]
     assert len(executor.remediation_prompts) == 1
+    # The round's own prompt carries every Check the roster still holds it to,
+    # read off a board on which every one of them is already finished.
+    for key in OWED_KEYS:
+        assert check_of(key) in executor.remediation_prompts[0]
     assert {
         result.criterion_id for result in iterations[1].evaluation.criteria_results
     } == set(OWED_KEYS)

@@ -7,6 +7,7 @@ from langchain_core.runnables import RunnableConfig
 from kodezart.core.errors import TrackerAccessDeniedError, TrackerUnavailableError
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import FireCriteriaReader, FireCriteriaSource, TrackerPort
+from kodezart.domain.criterion_cross_off import HELD_CRITERION_STATE
 from kodezart.domain.errors import (
     FireSpecEntryError,
     InvalidFireCriterionError,
@@ -32,13 +33,6 @@ from kodezart.types.domain.workflow import WorkflowState
 #: worked somewhere else, and re-validating it here would put this fire on
 #: the hook for an obligation the board does not hold it to.
 OWED_CRITERION_STATE = WorkflowStateKind.UNSTARTED
-
-#: The state a criterion this fire itself finished sits in at head.
-#:
-#: The fire's own evaluation step is what moved it, so it is still inside
-#: the obligation the fire took on: dropping it would make finishing work
-#: indistinguishable from the board cancelling it.
-HELD_CRITERION_STATE = WorkflowStateKind.COMPLETED
 
 
 def held_roster(criteria: Sequence[ExecutionCriterion]) -> TrackerCriterionSet | None:
@@ -66,8 +60,8 @@ class TrackerCriteria:
     sub-issues.  A deliverable child's criterion sits inside the exit
     condition and outside the subject's direct family, so a barrier
     reading only the direct family would be narrower than the obligation
-    it defends — the shape the 2026-09-09 subtree ruling closed on the
-    plan-time refusal, closed here on the fire's own entry.
+    it defends — the shape the subtree rule closed on the plan-time
+    refusal, closed here on the fire's own entry.
 
     Plus, at every barrier after the first, the criteria the fire ITSELF
     finished: the roster it entered with, named by the caller as *held*.

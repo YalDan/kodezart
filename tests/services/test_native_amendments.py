@@ -17,11 +17,20 @@ from kodezart.services.agent_service import AgentService
 from kodezart.services.native_amendments import NativeAmendments
 from kodezart.types.domain.agent import NativeAmendmentEvent, ResultEvent, Ruling
 from kodezart.types.domain.amendment import AmendmentGround, UpheldReason
+from kodezart.types.domain.criteria import TrackerCriterion, TrackerCriterionSet
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.operation import OperationConfig, RepoEntry
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.session import PermissionMode, SessionType, ToolPreset
-from tests.chains.test_native_fire import DIRECT_OWED, SUBJECT, tracker
+from kodezart.types.domain.tracker import WorkflowStateKind
+from tests.chains.test_native_fire import (
+    DIRECT_OWED,
+    DIRECT_OWED_TOO,
+    SUBJECT,
+    check_of,
+    finished,
+    tracker,
+)
 from tests.chains.test_organize import result
 from tests.domain.test_rulings import ruling_data
 from tests.fakes import SUPPRESS_ALL_SKILLS, FakeRepoCache, PassThroughGate
@@ -30,6 +39,8 @@ from tests.prompts.test_prompt_wiring import load_registry
 
 REPO_URL = "https://example.invalid/owner/repo"
 QUOTE = "def answer(): return 42"
+#: The Check an upheld amendment replaces the claimed criterion's text with.
+AMENDED_CHECK = "the amended observable Check"
 
 
 async def git(cwd, *args):
@@ -118,7 +129,7 @@ class Executor:
                 "replacement": {
                     "kind": "criterion",
                     "subject": self.subject,
-                    "check": "the amended observable Check",
+                    "check": AMENDED_CHECK,
                     "do": "the amended implementation guidance",
                 },
                 "explanation": (
@@ -354,7 +365,7 @@ async def test_reproduced_ground_is_applied_and_verified_before_persistence(repo
         import json
 
         assert json.loads(amended.prior.content)[0]["body"] == prior
-        assert "the amended observable Check" in port.issues[DIRECT_OWED].body
+        assert AMENDED_CHECK in port.issues[DIRECT_OWED].body
         assert any(isinstance(e, ResultEvent) and e.commit_sha for e in events)
         assert await git(repository[0], "ls-remote", "origin", "refs/heads/native-test")
         assert [c["output_format"]["schema"]["title"] for c in executor.calls] == [
@@ -604,5 +615,54 @@ async def test_actual_commit_receipt_requires_current_authority_before_publicati
             "NativeWriterOutput",
             "CommitMessageOutput",
         ]
+    finally:
+        await cleanup(workspace)
+
+
+async def test_an_observed_amendment_keeps_the_roster_criterion_the_fire_finished(
+    repository,
+):
+    """The mid-run roster refresh reads the board against the entry roster.
+
+    An amendment observed after the fire's own evaluation finished a roster
+    criterion refreshes the authority's criterion set, and that refresh has
+    to carry the roster: read without it, the finished criterion is gone
+    from the set, the comparison that follows compares two equally narrowed
+    readings and passes, and the retained authority states a smaller
+    obligation than the one the fire is judged against.
+    """
+    port = tracker()
+    source = TrackerCriteria(tracker=port)
+    spec = await source.read_spec(issue_key=SUBJECT)
+    entry = await source.read_current(spec=spec)
+    finished(port, DIRECT_OWED_TOO)
+    executor = Executor(reproduced=True)
+    service, guard, workspace, _ = await build(
+        repository, executor, port=port, frozen_spec=spec, held=entry
+    )
+    try:
+        await drive(service, guard, repository)
+
+        retained = guard.snapshot().criteria
+        assert retained == TrackerCriterionSet(
+            criteria=[
+                TrackerCriterion(
+                    id=criterion.id,
+                    # The amended criterion is the one the writer changed;
+                    # every other Check is the text the fire entered with.
+                    text=AMENDED_CHECK
+                    if criterion.id == DIRECT_OWED
+                    else criterion.text,
+                )
+                for criterion in entry.criteria
+            ]
+        )
+        assert {criterion.id for criterion in retained.criteria} == {
+            criterion.id for criterion in entry.criteria
+        }
+        assert next(
+            c for c in retained.criteria if c.id == DIRECT_OWED_TOO
+        ).text == check_of(DIRECT_OWED_TOO)
+        assert port.issues[DIRECT_OWED_TOO].state_kind is WorkflowStateKind.COMPLETED
     finally:
         await cleanup(workspace)

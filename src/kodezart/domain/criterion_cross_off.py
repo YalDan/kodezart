@@ -19,6 +19,12 @@ from kodezart.types.domain.criterion_lifecycle import CriterionCrossOff, CrossOf
 from kodezart.types.domain.tracker import TrackerIssue, WorkflowStateKind
 
 #: The state a criterion a fire finished sits in until something takes it back.
+#:
+#: The fire's own evaluation step is what moved it, so such a criterion is
+#: still inside the obligation the fire took on: reading it as gone would
+#: make finishing work indistinguishable from the board cancelling it. The
+#: barrier that keeps it in the fire's current set and the writer that takes
+#: it back are two readings of this one state, so it is stated once.
 HELD_CRITERION_STATE = WorkflowStateKind.COMPLETED
 
 #: The states a criterion sub-issue can be ticked from.
