@@ -238,15 +238,23 @@ def recorded_payload(body: str) -> dict:
 
 async def test_a_lane_killed_during_an_evaluation_is_located_from_the_tracker_alone():
     lane = Lane(
-        evaluations=[native_evaluation(failed=True), native_evaluation()],
+        evaluations=[
+            native_evaluation(failed=True),
+            native_evaluation(failed=True),
+            native_evaluation(),
+        ],
         max_iterations=3,
-        publishes=lambda commits: commits < 2,
+        # Only the second commit reaches the remote, so at the kill the pushed
+        # head is neither the current head nor what the first record recorded:
+        # a record carrying its own earlier value forward would read the same
+        # as one that observed the remote, and neither would be shown.
+        publishes=lambda commits: commits == 2,
     )
     port = lane.port
     at_die: list[list[tuple[str, str]]] = []
 
     def die(evaluation: int) -> None:
-        if evaluation == 2:
+        if evaluation == 3:
             at_die.append(board_bodies(port))
             raise ConnectionResetError("the lane was killed mid-loop")
 
@@ -277,7 +285,7 @@ async def test_a_lane_killed_during_an_evaluation_is_located_from_the_tracker_al
     assert record.pushed_head_sha == at_kill[1]
     assert record.pushed_head_sha != record.head_sha
     assert [row.sha for row in record.commits] == list(at_kill[2])
-    assert len(record.commits) == 2
+    assert len(record.commits) == 3
     assert record.pr is None
     assert recorded_payload(comment.body)["pr"] is None
     assert [row.sha for row in record.commits] == streamed
@@ -328,18 +336,28 @@ async def test_a_killed_lane_keeps_the_pull_request_its_record_already_carried()
         port=port,
     )
 
+    at_die: list[list[tuple[str, str]]] = []
+
     def die(evaluation: int) -> None:
         if evaluation == 2:
+            at_die.append(board_bodies(port))
             raise ConnectionResetError("the lane was killed mid-loop")
 
     lane.executor.on_evaluation = die
     with pytest.raises(ConnectionResetError):
         await lane.run()
+    at_kill = (lane.repo.head, tuple(lane.repo.shas))
     del lane
 
+    assert board_bodies(port) == at_die[0]
     comment, record = await LaneRecordReader(
         tracker=port, operation=native_operation()
     ).read(issue_key=SUBJECT, lane_key=SUBJECT)
+    # The lane rewrote the record twice over the seeded one, so what stands is
+    # its own work: the pull request survived those writes rather than their
+    # absence.
+    assert record.head_sha == at_kill[0]
+    assert [row.sha for row in record.commits] == ["0" * 40, *at_kill[1]]
     assert record.pr == carried.pr
     assert recorded_payload(comment.body)["pr"] == {
         "url": f"{REPO_URL}/pull/17",
@@ -353,10 +371,13 @@ async def test_a_lane_killed_between_its_push_and_its_record_write_reads_one_beh
     prefix = native_operation().marker_prefixes["run_state"]
     upsert, written = port.upsert_comment, []
 
+    at_die: list[list[tuple[str, str]]] = []
+
     async def kill_the_second_record_write(*, marker: str, **rest):
         if marker.startswith(f"[{prefix}:"):
             written.append(marker)
             if len(written) == 2:
+                at_die.append(board_bodies(port))
                 raise ConnectionResetError("the lane was killed after its push")
         return await upsert(marker=marker, **rest)
 
@@ -372,6 +393,7 @@ async def test_a_lane_killed_between_its_push_and_its_record_write_reads_one_beh
     at_kill = (lane.repo.head, lane.repo.pushed, tuple(lane.repo.shas))
     del lane
 
+    assert board_bodies(port) == at_die[0]
     _, record = await LaneRecordReader(tracker=port, operation=native_operation()).read(
         issue_key=SUBJECT, lane_key=SUBJECT
     )
