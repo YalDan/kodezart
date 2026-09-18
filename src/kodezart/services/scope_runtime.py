@@ -14,7 +14,11 @@ from kodezart.chains.scope_walker import read_scope_ready
 from kodezart.core.error_egress import build_error_event
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import DeliveryProbe, RepoCache, TrackerPort
-from kodezart.domain.errors import ScopedExecutionUnavailableError, ScopeReadError
+from kodezart.domain.errors import (
+    BaseResolutionError,
+    ScopedExecutionUnavailableError,
+    ScopeReadError,
+)
 from kodezart.domain.git_url import resolve_repo_url
 from kodezart.services.base_resolver import BaseResolver
 from kodezart.services.lane_entry import LaneEntryReader
@@ -104,6 +108,38 @@ class ScopeWorkflowEngine:
             rested.append(key)
             await self._log.aexception("scope_lane_failed", lane=key)
             failed.append(LaneFailure(issue_key=key, error=build_error_event(exc)))
+
+    async def _gate_unrecorded_blockers(
+        self, key: str, *, url: str, probe: DeliveryProbe
+    ) -> None:
+        """Refuse *key* while a blocker's work may sit in an unmerged delivery.
+
+        Base resolution assumes that a closed blocker recording no branch
+        finished outside this operation's own delivery loop, so its work is on
+        the trunk and contributes no input. There is exactly one observable
+        case where that is wrong: the blocker's delivery is open and not
+        merged, and its work is on a branch. The reading that settles it is
+        the forge's, and the resolver holds no collaborator that could make it
+        (KOD-721, KOD-777) — so the walker makes it, here, once per blocker
+        the resolver names and per turn, before the base is resolved at all.
+
+        An open delivery refuses this lane, by the resolution error the base
+        would otherwise have been wrong about. No open delivery states the
+        assumption in the log by name rather than silently, and resolution
+        then takes that arm unchanged. A forge that cannot answer raises its
+        own typed error, which is neither answer; every one of the three is a
+        fact about this lane and is contained by the boundary around it.
+        """
+        for blocker in await self._resolver.unrecorded_closed_blockers(issue_key=key):
+            if await probe.open_delivery_exists(repo_url=url, issue_key=blocker):
+                raise BaseResolutionError(
+                    "an unrecorded open delivery exists for the blocker",
+                    issue_id=key,
+                    blocker_issue_ids=(blocker,),
+                )
+            await self._log.ainfo(
+                "base_input_no_open_delivery", lane=key, blocker=blocker
+            )
 
     async def _readmitted(
         self, *, scope: ScopeRef, selected: ScopeReadyLane
@@ -222,6 +258,7 @@ class ScopeWorkflowEngine:
             resolved: tuple[str, BaseSpec] | None = None
             async with self._lane_boundary(key, failed=failed, rested=rested):
                 path = repo_path or await self._cache.ensure_available(url, lane_key)
+                await self._gate_unrecorded_blockers(key, url=url, probe=probe)
                 resolved = (
                     path,
                     await self._resolver.resolve(

@@ -6,6 +6,7 @@ import json
 from dataclasses import dataclass
 
 import pytest
+import structlog.testing
 from langgraph.checkpoint.memory import InMemorySaver
 
 from kodezart.chains.criteria import TrackerCriteria
@@ -19,6 +20,7 @@ from kodezart.domain.agent import mint_lane_branches
 from kodezart.domain.criterion_evidence import parse_criterion_evidence
 from kodezart.domain.errors import (
     BaseResolutionError,
+    ForgeAPIError,
     GitSourceReadError,
     ScopePlanRefusalError,
 )
@@ -72,6 +74,7 @@ from tests.fakes import (
     FakeArtifactPersister,
     FakeBranchMerger,
     FakeChangePersister,
+    FakeDeliveryProbe,
     FakeGitService,
     FakeRefPublisher,
     FakeRepoCache,
@@ -699,6 +702,118 @@ async def test_current_closed_blocker_unlocks_next_lane_using_its_recorded_branc
     # And no work ref was ever recorded on either lane: the record is the
     # whole carrier of a blocker's branch on this path.
     assert await port.work_refs(issue_key="A") == ()
+
+
+def finish_by_hand(port, key: str) -> None:
+    """Lane *key* as a board holds it when somebody finished it elsewhere.
+
+    Its criterion is Done and its own issue is closed, and nothing anywhere
+    records a branch for it: the lane never ran here, so base resolution can
+    only assume its work reached the trunk.
+    """
+    for issue_key in (key, f"{key}/check"):
+        port.issues[issue_key] = port.issues[issue_key].model_copy(
+            update={"state_name": "Done", "state_kind": WorkflowStateKind.COMPLETED}
+        )
+
+
+class UnreadableDelivery(FakeDeliveryProbe):
+    """A forge that cannot answer the delivery question about one issue.
+
+    It answers every other issue as usual, because the question about the
+    candidate itself is asked outside the lane's boundary: a double refusing
+    both would end the walk instead of reporting the lane.
+    """
+
+    def __init__(self, *, refuses: str) -> None:
+        super().__init__()
+        self.refuses = refuses
+
+    async def open_delivery_exists(self, *, repo_url: str, issue_key: str) -> bool:
+        if issue_key == self.refuses:
+            self.calls.append(issue_key)
+            raise ForgeAPIError(
+                "the delivery listing failed",
+                status_code=500,
+                detail=f"GET /pulls for {issue_key}",
+            )
+        return await super().open_delivery_exists(
+            repo_url=repo_url, issue_key=issue_key
+        )
+
+
+@pytest.mark.parametrize("answer", ["false", "true", "unreadable"])
+async def test_a_closed_blocker_with_no_record_is_gated_by_one_open_delivery_read(
+    answer,
+):
+    """A closed blocker recording nothing is assumed landed — after one read.
+
+    The assumption base resolution makes for such a blocker is wrong in one
+    observable case: the blocker's work is sitting in a delivery nobody merged
+    (KOD-721, KOD-777). The walker asks the forge once, before it resolves, and
+    all three answers are the lane's: no open delivery states the assumption in
+    the log and the lane stands on the trunk; an open one refuses the lane; a
+    forge that cannot answer refuses it with the forge's own error.
+    """
+    port = board(lanes=("A", "B"), blocked={"B": ("A",)})
+    finish_by_hand(port, "A")
+    harness = runtime(
+        port=port,
+        lanes=("A", "B"),
+        evaluations=[
+            native_evaluation(checks={"B/check": "B live Check  bytes"})
+            for _ in range(2)
+        ],
+    )
+    probe = (
+        UnreadableDelivery(refuses="A")
+        if answer == "unreadable"
+        else FakeDeliveryProbe(delivered=("A",) if answer == "true" else ())
+    )
+    harness.engine._scoped_arm._probe_for = lambda _: probe
+
+    with structlog.testing.capture_logs() as logs:
+        events = [event async for event in drive(harness)]
+
+    # The blocker was asked about exactly once, whatever the answer was: the
+    # read is made per blocker per turn and the lane is not offered again.
+    assert probe.calls.count("A") == 1
+    fired = [
+        event.lane_key
+        for event in events
+        if isinstance(event, ScopeLaneEvent)
+        and isinstance(event.event, WorkflowIterationEvent)
+    ]
+    assumed = [
+        event
+        for event in logs
+        if event.get("event") == "base_input_no_open_delivery"
+        and event.get("blocker") == "A"
+    ]
+    if answer == "false":
+        assert [failure.error.error_kind for failure in lane_failures(events)] == []
+        assert fired == ["B"]
+        bases = {
+            event.lane_key: event.event.base_branch
+            for event in events
+            if isinstance(event, ScopeLaneEvent)
+            and isinstance(event.event, WorkflowScopeBaseEvent)
+        }
+        assert bases["B"] == "trunk"
+        # Stated by name, once, and never silently.
+        assert [event["lane"] for event in assumed] == ["B"]
+        return
+    assert fired == []
+    assert assumed == []
+    failures = lane_failures(events)
+    assert [failure.issue_key for failure in failures] == ["B"]
+    assert [failure.error.error_kind for failure in failures] == [
+        {"true": "BaseResolutionError", "unreadable": "ForgeAPIError"}[answer]
+    ]
+    assert {
+        "true": "an unrecorded open delivery exists for the blocker",
+        "unreadable": "the delivery listing failed",
+    }[answer] in failures[0].error.error
 
 
 async def test_actual_http_sse_preserves_nested_progress_and_delivery_discriminators():

@@ -107,6 +107,37 @@ class BaseResolver:
             )
         return plan.spec
 
+    async def unrecorded_closed_blockers(self, *, issue_key: str) -> tuple[str, ...]:
+        """The blockers whose work this resolution would assume is on the trunk.
+
+        Exactly the set ``_input_for`` takes its assumed-landed arm for, from
+        the same two reads that arm makes: a blocker carrying no deliverable
+        ref anywhere on its ancestor chain, whose own issue is no longer open.
+        In the order the issue names its blockers, each named once.
+
+        Stated for a caller that has a question this module must not ask.  The
+        assumption is wrong in one observable case — the blocker's work is
+        sitting in a delivery nobody merged yet — and the reading that settles
+        it belongs to the forge, which nothing here holds a collaborator for
+        (KOD-721, KOD-777).  Naming the blockers the assumption is about is
+        all this module can honestly do; the caller asks its own question of
+        them and refuses the lane on what it learns.
+        """
+        seen: set[str] = set()
+        assumed: list[str] = []
+        for blocker_key in await self._blocker_keys(issue_key):
+            if blocker_key in seen:
+                continue
+            seen.add(blocker_key)
+            ref = await self._nearest_deliverable_ref(blocker_key, issue_key=issue_key)
+            if ref is not None:
+                continue
+            blocker = await self._tracker.read_issue(issue_key=blocker_key)
+            if is_open(blocker.state_kind):
+                continue
+            assumed.append(blocker_key)
+        return tuple(assumed)
+
     async def _blocker_keys(self, issue_key: str) -> tuple[str, ...]:
         issue = await self._tracker.read_issue(issue_key=issue_key)
         return tuple(

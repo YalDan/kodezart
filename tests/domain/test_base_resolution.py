@@ -30,6 +30,7 @@ from kodezart.services.agent_service import AgentService
 from kodezart.services.base_resolver import BaseResolver
 from kodezart.services.tracker_lifecycle import TrackerLifecycleWriter
 from kodezart.types.domain.branch import BaseInput, WorkRef, WorkRefRole
+from kodezart.types.domain.tracker import TrackerIssue, WorkflowStateKind
 from kodezart.types.requests.agent import WorkflowRequest
 from tests.fakes import (
     FIXTURE_EPOCH,
@@ -204,6 +205,84 @@ async def test_the_port_is_the_ref_reader_when_no_other_is_named() -> None:
 
     with pytest.raises(PortRefReadError, match="B-1"):
         await resolve(tracker, FakeGitService())
+
+
+# ---------------------------------------------------------------------------
+# The blockers the assumed-landed arm is about (KOD-721)
+# ---------------------------------------------------------------------------
+
+
+def done(issue_key: str, *, parent_key: str | None = None) -> TrackerIssue:
+    """A blocker its board has closed."""
+    return make_tracker_issue(
+        issue_key,
+        state_name="Done",
+        state_kind=WorkflowStateKind.COMPLETED,
+        parent_key=parent_key,
+    )
+
+
+async def test_only_closed_ref_less_blockers_are_named_as_assumed_landed() -> None:
+    """One board, every reason a blocker is not one, and the order they came in.
+
+    Four blockers are excluded, each for a different reason — still open, a
+    ref of its own, a ref on its parent, and being named twice — so a set
+    built from one of the two facts alone, or from all the blockers, or
+    sorted, fails here rather than at a lane that should not have fired.
+    """
+    tracker = FakeTrackerPort(
+        issues=[
+            make_tracker_issue(
+                LANE, blocked_by=["B-OPEN", "B-2", "B-REF", "B-1", "B-2", "B-CHILD"]
+            ),
+            make_tracker_issue("B-OPEN"),
+            done("B-2"),
+            done("B-REF"),
+            done("B-1"),
+            done("B-CHILD", parent_key="B-PARENT"),
+            make_tracker_issue("B-PARENT"),
+        ],
+        recorded_work_refs={
+            "B-REF": [ref("B-REF", "feature-bref")],
+            "B-PARENT": [ref("B-PARENT", "feature-parent")],
+        },
+    )
+
+    named = await resolver(tracker, FakeGitService()).unrecorded_closed_blockers(
+        issue_key=LANE
+    )
+
+    assert named == ("B-2", "B-1")
+
+
+async def test_a_lane_whose_blockers_all_recorded_a_branch_names_none() -> None:
+    """Nothing is assumed where every premise is written down."""
+    tracker = FakeTrackerPort(
+        issues=[
+            make_tracker_issue(LANE, blocked_by=["B-1"]),
+            done("B-1"),
+        ],
+        recorded_work_refs={"B-1": [ref("B-1", "feature-b1")]},
+    )
+
+    assert (
+        await resolver(tracker, FakeGitService()).unrecorded_closed_blockers(
+            issue_key=LANE
+        )
+        == ()
+    )
+
+
+async def test_a_lane_with_no_blockers_names_none() -> None:
+    """A lane on the trunk assumes nothing about anybody."""
+    tracker = FakeTrackerPort(issues=[make_tracker_issue(LANE)])
+
+    assert (
+        await resolver(tracker, FakeGitService()).unrecorded_closed_blockers(
+            issue_key=LANE
+        )
+        == ()
+    )
 
 
 # ---------------------------------------------------------------------------
