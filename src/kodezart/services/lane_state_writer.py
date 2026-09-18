@@ -319,12 +319,20 @@ class TrackerLaneStateWriter:
         holds now. The body edit goes first under its own compare-and-set
         precondition and the transition only after: the port's own order,
         so a transition can never ride on a body write that never landed.
+
+        Each of the two writes reads its own sub-issue: the transition has
+        no compare-and-set of its own, so it is the second read that stands
+        in for one. A sub-issue the board moved between the stamp and the
+        transition keeps the Evidence row of the grading that reached it and
+        is not finished.
         """
         issue = await self._tracker.read_issue(issue_key=criterion.id)
         require_tickable(issue=issue, criterion=criterion)
         await self._stamp(
             lane=lane, criterion=criterion, issue=issue, cross_off=cross_off
         )
+        stamped = await self._tracker.read_issue(issue_key=criterion.id)
+        require_tickable(issue=stamped, criterion=criterion)
         await settle(
             self._tracker.set_workflow_state(
                 issue_key=criterion.id, stage=LifecycleStage.DONE

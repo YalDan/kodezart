@@ -935,6 +935,85 @@ async def test_a_sub_issue_that_moves_mid_attempt_is_read_again_before_its_write
     assert port.workflow_writes == [(CRITERIA[0], LifecycleStage.DONE)]
 
 
+class EditingBoard(FakeTrackerPort):
+    """A board that changes the addressed sub-issue inside its own body edit.
+
+    The change lands after the fresh read the write was decided on and
+    before the edit it was decided for, which is the window the two halves
+    of a tick sit in: whatever a writer remembered from before this moment
+    is no longer what the sub-issue holds.
+    """
+
+    def __init__(self, *, target: str, change: dict[str, object]) -> None:
+        source = criteria_board()
+        super().__init__(
+            issues=list(source.issues.values()),
+            marker_prefixes=lane_operation().marker_prefixes,
+        )
+        self._target, self._change = target, change
+
+    async def edit_description(self, *, target, expected, replacement, **rest):
+        if target == self._target:
+            self.issues[target] = self.issues[target].model_copy(update=self._change)
+        return await super().edit_description(
+            target=target, expected=expected, replacement=replacement, **rest
+        )
+
+
+async def test_a_body_that_changed_under_the_stamp_leaves_the_criterion_unfinished():
+    """The transition never rides on a body write that did not land.
+
+    The board rewrites the sub-issue's body between the read the stamp was
+    decided on and the edit itself, so the compare-and-set refuses. The
+    criterion is left exactly as it was: no Evidence row of this grading and
+    no move into the finished state, rather than finished with the row of
+    the grading that never reached it.
+    """
+    port = EditingBoard(
+        target=CRITERIA[0],
+        change={"body": f"{criterion_body(CRITERIA[0])}\nedited while it was read"},
+    )
+    lane_state = writer(port, lane_repo())
+
+    with pytest.raises(StaleWriteError) as caught:
+        await tick(lane_state, sha="c" * 40)
+
+    assert caught.value.target == CRITERIA[0]
+    assert port.issues[CRITERIA[0]].state_kind is WorkflowStateKind.UNSTARTED
+    assert port.workflow_writes == []
+    assert [key for key, _, _ in port.issue_writes] == []
+
+
+async def test_a_state_that_moved_under_the_stamp_is_not_moved_to_done():
+    """The transition reads its own sub-issue, because it carries no precondition.
+
+    The board moves the sub-issue out of the states a tick addresses while
+    the stamp is landing. The stamp is that grading's own record and stays,
+    but the criterion is not finished on top of a board that took it
+    somewhere this verdict does not address.
+    """
+    port = EditingBoard(
+        target=CRITERIA[0],
+        change={
+            "state_kind": WorkflowStateKind.STARTED,
+            "state_name": "In Progress",
+        },
+    )
+    lane_state = writer(port, lane_repo())
+
+    with pytest.raises(StaleWriteError) as caught:
+        await tick(lane_state, sha="d" * 40)
+
+    assert caught.value.target == CRITERIA[0]
+    assert port.issues[CRITERIA[0]].state_kind is WorkflowStateKind.STARTED
+    assert parse_criterion_evidence(port.issues[CRITERIA[0]].body) == CriterionEvidence(
+        graded_sha="d" * 40,
+        test=evaluation_observation(session_id="eval-session", iteration=1),
+    )
+    assert port.workflow_writes == []
+    assert [key for key, _, _ in port.issue_writes] == [CRITERIA[0]]
+
+
 @pytest.mark.parametrize(
     "second",
     [
