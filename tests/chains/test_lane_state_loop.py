@@ -56,7 +56,7 @@ class Lane:
     ):
         self.work_base_ref = work_base_ref
         self.repo_url = repo_url
-        self.repo = LaneRepo()
+        self.repo = LaneRepo(branch=BRANCH)
         self.port = tracker() if port is None else port
         self.criteria = TrackerCriteria(tracker=self.port)
         self.executor = NativeExecutor(evaluations)

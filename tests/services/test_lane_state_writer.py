@@ -47,6 +47,11 @@ def binding() -> LaneBinding:
     )
 
 
+def lane_repo() -> LaneRepo:
+    """This lane's repository, on the branch and remote its record reads."""
+    return LaneRepo(branch=binding().loop_branch, remote=REMOTE)
+
+
 def board() -> FakeTrackerPort:
     operation = lane_operation()
     return FakeTrackerPort(
@@ -98,7 +103,7 @@ def record_comments(port: FakeTrackerPort) -> list:
 
 
 async def test_the_tenth_commit_edits_the_one_record_and_posts_nothing():
-    port, repo = board(), LaneRepo()
+    port, repo = board(), lane_repo()
     lane_state = writer(port, repo)
 
     await make_commit(lane_state, repo, 1)
@@ -134,14 +139,14 @@ async def test_the_tenth_commit_edits_the_one_record_and_posts_nothing():
 
 
 async def test_the_record_is_written_as_derived_content_on_a_comment():
-    port, repo, gate = board(), LaneRepo(), PassThroughGate()
+    port, repo, gate = board(), lane_repo(), PassThroughGate()
     await make_commit(writer(port, repo, gate), repo, 1)
     assert gate.content_classes == [ContentClass.DERIVED]
     assert gate.destinations == [OutboundDestination.TRACKER_COMMENT]
 
 
 async def test_a_receipt_naming_another_commit_refuses_before_any_write():
-    port, repo = board(), LaneRepo()
+    port, repo = board(), lane_repo()
     repo.commit()
     repo.publish()
     with pytest.raises(LaneRecordWriteError, match="the receipt names"):
@@ -159,7 +164,7 @@ async def test_a_receipt_naming_another_commit_refuses_before_any_write():
 
 
 async def test_a_damaged_record_is_refused_and_never_overwritten():
-    port, repo = board(), LaneRepo()
+    port, repo = board(), lane_repo()
     lane_state = writer(port, repo)
     await make_commit(lane_state, repo, 1)
     damaged = record_comments(port)[0]
@@ -178,7 +183,7 @@ async def test_a_record_marker_carried_by_a_reply_refuses_and_writes_nothing():
     compose a first record over a lane that already has one, so the reply is
     a refusal at the writer and not only at the reader.
     """
-    port, repo = board(), LaneRepo()
+    port, repo = board(), lane_repo()
     lane_state = writer(port, repo)
     await make_commit(lane_state, repo, 1)
     stored = record_comments(port)[0]
@@ -244,7 +249,7 @@ async def test_a_record_altered_after_the_read_refuses_and_is_left_as_it_stands(
             issues=[make_tracker_issue(LANE)],
             marker_prefixes=lane_operation().marker_prefixes,
         ),
-        LaneRepo(),
+        lane_repo(),
     )
     lane_state = writer(port, repo)
     await make_commit(lane_state, repo, 1)
@@ -258,7 +263,7 @@ async def test_a_record_altered_after_the_read_refuses_and_is_left_as_it_stands(
 
 
 async def test_a_gate_that_alters_the_recorded_facts_refuses_the_whole_write():
-    port, repo = board(), LaneRepo()
+    port, repo = board(), lane_repo()
     with pytest.raises(LaneRecordWriteError, match="the outbound gate changed"):
         await make_commit(writer(port, repo, AlteringGate()), repo, 1)
     assert port.comments == []
@@ -288,7 +293,7 @@ async def test_an_event_lost_after_the_record_is_posted_by_the_next_commit():
         issues=[make_tracker_issue(LANE)],
         marker_prefixes=lane_operation().marker_prefixes,
     )
-    repo = LaneRepo()
+    repo = lane_repo()
     lane_state = writer(port, repo)
 
     with pytest.raises(TransientAPIError):
@@ -318,7 +323,7 @@ async def test_a_damaged_event_stream_refuses_the_write_instead_of_escaping(dama
     lane's life; as the read error it is, it would reach the caller as a
     fault about nothing it can name, with a pushed commit behind it.
     """
-    port, repo = board(), LaneRepo()
+    port, repo = board(), lane_repo()
     await port.post_run_event(
         issue_key=LANE,
         event=LaneRunEvent(kind=RunEventKind.LANE_DISPATCHED, lane_key=LANE),
@@ -341,7 +346,7 @@ async def test_an_event_of_another_kind_does_not_stand_in_for_the_first_push():
     pushes: read as "any event at all", those would answer for the one
     event this write exists to post, and the lane would never announce it.
     """
-    port, repo = board(), LaneRepo()
+    port, repo = board(), lane_repo()
     await port.post_run_event(
         issue_key=LANE,
         event=LaneRunEvent(kind=RunEventKind.LANE_DISPATCHED, lane_key=LANE),
@@ -357,7 +362,7 @@ async def test_an_event_of_another_kind_does_not_stand_in_for_the_first_push():
 
 
 async def test_the_posted_event_carries_the_marker_and_the_codec_fields_alone():
-    port, repo = board(), LaneRepo()
+    port, repo = board(), lane_repo()
     await make_commit(writer(port, repo), repo, 1)
 
     prefix = lane_operation().marker_prefixes["run_event"]
@@ -377,7 +382,7 @@ async def test_the_posted_event_carries_the_marker_and_the_codec_fields_alone():
 
 
 async def test_an_operation_with_no_event_purpose_refuses_before_any_read():
-    port, repo = board(), LaneRepo()
+    port, repo = board(), lane_repo()
     git = LaneGit(repo)
     lane_state = TrackerLaneStateWriter(
         tracker=port,
@@ -401,7 +406,7 @@ async def test_an_operation_with_no_event_purpose_refuses_before_any_read():
 
 
 async def test_a_lane_naming_no_repository_refuses_before_any_read():
-    port, repo = board(), LaneRepo()
+    port, repo = board(), lane_repo()
     git = LaneGit(repo)
     lane_state = TrackerLaneStateWriter(
         tracker=port,
@@ -441,7 +446,7 @@ async def stored_record(port: FakeTrackerPort):
 
 
 async def test_pushed_head_is_absent_when_the_remote_read_returns_nothing():
-    port, repo = board(), LaneRepo()
+    port, repo = board(), lane_repo()
     record = await make_commit(writer(port, repo), repo, 1, publish=False)
     stored = await stored_record(port)
     assert repo.pushed is None
@@ -451,15 +456,35 @@ async def test_pushed_head_is_absent_when_the_remote_read_returns_nothing():
 
 
 async def test_pushed_head_equals_head_after_a_push():
-    port, repo = board(), LaneRepo()
+    port, repo = board(), lane_repo()
     record = await make_commit(writer(port, repo), repo, 1)
     stored = await stored_record(port)
     assert stored == record
     assert stored.pushed_head_sha == stored.head_sha == repo.head
 
 
+async def test_pushed_head_returns_to_absent_when_the_remote_branch_is_gone():
+    """The remote is observed at each commit, never carried from the last one.
+
+    A record that kept its first push would still claim a remote copy after
+    the branch was deleted from the remote, and the re-entry section would
+    send a reader to check out a branch that is no longer there.
+    """
+    port, repo = board(), lane_repo()
+    lane_state = writer(port, repo)
+    await make_commit(lane_state, repo, 1)
+    repo.pushed = None
+
+    record = await make_commit(lane_state, repo, 2, publish=False)
+
+    stored = await stored_record(port)
+    assert stored == record
+    assert stored.pushed_head_sha is None
+    assert stored.head_sha == repo.head
+
+
 async def test_pushed_head_behind_head_is_kept_as_its_own_value():
-    port, repo = board(), LaneRepo()
+    port, repo = board(), lane_repo()
     lane_state = writer(port, repo)
     pushed = await make_commit(lane_state, repo, 1)
     record = await make_commit(lane_state, repo, 2, publish=False)

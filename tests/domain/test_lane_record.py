@@ -3,7 +3,15 @@
 import dataclasses
 import json
 from pathlib import Path
-from typing import Literal, get_args, get_type_hints
+from typing import (
+    Literal,
+    NamedTuple,
+    NewType,
+    TypeAliasType,
+    TypedDict,
+    get_args,
+    get_type_hints,
+)
 
 import pytest
 from pydantic import BaseModel, ValidationError, create_model
@@ -571,17 +579,25 @@ def test_a_later_run_adds_its_own_association_pair_beside_the_first():
     assert [row.sha for row in later.commits] == ["a" * 40, "c" * 40]
 
 
-def declared_fields(owner: type) -> dict[str, object]:
-    """Every declared field of a run-state type, model or dataclass alike.
+def declared_fields(owner: type) -> dict[str, tuple[object, ...]]:
+    """Every declared field of a type the record reaches, with its annotations.
 
-    Read through ``get_type_hints`` rather than off the raw annotation, so a
+    Both readings of a model's field are kept. ``get_type_hints`` resolves a
     quoted annotation — and every annotation in a module with postponed
-    evaluation — is the type it names rather than the string that spells it.
+    evaluation — to the type it names; ``model_fields`` carries the annotation
+    pydantic itself resolved, which is the concrete type where a generic model
+    was parametrized and the hint is still its type variable. A field is read
+    under both, so neither reading's blind spot decides what the walk sees.
+    A type that is neither — a TypedDict, a NamedTuple — is read from its
+    hints, which is the only place such a type declares anything.
     """
     hints = get_type_hints(owner, include_extras=True)
-    if issubclass(owner, BaseModel):
-        return {name: hints[name] for name in owner.model_fields}
-    return {field.name: hints[field.name] for field in dataclasses.fields(owner)}
+    if isinstance(owner, type) and issubclass(owner, BaseModel):
+        return {
+            name: (hints.get(name, field.annotation), field.annotation)
+            for name, field in owner.model_fields.items()
+        }
+    return {name: (hint,) for name, hint in hints.items()}
 
 
 def annotation_types(annotation: object) -> set[object]:
@@ -589,24 +605,51 @@ def annotation_types(annotation: object) -> set[object]:
 
     A ``Literal`` carries values where other annotations carry types, so a
     literal ``True`` or ``False`` among its arguments is reported as ``bool``:
-    a flag spelled that way is still a flag.
+    a flag spelled that way is still a flag. An alias and a ``NewType`` are
+    opened to what they stand for, because a name given to a flag is a flag.
     """
     if isinstance(annotation, bool):
         return {bool}
+    if isinstance(annotation, TypeAliasType):
+        return {annotation, *annotation_types(annotation.__value__)}
+    if isinstance(annotation, NewType):
+        return {annotation, *annotation_types(annotation.__supertype__)}
     arguments = get_args(annotation)
     return {annotation}.union(
         *(annotation_types(argument) for argument in arguments), set()
     )
 
 
-def reached_types(roots: list[type]) -> dict[type, dict[str, object]]:
-    """Every model or dataclass the *roots* reach through their own fields.
+def field_types(annotations: tuple[object, ...]) -> set[object]:
+    """Every type the declared annotations of one field are composed of."""
+    return set().union(*(annotation_types(item) for item in annotations), set())
+
+
+def declares_fields(component: object) -> bool:
+    """Whether the walk enters *component*: a class that names its own members.
+
+    Read as "whatever declares types for its members", so a TypedDict or a
+    NamedTuple carried by the record is entered on the same footing as a model
+    or a dataclass: a flag declared inside one of those is still a flag.
+    """
+    if not isinstance(component, type):
+        return False
+    try:
+        return bool(get_type_hints(component))
+    except (NameError, TypeError):
+        return False
+
+
+def reached_types(roots: list[type]) -> dict[type, dict[str, tuple[object, ...]]]:
+    """Every type the *roots* reach through their own declared fields.
 
     The surface is walked out of the annotations themselves: whatever type a
     field names, wherever it is declared, is visited and its own fields are
-    read the same way, so nothing enters this guard as a named file.
+    read the same way, so nothing enters this guard as a named file. A type
+    already walked is not walked again, so a field that names the type it is
+    declared on is one visit rather than a descent with no bottom.
     """
-    reached: dict[type, dict[str, object]] = {}
+    reached: dict[type, dict[str, tuple[object, ...]]] = {}
     pending = list(roots)
     while pending:
         owner = pending.pop()
@@ -615,23 +658,20 @@ def reached_types(roots: list[type]) -> dict[type, dict[str, object]]:
         reached[owner] = declared_fields(owner)
         pending.extend(
             component
-            for annotation in reached[owner].values()
-            for component in annotation_types(annotation)
-            if isinstance(component, type)
-            and (
-                issubclass(component, BaseModel) or dataclasses.is_dataclass(component)
-            )
+            for annotations in reached[owner].values()
+            for component in field_types(annotations)
+            if declares_fields(component)
         )
     return reached
 
 
-def boolean_fields(reached: dict[type, dict[str, object]]) -> list[str]:
+def boolean_fields(reached: dict[type, dict[str, tuple[object, ...]]]) -> list[str]:
     """Every declared field of the walked types whose annotation admits a bool."""
     return sorted(
         f"{owner.__name__}.{name}"
         for owner, fields in reached.items()
-        for name, annotation in fields.items()
-        if bool in annotation_types(annotation)
+        for name, annotations in fields.items()
+        if bool in field_types(annotations)
     )
 
 
@@ -644,21 +684,48 @@ def run_state_types() -> list[type]:
 
 
 def test_no_type_the_lane_record_reaches_declares_a_boolean_field():
+    """No type this record carries states a fact of its own as a flag.
+
+    What the walk covers: the run-state types and everything their own field
+    annotations name, followed wherever it is declared and however it is
+    wrapped — in a union, a container, a ``Literal`` of booleans, behind an
+    alias or a ``NewType`` — into models, dataclasses, TypedDicts and
+    NamedTuples alike, each field read both as pydantic resolved it and as
+    ``get_type_hints`` resolves it, and each type visited once.
+
+    What it does not see, and what review has to read from the code: a field
+    whose type is decided at run time; a value carried as ``object`` or
+    ``Any`` and narrowed by its reader; a flag expressed as two states of a
+    field this walk reads as a string; and anything a model reaches other
+    than through a declared field of its own.
+    """
     reached = reached_types([LaneRunState, *run_state_types()])
-    assert set(run_state_types()) <= set(reached)
+    assert BranchAssociation not in run_state_types()
     assert BranchAssociation in reached, "the walk stops short of the nested facts"
     assert boolean_fields(reached) == []
 
 
+type PushFlag = bool
+Pushed = NewType("Pushed", bool)
+
+
 @pytest.mark.parametrize(
-    "annotation", [bool, bool | None, tuple[bool, ...], Literal[True, False]]
+    "annotation",
+    [
+        bool,
+        bool | None,
+        tuple[bool, ...],
+        Literal[True, False],
+        PushFlag,
+        Pushed,
+    ],
 )
 def test_the_boolean_guard_sees_a_flag_however_it_is_wrapped(annotation):
     flag = create_model("Flag", pushed=(annotation, ...))
     assert [
         name
         for name, declared in declared_fields(flag).items()
-        if bool in annotation_types(declared)
+        if bool in field_types(declared)
     ] == ["pushed"]
 
 
@@ -678,6 +745,53 @@ class QuotedFlag:
     pushed: "bool" = False
 
 
-@pytest.mark.parametrize("owner", [PlainFlag, QuotedFlag])
-def test_the_walk_reports_a_dataclass_flag_however_its_annotation_is_spelled(owner):
+class FlagRow(TypedDict):
+    pushed: bool
+
+
+class FlagTuple(NamedTuple):
+    pushed: bool
+
+
+class Inner(BaseModel):
+    pushed: bool = False
+
+
+class Box[T](BaseModel):
+    item: T
+
+
+class SelfReferential(BaseModel):
+    pushed: bool = False
+    next_one: "SelfReferential | None" = None
+
+
+class Deferred(BaseModel):
+    """A model naming a type declared after it, so its own reading is a name."""
+
+    carried: "DeferredFlag | None" = None
+
+
+class DeferredFlag(BaseModel):
+    pushed: bool = False
+
+
+@pytest.mark.parametrize("owner", [PlainFlag, QuotedFlag, FlagRow, FlagTuple])
+def test_the_walk_reports_a_flag_however_the_type_declaring_it_is_written(owner):
     assert boolean_fields(reached_types([owner])) == [f"{owner.__name__}.pushed"]
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        PlainFlag,
+        FlagRow,
+        FlagTuple,
+        Box[Inner],
+        list[SelfReferential],
+        Deferred,
+    ],
+)
+def test_the_walk_reports_a_flag_nested_under_a_model(field):
+    root = create_model("Nesting", carried=(field, ...))
+    assert [name for name in boolean_fields(reached_types([root])) if ".pushed" in name]

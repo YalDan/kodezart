@@ -56,7 +56,7 @@ class Arm:
     """The native commit path, wired as composition wires it, over one lane."""
 
     def __init__(self) -> None:
-        self.repo = LaneRepo()
+        self.repo = LaneRepo(branch=BRANCH, remote=REMOTE)
         self.git = LaneGit(self.repo)
         self.source = LaneSource(self.repo)
         self.port = tracker()

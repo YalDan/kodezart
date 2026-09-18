@@ -35,9 +35,17 @@ FORGE_CREDENTIAL = "lane-fixture-credential"
 
 
 class LaneRepo:
-    """The commits made on one lane branch and what the remote holds of them."""
+    """The commits made on one lane branch and what the remote holds of them.
 
-    def __init__(self) -> None:
+    The branch and the remote are the repository's own facts, so a read of
+    any other pair is a read of something this repository cannot answer for:
+    a double that answered every branch alike would report a lane's push
+    status from a branch nobody pushed.
+    """
+
+    def __init__(self, *, branch: str, remote: str = "origin") -> None:
+        self.branch = branch
+        self.remote = remote
         self.shas: list[str] = []
         self.head: str = TRUNK_SHA
         self.pushed: str | None = None
@@ -68,6 +76,10 @@ class LaneGit(FakeGitService):
         self.calls.append(("remote_branch_sha", cwd, remote, branch))
         if branch in TRUNK_BRANCHES:
             return TRUNK_SHA
+        if (remote, branch) != (self.repo.remote, self.repo.branch):
+            # The lane's branch on the lane's remote is the only ref this
+            # repository holds; nothing else has been pushed anywhere.
+            return None
         return self.repo.pushed
 
     async def diff_summary(
