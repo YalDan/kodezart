@@ -1858,7 +1858,7 @@ class LinearMcpTracker:
         return current
 
     async def reset_criterion_pending(
-        self, *, expected: TrackerIssue, holder: str
+        self, *, expected: TrackerIssue, holder: str | None = None
     ) -> TrackerIssue:
         surface = WritableSurface(
             kind=SurfaceKind.CRITERION_SUB_ISSUE,
@@ -1879,14 +1879,23 @@ class LinearMcpTracker:
                 team_id=self._team_identifier(current.team_key),
                 issue_key=expected.issue_key,
             )
-            markers = await self._markers_on(
-                _GrantKind.LEASE, targets=(_LEASE_ADDRESSING.target(surface),)
+            # An absent holder is the single-writer write, not an unheld one:
+            # the lease is observability, so only a supplied holder is checked.
+            markers = (
+                ()
+                if holder is None
+                else await self._markers_on(
+                    _GrantKind.LEASE, targets=(_LEASE_ADDRESSING.target(surface),)
+                )
             )
             current = await self.read_issue(issue_key=expected.issue_key)
             require_criterion_source(
                 expected=expected, current=current, pending_replay=True
             )
-            self._assert_surface_holder(surface=surface, holder=holder, markers=markers)
+            if holder is not None:
+                self._assert_surface_holder(
+                    surface=surface, holder=holder, markers=markers
+                )
             if current.state_kind is WorkflowStateKind.UNSTARTED:
                 return current
             payload = await self._send(

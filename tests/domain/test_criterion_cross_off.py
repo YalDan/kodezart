@@ -127,7 +127,12 @@ def stage_moves(tree: ast.Module, *, method: str, stage: str) -> list[str]:
 
 
 def test_exactly_one_function_applies_evidence_and_moves_a_criterion_to_done():
-    """One function writes both halves of a tick, and nothing else writes either.
+    """One function per half of a tick, and nothing else writes either half.
+
+    The Evidence row is written by one function because a tick and the
+    refutation that takes it back both say what the last grading of that
+    criterion read; the move into the finished state is written by another,
+    because only a tick makes it.
 
     What the guard covers: every ``.py`` file under ``src/kodezart/``,
     parsed, looking for calls named after the two halves as the code itself
@@ -158,7 +163,7 @@ def test_exactly_one_function_applies_evidence_and_moves_a_criterion_to_done():
     }
 
     assert {path: found for path, found in applying.items() if found} == {
-        WRITER: ["TrackerLaneStateWriter._write_one"]
+        WRITER: ["TrackerLaneStateWriter._stamp"]
     }
     assert {path: found for path, found in moving.items() if found} == {
         WRITER: ["TrackerLaneStateWriter._write_one"]

@@ -18,7 +18,11 @@ from kodezart.domain.errors import (
 )
 from kodezart.domain.fire_spec import replace_criterion_fields
 from kodezart.domain.lane_record import RUN_STATE_PURPOSE
-from kodezart.domain.run_event_stream import RUN_EVENT_PURPOSE, LaneRunEvent
+from kodezart.domain.run_event_stream import (
+    RUN_EVENT_PURPOSE,
+    LaneRunEvent,
+    lane_run_events,
+)
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.services.lane_state_writer import TrackerLaneStateWriter
 from kodezart.types.domain.agent import CriterionResult
@@ -858,3 +862,91 @@ async def test_a_tick_on_a_sub_issue_that_moved_after_dispatch_writes_nothing(dr
     assert board_shape(port) == before
     assert port.issue_writes == []
     assert port.workflow_writes == []
+
+
+def refutations(port: FakeTrackerPort) -> list[LaneRunEvent]:
+    """The refutation events this lane's stream holds, in order."""
+    return [
+        event
+        for event in lane_run_events(
+            comments=port.comments,
+            lane_key=LANE,
+            marker_prefixes=lane_operation().marker_prefixes,
+        )
+        if event.kind is RunEventKind.CRITERION_REFUTED
+    ]
+
+
+async def test_a_criterion_this_fire_finished_and_then_broke_is_taken_back():
+    """A regression is recorded, not absorbed, and recorded exactly once.
+
+    The first attempt finishes the criterion; the second fails it at a later
+    head. The sub-issue goes back to the unstarted state with the refuting
+    grading on its Evidence row, and the stream carries one refutation keyed
+    to that criterion. A third attempt failing it again finds it unstarted —
+    nothing this fire still claims — and writes nothing more.
+    """
+    port = criteria_board()
+    lane_state = writer(port, lane_repo())
+    broken = CRITERIA[0]
+
+    await tick(lane_state, sha="1" * 40)
+    await tick(lane_state, sha="2" * 40, failed=[broken])
+
+    issue = port.issues[broken]
+    assert issue.state_kind is WorkflowStateKind.UNSTARTED
+    assert parse_criterion_evidence(issue.body).graded_sha == "2" * 40
+    assert [event.subject_key for event in refutations(port)] == [broken]
+    # The criteria the same attempt passed again are untouched by any of it.
+    assert all(
+        port.issues[key].state_kind is WorkflowStateKind.COMPLETED
+        for key in CRITERIA[1:]
+    )
+
+    at_second = (board_shape(port), len(port.comments))
+    await tick(lane_state, sha="2" * 40, failed=[broken])
+    assert (board_shape(port), len(port.comments)) == at_second
+    assert [event.subject_key for event in refutations(port)] == [broken]
+
+
+async def test_a_criterion_this_fire_never_finished_is_not_taken_back():
+    """A criterion that never passed is still owed, and no event says otherwise."""
+    port = criteria_board()
+    lane_state = writer(port, lane_repo())
+    before = board_shape(port)
+
+    await tick(lane_state, sha="3" * 40, failed=CRITERIA)
+
+    assert board_shape(port) == before
+    assert port.issue_writes == []
+    assert port.workflow_writes == []
+    assert refutations(port) == []
+
+
+async def test_a_finished_criterion_outside_the_dispatched_roster_is_left_alone():
+    """Another run's finished work is not this verdict's to take back."""
+    port = criteria_board()
+    lane_state = writer(port, lane_repo())
+    outside = CRITERIA[2]
+    port.issues[outside] = port.issues[outside].model_copy(
+        update={"state_kind": WorkflowStateKind.COMPLETED, "state_name": "done"}
+    )
+    before = board_shape(port)[outside]
+
+    await tick(lane_state, sha="5" * 40, keys=CRITERIA[:2], failed=CRITERIA[:2])
+
+    assert board_shape(port)[outside] == before
+    assert refutations(port) == []
+
+
+async def test_an_undemonstrated_attempt_takes_nothing_back():
+    """A grading that proved nothing takes back no more than it crosses off."""
+    port = criteria_board()
+    lane_state = writer(port, lane_repo())
+    await tick(lane_state, sha="6" * 40)
+    finished = board_shape(port)
+
+    await tick(lane_state, sha="7" * 40, demonstrated=False)
+
+    assert board_shape(port) == finished
+    assert refutations(port) == []

@@ -18,13 +18,16 @@ from kodezart.types.domain.criterion_evidence import CriterionEvidence
 from kodezart.types.domain.criterion_lifecycle import CriterionCrossOff, CrossOffState
 from kodezart.types.domain.tracker import TrackerIssue, WorkflowStateKind
 
+#: The state a criterion a fire finished sits in until something takes it back.
+HELD_CRITERION_STATE = WorkflowStateKind.COMPLETED
+
 #: The states a criterion sub-issue can be ticked from.
 #:
 #: Unstarted is the ordinary first tick. Completed is a re-grade of a
 #: criterion an earlier iteration of this same run already ticked, which
 #: restamps its Evidence at the new head. Any other state means the board
 #: took the criterion somewhere this verdict does not address.
-TICKABLE_STATES = frozenset({WorkflowStateKind.UNSTARTED, WorkflowStateKind.COMPLETED})
+TICKABLE_STATES = frozenset({WorkflowStateKind.UNSTARTED, HELD_CRITERION_STATE})
 
 
 #: What stands in for a verdict when the grading proved nothing.

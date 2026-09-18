@@ -3962,7 +3962,7 @@ class FakeTrackerPort:
         return child
 
     async def reset_criterion_pending(
-        self, *, expected: TrackerIssue, holder: str
+        self, *, expected: TrackerIssue, holder: str | None = None
     ) -> TrackerIssue:
         current = await self.read_issue(issue_key=expected.issue_key)
         require_criterion_source(
@@ -3978,7 +3978,8 @@ class FakeTrackerPort:
             if grant is not None and grant.expires_at > self._clock()
             else None
         )
-        if not holder.strip() or holder != owner:
+        # An absent holder is the single-writer write, not an unheld one.
+        if holder is not None and (not holder.strip() or holder != owner):
             raise SurfaceLeaseError(
                 "native criterion amendment requires its grant",
                 surface=surface,

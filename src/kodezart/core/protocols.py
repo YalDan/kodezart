@@ -1026,7 +1026,7 @@ class TrackerPort(
         ...
 
     async def reset_criterion_pending(
-        self, *, expected: TrackerIssue, holder: str
+        self, *, expected: TrackerIssue, holder: str | None = None
     ) -> TrackerIssue:
         """Reset only this expected native criterion under CRITERION_SUB_ISSUE.
 
@@ -1034,6 +1034,9 @@ class TrackerPort(
         identity/body/state and the current holder on each unsent retry;
         a matching already-unstarted replay writes nothing. Read back the
         state separately from the write attempt. No body or evidence is edited.
+        A supplied ``holder`` must hold the criterion surface live, else
+        ``SurfaceLeaseError``. ``holder=None`` is the single-writer write: no
+        lease is consulted, and every other refusal on this call still applies.
         """
         ...
 
@@ -1524,6 +1527,10 @@ class LaneStateTracker(TrackerCommentReader, Protocol):
 
     async def set_workflow_state(
         self, *, issue_key: str, stage: LifecycleStage
+    ) -> TrackerIssue: ...
+
+    async def reset_criterion_pending(
+        self, *, expected: TrackerIssue, holder: str | None = None
     ) -> TrackerIssue: ...
 
 

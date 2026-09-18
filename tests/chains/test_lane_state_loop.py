@@ -846,3 +846,52 @@ async def test_a_long_criterion_set_over_many_iterations_posts_only_vocabulary_e
     assert [event.kind for event in posted] == [RunEventKind.FIRST_PUSH]
     assert all(event.kind in RUN_EVENT_PUBLISHERS for event in posted)
     assert len(posted) + len(lane.record_comments()) == len(port.comments)
+
+
+async def test_a_regression_inside_the_loop_moves_the_criterion_back_and_says_so():
+    """An iteration that breaks what an earlier one passed is not absorbed.
+
+    Iteration 1 finishes two criteria and leaves one owed, so the loop runs
+    again. Iteration 2 breaks one of the two: that sub-issue goes back out of
+    its finished state carrying the refuting grading, and the lane's stream
+    gains exactly one refutation keyed to it. Nothing writes the subject
+    itself, and the rollup over its criteria answers for it throughout.
+    """
+    broken, kept, owed = OWED_KEYS
+    lane = Lane(
+        evaluations=[graded({broken, kept}), graded({kept})],
+        max_iterations=2,
+    )
+    subject_before = (
+        lane.port.issues[SUBJECT].state_name,
+        lane.port.issues[SUBJECT].body,
+    )
+    observed: dict[int, tuple[set[str], bool]] = {}
+
+    async for event in lane.loop.run(**await lane.arguments()):
+        if isinstance(event, WorkflowIterationEvent):
+            observed[event.iteration] = (
+                completed(lane.port),
+                closure(lane.port).is_closed(SUBJECT),
+            )
+
+    assert observed[1] == ({broken, kept}, False)
+    assert observed[2] == ({kept}, False)
+    assert lane.port.issues[owed].state_kind is WorkflowStateKind.UNSTARTED
+    assert lane.port.issues[broken].state_kind is WorkflowStateKind.UNSTARTED
+    assert (
+        parse_criterion_evidence(lane.port.issues[broken].body).graded_sha
+        == lane.repo.head
+    )
+    posted = await lane.port.lane_run_events(issue_key=SUBJECT, lane_key=SUBJECT)
+    assert [
+        event.subject_key
+        for event in posted
+        if event.kind is RunEventKind.CRITERION_REFUTED
+    ] == [broken]
+    assert (
+        lane.port.issues[SUBJECT].state_name,
+        lane.port.issues[SUBJECT].body,
+    ) == subject_before
+    assert SUBJECT not in {key for key, _, _ in lane.port.issue_writes}
+    assert len(lane.port.comments) == 3

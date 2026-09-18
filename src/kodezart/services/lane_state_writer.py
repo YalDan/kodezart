@@ -17,7 +17,10 @@ from kodezart.domain.comment_markers import (
     compose_comment_marker,
     configured_marker_prefix,
 )
-from kodezart.domain.criterion_cross_off import require_tickable
+from kodezart.domain.criterion_cross_off import (
+    HELD_CRITERION_STATE,
+    require_tickable,
+)
 from kodezart.domain.criterion_evidence import apply_evidence
 from kodezart.domain.errors import LaneRecordReadError, LaneRecordWriteError
 from kodezart.domain.git_url import is_forge_less_origin
@@ -42,7 +45,7 @@ from kodezart.types.domain.operation import LifecycleStage, OperationConfig
 from kodezart.types.domain.persist import PersistResult
 from kodezart.types.domain.run_event import RunEventKind
 from kodezart.types.domain.run_state import LaneBinding, LaneRunState
-from kodezart.types.domain.tracker import TrackerComment
+from kodezart.types.domain.tracker import TrackerComment, TrackerIssue
 
 
 class TrackerLaneStateWriter:
@@ -190,19 +193,17 @@ class TrackerLaneStateWriter:
                 reason=f"the lane's comments could not be read: {exc}",
             ) from exc
 
-    def _first_push(
+    def _events(
         self, *, comments: Sequence[TrackerComment], lane: LaneBinding
-    ) -> bool:
-        """Whether this lane's stream is still without its first-push event.
+    ) -> tuple[LaneRunEvent, ...]:
+        """This lane's posted events, as the stream's own reader reads them.
 
-        Read from the stream and not from the absence of a record: a record
-        already written would report the event as posted when the post had
-        failed. A stream that will not parse is this write's own refusal —
-        it is read after the push, where a raw parse failure would leave a
-        pushed commit and an untyped error for the caller to make sense of.
+        A stream that will not parse is this write's own refusal — it is read
+        after a push or after a body edit, where a raw parse failure would
+        leave that write done and an untyped error for the caller.
         """
         try:
-            events = lane_run_events(
+            return lane_run_events(
                 comments=comments,
                 lane_key=lane.lane_key,
                 marker_prefixes=self._prefixes,
@@ -212,7 +213,20 @@ class TrackerLaneStateWriter:
                 lane_key=lane.lane_key,
                 reason=f"the lane's event stream could not be read: {exc}",
             ) from exc
-        return not any(event.kind is RunEventKind.FIRST_PUSH for event in events)
+
+    def _first_push(
+        self, *, comments: Sequence[TrackerComment], lane: LaneBinding
+    ) -> bool:
+        """Whether this lane's stream is still without its first-push event.
+
+        Read from the stream and not from the absence of a record: a record
+        already written would report the event as posted when the post had
+        failed.
+        """
+        return not any(
+            event.kind is RunEventKind.FIRST_PUSH
+            for event in self._events(comments=comments, lane=lane)
+        )
 
     def _markers(self, lane: LaneBinding) -> tuple[str, str]:
         """This lane's record marker and the prefix its event stream is under.
@@ -263,9 +277,11 @@ class TrackerLaneStateWriter:
         The verdict answers the roster it was dispatched against, one for
         one and in order; anything else is a reading of some other roster
         and is refused before a single sub-issue is touched. A criterion
-        this attempt did not pass is written nowhere: the sub-issue keeps
-        whatever an earlier attempt left on it, and the unwritten verdict
-        is on the iteration event and in this line.
+        this attempt neither passed nor had already finished is written
+        nowhere: the sub-issue keeps whatever an earlier attempt left on it,
+        and the unwritten verdict is on the iteration event and in this line.
+        A criterion this attempt FAILED and this fire had already finished is
+        a regression, and is taken back.
         """
         addressed = tuple(str(cross_off.criterion) for cross_off in cross_offs)
         if addressed != tuple(str(criterion.id) for criterion in dispatched):
@@ -278,14 +294,16 @@ class TrackerLaneStateWriter:
                 await self._write_one(
                     lane=lane, criterion=criterion, cross_off=cross_off
                 )
-            else:
-                await self._log.ainfo(
-                    "criterion_not_crossed_off",
-                    lane=lane.lane_key,
-                    criterion=cross_off.criterion,
-                    state=cross_off.state.value,
-                    graded_sha=cross_off.evidence.graded_sha,
-                )
+                continue
+            await self._log.ainfo(
+                "criterion_not_crossed_off",
+                lane=lane.lane_key,
+                criterion=cross_off.criterion,
+                state=cross_off.state.value,
+                graded_sha=cross_off.evidence.graded_sha,
+            )
+            if cross_off.state is CrossOffState.failed:
+                await self._refute(lane=lane, criterion=criterion, cross_off=cross_off)
 
     async def _write_one(
         self,
@@ -304,6 +322,71 @@ class TrackerLaneStateWriter:
         """
         issue = await self._tracker.read_issue(issue_key=criterion.id)
         require_tickable(issue=issue, criterion=criterion)
+        await self._stamp(
+            lane=lane, criterion=criterion, issue=issue, cross_off=cross_off
+        )
+        await settle(
+            self._tracker.set_workflow_state(
+                issue_key=criterion.id, stage=LifecycleStage.DONE
+            )
+        )
+
+    async def _refute(
+        self,
+        *,
+        lane: LaneBinding,
+        criterion: TrackerCriterion,
+        cross_off: CriterionCrossOff,
+    ) -> None:
+        """Take back a criterion this fire finished and then broke, once.
+
+        A criterion the fresh read finds unfinished is no regression: it was
+        never this fire's claim to take back, and a fire that had finished one
+        and already taken it back finds it unfinished too. The state the board
+        holds is therefore the whole condition, and a repeated verdict at the
+        same head writes nothing a second time.
+
+        What the refutation is made of, in order: the refuting grading on the
+        Evidence row, the move back out of the finished state, and one posted
+        event keyed to the criterion. The owning issue reopens by the tracker's
+        own rollup over its criteria and is written by nobody.
+        """
+        issue = await self._tracker.read_issue(issue_key=criterion.id)
+        if issue.state_kind is not HELD_CRITERION_STATE:
+            return
+        require_tickable(issue=issue, criterion=criterion)
+        await self._stamp(
+            lane=lane, criterion=criterion, issue=issue, cross_off=cross_off
+        )
+        event = LaneRunEvent(
+            kind=RunEventKind.CRITERION_REFUTED,
+            lane_key=lane.lane_key,
+            subject_key=criterion.id,
+        )
+        posted = event in self._events(comments=await self._board(lane), lane=lane)
+        stamped = await self._tracker.read_issue(issue_key=criterion.id)
+        await settle(
+            self._tracker.reset_criterion_pending(expected=stamped, holder=None)
+        )
+        if not posted:
+            await settle(
+                self._tracker.post_run_event(issue_key=lane.lane_key, event=event)
+            )
+
+    async def _stamp(
+        self,
+        *,
+        lane: LaneBinding,
+        criterion: TrackerCriterion,
+        issue: TrackerIssue,
+        cross_off: CriterionCrossOff,
+    ) -> None:
+        """Put one grading's facts on a criterion's Evidence row, and nothing else.
+
+        The only function in the source that applies Evidence. The row says
+        what the last grading of this criterion read and at which commit, so a
+        second writer of it would be a second answer to that one question.
+        """
         body = await self._gate_exact(
             body=apply_evidence(body=issue.body, evidence=cross_off.evidence),
             lane=lane,
@@ -312,11 +395,6 @@ class TrackerLaneStateWriter:
         await settle(
             self._tracker.edit_description(
                 target=criterion.id, expected=issue.body, replacement=body
-            )
-        )
-        await settle(
-            self._tracker.set_workflow_state(
-                issue_key=criterion.id, stage=LifecycleStage.DONE
             )
         )
 
