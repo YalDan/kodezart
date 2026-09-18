@@ -327,6 +327,11 @@ def test_one_site_builds_the_lane_run_state_and_one_site_parses_it():
     built around the class, ``type(x)(...)`` and ``x.__class__(...)``, and a
     copy whose receiver its own function does not state another type for.
 
+    Two build sites, both in the module that owns the value: the record a
+    commit leaves behind and the same record carrying the pull request its
+    delivery opened (KOD-843). A delivering step has no receipt and no
+    changeset, so it cannot compose one through the first.
+
     What it does not see, and what review has to read from the code: a class
     or a method reached by runtime reflection — ``globals()[name]``,
     ``getattr(module, name)`` — since no annotation and no import names it;
@@ -344,7 +349,10 @@ def test_one_site_builds_the_lane_run_state_and_one_site_parses_it():
     the record's own name only.
     """
     assert model_value_sites(source_tree(), identity=RECORD) == {
-        "build": ("domain/lane_record.py::next_lane_record",),
+        "build": (
+            "domain/lane_record.py::next_lane_record",
+            "domain/lane_record.py::record_with_pull_request",
+        ),
         "parse": ("domain/lane_record.py::parse_lane_record",),
     }
 

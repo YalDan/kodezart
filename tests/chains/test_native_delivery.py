@@ -30,6 +30,7 @@ from kodezart.types.domain.native_delivery import (
 )
 from kodezart.types.domain.operation import LifecycleStage
 from kodezart.types.domain.outcome import WorkflowOutcome
+from kodezart.types.domain.run_state import LanePR
 from tests.adapters.test_ci_watch_evidence import check
 from tests.adapters.test_github_api import _make_client
 from tests.chains.test_native_fire import (
@@ -153,6 +154,22 @@ class PublishedGit(FakeGitService):
         return NEXT_SHA if len(self.merger.calls) > 1 else SHA
 
 
+class RecordingLaneState:
+    """The lane's record writer, as the delivering step reaches it.
+
+    Only the one call that step makes: what it records is what the graph asked
+    for, and the tracker this fixture drives stays untouched by it, so the
+    coordinator's own "no tracker write" statements keep their meaning.
+    """
+
+    def __init__(self) -> None:
+        self.pull_requests: list[tuple[str, LanePR]] = []
+
+    async def record_pull_request(self, *, lane_key: str, pr: LanePR):
+        self.pull_requests.append((lane_key, pr))
+        return None
+
+
 def composed(*, red=False, rounds=0, saver=None, evaluations=None, forge_present=True):
     tracker = CountingTracker()
     executor = NativeExecutor(
@@ -177,8 +194,10 @@ def composed(*, red=False, rounds=0, saver=None, evaluations=None, forge_present
     wire = ForgeWire(red_first=red)
     wire.current_sha = lambda: NEXT_SHA if len(merger.calls) > 1 else SHA
     forge = _make_client(wire) if forge_present else None
+    lane_state = RecordingLaneState()
     lane = build_native_lane_workflow(
         fire=fire,
+        lane_state=lane_state,
         config=AppConfig(delivery_red_rerun_max_attempts=0),
         service=fire.specification._service,
         git=PublishedGit(merger),
@@ -194,7 +213,7 @@ def composed(*, red=False, rounds=0, saver=None, evaluations=None, forge_present
             {"job": "actual-parent-job", "issue": state["issue_key"]}, sort_keys=True
         )
     }
-    return lane, lane.prepare(state), config, wire, forge, executor, tracker
+    return lane, lane.prepare(state), config, wire, forge, executor, tracker, lane_state
 
 
 async def run(lane, state, config, **kwargs):
@@ -222,7 +241,7 @@ async def run(lane, state, config, **kwargs):
 async def test_actual_native_graph_delivers_and_only_work_defect_reenters_fire(
     red, rounds, outcome
 ):
-    lane, state, config, wire, forge, executor, tracker = composed(
+    lane, state, config, wire, forge, executor, tracker, lane_state = composed(
         red=red, rounds=rounds
     )
     try:
@@ -236,6 +255,11 @@ async def test_actual_native_graph_delivers_and_only_work_defect_reenters_fire(
         assert wire.creates[0]["base"] == "main"
         assert wire.creates[0]["head"] == result.head_branch
         assert result.pr.number == 17 and result.pr.state == "open"
+        # The delivering step put that pull request on the lane's record, once
+        # per delivery and under the lane the result names (KOD-843).
+        assert lane_state.pull_requests == [
+            (result.lane_key, result.pr) for _ in range(2 if red and rounds else 1)
+        ]
         assert len(wire.watches) == (2 if red and rounds else 1)
         assert all(watch == wire.watches[0] for watch in wire.watches)
         assert result.final_commit_sha == (NEXT_SHA if red and rounds else SHA)
@@ -272,7 +296,7 @@ async def test_actual_native_graph_delivers_and_only_work_defect_reenters_fire(
 
 
 async def test_no_forge_reports_explicit_skip_without_fabricating_pr():
-    lane, state, config, wire, _, executor, _ = composed(forge_present=False)
+    lane, state, config, wire, _, executor, _, _ = composed(forge_present=False)
     reports, _, final = await run(lane, state, config)
     phase = final["delivery"]
     assert isinstance(phase, SkippedLaneDelivery)
@@ -286,7 +310,7 @@ async def test_pre_delivery_resume_retains_identity_and_checks_current_criteria(
     changed,
 ):
     saver = InMemorySaver()
-    lane, state, config, wire, forge, executor, tracker = composed(saver=saver)
+    lane, state, config, wire, forge, executor, tracker, _ = composed(saver=saver)
     try:
         reports, _, _ = await run(lane, state, config, interrupt_before=["deliver"])
         assert reports == [] and wire.requests == []
@@ -313,7 +337,7 @@ async def test_pre_delivery_resume_retains_identity_and_checks_current_criteria(
 @pytest.mark.parametrize("damage", ["base", "head", "sha", "closed"])
 @pytest.mark.parametrize("after_watch", [False, True])
 async def test_actual_pr_identity_refuses_reuse_or_drift(damage, after_watch):
-    lane, state, config, wire, forge, _, _ = composed()
+    lane, state, config, wire, forge, _, _, _ = composed()
     wire.pr = {
         "html_url": "https://github.com/owner/repo/pull/17",
         "number": 17,
@@ -331,7 +355,7 @@ async def test_actual_pr_identity_refuses_reuse_or_drift(damage, after_watch):
 
 
 async def test_current_check_change_during_comment_gate_refuses_before_post():
-    lane, state, config, wire, forge, _, tracker = composed(red=True)
+    lane, state, config, wire, forge, _, tracker, _ = composed(red=True)
 
     class ChangedCriterion(PassThroughGate):
         async def gate(self, **kwargs):
@@ -352,7 +376,7 @@ async def test_current_check_change_during_comment_gate_refuses_before_post():
     "damage", ["base", "head", "sha", "closed", "malformed", "unavailable", None]
 )
 async def test_paused_terminal_requires_current_pr_without_repeating_delivery(damage):
-    lane, state, config, wire, forge, executor, _ = composed(saver=InMemorySaver())
+    lane, state, config, wire, forge, executor, _, _ = composed(saver=InMemorySaver())
     try:
         reports, _, _ = await run(lane, state, config, interrupt_before=["complete"])
         assert reports == []

@@ -8,7 +8,12 @@ from kodezart.domain.errors import LaneRecordWriteError
 from kodezart.domain.tracker_writes import marked_comment_body
 from kodezart.types.domain.branch import BranchAssociation, BranchRole
 from kodezart.types.domain.consolidation import ChangesetDigest
-from kodezart.types.domain.run_state import LaneBinding, LaneCommit, LaneRunState
+from kodezart.types.domain.run_state import (
+    LaneBinding,
+    LaneCommit,
+    LanePR,
+    LaneRunState,
+)
 
 #: The marker purpose an operation configures this record's prefix under.
 RUN_STATE_PURPOSE = "run_state"
@@ -114,6 +119,18 @@ def next_lane_record(
         ),
         associations=associations,
     )
+
+
+def record_with_pull_request(*, prior: LaneRunState, pr: LanePR) -> LaneRunState:
+    """The record this lane's delivery leaves behind: the prior one, plus the pr.
+
+    Composed here because this module owns every form the value is built by
+    (KOD-685): the delivering step has no commit receipt and no changeset to
+    compose a record from, and it must not compose a first record for a lane
+    it could not read one for. Nothing else changes — the head, the rows and
+    the associations are still what the last commit observed.
+    """
+    return prior.model_copy(update={"pr": pr})
 
 
 def _require_one_binding_per_run(

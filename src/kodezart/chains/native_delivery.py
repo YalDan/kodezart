@@ -8,6 +8,7 @@ from langgraph.graph.state import CompiledStateGraph
 from kodezart.chains.criteria import require_current_native_snapshot
 from kodezart.chains.lane_delivery import LaneDeliveryCoordinator
 from kodezart.chains.ralph_workflow import RalphWorkflowEngine
+from kodezart.core.protocols import LaneStateWriter
 from kodezart.domain.accept_gate import gate_cleared
 from kodezart.domain.outcome import classify_outcome
 from kodezart.domain.workflow_state import original_fire_spec, validated_criteria
@@ -31,14 +32,24 @@ class NativeLaneWorkflow:
     """Use the real prepared fire state/config and retain the typed lane result."""
 
     def __init__(
-        self, *, fire: RalphWorkflowEngine, delivery: LaneDeliveryCoordinator | None
+        self,
+        *,
+        fire: RalphWorkflowEngine,
+        delivery: LaneDeliveryCoordinator | None,
+        lane_state: LaneStateWriter | None,
     ) -> None:
         if fire.native_graph is None:
             raise ValueError(
                 "Native delivery requires the configured native fire graph"
             )
+        if delivery is not None and lane_state is None:
+            raise ValueError(
+                "Native delivery requires the lane state writer its record "
+                "is written through"
+            )
         self.fire = fire
         self._delivery = delivery
+        self._lane_state = lane_state
         graph: StateGraph[
             NativeDeliveryState, None, NativeDeliveryState, NativeDeliveryState
         ] = StateGraph(NativeDeliveryState)
@@ -100,6 +111,15 @@ class NativeLaneWorkflow:
             context=ExecutionContext.from_configurable(config),
             stalled=stalled,
             remediation_available=self.fire.remediation.rounds_remain(state),
+        )
+        # Where a completed delivery is retained is the lane's record, and this
+        # step is what has both the pull request and the lane it belongs to.
+        # The coordinator holds no tracker access of its own (KOD-326), so the
+        # write is made here, after it returns.
+        if self._lane_state is None:
+            raise ValueError("A completed delivery requires its lane state writer")
+        await self._lane_state.record_pull_request(
+            lane_key=result.lane_key, pr=result.pr
         )
         return {"delivery": CompletedLaneDelivery(result=result)}
 

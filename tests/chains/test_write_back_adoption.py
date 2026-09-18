@@ -810,14 +810,17 @@ UNVERIFIED_WRITES = frozenset(
 
 
 LANE_STATE = "services/lane_state_writer.py"
-#: The lane's own writes about the commit it has just made and about the
-#: verdict just reached on it.  Every fact they carry is DERIVED — the head
+#: The lane's own writes about the commit it has just made, about the verdict
+#: just reached on it, and about the pull request its delivery opened.
+#: Every fact they carry is DERIVED — the head
 #: sha the workspace was read at, the remote tip, the changeset counts, the
 #: commit subject, a criterion's pass or its loss and the sha it was graded
 #: at — and no second session re-reading the same git observations would add
 #: anything to them.  The judgement behind a tick is the evaluation session that
 #: produced the verdict, and it is the one the Evidence row points back at;
-#: re-judging a sha string is not a second judgement (KOD-806).
+#: re-judging a sha string is not a second judgement (KOD-806).  The pull
+#: request is the same kind of fact: a url and a number the forge answered
+#: with, put where a lane's delivery is retained (KOD-843).
 LANE_STATE_WRITES = frozenset(
     {
         CallSite(
@@ -829,6 +832,11 @@ LANE_STATE_WRITES = frozenset(
             module=LANE_STATE,
             function="TrackerLaneStateWriter.record_commit",
             method="post_run_event",
+        ),
+        CallSite(
+            module=LANE_STATE,
+            function="TrackerLaneStateWriter.record_pull_request",
+            method="upsert_comment",
         ),
         CallSite(
             module=LANE_STATE,

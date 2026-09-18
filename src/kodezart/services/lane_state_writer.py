@@ -33,6 +33,7 @@ from kodezart.domain.lane_record import (
     RUN_STATE_PURPOSE,
     lane_record_body,
     next_lane_record,
+    record_with_pull_request,
 )
 from kodezart.domain.run_event_stream import (
     RUN_EVENT_PURPOSE,
@@ -45,11 +46,15 @@ from kodezart.types.domain.criterion_lifecycle import (
     CriterionCrossOff,
     CrossOffState,
 )
-from kodezart.types.domain.gating import ContentClass, OutboundDestination
+from kodezart.types.domain.gating import (
+    ContentClass,
+    OutboundDestination,
+    RepoVisibility,
+)
 from kodezart.types.domain.operation import LifecycleStage, OperationConfig
 from kodezart.types.domain.persist import PersistResult
 from kodezart.types.domain.run_event import RunEventKind
-from kodezart.types.domain.run_state import LaneBinding, LaneRunState
+from kodezart.types.domain.run_state import LaneBinding, LanePR, LaneRunState
 from kodezart.types.domain.tracker import TrackerComment, TrackerIssue
 
 
@@ -156,7 +161,11 @@ class TrackerLaneStateWriter:
             changeset=changeset,
             subject=receipt.message.partition("\n")[0],
         )
-        body = await self._gate_exact(body=lane_record_body(record=record), lane=lane)
+        body = await self._gate_exact(
+            body=lane_record_body(record=record),
+            lane_key=lane.lane_key,
+            visibility=lane.visibility,
+        )
         await settle(
             self._tracker.upsert_comment(
                 target=lane.lane_key,
@@ -180,6 +189,56 @@ class TrackerLaneStateWriter:
                     ),
                 )
             )
+        return record
+
+    async def record_pull_request(self, *, lane_key: str, pr: LanePR) -> LaneRunState:
+        """Put the delivered pull request on this lane's record, in place.
+
+        The record is read through the one reader every other reader of it
+        uses, so a damaged or duplicated record refuses here rather than being
+        replaced by a record composed out of a delivery; a lane no comment
+        addresses refuses for the same reason — a delivery is no basis for a
+        first record. A pull request the record already carries writes nothing
+        at all, so a second delivery of the same head is not a second write.
+
+        The bytes go through the gate under UNKNOWN visibility, which is its
+        engaged path: this call is given the lane and the pull request and not
+        the run's resolved visibility, and asking the strict question of a
+        body the commit write already gated costs nothing.
+        """
+        marker = compose_comment_marker(
+            prefixes=self._prefixes, purpose=RUN_STATE_PURPOSE, lane=lane_key
+        )
+        try:
+            located = await self._records.find(issue_key=lane_key, lane_key=lane_key)
+        except LaneRecordReadError as exc:
+            raise LaneRecordWriteError(
+                lane_key=lane_key,
+                reason=f"the recorded lane state could not be read: {exc.reason}",
+            ) from exc
+        if located is None:
+            raise LaneRecordWriteError(
+                lane_key=lane_key,
+                reason="no record of this lane exists to carry a pull request",
+            )
+        prior_comment, prior = located
+        if prior.pr == pr:
+            return prior
+        record = record_with_pull_request(prior=prior, pr=pr)
+        body = await self._gate_exact(
+            body=lane_record_body(record=record),
+            lane_key=lane_key,
+            visibility=RepoVisibility.UNKNOWN,
+        )
+        await settle(
+            self._tracker.upsert_comment(
+                target=lane_key,
+                marker=marker,
+                body=body,
+                holder=None,
+                expected=prior_comment,
+            )
+        )
         return record
 
     async def _board(self, lane: LaneBinding) -> Sequence[TrackerComment]:
@@ -430,7 +489,8 @@ class TrackerLaneStateWriter:
             body=self._evidence_body(
                 issue=issue, criterion=criterion, cross_off=cross_off
             ),
-            lane=lane,
+            lane_key=lane.lane_key,
+            visibility=lane.visibility,
             destination=OutboundDestination.TRACKER_DESCRIPTION,
         )
         await settle(
@@ -469,18 +529,19 @@ class TrackerLaneStateWriter:
         self,
         *,
         body: str,
-        lane: LaneBinding,
+        lane_key: str,
+        visibility: RepoVisibility,
         destination: OutboundDestination = OutboundDestination.TRACKER_COMMENT,
     ) -> str:
         return await gated_exact(
             gate=self._gate,
             log=self._log,
             content=body,
-            visibility=lane.visibility,
+            visibility=visibility,
             destination=destination,
             content_class=ContentClass.DERIVED,
             refusal=lambda: LaneRecordWriteError(
-                lane_key=lane.lane_key,
+                lane_key=lane_key,
                 reason="the outbound gate changed the recorded lane facts",
             ),
         )

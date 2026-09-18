@@ -213,7 +213,7 @@ transport failure never becomes an empty record. Every call reads again, so a
 fresh client needs no process cache, repository, trajectory or forge connection.
 
 `TrackerLaneStateWriter` is the write side of that same record, and of the
-criterion cross-off beside it. It has two calls. `record_commit` runs inside the
+criterion cross-off beside it. It has three calls. `record_commit` runs inside the
 persisting phase of a native execution, between the push and the completion of
 the phase, so a commit and what it is recorded as are one operation: a record
 write that fails takes the phase with it. It reads
@@ -225,7 +225,15 @@ marker, machine authorship, the expected prior body) are what protect it. The
 first push also posts one `first_push` event under `marker_prefixes.run_event`;
 later commits post nothing, so the lane's comment count stops growing after it.
 
-`write_cross_offs` is the second call. `RalphLoop._evaluate_node` makes it once
+`record_pull_request` is the second. The lane graph's delivering step makes it
+after the delivery coordinator returns, so where a completed delivery is
+retained is the record and not a graph checkpoint: it reads the record through
+the same reader, refuses a lane that has none rather than composing a first
+record out of a delivery, writes nothing when the record already carries that
+pull request, and otherwise edits the one marker comment in place under the
+prior body it just read.
+
+`write_cross_offs` is the third call. `RalphLoop._evaluate_node` makes it once
 per iteration, after the grade and before the iteration event is emitted, so a
 consumer that sees the event for iteration n can read the tracker and find that
 iteration's cross-offs already on it. It is handed the roster the attempt was

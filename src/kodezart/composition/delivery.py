@@ -10,6 +10,7 @@ from kodezart.config.app import AppConfig
 from kodezart.core.protocols import (
     AgentRunner,
     GitService,
+    LaneStateWriter,
     OutboundContentGate,
     PromptSetProvider,
 )
@@ -28,12 +29,14 @@ def build_native_lane_workflow(
     skills: SkillsSelection,
     gate: OutboundContentGate,
     repositories: Sequence[RepoEntry],
+    lane_state: LaneStateWriter | None = None,
 ) -> NativeLaneWorkflow:
     """Select one forge capability set and the configured watch/rerun bounds."""
     if fire.criteria is None:
         raise ValueError("Native delivery requires its current criterion reader")
     return NativeLaneWorkflow(
         fire=fire,
+        lane_state=lane_state,
         delivery=None
         if forge is None
         else LaneDeliveryCoordinator(

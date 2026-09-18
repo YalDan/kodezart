@@ -48,7 +48,7 @@ from kodezart.types.domain.operation import (
 )
 from kodezart.types.domain.persist import PersistResult, PersistSource
 from kodezart.types.domain.run_event import RunEventKind
-from kodezart.types.domain.run_state import LaneBinding
+from kodezart.types.domain.run_state import LaneBinding, LanePR
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.tracker import TrackerComment, WorkflowStateKind
 from tests.fakes import FakeTrackerPort, PassThroughGate, make_tracker_issue
@@ -131,6 +131,62 @@ def record_comments(port: FakeTrackerPort) -> list:
     prefix = lane_operation().marker_prefixes["run_state"]
     return [
         comment for comment in port.comments if comment.body.startswith(f"[{prefix}:")
+    ]
+
+
+PR = LanePR(url="https://forge.example/acme/repo/pull/17", number=17, state="open")
+
+
+async def test_the_pull_request_is_set_in_place_and_a_repeat_writes_nothing():
+    """Where a delivery is retained is the record, edited where it stands.
+
+    A lane with no record refuses rather than composing a first one out of a
+    delivery; the pull request is then set on the record the commit left, in
+    the one comment that record lives in, and setting the same one again
+    writes nothing at all — a second delivery of the same head is not a second
+    write.
+    """
+    port, repo = board(), lane_repo()
+    lane_state = writer(port, repo)
+
+    with pytest.raises(LaneRecordWriteError, match="no record of this lane"):
+        await lane_state.record_pull_request(lane_key=LANE, pr=PR)
+    assert port.comments == []
+
+    committed = await make_commit(lane_state, repo, 1)
+    recorded = record_comments(port)[0]
+    before = [(comment.comment_key, comment.body) for comment in port.comments]
+
+    carried = await lane_state.record_pull_request(lane_key=LANE, pr=PR)
+
+    assert carried.pr == PR
+    # One comment, the same one, edited: the pull request is the only fact
+    # that moved.
+    assert [comment.comment_key for comment in record_comments(port)] == [
+        recorded.comment_key
+    ]
+    assert len(port.comments) == len(before)
+    _, stored = await LaneRecordReader(tracker=port, operation=lane_operation()).read(
+        issue_key=LANE, lane_key=LANE
+    )
+    assert stored == carried
+    # Everything else is what the commit recorded: the head, the rows and the
+    # associations are not rewritten by a delivery.
+    assert carried.model_copy(update={"pr": None}) == committed
+
+    unchanged = [(comment.comment_key, comment.body) for comment in port.comments]
+    again = await lane_state.record_pull_request(lane_key=LANE, pr=PR)
+    assert again == carried
+    assert [
+        (comment.comment_key, comment.body) for comment in port.comments
+    ] == unchanged
+
+    moved = await lane_state.record_pull_request(
+        lane_key=LANE, pr=PR.model_copy(update={"state": "merged"})
+    )
+    assert moved.pr is not None and moved.pr.state == "merged"
+    assert [comment.comment_key for comment in record_comments(port)] == [
+        recorded.comment_key
     ]
 
 

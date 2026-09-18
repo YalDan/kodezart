@@ -53,7 +53,7 @@ from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run import RunState
 from kodezart.types.domain.run_alarm import AlarmSignal, AlarmSubject, RunAlarm
 from kodezart.types.domain.run_records import RunIdentity, RunOutcome, RunRecord
-from kodezart.types.domain.run_state import LaneBinding, LaneRunState
+from kodezart.types.domain.run_state import LaneBinding, LanePR, LaneRunState
 from kodezart.types.domain.scope import ScopeContainer, ScopeRef
 from kodezart.types.domain.self_writes import IssueMovementSnapshot
 from kodezart.types.domain.session import AllowedTools, PermissionMode, SessionType
@@ -1551,6 +1551,16 @@ class LaneStateWriter(Protocol):
 
         The record is the whole answer to "where is this lane now", so it
         is rewritten in place under its own marker and never appended to.
+        """
+        ...
+
+    async def record_pull_request(self, *, lane_key: str, pr: LanePR) -> LaneRunState:
+        """Set *pr* on the lane's one record, editing that record in place.
+
+        Where a lane's delivery is retained is its record, so the step that
+        delivered writes it there. A lane with no record refuses: a delivery
+        is no basis for composing a first record. A pull request the record
+        already carries writes nothing.
         """
         ...
 

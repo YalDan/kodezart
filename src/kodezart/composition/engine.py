@@ -204,6 +204,22 @@ def build_workflow_engine(
     # this capability, and each consumer independently requires its reader.
     delay_floor_for = rate_limit_delay_floor(config)
     native_source = SubprocessGitSourceReader()
+    # One writer for every lane write of this deployment: the committing loop's
+    # record and cross-offs and the delivering step's pull request are writes
+    # of one record under one marker, and a second instance would be a second
+    # copy of the refusals that record's reader makes.
+    lane_state = (
+        TrackerLaneStateWriter(
+            tracker=scope_tracker,
+            operation=operation,
+            git=git,
+            git_remote=config.git.remote,
+            forge=github_api,
+            gate=gate,
+        )
+        if scope_tracker is not None and operation is not None
+        else None
+    )
 
     def loop(saver: BaseCheckpointSaver[str] | None) -> RalphLoop:
         """The quality gate, with whatever the arm it serves persists to.
@@ -214,18 +230,7 @@ def build_workflow_engine(
         """
         return RalphLoop(
             source=native_source,
-            lane_state=(
-                TrackerLaneStateWriter(
-                    tracker=scope_tracker,
-                    operation=operation,
-                    git=git,
-                    git_remote=config.git.remote,
-                    forge=github_api,
-                    gate=gate,
-                )
-                if scope_tracker is not None and operation is not None
-                else None
-            ),
+            lane_state=lane_state,
             amendments=(
                 NativeAmendments(
                     tracker=scope_tracker,
@@ -388,6 +393,7 @@ def build_workflow_engine(
                 skills=skills,
                 gate=gate,
                 repositories=repositories,
+                lane_state=lane_state,
             ),
             forge_less_lane=build_native_lane_workflow(
                 fire=fire(None, quality_gate=native_loop, saver=None),
@@ -399,6 +405,7 @@ def build_workflow_engine(
                 skills=skills,
                 gate=gate,
                 repositories=repositories,
+                lane_state=lane_state,
             ),
             forge_probe=github_api,
             git=git,

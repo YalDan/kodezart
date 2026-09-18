@@ -5,7 +5,6 @@ import hashlib
 import json
 from dataclasses import dataclass
 
-import httpx
 import pytest
 from langgraph.checkpoint.memory import InMemorySaver
 
@@ -30,7 +29,6 @@ from kodezart.handlers.agent_handler import AgentHandler
 from kodezart.services import scope_runtime
 from kodezart.services.agent_service import AgentService
 from kodezart.services.lane_records import LaneRecordReader
-from kodezart.services.scope_runtime import _lane_namespace
 from kodezart.types.domain.agent import (
     ResultEvent,
     SystemEvent,
@@ -765,37 +763,26 @@ async def test_actual_http_sse_preserves_nested_progress_and_delivery_discrimina
         assert status["state"] == "terminal" and status["outcome"] is None
 
 
-def lane_checkpoint_config():
-    """The address the scoped lane graph's state used to be saved under.
-
-    Kept for the one assertion below, which this slice leaves failing on
-    purpose: see the note on that test.
-    """
-    return {"configurable": {"thread_id": _lane_namespace("scope-job", "A")}}
-
-
 async def test_actual_scope_composition_retains_completed_native_delivery_record():
+    """A completed delivery is retained where a lane's state lives: its record.
+
+    The scope path persists no graph state (KOD-840), so what the lane graph
+    held in process is gone with the process. The record is read back through
+    the production reader afterwards and carries the pull request the delivery
+    opened — url, number and state — written by the delivering step onto the
+    one comment the commit before it left (KOD-843).
+    """
     from kodezart.types.domain.native_delivery import CompletedLaneDelivery
-    from tests.adapters.test_github_api import _make_client
-    from tests.chains.test_native_delivery import ForgeWire
 
-    origin = "https://github.com/owner/repo"
-    wire = ForgeWire()
-
-    def scope_wire(request):
-        if (
-            request.method == "GET"
-            and request.url.path.endswith("/pulls")
-            and "head" not in request.url.params
-        ):
-            wire.requests.append(request)
-            return httpx.Response(200, json=[] if wire.pr is None else [wire.pr])
-        return wire(request)
-
-    forge = _make_client(scope_wire)
+    repos = WalkRepos(url=FORGE_ORIGIN)
+    port = board(lanes=("A",))
+    wire = ScopeForgeWire(head_sha_of=repos.head_of)
+    forge = _make_client(wire)
     try:
-        harness = runtime(origin=origin, forge=forge, trunk="main")
-        events = [event async for event in drive(harness, origin=origin)]
+        harness = resumable(
+            port=port, repos=repos, origin=FORGE_ORIGIN, forge=forge, trunk="main"
+        )
+        events = [event async for event in drive(harness, origin=FORGE_ORIGIN)]
         deliveries = [
             event.event.delivery
             for event in events
@@ -807,7 +794,6 @@ async def test_actual_scope_composition_retains_completed_native_delivery_record
         assert isinstance(phase, CompletedLaneDelivery)
         assert phase.result.issue_id == phase.result.lane_key == "A"
         assert phase.result.base_branch == "main"
-        assert phase.result.final_commit_sha == "a" * 40
         assert phase.result.checks_passed is True
         assert not phase.result.remediation_pending
         addressed = ScopeLaneEvent(
@@ -816,21 +802,25 @@ async def test_actual_scope_composition_retains_completed_native_delivery_record
         assert (
             ScopeLaneEvent.model_validate_json(addressed.model_dump_json()) == addressed
         )
-        lane = harness.engine._scoped_arm._lane_for(origin)
-        # LEFT FAILING ON PURPOSE. The scoped arm now compiles without a
-        # checkpointer (KOD-840), so nothing in process retains the completed
-        # delivery. What replaces this assertion is the pull request written
-        # onto the lane record, which is slice 2b's own criterion; nothing in
-        # this slice authorises dropping the assertion, so it stands.
-        final = await lane.graph.aget_state(lane_checkpoint_config())
-        assert final.values["delivery"] == phase
+        record = await lane_record(port, "A")
+        assert record.pr is not None
+        assert (record.pr.url, record.pr.number, record.pr.state) == (
+            phase.result.pr.url,
+            phase.result.pr.number,
+            phase.result.pr.state,
+        )
+        # The head that pull request was opened on is the lane's own deliverable
+        # at the sha this walk's repositories hold, not a value spelled here.
+        assert wire.creates[0]["head"] == phase.result.head_branch
+        assert phase.result.final_commit_sha == repos.head_of(phase.result.head_branch)
+        assert record.head_sha == repos.head_of(record.branch)
         assert events[-1].observation.unresolved_criteria == ()
         assert harness.port.workflow_writes == [("A/check", LifecycleStage.DONE)]
-        # The sha the lane's own loop branch stands at, as the repository
-        # double answers it, rather than a value spelled here.
+        # The sha the lane's own loop branch stands at, as the repositories
+        # answer it, rather than a value spelled here.
         assert parse_criterion_evidence(
             harness.port.issues["A/check"].body
-        ).graded_sha == await NativeSourceReader().resolve_commit(cwd="", ref="ralph/A")
+        ).graded_sha == repos.head_of(record.branch)
     finally:
         await forge.close()
 
