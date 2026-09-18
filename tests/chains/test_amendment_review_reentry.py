@@ -52,7 +52,7 @@ async def test_review_fix_upheld_keeps_branch_head_and_records_blocking_ruling(
     executor = Executor(
         subject={"kind": "ruling", "id": ruling.ruling_id}, mutate=answers
     )
-    fire, spec, current, _, workspace = await make_runtime(
+    fire, spec, current, _, workspace, _ = await make_runtime(
         repository, executor, max_iterations=1
     )
     port = fire.criteria._tracker
