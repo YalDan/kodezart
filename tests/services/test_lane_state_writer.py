@@ -66,13 +66,20 @@ def writer(port: FakeTrackerPort, repo: LaneRepo, gate=None) -> TrackerLaneState
     )
 
 
-async def make_commit(lane_state, repo: LaneRepo, index: int, *, publish: bool = True):
+async def make_commit(
+    lane_state,
+    repo: LaneRepo,
+    index: int,
+    *,
+    publish: bool = True,
+    lane: LaneBinding | None = None,
+):
     """Commit, push, and record it the way the persist phase does."""
     sha = repo.commit()
     if publish:
         repo.publish()
     return await lane_state.record_commit(
-        lane=binding(),
+        lane=binding() if lane is None else lane,
         workspace_path="/workspace/lane",
         receipt=PersistResult(
             commit_sha=sha,
@@ -162,6 +169,28 @@ async def test_a_damaged_record_is_refused_and_never_overwritten():
     with pytest.raises(LaneRecordWriteError, match="could not be read"):
         await make_commit(lane_state, repo, 2)
     assert record_comments(port)[0].body.count('"commitsAhead": []') == 1
+
+
+async def test_a_record_marker_carried_by_a_reply_refuses_and_writes_nothing():
+    """A threaded copy of the marker is not this lane's record.
+
+    Read as absence it would be worse than unreadable: the next commit would
+    compose a first record over a lane that already has one, so the reply is
+    a refusal at the writer and not only at the reader.
+    """
+    port, repo = board(), LaneRepo()
+    lane_state = writer(port, repo)
+    await make_commit(lane_state, repo, 1)
+    stored = record_comments(port)[0]
+    port.comments[port.comments.index(stored)] = stored.model_copy(
+        update={"reply_to": "discussion"}
+    )
+    before = [(comment.comment_key, comment.body) for comment in port.comments]
+
+    with pytest.raises(LaneRecordWriteError, match="reply"):
+        await make_commit(lane_state, repo, 2)
+
+    assert [(comment.comment_key, comment.body) for comment in port.comments] == before
 
 
 class RewritingBoard(FakeTrackerPort):
@@ -342,6 +371,11 @@ async def test_a_lane_naming_no_repository_refuses_before_any_read():
     )
     with pytest.raises(LaneRecordWriteError, match="names no repository"):
         lane_state.require_writable(lane=homeless)
+    # The same binding through the write itself: the address is resolved
+    # among the first statements, so the refusal costs neither a git read
+    # nor a tracker write rather than arriving after both.
+    with pytest.raises(LaneRecordWriteError, match="names no repository"):
+        await make_commit(lane_state, repo, 1, lane=homeless)
     assert git.calls == []
     assert port.comments == []
 

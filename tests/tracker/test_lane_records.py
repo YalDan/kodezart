@@ -153,10 +153,20 @@ async def test_addressed_reader_does_not_substitute_a_different_record(tracker):
     assert raised.value.record_ref == "a-prior-record"
 
 
-@pytest.mark.parametrize("mode", ["foreign-owner", "reply"])
+@pytest.mark.parametrize(
+    ("mode", "reason"),
+    [("foreign-owner", "another issue"), ("reply", "reply")],
+)
 async def test_contradictory_native_comment_identity_is_refused(
-    tracker, monkeypatch, mode
+    tracker, monkeypatch, mode, reason
 ):
+    """The refusal names the contradiction, so absence cannot stand in for it.
+
+    A reader answering ``None`` here would hand a writer "no record yet" for
+    a lane whose record is on the board, and the next write would compose a
+    fresh record over it; the reason is asserted so the refusal cannot be
+    satisfied by the absence branch of a caller further out.
+    """
     stored = await seed(tracker)
     updates = (
         {"issue_key": CLAIMED_ISSUE}
@@ -168,7 +178,7 @@ async def test_contradictory_native_comment_identity_is_refused(
         "list_comments",
         AsyncMock(return_value=(stored.model_copy(update=updates),)),
     )
-    with pytest.raises(LaneRecordReadError):
+    with pytest.raises(LaneRecordReadError, match=reason):
         await LaneRecordReader(tracker=tracker, operation=OPERATION).read(**ADDRESS)
 
 

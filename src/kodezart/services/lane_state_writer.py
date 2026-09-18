@@ -116,7 +116,7 @@ class TrackerLaneStateWriter:
         except LaneRecordReadError as exc:
             raise LaneRecordWriteError(
                 lane_key=lane.lane_key,
-                reason=f"the recorded lane state could not be read: {exc}",
+                reason=f"the recorded lane state could not be read: {exc.reason}",
             ) from exc
         prior_comment, prior = located if located is not None else (None, None)
         record = next_lane_record(
