@@ -77,6 +77,8 @@ does not exist.
 | TrackerPort       | LinearMcpTracker         | Tracker vocabulary over the vendor MCP server, no model in the loop |
 | TrackerCommentReader | LinearMcpTracker | Complete comment reads for lane, escalation and ruling readers |
 | TrackerCriteriaReader | LinearMcpTracker | Full current criterion families for resolution and audit consumers |
+| WorkRefReader | LinearMcpTracker | The one read base resolution makes to find a blocker's branch, narrowed out of the port rather than added to it; on the per-issue pass it is the refs recorded against the issue |
+| WorkRefReader | RecordedDeliverableRefs | The same read on the scope path, answered from the blocker's own lane run-state record, which is where a lane's deliverable branch is written. A peer, selected at the composition root — not a fallback |
 | FireCriteriaReader | TrackerCriteria | Refreshes current native criterion obligations at execution, retry and replay barriers |
 | FireCriteriaSource | TrackerCriteria | Captures the typed native subject specification and supplies current criterion reads |
 | TrackerContextReader | LinearMcpTracker | Referenced assets and document bodies for fire context |
