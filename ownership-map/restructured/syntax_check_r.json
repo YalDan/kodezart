@@ -1,37 +1,30 @@
 {
  "M1": {
-  "checked": 245,
-  "failures": 0,
-  "failed_files": []
- },
- "M4": {
-  "checked": 144,
-  "failures": 0,
-  "failed_files": []
- },
- "M3": {
-  "checked": 133,
-  "failures": 0,
-  "failed_files": []
+  "checked": 243,
+  "failures": []
  },
  "M2": {
-  "checked": 37,
-  "failures": 0,
-  "failed_files": []
+  "checked": 38,
+  "failures": []
+ },
+ "M3": {
+  "checked": 134,
+  "failures": []
+ },
+ "M4": {
+  "checked": 158,
+  "failures": []
  },
  "M5": {
-  "checked": 75,
-  "failures": 0,
-  "failed_files": []
+  "checked": 74,
+  "failures": []
  },
  "M6": {
   "checked": 84,
-  "failures": 0,
-  "failed_files": []
+  "failures": []
  },
  "M7": {
   "checked": 41,
-  "failures": 0,
-  "failed_files": []
+  "failures": []
  }
 }
