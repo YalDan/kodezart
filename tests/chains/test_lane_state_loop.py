@@ -49,7 +49,9 @@ class Lane:
         lane_operation=None,
         port=None,
         publishes=None,
+        work_base_ref="main",
     ):
+        self.work_base_ref = work_base_ref
         self.repo = LaneRepo()
         self.port = tracker() if port is None else port
         self.criteria = TrackerCriteria(tracker=self.port)
@@ -79,7 +81,7 @@ class Lane:
             feature_branch=FEATURE,
             ralph_branch=BRANCH,
             base_spec=trunk_base("main"),
-            work_base_ref="main",
+            work_base_ref=self.work_base_ref,
             permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=ToolPreset.IMPLEMENTATION,
             acceptance_criteria=list(current.criteria),
@@ -139,6 +141,30 @@ async def test_the_recorded_branch_url_is_the_forges_own_branch_page():
     lane = Lane(evaluations=[native_evaluation()], forge=lane_forge())
     await lane.run()
     assert (await lane.record()).branch_url == f"{REPO_URL}/tree/{BRANCH}"
+
+
+async def test_a_round_built_on_earlier_work_records_the_runs_own_base():
+    """Every recorded identity is read off the loop's context, one seat each.
+
+    A round that continues earlier work cuts its loop branch from the
+    deliverable branch while its scope is still measured against the base the
+    run was dispatched on, so those two refs differ here. The record has to
+    carry the second, and each branch has to carry its own role: a pair of
+    seats exchanged where the binding is built would send a re-entering
+    reader to the wrong branch and grade it against the work it contains.
+    """
+    lane = Lane(evaluations=[native_evaluation()], work_base_ref=FEATURE)
+    await lane.run()
+
+    record = await lane.record()
+    assert (record.lane_key, record.branch) == (SUBJECT, BRANCH)
+    assert [
+        (item.branch, item.role, item.derived_from, item.run_id)
+        for item in record.associations
+    ] == [
+        (FEATURE, BranchRole.DELIVERABLE, "main", JOB),
+        (BRANCH, BranchRole.LOOP, FEATURE, JOB),
+    ]
 
 
 async def test_an_operation_with_no_event_purpose_refuses_before_the_session():

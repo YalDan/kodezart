@@ -290,9 +290,28 @@ class RalphLoop:
         config: RunnableConfig,
     ) -> dict[str, object]:
         ctx = RalphLoopContext.from_configurable(config)
-        if ctx.tracker_spec is not None and self._source is None:
-            raise NativeWriteRefusalError(
-                "Native execution requires its Git source reader"
+        # Everything a native iteration needs from its own wiring is settled
+        # here, before the first backend read of the node: each of these is
+        # knowable from the context and the collaborators alone, so none of
+        # them is worth a criteria read, a session or a commit first.
+        after_publish: AfterPublish | None = None
+        amendments: NativeAmendments | None = None
+        if ctx.tracker_spec is not None:
+            if self._source is None:
+                raise NativeWriteRefusalError(
+                    "Native execution requires its Git source reader"
+                )
+            if self._amendments is None:
+                raise NativeWriteRefusalError(
+                    "Native execution requires the precommit amendment owner"
+                )
+            if self._lane_state is None:
+                raise NativeWriteRefusalError(
+                    "Native execution requires the lane state writer"
+                )
+            amendments = self._amendments
+            after_publish = self._record_commit(
+                self._lane_state, self._lane_binding(ctx)
             )
         native_criteria = (
             None
@@ -319,16 +338,15 @@ class RalphLoop:
             prompt += "\n\n" + tracker_checks_section(native_criteria)
 
         native_guard = None
-        after_publish: AfterPublish | None = None
         reports = state.get("amendment_reports", [])
         blocked = False
         refusal: NativeAmendmentEvent | None = None
-        if ctx.tracker_spec is not None and native_criteria is not None:
-            if self._amendments is None:
-                raise NativeWriteRefusalError(
-                    "Native execution requires the precommit amendment owner"
-                )
-            native_guard = self._amendments.for_writer(
+        if (
+            ctx.tracker_spec is not None
+            and amendments is not None
+            and native_criteria is not None
+        ):
+            native_guard = amendments.for_writer(
                 spec=ctx.tracker_spec,
                 criteria=native_criteria,
                 base_ref=ctx.base_branch,
@@ -341,7 +359,6 @@ class RalphLoop:
                 prompt += "\n\nPrior independent amendment reports:\n" + "\n".join(
                     report.model_dump_json() for report in reports
                 )
-            after_publish = self._record_commit(ctx)
 
         commit_sha: str | None = None
         async for event in self._service.stream_workflow(
@@ -415,20 +432,19 @@ class RalphLoop:
             visibility=ctx.repo_visibility,
         )
 
-    def _record_commit(self, ctx: RalphLoopContext) -> AfterPublish:
+    def _record_commit(
+        self, lane_state: LaneStateWriter, lane: LaneBinding
+    ) -> AfterPublish:
         """The record write this node's commit act completes with.
 
-        Handed to the persisting phase rather than performed after it, so
-        no commit of this loop can reach a branch without its record. What
-        the write needs from configuration is resolved here, before the
-        implementation session opens: a lane that could not record its
-        commit refuses before it makes one.
+        Handed to the persisting phase rather than performed after it, so a
+        commit whose record write fails never completes that phase or yields
+        its sha; such a commit is on the branch, and the divergence is read
+        by comparing the recorded head with the branch head. What the write
+        needs from configuration is resolved here, before the implementation
+        session opens: a lane that could not record its commit refuses
+        before it makes one.
         """
-        lane_state, lane = self._lane_state, self._lane_binding(ctx)
-        if lane_state is None:
-            raise NativeWriteRefusalError(
-                "Native execution requires the lane state writer"
-            )
         lane_state.require_writable(lane=lane)
 
         async def record(workspace_path: str, receipt: PersistResult) -> None:
