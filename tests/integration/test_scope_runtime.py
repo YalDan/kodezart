@@ -14,7 +14,6 @@ from kodezart.composition.jobs import build_job_queue
 from kodezart.config.app import AppConfig
 from kodezart.config.job_queue import JobQueueSettings
 from kodezart.config.write_back import WriteBackSettings
-from kodezart.core.checkpointer import make_checkpointer
 from kodezart.core.errors import TrackerUnavailableError
 from kodezart.domain.criterion_evidence import parse_criterion_evidence
 from kodezart.domain.errors import (
@@ -27,14 +26,14 @@ from kodezart.domain.lane_entry import recorded_branches
 from kodezart.handlers.agent_handler import AgentHandler
 from kodezart.services.agent_service import AgentService
 from kodezart.services.lane_records import LaneRecordReader
-from kodezart.services.scope_runtime import _lane_checkpoint_key
+from kodezart.services.scope_runtime import _lane_namespace
 from kodezart.types.domain.agent import (
     ErrorEvent,
-    NodeSessionStartedEvent,
     ResultEvent,
     SystemEvent,
     WorkflowCompleteEvent,
     WorkflowIterationEvent,
+    WorkflowScopeBaseEvent,
 )
 from kodezart.types.domain.branch import (
     BranchRole,
@@ -52,7 +51,6 @@ from kodezart.types.domain.native_delivery import LaneDeliveryEvent
 from kodezart.types.domain.operation import LifecycleStage, RepoEntry, ScopeLabel
 from kodezart.types.domain.persist import PersistResult, PersistSource
 from kodezart.types.domain.run_event import RunEventKind
-from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.scope_runtime import ScopeLaneEvent, ScopeWalkEvent
 from kodezart.types.domain.session import PermissionMode
@@ -594,131 +592,6 @@ def lane_of(harness):
     return harness.engine._scoped_arm._lane_for(ORIGIN)
 
 
-def checkpoint_config():
-    return {"configurable": {"thread_id": _lane_checkpoint_key("scope-job", "A")}}
-
-
-async def pause_before_delivery(harness):
-    lane = lane_of(harness)
-    lane.graph.interrupt_before_nodes = ["deliver"]
-    events = await walk_reporting(
-        harness, kind="ScopeReadError", match="no final delivery phase"
-    )
-    snapshot = await lane.graph.aget_state(checkpoint_config())
-    assert snapshot.next == ("deliver",)
-    assert not any(
-        isinstance(event, ScopeLaneEvent) and isinstance(event.event, LaneDeliveryEvent)
-        for event in events
-    )
-    # The loop ran before this pause and crossed its criterion off, so the
-    # lane is closed and no walk would offer it again. What the resume this
-    # fixture sets up is about is the checkpoint, so the lane is made owed
-    # again the way the product makes one owed again.
-    owed_again(harness.port)
-    return snapshot, events
-
-
-async def test_resolved_checkpointer_round_trips_pause_identity_and_existing_branch():
-    async with make_checkpointer(":memory:") as saver:
-        harness = runtime(saver=saver)
-        paused, events = await pause_before_delivery(harness)
-        metadata = paused.metadata
-        assert isinstance(metadata["scope_lane_request"], str)
-        assert json.loads(metadata["scope_lane_request"])["job"] == "scope-job"
-        original = RunIdentity.model_validate_json(metadata["scope_lane_run_identity"])
-        observed = [
-            event.event.invocation.run
-            for event in events
-            if isinstance(event, ScopeLaneEvent)
-            and isinstance(event.event, NodeSessionStartedEvent)
-        ]
-        assert observed and all(run == original for run in observed)
-        original_branch = paused.values["feature_branch"]
-        assert original_branch and paused.values["feature_tip_sha"]
-        fresh = runtime(port=harness.port, saver=saver)
-        replayed = [event async for event in drive(fresh)]
-        assert fresh.executor.schema_calls == []
-        final = await lane_of(fresh).graph.aget_state(checkpoint_config())
-        assert final.next == ()
-        assert final.values["feature_branch"] == original_branch
-        assert (
-            final.metadata["scope_lane_run_identity"]
-            == metadata["scope_lane_run_identity"]
-        )
-        assert any(
-            isinstance(event, ScopeLaneEvent)
-            and isinstance(event.event, LaneDeliveryEvent)
-            for event in replayed
-        )
-        assert replayed[-1].observation.skipped_lanes == ("A",)
-        assert replayed[-1].observation.unresolved_criteria == ("A/check",)
-
-
-@pytest.mark.parametrize("change", ["check", "membership", "owed-state", "outage"])
-async def test_fresh_engine_paused_resume_requires_current_native_obligations(
-    change, monkeypatch
-):
-    harness = runtime()
-    await pause_before_delivery(harness)
-    port = harness.port
-    if change == "check":
-        port.issues["A/check"] = port.issues["A/check"].model_copy(
-            update={"body": "**Check:** changed paused Check\n**Evidence:** —"}
-        )
-    elif change == "membership":
-        port.issues["A/new"] = make_tracker_issue(
-            "A/new",
-            parent_key="A",
-            issue_labels=frozenset({"criterion"}),
-            body="**Check:** new owed Check\n**Evidence:** —",
-        )
-    elif change == "owed-state":
-        # Another obligation keeps the lane eligible, while the judged roster changes.
-        port.issues["A/check"] = port.issues["A/check"].model_copy(
-            update={"state_kind": WorkflowStateKind.COMPLETED}
-        )
-        port.issues["A/new"] = make_tracker_issue(
-            "A/new",
-            parent_key="A",
-            issue_labels=frozenset({"criterion"}),
-            body="**Check:** remaining owed Check\n**Evidence:** —",
-        )
-    fresh = runtime(port=port, saver=harness.saver)
-    if change == "outage":
-        original = port.scope_issues
-
-        async def current_unavailable(*, ref):
-            if ref.kind is ScopeKind.ISSUE:
-                raise TrackerUnavailableError("current criterion authority unavailable")
-            return await original(ref=ref)
-
-        probe = fresh.engine._scoped_arm._probe_for(ORIGIN)
-        probes = 0
-
-        async def no_open_delivery(*, repo_url, issue_key):
-            nonlocal probes
-            probes += 1
-            if probes == 2:
-                # Outage starts after the last admission read, at the launch boundary.
-                monkeypatch.setattr(port, "scope_issues", current_unavailable)
-            return False
-
-        monkeypatch.setattr(probe, "open_delivery_exists", no_open_delivery)
-    if change == "outage":
-        # The lane's own refusal is contained, and the tick after it reads the
-        # scope again through the same outage: a SCOPE read failure is not one
-        # lane's fault and still ends the run.
-        with pytest.raises(TrackerUnavailableError):
-            _ = [event async for event in drive(fresh)]
-    else:
-        reported = await walk_reporting(fresh, kind="FireSpecEntryError")
-        assert "current tracker criteria" in lane_failures(reported)[0].error.error
-    assert fresh.executor.schema_calls == []
-    assert (await lane_of(fresh).graph.aget_state(checkpoint_config())).next == (
-        "deliver",
-    )
-
-
 async def test_current_closed_blocker_unlocks_next_lane_using_its_actual_work_ref():
     port = board(lanes=("A", "B"), blocked={"B": ("A",)})
     harness = runtime(port=port, lanes=("A", "B"))
@@ -756,11 +629,16 @@ async def test_current_closed_blocker_unlocks_next_lane_using_its_actual_work_re
         ("A/check", LifecycleStage.DONE),
         ("B/check", LifecycleStage.DONE),
     ]
-    b_checkpoint = await lane_of(harness).graph.aget_state(
-        {"configurable": {"thread_id": _lane_checkpoint_key("scope-job", "B")}}
-    )
-    binding = json.loads(b_checkpoint.metadata["scope_lane_request"])
-    assert json.loads(binding["base"])["base_branch"] == "recorded-A"
+    # The base B was actually prepared with, read off the run's own base event
+    # rather than a checkpoint's request metadata (KOD-776 and the 2026-09-16
+    # steer: the scope path persists no graph state).
+    bases = {
+        event.lane_key: event.event.base_branch
+        for event in events
+        if isinstance(event, ScopeLaneEvent)
+        and isinstance(event.event, WorkflowScopeBaseEvent)
+    }
+    assert bases["B"] == "recorded-A"
 
 
 async def test_actual_http_sse_preserves_nested_progress_and_delivery_discriminators():
@@ -819,6 +697,15 @@ async def test_actual_http_sse_preserves_nested_progress_and_delivery_discrimina
         assert status["state"] == "terminal" and status["outcome"] is None
 
 
+def lane_checkpoint_config():
+    """The address the scoped lane graph's state used to be saved under.
+
+    Kept for the one assertion below, which this slice leaves failing on
+    purpose: see the note on that test.
+    """
+    return {"configurable": {"thread_id": _lane_namespace("scope-job", "A")}}
+
+
 async def test_actual_scope_composition_retains_completed_native_delivery_record():
     from kodezart.types.domain.native_delivery import CompletedLaneDelivery
     from tests.adapters.test_github_api import _make_client
@@ -862,7 +749,12 @@ async def test_actual_scope_composition_retains_completed_native_delivery_record
             ScopeLaneEvent.model_validate_json(addressed.model_dump_json()) == addressed
         )
         lane = harness.engine._scoped_arm._lane_for(origin)
-        final = await lane.graph.aget_state(checkpoint_config())
+        # LEFT FAILING ON PURPOSE. The scoped arm now compiles without a
+        # checkpointer (KOD-840), so nothing in process retains the completed
+        # delivery. What replaces this assertion is the pull request written
+        # onto the lane record, which is slice 2b's own criterion; nothing in
+        # this slice authorises dropping the assertion, so it stands.
+        final = await lane.graph.aget_state(lane_checkpoint_config())
         assert final.values["delivery"] == phase
         assert events[-1].observation.unresolved_criteria == ()
         assert harness.port.workflow_writes == [("A/check", LifecycleStage.DONE)]
@@ -873,69 +765,6 @@ async def test_actual_scope_composition_retains_completed_native_delivery_record
         ).graded_sha == await NativeSourceReader().resolve_commit(cwd="", ref="ralph/A")
     finally:
         await forge.close()
-
-
-@pytest.mark.parametrize("change", ["repository", "path", "scope"])
-async def test_same_job_checkpoint_refuses_incompatible_request_identity(change):
-    harness = runtime()
-    _ = [event async for event in drive(harness)]
-    owed_again(harness.port)
-    origin = "file:///another-repository.git" if change == "repository" else ORIGIN
-    scope = (
-        ScopeRef(kind=ScopeKind.PROJECT, key="another-scope")
-        if change == "scope"
-        else SCOPE
-    )
-    harness.port.scope_memberships[scope] = ("A",)
-    fresh = runtime(port=harness.port, saver=harness.saver, origin=origin)
-    await walk_reporting(
-        fresh,
-        kind="ScopeReadError",
-        match="different scope request",
-        origin=origin,
-        scope=scope,
-        path="/tmp/another-repo" if change == "path" else None,
-    )
-    assert fresh.executor.schema_calls == []
-
-
-@pytest.mark.parametrize("amended", [False, True])
-async def test_nested_fire_resume_reuses_branch_and_original_attributed_run(amended):
-    harness = runtime()
-    lane = lane_of(harness)
-    lane.fire.native_graph.interrupt_before_nodes = ["review_against_ticket"]
-    await walk_reporting(
-        harness, kind="ScopeReadError", match="no final delivery phase"
-    )
-    paused = await lane.graph.aget_state(checkpoint_config(), subgraphs=True)
-    child = paused.tasks[0].state
-    assert child.next == ("review_against_ticket",)
-    branch = child.values["feature_branch"]
-    original_identity = RunIdentity.model_validate_json(
-        paused.metadata["scope_lane_run_identity"]
-    )
-    # The loop crossed its criterion off before this pause, so the lane is
-    # made owed again the way the product does it — carrying the amended
-    # Check where the amendment is what this case is about.
-    owed_again(harness.port, check="amended before resumed review" if amended else None)
-    harness.port.issues["A"] = harness.port.issues["A"].model_copy(
-        update={"body": "A later subject body must not replace the frozen subject"}
-    )
-    fresh = runtime(port=harness.port, saver=harness.saver)
-    after = [event async for event in drive(fresh)]
-    assert fresh.executor.execution_prompts == []
-    assert not any("slug" in props for props in fresh.executor.schema_calls)
-    reviews = fresh.executor.evaluation_prompts
-    assert len(reviews) == 1
-    assert "A later subject body" not in reviews[0]
-    if amended:
-        assert "amended before resumed review" in reviews[0]
-    identities = fresh.executor.run_identities
-    assert identities and all(identity == original_identity for identity in identities)
-    assert any(isinstance(event, ScopeLaneEvent) for event in after)
-    final = await lane_of(fresh).graph.aget_state(checkpoint_config())
-    assert final.next == () and final.values["feature_branch"] == branch
-    assert final.values["fire_spec"].body == "Exact native subject A  with spaces\n"
 
 
 # ---------------------------------------------------------------------------
@@ -1475,3 +1304,32 @@ async def test_a_recorded_lane_the_facts_no_longer_admit_is_reported_not_fired(
     )
     assert second.executor.schema_calls == []
     assert await lane_record(port, "A") == before
+
+
+async def test_the_scoped_arm_holds_no_checkpointer_while_the_authored_arm_keeps_it():
+    """Three graphs on the scope path, none of them compiled with a saver.
+
+    A saver IS configured for this deployment, and the authored arm still
+    holds it, so the scope path's absence of one is a composition choice and
+    not an unconfigured deployment (KOD-840). A whole scoped run then writes
+    nothing to it.
+    """
+    saver = InMemorySaver()
+    harness = runtime(saver=saver)
+    lane = lane_of(harness)
+
+    assert lane.graph.checkpointer is None
+    assert lane.fire.native_graph is not None
+    assert lane.fire.native_graph.checkpointer is None
+    assert lane.fire.checkpointer is None
+    assert lane.fire.implementation._quality_gate._checkpointer is None
+    # Not vacuous: the arm a run without a scope takes still holds it.
+    authored = harness.engine.arm_for(None).fire
+    assert authored.graph.checkpointer is saver
+    assert authored.implementation._quality_gate._checkpointer is saver
+
+    events = [event async for event in drive(harness)]
+
+    # The run really ran, so the empty saver below is a statement about it.
+    assert events[-1].observation.dispatched == ("A",)
+    assert [checkpoint async for checkpoint in saver.alist(None)] == []

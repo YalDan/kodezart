@@ -1,15 +1,13 @@
 """Run a live scope inside its existing queue job, one fresh lane per tick."""
 
-import json
 from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
 
-from pydantic import TypeAdapter, ValidationError
+from pydantic import TypeAdapter
 
-from kodezart.chains.criteria import require_current_native_snapshot
 from kodezart.chains.native_delivery import NativeLaneWorkflow
 from kodezart.chains.scope_walker import read_scope_ready
 from kodezart.core.error_egress import build_error_event
@@ -40,10 +38,7 @@ from kodezart.types.domain.scope_runtime import (
 )
 from kodezart.types.domain.session import AllowedTools, PermissionMode
 from kodezart.types.domain.tracker import WorkflowStateKind
-from kodezart.types.domain.workflow import ExecutionContext
 
-_REQUEST_METADATA = "scope_lane_request"
-_RUN_METADATA = "scope_lane_run_identity"
 _NATIVE_STATE = TypeAdapter(NativeDeliveryState)
 _NATIVE_PROGRESS: TypeAdapter[ScopeLaneProgress] = TypeAdapter(ScopeLaneProgress)
 
@@ -52,10 +47,9 @@ class ScopeWorkflowEngine:
     """The sole lane selector inside a scope request.
 
     No child is submitted to the queue that is already running this scope.
-    A lane's checkpoint address is separate from the real queue job's holder
-    identity. This owner writes neither tracker state nor approval/claim marks.
-    The invocation stops after currently eligible lanes have each fired once;
-    remaining tracker obligations stay explicit for a later invocation.
+    This owner writes neither tracker state nor approval/claim marks, and it
+    persists no graph state: where a lane stands is its own tracker record,
+    read again before every fire.
     """
 
     def __init__(
@@ -199,7 +193,7 @@ class ScopeWorkflowEngine:
                 selected.issue.issue_key, failed=failed, rested=rested
             ):
                 key = selected.issue.issue_key
-                lane_key = _lane_checkpoint_key(cache_key, key)
+                lane_key = _lane_namespace(cache_key, key)
                 path = repo_path or await self._cache.ensure_available(url, lane_key)
                 spec = await self._resolver.resolve(
                     issue_key=key,
@@ -250,82 +244,8 @@ class ScopeWorkflowEngine:
                         kind=RunKind.FIRE, name=key, started_at=datetime.now(tz=UTC)
                     ),
                 )
-                context = ExecutionContext.from_configurable(config)
-                address = {
-                    "job": cache_key,
-                    "surface_holder": context.surface_holder,
-                    "scope": scope.model_dump_json(),
-                    "issue": key,
-                    "repo_url": context.repo_url,
-                    "repo_path": context.repo_path,
-                    "base": spec.model_dump_json(),
-                }
-                # LangGraph retains only scalar configuration metadata. JSON text
-                # survives the real checkpoint serializer without another store.
-                address_json = json.dumps(
-                    address, sort_keys=True, separators=(",", ":")
-                )
-                assert context.run_identity is not None
-                config["metadata"] = {
-                    _REQUEST_METADATA: address_json,
-                    _RUN_METADATA: context.run_identity.model_dump_json(),
-                }
-                initial: NativeDeliveryState | None = lane.prepare(fire_state)
-                if lane.fire.checkpointer is not None:
-                    saved = await lane.graph.aget_state(config)
-                    if saved.values:
-                        if (saved.metadata or {}).get(
-                            _REQUEST_METADATA
-                        ) != address_json:
-                            raise ScopeReadError(
-                                "native checkpoint belongs to a different "
-                                "scope request",
-                                ref=scope,
-                            )
-                        saved_state = _NATIVE_STATE.validate_python(saved.values)
-                        if (
-                            saved_state["issue_key"] != key
-                            or saved_state["repo_url"] != context.repo_url
-                        ):
-                            raise ScopeReadError(
-                                "native checkpoint state differs from its "
-                                "request identity",
-                                ref=scope,
-                            )
-                        original_run_json = (saved.metadata or {}).get(_RUN_METADATA)
-                        if not isinstance(original_run_json, str):
-                            raise ScopeReadError(
-                                "native checkpoint has no serialized run identity",
-                                ref=scope,
-                            )
-                        try:
-                            original_run = RunIdentity.model_validate_json(
-                                original_run_json
-                            )
-                        except ValidationError as exc:
-                            raise ScopeReadError(
-                                "native checkpoint has an invalid run identity",
-                                ref=scope,
-                            ) from exc
-                        if (
-                            original_run.kind is not RunKind.FIRE
-                            or original_run.name != key
-                        ):
-                            raise ScopeReadError(
-                                "native checkpoint run identity differs from its lane",
-                                ref=scope,
-                            )
-                        config["configurable"]["run_identity"] = (
-                            original_run.model_dump()
-                        )
-                        config["metadata"][_RUN_METADATA] = original_run_json
-                        # Even a fully completed checkpoint must not replay a cached
-                        # acceptance without asking today's criterion authority.
-                        await require_current_native_snapshot(
-                            saved_state, reader=lane.fire.criteria
-                        )
-                        initial = None
-                # Probe, checkpoint and record reads can yield to changed approval,
+                initial = lane.prepare(fire_state)
+                # Probe and record reads can yield to changed approval,
                 # membership or blockers. Admission must still hold at graph launch.
                 launch_ready = await read_scope_ready(ref=scope, tracker=self._tracker)
                 if current not in launch_ready.ready:
@@ -356,8 +276,12 @@ class ScopeWorkflowEngine:
                     skipped.append(key)
 
 
-def _lane_checkpoint_key(job_id: str, lane_key: str) -> str:
-    """A graph namespace, never a new queue job or writable-surface holder."""
+def _lane_namespace(job_id: str, lane_key: str) -> str:
+    """A name for this lane's clone and workspace directory, and nothing more.
+
+    Never a new queue job, never a writable-surface holder, and no longer a
+    checkpoint address: the scope path persists no graph state (KOD-840).
+    """
     return f"{job_id}-scope-{sha256(lane_key.encode()).hexdigest()}"
 
 

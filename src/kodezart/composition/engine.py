@@ -204,57 +204,68 @@ def build_workflow_engine(
     # this capability, and each consumer independently requires its reader.
     delay_floor_for = rate_limit_delay_floor(config)
     native_source = SubprocessGitSourceReader()
-    ralph_loop = RalphLoop(
-        source=native_source,
-        lane_state=(
-            TrackerLaneStateWriter(
-                tracker=scope_tracker,
-                operation=operation,
-                git=git,
-                git_remote=config.git.remote,
-                forge=github_api,
-                gate=gate,
-            )
-            if scope_tracker is not None and operation is not None
-            else None
-        ),
-        amendments=(
-            NativeAmendments(
-                tracker=scope_tracker,
-                operation=operation,
-                criteria=criteria,
-                git=git,
-                source=native_source,
-                workspace=workspace,
-                runner=agent_service,
-                prompts=prompts,
-                skills=skills,
-                repositories=repositories,
-                gate=gate,
-                max_verify_rounds=config.write_back.max_verify_rounds,
-                lease_seconds=config.tracker.surface_lease_seconds,
-            )
-            if scope_tracker is not None
-            and operation is not None
-            and criteria is not None
-            and config.write_back is not None
-            else None
-        ),
-        criteria_reader=criteria,
-        workspace=workspace,
-        service=agent_service,
-        max_iterations=config.max_iterations,
-        plateau_window=config.loop_plateau_window,
-        git=git,
-        cache=cache,
-        prompts=prompts,
-        skills=skills,
-        checkpointer=checkpointer,
-        retry_max_attempts=config.retry_max_attempts,
-        retry_initial_interval=config.retry_initial_interval,
-        delay_floor_for=delay_floor_for,
-        fan_in_max_attempts=config.fan_in_max_attempts,
-    )
+
+    def loop(saver: BaseCheckpointSaver[str] | None) -> RalphLoop:
+        """The quality gate, with whatever the arm it serves persists to.
+
+        The scoped arm persists nothing: its state is the tracker, so its loop
+        is built with no saver at all rather than given one it must not write
+        to (KOD-840).
+        """
+        return RalphLoop(
+            source=native_source,
+            lane_state=(
+                TrackerLaneStateWriter(
+                    tracker=scope_tracker,
+                    operation=operation,
+                    git=git,
+                    git_remote=config.git.remote,
+                    forge=github_api,
+                    gate=gate,
+                )
+                if scope_tracker is not None and operation is not None
+                else None
+            ),
+            amendments=(
+                NativeAmendments(
+                    tracker=scope_tracker,
+                    operation=operation,
+                    criteria=criteria,
+                    git=git,
+                    source=native_source,
+                    workspace=workspace,
+                    runner=agent_service,
+                    prompts=prompts,
+                    skills=skills,
+                    repositories=repositories,
+                    gate=gate,
+                    max_verify_rounds=config.write_back.max_verify_rounds,
+                    lease_seconds=config.tracker.surface_lease_seconds,
+                )
+                if scope_tracker is not None
+                and operation is not None
+                and criteria is not None
+                and config.write_back is not None
+                else None
+            ),
+            criteria_reader=criteria,
+            workspace=workspace,
+            service=agent_service,
+            max_iterations=config.max_iterations,
+            plateau_window=config.loop_plateau_window,
+            git=git,
+            cache=cache,
+            prompts=prompts,
+            skills=skills,
+            checkpointer=saver,
+            retry_max_attempts=config.retry_max_attempts,
+            retry_initial_interval=config.retry_initial_interval,
+            delay_floor_for=delay_floor_for,
+            fan_in_max_attempts=config.fan_in_max_attempts,
+        )
+
+    authored_loop = loop(checkpointer)
+
     ticket_generator = TicketGenerationLoop(
         service=agent_service,
         workspace=workspace,
@@ -274,53 +285,66 @@ def build_workflow_engine(
         skills=skills,
     )
 
+    def fire(
+        forge: GitHubAPIClient | None,
+        *,
+        quality_gate: RalphLoop,
+        saver: BaseCheckpointSaver[str] | None,
+    ) -> RalphWorkflowEngine:
+        """One fire engine, with the loop and the saver its arm was chosen with.
+
+        The two are one choice: an engine compiled with a saver whose loop was
+        built without one would persist half a fire.
+        """
+        return RalphWorkflowEngine(
+            criteria=criteria,
+            specification=FireSpecification(
+                service=agent_service,
+                ticket_generator=ticket_generator,
+                prompts=prompts,
+                skills=skills,
+                gate=gate,
+                visibility_resolver=forge,
+                criteria_max_regeneration_rounds=config.criteria_max_regeneration_rounds,
+                fan_in_max_attempts=config.fan_in_max_attempts,
+            ),
+            implementation=FireImplementation(
+                criteria_reader=criteria,
+                quality_gate=quality_gate,
+                prompts=prompts,
+                artifact_persister=artifact_persister,
+                gate=gate,
+            ),
+            consolidation=FireConsolidation(
+                merger=merger,
+                git=git,
+                cache=cache,
+                git_remote=config.git.remote,
+                ref_publisher=ref_publisher if forge is not None else None,
+            ),
+            review=FireReview(
+                criteria_reader=criteria,
+                service=agent_service,
+                prompts=prompts,
+                skills=skills,
+                git=git,
+                cache=cache,
+                fan_in_max_attempts=config.fan_in_max_attempts,
+            ),
+            remediation=FireRemediation(
+                remediator=remediator,
+                remediation_max_rounds=config.remediation_max_rounds,
+            ),
+            git_base_url=config.git.base_url,
+            checkpointer=saver,
+            retry_max_attempts=config.retry_max_attempts,
+            retry_initial_interval=config.retry_initial_interval,
+            delay_floor_for=delay_floor_for,
+        )
+
     def arm(forge: GitHubAPIClient | None) -> AuthoredDeliveryCoordinator:
         return AuthoredDeliveryCoordinator(
-            fire=RalphWorkflowEngine(
-                criteria=criteria,
-                specification=FireSpecification(
-                    service=agent_service,
-                    ticket_generator=ticket_generator,
-                    prompts=prompts,
-                    skills=skills,
-                    gate=gate,
-                    visibility_resolver=forge,
-                    criteria_max_regeneration_rounds=config.criteria_max_regeneration_rounds,
-                    fan_in_max_attempts=config.fan_in_max_attempts,
-                ),
-                implementation=FireImplementation(
-                    criteria_reader=criteria,
-                    quality_gate=ralph_loop,
-                    prompts=prompts,
-                    artifact_persister=artifact_persister,
-                    gate=gate,
-                ),
-                consolidation=FireConsolidation(
-                    merger=merger,
-                    git=git,
-                    cache=cache,
-                    git_remote=config.git.remote,
-                    ref_publisher=ref_publisher if forge is not None else None,
-                ),
-                review=FireReview(
-                    criteria_reader=criteria,
-                    service=agent_service,
-                    prompts=prompts,
-                    skills=skills,
-                    git=git,
-                    cache=cache,
-                    fan_in_max_attempts=config.fan_in_max_attempts,
-                ),
-                remediation=FireRemediation(
-                    remediator=remediator,
-                    remediation_max_rounds=config.remediation_max_rounds,
-                ),
-                git_base_url=config.git.base_url,
-                checkpointer=checkpointer,
-                retry_max_attempts=config.retry_max_attempts,
-                retry_initial_interval=config.retry_initial_interval,
-                delay_floor_for=delay_floor_for,
-            ),
+            fire=fire(forge, quality_gate=authored_loop, saver=checkpointer),
             publication=AuthoredPublication(
                 service=agent_service,
                 prompts=prompts,
@@ -348,10 +372,14 @@ def build_workflow_engine(
             raise ValueError("Scope execution requires a native criterion source")
         if operation is None:
             raise ValueError("Scope execution requires the operation config")
+        # The scoped arm's own engines, with no saver anywhere: the lane's
+        # state is its tracker record, so nothing here writes a checkpoint
+        # and nothing reads one (KOD-840).
+        native_loop = loop(None)
         scoped_arm = build_scope_runtime(
             tracker=scope_tracker,
             forge_lane=build_native_lane_workflow(
-                fire=forge_arm.fire,
+                fire=fire(github_api, quality_gate=native_loop, saver=None),
                 config=config,
                 service=agent_service,
                 git=git,
@@ -362,7 +390,7 @@ def build_workflow_engine(
                 repositories=repositories,
             ),
             forge_less_lane=build_native_lane_workflow(
-                fire=forge_less_arm.fire,
+                fire=fire(None, quality_gate=native_loop, saver=None),
                 config=config,
                 service=agent_service,
                 git=git,

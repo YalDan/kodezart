@@ -3,43 +3,45 @@
 import pytest
 
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
+from kodezart.types.domain.tracker import WorkflowStateKind
 from tests.integration.test_scope_runtime import (
-    ORIGIN,
+    A_KEYS,
     SCOPE,
+    TWO_CHECKS,
+    WalkRepos,
     board,
     drive,
+    echoes,
+    first_fire,
     lane_failures,
-    lane_of,
-    owed_again,
-    runtime,
-    walk_reporting,
+    resumable,
 )
 
 
 @pytest.mark.parametrize("change", ["approval", "membership", "blocker", "unchanged"])
-async def test_paused_resume_rechecks_readiness_after_awaited_delivery_probe(
+async def test_re_entry_rechecks_readiness_after_the_awaited_record_read(
     monkeypatch, change
 ):
-    harness = runtime()
-    lane_of(harness).fire.native_graph.interrupt_before_nodes = [
-        "review_against_ticket"
-    ]
-    await walk_reporting(
-        harness, kind="ScopeReadError", match="no final delivery phase"
-    )
-    port = harness.port
-    # The loop ran before this pause and crossed its criterion off, so the
-    # lane is closed and no walk offers it again; what the resume is about is
-    # readiness, so the lane is made owed again the way the product does it.
-    owed_again(port)
-    fresh = runtime(port=port, saver=harness.saver)
-    probe = fresh.engine._scoped_arm._probe_for(ORIGIN)
-    count = 0
+    """Admission has to still hold at the graph's launch, not only before it.
 
-    async def change_during_probe(*, repo_url, issue_key):
-        nonlocal count
-        count += 1
-        if count == 2:
+    The awaited preparation a resumed lane makes is the read of its own record,
+    so that is where a board is changed under it here: the record listing for
+    lane A yields, the board moves, and the launch must not happen. Run one
+    leaves A a record and one criterion still owed, which is the state a killed
+    process leaves behind (KOD-785 and the 2026-09-16 steer: the delivery probe
+    is no longer the preparation that matters).
+    """
+    repos = WalkRepos()
+    port = board(lanes=("A",), checks=TWO_CHECKS)
+    await first_fire(port, repos)
+    second = resumable(port=port, repos=repos, evaluations=echoes(passed=set(A_KEYS)))
+    listing = port.list_comments
+    reads = 0
+
+    async def change_during_record_read(*, issue_key):
+        nonlocal reads
+        reads += 1
+        if reads == 1:
             if change == "approval":
                 port.scope_label_members[ScopeRef(kind=ScopeKind.ISSUE, key="A")] = (
                     frozenset()
@@ -47,21 +49,29 @@ async def test_paused_resume_rechecks_readiness_after_awaited_delivery_probe(
             elif change == "membership":
                 port.scope_memberships[SCOPE] = ()
             elif change == "blocker":
-                other = board(lanes=("B", "A"), blocked={"A": ("B",)})
+                other = board(
+                    lanes=("B", "A"), blocked={"A": ("B",)}, checks=TWO_CHECKS
+                )
                 port.issues["A"] = other.issues["A"]
                 port.issues["B"] = other.issues["B"]
                 port.issues["B/check"] = other.issues["B/check"]
+                port.issues["B/second"] = other.issues["B/second"]
                 port.scope_memberships[SCOPE] = ("A", "B")
                 port.scope_label_members[ScopeRef(kind=ScopeKind.ISSUE, key="B")] = (
                     frozenset()
                 )
-        return False
+        return await listing(issue_key=issue_key)
 
-    monkeypatch.setattr(probe, "open_delivery_exists", change_during_probe)
-    events = [event async for event in drive(fresh)]
+    monkeypatch.setattr(port, "list_comments", change_during_record_read)
+    events = [event async for event in drive(second, job="second-job")]
+    assert reads, "the resumed lane made no record read to change the board under"
     if change == "unchanged":
-        assert len(fresh.executor.evaluation_prompts) == 1
-        # Nothing changed, so nothing about this lane was refused either.
+        # Nothing moved, so the lane launched and its fire ran to the end:
+        # it graded, nothing refused it, and it owes nothing afterwards.
+        assert second.executor.evaluation_prompts
         assert not lane_failures(events)
+        assert all(
+            port.issues[key].state_kind is WorkflowStateKind.COMPLETED for key in A_KEYS
+        )
     else:
-        assert not fresh.executor.evaluation_prompts
+        assert not second.executor.evaluation_prompts
