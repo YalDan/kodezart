@@ -61,11 +61,14 @@ LANE = "LANE-1"
 #: record read off a remote nobody configured would read as this lane's.
 REMOTE = "fixture-remote"
 REPO_URL = "https://forge.example/acme/repo"
+#: The subject digest this lane's fire entered on, as its record pins it.
+SUBJECT_DIGEST = "f" * 64
 
 
 def binding() -> LaneBinding:
     return LaneBinding(
         lane_key=LANE,
+        body_digest=SUBJECT_DIGEST,
         loop_branch="ralph/LANE-1",
         deliverable_branch="feature/LANE-1",
         base_ref="trunk",
@@ -525,6 +528,7 @@ async def test_a_lane_naming_no_repository_refuses_before_any_read():
     )
     homeless = LaneBinding(
         lane_key=LANE,
+        body_digest=SUBJECT_DIGEST,
         loop_branch="ralph/LANE-1",
         deliverable_branch="feature/LANE-1",
         base_ref="trunk",
@@ -557,6 +561,7 @@ async def test_a_run_rebound_to_another_deliverable_leaves_the_board_untouched()
     before = [(comment.comment_key, comment.body) for comment in port.comments]
     rebound = LaneBinding(
         lane_key=LANE,
+        body_digest=SUBJECT_DIGEST,
         loop_branch=binding().loop_branch,
         deliverable_branch="feature/another",
         base_ref=binding().base_ref,

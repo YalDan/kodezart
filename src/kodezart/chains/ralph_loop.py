@@ -41,6 +41,7 @@ from kodezart.domain.criterion_cross_off import (
 )
 from kodezart.domain.errors import GitSourceReadError
 from kodezart.domain.fan_in import fan_in_report, require_permutation
+from kodezart.domain.fire_spec import subject_digest
 from kodezart.domain.prompt_variables import (
     changeset_variables,
     execution_criteria_variables,
@@ -476,6 +477,7 @@ class RalphLoop:
             )
         return LaneBinding(
             lane_key=ctx.tracker_spec.subject,
+            body_digest=subject_digest(spec=ctx.tracker_spec),
             loop_branch=ctx.ralph_branch,
             deliverable_branch=ctx.feature_branch,
             base_ref=ctx.base_branch,

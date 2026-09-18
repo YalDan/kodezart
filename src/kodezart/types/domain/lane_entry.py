@@ -21,6 +21,10 @@ class ResumedLane(CamelCaseModel):
     ``head_sha`` is the REMOTE head read at the decision, not the record's own
     head: the remote is the truth about what the branch contains, while the
     record is the truth about which branch.
+
+    ``body_digest`` is the subject digest AS RECORDED, and ``None`` on a record
+    written before the digest was pinned; the fire compares the text it reads
+    at entry against it.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -29,6 +33,7 @@ class ResumedLane(CamelCaseModel):
     deliverable_branch: str = Field(min_length=1)
     loop_branch: str = Field(min_length=1)
     head_sha: str = Field(min_length=1)
+    body_digest: str | None
 
 
 class DeliverOnlyLane(CamelCaseModel):
@@ -40,6 +45,7 @@ class DeliverOnlyLane(CamelCaseModel):
     deliverable_branch: str = Field(min_length=1)
     loop_branch: str = Field(min_length=1)
     head_sha: str = Field(min_length=1)
+    body_digest: str | None
 
 
 type LaneEntry = Annotated[

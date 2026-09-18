@@ -339,6 +339,29 @@ class FireSpecEntryError(Exception):
         super().__init__(f"fire subject {issue_key!r} cannot enter: {reason}")
 
 
+class SubjectAmendedError(FireSpecEntryError):
+    """The subject text read at entry differs from the digest on the record.
+
+    Read once per process entry, compared, and never silently re-read: a
+    lane whose subject was edited under it stays refused and reported until
+    a person acts on the record, because what its criteria were graded
+    against is not the text that is there now.
+    """
+
+    def __init__(
+        self, *, issue_key: str, recorded_digest: str, current_digest: str
+    ) -> None:
+        self.recorded_digest = recorded_digest
+        self.current_digest = current_digest
+        super().__init__(
+            issue_key=issue_key,
+            reason=(
+                f"the subject text digest {current_digest} differs from the "
+                f"recorded {recorded_digest}"
+            ),
+        )
+
+
 class EmptyFireCriteriaError(Exception):
     """A successful tracker spec read found no criterion sub-issues."""
 

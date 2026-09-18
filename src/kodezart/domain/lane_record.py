@@ -104,6 +104,14 @@ def next_lane_record(
         files_changed=len(changeset.file_paths),
         commits=commits,
         pr=prior.pr if prior is not None else None,
+        # Pinned once, by the first write that had one: a later entry reading
+        # a different subject is an amendment and is refused before it, so
+        # nothing here re-pins the digest under a running lane.
+        body_digest=(
+            prior.body_digest
+            if prior is not None and prior.body_digest is not None
+            else lane.body_digest
+        ),
         associations=associations,
     )
 

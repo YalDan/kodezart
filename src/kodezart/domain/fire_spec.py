@@ -2,6 +2,7 @@
 
 import re
 from collections.abc import Mapping, Sequence
+from hashlib import sha256
 from typing import Literal
 
 from kodezart.domain.errors import (
@@ -16,6 +17,16 @@ from kodezart.types.domain.tracker import TrackerIssue
 _CRITERION_ROW = re.compile(r"^ {0,3}\*\*(Check|Do|Evidence|Class):\*\*(.*)$")
 _FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
 CriterionField = Literal["Check", "Do", "Evidence", "Class"]
+
+
+def subject_digest(*, spec: TrackerSpec) -> str:
+    """The sha256 hex of the captured subject text, as the record pins it.
+
+    The one fact a lane's record keeps about the text it entered on, and
+    arithmetic over the bytes that were read: two processes that read the
+    same subject agree on it without either of them asking anything.
+    """
+    return sha256(spec.body.encode("utf-8")).hexdigest()
 
 
 def _without_comments(line: str, *, comment: bool) -> tuple[str, bool]:

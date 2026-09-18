@@ -19,6 +19,7 @@ LOOP = "kodezart/KOD-684-0a1b2c3d-ralph-11112222"
 DELIVERABLE = "kodezart/KOD-684-0a1b2c3d"
 RECORDED_HEAD = "a" * 40
 REMOTE_HEAD = "c" * 40
+DIGEST = "d" * 64
 
 
 def record(
@@ -27,6 +28,7 @@ def record(
     deliverable: str = DELIVERABLE,
     base: str = BASE,
     head: str = RECORDED_HEAD,
+    digest: str | None = DIGEST,
     pr: LanePR | None = None,
     extra: tuple[BranchAssociation, ...] = (),
 ) -> LaneRunState:
@@ -41,6 +43,7 @@ def record(
         files_changed=1,
         commits=[LaneCommit(sha=head, subject="feat: one", issue_id=LANE)],
         pr=pr,
+        body_digest=digest,
         associations=[
             BranchAssociation(
                 branch=deliverable,
@@ -84,7 +87,10 @@ ROWS = (
             "open_criteria": ("KOD-684/check",),
         },
         ResumedLane(
-            deliverable_branch=DELIVERABLE, loop_branch=LOOP, head_sha=REMOTE_HEAD
+            deliverable_branch=DELIVERABLE,
+            loop_branch=LOOP,
+            head_sha=REMOTE_HEAD,
+            body_digest=DIGEST,
         ),
     ),
     (
@@ -95,14 +101,20 @@ ROWS = (
             "open_criteria": ("KOD-684/check",),
         },
         ResumedLane(
-            deliverable_branch=DELIVERABLE, loop_branch=LOOP, head_sha=REMOTE_HEAD
+            deliverable_branch=DELIVERABLE,
+            loop_branch=LOOP,
+            head_sha=REMOTE_HEAD,
+            body_digest=DIGEST,
         ),
     ),
     (
         "record, gap empty, no pull request",
         {"record": record(), "remote_loop_head": REMOTE_HEAD},
         DeliverOnlyLane(
-            deliverable_branch=DELIVERABLE, loop_branch=LOOP, head_sha=REMOTE_HEAD
+            deliverable_branch=DELIVERABLE,
+            loop_branch=LOOP,
+            head_sha=REMOTE_HEAD,
+            body_digest=DIGEST,
         ),
     ),
     (
@@ -120,6 +132,17 @@ ROWS = (
 )
 def test_each_row_of_the_entry_table(facts, expected) -> None:
     assert decide(**facts) == expected
+
+
+def test_a_record_written_before_the_pin_carries_no_digest_to_compare() -> None:
+    """A record with no digest is not compared, and is pinned by its next write."""
+    entry = decide(
+        record=record(digest=None),
+        remote_loop_head=REMOTE_HEAD,
+        open_criteria=("KOD-684/check",),
+    )
+    assert isinstance(entry, ResumedLane)
+    assert entry.body_digest is None
 
 
 def test_a_resumed_lane_carries_the_remote_head_not_the_recorded_one() -> None:

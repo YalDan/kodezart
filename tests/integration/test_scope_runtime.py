@@ -21,7 +21,7 @@ from kodezart.domain.errors import (
     GitSourceReadError,
     ScopePlanRefusalError,
 )
-from kodezart.domain.fire_spec import criterion_field_bodies
+from kodezart.domain.fire_spec import criterion_field_bodies, subject_digest
 from kodezart.domain.lane_entry import recorded_branches
 from kodezart.handlers.agent_handler import AgentHandler
 from kodezart.services.agent_service import AgentService
@@ -1333,3 +1333,56 @@ async def test_the_scoped_arm_holds_no_checkpointer_while_the_authored_arm_keeps
     # The run really ran, so the empty saver below is a statement about it.
     assert events[-1].observation.dispatched == ("A",)
     assert [checkpoint async for checkpoint in saver.alist(None)] == []
+
+
+# ---------------------------------------------------------------------------
+# KOD-433 — the subject text is read once at entry and compared with the
+# digest the record pinned.
+# ---------------------------------------------------------------------------
+
+
+async def spec_of(port, key: str):
+    """The subject as the production reader captures it."""
+    return await TrackerCriteria(tracker=port).read_spec(issue_key=key)
+
+
+async def test_the_digest_is_pinned_at_the_first_record_write():
+    """What the record keeps about the subject is the digest of the text read."""
+    repos = WalkRepos()
+    port = board(lanes=("A",), checks=TWO_CHECKS)
+    _, record = await first_fire(port, repos)
+    assert record.body_digest == subject_digest(spec=await spec_of(port, "A"))
+
+
+async def test_a_subject_amended_between_runs_is_refused_by_digest_not_re_read(
+    monkeypatch,
+):
+    """An edited subject is an amendment, never a silent re-read.
+
+    Run one pins the digest. The subject is then edited, and the second
+    process reads the text once at entry, compares, and refuses this one lane
+    before any session: the criteria it owes were graded against the text the
+    digest names. Nothing re-pins the digest, so the record is untouched.
+    """
+    repos = WalkRepos()
+    port = board(lanes=("A",), checks=TWO_CHECKS)
+    _, before = await first_fire(port, repos)
+    port.issues["A"] = port.issues["A"].model_copy(
+        update={"body": "A later subject body must not be read into a resumed lane"}
+    )
+    refuse_to_mint(monkeypatch)
+
+    second = resumable(port=port, repos=repos, evaluations=echoes(passed=set(A_KEYS)))
+    await walk_reporting(
+        second, kind="SubjectAmendedError", match="differs from the recorded"
+    )
+
+    assert second.executor.execution_prompts == []
+    assert second.executor.evaluation_prompts == []
+    after = await lane_record(port, "A")
+    assert after == before
+    assert (
+        after.body_digest
+        == before.body_digest
+        != subject_digest(spec=await spec_of(port, "A"))
+    )

@@ -37,11 +37,14 @@ from tests.identity_guards import construction_sites, model_value_sites
 
 SOURCE_ROOT = Path(__file__).parents[2] / "src" / "kodezart"
 RECORD = "LaneRunState"
+#: The subject digest a binding carries, pinned on the record it composes.
+DIGEST = "e" * 64
 
 
 def binding() -> LaneBinding:
     return LaneBinding(
         lane_key="lane:alpha",
+        body_digest=DIGEST,
         loop_branch="ordinary-name",
         deliverable_branch="has-ralph-in-its-name",
         base_ref="trunk",
@@ -78,6 +81,7 @@ def record_data() -> dict[str, object]:
             },
         ],
         "pr": {"url": "https://forge.example/pr/7", "number": 7, "state": "OPEN"},
+        "bodyDigest": DIGEST,
         "associations": [
             {
                 "branch": "ordinary-name",
@@ -118,6 +122,7 @@ def test_record_and_association_have_only_the_declared_fields():
         "files_changed",
         "commits",
         "pr",
+        "body_digest",
         "associations",
     }
     assert set(LaneCommit.model_fields) == {"sha", "subject", "issue_id"}
@@ -623,6 +628,7 @@ def test_the_pull_request_the_prior_record_carries_survives_the_next_commit():
     prior = LaneRunState.model_validate(record_data())
     lane = LaneBinding(
         lane_key=prior.lane_key,
+        body_digest=DIGEST,
         loop_branch=prior.branch,
         deliverable_branch="has-ralph-in-its-name",
         base_ref="trunk",
@@ -657,6 +663,7 @@ def test_a_run_rebound_to_another_deliverable_refuses_before_composing_a_record(
     )
     rebound = LaneBinding(
         lane_key=lane.lane_key,
+        body_digest=lane.body_digest,
         loop_branch=lane.loop_branch,
         deliverable_branch="another-deliverable",
         base_ref=lane.base_ref,
@@ -692,6 +699,7 @@ def test_a_run_rebased_onto_another_base_refuses_before_composing_a_record():
     )
     rebased = LaneBinding(
         lane_key=lane.lane_key,
+        body_digest=lane.body_digest,
         loop_branch=lane.loop_branch,
         deliverable_branch=lane.deliverable_branch,
         base_ref="another-base",
@@ -780,6 +788,7 @@ def test_a_later_run_adds_its_own_association_pair_beside_the_first():
     )
     remediation = LaneBinding(
         lane_key=lane.lane_key,
+        body_digest=lane.body_digest,
         loop_branch="second-loop",
         deliverable_branch=lane.deliverable_branch,
         base_ref=lane.base_ref,

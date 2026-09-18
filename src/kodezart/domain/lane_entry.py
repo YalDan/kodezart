@@ -124,6 +124,7 @@ def decide_lane_entry(
             deliverable_branch=branches.deliverable_branch,
             loop_branch=branches.loop_branch,
             head_sha=remote_loop_head,
+            body_digest=record.body_digest,
         )
     if record.pr is not None:
         return None
@@ -131,4 +132,5 @@ def decide_lane_entry(
         deliverable_branch=branches.deliverable_branch,
         loop_branch=branches.loop_branch,
         head_sha=remote_loop_head,
+        body_digest=record.body_digest,
     )

@@ -22,6 +22,9 @@ class LaneBinding:
     loop_branch: str
     deliverable_branch: str
     base_ref: str
+    #: The digest of the subject text this run entered on, pinned by the
+    #: record's first write and compared at every later entry.
+    body_digest: str
     repo_url: str | None
     repo_path: str | None
     run_id: str
@@ -81,6 +84,10 @@ class LaneRunState(CamelCaseModel):
     files_changed: int = Field(ge=0)
     commits: list[LaneCommit]
     pr: LanePR | None = None
+    #: The subject digest this lane was entered on, ``None`` on a record
+    #: written before the pin existed. Never re-pinned by a later entry:
+    #: an entry whose text differs is an amendment, not a re-read.
+    body_digest: Annotated[str, Field(min_length=1)] | None = None
     associations: list[BranchAssociation]
 
     @model_validator(mode="after")

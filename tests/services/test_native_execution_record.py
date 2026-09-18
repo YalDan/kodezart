@@ -42,6 +42,7 @@ REPO_URL = "https://forge.example/owner/repo"
 def lane() -> LaneBinding:
     return LaneBinding(
         lane_key=SUBJECT,
+        body_digest="a" * 64,
         loop_branch=BRANCH,
         deliverable_branch="feature/native-test",
         base_ref="main",
