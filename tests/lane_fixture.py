@@ -12,6 +12,7 @@ import httpx
 
 from kodezart.adapters.github.api import GitHubAPIClient
 from kodezart.core.backoff import RetryPolicy
+from kodezart.domain.errors import TransientAPIError
 from kodezart.types.domain.consolidation import ChangesetDigest
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.operation import OperationConfig
@@ -29,6 +30,7 @@ from tests.fakes import (
     SUPPRESS_ALL_SKILLS,
     FakeChangePersister,
     FakeGitService,
+    FakeTrackerPort,
     make_tracker_issue,
 )
 
@@ -103,6 +105,51 @@ def criteria_echo(*, keys: Sequence[str], passed: Container[str]) -> dict:
             for key in keys
         ]
     }
+
+
+class LosingBoard(FakeTrackerPort):
+    """A board that loses the next write of one named call, and then behaves.
+
+    Taking a criterion back is three writes — the move back, the Evidence row
+    and the event — and each of them can be the one the backend does not
+    take. What the board holds afterwards, and what a later failing verdict
+    does about it, is the property this double exists to ask about, so the
+    loss is armed when a test wants it rather than on the first write of that
+    name: armed after the writes a test needs to have landed, the next write
+    of that call is the one the act under test makes.
+    """
+
+    def __init__(self, **rest) -> None:
+        super().__init__(**rest)
+        self._drops: str | None = None
+        self._dropped = False
+
+    def lose(self, call: str) -> None:
+        """Lose the next write of *call*, and only that one."""
+        self._drops, self._dropped = call, False
+
+    def _drop_once(self, call: str) -> bool:
+        if call != self._drops or self._dropped:
+            return False
+        self._dropped = True
+        return True
+
+    async def post_run_event(self, *, issue_key, event):
+        if self._drop_once("post_run_event"):
+            raise TransientAPIError("the posted event never reached the board")
+        return await super().post_run_event(issue_key=issue_key, event=event)
+
+    async def reset_criterion_pending(self, *, expected, holder=None):
+        if self._drop_once("reset_criterion_pending"):
+            raise TransientAPIError("the move back never reached the board")
+        return await super().reset_criterion_pending(expected=expected, holder=holder)
+
+    async def edit_description(self, *, target, expected, replacement, **rest):
+        if self._drop_once("edit_description"):
+            raise TransientAPIError("the Evidence row never reached the board")
+        return await super().edit_description(
+            target=target, expected=expected, replacement=replacement, **rest
+        )
 
 
 class LaneGit(FakeGitService):

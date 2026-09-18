@@ -16,7 +16,10 @@ from kodezart.domain.errors import (
     StaleWriteError,
     TransientAPIError,
 )
-from kodezart.domain.fire_spec import replace_criterion_fields
+from kodezart.domain.fire_spec import (
+    criterion_field_bodies,
+    replace_criterion_fields,
+)
 from kodezart.domain.issue_tree import SubtreeClosure
 from kodezart.domain.lane_record import RUN_STATE_PURPOSE
 from kodezart.domain.run_event_stream import (
@@ -49,7 +52,7 @@ from kodezart.types.domain.run_state import LaneBinding
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.tracker import TrackerComment, WorkflowStateKind
 from tests.fakes import FakeTrackerPort, PassThroughGate, make_tracker_issue
-from tests.lane_fixture import LaneGit, LaneRepo, lane_operation
+from tests.lane_fixture import LaneGit, LaneRepo, LosingBoard, lane_operation
 
 LANE = "LANE-1"
 #: The remote this lane's repository is on, named unlike the production
@@ -295,18 +298,6 @@ async def test_a_gate_that_alters_the_recorded_facts_refuses_the_whole_write():
     assert port.comments == []
 
 
-class DroppingBoard(FakeTrackerPort):
-    """A board that loses the first event post, after the record is written."""
-
-    dropped = 0
-
-    async def post_run_event(self, *, issue_key: str, event):
-        if self.dropped == 0:
-            self.dropped += 1
-            raise TransientAPIError("the event post was lost")
-        return await super().post_run_event(issue_key=issue_key, event=event)
-
-
 def event_comments(port: FakeTrackerPort) -> list:
     prefix = lane_operation().marker_prefixes["run_event"]
     return [
@@ -315,10 +306,12 @@ def event_comments(port: FakeTrackerPort) -> list:
 
 
 async def test_an_event_lost_after_the_record_is_posted_by_the_next_commit():
-    port = DroppingBoard(
+    port = LosingBoard(
         issues=[make_tracker_issue(LANE)],
         marker_prefixes=lane_operation().marker_prefixes,
     )
+    # The first-push event of the first commit is the write that is lost.
+    port.lose("post_run_event")
     repo = lane_repo()
     lane_state = writer(port, repo)
 
@@ -1238,6 +1231,89 @@ async def test_a_regression_on_a_sub_issue_that_drifted_takes_nothing_back(
     assert refutations(port) == []
 
 
+class MovingBoard(FakeTrackerPort):
+    """A board that rewrites the addressed sub-issue inside the move back.
+
+    The edit lands after the write the act starts with and before the
+    Evidence row it goes on to set, which is the one window in which the body
+    the act's precondition was read from and the body that row is set against
+    are different: the port's own move back writes no body, so nothing else
+    models a third party editing one there.
+    """
+
+    def __init__(self, *, target: str, edit) -> None:
+        source = criteria_board()
+        super().__init__(
+            issues=list(source.issues.values()),
+            marker_prefixes=lane_operation().marker_prefixes,
+        )
+        self._target, self._edit = target, edit
+
+    async def reset_criterion_pending(self, *, expected, holder=None):
+        moved = await super().reset_criterion_pending(expected=expected, holder=holder)
+        if expected.issue_key == self._target:
+            stored = self.issues[self._target]
+            self.issues[self._target] = stored.model_copy(
+                update={"body": self._edit(stored.body)}
+            )
+        return moved
+
+
+async def test_a_check_amended_under_the_move_back_leaves_the_criterion_owed():
+    """The row is set against the body the move back left, and asserts about it.
+
+    A third party amends the Check between the move and the stamp, so the
+    sub-issue that row would land on is no longer the one this verdict
+    addresses and the act stops there. What it leaves is the partial state a
+    lost stamp leaves: unstarted and owed, carrying the grading that finished
+    it, with nothing on the stream saying it was taken back.
+    """
+    broken = CRITERIA[0]
+    port = MovingBoard(
+        target=broken,
+        edit=lambda body: body.replace(check_of(broken), "an amended Check"),
+    )
+    lane_state = writer(port, lane_repo())
+    await tick(lane_state, sha="1" * 40)
+
+    with pytest.raises(StaleWriteError) as caught:
+        await tick(lane_state, sha="2" * 40, failed=[broken])
+
+    assert caught.value.target == broken
+    assert port.issues[broken].state_kind is WorkflowStateKind.UNSTARTED
+    assert parse_criterion_evidence(port.issues[broken].body).graded_sha == "1" * 40
+    assert refutations(port) == []
+
+
+async def test_a_do_row_edited_under_the_move_back_is_kept_under_the_stamp():
+    """An edit the verdict does not address survives the row the act sets.
+
+    The Evidence row is set by compare-and-set against the sub-issue as the
+    move back left it rather than against the body the act was decided on, so
+    a row this verdict says nothing about is kept and the refutation
+    completes: the criterion unstarted, the refuting grading recorded, one
+    event on the stream.
+    """
+    broken = CRITERIA[0]
+    rewritten = "the build somebody else described"
+    port = MovingBoard(
+        target=broken,
+        edit=lambda body: replace_criterion_fields(
+            body, replacements={"Do": rewritten}
+        ),
+    )
+    lane_state = writer(port, lane_repo())
+    await tick(lane_state, sha="1" * 40)
+
+    await tick(lane_state, sha="2" * 40, failed=[broken])
+
+    issue = port.issues[broken]
+    assert issue.state_kind is WorkflowStateKind.UNSTARTED
+    assert parse_criterion_evidence(issue.body).graded_sha == "2" * 40
+    assert criterion_field_bodies(issue.body, field="Do") == (rewritten,)
+    assert [event.graded_sha for event in refutations(port)] == ["2" * 40]
+
+
 @pytest.mark.parametrize("hiding", HIDING)
 async def test_a_regression_on_a_body_no_evidence_row_can_be_set_on_is_refused(hiding):
     """The act's last write is a precondition of its first one.
@@ -1365,50 +1441,13 @@ async def test_a_second_regression_at_a_later_head_is_its_own_refutation():
     assert (board_shape(port), len(port.comments)) == at_fourth
 
 
-class LosingBoard(FakeTrackerPort):
-    """A board that loses the next write of a named call and then behaves.
-
-    The refutation is three writes, and each of them can be the one the
-    backend does not take. What the board holds afterwards — and what a
-    later failing verdict at the same head does about it — is the property
-    this double exists to ask about, so the loss is armed when the test
-    wants it rather than on the first write of that name.
-    """
-
-    def __init__(self) -> None:
-        source = criteria_board()
-        super().__init__(
-            issues=list(source.issues.values()),
-            marker_prefixes=lane_operation().marker_prefixes,
-        )
-        self._drops, self._dropped = None, False
-
-    def lose(self, call: str) -> None:
-        """Lose the next write of *call*, and only that one."""
-        self._drops, self._dropped = call, False
-
-    def _drop_once(self, call: str) -> bool:
-        if call != self._drops or self._dropped:
-            return False
-        self._dropped = True
-        return True
-
-    async def post_run_event(self, *, issue_key, event):
-        if self._drop_once("post_run_event"):
-            raise TransientAPIError("the posted event never reached the board")
-        return await super().post_run_event(issue_key=issue_key, event=event)
-
-    async def reset_criterion_pending(self, *, expected, holder=None):
-        if self._drop_once("reset_criterion_pending"):
-            raise TransientAPIError("the move back never reached the board")
-        return await super().reset_criterion_pending(expected=expected, holder=holder)
-
-    async def edit_description(self, *, target, expected, replacement, **rest):
-        if self._drop_once("edit_description"):
-            raise TransientAPIError("the Evidence row never reached the board")
-        return await super().edit_description(
-            target=target, expected=expected, replacement=replacement, **rest
-        )
+def losing_board() -> LosingBoard:
+    """The tick fixture's own board, ready to lose one named write."""
+    source = criteria_board()
+    return LosingBoard(
+        issues=list(source.issues.values()),
+        marker_prefixes=lane_operation().marker_prefixes,
+    )
 
 
 #: What each lost write of the refutation leaves on the sub-issue: the state
@@ -1435,7 +1474,7 @@ async def test_a_refutation_a_write_was_lost_from_leaves_the_criterion_owed(drop
     this fire's claim.
     """
     state, recorded, completed_later = LOST_WRITES[drops]
-    port = LosingBoard()
+    port = losing_board()
     lane_state = writer(port, lane_repo())
     broken = CRITERIA[0]
 

@@ -363,17 +363,26 @@ class TrackerLaneStateWriter:
         violation on the board rather than a case to tell apart here.
 
         Everything knowable is read before anything is written: the state the
-        board holds, the body the write depends on, and the stream, so a
+        board holds, the body the writes depend on, and the stream, so a
         stream that will not parse refuses while the sub-issue still reads as
         the pass it was. The move back is then the FIRST write, because a
         criterion left finished is in no later fire's roster and would never
-        be graded again: a failure after it leaves the criterion unstarted
-        with the earlier grading still on its Evidence row and no event on the
-        stream — owed, and the next fire re-grades it, rather than certified
-        at a sha nothing passed at. Nothing repairs the event for such a
-        criterion: unstarted, it is no longer this fire's claim to take back.
-        The owning issue reopens by the tracker's own rollup over its criteria
-        and is written by nobody.
+        be graded again: a failure after it leaves the criterion unstarted and
+        owed, and the next fire re-grades it, rather than certified at a sha
+        nothing passed at. Which grading the Evidence row carries then depends
+        on what was lost — a lost stamp leaves the earlier grading, a lost
+        event leaves the refuting one — and neither partial state carries an
+        event. Nothing repairs the event for such a criterion: unstarted, it
+        is no longer this fire's claim to take back.
+
+        The sub-issue is read once more after the move and asked the same
+        precondition, because the Evidence row is set against THAT body: a
+        criterion a third party amended under the move is one this verdict no
+        longer addresses, and the act stops there rather than writing the
+        refuting grading onto it — unstarted, owed, carrying the earlier
+        grading, with no event, which is the partial state a lost stamp
+        leaves. The owning issue reopens by the tracker's own rollup over its
+        criteria and is written by nobody.
         """
         issue = await self._tracker.read_issue(issue_key=criterion.id)
         if issue.state_kind is not HELD_CRITERION_STATE:
@@ -393,6 +402,7 @@ class TrackerLaneStateWriter:
         posted = event in self._events(comments=await self._board(lane), lane=lane)
         await settle(self._tracker.reset_criterion_pending(expected=issue, holder=None))
         moved = await self._tracker.read_issue(issue_key=criterion.id)
+        require_tickable(issue=moved, criterion=criterion)
         await self._stamp(
             lane=lane, criterion=criterion, issue=moved, cross_off=cross_off
         )

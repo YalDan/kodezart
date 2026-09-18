@@ -234,9 +234,12 @@ criterion the attempt passed, the sha it was graded at goes on that sub-issue's
 Evidence row and the sub-issue then moves to the configured `done` stage, in
 that order — the body edit under its own compare-and-set precondition, the
 transition only after it. For a criterion the attempt failed that this fire had
-already finished, the refuting grading goes on the Evidence row, the sub-issue
-moves back to the team's unstarted state and one `criterion_refuted` event is
-posted under `marker_prefixes.run_event`. Nothing else is written: no parent's
+already finished, the sub-issue moves back to the team's unstarted state first,
+the refuting grading then goes on its Evidence row, and one `criterion_refuted`
+event is posted under `marker_prefixes.run_event` last. That order is what the
+act guarantees: a failure anywhere after the move back leaves the criterion
+owed, and the next fire re-grades it, instead of leaving it certified at a sha
+that failed it. Nothing else is written: no parent's
 state, and no comment per criterion. The owning issue's finished state is the
 tracker's own rollup over its criterion sub-issues, which `SubtreeClosure`
 reads, so the scope walker sees a lane close with no further write.

@@ -55,13 +55,14 @@ from tests.chains.test_native_fire import (
     tracker,
 )
 from tests.domain.test_criterion_cross_off import callers_of
-from tests.fakes import FakeTrackerPort, make_tracker_issue
+from tests.fakes import make_tracker_issue
 from tests.lane_fixture import (
     ADDED_OWED,
     LaneGit,
     LanePersister,
     LaneRepo,
     LaneSource,
+    LosingBoard,
     added_criterion,
     criteria_echo,
     lane_forge,
@@ -1200,48 +1201,24 @@ async def test_a_regression_inside_the_loop_moves_the_criterion_back_and_says_so
     assert len(lane.port.comments) == 3
 
 
-class LosingBoard(FakeTrackerPort):
-    """The lane's board, losing one write of the refutation exactly once.
-
-    Only the refutation's own writes: the first-push event and the ticks go
-    through, so what the run reaches the failure with is a criterion this
-    fire finished, which is the state the act starts from.
-    """
-
-    def __init__(self, *, drops: str) -> None:
-        source = tracker()
-        super().__init__(
-            issues=list(source.issues.values()),
-            criteria_stage_label_key=STAGE_KEY,
-            marker_prefixes=native_operation().marker_prefixes,
-            scope_label_members=source.scope_label_members,
-        )
-        self._drops, self._dropped = drops, False
-
-    def _drop_once(self, call: str) -> bool:
-        if call != self._drops or self._dropped:
-            return False
-        self._dropped = True
-        return True
-
-    async def reset_criterion_pending(self, *, expected, holder=None):
-        if self._drop_once("reset_criterion_pending"):
-            raise TransientAPIError("the move back never reached the board")
-        return await super().reset_criterion_pending(expected=expected, holder=holder)
-
-    async def post_run_event(self, *, issue_key, event):
-        if event.kind is RunEventKind.CRITERION_REFUTED and self._drop_once(
-            "post_run_event"
-        ):
-            raise TransientAPIError("the posted event never reached the board")
-        return await super().post_run_event(issue_key=issue_key, event=event)
+def losing_board() -> LosingBoard:
+    """The lane's own board, ready to lose one named write."""
+    source = tracker()
+    return LosingBoard(
+        issues=list(source.issues.values()),
+        criteria_stage_label_key=STAGE_KEY,
+        marker_prefixes=native_operation().marker_prefixes,
+        scope_label_members=source.scope_label_members,
+    )
 
 
 #: What a refutation the loop died inside leaves for the NEXT fire to read:
 #: the state the sub-issue is in, which grading its Evidence row carries, and
-#: whether that fire's own entry-shaped read still owes the criterion.
+#: whether that fire's own entry-shaped read still owes the criterion. Each of
+#: the act's three writes is one row, because each leaves its own state.
 LOST_REFUTATION_WRITES = {
     "reset_criterion_pending": (WorkflowStateKind.COMPLETED, 0, False),
+    "edit_description": (WorkflowStateKind.UNSTARTED, 0, True),
     "post_run_event": (WorkflowStateKind.UNSTARTED, 1, True),
 }
 
@@ -1253,18 +1230,26 @@ async def test_a_refutation_the_loop_died_inside_certifies_no_failing_grading(dr
     The loop has no handler for a write that does not land, so the run ends
     there and nothing later in it revisits the criterion. The move back is
     therefore the first write: losing anything after it leaves the criterion
-    unstarted with the earlier grading still on it, which the next fire's
-    entry-shaped read owes again. Losing the move back itself leaves the pass
-    it already was — true of the head that passed — and never the failing
-    grading's sha under a finished state, which no later fire would re-grade.
+    unstarted, which the next fire's entry-shaped read owes again — carrying
+    the earlier grading when the stamp was lost and the refuting one when the
+    event was, and in neither case an event. Losing the move back itself
+    leaves the pass it already was — true of the head that passed — and never
+    the failing grading's sha under a finished state, which no later fire
+    would re-grade.
     """
     state, graded_at, owed_again = LOST_REFUTATION_WRITES[drops]
     broken, kept, _ = OWED_KEYS
+    port = losing_board()
     lane = Lane(
         evaluations=[graded({broken, kept}), graded({kept})],
         max_iterations=2,
-        port=LosingBoard(drops=drops),
+        port=port,
     )
+    # Armed once iteration 1's ticks and the first-push event have landed and
+    # before iteration 2 writes anything, so the write it loses is one of the
+    # three the refutation makes: the run reaches the failure with a criterion
+    # this fire finished, which is the state the act starts from.
+    lane.executor.on_evaluation = lambda count: port.lose(drops) if count == 2 else None
 
     with pytest.raises(TransientAPIError):
         await lane.run()
