@@ -876,6 +876,18 @@ class WalkRepos:
         # is what the repository this walk was cut from holds.
         self.committing = LaneRepo(branch="trunk", remote=remote)
 
+    def head_of(self, branch: str) -> str | None:
+        """The sha this walk holds for *branch*, without creating a repository.
+
+        ``of`` makes one and makes it the tree later unaddressed reads answer
+        from, so a forge double asking what a branch stands at would change
+        what the walk is standing on.
+        """
+        repo = self.branches.get(branch)
+        if repo is not None:
+            return repo.head
+        return self.delivered.get(branch)
+
     def of(self, branch: str) -> LaneRepo:
         repo = self.branches.setdefault(
             branch,
@@ -1596,17 +1608,21 @@ def one_check_echoes(key: str, rounds: int = 2):
 async def test_kill_and_re_enter_dispatches_exactly_the_remaining_lanes(monkeypatch):
     """A scope killed after two lanes finished re-enters on the third alone.
 
-    Run one delivers A and B and is then KILLED while C's fire is in flight,
-    after C's first criterion was crossed off and recorded: the walk's task is
-    cancelled, and cancellation is a BaseException the lane boundary does not
-    contain, so the run really ends where a process would. Run two shares only
-    the board, the remote and the forge: it dispatches C and nothing else,
-    resumes on C's recorded branch without minting, owes only C's open
-    criterion, and reads no pull-request state at all before C's first session.
+    Run one delivers A and B — really delivers them: the forge double answers
+    each pull request's head at the sha the walk's own merger published, so
+    the identity check a delivery makes passes and no lane fails — and is then
+    KILLED while C's fire is in flight, after C's first criterion was crossed
+    off and recorded: the walk's task is cancelled, and cancellation is a
+    BaseException the lane boundary does not contain, so the run really ends
+    where a process would. Run two shares only the board, the remote and the
+    forge: it dispatches C and nothing else, fails no lane, resumes on C's
+    recorded branch without minting, acquires no other branch, owes only C's
+    open criterion, and reads no pull-request state at all before C's first
+    session.
     """
     repos = WalkRepos(url=FORGE_ORIGIN)
     port = board(lanes=THREE_LANES, checks={"C": ("check", "second")})
-    wire = ScopeForgeWire()
+    wire = ScopeForgeWire(head_sha_of=repos.head_of)
     forge = _make_client(wire)
     try:
         first = resumable(
@@ -1644,8 +1660,10 @@ async def test_kill_and_re_enter_dispatches_exactly_the_remaining_lanes(monkeypa
         assert port.issues["C/check"].state_kind is WorkflowStateKind.COMPLETED
         assert port.issues["C/second"].state_kind is WorkflowStateKind.UNSTARTED
         killed = await lane_record(port, "C")
-        # A and B ran to delivery before the kill; C never reached one.
+        # A and B ran to delivery before the kill, and neither failed doing it:
+        # a contained delivery failure would have been reported here.
         assert len(wire.creates) == 2
+        assert lane_failures(seen) == ()
         assert killed.branch not in {create["head"] for create in wire.creates}
 
         minted = mint_spy(monkeypatch)
@@ -1661,9 +1679,12 @@ async def test_kill_and_re_enter_dispatches_exactly_the_remaining_lanes(monkeypa
             ],
         )
         # The wire outlives the kill, so what "zero" means is "none more than
-        # the two A's and B's own deliveries made in run one".
+        # the reads A's and B's own deliveries made in run one": each delivery
+        # reads its pull request's own state three times — at the identity
+        # check that follows opening it, once more before it returns, and again
+        # where the lane graph completes.
         before_re_entry = len(wire.pr_reads)
-        assert before_re_entry == 2
+        assert before_re_entry == 6
         reads_at_first_session: list[int] = []
         sessions = second.executor.stream
 
@@ -1689,19 +1710,37 @@ async def test_kill_and_re_enter_dispatches_exactly_the_remaining_lanes(monkeypa
             for key in ("A", "B")
             if f"Exact native subject {key}" in prompt
         ]
+        # Exactly the lanes that are left, read off the walk's own report
+        # rather than off which lanes emitted an iteration: a lane that
+        # entered and then failed would appear here.
+        final = [
+            event.observation for event in events if isinstance(event, ScopeWalkEvent)
+        ][-1]
+        assert final.dispatched == ("C",)
+        assert final.failed_lanes == ()
         assert minted == []
+        # One branch was checked out in this whole run, and it is the one the
+        # record names.
+        assert {
+            acquisition["branch_name"]
+            for acquisition in second.workspace.acquisitions
+            if acquisition["branch_name"]
+        } == {killed.branch}
         opened = second.workspace.acquisitions[0]
         assert opened["branch_name"] == opened["ref"] == killed.branch
         assert opened["create_branch"] is False
         prompt = second.executor.execution_prompts[0]
         assert "C/second live Check  bytes" in prompt
         assert "C live Check  bytes" not in prompt
-        # Nothing about a pull request was read to decide any of that: the
-        # entry reads the record and the remote head, and a delivery's own
-        # read comes after the lane has already worked.
+        # No pull request's own state was read to decide any of that: the entry
+        # reads the record and the remote head, and a delivery's own read comes
+        # after the lane has already worked. The open-delivery LISTING is read
+        # before the session and is counted separately here; removing it from
+        # selection is slice 2c's criterion, not this one's.
         assert reads_at_first_session
         assert reads_at_first_session[0] == before_re_entry
-        # And C's own delivery does make one, after the lane has worked.
-        assert len(wire.pr_reads) == before_re_entry + 1
+        # And C's own delivery does make its three, after the lane has worked.
+        assert len(wire.pr_reads) == before_re_entry + 3
+        assert len(wire.creates) == 3
     finally:
         await forge.close()

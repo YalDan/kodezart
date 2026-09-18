@@ -330,24 +330,47 @@ class ScopeForgeWire:
 
     Generalises the single-pull-request wire the lane delivery tests drive:
     a scope opens one per lane, so the request a read is about is decided by
-    the head branch it names rather than by there being only one. Anything it
-    does not know raises, a merge included — nothing on this path merges, and
-    a call that tried would fail here rather than pass unnoticed.
+    the head branch it names rather than by there being only one.
+
+    *head_sha_of* answers what the remote holds for a branch. A delivery
+    compares the pull request's head with the tip its own consolidation
+    published, so over repositories that actually commit a fixed sha makes
+    every delivery fail; given the walk's own repositories, the two agree
+    because they are one fact. Its check runs are reported at the same sha,
+    for the same reason.
+
+    Anything it does not know raises, a merge included — nothing on this path
+    merges. A raise is a FAILURE only where production does not contain one:
+    the repository read is answered rather than raised, because a walk whose
+    visibility resolution raises is contained with visibility unknown and
+    nothing about the run says so.
     """
 
-    #: The sha a delivered head stands at, which is the consolidated tip.
+    #: The sha a delivered head stands at where no repository answers for it.
     HEAD_SHA = "a" * 40
     FIRST_NUMBER = 17
 
-    def __init__(self) -> None:
+    def __init__(
+        self, *, head_sha_of: Callable[[str], str | None] | None = None
+    ) -> None:
         self.requests: list[httpx.Request] = []
         self.creates: list[dict[str, object]] = []
         self.comments: list[dict[str, object]] = []
         self.watches: list[str] = []
         #: Every read of a pull request's own state, in order.
         self.pr_reads: list[httpx.Request] = []
+        self._head_sha_of = head_sha_of
         self._pulls: dict[int, dict[str, str]] = {}
         self._numbers: dict[str, int] = {}
+
+    def _head_sha(self, ref: str) -> str:
+        """What the remote holds for *ref*, as this walk's repositories say."""
+        if self._head_sha_of is None:
+            return self.HEAD_SHA
+        resolved = self._head_sha_of(ref)
+        if resolved is None:
+            raise AssertionError(f"no repository of this walk holds {ref!r}")
+        return resolved
 
     def _payload(self, number: int) -> dict[str, object]:
         pull = self._pulls[number]
@@ -361,7 +384,11 @@ class ScopeForgeWire:
             "title": pull["title"],
             "state": "open",
             "merged": False,
-            "head": {"ref": pull["head"], "sha": self.HEAD_SHA, "repo": repo},
+            "head": {
+                "ref": pull["head"],
+                "sha": self._head_sha(pull["head"]),
+                "repo": repo,
+            },
             "base": {"ref": pull["base"], "sha": "b" * 40, "repo": repo},
         }
 
@@ -403,18 +430,33 @@ class ScopeForgeWire:
         if numbered is not None:
             self.pr_reads.append(request)
             return httpx.Response(200, json=self._payload(int(numbered.group(1))))
-        if path.endswith("/check-runs"):
+        watched = re.fullmatch(r".*/commits/(.+)/check-runs", path)
+        if watched is not None:
             self.watches.append(path)
             return httpx.Response(
                 200,
                 json={
                     "total_count": 1,
-                    "check_runs": [check(sha=self.HEAD_SHA, passed=True)],
+                    "check_runs": [
+                        check(sha=self._head_sha(watched.group(1)), passed=True)
+                    ],
                 },
             )
         if path.endswith("/comments"):
             self.comments.append(json.loads(request.content))
             return httpx.Response(201, json={})
+        if re.fullmatch(r"/repos/[^/]+/[^/]+", path):
+            # Visibility. Production contains a failure here as UNKNOWN, so a
+            # raise would not fail the walk; it would only make every lane run
+            # with a visibility nobody chose.
+            return httpx.Response(
+                200,
+                json={
+                    "private": False,
+                    "html_url": "https://github.com/owner/repo",
+                    "full_name": "owner/repo",
+                },
+            )
         raise AssertionError(
             f"Unexpected forge capability: {request.method} {request.url}"
         )
