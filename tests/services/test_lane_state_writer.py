@@ -13,6 +13,7 @@ from kodezart.domain.criterion_evidence import parse_criterion_evidence
 from kodezart.domain.errors import (
     LaneRecordWriteError,
     StaleCommentWriteError,
+    StaleWriteError,
     TransientAPIError,
 )
 from kodezart.domain.fire_spec import replace_criterion_fields
@@ -754,5 +755,99 @@ async def test_a_verdict_that_does_not_answer_the_dispatched_roster_writes_nothi
             ),
         )
 
+    assert port.issue_writes == []
+    assert port.workflow_writes == []
+
+
+def board_shape(port: FakeTrackerPort) -> dict[str, tuple[str, str]]:
+    """Every issue on the board as the two facts a tick could move."""
+    return {
+        key: (issue.body, issue.state_name)
+        for key, issue in sorted(port.issues.items())
+    }
+
+
+async def test_a_tick_rewrites_only_the_addressed_sub_issue():
+    """One verdict, one sub-issue: nothing else on the board is touched.
+
+    The board is read whole before and after, so the assertion covers the
+    lane's own issue, the sub-issues the same attempt graded and the child
+    that is not a criterion at all, rather than the one issue a narrower
+    check would have looked at.
+    """
+    port = criteria_board()
+    lane_state = writer(port, lane_repo())
+    addressed = CRITERIA[1]
+    before = board_shape(port)
+
+    await tick(
+        lane_state,
+        sha="7" * 40,
+        keys=CRITERIA,
+        failed=[key for key in CRITERIA if key != addressed],
+    )
+
+    after = board_shape(port)
+    assert {key for key in after if after[key] != before[key]} == {addressed}
+    assert after[addressed][1] == LifecycleStage.DONE.value
+    assert parse_criterion_evidence(port.issues[addressed].body).graded_sha == "7" * 40
+    assert [key for key, _, _ in port.issue_writes] == [addressed]
+    assert port.workflow_writes == [(addressed, LifecycleStage.DONE)]
+
+
+async def test_a_lane_of_ticks_leaves_the_owning_body_byte_identical():
+    """Satisfaction is written on the criteria, never on what owns them.
+
+    Not even the rollup: the lane's own body and state are what a parent
+    write would move, and after every criterion under it is Done both are
+    the bytes the board started with.
+    """
+    port = criteria_board()
+    lane_state = writer(port, lane_repo())
+    owning = board_shape(port)[LANE]
+
+    for index in (1, 2, 3):
+        await tick(lane_state, sha=format(index, "040x"))
+
+    assert board_shape(port)[LANE] == owning
+    assert all(
+        port.issues[key].state_kind is WorkflowStateKind.COMPLETED for key in CRITERIA
+    )
+    assert LANE not in {key for key, _, _ in port.issue_writes}
+    assert LANE not in {key for key, _ in port.workflow_writes}
+
+
+@pytest.mark.parametrize(
+    "drift",
+    [
+        pytest.param(
+            {"state_kind": WorkflowStateKind.STARTED, "state_name": "In Progress"},
+            id="state-moved",
+        ),
+        pytest.param(
+            {"body": "**Check:** an amended Check\n**Evidence:** —"}, id="check-amended"
+        ),
+        pytest.param({"issue_labels": frozenset()}, id="classification-lost"),
+    ],
+)
+async def test_a_tick_on_a_sub_issue_that_moved_after_dispatch_writes_nothing(drift):
+    """The sub-issue is read back through the port, never remembered.
+
+    The verdict was reached against what the dispatch saw; the write asserts
+    what the sub-issue holds now, and a sub-issue that moved in between
+    takes no part of the write at all — not its body, not its state, and not
+    the sub-issues the same attempt would have gone on to address.
+    """
+    port = criteria_board()
+    lane_state = writer(port, lane_repo())
+    moved = CRITERIA[0]
+    port.issues[moved] = port.issues[moved].model_copy(update=drift)
+    before = board_shape(port)
+
+    with pytest.raises(StaleWriteError) as caught:
+        await tick(lane_state, sha="8" * 40)
+
+    assert caught.value.target == moved
+    assert board_shape(port) == before
     assert port.issue_writes == []
     assert port.workflow_writes == []
