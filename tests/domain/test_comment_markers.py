@@ -165,21 +165,31 @@ def strings(node: ast.AST) -> tuple[str, ...] | None:
     return None
 
 
-def bindings_in(body: list[ast.stmt] | ast.AST) -> dict[str, tuple[str, ...]]:
-    """The names *body* binds to a string, read off its own statements.
+def scope_nodes(body: list[ast.stmt]) -> list[ast.AST]:
+    """Everything *body* holds in its own scope, nested scopes left out."""
+    nodes: list[ast.AST] = []
+    pending: list[ast.AST] = list(body)
+    while pending:
+        node = pending.pop()
+        if isinstance(
+            node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef | ast.Lambda
+        ):
+            continue
+        nodes.append(node)
+        pending.extend(ast.iter_child_nodes(node))
+    return nodes
+
+
+def bindings_in(body: list[ast.stmt]) -> dict[str, tuple[str, ...]]:
+    """The names *body* binds to a string, read off its own scope alone.
 
     A module's own top level and a function's own body are the two scopes a
-    name is resolved in, and never each other's: a local binding in one
-    function says nothing about a name another function passes, and the
-    last one walked would otherwise answer for both.
+    name is resolved in, and never each other's: a binding inside some other
+    function says nothing about a name this one passes, and taken together
+    the last one walked would answer for both.
     """
-    nodes = (
-        [inner for statement in body for inner in ast.walk(statement)]
-        if isinstance(body, list)
-        else list(ast.walk(body))
-    )
     bound: dict[str, tuple[str, ...]] = {}
-    for node in nodes:
+    for node in scope_nodes(body):
         if isinstance(node, ast.Assign):
             targets, values = node.targets, strings(node.value)
         elif isinstance(node, ast.For):
@@ -320,7 +330,7 @@ def _scan_module(
     def strings_local(
         owner: ast.FunctionDef | ast.AsyncFunctionDef, name: str
     ) -> tuple[str, ...] | None:
-        scope = locals_of.setdefault(id(owner), bindings_in(owner))
+        scope = locals_of.setdefault(id(owner), bindings_in(owner.body))
         return scope.get(name)
 
     callees = {id(node.func) for node in ast.walk(tree) if isinstance(node, ast.Call)}
@@ -502,6 +512,28 @@ def test_a_reader_handed_on_as_a_value_is_reported_as_unresolved(module: str):
     """
     sources = source_tree()
     sources["adapters/aliased_reader.py"] = module
+    _, unresolved = written_purposes(sources)
+    assert [place for place in unresolved if place.startswith("adapters/")]
+
+
+def test_a_purpose_a_module_only_binds_while_running_is_reported_as_unresolved():
+    """A name no scope this walk reads binds is an answer the guard lacks.
+
+    Taking the string from whichever function happens to assign it would
+    state, as a fact about the tree, a value that holds only if that
+    function ran — so the name is reported instead, and the table is never
+    told this module writes under a purpose on that basis.
+    """
+    sources = source_tree()
+    sources["adapters/runtime_binding.py"] = (
+        "from kodezart.domain.comment_markers import configured_marker_prefix\n"
+        "def configure():\n"
+        "    global chosen\n"
+        "    chosen = 'claim'\n"
+        "\n"
+        "def prefix(prefixes):\n"
+        "    return configured_marker_prefix(prefixes, purpose=chosen)\n"
+    )
     _, unresolved = written_purposes(sources)
     assert [place for place in unresolved if place.startswith("adapters/")]
 
