@@ -21,6 +21,7 @@ from kodezart.domain.ticket import format_fire_spec
 from kodezart.domain.workflow_state import (
     current_fire_spec,
     current_ticket,
+    recorded_native_roster,
     validated_artifact,
     validated_criteria,
 )
@@ -154,11 +155,7 @@ class FireImplementation:
             criterion_set = await current_native_criteria(
                 spec=spec,
                 reader=self._criteria_reader,
-                held=(
-                    criterion_set
-                    if isinstance(criterion_set, TrackerCriterionSet)
-                    else None
-                ),
+                held=recorded_native_roster(criterion_set),
             )
         criteria = validated_criteria({**state, "criterion_set": criterion_set})
 

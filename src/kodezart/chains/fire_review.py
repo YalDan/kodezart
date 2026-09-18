@@ -31,6 +31,7 @@ from kodezart.domain.prompt_variables import (
 )
 from kodezart.domain.workflow_state import (
     current_fire_spec,
+    recorded_native_roster,
     validated_criteria,
 )
 from kodezart.types.domain.agent import (
@@ -38,10 +39,7 @@ from kodezart.types.domain.agent import (
     AcceptanceCriteriaOutput,
     WorkflowReviewEvent,
 )
-from kodezart.types.domain.criteria import (
-    FanInReport,
-    TrackerCriterionSet,
-)
+from kodezart.types.domain.criteria import FanInReport
 from kodezart.types.domain.fire_spec import TrackerSpec
 from kodezart.types.domain.grading import IterationGrade
 from kodezart.types.domain.prompts import PromptKey
@@ -112,11 +110,7 @@ class FireReview:
                 criterion_set = await current_native_criteria(
                     spec=spec,
                     reader=self._criteria_reader,
-                    held=(
-                        criterion_set
-                        if isinstance(criterion_set, TrackerCriterionSet)
-                        else None
-                    ),
+                    held=recorded_native_roster(criterion_set),
                 )
             criteria = validated_criteria({**state, "criterion_set": criterion_set})
             prompt = self._prompts.template_for(PromptKey.POST_MERGE_REVIEW).render(

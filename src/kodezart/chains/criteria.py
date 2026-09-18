@@ -14,6 +14,7 @@ from kodezart.domain.errors import (
     TransientAPIError,
 )
 from kodezart.domain.fire_spec import criterion_check
+from kodezart.domain.workflow_state import recorded_native_roster
 from kodezart.services.scope_membership import read_scope_members
 from kodezart.types.domain.criteria import (
     CriterionId,
@@ -221,7 +222,6 @@ async def revalidate_criteria(
         spec = await source.read_spec(issue_key=issue_key)
     if not isinstance(spec, TrackerSpec) or spec.subject != issue_key:
         raise ValueError("The native fire spec must match its addressed subject")
-    recorded = state["criterion_set"]
     return {
         "fire_spec": spec,
         "criterion_set": await source.read_current(
@@ -229,7 +229,7 @@ async def revalidate_criteria(
             # A first entry carries no roster and reads the Todo set; a
             # remediation re-entry or a replayed checkpoint carries the one
             # this run was already judged against.
-            held=recorded if isinstance(recorded, TrackerCriterionSet) else None,
+            held=recorded_native_roster(state["criterion_set"]),
         ),
     }
 
@@ -241,13 +241,9 @@ async def require_current_native_snapshot(
     spec = state["fire_spec"]
     if not isinstance(spec, TrackerSpec):
         return
-    recorded = state["criterion_set"]
-    current = await current_native_criteria(
-        spec=spec,
-        reader=reader,
-        held=recorded if isinstance(recorded, TrackerCriterionSet) else None,
-    )
-    if not isinstance(recorded, TrackerCriterionSet) or current != recorded:
+    recorded = recorded_native_roster(state["criterion_set"])
+    current = await current_native_criteria(spec=spec, reader=reader, held=recorded)
+    if recorded is None or current != recorded:
         raise FireSpecEntryError(
             issue_key=spec.subject,
             reason="current tracker criteria differ from the evaluated snapshot",

@@ -1,9 +1,26 @@
 """Read the one subject and criterion set held by either fire composition."""
 
 from kodezart.types.domain.agent import TicketDraftOutput
-from kodezart.types.domain.criteria import CriteriaArtifact, ExecutionCriterion
+from kodezart.types.domain.criteria import (
+    CriteriaArtifact,
+    ExecutionCriterion,
+    TrackerCriterionSet,
+)
 from kodezart.types.domain.fire_spec import AuthoredSpec, FireSpec
 from kodezart.types.domain.workflow import WorkflowState
+
+
+def recorded_native_roster(
+    criterion_set: CriteriaArtifact | TrackerCriterionSet | None,
+) -> TrackerCriterionSet | None:
+    """The roster a native barrier was already judged against, or nothing.
+
+    A first entry has recorded no set, and an authored sweep records one of
+    another kind entirely; either way the barrier holds no native roster and
+    reads the entry-shaped Todo set. Every barrier that passes *held* asks
+    this one question, so it is answered here once.
+    """
+    return criterion_set if isinstance(criterion_set, TrackerCriterionSet) else None
 
 
 def validated_artifact(state: WorkflowState) -> CriteriaArtifact:
