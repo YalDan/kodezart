@@ -6,6 +6,8 @@ or a comment — every recorded fact has to come from a real observation of
 this repository through the production reader it is written by.
 """
 
+import json
+import re
 from collections.abc import Awaitable, Callable, Container, Sequence
 
 import httpx
@@ -18,6 +20,7 @@ from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.operation import OperationConfig
 from kodezart.types.domain.persist import PersistResult, PersistSource
 from kodezart.types.domain.subagents import NO_SUBAGENTS, UNCONFIGURED_SESSION_POLICY
+from tests.adapters.test_ci_watch_evidence import check
 from tests.chains.test_native_fire import (
     SUBJECT,
     TRUNK_BRANCHES,
@@ -319,4 +322,99 @@ class LanePersister(FakeChangePersister):
             branch=branch,
             message=f"feat: commit {len(self.repo.shas)}\n\nthe body of that commit",
             source=PersistSource.WORKING_TREE_COMMIT,
+        )
+
+
+class ScopeForgeWire:
+    """One pull request per head branch, for a whole walk's worth of lanes.
+
+    Generalises the single-pull-request wire the lane delivery tests drive:
+    a scope opens one per lane, so the request a read is about is decided by
+    the head branch it names rather than by there being only one. Anything it
+    does not know raises, a merge included — nothing on this path merges, and
+    a call that tried would fail here rather than pass unnoticed.
+    """
+
+    #: The sha a delivered head stands at, which is the consolidated tip.
+    HEAD_SHA = "a" * 40
+    FIRST_NUMBER = 17
+
+    def __init__(self) -> None:
+        self.requests: list[httpx.Request] = []
+        self.creates: list[dict[str, object]] = []
+        self.comments: list[dict[str, object]] = []
+        self.watches: list[str] = []
+        #: Every read of a pull request's own state, in order.
+        self.pr_reads: list[httpx.Request] = []
+        self._pulls: dict[int, dict[str, str]] = {}
+        self._numbers: dict[str, int] = {}
+
+    def _payload(self, number: int) -> dict[str, object]:
+        pull = self._pulls[number]
+        repo = {
+            "html_url": "https://github.com/owner/repo",
+            "full_name": "owner/repo",
+        }
+        return {
+            "number": number,
+            "html_url": pull["html_url"],
+            "title": pull["title"],
+            "state": "open",
+            "merged": False,
+            "head": {"ref": pull["head"], "sha": self.HEAD_SHA, "repo": repo},
+            "base": {"ref": pull["base"], "sha": "b" * 40, "repo": repo},
+        }
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        self.requests.append(request)
+        path = request.url.path
+        numbered = re.fullmatch(r".*/pulls/(\d+)", path)
+        if path.endswith("/pulls") and request.method == "POST":
+            body = json.loads(request.content)
+            number = self.FIRST_NUMBER + len(self._pulls)
+            self._pulls[number] = {
+                "head": body["head"],
+                "base": body["base"],
+                "title": body.get("title", "Lane pull request"),
+                "html_url": f"https://github.com/owner/repo/pull/{number}",
+            }
+            self._numbers[body["head"]] = number
+            self.creates.append(body)
+            return httpx.Response(
+                201,
+                json={
+                    "html_url": self._pulls[number]["html_url"],
+                    "number": number,
+                    "title": self._pulls[number]["title"],
+                },
+            )
+        if path.endswith("/pulls"):
+            if "head" not in request.url.params:
+                # The unfiltered listing: every open pull request this walk
+                # opened, which is how an origin is asked what it already has.
+                return httpx.Response(
+                    200, json=[self._payload(number) for number in self._pulls]
+                )
+            head = request.url.params["head"].split(":", 1)[-1]
+            number = self._numbers.get(head)
+            return httpx.Response(
+                200, json=[] if number is None else [self._payload(number)]
+            )
+        if numbered is not None:
+            self.pr_reads.append(request)
+            return httpx.Response(200, json=self._payload(int(numbered.group(1))))
+        if path.endswith("/check-runs"):
+            self.watches.append(path)
+            return httpx.Response(
+                200,
+                json={
+                    "total_count": 1,
+                    "check_runs": [check(sha=self.HEAD_SHA, passed=True)],
+                },
+            )
+        if path.endswith("/comments"):
+            self.comments.append(json.loads(request.content))
+            return httpx.Response(201, json={})
+        raise AssertionError(
+            f"Unexpected forge capability: {request.method} {request.url}"
         )

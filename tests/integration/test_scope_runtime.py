@@ -22,6 +22,7 @@ from kodezart.domain.errors import (
     ScopePlanRefusalError,
 )
 from kodezart.domain.fire_spec import criterion_field_bodies, subject_digest
+from kodezart.domain.git_url import resolve_repo_url
 from kodezart.domain.lane_entry import recorded_branches
 from kodezart.handlers.agent_handler import AgentHandler
 from kodezart.services.agent_service import AgentService
@@ -57,6 +58,7 @@ from kodezart.types.domain.session import PermissionMode
 from kodezart.types.domain.ticket_review import TicketReviewMode
 from kodezart.types.domain.tracker import WorkflowStateKind
 from kodezart.types.requests.agent import WorkflowRequest
+from tests.adapters.test_github_api import _make_client
 from tests.api.v1.test_jobs import _build_app
 from tests.chains.test_native_fire import (
     NativeExecutor,
@@ -79,7 +81,13 @@ from tests.fakes import (
     make_prompt_provider,
     make_tracker_issue,
 )
-from tests.lane_fixture import TRUNK_BRANCHES, TRUNK_SHA, LaneRepo, criteria_echo
+from tests.lane_fixture import (
+    TRUNK_BRANCHES,
+    TRUNK_SHA,
+    LaneRepo,
+    ScopeForgeWire,
+    criteria_echo,
+)
 
 ORIGIN = "file:///scope-repository.git"
 SCOPE = ScopeRef(kind=ScopeKind.PROJECT, key="scoped-project")
@@ -172,6 +180,7 @@ def runtime(
     git=None,
     source=None,
     workspace=None,
+    merger=None,
     max_iterations=1,
 ):
     """The composed engine over external doubles.
@@ -224,7 +233,9 @@ def runtime(
             git=git,
             cache=FakeRepoCache(),
             workspace=workspace,
-            merger=FakeBranchMerger(
+            merger=merger
+            if merger is not None
+            else FakeBranchMerger(
                 consolidation_outcomes=[
                     ConsolidationOutcome(
                         status=ConsolidationStatus.FAST_FORWARDED,
@@ -789,8 +800,17 @@ class WalkRepos:
     #: How far apart two repositories' sha spaces are set.
     SPACING = 0x1000
 
-    def __init__(self, *, remote: str = "origin") -> None:
+    def __init__(self, *, remote: str = "origin", url: str | None = None) -> None:
         self.remote = remote
+        #: The same remote, under the other name callers have for it: the lane
+        #: state writer knows the configured remote NAME and a delivery knows
+        #: the repository URL. Two names for one remote, so a read through
+        #: either is a read of these repositories — and a read through a third
+        #: name is still a read of a remote this walk knows nothing about.
+        self.remote_names = frozenset(
+            {remote}
+            | ({url, resolve_repo_url(url, "https://github.com")} if url else set())
+        )
         self.branches: dict[str, LaneRepo] = {}
         #: The refs a delivery published, which a later lane resolves a base
         #: from: they carry no commits of this walk and hold one sha each.
@@ -831,7 +851,7 @@ class WalkGit(FakeGitService):
         self.calls.append(("remote_branch_sha", cwd, remote, branch))
         if branch in TRUNK_BRANCHES:
             return TRUNK_SHA
-        if remote != self.repos.remote:
+        if remote not in self.repos.remote_names:
             return None
         repo = self.repos.branches.get(branch)
         if repo is not None:
@@ -904,6 +924,55 @@ class WalkWorkspaces(FakeWorkspaceProvider):
         if branch is not None:
             self.repos.of(branch)
         return await super().acquire(**arguments)
+
+
+class WalkMerger(FakeBranchMerger):
+    """Consolidates a lane's loop branch onto its deliverable, in the repositories.
+
+    The deliverable branch then stands on the remote at the sha the loop branch
+    reached, which is the fact a delivery checks before it opens anything. A
+    double that answered a tip nobody published would let a delivery proceed
+    from a head no repository holds.
+    """
+
+    def __init__(self, repos: WalkRepos) -> None:
+        super().__init__()
+        self.repos = repos
+
+    async def consolidate(
+        self,
+        *,
+        repo_path,
+        repo_url,
+        base_branch,
+        feature_branch,
+        source_branch,
+        cache_key=None,
+    ):
+        committing = self.repos.current
+        source = self.repos.of(source_branch)
+        feature = self.repos.of(feature_branch)
+        integrated = feature.head == source.head
+        feature.head = source.head
+        feature.shas = list(source.shas)
+        feature.publish()
+        # Consolidation moves a branch; it does not make the lane's tree the
+        # one later reads answer from.
+        self.repos.committing = committing
+        self.calls.append(
+            {
+                "method": "consolidate",
+                "base_branch": base_branch,
+                "feature_branch": feature_branch,
+                "source_branch": source_branch,
+            }
+        )
+        return ConsolidationOutcome(
+            status=ConsolidationStatus.ALREADY_INTEGRATED
+            if integrated
+            else ConsolidationStatus.FAST_FORWARDED,
+            feature_tip_sha=source.head,
+        )
 
 
 class WalkPersister(FakeChangePersister):
@@ -1160,6 +1229,7 @@ async def test_a_walk_that_breaks_what_it_finished_takes_it_back_once():
 #: and the lane is still owed when the next process enters it.
 TWO_CHECKS = {"A": ("check", "second")}
 A_KEYS = ("A/check", "A/second")
+C_KEYS = ("C/check", "C/second")
 
 
 def echoes(*, passed, rounds: int = 6):
@@ -1185,6 +1255,7 @@ def resumable(*, repos: WalkRepos, **rest):
         git=git,
         source=WalkSource(repos),
         workspace=WalkWorkspaces(repos, git=git),
+        merger=WalkMerger(repos),
         **rest,
     )
 
@@ -1386,3 +1457,135 @@ async def test_a_subject_amended_between_runs_is_refused_by_digest_not_re_read(
         == before.body_digest
         != subject_digest(spec=await spec_of(port, "A"))
     )
+
+
+# ---------------------------------------------------------------------------
+# KOD-449 — a killed scope re-enters and dispatches exactly the lanes that
+# are left, on their recorded branches, reading no merge state to decide.
+# ---------------------------------------------------------------------------
+
+FORGE_ORIGIN = "https://github.com/owner/repo"
+#: Lane C owes two criteria, so the fire killed mid-flight leaves one finished
+#: and one open and the re-entry has something to tell apart.
+THREE_LANES = ("A", "B", "C")
+
+
+def one_check_echoes(key: str, rounds: int = 2):
+    """The gradings one single-criterion lane's fire asks for."""
+    return [
+        criteria_echo(keys=(f"{key}/check",), passed={f"{key}/check"})
+        for _ in range(rounds)
+    ]
+
+
+async def test_kill_and_re_enter_dispatches_exactly_the_remaining_lanes(monkeypatch):
+    """A scope killed after two lanes finished re-enters on the third alone.
+
+    Run one delivers A and B and is then KILLED while C's fire is in flight,
+    after C's first criterion was crossed off and recorded: the walk's task is
+    cancelled, and cancellation is a BaseException the lane boundary does not
+    contain, so the run really ends where a process would. Run two shares only
+    the board, the remote and the forge: it dispatches C and nothing else,
+    resumes on C's recorded branch without minting, owes only C's open
+    criterion, and reads no pull-request state at all before C's first session.
+    """
+    repos = WalkRepos(url=FORGE_ORIGIN)
+    port = board(lanes=THREE_LANES, checks={"C": ("check", "second")})
+    wire = ScopeForgeWire()
+    forge = _make_client(wire)
+    try:
+        first = resumable(
+            port=port,
+            repos=repos,
+            lanes=THREE_LANES,
+            origin=FORGE_ORIGIN,
+            forge=forge,
+            trunk="main",
+            evaluations=[
+                *one_check_echoes("A"),
+                *one_check_echoes("B"),
+                *[criteria_echo(keys=C_KEYS, passed={"C/check"}) for _ in range(4)],
+            ],
+        )
+        seen: list[object] = []
+
+        async def walk() -> None:
+            async for event in drive(first, job="first-job", origin=FORGE_ORIGIN):
+                seen.append(event)
+
+        task = asyncio.create_task(walk())
+        while not any(
+            isinstance(event, ScopeLaneEvent)
+            and event.lane_key == "C"
+            and isinstance(event.event, WorkflowIterationEvent)
+            for event in seen
+        ):
+            assert not task.done(), "the walk ended before lane C was in flight"
+            await asyncio.sleep(0)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        assert port.issues["C/check"].state_kind is WorkflowStateKind.COMPLETED
+        assert port.issues["C/second"].state_kind is WorkflowStateKind.UNSTARTED
+        killed = await lane_record(port, "C")
+        # A and B ran to delivery before the kill; C never reached one.
+        assert len(wire.creates) == 2
+        assert killed.branch not in {create["head"] for create in wire.creates}
+
+        refuse_to_mint(monkeypatch)
+        second = resumable(
+            port=port,
+            repos=repos,
+            lanes=THREE_LANES,
+            origin=FORGE_ORIGIN,
+            forge=forge,
+            trunk="main",
+            evaluations=[
+                criteria_echo(keys=C_KEYS, passed=set(C_KEYS)) for _ in range(6)
+            ],
+        )
+        # The wire outlives the kill, so what "zero" means is "none more than
+        # the two A's and B's own deliveries made in run one".
+        before_re_entry = len(wire.pr_reads)
+        assert before_re_entry == 2
+        reads_at_first_session: list[int] = []
+        sessions = second.executor.stream
+
+        def recording(**arguments):
+            reads_at_first_session.append(len(wire.pr_reads))
+            return sessions(**arguments)
+
+        monkeypatch.setattr(second.executor, "stream", recording)
+        events = [
+            event
+            async for event in drive(second, job="second-job", origin=FORGE_ORIGIN)
+        ]
+
+        assert [
+            event.lane_key
+            for event in events
+            if isinstance(event, ScopeLaneEvent)
+            and isinstance(event.event, WorkflowIterationEvent)
+        ] == ["C"]
+        assert not [
+            prompt
+            for prompt in second.executor.execution_prompts
+            for key in ("A", "B")
+            if f"Exact native subject {key}" in prompt
+        ]
+        opened = second.workspace.acquisitions[0]
+        assert opened["branch_name"] == opened["ref"] == killed.branch
+        assert opened["create_branch"] is False
+        prompt = second.executor.execution_prompts[0]
+        assert "C/second live Check  bytes" in prompt
+        assert "C live Check  bytes" not in prompt
+        # Nothing about a pull request was read to decide any of that: the
+        # entry reads the record and the remote head, and a delivery's own
+        # read comes after the lane has already worked.
+        assert reads_at_first_session
+        assert reads_at_first_session[0] == before_re_entry
+        # And C's own delivery does make one, after the lane has worked.
+        assert len(wire.pr_reads) == before_re_entry + 1
+    finally:
+        await forge.close()
