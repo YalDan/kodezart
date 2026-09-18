@@ -7,6 +7,7 @@ import pytest
 from langgraph.checkpoint.memory import InMemorySaver
 
 from kodezart.chains.criteria import TrackerCriteria
+from kodezart.chains.native_delivery import NativeLaneWorkflow
 from kodezart.composition.delivery import build_native_lane_workflow
 from kodezart.config.app import AppConfig
 from kodezart.domain.criterion_evidence import parse_criterion_evidence
@@ -21,7 +22,7 @@ from kodezart.types.domain.consolidation import (
     ConsolidationOutcome,
     ConsolidationStatus,
 )
-from kodezart.types.domain.gating import OutboundDestination
+from kodezart.types.domain.gating import OutboundDestination, RepoVisibility
 from kodezart.types.domain.native_delivery import (
     CompletedLaneDelivery,
     LaneDeliveryEvent,
@@ -163,10 +164,12 @@ class RecordingLaneState:
     """
 
     def __init__(self) -> None:
-        self.pull_requests: list[tuple[str, LanePR]] = []
+        self.pull_requests: list[tuple[str, LanePR, RepoVisibility]] = []
 
-    async def record_pull_request(self, *, lane_key: str, pr: LanePR):
-        self.pull_requests.append((lane_key, pr))
+    async def record_pull_request(
+        self, *, lane_key: str, pr: LanePR, visibility: RepoVisibility
+    ):
+        self.pull_requests.append((lane_key, pr, visibility))
         return None
 
 
@@ -256,9 +259,12 @@ async def test_actual_native_graph_delivers_and_only_work_defect_reenters_fire(
         assert wire.creates[0]["head"] == result.head_branch
         assert result.pr.number == 17 and result.pr.state == "open"
         # The delivering step put that pull request on the lane's record, once
-        # per delivery and under the lane the result names (KOD-843).
+        # per delivery, under the lane the result names and under the
+        # visibility this run resolved — the same one the commit write of that
+        # record body was gated under (KOD-843).
         assert lane_state.pull_requests == [
-            (result.lane_key, result.pr) for _ in range(2 if red and rounds else 1)
+            (result.lane_key, result.pr, final["repo_visibility"])
+            for _ in range(2 if red and rounds else 1)
         ]
         assert len(wire.watches) == (2 if red and rounds else 1)
         assert all(watch == wire.watches[0] for watch in wire.watches)
@@ -303,6 +309,25 @@ async def test_no_forge_reports_explicit_skip_without_fabricating_pr():
     assert phase.outcome is WorkflowOutcome.review_passed_no_pr_adapter
     assert reports[0].delivery == phase and wire.requests == []
     assert executor.remediation_prompts == []
+
+
+async def test_a_delivering_lane_without_its_record_writer_refuses_at_construction():
+    """A lane that can deliver can record where it delivered to, or is not built.
+
+    Where a delivery is retained is the lane's record, so the graph that holds
+    a delivery coordinator and no writer of that record is refused while it is
+    being composed — not at the one delivery that would have been dropped
+    (KOD-843).
+    """
+    lane, _, _, _, forge, *_ = composed()
+    try:
+        # Not vacuous: this is the coordinator a composed forge lane holds.
+        assert lane._delivery is not None
+
+        with pytest.raises(ValueError, match="lane state writer"):
+            NativeLaneWorkflow(fire=lane.fire, delivery=lane._delivery, lane_state=None)
+    finally:
+        await forge.close()
 
 
 @pytest.mark.parametrize("changed", [False, True])

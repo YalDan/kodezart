@@ -29,7 +29,10 @@ def build_native_lane_workflow(
     skills: SkillsSelection,
     gate: OutboundContentGate,
     repositories: Sequence[RepoEntry],
-    lane_state: LaneStateWriter | None = None,
+    # Stated at every composition site rather than defaulted: a forge lane
+    # composed without the writer its delivery records through is a refusal
+    # at construction, and the choice belongs where the lane is built.
+    lane_state: LaneStateWriter | None,
 ) -> NativeLaneWorkflow:
     """Select one forge capability set and the configured watch/rerun bounds."""
     if fire.criteria is None:

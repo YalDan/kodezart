@@ -119,7 +119,11 @@ class NativeLaneWorkflow:
         if self._lane_state is None:
             raise ValueError("A completed delivery requires its lane state writer")
         await self._lane_state.record_pull_request(
-            lane_key=result.lane_key, pr=result.pr
+            lane_key=result.lane_key,
+            pr=result.pr,
+            # The run's own resolved visibility, which is what the commit
+            # write gated this record body under: one body, one question.
+            visibility=state["repo_visibility"],
         )
         return {"delivery": CompletedLaneDelivery(result=result)}
 

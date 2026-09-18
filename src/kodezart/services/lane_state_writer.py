@@ -109,7 +109,7 @@ class TrackerLaneStateWriter:
         purpose, and a lane naming no repository, are faults the caller can
         be told about before it opens a session and before it pushes.
         """
-        self._markers(lane)
+        self._markers(lane.lane_key)
         self._branch_url(lane)
 
     async def record_commit(
@@ -126,7 +126,7 @@ class TrackerLaneStateWriter:
         is composed, so a damaged record refuses rather than being replaced
         by a fresh one.
         """
-        marker, _ = self._markers(lane)
+        marker, _ = self._markers(lane.lane_key)
         branch_url = self._branch_url(lane)
         head_sha = await self._git.current_sha(workspace_path)
         if head_sha != receipt.commit_sha:
@@ -191,7 +191,9 @@ class TrackerLaneStateWriter:
             )
         return record
 
-    async def record_pull_request(self, *, lane_key: str, pr: LanePR) -> LaneRunState:
+    async def record_pull_request(
+        self, *, lane_key: str, pr: LanePR, visibility: RepoVisibility
+    ) -> LaneRunState:
         """Put the delivered pull request on this lane's record, in place.
 
         The record is read through the one reader every other reader of it
@@ -201,14 +203,14 @@ class TrackerLaneStateWriter:
         first record. A pull request the record already carries writes nothing
         at all, so a second delivery of the same head is not a second write.
 
-        The bytes go through the gate under UNKNOWN visibility, which is its
-        engaged path: this call is given the lane and the pull request and not
-        the run's resolved visibility, and asking the strict question of a
-        body the commit write already gated costs nothing.
+        The bytes go through the gate under the run's resolved *visibility*,
+        the one the commit write of the same record body asked under: this
+        body carries the lane's branch page and the pull request's own
+        address, and a private deployment whose forge host it declares
+        private would have that body admitted at the commit write and refused
+        at this one if this write asked a different question of it.
         """
-        marker = compose_comment_marker(
-            prefixes=self._prefixes, purpose=RUN_STATE_PURPOSE, lane=lane_key
-        )
+        marker, _ = self._markers(lane_key)
         try:
             located = await self._records.find(issue_key=lane_key, lane_key=lane_key)
         except LaneRecordReadError as exc:
@@ -228,7 +230,7 @@ class TrackerLaneStateWriter:
         body = await self._gate_exact(
             body=lane_record_body(record=record),
             lane_key=lane_key,
-            visibility=RepoVisibility.UNKNOWN,
+            visibility=visibility,
         )
         await settle(
             self._tracker.upsert_comment(
@@ -293,16 +295,19 @@ class TrackerLaneStateWriter:
             for event in self._events(comments=comments, lane=lane)
         )
 
-    def _markers(self, lane: LaneBinding) -> tuple[str, str]:
+    def _markers(self, lane_key: str) -> tuple[str, str]:
         """This lane's record marker and the prefix its event stream is under.
 
         Both are resolved together because both are written in the same act:
         resolving only the one the first write needs would leave the other
-        purpose's absence to be found after a push and after a comment.
+        purpose's absence to be found after a push and after a comment. The
+        lane key is all either needs, so every write of this lane's record
+        addresses it from here and no second composition of the marker exists
+        to drift from the one the reader addresses.
         """
         return (
             compose_comment_marker(
-                prefixes=self._prefixes, purpose=RUN_STATE_PURPOSE, lane=lane.lane_key
+                prefixes=self._prefixes, purpose=RUN_STATE_PURPOSE, lane=lane_key
             ),
             configured_marker_prefix(self._prefixes, purpose=RUN_EVENT_PURPOSE),
         )

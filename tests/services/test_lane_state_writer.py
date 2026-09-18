@@ -5,6 +5,9 @@ from collections.abc import Sequence
 
 import pytest
 
+from kodezart.adapters.outbound_admission import OutboundAdmission
+from kodezart.adapters.reference_content_scanner import ReferenceContentScanner
+from kodezart.domain.comment_markers import compose_comment_marker
 from kodezart.domain.criterion_cross_off import (
     cross_offs_for,
     evaluation_observation,
@@ -12,6 +15,7 @@ from kodezart.domain.criterion_cross_off import (
 from kodezart.domain.criterion_evidence import parse_criterion_evidence
 from kodezart.domain.errors import (
     LaneRecordWriteError,
+    OutboundContentBlockedError,
     StaleCommentWriteError,
     StaleWriteError,
     TransientAPIError,
@@ -47,6 +51,7 @@ from kodezart.types.domain.operation import (
     OperationMemberAbsentError,
 )
 from kodezart.types.domain.persist import PersistResult, PersistSource
+from kodezart.types.domain.privacy import PrivateSurface
 from kodezart.types.domain.run_event import RunEventKind
 from kodezart.types.domain.run_state import LaneBinding, LanePR
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
@@ -137,18 +142,21 @@ def record_comments(port: FakeTrackerPort) -> list:
 PR = LanePR(url="https://forge.example/acme/repo/pull/17", number=17, state="open")
 
 
-def comment_upserts(port: FakeTrackerPort) -> list[str]:
-    """Every comment write this board is asked to make, by its marker.
+def comment_upserts(port: FakeTrackerPort) -> list[tuple[str, str | None]]:
+    """Every comment write this board is asked to make, and what it names.
 
     A write that leaves the same bytes on the same comment is invisible in
     the board's own comment list, so "writes nothing" is counted at the call
-    and not inferred from what the board holds afterwards.
+    and not inferred from what the board holds afterwards. Each call is
+    recorded with its marker and the comment it named as its precondition, so
+    an in-place edit that overwrote whatever the board holds now is a
+    different entry here than one that named the comment it read.
     """
-    calls: list[str] = []
+    calls: list[tuple[str, str | None]] = []
     writing = port.upsert_comment
 
     async def counted(*, target, marker, body, holder=None, expected=None):
-        calls.append(marker)
+        calls.append((marker, None if expected is None else expected.comment_key))
         return await writing(
             target=target,
             marker=marker,
@@ -161,31 +169,49 @@ def comment_upserts(port: FakeTrackerPort) -> list[str]:
     return calls
 
 
+RECORD_MARKER = compose_comment_marker(
+    prefixes=lane_operation().marker_prefixes, purpose=RUN_STATE_PURPOSE, lane=LANE
+)
+
+
 async def test_the_pull_request_is_set_in_place_and_a_repeat_writes_nothing():
     """Where a delivery is retained is the record, edited where it stands.
 
     A lane with no record refuses rather than composing a first one out of a
     delivery; the pull request is then set on the record the commit left, in
-    the one comment that record lives in, and setting the same one again
-    writes nothing at all — a second delivery of the same head is not a second
-    write.
+    the one comment that record lives in, naming that comment as the edit's
+    precondition, and setting the same one again writes nothing at all — a
+    second delivery of the same head is not a second write.
     """
     port, repo = board(), lane_repo()
     lane_state = writer(port, repo)
     upserts = comment_upserts(port)
 
     with pytest.raises(LaneRecordWriteError, match="no record of this lane"):
-        await lane_state.record_pull_request(lane_key=LANE, pr=PR)
+        await lane_state.record_pull_request(
+            lane_key=LANE, pr=PR, visibility=binding().visibility
+        )
     assert port.comments == []
     assert upserts == []
 
     committed = await make_commit(lane_state, repo, 1)
     recorded = record_comments(port)[0]
     before = [(comment.comment_key, comment.body) for comment in port.comments]
+    # The counter is live before anything is asked of it: the commit's own
+    # record write is on it, under the record marker and naming no prior
+    # comment. A counter that answered "no write" for any input would say
+    # nothing about the repeat below.
+    assert upserts == [(RECORD_MARKER, None)]
 
-    carried = await lane_state.record_pull_request(lane_key=LANE, pr=PR)
+    carried = await lane_state.record_pull_request(
+        lane_key=LANE, pr=PR, visibility=binding().visibility
+    )
 
     assert carried.pr == PR
+    # The edit named the comment the writer had just read, so a record another
+    # writer changed in between is refused rather than overwritten.
+    assert upserts[-1] == (RECORD_MARKER, recorded.comment_key)
+    assert len(upserts) == 2
     # One comment, the same one, edited: the pull request is the only fact
     # that moved.
     assert [comment.comment_key for comment in record_comments(port)] == [
@@ -202,7 +228,9 @@ async def test_the_pull_request_is_set_in_place_and_a_repeat_writes_nothing():
 
     unchanged = [(comment.comment_key, comment.body) for comment in port.comments]
     written = list(upserts)
-    again = await lane_state.record_pull_request(lane_key=LANE, pr=PR)
+    again = await lane_state.record_pull_request(
+        lane_key=LANE, pr=PR, visibility=binding().visibility
+    )
     assert again == carried
     # Not a write that happened to leave the same bytes: no write was made.
     # The body is what an edit of the same comment would produce either way.
@@ -212,12 +240,18 @@ async def test_the_pull_request_is_set_in_place_and_a_repeat_writes_nothing():
     ] == unchanged
 
     moved = await lane_state.record_pull_request(
-        lane_key=LANE, pr=PR.model_copy(update={"state": "merged"})
+        lane_key=LANE,
+        pr=PR.model_copy(update={"state": "merged"}),
+        visibility=binding().visibility,
     )
     assert moved.pr is not None and moved.pr.state == "merged"
     assert [comment.comment_key for comment in record_comments(port)] == [
         recorded.comment_key
     ]
+    # A changed pull request is one more write, naming the record as it stands
+    # after the write before it.
+    assert upserts[-1] == (RECORD_MARKER, recorded.comment_key)
+    assert len(upserts) == 3
 
 
 async def test_the_tenth_commit_edits_the_one_record_and_posts_nothing():
@@ -385,6 +419,143 @@ async def test_a_gate_that_alters_the_recorded_facts_refuses_the_whole_write():
     with pytest.raises(LaneRecordWriteError, match="the outbound gate changed"):
         await make_commit(writer(port, repo, AlteringGate()), repo, 1)
     assert port.comments == []
+
+
+async def test_a_record_altered_after_the_read_refuses_the_pull_request_write():
+    """The delivery's edit names the comment it read, so it overwrites nothing.
+
+    A commit recorded between the delivery write's read and its write would
+    otherwise be lost: the delivery would put its own stale record, without
+    that commit's row, over the newer one.
+    """
+    port, repo = (
+        RewritingBoard(
+            issues=[make_tracker_issue(LANE)],
+            marker_prefixes=lane_operation().marker_prefixes,
+        ),
+        lane_repo(),
+    )
+    lane_state = writer(port, repo)
+    await make_commit(lane_state, repo, 1)
+    recorded = record_comments(port)[0]
+
+    with pytest.raises(StaleCommentWriteError):
+        await lane_state.record_pull_request(
+            lane_key=LANE, pr=PR, visibility=binding().visibility
+        )
+
+    assert [comment.comment_key for comment in record_comments(port)] == [
+        recorded.comment_key
+    ]
+    body = record_comments(port)[0].body
+    assert '"changed"' in body
+    assert PR.url not in body
+
+
+async def test_a_duplicated_record_refuses_the_pull_request_write():
+    """Two comments under the lane's marker are no basis for an in-place edit.
+
+    Unreadable is not absent: a delivery that read a duplicated record as "no
+    record" would refuse for the wrong reason, and one that picked either copy
+    would edit a record it cannot show is this lane's.
+    """
+    port, repo = board(), lane_repo()
+    lane_state = writer(port, repo)
+    await make_commit(lane_state, repo, 1)
+    stored = record_comments(port)[0]
+    port.comments.append(stored.model_copy(update={"comment_key": "second-copy"}))
+    upserts = comment_upserts(port)
+
+    with pytest.raises(LaneRecordWriteError, match="could not be read"):
+        await lane_state.record_pull_request(
+            lane_key=LANE, pr=PR, visibility=binding().visibility
+        )
+
+    assert upserts == []
+    assert all(PR.url not in comment.body for comment in port.comments)
+
+
+async def test_a_gate_that_alters_the_delivered_record_refuses_the_write():
+    """The delivery write's bytes go through the same exact gate as the commit's.
+
+    A redacted variant of a record is a different claim about where this lane
+    stands, so the write refuses with the writer's own error and the record is
+    left exactly as the commit wrote it.
+    """
+    port, repo = board(), lane_repo()
+    await make_commit(writer(port, repo), repo, 1)
+    before = [(comment.comment_key, comment.body) for comment in port.comments]
+
+    with pytest.raises(LaneRecordWriteError, match="the outbound gate changed"):
+        await writer(port, repo, AlteringGate()).record_pull_request(
+            lane_key=LANE, pr=PR, visibility=binding().visibility
+        )
+
+    assert [(comment.comment_key, comment.body) for comment in port.comments] == before
+
+
+class RecordingReferences(ReferenceContentScanner):
+    """The production reference scan, keeping the bodies it was asked about."""
+
+    def __init__(self, *, private_surface: PrivateSurface) -> None:
+        super().__init__(private_surface=private_surface)
+        self.scanned: list[str] = []
+
+    async def scan(self, *, content: str, destination: OutboundDestination):
+        self.scanned.append(content)
+        return await super().scan(content=content, destination=destination)
+
+
+class UnaskedJudgment:
+    """A judgement a derived record write must never reach."""
+
+    async def scan(self, *, content: str, destination: OutboundDestination):
+        raise AssertionError("recorded lane facts are derived content, not prose")
+
+
+async def test_both_writes_of_one_record_are_gated_under_the_lanes_own_visibility():
+    """The delivery write asks the gate the question the commit write asked.
+
+    Driven by the production admission and reference scan, over a deployment
+    that declares this lane's forge host private. The record body carries that
+    host twice — the branch page and, after a delivery, the pull request's own
+    address — so a delivery write that asked the public question of a private
+    lane would refuse the body its commit write had just admitted, after the
+    pull request was opened and with nothing recording it (KOD-843).
+    """
+    references = RecordingReferences(
+        private_surface=PrivateSurface(hosts=("forge.example",))
+    )
+    port, repo = board(), lane_repo()
+    lane_state = writer(
+        port, repo, OutboundAdmission(references=references, judgment=UnaskedJudgment())
+    )
+
+    committed = await make_commit(lane_state, repo, 1)
+    # A private lane's record is admitted without a scan, and the body that was
+    # admitted is the one carrying the private host.
+    assert references.scanned == []
+    assert REPO_URL in record_comments(port)[0].body
+    assert committed.branch_url == REPO_URL
+
+    # The same bytes, asked as a public lane's would be: scanned, and refused
+    # for the host the deployment declared private.
+    before = [(comment.comment_key, comment.body) for comment in port.comments]
+    with pytest.raises(OutboundContentBlockedError):
+        await lane_state.record_pull_request(
+            lane_key=LANE, pr=PR, visibility=RepoVisibility.PUBLIC
+        )
+    assert [PR.url in body for body in references.scanned] == [True]
+    assert [(comment.comment_key, comment.body) for comment in port.comments] == before
+
+    carried = await lane_state.record_pull_request(
+        lane_key=LANE, pr=PR, visibility=binding().visibility
+    )
+
+    assert carried.pr == PR
+    assert PR.url in record_comments(port)[0].body
+    # Still nothing scanned: this lane's visibility decided both writes.
+    assert [PR.url in body for body in references.scanned] == [True]
 
 
 def event_comments(port: FakeTrackerPort) -> list:
