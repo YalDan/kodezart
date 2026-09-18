@@ -160,6 +160,7 @@ class RalphLoop:
         ralph_branch: str,
         base_spec: BaseSpec,
         work_base_ref: str,
+        resumed_head_sha: str | None = None,
         permission_mode: PermissionMode,
         allowed_tools: AllowedTools,
         acceptance_criteria: list[ExecutionCriterion],
@@ -187,6 +188,7 @@ class RalphLoop:
             feature_branch=feature_branch,
             ralph_branch=ralph_branch,
             work_base_ref=work_base_ref,
+            resumed_head_sha=resumed_head_sha,
             acceptance_criteria=acceptance_criteria,
             tracker_spec=tracker_spec,
             repo_visibility=repo_visibility,
@@ -342,6 +344,8 @@ class RalphLoop:
         # branch that already exists, so it checks that branch out instead of
         # cutting it again; iterations 2..n have always done exactly this.
         cut = is_first and ctx.work_base_ref != ctx.ralph_branch
+        if is_first and not cut:
+            await self._require_resumed_head(ctx)
 
         prompt = ctx.prompt
         if not is_first:
@@ -468,6 +472,32 @@ class RalphLoop:
             () if isinstance(outcome, PendingRalphOutcome) else outcome.criteria
         )
         return held_roster([*criteria, *graded])
+
+    async def _require_resumed_head(self, ctx: RalphLoopContext) -> None:
+        """Refuse a continued branch whose local copy is not the head entered on.
+
+        A first iteration that continues an existing branch gets a tree cut
+        from the CLONE's copy of it, while the entry that chose the branch
+        read the head from the remote. A clone behind that head hands the
+        session commits the criteria this lane owes were already graded
+        against, and the lane would then record a head it never worked at.
+        Both readings are one git read, made here: before the session, before
+        any commit, and before the record write that commit carries.
+        """
+        expected = ctx.resumed_head_sha
+        if expected is None:
+            raise NativeWriteRefusalError(
+                "A continued native branch names no head to continue from"
+            )
+        cwd = (
+            ctx.repo_path
+            if ctx.repo_path is not None
+            else await self._cache.ensure_available(ctx.repo_url or "", ctx.cache_key)
+        )
+        if await self._resolve(cwd=cwd, ref=ctx.ralph_branch) != expected:
+            raise NativeWriteRefusalError(
+                "The continued native branch is not at the head the lane entered on"
+            )
 
     def _lane_binding(self, ctx: RalphLoopContext) -> LaneBinding:
         """The lane this node commits for, as the record write needs it."""

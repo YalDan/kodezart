@@ -490,7 +490,7 @@ class RalphWorkflowEngine:
                     feature_branch = entered.deliverable_branch
                     ralph_branch = entered.loop_branch
                     work_base_ref = entered.loop_branch
-                case _:  # pragma: no cover - exhaustive over LaneEntry
+                case _:
                     assert_never(entered)
 
         initial_state: WorkflowState = {

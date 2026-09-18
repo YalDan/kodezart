@@ -8,7 +8,11 @@ merely both derived from the same expression.
 import pytest
 
 from kodezart.domain.errors import LaneEntryError
-from kodezart.domain.lane_entry import decide_lane_entry, recorded_branches
+from kodezart.domain.lane_entry import (
+    RecordedBranches,
+    decide_lane_entry,
+    recorded_branches,
+)
 from kodezart.types.domain.branch import BranchAssociation, BranchRole
 from kodezart.types.domain.lane_entry import DeliverOnlyLane, NewLane, ResumedLane
 from kodezart.types.domain.run_state import LaneCommit, LanePR, LaneRunState
@@ -62,10 +66,19 @@ def record(
     )
 
 
+def recorded(source: LaneRunState) -> tuple[LaneRunState, RecordedBranches]:
+    """A record with the branches its associations resolve to.
+
+    The reader pairs them before it reads the remote, because resolving them
+    refuses and that refusal is a fact of the record alone.
+    """
+    return (source, recorded_branches(record=source))
+
+
 def decide(**overrides):
     facts: dict[str, object] = {
         "issue_key": LANE,
-        "record": None,
+        "recorded": None,
         "remote_loop_head": None,
         "open_criteria": (),
         "resolved_base": BASE,
@@ -82,7 +95,7 @@ ROWS = (
     (
         "record, gap open",
         {
-            "record": record(),
+            "recorded": recorded(record()),
             "remote_loop_head": REMOTE_HEAD,
             "open_criteria": ("KOD-684/check",),
         },
@@ -96,7 +109,7 @@ ROWS = (
     (
         "record with a pull request, gap open",
         {
-            "record": record(pr=PR),
+            "recorded": recorded(record(pr=PR)),
             "remote_loop_head": REMOTE_HEAD,
             "open_criteria": ("KOD-684/check",),
         },
@@ -109,7 +122,7 @@ ROWS = (
     ),
     (
         "record, gap empty, no pull request",
-        {"record": record(), "remote_loop_head": REMOTE_HEAD},
+        {"recorded": recorded(record()), "remote_loop_head": REMOTE_HEAD},
         DeliverOnlyLane(
             deliverable_branch=DELIVERABLE,
             loop_branch=LOOP,
@@ -119,7 +132,7 @@ ROWS = (
     ),
     (
         "record, gap empty, pull request recorded",
-        {"record": record(pr=PR), "remote_loop_head": REMOTE_HEAD},
+        {"recorded": recorded(record(pr=PR)), "remote_loop_head": REMOTE_HEAD},
         None,
     ),
 )
@@ -137,7 +150,7 @@ def test_each_row_of_the_entry_table(facts, expected) -> None:
 def test_a_record_written_before_the_pin_carries_no_digest_to_compare() -> None:
     """A record with no digest is not compared, and is pinned by its next write."""
     entry = decide(
-        record=record(digest=None),
+        recorded=recorded(record(digest=None)),
         remote_loop_head=REMOTE_HEAD,
         open_criteria=("KOD-684/check",),
     )
@@ -153,7 +166,7 @@ def test_a_resumed_lane_carries_the_remote_head_not_the_recorded_one() -> None:
     head and the next record write brings the record level again.
     """
     entry = decide(
-        record=record(),
+        recorded=recorded(record()),
         remote_loop_head=REMOTE_HEAD,
         open_criteria=("KOD-684/check",),
     )
@@ -163,14 +176,14 @@ def test_a_resumed_lane_carries_the_remote_head_not_the_recorded_one() -> None:
 
 def test_a_recorded_branch_absent_from_the_remote_refuses_and_mints_nothing() -> None:
     with pytest.raises(LaneEntryError, match="absent from the remote") as caught:
-        decide(record=record(), open_criteria=("KOD-684/check",))
+        decide(recorded=recorded(record()), open_criteria=("KOD-684/check",))
     assert caught.value.branches == (LOOP,)
 
 
 def test_a_recorded_base_that_is_no_longer_the_resolved_base_refuses() -> None:
     with pytest.raises(LaneEntryError, match="is not the base") as caught:
         decide(
-            record=record(),
+            recorded=recorded(record()),
             remote_loop_head=REMOTE_HEAD,
             open_criteria=("KOD-684/check",),
             resolved_base="some-blocker-branch",
@@ -218,12 +231,13 @@ def test_roles_are_resolved_from_associations_not_names() -> None:
     ids=["two-deliverables", "two-bases"],
 )
 def test_associations_that_do_not_resolve_refuse(extra, reason) -> None:
+    """Asked of the record alone, which is what puts it before the remote read.
+
+    ``tests/services/test_lane_entry.py`` pins that order over the reader;
+    here it is the refusal itself.
+    """
     with pytest.raises(LaneEntryError, match=reason):
-        decide(
-            record=record(extra=extra),
-            remote_loop_head=REMOTE_HEAD,
-            open_criteria=("KOD-684/check",),
-        )
+        recorded_branches(record=record(extra=extra))
 
 
 def test_a_loop_association_with_no_derived_from_refuses() -> None:
@@ -241,8 +255,4 @@ def test_a_loop_association_with_no_derived_from_refuses() -> None:
         }
     )
     with pytest.raises(LaneEntryError, match="deliverable branches, not one"):
-        decide(
-            record=damaged,
-            remote_loop_head=REMOTE_HEAD,
-            open_criteria=("KOD-684/check",),
-        )
+        recorded_branches(record=damaged)

@@ -74,15 +74,31 @@ def recorded_branches(*, record: LaneRunState) -> RecordedBranches:
     )
 
 
+def recorded_entry(entry: LaneEntry | None) -> ResumedLane | DeliverOnlyLane | None:
+    """The entry when it stands on a record, and ``None`` when it does not.
+
+    One narrowing for "did this lane enter from a record", so the two facts
+    such an entry carries — the head the branch stood at and the digest its
+    record pinned — are read off the same answer instead of each through its
+    own type test.
+    """
+    return entry if isinstance(entry, (ResumedLane, DeliverOnlyLane)) else None
+
+
 def decide_lane_entry(
     *,
     issue_key: str,
-    record: LaneRunState | None,
+    recorded: tuple[LaneRunState, RecordedBranches] | None,
     remote_loop_head: str | None,
     open_criteria: Sequence[str],
     resolved_base: str,
 ) -> LaneEntry | None:
     """The one place a lane's entry is decided, from those facts alone.
+
+    ``recorded`` is a record together with the branches its associations
+    resolve to, and the two travel as one value: resolving them refuses — no
+    single deliverable, no single base — and that refusal is a fact of the
+    record alone, so the caller makes it BEFORE it asks a remote anything.
 
     ``None`` is "nothing to do": a lane with no record and no open criterion
     was finished outside kodezart, and a lane whose record already carries a
@@ -101,9 +117,9 @@ def decide_lane_entry(
     record write failed. Refusing would strand exactly that lane; the next
     commit's record write brings the record level again.
     """
-    if record is None:
+    if recorded is None:
         return NewLane() if open_criteria else None
-    branches = recorded_branches(record=record)
+    record, branches = recorded
     if remote_loop_head is None:
         raise LaneEntryError(
             issue_key=issue_key,

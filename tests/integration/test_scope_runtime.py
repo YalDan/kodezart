@@ -15,6 +15,7 @@ from kodezart.config.app import AppConfig
 from kodezart.config.job_queue import JobQueueSettings
 from kodezart.config.write_back import WriteBackSettings
 from kodezart.core.errors import TrackerUnavailableError
+from kodezart.domain.agent import mint_lane_branches
 from kodezart.domain.criterion_evidence import parse_criterion_evidence
 from kodezart.domain.errors import (
     BaseResolutionError,
@@ -1322,13 +1323,28 @@ async def first_fire(port, repos, *, passed=("A/check",)):
     return harness, await lane_record(port, "A")
 
 
-def refuse_to_mint(monkeypatch):
-    """Make the branch-name function the walker path uses fail if it is called."""
+def mint_spy(monkeypatch) -> list[str]:
+    """Record every branch-name mint the walker path makes, and mint as usual.
 
-    def never(issue_key):
-        raise AssertionError(f"a recorded lane minted a branch name for {issue_key}")
+    Patched at the definition AND at the alias the fire holds: a mint through
+    either name is a mint, and a spy on one name only answers "uncalled" for a
+    mint made through the other. It records rather than raises, so what the
+    test states is the empty list beside a walk that otherwise ran — a raising
+    spy would be contained at the lane boundary and read as some other
+    failure.
+    """
+    calls: list[str] = []
 
-    monkeypatch.setattr("kodezart.chains.ralph_workflow.mint_lane_branches", never)
+    def recording(issue_key):
+        calls.append(issue_key)
+        return mint_lane_branches(issue_key)
+
+    for name in (
+        "kodezart.domain.agent.mint_lane_branches",
+        "kodezart.chains.ralph_workflow.mint_lane_branches",
+    ):
+        monkeypatch.setattr(name, recording)
+    return calls
 
 
 async def test_a_recorded_lane_resumes_on_its_recorded_branch_and_mints_nothing(
@@ -1349,10 +1365,14 @@ async def test_a_recorded_lane_resumes_on_its_recorded_branch_and_mints_nothing(
     assert port.issues["A/second"].state_kind is WorkflowStateKind.UNSTARTED
     deliverable = recorded_branches(record=before).deliverable_branch
 
-    refuse_to_mint(monkeypatch)
+    minted = mint_spy(monkeypatch)
     second = resumable(port=port, repos=repos, evaluations=echoes(passed=set(A_KEYS)))
-    _ = [event async for event in drive(second, job="second-job")]
+    events = [event async for event in drive(second, job="second-job")]
 
+    # Nothing was minted on any path, and the lane did not fail on the way to
+    # not minting: an empty spy beside a reported failure would say nothing.
+    assert minted == []
+    assert lane_failures(events) == ()
     assert not any("slug" in props for props in second.executor.schema_calls)
     opened = second.workspace.acquisitions[0]
     assert opened["branch_name"] == opened["ref"] == before.branch
@@ -1413,7 +1433,7 @@ async def test_a_recorded_lane_the_facts_no_longer_admit_is_reported_not_fired(
     repos = WalkRepos()
     port = board(lanes=("A",), checks=TWO_CHECKS)
     _, before = await first_fire(port, repos)
-    refuse_to_mint(monkeypatch)
+    minted = mint_spy(monkeypatch)
     if damage == "branch":
         repos.branches[before.branch].pushed = None
 
@@ -1428,6 +1448,7 @@ async def test_a_recorded_lane_the_facts_no_longer_admit_is_reported_not_fired(
         kind="LaneEntryError",
         match=("is not the base" if damage == "base" else "absent from the remote"),
     )
+    assert minted == []
     assert second.executor.schema_calls == []
     assert await lane_record(port, "A") == before
 
@@ -1496,13 +1517,14 @@ async def test_a_subject_amended_between_runs_is_refused_by_digest_not_re_read(
     port.issues["A"] = port.issues["A"].model_copy(
         update={"body": "A later subject body must not be read into a resumed lane"}
     )
-    refuse_to_mint(monkeypatch)
+    minted = mint_spy(monkeypatch)
 
     second = resumable(port=port, repos=repos, evaluations=echoes(passed=set(A_KEYS)))
     await walk_reporting(
         second, kind="SubjectAmendedError", match="differs from the recorded"
     )
 
+    assert minted == []
     assert second.executor.execution_prompts == []
     assert second.executor.evaluation_prompts == []
     after = await lane_record(port, "A")
@@ -1588,7 +1610,7 @@ async def test_kill_and_re_enter_dispatches_exactly_the_remaining_lanes(monkeypa
         assert len(wire.creates) == 2
         assert killed.branch not in {create["head"] for create in wire.creates}
 
-        refuse_to_mint(monkeypatch)
+        minted = mint_spy(monkeypatch)
         second = resumable(
             port=port,
             repos=repos,
@@ -1629,6 +1651,7 @@ async def test_kill_and_re_enter_dispatches_exactly_the_remaining_lanes(monkeypa
             for key in ("A", "B")
             if f"Exact native subject {key}" in prompt
         ]
+        assert minted == []
         opened = second.workspace.acquisitions[0]
         assert opened["branch_name"] == opened["ref"] == killed.branch
         assert opened["create_branch"] is False

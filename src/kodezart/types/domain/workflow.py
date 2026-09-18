@@ -171,6 +171,13 @@ class RalphLoopContext(ExecutionContext):
     feature_branch: str = Field(min_length=1)
     ralph_branch: str = Field(min_length=1)
     work_base_ref: str = Field(min_length=1)
+    #: The remote head the lane's entry decided on, and ``None`` for a lane
+    #: that is cutting its branch rather than continuing one.  A first
+    #: iteration that checks an existing branch out gets the tree the CLONE
+    #: holds of it, so the loop compares the two before it opens a session:
+    #: a clone behind the head the entry read would carry work the criteria
+    #: the lane owes were already graded against.
+    resumed_head_sha: str | None = None
     acceptance_criteria: list[ExecutionCriterion] = Field(min_length=1)
     tracker_spec: TrackerSpec | None = None
     repo_visibility: RepoVisibility
@@ -255,8 +262,9 @@ class WorkflowState(TypedDict):
 
     ``lane_entry`` is how this run entered: ``None`` on the authored arm
     and on a native fire prepared without a walker, which is the same as a
-    new lane.  It is carried on the state because the route after
-    re-validation and the loop's first iteration both read it.
+    new lane.  It is carried on the state because the fire's entry check
+    compares the subject digest against it, and because the loop is told the
+    head a continued branch was entered on from it.
 
     ``work_base_ref`` is the ref the next loop cuts its ralph branch
     from.  It starts as the run's base and becomes the feature branch

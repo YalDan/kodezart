@@ -46,6 +46,7 @@ from tests.chains.test_native_fire import (
     OWED_KEYS,
     STAGE_KEY,
     SUBJECT,
+    TRUNK_SHA,
     NativeExecutor,
     board,
     criterion_body,
@@ -115,12 +116,14 @@ class Lane:
         port=None,
         publishes=None,
         work_base_ref="main",
+        resumed_head_sha=None,
         repo_url=REPO_URL,
         writes_lane_state=True,
         owns_workspace=True,
         source=LaneSource,
     ):
         self.work_base_ref = work_base_ref
+        self.resumed_head_sha = resumed_head_sha
         self.repo_url = repo_url
         self.repo = LaneRepo(branch=BRANCH)
         self.git = LaneGit(self.repo)
@@ -172,6 +175,7 @@ class Lane:
             "ralph_branch": BRANCH,
             "base_spec": trunk_base("main"),
             "work_base_ref": self.work_base_ref,
+            "resumed_head_sha": self.resumed_head_sha,
             "permission_mode": PermissionMode.UNATTENDED,
             "allowed_tools": ToolPreset.IMPLEMENTATION,
             "acceptance_criteria": list(entry.criteria),
@@ -200,6 +204,55 @@ class Lane:
             for comment in self.port.comments
             if comment.body.startswith(f"[{prefix}:")
         ]
+
+
+@pytest.mark.parametrize("clone", ["behind", "level"])
+async def test_a_continued_branch_must_stand_at_the_head_the_lane_entered_on(clone):
+    """The tree comes from the clone; the entry read the remote (KOD-684).
+
+    A first iteration whose work base IS the loop branch continues an existing
+    branch, and the tree it works in is cut from the clone's copy of it. A copy
+    behind the head the entry decided on would hand the session commits the
+    criteria this lane owes were already graded against, so the loop compares
+    the two and refuses before the session, before any commit and before the
+    record write a commit carries. Not vacuous: the same lane at the head it
+    entered on runs and records.
+    """
+    lane = Lane(
+        evaluations=[native_evaluation()],
+        work_base_ref=BRANCH,
+        resumed_head_sha="0" * 40 if clone == "behind" else TRUNK_SHA,
+    )
+
+    if clone == "behind":
+        with pytest.raises(
+            NativeWriteRefusalError, match="not at the head the lane entered on"
+        ):
+            await lane.run()
+        assert lane.executor.execution_prompts == []
+        assert lane.persister.calls == []
+        assert lane.record_comments() == []
+        return
+
+    await lane.run()
+    assert lane.executor.execution_prompts
+    assert (await lane.record()).head_sha == lane.repo.head
+
+
+async def test_a_continued_branch_with_no_entered_head_refuses() -> None:
+    """The head is not optional where the branch already exists.
+
+    A continued branch whose entry named no head is a lane nothing can compare
+    the clone against, which is the state this refusal exists to make loud
+    rather than to work around.
+    """
+    lane = Lane(evaluations=[native_evaluation()], work_base_ref=BRANCH)
+
+    with pytest.raises(NativeWriteRefusalError, match="names no head to continue from"):
+        await lane.run()
+
+    assert lane.executor.execution_prompts == []
+    assert lane.record_comments() == []
 
 
 async def test_first_push_leaves_the_record_and_the_first_push_event():

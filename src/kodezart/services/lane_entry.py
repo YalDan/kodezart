@@ -4,7 +4,7 @@ from collections.abc import Sequence
 
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import GitService
-from kodezart.domain.lane_entry import decide_lane_entry
+from kodezart.domain.lane_entry import decide_lane_entry, recorded_branches
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.types.domain.lane_entry import LaneEntry
 
@@ -42,6 +42,13 @@ class LaneEntryReader:
         """
         located = await self._records.find(issue_key=issue_key, lane_key=issue_key)
         record = located[1] if located is not None else None
+        # Which branches a record's associations resolve to is a fact of the
+        # record alone, and resolving them refuses. Asked here, so a record
+        # that settles no deliverable or no base refuses before the remote is
+        # asked anything about the branch it names.
+        recorded = (
+            None if record is None else (record, recorded_branches(record=record))
+        )
         remote_head = (
             None
             if record is None
@@ -63,7 +70,7 @@ class LaneEntryReader:
             )
         return decide_lane_entry(
             issue_key=issue_key,
-            record=record,
+            recorded=recorded,
             remote_loop_head=remote_head,
             open_criteria=open_criteria,
             resolved_base=resolved_base,

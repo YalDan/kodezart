@@ -78,6 +78,9 @@ async def capture_prompts(family, ticket, monkeypatch):
     )
     state = {
         "issue_key": "subject/42",
+        # The authored arm enters no lane, which is the value prepare puts
+        # here for it; the loop reads it for the head a resumed lane carries.
+        "lane_entry": None,
         "fire_spec": AuthoredSpec(ticket=ticket),
         "remediation_ticket": None,
         "feature_branch": "feature",

@@ -17,6 +17,7 @@ from kodezart.domain.accept_gate import (
     flagged_items,
 )
 from kodezart.domain.amendment import NativeAmendmentRefusalError
+from kodezart.domain.lane_entry import recorded_entry
 from kodezart.domain.ticket import format_fire_spec
 from kodezart.domain.workflow_state import (
     current_fire_spec,
@@ -88,6 +89,7 @@ class FireImplementation:
         ralph_branch: str,
         base_spec: BaseSpec,
         work_base_ref: str,
+        resumed_head_sha: str | None = None,
         permission_mode: PermissionMode,
         allowed_tools: AllowedTools,
         acceptance_criteria: list[ExecutionCriterion],
@@ -109,6 +111,7 @@ class FireImplementation:
             ralph_branch=ralph_branch,
             base_spec=base_spec,
             work_base_ref=work_base_ref,
+            resumed_head_sha=resumed_head_sha,
             permission_mode=permission_mode,
             allowed_tools=allowed_tools,
             acceptance_criteria=acceptance_criteria,
@@ -176,6 +179,14 @@ class FireImplementation:
             ralph_branch=state["ralph_branch"],
             base_spec=ctx.base_spec,
             work_base_ref=state["work_base_ref"],
+            # A lane that entered on a record continues its branch, and the
+            # head that entry read is what the loop requires its tree to
+            # stand at before it opens a session.
+            resumed_head_sha=(
+                entered.head_sha
+                if (entered := recorded_entry(state["lane_entry"])) is not None
+                else None
+            ),
             permission_mode=ctx.permission_mode,
             allowed_tools=ctx.allowed_tools,
             acceptance_criteria=criteria,

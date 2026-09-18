@@ -1804,6 +1804,10 @@ class QualityGate(Protocol):
     the first is where the loop's first iteration cuts its branch, the
     second is what the work is diffed against.  A round built on top of
     an earlier round's consolidated work has them name different refs.
+
+    ``resumed_head_sha`` is the third: the head a lane that CONTINUES its
+    branch was entered on, which the loop requires the tree it works in to
+    stand at.
     """
 
     def run(
@@ -1816,6 +1820,7 @@ class QualityGate(Protocol):
         ralph_branch: str,
         base_spec: BaseSpec,
         work_base_ref: str,
+        resumed_head_sha: str | None = None,
         permission_mode: PermissionMode,
         allowed_tools: AllowedTools,
         acceptance_criteria: list[ExecutionCriterion],
