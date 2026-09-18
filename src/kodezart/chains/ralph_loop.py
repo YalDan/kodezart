@@ -317,13 +317,9 @@ class RalphLoop:
                 raise NativeWriteRefusalError(
                     "Native execution requires the precommit amendment owner"
                 )
-            if self._lane_state is None:
-                raise NativeWriteRefusalError(
-                    "Native execution requires the lane state writer"
-                )
             amendments = self._amendments
             after_publish = self._record_commit(
-                self._lane_state, self._lane_binding(ctx)
+                self._lane_writer(), self._lane_binding(ctx)
             )
         native_criteria = (
             None
@@ -433,14 +429,19 @@ class RalphLoop:
     def _held(
         self, *, criteria: Sequence[ExecutionCriterion], outcome: RalphOutcome
     ) -> TrackerCriterionSet | None:
-        """Everything this fire took on: its entry roster and what it graded.
+        """The entry roster plus what this loop's last evaluation graded.
 
-        The obligation can grow mid-run: the amendment write-back puts an
-        amended criterion back in Todo and the next iteration owes it. Such
-        a criterion is part of what this fire took on, so once the fire's own
-        evaluation finishes it, the roster that keeps it inside the set has
-        to hold it too. Nothing is ever removed from the roster this way —
-        it only admits a criterion this loop itself graded.
+        A criterion added to the subtree mid-run and then graded by this
+        loop is held, because the cross-off moved it out of Todo and a
+        barrier reading Todo alone would no longer see it. A criterion
+        added AFTER that last grading is in neither half, so the set the
+        post-loop check reads has changed and it refuses — which is exactly
+        what the check meant before cross-offs existed: it detects a set
+        change since the last grading and nothing else. A criterion
+        finished before this fire entered is in no roster at all.
+
+        Nothing is ever removed from the roster this way: it only admits a
+        criterion this loop itself graded.
         """
         graded: Sequence[ExecutionCriterion] = (
             outcome.criteria
@@ -530,7 +531,9 @@ class RalphLoop:
         # The session the standing grade came from, carried out of the
         # retried closure: the Evidence row points back at the grading that
         # produced the verdict, and on a re-dispatch that is the last one.
-        graded_in: str | None = None
+        # Every path out of the dispatch below either sets it or raises, so
+        # nothing downstream reads this initial value.
+        graded_in: str = ""
         # Whether the tree the standing grade was read from was the one the
         # graded sha names. The authored arm has no sha to stand for, so its
         # readings are of the ref it asked for and nothing else is claimed.
@@ -768,7 +771,7 @@ class RalphLoop:
         grade: IterationGrade,
         dispatched: Sequence[ExecutionCriterion],
         graded_sha: str,
-        graded_in: str | None,
+        graded_in: str,
         demonstrated: bool,
         iteration: int,
     ) -> None:
@@ -776,20 +779,17 @@ class RalphLoop:
 
         The whole roster the attempt dispatched is handed over with the
         whole grade, because a verdict is a reading of the roster and a
-        partial one is no reading of it. A grade with no session behind it
-        is not one this loop produced, so it is refused rather than stamped
-        with a pointer that leads nowhere.
+        partial one is no reading of it.
         """
-        if self._lane_state is None:
-            raise NativeWriteRefusalError(
-                "Native evaluation requires the lane state writer"
-            )
+        # Resolved rather than re-refused: the execute node settles the
+        # writer's absence at its entry, before the session this grade is.
+        lane_state = self._lane_writer()
         roster = held_roster(dispatched)
-        if roster is None or graded_in is None:
+        if roster is None:
             raise NativeWriteRefusalError(
                 "The native evaluation graded no tracker criterion in a session"
             )
-        await self._lane_state.write_cross_offs(
+        await lane_state.write_cross_offs(
             lane=self._lane_binding(ctx),
             dispatched=roster.criteria,
             cross_offs=cross_offs_for(
@@ -827,6 +827,14 @@ class RalphLoop:
                 "Native evaluation requires its workspace provider"
             )
         return self._workspace
+
+    def _lane_writer(self) -> LaneStateWriter:
+        """The writer both of this loop's board writes go through."""
+        if self._lane_state is None:
+            raise NativeWriteRefusalError(
+                "Native execution requires the lane state writer"
+            )
+        return self._lane_state
 
     def _route_after_execute(self, state: RalphLoopState) -> str:
         if state.get("amendment_blocked", False):
