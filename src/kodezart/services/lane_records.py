@@ -16,8 +16,10 @@ from kodezart.domain.errors import (
     LaneRecordReadError,
     TransientAPIError,
 )
+from kodezart.domain.lane_entry import recorded_branches
 from kodezart.domain.lane_record import RUN_STATE_PURPOSE, parse_lane_record
 from kodezart.domain.tracker_writes import comment_under_marker
+from kodezart.types.domain.branch import WorkRef, WorkRefRole
 from kodezart.types.domain.operation import OperationConfig
 from kodezart.types.domain.run_state import LaneRunState
 from kodezart.types.domain.tracker import TrackerComment
@@ -167,4 +169,52 @@ class LaneRecordReader:
             lane_key=lane_key,
             record_ref=record_ref,
             reason=reason,
+        )
+
+
+class RecordedDeliverableRefs:
+    """The ref read of base resolution, answered from the lane record (KOD-842).
+
+    A blocker's deliverable branch is written on the blocker's own run-state
+    record, so on the scope path that record is what the question *which ref
+    delivers this issue* is answered from.  Nothing is read from a second
+    carrier beside it, and the branch is resolved by ROLE out of the
+    record's associations rather than by its name.
+
+    The lane key IS the issue key here, the same address the entry reader
+    reads a lane's record under: one lane per scope member.
+
+    A lane no comment addresses answers with no refs, which is exactly the
+    ref-less blocker the resolver already reasons about — it is not a
+    refusal, because a blocker finished before this operation ran never had
+    a record.  Every other way the read can be wrong stays the record
+    reader's own refusal, so an unreadable record never reads as an absent
+    one; and a record whose associations settle no single deliverable
+    refuses with the record reader's typed entry error, before any ref of
+    it reaches Git.
+    """
+
+    def __init__(self, *, records: LaneRecordReader) -> None:
+        self._records = records
+
+    async def work_refs(self, *, issue_key: str) -> Sequence[WorkRef]:
+        """The one deliverable ref this issue's record names, or none.
+
+        The sha is the record's pushed head: what the branch stands at on
+        the remote, which is the only head another lane could be based on.
+        The recording instant is the record comment's own, so the ref is
+        stamped with when the fact was written and not when it was read.
+        """
+        located = await self._records.find(issue_key=issue_key, lane_key=issue_key)
+        if located is None:
+            return ()
+        comment, record = located
+        return (
+            WorkRef(
+                issue_id=issue_key,
+                role=WorkRefRole.DELIVERABLE,
+                branch=recorded_branches(record=record).deliverable_branch,
+                pushed_head_sha=record.pushed_head_sha,
+                recorded_at=comment.created_at,
+            ),
         )

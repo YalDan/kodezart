@@ -14,7 +14,7 @@ and nothing else.
 
 import ast
 import sys
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
 from types import FrameType
 
@@ -128,6 +128,82 @@ async def test_a_second_ref_at_another_role_is_accepted() -> None:
         ref=ref("B-1", "feature-a-ralph", role=WorkRefRole.ITERATION),
     )
     assert len(await tracker.work_refs(issue_key="B-1")) == 2
+
+
+# ---------------------------------------------------------------------------
+# The ref read is a role of its own (KOD-842)
+# ---------------------------------------------------------------------------
+
+
+class PortRefReadError(RuntimeError):
+    """Raised where the port's own ref read must not have been reached."""
+
+
+class UnreadPortRefs(FakeTrackerPort):
+    """A port every other read of which is ordinary, save the ref read.
+
+    Seeded with refs it then refuses to answer: a resolver reading the port
+    would resolve a base and look correct, so the substitution is shown by
+    the read that must not happen raising rather than by a value.
+    """
+
+    async def work_refs(self, *, issue_key: str) -> Sequence[WorkRef]:
+        raise PortRefReadError(issue_key)
+
+
+class NamedRefs:
+    """The read role, answered from a carrier that is not the port."""
+
+    def __init__(self, refs: Mapping[str, Sequence[WorkRef]]) -> None:
+        self._refs = dict(refs)
+        self.calls: list[str] = []
+
+    async def work_refs(self, *, issue_key: str) -> Sequence[WorkRef]:
+        self.calls.append(issue_key)
+        return self._refs.get(issue_key, ())
+
+
+async def test_a_named_ref_reader_answers_instead_of_the_port() -> None:
+    """The base is the named carrier's branch, and the port is never asked."""
+    tracker = UnreadPortRefs(
+        issues=[
+            make_tracker_issue(LANE, blocked_by=["B-1"]),
+            make_tracker_issue("B-1"),
+        ],
+        recorded_work_refs={"B-1": [ref("B-1", "branch-on-the-port")]},
+    )
+    reader = NamedRefs({"B-1": (ref("B-1", "branch-on-the-record"),)})
+
+    spec = await BaseResolver(
+        tracker=tracker, git=FakeGitService(), remote=REMOTE, refs=reader
+    ).resolve(
+        issue_key=LANE,
+        repo_path=REPO_PATH,
+        integration_workspace=INTEGRATION_WORKSPACE,
+        trunk=CONFIGURED_TRUNK,
+        now=FIXTURE_EPOCH,
+    )
+
+    assert spec.base_branch == "branch-on-the-record"
+    assert reader.calls == ["B-1"]
+
+
+async def test_the_port_is_the_ref_reader_when_no_other_is_named() -> None:
+    """The control: the default resolver reaches exactly the read above.
+
+    Without it the assertion above would hold for a resolver that had
+    stopped reading refs at all.
+    """
+    tracker = UnreadPortRefs(
+        issues=[
+            make_tracker_issue(LANE, blocked_by=["B-1"]),
+            make_tracker_issue("B-1"),
+        ],
+        recorded_work_refs={"B-1": [ref("B-1", "branch-on-the-port")]},
+    )
+
+    with pytest.raises(PortRefReadError, match="B-1"):
+        await resolve(tracker, FakeGitService())
 
 
 # ---------------------------------------------------------------------------

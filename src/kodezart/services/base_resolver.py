@@ -1,10 +1,17 @@
 """Resolving a lane's base from the tracker graph, and building it if needed.
 
 The rule lives in :mod:`kodezart.domain.base_resolution` and is pure.  This
-service is the I/O half: it reads the ``blockedBy`` edges and the recorded
-work refs through ``TrackerPort``, asks ``GitService`` which refs contain
-which, hands the resolved values to the rule, and — on the combined arm only
-— constructs the integration ref the rule named.
+service is the I/O half: it reads the ``blockedBy`` edges through
+``TrackerPort`` and a blocker's recorded work refs through ``WorkRefReader``,
+asks ``GitService`` which refs contain which, hands the resolved values to
+the rule, and — on the combined arm only — constructs the integration ref
+the rule named.
+
+The ref read is its own role because the two passes answer it from
+different carriers: the per-issue pass from the refs recorded on the issue
+(the port satisfies the role, so it is also the default), the scope path
+from the blocker's lane run-state record (KOD-842).  Nothing here knows
+which, and nothing here derives a role or an issue from a branch name.
 
 Two things it deliberately does NOT do.  It never reads a pull request's
 merge or open/closed state: under the standing ruling an open unmerged pull
@@ -19,7 +26,7 @@ from datetime import datetime
 from typing import assert_never
 
 from kodezart.core.logging import BoundLogger, get_logger
-from kodezart.core.protocols import GitService, TrackerPort
+from kodezart.core.protocols import GitService, TrackerPort, WorkRefReader
 from kodezart.domain.base_resolution import BasePlan, resolve_base
 from kodezart.domain.errors import (
     BaseIntegrationConflictError,
@@ -45,10 +52,15 @@ class BaseResolver:
         tracker: TrackerPort,
         git: GitService,
         remote: str,
+        refs: WorkRefReader | None = None,
     ) -> None:
         self._tracker: TrackerPort = tracker
         self._git: GitService = git
         self._remote: str = remote
+        # The port answers the ref read unless a caller names another
+        # carrier for it, so every composition that has one collaborator
+        # keeps one and the scope path substitutes the record.
+        self._refs: WorkRefReader = refs if refs is not None else tracker
         self._log: BoundLogger = get_logger(__name__)
 
     async def resolve(
@@ -173,7 +185,7 @@ class BaseResolver:
             seen.add(cursor)
             deliverables = [
                 ref
-                for ref in await self._tracker.work_refs(issue_key=cursor)
+                for ref in await self._refs.work_refs(issue_key=cursor)
                 if ref.role is WorkRefRole.DELIVERABLE
             ]
             if len(deliverables) > 1:

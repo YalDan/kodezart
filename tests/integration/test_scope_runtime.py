@@ -293,8 +293,13 @@ async def walk_reporting(harness, *, kind, match="", **rest):
 
 
 async def test_request_queue_constructor_reaches_real_native_graph_without_child_jobs():
-    harness = runtime(
-        port=board(lanes=("A", "B"), blocked={"B": ("A",)}), lanes=("A", "B")
+    # Over repositories that actually commit (``resumable``, below): B's base
+    # is A's recorded deliverable branch, so A has to leave a record and push
+    # the branch it names before B can be prepared at all (KOD-842).
+    harness = resumable(
+        repos=WalkRepos(),
+        port=board(lanes=("A", "B"), blocked={"B": ("A",)}),
+        lanes=("A", "B"),
     )
     queue = build_job_queue(settings=JobQueueSettings(), workflow_engine=harness.engine)
     handler = AgentHandler(harness.service, SUPPRESS_ALL_SKILLS, queue=queue)
@@ -312,22 +317,6 @@ async def test_request_queue_constructor_reaches_real_native_graph_without_child
         async with asyncio.timeout(15):
             async for item in handler.attach_job(job_id=record.job_id):
                 payloads.append(item)
-                if (
-                    item["type"] == "scope_lane"
-                    and item["laneKey"] == "A"
-                    and item["event"]["type"] == "lane_delivery"
-                ):
-                    # A delivered, so the deliverable ref a delivery records
-                    # exists; B resolves its base from the blocker it names.
-                    harness.port.recorded_work_refs["A"] = [
-                        WorkRef(
-                            issue_id="A",
-                            role=WorkRefRole.DELIVERABLE,
-                            branch="recorded-A",
-                            pushed_head_sha="a" * 40,
-                            recorded_at=FIXTURE_EPOCH,
-                        )
-                    ]
         assert not [item for item in payloads if item["type"] == "error"]
         nested = [item for item in payloads if item["type"] == "scope_lane"]
         iterations = [
@@ -658,9 +647,18 @@ def lane_of(harness):
     return harness.engine._scoped_arm._lane_for(ORIGIN)
 
 
-async def test_current_closed_blocker_unlocks_next_lane_using_its_actual_work_ref():
+async def test_current_closed_blocker_unlocks_next_lane_using_its_recorded_branch():
+    """B stands on the deliverable branch A's own record names (KOD-842).
+
+    Nothing seeds a ref anywhere on this board: A's record is written by A's
+    own commit, so the branch B was prepared with can only have been read
+    from it. The record stands on A's LOOP branch, which is asserted to be
+    what B was NOT based on — a reader answering with the record's branch
+    would otherwise resolve a base and look right.
+    """
+    repos = WalkRepos()
     port = board(lanes=("A", "B"), blocked={"B": ("A",)})
-    harness = runtime(port=port, lanes=("A", "B"))
+    harness = resumable(repos=repos, port=port, lanes=("A", "B"))
     events = []
     async for event in drive(harness):
         events.append(event)
@@ -671,15 +669,6 @@ async def test_current_closed_blocker_unlocks_next_lane_using_its_actual_work_re
                 # A's criterion is already Done: its own evaluation step
                 # crossed it off, so nothing here has to close the blocker.
                 assert port.issues["A/check"].state_kind is WorkflowStateKind.COMPLETED
-                port.recorded_work_refs["A"] = [
-                    WorkRef(
-                        issue_id="A",
-                        role=WorkRefRole.DELIVERABLE,
-                        branch="recorded-A",
-                        pushed_head_sha="a" * 40,
-                        recorded_at=FIXTURE_EPOCH,
-                    )
-                ]
     iterations = [
         event.lane_key
         for event in events
@@ -704,7 +693,12 @@ async def test_current_closed_blocker_unlocks_next_lane_using_its_actual_work_re
         if isinstance(event, ScopeLaneEvent)
         and isinstance(event.event, WorkflowScopeBaseEvent)
     }
-    assert bases["B"] == "recorded-A"
+    record = await lane_record(port, "A")
+    assert bases["B"] == recorded_branches(record=record).deliverable_branch
+    assert bases["B"] != record.branch
+    # And no work ref was ever recorded on either lane: the record is the
+    # whole carrier of a blocker's branch on this path.
+    assert await port.work_refs(issue_key="A") == ()
 
 
 async def test_actual_http_sse_preserves_nested_progress_and_delivery_discriminators():
@@ -1127,9 +1121,16 @@ async def test_a_scoped_walk_finishes_every_criterion_at_its_head_with_a_record(
                     repos.branches[record.branch].head,
                 )
         if isinstance(event.event, LaneDeliveryEvent):
-            port.recorded_work_refs[event.lane_key] = [
-                deliverable_of(repos, event.lane_key)
-            ]
+            # A delivery leaves the lane's deliverable branch on the remote,
+            # which is the ref a dependent lane's base resolves to. The branch
+            # is read off the record, because the record is where a lane's
+            # deliverable branch is written (KOD-842).
+            delivered = recorded_branches(
+                record=await lane_record(port, event.lane_key)
+            )
+            repos.delivered[delivered.deliverable_branch] = repos.branches[
+                delivered.loop_branch
+            ].head
 
     heads = {branch: repo.head for branch, repo in repos.branches.items()}
     assert len(heads) == 2

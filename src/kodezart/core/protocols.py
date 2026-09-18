@@ -1486,6 +1486,21 @@ class TrackerPort(
         ...
 
 
+@runtime_checkable
+class WorkRefReader(Protocol):
+    """The one read base resolution makes to find a blocker's branch.
+
+    A role narrowed out of the port rather than a widening of it:
+    ``TrackerPort`` satisfies it structurally and remains the answer on the
+    per-issue pass, while the scope path serves the same question from the
+    lane's own run-state record (KOD-842).  Either way the caller asks
+    *which refs deliver issue X, in which roles, at which shas* and derives
+    nothing from a branch name.
+    """
+
+    async def work_refs(self, *, issue_key: str) -> Sequence[WorkRef]: ...
+
+
 #: Called with the workspace a commit was made in and the receipt it
 #: returned, between the push and the completion of the persisting phase.
 AfterPublish = Callable[[str, PersistResult], Awaitable[None]]

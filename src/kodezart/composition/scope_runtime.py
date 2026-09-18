@@ -9,7 +9,7 @@ from kodezart.core.protocols import DeliveryProbe, GitService, RepoCache, Tracke
 from kodezart.domain.git_url import is_forge_less_origin
 from kodezart.services.base_resolver import BaseResolver
 from kodezart.services.lane_entry import LaneEntryReader
-from kodezart.services.lane_records import LaneRecordReader
+from kodezart.services.lane_records import LaneRecordReader, RecordedDeliverableRefs
 from kodezart.services.scope_runtime import ScopeWorkflowEngine
 from kodezart.types.domain.operation import OperationConfig, RepoEntry
 
@@ -29,7 +29,9 @@ def build_scope_runtime(
     """One request controller; the existing origin predicate chooses capabilities.
 
     One record reader serves the whole walk: every lane's entry is decided
-    from the same reader, under the same configured marker.
+    from the same reader, under the same configured marker, and a blocker's
+    deliverable branch is read through that same reader (KOD-842) rather
+    than off a second carrier the walk would have to keep level with it.
     """
     no_forge = NoForgeDeliveryProbe()
     records = LaneRecordReader(tracker=tracker, operation=operation)
@@ -44,7 +46,12 @@ def build_scope_runtime(
         tracker=tracker,
         lane_for=lane_for,
         probe_for=probe_for,
-        resolver=BaseResolver(tracker=tracker, git=git, remote=config.git.remote),
+        resolver=BaseResolver(
+            tracker=tracker,
+            git=git,
+            remote=config.git.remote,
+            refs=RecordedDeliverableRefs(records=records),
+        ),
         entries=LaneEntryReader(records=records, git=git, remote=config.git.remote),
         cache=cache,
         repositories=repositories,
