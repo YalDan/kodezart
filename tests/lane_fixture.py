@@ -44,16 +44,23 @@ class LaneRepo:
     status from a branch nobody pushed.
     """
 
-    def __init__(self, *, branch: str, remote: str = "origin") -> None:
+    def __init__(self, *, branch: str, remote: str = "origin", seed: int = 0) -> None:
         self.branch = branch
         self.remote = remote
+        self.seed = seed
         self.shas: list[str] = []
         self.head: str = TRUNK_SHA
         self.pushed: str | None = None
 
     def commit(self) -> str:
-        """Advance the branch by one commit and return its complete sha."""
-        self.head = f"{len(self.shas) + 1:040x}"
+        """Advance the branch by one commit and return its complete sha.
+
+        *seed* is where this repository's own shas start. Two repositories
+        left unseeded number from one and hand back the same value for their
+        first commit, so a test over more than one of them could not tell
+        one repository's head from another's.
+        """
+        self.head = f"{self.seed + len(self.shas) + 1:040x}"
         self.shas.append(self.head)
         return self.head
 

@@ -19,6 +19,7 @@ from kodezart.core.errors import TrackerUnavailableError
 from kodezart.domain.criterion_evidence import parse_criterion_evidence
 from kodezart.domain.errors import (
     FireSpecEntryError,
+    GitSourceReadError,
     ScopePlanRefusalError,
     ScopeReadError,
 )
@@ -158,12 +159,15 @@ def runtime(
     persister=None,
     git=None,
     source=None,
+    workspace=None,
+    max_iterations=1,
 ):
     """The composed engine over external doubles.
 
-    *persister*, *git* and *source* default to today's no-commit doubles; a
-    test about what a walk leaves on the board supplies repositories that
-    actually commit, so every recorded fact comes from an observation of one.
+    *persister*, *git*, *source* and *workspace* default to today's
+    no-commit doubles; a test about what a walk leaves on the board supplies
+    repositories that actually commit, so every recorded fact comes from an
+    observation of one.
     """
     port = port or board(lanes=lanes)
     executor = ObservedNativeExecutor(
@@ -178,7 +182,7 @@ def runtime(
     # The workspace reports its identity through the same Git double the rest
     # of the fixture reads, so a prepared tree and the head it was cut at are
     # one repository's answer rather than two doubles'.
-    workspace = FakeWorkspaceProvider(git=git)
+    workspace = FakeWorkspaceProvider(git=git) if workspace is None else workspace
     service = AgentService(
         git_base_url="https://github.com",
         executor=executor,
@@ -199,7 +203,7 @@ def runtime(
             config=AppConfig(
                 write_back=WriteBackSettings(max_verify_rounds=2),
                 ticket_review_mode=TicketReviewMode.REVIEWED,
-                max_iterations=1,
+                max_iterations=max_iterations,
                 retry_max_attempts=1,
                 retry_initial_interval=0.1,
             ),
@@ -864,13 +868,20 @@ async def test_nested_fire_resume_reuses_branch_and_original_attributed_run(amen
 
 
 class WalkRepos:
-    """One repository per lane branch, and which lane last committed.
+    """One repository per lane branch, each numbering its own shas.
 
-    A walk dispatches its lanes one at a time, so the branch the last commit
-    landed on is the lane every unaddressed read belongs to. Push status is
-    still answered per branch: a double that answered every branch alike
-    would report one lane's push from a branch nobody pushed.
+    Every repository is seeded where no other one's shas reach, so a lane's
+    head is that lane's: unseeded, the first commit of each branch would be
+    the same value and no assertion could tell one lane's tree from
+    another's. A walk dispatches its lanes one at a time and the workspace
+    provider hands each of them the same path, so the tree an unaddressed
+    read belongs to is the lane that last committed and not the path. Push
+    status is still answered per branch: a double that answered every branch
+    alike would report one lane's push from a branch nobody pushed.
     """
+
+    #: How far apart two repositories' sha spaces are set.
+    SPACING = 0x1000
 
     def __init__(self, *, remote: str = "origin") -> None:
         self.remote = remote
@@ -884,7 +895,12 @@ class WalkRepos:
 
     def of(self, branch: str) -> LaneRepo:
         repo = self.branches.setdefault(
-            branch, LaneRepo(branch=branch, remote=self.remote)
+            branch,
+            LaneRepo(
+                branch=branch,
+                remote=self.remote,
+                seed=(len(self.branches) + 1) * self.SPACING,
+            ),
         )
         self.committing = repo
         return repo
@@ -937,19 +953,51 @@ class WalkGit(FakeGitService):
 
 
 class WalkSource(NativeSourceReader):
-    """Resolves each lane's refs, and HEAD, against its own repository."""
+    """Resolves each lane's refs against the repository that holds them.
+
+    A ref no repository of this walk holds is a read this double cannot
+    answer, and it refuses: answered with the current head instead, a
+    grading of some ref nobody wrote would read as a grading of the lane's
+    own branch.
+    """
 
     def __init__(self, repos: WalkRepos) -> None:
         self.repos = repos
 
     async def resolve_commit(self, *, cwd, ref):
-        if ref in TRUNK_BRANCHES:
+        if ref in TRUNK_BRANCHES or ref == TRUNK_SHA:
             return TRUNK_SHA
         if ref in self.repos.branches:
             return self.repos.branches[ref].head
-        if any(ref in repo.shas for repo in self.repos.branches.values()):
+        if ref in self.repos.delivered:
+            return self.repos.delivered[ref]
+        if ref in set(self.repos.delivered.values()) or any(
+            ref in repo.shas for repo in self.repos.branches.values()
+        ):
             return ref
-        return self.repos.current.head
+        raise GitSourceReadError(
+            ref=ref, path=None, reason="no repository of this walk holds the ref"
+        )
+
+
+class WalkWorkspaces(FakeWorkspaceProvider):
+    """Cuts each lane's tree from the branch that lane commits on.
+
+    A lane's repository exists from the moment its tree is acquired, not
+    from its first commit: the guard reads the tree's starting HEAD before
+    anything is committed in it, and a walk whose repositories appeared only
+    at the commit would answer that read from the previous lane's branch.
+    """
+
+    def __init__(self, repos: WalkRepos, *, git: WalkGit) -> None:
+        super().__init__(git=git)
+        self.repos = repos
+
+    async def acquire(self, **arguments):
+        branch = arguments.get("branch_name")
+        if branch is not None:
+            self.repos.of(branch)
+        return await super().acquire(**arguments)
 
 
 class WalkPersister(FakeChangePersister):
@@ -1011,14 +1059,16 @@ async def test_a_scoped_walk_finishes_every_criterion_at_its_head_with_a_record(
     """
     repos = WalkRepos()
     port = board(lanes=("A", "B"), blocked={"B": ("A",)})
+    git = WalkGit(repos)
     harness = runtime(
         port=port,
         lanes=("A", "B"),
         persister=WalkPersister(repos),
-        git=WalkGit(repos),
+        git=git,
         source=WalkSource(repos),
+        workspace=WalkWorkspaces(repos, git=git),
     )
-    mid_walk: dict[str, tuple[str, str, str | None]] = {}
+    mid_walk: dict[str, tuple[str, str, str, str | None]] = {}
 
     events = []
     async for event in drive(harness):
@@ -1031,6 +1081,9 @@ async def test_a_scoped_walk_finishes_every_criterion_at_its_head_with_a_record(
                 record = await lane_record(port, lane)
                 mid_walk[lane] = (
                     port.issues[f"{lane}/check"].state_name,
+                    parse_criterion_evidence(
+                        port.issues[f"{lane}/check"].body
+                    ).graded_sha,
                     record.head_sha,
                     record.pushed_head_sha,
                 )
@@ -1041,17 +1094,22 @@ async def test_a_scoped_walk_finishes_every_criterion_at_its_head_with_a_record(
 
     heads = {branch: repo.head for branch, repo in repos.branches.items()}
     assert len(heads) == 2
-    for state_name, head, pushed in mid_walk.values():
-        assert state_name == LifecycleStage.DONE.value
-        assert (head, pushed) in {(sha, sha) for sha in heads.values()}
+    # Two repositories, two sha spaces: each lane's own head is a value no
+    # other lane's tree ever stood at, so "its own branch head" is a
+    # comparison and not a coincidence.
+    assert len({*heads.values()}) == 2
     assert set(mid_walk) == {"A", "B"}
 
     for lane in ("A", "B"):
         criterion = port.issues[f"{lane}/check"]
         record = await lane_record(port, lane)
+        own_head = heads[record.branch]
+        state_name, graded_sha, head, pushed = mid_walk[lane]
+        assert state_name == LifecycleStage.DONE.value
+        assert graded_sha == head == pushed
         assert criterion.state_kind is WorkflowStateKind.COMPLETED
-        assert parse_criterion_evidence(criterion.body).graded_sha == record.head_sha
-        assert record.head_sha == record.pushed_head_sha == heads[record.branch]
+        assert parse_criterion_evidence(criterion.body).graded_sha == own_head
+        assert record.head_sha == record.pushed_head_sha == own_head
         assert [
             event.kind
             for event in await port.lane_run_events(issue_key=lane, lane_key=lane)
@@ -1062,8 +1120,117 @@ async def test_a_scoped_walk_finishes_every_criterion_at_its_head_with_a_record(
         ("A/check", LifecycleStage.DONE),
         ("B/check", LifecycleStage.DONE),
     ]
+    # One record and one first-push event per lane, and nothing else.
+    assert len(port.comments) == 4
+    # Push status is per branch: a branch this walk never pushed is reported
+    # as unpushed, so no lane's push is ever read off another lane's branch.
+    assert await git.remote_branch_sha("/w", repos.remote, "never-pushed") is None
     observations = [
         event.observation for event in events if isinstance(event, ScopeWalkEvent)
     ]
     assert observations[-1].unresolved_criteria == ()
     assert observations[-1].dispatched == ("A", "B")
+
+
+#: Two more criteria under lane A, so one iteration can pass some of its
+#: roster and fail the rest and the loop has somewhere left to go.
+FURTHER_CHECKS = ("A/second", "A/third")
+
+
+def lane_with_three_criteria() -> FakeTrackerPort:
+    """Lane A's board, widened by two more criterion sub-issues."""
+    port = board(lanes=("A",))
+    for key in FURTHER_CHECKS:
+        port.issues[key] = make_tracker_issue(
+            key,
+            parent_key="A",
+            issue_labels=frozenset({"criterion"}),
+            body=f"**Check:** {key} live Check  bytes\n**Evidence:** —",
+        )
+    return port
+
+
+def walk_grade(keys, passed) -> dict:
+    """One evaluator echo per criterion of *keys*, passing exactly *passed*."""
+    return {
+        "criteriaResults": [
+            {
+                "criterionId": key,
+                "criterion": "an evaluator echo",
+                "passed": key in passed,
+                "reasoning": "Observed the selected check.",
+            }
+            for key in keys
+        ]
+    }
+
+
+async def test_a_walk_that_breaks_what_it_finished_takes_it_back_once():
+    """The regression, in process, over the whole walk.
+
+    Iteration 1 finishes one criterion. Iteration 2 breaks it and finishes
+    the other two: read at that iteration's event, the sub-issue is back out
+    of its finished state, its Evidence row carries the sha that grading was
+    read at, and the lane's stream holds exactly one refutation naming that
+    sha. Iteration 3 finishes it again at the final head, and the stream
+    still holds that one refutation: a criterion this lane broke and then
+    fixed is one regression, recorded once.
+    """
+    broken, *rest = keys = ("A/check", *FURTHER_CHECKS)
+    repos = WalkRepos()
+    port = lane_with_three_criteria()
+    git = WalkGit(repos)
+    harness = runtime(
+        port=port,
+        lanes=("A",),
+        evaluations=[
+            walk_grade(keys, {broken}),
+            walk_grade(keys, set(rest)),
+            walk_grade(keys, set(keys)),
+            walk_grade(keys, set(keys)),
+        ],
+        persister=WalkPersister(repos),
+        git=git,
+        source=WalkSource(repos),
+        workspace=WalkWorkspaces(repos, git=git),
+        max_iterations=3,
+    )
+    at_iteration: dict[int, tuple[str, str, list[str | None]]] = {}
+
+    async for event in drive(harness):
+        if not isinstance(event, ScopeLaneEvent):
+            continue
+        if isinstance(event.event, WorkflowIterationEvent):
+            issue = port.issues[broken]
+            at_iteration[event.event.iteration] = (
+                issue.state_name,
+                parse_criterion_evidence(issue.body).graded_sha,
+                [
+                    posted.graded_sha
+                    for posted in await port.lane_run_events(
+                        issue_key="A", lane_key="A"
+                    )
+                    if posted.kind is RunEventKind.CRITERION_REFUTED
+                ],
+            )
+        if isinstance(event.event, LaneDeliveryEvent):
+            port.recorded_work_refs["A"] = [deliverable_of(repos, "A")]
+
+    heads = [repo.head for repo in repos.branches.values()]
+    assert len(heads) == 1
+    refuted_at = at_iteration[2][1]
+    assert at_iteration[2] == ("Todo", refuted_at, [refuted_at])
+    assert at_iteration[1][0] == LifecycleStage.DONE.value
+    assert refuted_at != at_iteration[1][1]
+
+    final = port.issues[broken]
+    assert final.state_kind is WorkflowStateKind.COMPLETED
+    assert parse_criterion_evidence(final.body).graded_sha == heads[0]
+    assert [
+        posted.graded_sha
+        for posted in await port.lane_run_events(issue_key="A", lane_key="A")
+        if posted.kind is RunEventKind.CRITERION_REFUTED
+    ] == [refuted_at]
+    assert all(
+        port.issues[key].state_kind is WorkflowStateKind.COMPLETED for key in keys
+    )
