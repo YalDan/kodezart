@@ -782,10 +782,11 @@ async def test_actual_scope_composition_retains_completed_native_delivery_record
         assert final.values["delivery"] == phase
         assert events[-1].observation.unresolved_criteria == ()
         assert harness.port.workflow_writes == [("A/check", LifecycleStage.DONE)]
-        assert (
-            parse_criterion_evidence(harness.port.issues["A/check"].body).graded_sha
-            == "b" * 40
-        )
+        # The sha the lane's own loop branch stands at, as the repository
+        # double answers it, rather than a value spelled here.
+        assert parse_criterion_evidence(
+            harness.port.issues["A/check"].body
+        ).graded_sha == await NativeSourceReader().resolve_commit(cwd="", ref="ralph/A")
     finally:
         await forge.close()
 

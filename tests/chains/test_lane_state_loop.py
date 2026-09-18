@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 import pytest
+import structlog.testing
 
 from kodezart.chains.criteria import TrackerCriteria
 from kodezart.chains.ralph_loop import RalphLoop
@@ -102,14 +103,13 @@ class Lane:
         work_base_ref="main",
         repo_url=REPO_URL,
         writes_lane_state=True,
+        owns_workspace=True,
         source=LaneSource,
-        has_changes=False,
     ):
         self.work_base_ref = work_base_ref
         self.repo_url = repo_url
         self.repo = LaneRepo(branch=BRANCH)
         self.git = LaneGit(self.repo)
-        self.git.has_changes_result = has_changes
         self.port = tracker() if port is None else port
         self.criteria = CountingCriteria(tracker=self.port)
         self.executor = NativeExecutor(evaluations)
@@ -125,8 +125,21 @@ class Lane:
             forge=forge,
             lane_operation=lane_operation,
             writes_lane_state=writes_lane_state,
+            owns_workspace=owns_workspace,
         )
         self.loop = self.fire.implementation._quality_gate
+
+    def graded_in(self) -> str:
+        """The tree the last evaluation session was streamed in."""
+        return self.executor.evaluation_workspaces[-1]
+
+    def leave_changes_behind(self, count: int) -> None:
+        """Let the evaluator session end with its tree holding changes."""
+        self.git.dirtied.add(self.graded_in())
+
+    def move_the_head(self, count: int) -> None:
+        """Let the evaluator session end with its tree at another commit."""
+        self.git.heads[self.graded_in()] = "0" * 40
 
     async def arguments(self):
         """Everything the loop is dispatched with, for one run of this lane.
@@ -291,6 +304,27 @@ async def test_a_native_iteration_with_no_record_writer_refuses_before_any_read(
     lane = Lane(evaluations=[native_evaluation()], writes_lane_state=False)
 
     with pytest.raises(NativeWriteRefusalError, match="lane state writer"):
+        await lane.run()
+
+    assert lane.criteria.current_reads == 0
+    assert lane.executor.execution_prompts == []
+    assert lane.persister.calls == []
+    assert lane.repo.shas == []
+    assert lane.port.comments == []
+
+
+async def test_a_native_iteration_with_no_workspace_provider_refuses_before_any_read():
+    """The tree a native verdict is about is wiring, settled at the entry.
+
+    A loop with no provider cannot own the tree its evaluation is graded in,
+    and that is knowable from the wiring alone. Refused at the evaluate
+    node's own entry it would already have opened the implementation
+    session, committed and pushed; refused here it costs a board round trip,
+    a session and a commit less.
+    """
+    lane = Lane(evaluations=[native_evaluation()], owns_workspace=False)
+
+    with pytest.raises(NativeWriteRefusalError, match="workspace provider"):
         await lane.run()
 
     assert lane.criteria.current_reads == 0
@@ -665,15 +699,6 @@ async def test_a_criterion_added_after_the_last_evaluation_refuses_the_lane():
     assert lane.port.issues[ADDED_OWED].state_kind is WorkflowStateKind.UNSTARTED
 
 
-class DriftedHead(LaneSource):
-    """A workspace whose head is not the sha the verdict would be stamped with."""
-
-    async def resolve_commit(self, *, cwd, ref):
-        if ref == "HEAD":
-            return "0" * 40
-        return await super().resolve_commit(cwd=cwd, ref=ref)
-
-
 def recording(lane) -> list[tuple[CrossOffState, ...]]:
     """Every whole verdict handed to the lane's writer, as its states."""
     states: list[tuple[CrossOffState, ...]] = []
@@ -688,28 +713,41 @@ def recording(lane) -> list[tuple[CrossOffState, ...]]:
     return states
 
 
+#: The tree the loop resolves the branch in: never the one it grades in.
+CACHE_PATH = "/tmp/fake-cache"
+
+
 @pytest.mark.parametrize(
-    "workspace",
+    "left_behind",
     [
-        pytest.param({"has_changes": True}, id="uncommitted-change"),
-        pytest.param({"source": DriftedHead}, id="head-elsewhere"),
+        pytest.param(Lane.leave_changes_behind, id="uncommitted-change"),
+        pytest.param(Lane.move_the_head, id="head-elsewhere"),
     ],
 )
-async def test_a_workspace_that_is_not_the_graded_sha_yields_no_cross_off(workspace):
+async def test_a_workspace_that_is_not_the_graded_sha_yields_no_cross_off(left_behind):
     """A verdict is only the branch's when the tree it read was the branch's.
 
     An uncommitted change in the grading workspace, or a head that is not the
     sha the verdict would be stamped with, means what the evaluator read was
-    somebody's working copy. Nothing is written to any sub-issue, every result
-    carries the fixed reason in place of a verdict, the iteration is rejected,
-    and the writer is handed the fourth state for each criterion.
+    somebody's working copy. The evaluator session leaves it that way, in the
+    tree it was streamed in and at the moment it ends, so both facts are read
+    off THAT tree and after THAT session or they are read off nothing. Then:
+    nothing is written to any sub-issue, every result carries the fixed
+    reason in place of a verdict, the iteration is rejected, and the writer is
+    handed the fourth state for each criterion.
     """
-    lane = Lane(evaluations=[native_evaluation()], **workspace)
+    lane = Lane(evaluations=[native_evaluation()])
     before = {
         key: (issue.state_name, issue.body) for key, issue in lane.port.issues.items()
     }
     states = recording(lane)
+    at_session: list[int] = []
 
+    def session_over(count: int) -> None:
+        at_session.append(len(lane.git.calls))
+        left_behind(lane, count)
+
+    lane.executor.on_evaluation = session_over
     events = await lane.run()
 
     iterations = [e for e in events if isinstance(e, WorkflowIterationEvent)]
@@ -723,6 +761,47 @@ async def test_a_workspace_that_is_not_the_graded_sha_yields_no_cross_off(worksp
     } == before
     assert lane.port.workflow_writes == []
     assert lane.port.issue_writes == []
+    # Both facts name the tree the evaluator was streamed in, and both are
+    # read after that stream ended: read before it, or off the tree the
+    # branch was resolved in, they would be facts about another tree.
+    graded_in = lane.executor.evaluation_workspaces[0]
+    assert graded_in != CACHE_PATH
+    dirt_reads = [
+        index
+        for index, call in enumerate(lane.git.calls)
+        if call == ("has_changes", graded_in)
+    ]
+    head_reads = [
+        index
+        for index, call in enumerate(lane.git.calls)
+        if call == ("current_sha", graded_in)
+    ]
+    assert dirt_reads == [index for index in dirt_reads if index >= at_session[0]]
+    assert len(dirt_reads) == 1
+    assert [index for index in head_reads if index >= at_session[0]]
+    assert ("has_changes", CACHE_PATH) not in lane.git.calls
+    assert ("current_sha", CACHE_PATH) not in lane.git.calls
+
+
+async def test_an_undemonstrated_grading_says_so_in_the_lanes_log():
+    """The third leg of "recorded": the harness's own reading, once.
+
+    The typed value reaches the writer and the fixed reason reaches the
+    iteration event; this line is what a person reading the run's log finds,
+    and it names the sha the verdict would have been stamped with.
+    """
+    lane = Lane(evaluations=[native_evaluation()])
+    lane.executor.on_evaluation = lane.leave_changes_behind
+
+    with structlog.testing.capture_logs() as logs:
+        await lane.run()
+
+    undemonstrated = [
+        entry for entry in logs if entry.get("event") == "evaluation_undemonstrated"
+    ]
+    assert [(entry["graded_sha"], entry["iteration"]) for entry in undemonstrated] == [
+        (lane.repo.head, 1)
+    ]
 
 
 async def test_a_clean_workspace_at_the_graded_sha_is_what_a_cross_off_needs():

@@ -37,6 +37,7 @@ from tests.chains.test_native_fire import (
     SUBJECT,
     CountingTracker,
     NativeExecutor,
+    NativeSourceReader,
     change_tracker,
     engine,
     native_evaluation,
@@ -249,10 +250,14 @@ async def test_actual_native_graph_delivers_and_only_work_defect_reenters_fire(
         assert tracker.workflow_writes == [
             (key, LifecycleStage.DONE) for key in sorted(OWED_KEYS)
         ]
+        # The sha the loop branch stands at, as the repository double answers
+        # it, rather than a value spelled here.
         assert {
             parse_criterion_evidence(tracker.issues[key].body).graded_sha
             for key in OWED_KEYS
-        } == {"b" * 40}
+        } == {
+            await NativeSourceReader().resolve_commit(cwd="", ref=final["ralph_branch"])
+        }
         assert SUBJECT not in {key for key, _, _ in tracker.issue_writes} | {
             key for key, _ in tracker.workflow_writes
         }

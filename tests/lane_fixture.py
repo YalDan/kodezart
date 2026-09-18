@@ -17,7 +17,11 @@ from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.operation import OperationConfig
 from kodezart.types.domain.persist import PersistResult, PersistSource
 from kodezart.types.domain.subagents import NO_SUBAGENTS, UNCONFIGURED_SESSION_POLICY
-from tests.chains.test_native_fire import NativeSourceReader
+from tests.chains.test_native_fire import (
+    TRUNK_BRANCHES,
+    TRUNK_SHA,
+    NativeSourceReader,
+)
 from tests.fakes import (
     FAKE_SESSION_TYPE,
     SUPPRESS_ALL_SKILLS,
@@ -25,9 +29,6 @@ from tests.fakes import (
     FakeGitService,
 )
 
-#: The shas a trunk-shaped ref resolves to, as ``RemoteGit`` already spells it.
-TRUNK_SHA = "b" * 40
-TRUNK_BRANCHES = ("trunk", "main")
 #: The API host the forge double is configured against and never asked at.
 FORGE_API = "https://api.github.com"
 #: The credential that host would need, for a client that never reaches it.
@@ -62,15 +63,30 @@ class LaneRepo:
 
 
 class LaneGit(FakeGitService):
-    """The git reads of one lane, answered from the repository itself."""
+    """The git reads of one lane, answered from the repository itself.
+
+    Per tree, not per run: a tree somebody left changes in, or moved to
+    another commit, is that tree and no other, so both facts are keyed by
+    the path they are asked about. A double answering every path alike
+    could not tell a read of the graded workspace from a read of the cache
+    the branch was resolved in.
+    """
 
     def __init__(self, repo: LaneRepo) -> None:
         super().__init__()
         self.repo = repo
+        #: Trees holding uncommitted changes, by the path each one is at.
+        self.dirtied: set[str] = set()
+        #: Trees standing at a commit other than the branch head.
+        self.heads: dict[str, str] = {}
 
     async def current_sha(self, cwd: str) -> str:
         self.calls.append(("current_sha", cwd))
-        return self.repo.head
+        return self.heads.get(cwd, self.repo.head)
+
+    async def has_changes(self, cwd: str) -> bool:
+        self.calls.append(("has_changes", cwd))
+        return cwd in self.dirtied or self.has_changes_result
 
     async def remote_branch_sha(self, cwd: str, remote: str, branch: str) -> str | None:
         self.calls.append(("remote_branch_sha", cwd, remote, branch))

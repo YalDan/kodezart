@@ -190,13 +190,15 @@ def engine(
     forge=None,
     lane_operation=None,
     writes_lane_state: bool = True,
+    owns_workspace: bool = True,
 ) -> RalphWorkflowEngine:
     """The fire engine, wired the way composition wires it, plus the stage.
 
     The Git, source and persister doubles default to today's no-commit ones;
     a test about what a commit leaves behind supplies its own repository.
-    *writes_lane_state* is the one collaborator a test withholds on purpose:
-    a native loop with no record writer is the wiring the node refuses at.
+    *writes_lane_state* and *owns_workspace* are the two collaborators a test
+    withholds on purpose: a native loop without either is the wiring the
+    execute node refuses at, before it opens a session.
     """
     git = (
         git
@@ -248,7 +250,7 @@ def engine(
                 else None
             ),
             service=service,
-            workspace=workspace,
+            workspace=workspace if owns_workspace else None,
             max_iterations=max_iterations,
             criteria_reader=criteria,
             plateau_window=2,
@@ -612,6 +614,15 @@ def native_operation():
     )
 
 
+#: The sha every trunk-shaped ref resolves to, and the names that shape.
+TRUNK_SHA = "b" * 40
+TRUNK_BRANCHES = ("trunk", "main")
+#: The sha the fake workspaces stand at, which ``FakeGitService`` reports as
+#: their HEAD: a ref read and a HEAD read of one tree answer one repository,
+#: so a verdict graded in it stands at the sha it is stamped with.
+WORK_SHA = "a" * 40
+
+
 class NativeSourceReader:
     """The immutable Git-read double paired with these fake Git workspaces.
 
@@ -620,7 +631,9 @@ class NativeSourceReader:
     """
 
     async def resolve_commit(self, *, cwd, ref):
-        return ref if len(ref) == 40 else "b" * 40
+        if ref in TRUNK_BRANCHES:
+            return TRUNK_SHA
+        return ref if len(ref) == 40 else WORK_SHA
 
     async def read_source(self, *, cwd, commit_sha, path):
         raise AssertionError("A no-claim writer must not read semantic citations")
@@ -639,6 +652,9 @@ class NativeExecutor(FakeAgentExecutor):
         self.schema_calls = []
         self.execution_prompts = []
         self.evaluation_prompts = []
+        #: The tree each evaluation session was streamed in, in order: what
+        #: an evaluator leaves behind, it leaves in the tree it ran in.
+        self.evaluation_workspaces = []
         self.remediation_prompts = []
         self.on_evaluation = None
 
@@ -649,6 +665,7 @@ class NativeExecutor(FakeAgentExecutor):
         if "criteriaResults" in properties:
             assert self.evaluations, "Unexpected extra evaluation"
             self.evaluation_prompts.append(kwargs["prompt"])
+            self.evaluation_workspaces.append(kwargs.get("cwd"))
             output = self.evaluations.pop(0)
             if self.on_evaluation is not None:
                 self.on_evaluation(len(self.evaluation_prompts))

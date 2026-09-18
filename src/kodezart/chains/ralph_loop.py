@@ -48,6 +48,7 @@ from kodezart.domain.prompt_variables import (
 )
 from kodezart.domain.thread_id import ralph_thread_id
 from kodezart.domain.trajectory import fold_trajectory
+from kodezart.services.git_observations import read_workspace_head
 from kodezart.services.native_amendments import NativeAmendments
 from kodezart.services.owned_workspace import owned_workspace
 from kodezart.types.domain.accept import AcceptVerdict
@@ -317,6 +318,7 @@ class RalphLoop:
                 raise NativeWriteRefusalError(
                     "Native execution requires the precommit amendment owner"
                 )
+            self._evaluation_workspace()
             amendments = self._amendments
             after_publish = self._record_commit(
                 self._lane_writer(), self._lane_binding(ctx)
@@ -504,11 +506,6 @@ class RalphLoop:
                 ctx.cache_key,
             )
         )
-        if ctx.tracker_spec is not None:
-            # The tree a native verdict is about is this node's own, so the
-            # provider it comes from is settled before the first read: a loop
-            # that cannot own that tree refuses without opening a session.
-            self._evaluation_workspace()
         native_ref = (
             await self._resolve(cwd=cwd, ref=ctx.ralph_branch)
             if ctx.tracker_spec is not None
@@ -638,10 +635,9 @@ class RalphLoop:
                         site="ralph_evaluator",
                         observe=observe,
                     )
-                    demonstrated = not await self._git.has_changes(graded_in_path) and (
-                        await self._resolve(cwd=graded_in_path, ref="HEAD")
-                        == native_ref
-                    )
+                    demonstrated = await read_workspace_head(
+                        git=self._git, workspace=graded_in_path
+                    ) == (native_ref, False)
             if observer is not None:
                 observer.require_valid()
 
