@@ -16,6 +16,7 @@ from kodezart.domain.criterion_cross_off import (
     evaluation_observation,
 )
 from kodezart.domain.criterion_evidence import parse_criterion_evidence
+from kodezart.domain.errors import TransientAPIError
 from kodezart.domain.issue_tree import SubtreeClosure
 from kodezart.domain.lane_record import RUN_STATE_PURPOSE, render_lane_record
 from kodezart.domain.run_event_stream import RUN_EVENT_PURPOSE
@@ -54,7 +55,7 @@ from tests.chains.test_native_fire import (
     tracker,
 )
 from tests.domain.test_criterion_cross_off import callers_of
-from tests.fakes import make_tracker_issue
+from tests.fakes import FakeTrackerPort, make_tracker_issue
 from tests.lane_fixture import (
     LaneGit,
     LanePersister,
@@ -970,10 +971,13 @@ async def test_the_evaluation_is_graded_in_a_workspace_the_loop_owns():
 def written(port) -> tuple[int, int]:
     """How much this board has been written: state moves and body edits.
 
-    State moves and body edits only. A move BACK out of the finished state
-    is neither — the double ledgers it nowhere — so what this count covers
-    is what a tick writes, and the completed-set assertion beside it is what
-    covers a move-back.
+    Those two only, and the blind spot is the move back out of the finished
+    state: the double answers ``reset_criterion_pending`` without a
+    ``workflow_writes`` entry and without an ``issue_writes`` one, so a
+    move back made after the loop would leave this count where it was. What
+    would show it is the completed-set assertion beside this one, read off
+    the board's own states, and the comment count, which a refutation's
+    event would move.
     """
     return len(port.workflow_writes), len(port.issue_writes)
 
@@ -1225,3 +1229,88 @@ async def test_a_regression_inside_the_loop_moves_the_criterion_back_and_says_so
     ) == subject_before
     assert SUBJECT not in {key for key, _, _ in lane.port.issue_writes}
     assert len(lane.port.comments) == 3
+
+
+class LosingBoard(FakeTrackerPort):
+    """The lane's board, losing one write of the refutation exactly once.
+
+    Only the refutation's own writes: the first-push event and the ticks go
+    through, so what the run reaches the failure with is a criterion this
+    fire finished, which is the state the act starts from.
+    """
+
+    def __init__(self, *, drops: str) -> None:
+        source = tracker()
+        super().__init__(
+            issues=list(source.issues.values()),
+            criteria_stage_label_key=STAGE_KEY,
+            marker_prefixes=native_operation().marker_prefixes,
+            scope_label_members=source.scope_label_members,
+        )
+        self._drops, self._dropped = drops, False
+
+    def _drop_once(self, call: str) -> bool:
+        if call != self._drops or self._dropped:
+            return False
+        self._dropped = True
+        return True
+
+    async def reset_criterion_pending(self, *, expected, holder=None):
+        if self._drop_once("reset_criterion_pending"):
+            raise TransientAPIError("the move back never reached the board")
+        return await super().reset_criterion_pending(expected=expected, holder=holder)
+
+    async def post_run_event(self, *, issue_key, event):
+        if event.kind is RunEventKind.CRITERION_REFUTED and self._drop_once(
+            "post_run_event"
+        ):
+            raise TransientAPIError("the posted event never reached the board")
+        return await super().post_run_event(issue_key=issue_key, event=event)
+
+
+#: What a refutation the loop died inside leaves for the NEXT fire to read:
+#: the state the sub-issue is in, which grading its Evidence row carries, and
+#: whether that fire's own entry-shaped read still owes the criterion.
+LOST_REFUTATION_WRITES = {
+    "reset_criterion_pending": (WorkflowStateKind.COMPLETED, 0, False),
+    "post_run_event": (WorkflowStateKind.UNSTARTED, 1, True),
+}
+
+
+@pytest.mark.parametrize("drops", sorted(LOST_REFUTATION_WRITES))
+async def test_a_refutation_the_loop_died_inside_certifies_no_failing_grading(drops):
+    """A run that dies taking a criterion back leaves no false claim behind.
+
+    The loop has no handler for a write that does not land, so the run ends
+    there and nothing later in it revisits the criterion. The move back is
+    therefore the first write: losing anything after it leaves the criterion
+    unstarted with the earlier grading still on it, which the next fire's
+    entry-shaped read owes again. Losing the move back itself leaves the pass
+    it already was — true of the head that passed — and never the failing
+    grading's sha under a finished state, which no later fire would re-grade.
+    """
+    state, graded_at, owed_again = LOST_REFUTATION_WRITES[drops]
+    broken, kept, _ = OWED_KEYS
+    lane = Lane(
+        evaluations=[graded({broken, kept}), graded({kept})],
+        max_iterations=2,
+        port=LosingBoard(drops=drops),
+    )
+
+    with pytest.raises(TransientAPIError):
+        await lane.run()
+
+    assert lane.port.issues[broken].state_kind is state
+    assert (
+        parse_criterion_evidence(lane.port.issues[broken].body).graded_sha
+        == lane.repo.shas[graded_at]
+    )
+    posted = await lane.port.lane_run_events(issue_key=SUBJECT, lane_key=SUBJECT)
+    assert [
+        event.kind for event in posted if event.kind is RunEventKind.CRITERION_REFUTED
+    ] == []
+    # What a new fire over the same subject owes, read the way its entry
+    # barrier reads it: with no roster held, so nothing this run claimed.
+    spec = await lane.criteria.read_spec(issue_key=SUBJECT)
+    current = await lane.criteria.read_current(spec=spec)
+    assert (broken in {criterion.id for criterion in current.criteria}) is owed_again

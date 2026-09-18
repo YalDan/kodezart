@@ -198,9 +198,10 @@ class TrackerLaneStateWriter:
     ) -> tuple[LaneRunEvent, ...]:
         """This lane's posted events, as the stream's own reader reads them.
 
-        A stream that will not parse is this write's own refusal — it is read
-        after a push or after a body edit, where a raw parse failure would
-        leave that write done and an untyped error for the caller.
+        A stream that will not parse is this write's own refusal: it is read
+        after a push when a commit is recorded, and before any write when a
+        criterion is taken back. In both a raw parse failure has no name a
+        caller could act on.
         """
         try:
             return lane_run_events(
@@ -349,22 +350,25 @@ class TrackerLaneStateWriter:
         """Take back a criterion this fire finished and then broke, once.
 
         A criterion the fresh read finds unfinished is no regression: it was
-        never this fire's claim to take back. Such a criterion is never a
-        regression however it got there — a person may have moved it, and the
-        roster carries no state to tell one from the other — so the state the
-        board holds is the whole condition.
+        never this fire's claim to take back. A criterion found finished is
+        taken back on a fail whoever moved it there — the roster carries no
+        state and the Evidence row no run, so one a person moved into that
+        state reads exactly like one this fire finished, and nothing but the
+        evaluation step moves a criterion there, which makes that a protocol
+        violation on the board rather than a case to tell apart here.
 
-        The whole act is ordered so that a failure anywhere inside it leaves
-        the criterion finished, which is the arm this method re-enters: the
-        next failing verdict at the same head then performs exactly the steps
-        that did not land, because the stamp is decided by its content, the
-        post is deduplicated by the grading the event names, and the move back
-        is idempotent. So: the board and its stream are read BEFORE anything
-        is written, so a stream that will not parse refuses while the
-        sub-issue still reads as the pass it was; then the refuting grading
-        goes on the Evidence row; then the event; then the move back out of
-        the finished state. The owning issue reopens by the tracker's own
-        rollup over its criteria and is written by nobody.
+        Everything knowable is read before anything is written: the state the
+        board holds, the body the write depends on, and the stream, so a
+        stream that will not parse refuses while the sub-issue still reads as
+        the pass it was. The move back is then the FIRST write, because a
+        criterion left finished is in no later fire's roster and would never
+        be graded again: a failure after it leaves the criterion unstarted
+        with the earlier grading still on its Evidence row and no event on the
+        stream — owed, and the next fire re-grades it, rather than certified
+        at a sha nothing passed at. Nothing repairs the event for such a
+        criterion: unstarted, it is no longer this fire's claim to take back.
+        The owning issue reopens by the tracker's own rollup over its criteria
+        and is written by nobody.
         """
         issue = await self._tracker.read_issue(issue_key=criterion.id)
         if issue.state_kind is not HELD_CRITERION_STATE:
@@ -377,17 +381,15 @@ class TrackerLaneStateWriter:
             graded_sha=cross_off.evidence.graded_sha,
         )
         posted = event in self._events(comments=await self._board(lane), lane=lane)
+        await settle(self._tracker.reset_criterion_pending(expected=issue, holder=None))
+        moved = await self._tracker.read_issue(issue_key=criterion.id)
         await self._stamp(
-            lane=lane, criterion=criterion, issue=issue, cross_off=cross_off
+            lane=lane, criterion=criterion, issue=moved, cross_off=cross_off
         )
         if not posted:
             await settle(
                 self._tracker.post_run_event(issue_key=lane.lane_key, event=event)
             )
-        stamped = await self._tracker.read_issue(issue_key=criterion.id)
-        await settle(
-            self._tracker.reset_criterion_pending(expected=stamped, holder=None)
-        )
 
     async def _stamp(
         self,

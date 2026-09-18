@@ -1140,6 +1140,55 @@ async def test_a_criterion_this_fire_finished_and_then_broke_is_taken_back():
     assert [event.subject_key for event in refutations(port)] == [broken]
 
 
+@pytest.mark.parametrize(
+    "drift,labels",
+    [
+        pytest.param(
+            lambda body: body.replace(check_of(CRITERIA[0]), "an amended Check"),
+            None,
+            id="check-amended",
+        ),
+        pytest.param(None, frozenset(), id="classification-lost"),
+        pytest.param(
+            lambda body: f"{body}\n**Do:** a second build it names",
+            None,
+            id="row-duplicated",
+        ),
+    ],
+)
+async def test_a_regression_on_a_sub_issue_that_drifted_takes_nothing_back(
+    drift, labels
+):
+    """The move back asserts about the sub-issue what the tick asserted.
+
+    A criterion whose Check was amended, whose classification is gone, or
+    whose body gained a second row of a template field is no longer the one
+    this verdict was reached against, and taking it back would write the
+    refuting grading onto a sub-issue the verdict does not address. The
+    refusal is the same typed one the tick makes, before any write.
+    """
+    port = criteria_board()
+    lane_state = writer(port, lane_repo())
+    drifted = CRITERIA[0]
+    await tick(lane_state, sha="1" * 40)
+    update: dict[str, object] = {}
+    if drift is not None:
+        update["body"] = drift(port.issues[drifted].body)
+    if labels is not None:
+        update["issue_labels"] = labels
+    port.issues[drifted] = port.issues[drifted].model_copy(update=update)
+    finished = board_shape(port)
+    writes = (list(port.issue_writes), list(port.workflow_writes))
+
+    with pytest.raises(StaleWriteError) as caught:
+        await tick(lane_state, sha="2" * 40, failed=[drifted])
+
+    assert caught.value.target == drifted
+    assert board_shape(port) == finished
+    assert (port.issue_writes, port.workflow_writes) == writes
+    assert refutations(port) == []
+
+
 async def test_a_criterion_this_fire_never_finished_is_not_taken_back():
     """A criterion that never passed is still owed, and no event says otherwise."""
     port = criteria_board()
@@ -1212,20 +1261,26 @@ async def test_a_second_regression_at_a_later_head_is_its_own_refutation():
 
 
 class LosingBoard(FakeTrackerPort):
-    """A board that loses one write of the named call and then behaves.
+    """A board that loses the next write of a named call and then behaves.
 
-    The refutation is several writes, and each of them can be the one the
-    backend does not take. What the next failing verdict at the same head
-    does about it is the property this double exists to ask about.
+    The refutation is three writes, and each of them can be the one the
+    backend does not take. What the board holds afterwards — and what a
+    later failing verdict at the same head does about it — is the property
+    this double exists to ask about, so the loss is armed when the test
+    wants it rather than on the first write of that name.
     """
 
-    def __init__(self, *, drops: str) -> None:
+    def __init__(self) -> None:
         source = criteria_board()
         super().__init__(
             issues=list(source.issues.values()),
             marker_prefixes=lane_operation().marker_prefixes,
         )
-        self._drops, self._dropped = drops, False
+        self._drops, self._dropped = None, False
+
+    def lose(self, call: str) -> None:
+        """Lose the next write of *call*, and only that one."""
+        self._drops, self._dropped = call, False
 
     def _drop_once(self, call: str) -> bool:
         if call != self._drops or self._dropped:
@@ -1243,34 +1298,64 @@ class LosingBoard(FakeTrackerPort):
             raise TransientAPIError("the move back never reached the board")
         return await super().reset_criterion_pending(expected=expected, holder=holder)
 
+    async def edit_description(self, *, target, expected, replacement, **rest):
+        if self._drop_once("edit_description"):
+            raise TransientAPIError("the Evidence row never reached the board")
+        return await super().edit_description(
+            target=target, expected=expected, replacement=replacement, **rest
+        )
 
-@pytest.mark.parametrize("drops", ["post_run_event", "reset_criterion_pending"])
-async def test_a_refutation_a_write_was_lost_from_is_completed_by_the_next_verdict(
-    drops,
-):
-    """Whatever the act loses, the criterion is left as the pass it was.
 
-    The steps are ordered so that a failure anywhere inside the act leaves
-    the criterion finished, which is the arm a later failing verdict
-    re-enters. That verdict then performs exactly what did not land: the
-    stamp is decided by its content, the post by the grading the event
-    names, and the move back is the same move either way. So the same head,
-    graded again, ends with the criterion back and exactly one refutation.
+#: What each lost write of the refutation leaves on the sub-issue: the state
+#: it is in, the grading its Evidence row carries, and whether a later
+#: failing verdict at the same head still completes the act.
+LOST_WRITES = {
+    "reset_criterion_pending": (WorkflowStateKind.COMPLETED, "1" * 40, True),
+    "edit_description": (WorkflowStateKind.UNSTARTED, "1" * 40, False),
+    "post_run_event": (WorkflowStateKind.UNSTARTED, "2" * 40, False),
+}
+
+
+@pytest.mark.parametrize("drops", sorted(LOST_WRITES))
+async def test_a_refutation_a_write_was_lost_from_leaves_the_criterion_owed(drops):
+    """Whatever the act loses, the board never certifies the grading that failed.
+
+    The move back is the first write, so a failure after it leaves the
+    criterion unstarted — owed, carrying the earlier grading and no event,
+    which the next fire's roster reads as work to do again. A failure AT it
+    leaves the criterion exactly the pass it was, and the next failing
+    verdict at the same head performs the whole act. What no loss leaves is
+    a criterion finished at a sha that failed it, and nothing repairs the
+    event for a criterion already taken back: unstarted, it is no longer
+    this fire's claim.
     """
-    port = LosingBoard(drops=drops)
+    state, recorded, completed_later = LOST_WRITES[drops]
+    port = LosingBoard()
     lane_state = writer(port, lane_repo())
     broken = CRITERIA[0]
 
     await tick(lane_state, sha="1" * 40)
+    finished = board_shape(port)
+    port.lose(drops)
     with pytest.raises(TransientAPIError):
         await tick(lane_state, sha="2" * 40, failed=[broken])
-    assert port.issues[broken].state_kind is WorkflowStateKind.COMPLETED
+
+    assert port.issues[broken].state_kind is state
+    assert parse_criterion_evidence(port.issues[broken].body).graded_sha == recorded
+    assert refutations(port) == []
+    assert {
+        key: shape for key, shape in board_shape(port).items() if key != broken
+    } == {key: shape for key, shape in finished.items() if key != broken}
 
     await tick(lane_state, sha="2" * 40, failed=[broken])
 
     assert port.issues[broken].state_kind is WorkflowStateKind.UNSTARTED
-    assert parse_criterion_evidence(port.issues[broken].body).graded_sha == "2" * 40
-    assert [event.graded_sha for event in refutations(port)] == ["2" * 40]
+    assert parse_criterion_evidence(port.issues[broken].body).graded_sha == (
+        "2" * 40 if completed_later else recorded
+    )
+    assert [event.graded_sha for event in refutations(port)] == (
+        ["2" * 40] if completed_later else []
+    )
 
 
 async def test_a_stream_that_will_not_parse_refuses_before_the_board_is_touched():
