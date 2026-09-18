@@ -57,10 +57,12 @@ from tests.chains.test_native_fire import (
 from tests.domain.test_criterion_cross_off import callers_of
 from tests.fakes import FakeTrackerPort, make_tracker_issue
 from tests.lane_fixture import (
+    ADDED_OWED,
     LaneGit,
     LanePersister,
     LaneRepo,
     LaneSource,
+    added_criterion,
     criteria_echo,
     lane_forge,
 )
@@ -569,16 +571,6 @@ def states(port) -> dict[str, WorkflowStateKind]:
     return {key: issue.state_kind for key, issue in port.issues.items()}
 
 
-def added_criterion(port, key: str) -> None:
-    """Put one more Todo criterion under the subject, mid-run."""
-    port.issues[key] = make_tracker_issue(
-        key,
-        parent_key=SUBJECT,
-        issue_labels=frozenset({"criterion"}),
-        body=criterion_body(key),
-    )
-
-
 async def test_cross_offs_appear_on_the_tracker_between_iterations():
     """The board carries iteration n's cross-offs while the loop still runs.
 
@@ -645,10 +637,6 @@ async def test_cross_offs_appear_on_the_tracker_between_iterations():
     assert pointers[2] == {
         evaluation_observation(session_id=NATIVE_SESSION, iteration=2)
     }
-
-
-#: A criterion the subtree gains after the fire entered it.
-ADDED_OWED = "fire/owed-added"
 
 
 async def test_a_criterion_added_between_iterations_is_graded_and_crossed_off():

@@ -18,21 +18,36 @@ from kodezart.types.domain.operation import OperationConfig
 from kodezart.types.domain.persist import PersistResult, PersistSource
 from kodezart.types.domain.subagents import NO_SUBAGENTS, UNCONFIGURED_SESSION_POLICY
 from tests.chains.test_native_fire import (
+    SUBJECT,
     TRUNK_BRANCHES,
     TRUNK_SHA,
     NativeSourceReader,
+    criterion_body,
 )
 from tests.fakes import (
     FAKE_SESSION_TYPE,
     SUPPRESS_ALL_SKILLS,
     FakeChangePersister,
     FakeGitService,
+    make_tracker_issue,
 )
 
 #: The API host the forge double is configured against and never asked at.
 FORGE_API = "https://api.github.com"
 #: The credential that host would need, for a client that never reaches it.
 FORGE_CREDENTIAL = "lane-fixture-credential"
+#: A criterion the subject's subtree gains after the fire entered it.
+ADDED_OWED = "fire/owed-added"
+
+
+def added_criterion(port, key: str = ADDED_OWED) -> None:
+    """Put one more Todo criterion under the subject, mid-run."""
+    port.issues[key] = make_tracker_issue(
+        key,
+        parent_key=SUBJECT,
+        issue_labels=frozenset({"criterion"}),
+        body=criterion_body(key),
+    )
 
 
 class LaneRepo:

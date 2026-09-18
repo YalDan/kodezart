@@ -158,12 +158,17 @@ async def test_upheld_after_real_grade_preserves_criterion_history_and_plateau(
             "new_evaluations": [
                 event for event in events if isinstance(event, WorkflowIterationEvent)
             ],
+            # The round graded nothing, so the receipt it leaves carries the
+            # roster the last genuine grading graded: dropped here, every
+            # barrier after this round would read the entry roster alone.
+            "held": final["outcome"].criteria,
         }
         assert actual == {
             "records": previous_records,
             "failures": previous_grade.failures,
             "plateaued": False,
             "new_evaluations": [],
+            "held": tuple(current.criteria),
         }
     finally:
         await cleanup(workspace)

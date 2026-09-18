@@ -424,7 +424,18 @@ class RalphLoop:
                     else None
                 )
                 update["outcome"] = RefusedRalphOutcome(
-                    event=refusal, last_iteration=last
+                    event=refusal,
+                    last_iteration=last,
+                    # This round graded nothing, so what the loop holds is
+                    # still what the last genuine grading graded: dropped
+                    # here, every barrier after this round would read the
+                    # entry roster alone and a criterion this loop finished
+                    # mid-run would fall out of the set it is judged against.
+                    criteria=(
+                        ()
+                        if isinstance(previous, PendingRalphOutcome)
+                        else previous.criteria
+                    ),
                 )
         return update
 
@@ -443,12 +454,13 @@ class RalphLoop:
         finished before this fire entered is in no roster at all.
 
         Nothing is ever removed from the roster this way: it only admits a
-        criterion this loop itself graded.
+        criterion this loop itself graded. A round that ended in an upheld
+        amendment graded nothing and carries the last grading's roster
+        forward, so the rule reads the same on either side of one: the last
+        evaluation is the last that evaluated, not the last round that ran.
         """
         graded: Sequence[ExecutionCriterion] = (
-            outcome.criteria
-            if isinstance(outcome, (EvaluatedRalphOutcome, NativeEvaluatedRalphOutcome))
-            else ()
+            () if isinstance(outcome, PendingRalphOutcome) else outcome.criteria
         )
         return held_roster([*criteria, *graded])
 
@@ -776,9 +788,14 @@ class RalphLoop:
         The whole roster the attempt dispatched is handed over with the
         whole grade, because a verdict is a reading of the roster and a
         partial one is no reading of it.
+
+        The refusal below only narrows the closure's typed value: the set is
+        read before any evaluation on this arm and an empty one is refused
+        there, so no grade reaches here without a roster behind it.
         """
-        # Resolved rather than re-refused: the execute node settles the
-        # writer's absence at its entry, before the session this grade is.
+        # The execute node resolved this writer at its entry, before the
+        # session this grade is; this is the same resolver, not a second
+        # refusal site.
         lane_state = self._lane_writer()
         roster = held_roster(dispatched)
         if roster is None:

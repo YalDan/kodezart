@@ -60,12 +60,20 @@ class NativeEvaluatedRalphOutcome(_EvaluatedRalphOutcome):
 
 
 class RefusedRalphOutcome(CamelCaseModel):
-    """An actual ending UPHELD report with only the last genuine observation."""
+    """An actual ending UPHELD report with only the last genuine observation.
+
+    Such a round produced no grading of its own, so it carries the roster the
+    last genuine one graded: a barrier after it reads what the loop has
+    graded so far, and an iteration that graded nothing is not the iteration
+    that decides what the loop still holds. Empty where no grading preceded
+    it, which is the entry-shaped reading.
+    """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
     phase: Literal["refused"] = "refused"
     event: NativeAmendmentEvent
     last_iteration: WorkflowIterationEvent | None
+    criteria: tuple[ExecutionCriterion, ...] = ()
 
     @model_validator(mode="after")
     def _actual_refusal(self) -> Self:

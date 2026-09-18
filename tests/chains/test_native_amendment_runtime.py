@@ -33,6 +33,7 @@ from tests.fakes import (
     FakeRepoCache,
     PassThroughGate,
 )
+from tests.lane_fixture import ADDED_OWED, added_criterion, criteria_echo
 from tests.prompts.test_prompt_wiring import load_registry
 from tests.services.test_native_amendments import (
     REPO_URL,
@@ -308,6 +309,85 @@ async def test_amended_done_criterion_enters_the_actual_fresh_grading_roster(
         assert all(r.passed for r in results)
         assert iteration.trajectory.records[-1].passed_count == 4
         assert iteration.commit_sha
+    finally:
+        await cleanup(workspace)
+
+
+def dispatched_keys(prompt: str, port) -> list[str]:
+    """The criterion keys one evaluation was dispatched with.
+
+    Read off the prompt the node rendered, which names every dispatched
+    criterion by its own key at the start of its own line, so a test scripts
+    its answers against the roster the node actually dispatched rather than
+    against a roster written here.
+    """
+    lines = prompt.splitlines()
+    return [
+        key for key in port.issues if any(line.startswith(f"{key} ") for line in lines)
+    ]
+
+
+async def test_a_criterion_crossed_off_before_an_upheld_round_is_graded_after_it(
+    repository,
+):
+    """A round that graded nothing does not shrink what the loop is judged against.
+
+    The obligation grows while the fire is in it: a criterion appears under
+    the subject during the first grading, the second grading covers it and
+    crosses it off, and the round after that ends in an upheld amendment,
+    which produces no grading at all. The round after THAT has to dispatch
+    the crossed-off criterion again — held only by what the last grading
+    graded, it is Done and outside the entry roster, so nothing would
+    re-grade it and a regression of it would be absorbed while the lane
+    delivered.
+    """
+    port = None
+    dispatched: list[list[str]] = []
+    writes = 0
+
+    async def answers(title, payload, kwargs):
+        nonlocal writes
+        if title == "NativeWriterOutput":
+            writes += 1
+            # Only the third round claims a departure, and the independent
+            # judgment does not reproduce it, so that round ends upheld.
+            if writes != 3:
+                payload["claims"] = []
+        elif title == "AcceptanceCriteriaOutput":
+            if not dispatched:
+                added_criterion(port)
+            keys = dispatched_keys(kwargs["prompt"], port)
+            dispatched.append(keys)
+            # The first grading passes nothing, the second finishes the
+            # criterion that appeared under the subject, the last passes
+            # whatever it was dispatched with.
+            passed: set[str] = set()
+            if len(dispatched) == 2:
+                passed = {ADDED_OWED}
+            elif len(dispatched) > 2:
+                passed = set(keys)
+            payload.clear()
+            payload.update(criteria_echo(keys=keys, passed=passed))
+
+    executor = Executor(mutate=answers)
+    fire, spec, current, _, workspace, port = await make_runtime(
+        repository, executor, max_iterations=4
+    )
+    entry = {criterion.id for criterion in current.criteria}
+    try:
+        final = await consumer_graph(fire, repository, spec, current).ainvoke({})
+
+        iteration = final["iteration"]
+        assert [set(keys) for keys in dispatched] == [
+            entry,
+            entry | {ADDED_OWED},
+            entry | {ADDED_OWED},
+        ]
+        assert {
+            row.criterion_id for row in iteration.evaluation.criteria_results
+        } == entry | {ADDED_OWED}
+        assert iteration.iteration == 4
+        assert port.issues[ADDED_OWED].state_kind is WorkflowStateKind.COMPLETED
     finally:
         await cleanup(workspace)
 
