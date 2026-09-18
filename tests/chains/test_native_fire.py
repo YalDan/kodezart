@@ -8,6 +8,7 @@ for it.
 """
 
 import inspect
+import re
 
 import pytest
 from langgraph.checkpoint.memory import InMemorySaver
@@ -39,6 +40,7 @@ from kodezart.services.lane_state_writer import TrackerLaneStateWriter
 from kodezart.services.native_amendments import NativeAmendments
 from kodezart.types.domain.accept import AcceptVerdict
 from kodezart.types.domain.agent import (
+    BRANCH_NAME_SCHEMA,
     AcceptanceCriteriaOutput,
     ResultEvent,
     TicketDraftOutput,
@@ -400,6 +402,52 @@ def test_the_native_fire_graph_holds_no_ticket_or_criteria_generation_node() -> 
     assert GENERATION_NODES <= set(authored.nodes)
     assert "revalidate_criteria" in set(native.nodes)
     assert "revalidate_criteria" not in set(authored.nodes)
+
+
+def test_the_native_fire_graph_holds_no_branch_generation_node() -> None:
+    """The node sets of the two compiled graphs, compared (KOD-839).
+
+    Not vacuous: the authored graph still holds the node, so the native arm
+    dropped it rather than never having had one.
+    """
+    fire = engine(criteria=TrackerCriteria(tracker=tracker()))
+    assert fire.native_graph is not None
+    native = fire.native_graph.get_graph()
+    authored = fire.graph.get_graph()
+
+    assert "generate_branch" in set(authored.nodes)
+    assert "generate_branch" not in set(native.nodes)
+    assert not [
+        edge for edge in native.edges if "generate_branch" in (edge.source, edge.target)
+    ]
+    # And the node the entry used to reach through it is reached directly.
+    assert ("resolve_visibility", "revalidate_criteria") in {
+        (edge.source, edge.target) for edge in native.edges
+    }
+
+
+async def test_a_native_fire_opens_no_branch_name_session() -> None:
+    """The lane's names come from its issue key, with no session at all.
+
+    ``prepare`` draws them, so the terminal reports a deliverable branch of
+    the documented shape while the executor recorded no branch-name schema
+    call — the schema is what a branch-name session is asked for.
+    """
+    executor = NativeExecutor([native_evaluation(), native_evaluation()])
+    fire = engine(
+        criteria=TrackerCriteria(tracker=tracker()), executor=executor, real_loop=True
+    )
+
+    events = await drive(fire, scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
+
+    terminal = next(e for e in events if isinstance(e, WorkflowCompleteEvent))
+    assert re.fullmatch(
+        rf"kodezart/{re.escape(SUBJECT)}-[0-9a-f]{{8}}", terminal.feature_branch
+    )
+    assert terminal.ralph_branch.startswith(f"{terminal.feature_branch}-ralph-")
+    assert not any("slug" in properties for properties in executor.schema_calls)
+    # The authored arm still asks for one, so the absence is this arm's.
+    assert "slug" in BRANCH_NAME_SCHEMA["properties"]
 
 
 def test_an_unwired_deployment_composes_no_native_arm_at_all() -> None:

@@ -155,6 +155,34 @@ def trunk_base(branch: str) -> BaseSpec:
     return BaseSpec(inputs=(), base_branch=branch, base_role=None)
 
 
+#: What an issue key has to look like to stand inside a ref path.
+#:
+#: One or more ``/``-separated segments, each of them alphanumerics joined by
+#: single ``-``, ``_`` or ``.`` characters.  That admits every key shape the
+#: tracker mints, including a key whose own identity is a path, and refuses
+#: everything ``git check-ref-format`` refuses for a branch: whitespace, the
+#: glob and revision characters, ``..``, an empty or separator-edged segment.
+LANE_KEY_SEGMENT = r"[A-Za-z0-9]+(?:[-_.][A-Za-z0-9]+)*"
+LANE_KEY_PATTERN = rf"^{LANE_KEY_SEGMENT}(?:/{LANE_KEY_SEGMENT})*$"
+
+
+class LaneBranchName(BaseModel):
+    """``kodezart/{issue_key}-{short_id}``: a native lane's deliverable branch.
+
+    The key is validated here, in the module that owns ref shapes, so a lane
+    whose key could not be a ref refuses while the name is being composed and
+    before any git call is made with it.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    issue_key: str = Field(pattern=LANE_KEY_PATTERN)
+    short_id: str = Field(pattern=r"^[0-9a-f]{8}$")
+
+    def __str__(self) -> str:
+        return f"kodezart/{self.issue_key}-{self.short_id}"
+
+
 class IntegrationBranchName(BaseModel):
     """``{issue_id}-integration-{digest}`` — a base constructed from inputs.
 

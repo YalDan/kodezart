@@ -569,7 +569,11 @@ async def test_distinct_queue_jobs_never_alias_a_lane_checkpoint():
     fresh = runtime(port=harness.port, saver=harness.saver)
     _ = [event async for event in drive(fresh, job="second-job")]
     assert fresh.executor.execution_prompts
-    assert sum("slug" in props for props in fresh.executor.schema_calls) == 1
+    # The second job executes rather than replaying the first job's saved
+    # graph, which is what "never alias" means here. It names its branches
+    # from the issue key, so no branch-name session is opened for it at all
+    # (KOD-839); the count used to be one, when this arm still asked.
+    assert not any("slug" in props for props in fresh.executor.schema_calls)
 
 
 async def test_approval_removed_during_preparation_prevents_any_native_node(

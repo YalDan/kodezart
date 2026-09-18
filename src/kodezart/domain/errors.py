@@ -235,6 +235,26 @@ class RulingRecordReadError(Exception):
         )
 
 
+class LaneEntryError(Exception):
+    """A lane cannot be entered from the facts it presents, and nothing is minted.
+
+    Every reading that reaches here is knowable before a session and before a
+    git call: a key that could not be a ref, a recorded association set that
+    resolves to no single deliverable or base, a recorded branch the remote no
+    longer holds.  Minting a second branch beside a recorded one would lose
+    the work the record names, so the lane is refused and reported instead.
+    """
+
+    def __init__(
+        self, *, issue_key: str, reason: str, branches: Sequence[str] = ()
+    ) -> None:
+        self.issue_key = issue_key
+        self.reason = reason
+        self.branches: tuple[str, ...] = tuple(branches)
+        named = f" ({', '.join(self.branches)})" if self.branches else ""
+        super().__init__(f"lane {issue_key!r} cannot be entered: {reason}{named}")
+
+
 class LaneRecordReadError(Exception):
     """A lane's branch record cannot be read from its addressed tracker comment."""
 

@@ -24,6 +24,7 @@ from kodezart.core.retry import DelayFloor, RetryFloor, should_retry
 from kodezart.domain.accept_gate import (
     gate_cleared,
 )
+from kodezart.domain.agent import mint_lane_branches
 from kodezart.domain.base_scope import scope_base
 from kodezart.domain.criteria_feasibility import (
     demands_regeneration,
@@ -178,8 +179,11 @@ class RalphWorkflowEngine:
         Everything from the loop onward is the same nodes and the same
         routes on both arms.  The arms differ in exactly one place — the
         criteria gate the entry, the validation route and a remediation
-        round all converge on — so the native arm HOLDS no ticket- or
-        criteria-generation node rather than merely skipping one.
+        round all converge on — so the native arm HOLDS no ticket-,
+        criteria- or branch-generation node rather than merely skipping
+        one.  A native lane's branch names are arithmetic over its issue
+        key, drawn in ``prepare``; only the authored arm asks a model for
+        a name, because only there is the name a summary of prose.
         """
         graph: StateGraph[WorkflowState, None, WorkflowState, WorkflowState] = (
             StateGraph(WorkflowState)
@@ -189,12 +193,12 @@ class RalphWorkflowEngine:
             self.floor(self.specification.resolve_visibility),
             retry_policy=self.retry,
         )
-        graph.add_node(
-            "generate_branch",
-            self.floor(self.specification.generate_branch),
-            retry_policy=self.retry,
-        )
         if criteria is None:
+            graph.add_node(
+                "generate_branch",
+                self.floor(self.specification.generate_branch),
+                retry_policy=self.retry,
+            )
             graph.add_node(
                 "generate_ticket",
                 self.floor(self.specification.generate_ticket),
@@ -267,8 +271,8 @@ class RalphWorkflowEngine:
             self._route_entry,
             {"resolve_visibility": "resolve_visibility", "generate_criteria": gate},
         )
-        graph.add_edge("resolve_visibility", "generate_branch")
         if criteria is None:
+            graph.add_edge("resolve_visibility", "generate_branch")
             graph.add_edge("generate_branch", "generate_ticket")
             if persists:
                 graph.add_edge("generate_ticket", "persist_ticket")
@@ -289,7 +293,7 @@ class RalphWorkflowEngine:
             if persists:
                 graph.add_edge("persist_artifacts", "run_ralph_loop")
         else:
-            graph.add_edge("generate_branch", "revalidate_criteria")
+            graph.add_edge("resolve_visibility", "revalidate_criteria")
             graph.add_edge("revalidate_criteria", "run_ralph_loop")
         graph.add_edge("run_ralph_loop", "merge_to_feature")
         graph.add_conditional_edges(
@@ -455,10 +459,17 @@ class RalphWorkflowEngine:
 
         config: RunnableConfig = {"configurable": configurable}
 
+        # The native arm holds no branch-generation node, so the lane's two
+        # names are drawn here, from its issue key. A key that could not
+        # stand inside a ref refuses at this point, before any node runs.
+        feature_branch, ralph_branch = (
+            mint_lane_branches(scope.key) if scope is not None else ("", "")
+        )
+
         initial_state: WorkflowState = {
             "issue_key": issue_key,
-            "feature_branch": "",
-            "ralph_branch": "",
+            "feature_branch": feature_branch,
+            "ralph_branch": ralph_branch,
             "work_base_ref": base_spec.base_branch,
             "fire_spec": None,
             "acceptance_criteria": [],
