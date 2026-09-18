@@ -28,6 +28,7 @@ from kodezart.services.lane_state_writer import TrackerLaneStateWriter
 from kodezart.types.domain.agent import CriterionResult
 from kodezart.types.domain.branch import BranchRole
 from kodezart.types.domain.criteria import CriterionId, TrackerCriterion
+from kodezart.types.domain.criterion_evidence import CriterionEvidence
 from kodezart.types.domain.gating import (
     ContentClass,
     GateDecision,
@@ -801,7 +802,13 @@ async def test_a_tick_rewrites_only_the_addressed_sub_issue():
     after = board_shape(port)
     assert {key for key in after if after[key] != before[key]} == {addressed}
     assert after[addressed][1] == LifecycleStage.DONE.value
-    assert parse_criterion_evidence(port.issues[addressed].body).graded_sha == "7" * 40
+    # The whole row, not the sha alone: the pointer back to the grading is
+    # the second datum this write puts there, and a stamp carrying the sha
+    # under any other pointer is not the grading just made.
+    assert parse_criterion_evidence(port.issues[addressed].body) == CriterionEvidence(
+        graded_sha="7" * 40,
+        test=evaluation_observation(session_id="eval-session", iteration=1),
+    )
     assert [key for key, _, _ in port.issue_writes] == [addressed]
     assert port.workflow_writes == [(addressed, LifecycleStage.DONE)]
 
@@ -828,6 +835,7 @@ async def test_a_lane_of_ticks_leaves_the_owning_body_byte_identical():
     assert LANE not in {key for key, _ in port.workflow_writes}
 
 
+@pytest.mark.parametrize("index", [0, 1, 2])
 @pytest.mark.parametrize(
     "drift",
     [
@@ -841,17 +849,22 @@ async def test_a_lane_of_ticks_leaves_the_owning_body_byte_identical():
         pytest.param({"issue_labels": frozenset()}, id="classification-lost"),
     ],
 )
-async def test_a_tick_on_a_sub_issue_that_moved_after_dispatch_writes_nothing(drift):
+async def test_a_tick_on_a_sub_issue_that_moved_after_dispatch_writes_nothing(
+    drift, index
+):
     """The sub-issue is read back through the port, never remembered.
 
     The verdict was reached against what the dispatch saw; the write asserts
     what the sub-issue holds now, and a sub-issue that moved in between
     takes no part of the write at all — not its body, not its state, and not
-    the sub-issues the same attempt would have gone on to address.
+    the sub-issues the same attempt would have gone on to address. What
+    PRECEDES it in the roster is already written when the refusal is raised:
+    the act is per criterion, so the drifted position decides how much of
+    the attempt landed.
     """
     port = criteria_board()
     lane_state = writer(port, lane_repo())
-    moved = CRITERIA[0]
+    moved = CRITERIA[index]
     port.issues[moved] = port.issues[moved].model_copy(update=drift)
     before = board_shape(port)
 
@@ -859,9 +872,64 @@ async def test_a_tick_on_a_sub_issue_that_moved_after_dispatch_writes_nothing(dr
         await tick(lane_state, sha="8" * 40)
 
     assert caught.value.target == moved
-    assert board_shape(port) == before
-    assert port.issue_writes == []
-    assert port.workflow_writes == []
+    written = list(CRITERIA[:index])
+    assert [key for key, _, _ in port.issue_writes] == written
+    assert port.workflow_writes == [(key, LifecycleStage.DONE) for key in written]
+    after = board_shape(port)
+    assert {key for key in after if after[key] != before[key]} == set(written)
+
+
+class DriftingBoard(FakeTrackerPort):
+    """A board that moves the NEXT criterion while this one is being written.
+
+    The drift lands between the attempt's own reads, which is the window a
+    writer that read every dispatched sub-issue once at the start cannot
+    see: its snapshots were all taken before this move happened.
+    """
+
+    def __init__(self, *, moves: str, when: str) -> None:
+        source = criteria_board()
+        super().__init__(
+            issues=list(source.issues.values()),
+            marker_prefixes=lane_operation().marker_prefixes,
+        )
+        self._moves, self._when = moves, when
+
+    async def set_workflow_state(self, *, issue_key, stage):
+        if issue_key == self._when:
+            self.issues[self._moves] = self.issues[self._moves].model_copy(
+                update={
+                    "state_kind": WorkflowStateKind.STARTED,
+                    "state_name": "In Progress",
+                }
+            )
+        return await super().set_workflow_state(issue_key=issue_key, stage=stage)
+
+
+async def test_a_sub_issue_that_moves_mid_attempt_is_read_again_before_its_write():
+    """Each write reads its own sub-issue, at the instant it writes it.
+
+    The board moves the second criterion while the first is being finished,
+    so what the attempt saw when it was dispatched and what the second
+    sub-issue holds when its turn comes are different boards. The first
+    criterion is finished at the graded sha, the second is refused, and the
+    third — which the attempt never reached — is untouched.
+    """
+    port = DriftingBoard(moves=CRITERIA[1], when=CRITERIA[0])
+    lane_state = writer(port, lane_repo())
+    untouched = board_shape(port)[CRITERIA[2]]
+
+    with pytest.raises(StaleWriteError) as caught:
+        await tick(lane_state, sha="a" * 40)
+
+    assert caught.value.target == CRITERIA[1]
+    assert port.issues[CRITERIA[0]].state_kind is WorkflowStateKind.COMPLETED
+    assert (
+        parse_criterion_evidence(port.issues[CRITERIA[0]].body).graded_sha == "a" * 40
+    )
+    assert board_shape(port)[CRITERIA[2]] == untouched
+    assert [key for key, _, _ in port.issue_writes] == [CRITERIA[0]]
+    assert port.workflow_writes == [(CRITERIA[0], LifecycleStage.DONE)]
 
 
 async def test_a_tick_on_a_sub_issue_carrying_two_evidence_rows_writes_nothing():
