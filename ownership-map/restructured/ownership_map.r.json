@@ -4098,5 +4098,55 @@
   "owner": "M3",
   "reason": "introduced f575b2e8..9e7b420a by a M3 commit",
   "split": null
+ },
+ "src/kodezart/core/outbound_write.py": {
+  "owner": "M4",
+  "reason": "introduced 9e7b420a..b94a63ab by a M4 commit",
+  "split": null
+ },
+ "src/kodezart/domain/criterion_cross_off.py": {
+  "owner": "M4",
+  "reason": "introduced 9e7b420a..b94a63ab by a M4 commit",
+  "split": null
+ },
+ "src/kodezart/services/lane_state_writer.py": {
+  "owner": "M4",
+  "reason": "introduced 9e7b420a..b94a63ab by a M4 commit",
+  "split": null
+ },
+ "tests/chains/test_lane_state_loop.py": {
+  "owner": "M4",
+  "reason": "introduced 9e7b420a..b94a63ab by a M4 commit",
+  "split": null
+ },
+ "tests/core/test_outbound_write.py": {
+  "owner": "M4",
+  "reason": "introduced 9e7b420a..b94a63ab by a M4 commit",
+  "split": null
+ },
+ "tests/domain/test_criterion_cross_off.py": {
+  "owner": "M4",
+  "reason": "introduced 9e7b420a..b94a63ab by a M4 commit",
+  "split": null
+ },
+ "tests/domain/test_run_alarm_record.py": {
+  "owner": "M4",
+  "reason": "introduced 9e7b420a..b94a63ab by a M4 commit",
+  "split": null
+ },
+ "tests/lane_fixture.py": {
+  "owner": "M4",
+  "reason": "introduced 9e7b420a..b94a63ab by a M4 commit",
+  "split": null
+ },
+ "tests/services/test_lane_state_writer.py": {
+  "owner": "M4",
+  "reason": "introduced 9e7b420a..b94a63ab by a M4 commit",
+  "split": null
+ },
+ "tests/services/test_native_execution_record.py": {
+  "owner": "M4",
+  "reason": "introduced 9e7b420a..b94a63ab by a M4 commit",
+  "split": null
  }
 }

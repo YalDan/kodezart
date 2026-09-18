@@ -6,10 +6,11 @@ Owner of a new file / new symbol = the lane tag of the commit that introduced it
 (commit subject prefix like 'feat(m2):' / 'test(M4):' -> M2 / M4; otherwise M1).
 """
 import json, os, re, subprocess, sys
-S = "/private/tmp/claude-503/-Users-kodezart-Projects-kodezart/f325c30b-eb65-4b5e-83ca-1ef5846ade2d/scratchpad"
+S = "<scratch>/recut"
 sys.path.insert(0, S)
 os.environ.setdefault("CUT_SUFFIX", ".r")
 import cut_views_r as C
+import sym_kinds as K   # derives the real kind from cut_views_r's own models
 OLD, NEW = sys.argv[1], sys.argv[2]
 MAIN = C.MAIN
 def git(*a): return subprocess.run(["git", "-C", C.REPO, *a], capture_output=True, text=True).stdout
@@ -43,6 +44,11 @@ def model(rev, p):
 added = remarked = 0
 for p in split:
     mo, mn, mm = model(OLD, p), model(NEW, p), model(MAIN, p)
+    kinds_new, kinds_old = K.kinds_at(NEW, p), K.kinds_at(OLD, p)
+    def sym_kind_of(key):
+        # the model entry's own kind (py: import/function/method/class_attr/assignment/class,
+        # toml: toml_table/toml_key, md: md_h2/md_h3, env: env_key) - never a placeholder
+        return kinds_new.get(key) or kinds_old.get(key) or K.kind_from_shape(p, key)
     lane = file_lane.get(p, om[p]["owner"])
     for k, v in mn["sym"].items():
         told = (mo["sym"].get(k) or {}).get("text") if mo else None
@@ -51,10 +57,11 @@ for p in split:
         kind = "added" if tmain is None else ("modified" if tmain != v["text"] else "unchanged")
         entry = syms.setdefault(p, {}).get(k)
         if entry is None:
-            syms[p][k] = {"consumers": {}, "kind": kind, "note": f"introduced {OLD[:8]}..{NEW[:8]}", "owner": lane, "sym_kind": v.get("kind", "symbol")}
+            syms[p][k] = {"consumers": {}, "kind": kind, "note": f"introduced {OLD[:8]}..{NEW[:8]}", "owner": lane, "sym_kind": sym_kind_of(k)}
             owner = lane; added += 1
         else:
             owner = entry.get("owner") or lane; entry["owner"] = owner
+            if entry.get("sym_kind") in (None, "symbol"): entry["sym_kind"] = sym_kind_of(k)
             if entry.get("kind") not in ("added", "modified"): entry["kind"] = kind
             remarked += 1
         sp = specs.setdefault(owner, {}).setdefault(p, {"base": "main", "creates_file": False, "delta_status": "M", "file_map_owner": om[p]["owner"], "keep_main": [], "new_at_this_milestone": [], "remove": [], "take_from_donor": []})

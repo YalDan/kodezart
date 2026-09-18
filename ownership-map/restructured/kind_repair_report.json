@@ -1,0 +1,519 @@
+{
+ "repaired": [
+  [
+   "docs/operation.example.toml",
+   "marker_prefixes.amendment",
+   "symbol",
+   "toml_key",
+   "union model"
+  ],
+  [
+   "docs/operation.example.toml",
+   "marker_prefixes.audit",
+   "symbol",
+   "toml_key",
+   "union model"
+  ],
+  [
+   "docs/operation.example.toml",
+   "marker_prefixes.run_alarm",
+   "symbol",
+   "toml_key",
+   "union model"
+  ],
+  [
+   "docs/operation.example.toml",
+   "marker_prefixes.run_event",
+   "symbol",
+   "toml_key",
+   "union model"
+  ],
+  [
+   "src/kodezart/adapters/linear/tracker.py",
+   "LinearMcpTracker._body_authorship",
+   "symbol",
+   "method",
+   "union model"
+  ],
+  [
+   "src/kodezart/adapters/linear/tracker.py",
+   "LinearMcpTracker._read_planning_wire",
+   "symbol",
+   "method",
+   "union model"
+  ],
+  [
+   "src/kodezart/adapters/linear/tracker.py",
+   "LinearMcpTracker._renewal_retractions",
+   "symbol",
+   "method",
+   "union model"
+  ],
+  [
+   "src/kodezart/adapters/linear/tracker.py",
+   "LinearMcpTracker._require_machine_authored",
+   "symbol",
+   "method",
+   "union model"
+  ],
+  [
+   "src/kodezart/adapters/linear/tracker.py",
+   "LinearMcpTracker.read_surface_authorship",
+   "symbol",
+   "method",
+   "union model"
+  ],
+  [
+   "src/kodezart/adapters/linear/tracker.py",
+   "import:from kodezart.domain.errors import ( ApprovalLabelWriteError, CriterionReadError, DuplicateIssueIdentityError, DuplicateWorkRefError, EscalationReadError, IssueLabelReadError, OrganizeWriteRefusalError, PrincipalAuthoredSurfaceError, ScopeReadError, SurfaceLeaseError, SurfaceWriteAttributionError, TransientAPIError, )",
+   "symbol",
+   "import",
+   "union model"
+  ],
+  [
+   "src/kodezart/adapters/linear/tracker.py",
+   "import:from kodezart.domain.run_alarm_record import ( parse_run_alarm, render_run_alarm, require_alarm_holder, run_alarm_marker, )",
+   "symbol",
+   "import",
+   "union model"
+  ],
+  [
+   "src/kodezart/adapters/linear/tracker.py",
+   "import:from kodezart.domain.surface_lease import ( live_conflict, one_ownership, renewed_deadline, renews, retracts, surface_address, )",
+   "symbol",
+   "import",
+   "union model"
+  ],
+  [
+   "src/kodezart/adapters/linear/tracker.py",
+   "import:from kodezart.types.domain.surface import ( DescriptionWriteAuthority, SurfaceAuthorship, SurfaceKind, SurfaceLease, WritableSurface, WriteRevalidation, require_body_authorship_surface, )",
+   "symbol",
+   "import",
+   "union model"
+  ],
+  [
+   "src/kodezart/composition/engine.py",
+   "import:from kodezart.services.lane_state_writer import TrackerLaneStateWriter",
+   "symbol",
+   "import",
+   "union model"
+  ],
+  [
+   "src/kodezart/core/protocols.py",
+   "AfterPublish",
+   "symbol",
+   "assignment",
+   "union model"
+  ],
+  [
+   "src/kodezart/core/protocols.py",
+   "LaneStateTracker",
+   "symbol",
+   "class",
+   "union model"
+  ],
+  [
+   "src/kodezart/core/protocols.py",
+   "LaneStateTracker.edit_description",
+   "symbol",
+   "method",
+   "union model"
+  ],
+  [
+   "src/kodezart/core/protocols.py",
+   "LaneStateTracker.post_run_event",
+   "symbol",
+   "method",
+   "union model"
+  ],
+  [
+   "src/kodezart/core/protocols.py",
+   "LaneStateTracker.read_issue",
+   "symbol",
+   "method",
+   "union model"
+  ],
+  [
+   "src/kodezart/core/protocols.py",
+   "LaneStateTracker.reset_criterion_pending",
+   "symbol",
+   "method",
+   "union model"
+  ],
+  [
+   "src/kodezart/core/protocols.py",
+   "LaneStateTracker.set_workflow_state",
+   "symbol",
+   "method",
+   "union model"
+  ],
+  [
+   "src/kodezart/core/protocols.py",
+   "LaneStateTracker.upsert_comment",
+   "symbol",
+   "method",
+   "union model"
+  ],
+  [
+   "src/kodezart/core/protocols.py",
+   "LaneStateWriter",
+   "symbol",
+   "class",
+   "union model"
+  ],
+  [
+   "src/kodezart/core/protocols.py",
+   "LaneStateWriter.record_commit",
+   "symbol",
+   "method",
+   "union model"
+  ],
+  [
+   "src/kodezart/core/protocols.py",
+   "LaneStateWriter.require_writable",
+   "symbol",
+   "method",
+   "union model"
+  ],
+  [
+   "src/kodezart/core/protocols.py",
+   "LaneStateWriter.write_cross_offs",
+   "symbol",
+   "method",
+   "union model"
+  ],
+  [
+   "src/kodezart/core/protocols.py",
+   "TrackerPort.read_surface_authorship",
+   "symbol",
+   "method",
+   "union model"
+  ],
+  [
+   "src/kodezart/core/protocols.py",
+   "import:from kodezart.types.domain.criteria import ( ExecutionCriterion, TrackerCriterion, TrackerCriterionSet, )",
+   "symbol",
+   "import",
+   "union model"
+  ],
+  [
+   "src/kodezart/core/protocols.py",
+   "import:from kodezart.types.domain.criterion_lifecycle import CriterionCrossOff",
+   "symbol",
+   "import",
+   "union model"
+  ],
+  [
+   "src/kodezart/core/protocols.py",
+   "import:from kodezart.types.domain.run_state import LaneBinding, LaneRunState",
+   "symbol",
+   "import",
+   "union model"
+  ],
+  [
+   "src/kodezart/core/protocols.py",
+   "import:from kodezart.types.domain.surface import ( DescriptionWriteAuthority, SurfaceAuthorship, SurfaceLease, WritableSurface, WriteRevalidation, )",
+   "symbol",
+   "import",
+   "union model"
+  ],
+  [
+   "src/kodezart/domain/errors.py",
+   "ApprovalLabelWriteError",
+   "symbol",
+   "class",
+   "union model"
+  ],
+  [
+   "src/kodezart/domain/errors.py",
+   "ApprovalLabelWriteError.__init__",
+   "symbol",
+   "method",
+   "union model"
+  ],
+  [
+   "src/kodezart/domain/errors.py",
+   "LaneRecordWriteError",
+   "symbol",
+   "class",
+   "union model"
+  ],
+  [
+   "src/kodezart/domain/errors.py",
+   "LaneRecordWriteError.__init__",
+   "symbol",
+   "method",
+   "union model"
+  ],
+  [
+   "src/kodezart/domain/errors.py",
+   "PrincipalAuthoredSurfaceError",
+   "symbol",
+   "class",
+   "union model"
+  ],
+  [
+   "src/kodezart/domain/errors.py",
+   "PrincipalAuthoredSurfaceError.__init__",
+   "symbol",
+   "method",
+   "union model"
+  ],
+  [
+   "src/kodezart/domain/fire_spec.py",
+   "_criterion_rows",
+   "symbol",
+   "function",
+   "union model"
+  ],
+  [
+   "src/kodezart/domain/fire_spec.py",
+   "_duplicated",
+   "symbol",
+   "function",
+   "union model"
+  ],
+  [
+   "src/kodezart/domain/fire_spec.py",
+   "criterion_ref",
+   "symbol",
+   "function",
+   "union model"
+  ],
+  [
+   "src/kodezart/domain/fire_spec.py",
+   "duplicated_row_labels",
+   "symbol",
+   "function",
+   "union model"
+  ],
+  [
+   "src/kodezart/domain/organize.py",
+   "organize_at_rest",
+   "symbol",
+   "function",
+   "union model"
+  ],
+  [
+   "src/kodezart/services/agent_service.py",
+   "import:from kodezart.core.protocols import ( AfterPublish, AgentExecutor, ChangePersister, NativeWriteGuard, WorkspaceProvider, )",
+   "symbol",
+   "import",
+   "union model"
+  ],
+  [
+   "src/kodezart/types/domain/operation.py",
+   "import:from kodezart.types.domain.organize import ( MANDATE_PHASE_ROLES, MandateSpec, OrganizeLabelNamespace, ResolvedMandateSpec, phase_marker_source, split_label_key, )",
+   "symbol",
+   "import",
+   "union model"
+  ],
+  [
+   "src/kodezart/types/domain/organize.py",
+   "MANDATE_PHASE_ROLES",
+   "symbol",
+   "assignment",
+   "union model"
+  ],
+  [
+   "src/kodezart/types/domain/organize.py",
+   "MandatePhaseRole",
+   "symbol",
+   "class",
+   "union model"
+  ],
+  [
+   "src/kodezart/types/domain/organize.py",
+   "MandatePhaseRole.author_prompt_key",
+   "symbol",
+   "class_attr",
+   "union model"
+  ],
+  [
+   "src/kodezart/types/domain/organize.py",
+   "MandatePhaseRole.marks_execution_stage",
+   "symbol",
+   "class_attr",
+   "union model"
+  ],
+  [
+   "src/kodezart/types/domain/organize.py",
+   "MandatePhaseRole.marks_specification_body",
+   "symbol",
+   "class_attr",
+   "union model"
+  ],
+  [
+   "src/kodezart/types/domain/organize.py",
+   "MandatePhaseRole.model_config",
+   "symbol",
+   "class_attr",
+   "union model"
+  ],
+  [
+   "src/kodezart/types/domain/organize.py",
+   "ResolvedMandateSpec.marker_source",
+   "symbol",
+   "class_attr",
+   "union model"
+  ],
+  [
+   "src/kodezart/types/domain/organize.py",
+   "ResolvedMandateSpec.role",
+   "symbol",
+   "class_attr",
+   "union model"
+  ],
+  [
+   "src/kodezart/types/domain/organize.py",
+   "import:from collections.abc import Mapping",
+   "symbol",
+   "import",
+   "union model"
+  ],
+  [
+   "src/kodezart/types/domain/organize.py",
+   "phase_marker_source",
+   "symbol",
+   "function",
+   "union model"
+  ],
+  [
+   "src/kodezart/types/domain/organize.py",
+   "phase_successor",
+   "symbol",
+   "function",
+   "union model"
+  ],
+  [
+   "tests/chains/test_ralph_loop.py",
+   "evaluative_sites",
+   "symbol",
+   "function",
+   "union model"
+  ],
+  [
+   "tests/fakes.py",
+   "FakeMcpIssue.created_by",
+   "symbol",
+   "class_attr",
+   "union model"
+  ],
+  [
+   "tests/fakes.py",
+   "FakeTrackerPort._body_authorship",
+   "symbol",
+   "method",
+   "union model"
+  ],
+  [
+   "tests/fakes.py",
+   "FakeTrackerPort._require_machine_authored",
+   "symbol",
+   "method",
+   "union model"
+  ],
+  [
+   "tests/fakes.py",
+   "FakeTrackerPort.read_surface_authorship",
+   "symbol",
+   "method",
+   "union model"
+  ],
+  [
+   "tests/fakes.py",
+   "import:from kodezart.core.protocols import ( AfterPublish, AgentExecutor, McpToolResult, NativeWriteGuard, PromptSetProvider, WorkflowEngine, )",
+   "symbol",
+   "import",
+   "union model"
+  ],
+  [
+   "tests/fakes.py",
+   "import:from kodezart.domain.errors import ( ApprovalLabelWriteError, CriterionReadError, DuplicateIssueIdentityError, DuplicateWorkRefError, EscalationReadError, IssueLabelReadError, MergeConflictError, OrganizeWriteRefusalError, PrincipalAuthoredSurfaceError, PRStateReadError, RateLimitError, ScopeReadError, SurfaceLeaseError, SurfaceWriteAttributionError, TransientAPIError, WorkspaceError, )",
+   "symbol",
+   "import",
+   "union model"
+  ],
+  [
+   "tests/fakes.py",
+   "import:from kodezart.domain.run_alarm_record import ( parse_run_alarm, render_run_alarm, require_alarm_holder, run_alarm_marker, )",
+   "symbol",
+   "import",
+   "union model"
+  ],
+  [
+   "tests/fakes.py",
+   "import:from kodezart.types.domain.surface import ( DescriptionWriteAuthority, SurfaceAuthorship, SurfaceKind, SurfaceLease, WritableSurface, WriteRevalidation, require_body_authorship_surface, )",
+   "symbol",
+   "import",
+   "union model"
+  ],
+  [
+   "tests/tracker/conftest.py",
+   "ISSUE_LABELS",
+   "symbol",
+   "assignment",
+   "union model"
+  ],
+  [
+   "tests/tracker/conftest.py",
+   "SCOPE_LABELS",
+   "symbol",
+   "assignment",
+   "union model"
+  ],
+  [
+   "tests/tracker/conftest.py",
+   "TrackerWorkspace",
+   "symbol",
+   "class",
+   "union model"
+  ],
+  [
+   "tests/tracker/conftest.py",
+   "TrackerWorkspace.clock",
+   "symbol",
+   "class_attr",
+   "union model"
+  ],
+  [
+   "tests/tracker/conftest.py",
+   "TrackerWorkspace.scope_labels",
+   "symbol",
+   "class_attr",
+   "union model"
+  ],
+  [
+   "tests/tracker/conftest.py",
+   "TrackerWorkspace.server",
+   "symbol",
+   "class_attr",
+   "union model"
+  ],
+  [
+   "tests/tracker/conftest.py",
+   "approval_classifications",
+   "symbol",
+   "function",
+   "union model"
+  ],
+  [
+   "tests/tracker/conftest.py",
+   "import:from kodezart.types.domain.surface import ( SurfaceKind, WritableSurface, )",
+   "symbol",
+   "import",
+   "union model"
+  ],
+  [
+   "tests/tracker/conftest.py",
+   "observed_writes",
+   "symbol",
+   "function",
+   "union model"
+  ]
+ ],
+ "by_source": {
+  "union model": 73
+ },
+ "shape_only": []
+}

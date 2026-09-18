@@ -1,0 +1,69 @@
+{
+ "milestone": "M5",
+ "branch": "b448e7eb9798a9cffa3e237028e131c9f16ea023",
+ "base": "1c6b2b2f5655131aa4e3574dc7cc212499c74f32",
+ "head": "b448e7eb9798a9cffa3e237028e131c9f16ea023",
+ "later_members_shown_here": [],
+ "own_members_shown_earlier": [
+  {
+   "file": "src/kodezart/adapters/git/service.py",
+   "symbol": "SubprocessGitService.merge_scratch_head",
+   "shown_at": "M1",
+   "shown_pr": 133,
+   "sym_kind": "method",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/core/protocols.py",
+   "symbol": "import:from kodezart.types.domain.check_chain import CheckChainResult",
+   "shown_at": "M1",
+   "shown_pr": 133,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/domain/accept_gate.py",
+   "symbol": "ungraded",
+   "shown_at": "M4",
+   "shown_pr": 124,
+   "sym_kind": "function",
+   "kind": "modified"
+  },
+  {
+   "file": "src/kodezart/types/domain/branch.py",
+   "symbol": "BranchAssociation.derived_from",
+   "shown_at": "M1",
+   "shown_pr": 133,
+   "sym_kind": "class_attr",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/workflow.py",
+   "symbol": "import:from kodezart.types.domain.delivery import CheckRedClass",
+   "shown_at": "M1",
+   "shown_pr": 133,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "tests/fakes.py",
+   "symbol": "import:from kodezart.domain.git_url import extract_owner_repo",
+   "shown_at": "M1",
+   "shown_pr": 133,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "tests/fakes.py",
+   "symbol": "import:from urllib.parse import quote, urlsplit",
+   "shown_at": "M1",
+   "shown_pr": 133,
+   "sym_kind": "import",
+   "kind": "added"
+  }
+ ],
+ "counts": {
+  "later_members_shown_here": 0,
+  "own_members_shown_earlier": 7
+ }
+}

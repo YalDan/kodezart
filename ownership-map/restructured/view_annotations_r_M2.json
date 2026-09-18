@@ -1,8 +1,8 @@
 {
  "milestone": "M2",
- "branch": "origin/v03/m2-organize",
- "base": "origin/v03/m3-plan-walk",
- "head": "a94e4d7f86b8ad0e8cf3af834b8ac5ab9d05b83e",
+ "branch": "763464589ac7aea1c6aea92f4e2c358df3143ce5",
+ "base": "3757ed9cdd1ecdc958124fb3a680fa76c6b20a4f",
+ "head": "763464589ac7aea1c6aea92f4e2c358df3143ce5",
  "later_members_shown_here": [],
  "own_members_shown_earlier": [
   {
@@ -42,7 +42,7 @@
    "symbol": "import:from kodezart.types.domain.organize import ( MANDATE_PHASE_ROLES, MandateSpec, OrganizeLabelNamespace, ResolvedMandateSpec, phase_marker_source, split_label_key, )",
    "shown_at": "M1",
    "shown_pr": 133,
-   "sym_kind": "symbol",
+   "sym_kind": "import",
    "kind": "added"
   },
   {
@@ -50,7 +50,7 @@
    "symbol": "import:from collections.abc import Mapping",
    "shown_at": "M1",
    "shown_pr": 133,
-   "sym_kind": "symbol",
+   "sym_kind": "import",
    "kind": "added"
   },
   {

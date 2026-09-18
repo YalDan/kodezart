@@ -130,6 +130,7 @@
   ".env.example",
   "docs/api.md",
   "docs/configuration.md",
+  "docs/operation.example.toml",
   "src/kodezart/adapters/linear/tracker.py",
   "src/kodezart/composition/engine.py",
   "src/kodezart/composition/jobs.py",
@@ -160,25 +161,13 @@
  "preserved": [
   [
    "src/kodezart/types/domain/workflow.py",
-   "WorkflowState.ticket",
-   "M3",
-   "M5"
-  ],
-  [
-   "src/kodezart/types/domain/workflow.py",
    "WorkflowState.pr_url",
    "M3",
    "M5"
   ],
   [
    "src/kodezart/types/domain/workflow.py",
-   "WorkflowState.ci_status",
-   "M3",
-   "M5"
-  ],
-  [
-   "src/kodezart/types/domain/workflow.py",
-   "WorkflowState.criteria_artifact",
+   "WorkflowState.pr_number",
    "M3",
    "M5"
   ],
@@ -190,9 +179,22 @@
   ],
   [
    "src/kodezart/types/domain/workflow.py",
-   "WorkflowState.pr_number",
+   "WorkflowState.ci_status",
+   "M3",
+   "M5"
+  ],
+  [
+   "src/kodezart/types/domain/workflow.py",
+   "WorkflowState.ticket",
+   "M3",
+   "M5"
+  ],
+  [
+   "src/kodezart/types/domain/workflow.py",
+   "WorkflowState.criteria_artifact",
    "M3",
    "M5"
   ]
- ]
+ ],
+ "displaced": []
 }

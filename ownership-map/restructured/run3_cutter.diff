@@ -1,0 +1,145 @@
+--- <scratch>/recut/cut_views_r.py.archive17f59c06	2026-09-18 16:44:15
++++ <scratch>/recut/cut_views_r.py	2026-09-18 16:42:13
+@@ -24,7 +24,7 @@
+ import subprocess
+ import sys
+ 
+-S = "<scratch-prev>/"
++S = "<scratch>/recut/"
+ REPO = "/Users/kodezart/Projects/kodezart"
+ import os
+ DONOR = os.environ.get("CUT_DONOR", "eae9a940e9682a09680b4adf49781f3743c12754")
+@@ -50,7 +50,7 @@
+ LIVE = ("added", "modified")
+ 
+ # populated per file/milestone by run(); read by the render helpers
+-CTX = {"path": None, "mile": None, "restricted": [], "preserved": []}
++CTX = {"path": None, "mile": None, "restricted": [], "preserved": [], "displaced": []}
+ 
+ 
+ def blob(sha: str, path: str):
+@@ -202,6 +202,8 @@
+                     add(t.id, node)
+         elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+             add(node.target.id, node)
++        elif isinstance(node, ast.TypeAlias) and isinstance(node.name, ast.Name):
++            add(node.name.id, node)      # PEP 695 `type X = ...`: a module-level assignment
+     return {"lines": lines, "sym": out, "imports": imports, "order": order, "tree": tree}
+ 
+ 
+@@ -588,12 +590,89 @@
+     if not spans:
+         return s["text"].splitlines()
+     return restrict_region(lines, s["start"], s["end"], spans)
++
++
++def _toml_is_header(line):
++    return bool(_HDR.match(line)) and not line.strip().startswith("#")
++
++
++def _toml_key_floor(m):
++    """First line at which a table header may be inserted into `m`.
++
++    TOML puts every headerless top-level key ABOVE the first table header: a
++    header inserted above one of them would swallow it into that table.
++    """
++    floor = 1
++    for k, v in m["sym"].items():
++        if "." in k or k.startswith("table:"):
++            continue
++        body = [l for l in v["text"].splitlines() if l.strip() and not l.strip().startswith("#")]
++        if not body or _toml_is_header(body[0]):
++            continue
++        floor = max(floor, v["end"] + 1)
++    return floor
++
++
++def _toml_bare_key(m, k):
++    """True when `k` is a headerless top-level key of `m` (never a table header)."""
++    v = m["sym"].get(k)
++    if v is None or "." in k or k.startswith("table:"):
++        return False
++    body = [l for l in v["text"].splitlines() if l.strip() and not l.strip().startswith("#")]
++    return bool(body) and not _toml_is_header(body[0])
++
++
++def _toml_displaced(cur, don, take):
++    """Headerless top-level keys of `cur` that a donor TABLE of the same name evicts.
++
++    TOML cannot hold both `x = "..."` and `[x]`, so the milestone that brings the
++    table takes the old scalar with it, whatever milestone the map records the
++    removal at (that later removal then finds nothing and is a no-op).
++    """
++    out = set()
++    for k in take:
++        dv = don["sym"].get(k)
++        if dv is None:
++            continue
++        body = [l for l in dv["text"].splitlines() if l.strip() and not l.strip().startswith("#")]
++        if not body or not _toml_is_header(body[0]):
++            continue
++        name = k[len("table:"):] if k.startswith("table:") else k
++        root = name.split(".")[0]
++        if _toml_bare_key(cur, root):
++            out.add(root)
++    return out
+ 
+ 
++def _toml_moved_key(m, k):
++    """`k` as a headerless top-level key that now sits under a header in `m`.
++
++    A top-level key a milestone removes must be removed by its TEXT even when an
++    inserted table header has re-qualified it (`k` -> `<table>.k`).
++    """
++    if "." in k or k.startswith("table:") or k in m["sym"]:
++        return None
++    for j, v in m["sym"].items():
++        if not j.endswith("." + k):
++            continue
++        body = [l for l in v["text"].splitlines() if l.strip() and not l.strip().startswith("#")]
++        if not body or _toml_is_header(body[0]):
++            continue
++        if body[0].split("=", 1)[0].strip().strip('"').strip("'") == k:
++            return j
++    return None
++
++
+ def struct_render(cur_src, donor_src, take, drop, model, mile, path):
+     cur = model(cur_src)
+     don = model(donor_src)
++    floor = _toml_key_floor(cur) if model is toml_model else 1
+     take = _outermost(take, don)
++    if model is toml_model:
++        drop = {(_toml_moved_key(cur, k) or k) for k in drop}
++        for k in sorted(_toml_displaced(cur, don, take)):
++            drop.add(k)
++            CTX["displaced"].append([path, k, mile])
+     drop = _outermost(drop, cur)
+     edits = []
+     for k in sorted(drop):
+@@ -617,6 +696,8 @@
+                     if nxt in cur["sym"]:
+                         at = cur["sym"][nxt]["start"]
+                         break
++            if floor > 1 and any(_toml_is_header(l) for l in t):
++                at = max(at, floor)      # never above a headerless top-level key
+             edits.append((at, at - 1, t + [""]))
+     return "\n".join(_apply_edits(cur["lines"], edits)).rstrip("\n") + "\n"
+ 
+@@ -648,7 +729,7 @@
+ def run(mile, wt):
+     report = {"whole": [], "deleted": [], "renamed": [], "shared": [],
+               "import_blocks": [], "skipped": [], "created": [], "restricted": [],
+-              "preserved": []}
++              "preserved": [], "displaced": []}
+     spec = SPECS[mile]
+ 
+     for p, e in sorted(MAP.items()):
+@@ -716,6 +797,7 @@
+ 
+     report["restricted"] = CTX["restricted"]
+     report["preserved"] = CTX["preserved"]
++    report["displaced"] = CTX["displaced"]
+     return report
+ 
+ 

@@ -1,8 +1,8 @@
 {
  "milestone": "M1",
- "branch": "origin/v03/m1-scope-ports",
- "base": "origin/v03/restructure",
- "head": "854cbbe1c08f686cc51e640a878eb2221877fdd5",
+ "branch": "f17b6ee51fede33e361c975e46c74bba1618840b",
+ "base": "e1544ed749b994b2863b16b6318c61863fa4aa3e",
+ "head": "f17b6ee51fede33e361c975e46c74bba1618840b",
  "later_members_shown_here": [
   {
    "file": "src/kodezart/adapters/git/service.py",
@@ -21,12 +21,28 @@
    "kind": "added"
   },
   {
+   "file": "src/kodezart/adapters/linear/tracker.py",
+   "symbol": "import:from kodezart.domain.run_alarm_record import ( parse_run_alarm, render_run_alarm, require_alarm_holder, run_alarm_marker, )",
+   "owner": "M4",
+   "owner_pr": 124,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
    "file": "src/kodezart/adapters/mcp/stdio_tool_caller.py",
    "symbol": "StdioMcpToolCaller",
    "owner": "M4",
    "owner_pr": 124,
    "sym_kind": "class",
    "kind": "modified"
+  },
+  {
+   "file": "src/kodezart/composition/engine.py",
+   "symbol": "import:from kodezart.services.lane_state_writer import TrackerLaneStateWriter",
+   "owner": "M4",
+   "owner_pr": 124,
+   "sym_kind": "import",
+   "kind": "added"
   },
   {
    "file": "src/kodezart/composition/engine.py",
@@ -85,6 +101,30 @@
    "kind": "added"
   },
   {
+   "file": "src/kodezart/core/protocols.py",
+   "symbol": "import:from kodezart.types.domain.criteria import ( ExecutionCriterion, TrackerCriterion, TrackerCriterionSet, )",
+   "owner": "M4",
+   "owner_pr": 124,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/core/protocols.py",
+   "symbol": "import:from kodezart.types.domain.criterion_lifecycle import CriterionCrossOff",
+   "owner": "M4",
+   "owner_pr": 124,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/core/protocols.py",
+   "symbol": "import:from kodezart.types.domain.run_state import LaneBinding, LaneRunState",
+   "owner": "M4",
+   "owner_pr": 124,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
    "file": "src/kodezart/core/retry.py",
    "symbol": "RetryFloor",
    "owner": "M3",
@@ -121,6 +161,14 @@
    "symbol": "import:from collections.abc import Sequence",
    "owner": "M2",
    "owner_pr": 126,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/services/agent_service.py",
+   "symbol": "import:from kodezart.core.protocols import ( AfterPublish, AgentExecutor, ChangePersister, NativeWriteGuard, WorkspaceProvider, )",
+   "owner": "M4",
+   "owner_pr": 124,
    "sym_kind": "import",
    "kind": "added"
   },
@@ -409,7 +457,7 @@
    "symbol": "import:from kodezart.types.domain.organize import ( MANDATE_PHASE_ROLES, MandateSpec, OrganizeLabelNamespace, ResolvedMandateSpec, phase_marker_source, split_label_key, )",
    "owner": "M2",
    "owner_pr": 126,
-   "sym_kind": "symbol",
+   "sym_kind": "import",
    "kind": "added"
   },
   {
@@ -425,7 +473,7 @@
    "symbol": "import:from collections.abc import Mapping",
    "owner": "M2",
    "owner_pr": 126,
-   "sym_kind": "symbol",
+   "sym_kind": "import",
    "kind": "added"
   },
   {
@@ -622,9 +670,25 @@
   },
   {
    "file": "tests/fakes.py",
+   "symbol": "import:from kodezart.core.protocols import ( AfterPublish, AgentExecutor, McpToolResult, NativeWriteGuard, PromptSetProvider, WorkflowEngine, )",
+   "owner": "M4",
+   "owner_pr": 124,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "tests/fakes.py",
    "symbol": "import:from kodezart.domain.git_url import extract_owner_repo",
    "owner": "M5",
    "owner_pr": 127,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "tests/fakes.py",
+   "symbol": "import:from kodezart.domain.run_alarm_record import ( parse_run_alarm, render_run_alarm, require_alarm_holder, run_alarm_marker, )",
+   "owner": "M4",
+   "owner_pr": 124,
    "sym_kind": "import",
    "kind": "added"
   },
@@ -695,7 +759,7 @@
  ],
  "own_members_shown_earlier": [],
  "counts": {
-  "later_members_shown_here": 86,
+  "later_members_shown_here": 94,
   "own_members_shown_earlier": 0
  }
 }

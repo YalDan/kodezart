@@ -1,0 +1,387 @@
+{
+ "unmapped": [],
+ "whole_missing": [],
+ "split_missing": [
+  [
+   "CHANGELOG.md",
+   "H2:[Unreleased]",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "README.md",
+   "H2:Documentation",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "README.md",
+   "H2:Configuration",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "README.md",
+   "H3:Setting up the self-running service",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "README.md",
+   "H2:Development",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "README.md",
+   "H2:For AI Agents",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "README.md",
+   "H3:Contributing back to kodezart",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "docs/api.md",
+   "H2:Base URL",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "docs/api.md",
+   "H3:Example",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "docs/api.md",
+   "H2:POST /api/v1/agent/workflow",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "docs/api.md",
+   "H2:POST /api/v1/agent/fire",
+   "owner M4: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "docs/api.md",
+   "H2:GET /api/v1/jobs/{jobId}",
+   "owner M4: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "docs/api.md",
+   "H2:GET /api/v1/jobs/{jobId}/stream",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "docs/api.md",
+   "H2:SSE Event Types",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "docs/api.md",
+   "H3:Error Events (1)",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "docs/architecture.md",
+   "H2:Overview",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "docs/architecture.md",
+   "H2:Protocol Map",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "docs/architecture.md",
+   "H2:Workflow Pipeline",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "docs/architecture.md",
+   "H2:Claude Agent SDK Integration",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "docs/architecture.md",
+   "H3:Structured Output",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "docs/architecture.md",
+   "H2:LangGraph Configurable Pattern",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "docs/architecture.md",
+   "H2:Run-shape observations",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "docs/architecture.md",
+   "H2:Standing over-claim observations",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "docs/architecture.md",
+   "H2:Scoped execution boundary",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "docs/architecture.md",
+   "H3:Owned resource operations",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "docs/configuration.md",
+   "H2:Overview",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "docs/configuration.md",
+   "H2:Settings Reference",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "docs/configuration.md",
+   "H2:The knowledge-server grant",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "docs/configuration.md",
+   "H2:The knowledge transport, and the shapes it can express",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "docs/configuration.md",
+   "H3:Recipe: the knowledge layer with a Notion integration token",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "docs/configuration.md",
+   "H2:Private knowledge base \u2014 the knowledge credential",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "docs/configuration.md",
+   "H2:Queue retention \u2014 two independent windows",
+   "owner M3: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "docs/configuration.md",
+   "H2:.env.example",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "docs/configuration.md",
+   "H2:Logging Modes",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "docs/configuration.md",
+   "H3:Colorized Console (Development)",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "docs/configuration.md",
+   "H2:Checkpointing",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "docs/configuration.md",
+   "H3:Scoped workflow requests",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "docs/configuration.md",
+   "H2:Tracker write verification",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "docs/configuration.md",
+   "H2:Native Audit scheduling",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "docs/cutover_mapping.md",
+   "H2:Routine behavior \u2192 kodezart component",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "docs/cutover_mapping.md",
+   "H2:Placeholder \u2192 OperationConfig field",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "docs/cutover_mapping.md",
+   "H2:What this lane does not claim",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "docs/migration-v0.2-to-v0.3.md",
+   "H2:Who this is for",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "docs/migration-v0.2-to-v0.3.md",
+   "H2:In one paragraph",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "docs/migration-v0.2-to-v0.3.md",
+   "H2:1. The naming rule",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "docs/migration-v0.2-to-v0.3.md",
+   "H2:2. Empty is not unset",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "docs/migration-v0.2-to-v0.3.md",
+   "H2:3. Renames",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "docs/migration-v0.2-to-v0.3.md",
+   "H3:Queue",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "docs/migration-v0.2-to-v0.3.md",
+   "H2:4. Settings that stay flat",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "docs/migration-v0.2-to-v0.3.md",
+   "H2:5. Removed with no replacement",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "docs/migration-v0.2-to-v0.3.md",
+   "H2:6. Checking the result",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "docs/operation.example.toml",
+   "table:private_surface",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "docs/operation.example.toml",
+   "table:private_surface.workspaces",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "docs/operation.example.toml",
+   "table:marker_prefixes",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "docs/operation.example.toml",
+   "repos",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "docs/operation.example.toml",
+   "repos.checks",
+   "owner None: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "docs/operation.example.toml",
+   "table:documents",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "docs/operation.example.toml",
+   "table:documents.house_rules",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "docs/operation.example.toml",
+   "table:records",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "docs/operation.example.toml",
+   "table:records.grooming",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "docs/operation.example.toml",
+   "table:endpoints",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "docs/operation.example.toml",
+   "table:run_event_states",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "docs/operation.example.toml",
+   "agent_identities",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "docs/parity_checklist.md",
+   "H2:How the rows were derived",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "docs/parity_checklist.md",
+   "H2:The checklist",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "src/kodezart/adapters/linear/tracker.py",
+   "LinearMcpTracker",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "src/kodezart/config/app.py",
+   "AppConfig",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "src/kodezart/core/protocols.py",
+   "TrackerPort",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "src/kodezart/core/protocols.py",
+   "NativeWriteGuard",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "src/kodezart/types/domain/audit.py",
+   "AuditClaimJudgment",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "src/kodezart/types/domain/dispatch.py",
+   "DispatchReport",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "src/kodezart/types/domain/operation.py",
+   "OperationConfig",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "tests/fakes.py",
+   "FakeAgentRunner",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "tests/fakes.py",
+   "FakeCIMonitor",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "tests/fakes.py",
+   "FakeTrackerPort",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ],
+  [
+   "tests/fakes.py",
+   "FakeJobQueue",
+   "owner M1: union text of this symbol in no view on the owner's path"
+  ]
+ ],
+ "covered": 4222
+}

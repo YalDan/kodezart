@@ -320,6 +320,26 @@
  "restricted": [
   [
    "docs/operation.example.toml",
+   "marker_prefixes.amendment",
+   "M1"
+  ],
+  [
+   "docs/operation.example.toml",
+   "marker_prefixes.audit",
+   "M1"
+  ],
+  [
+   "docs/operation.example.toml",
+   "marker_prefixes.run_alarm",
+   "M1"
+  ],
+  [
+   "docs/operation.example.toml",
+   "marker_prefixes.run_event",
+   "M1"
+  ],
+  [
+   "docs/operation.example.toml",
    "marker_prefixes.run_outcome",
    "M1"
   ],
@@ -838,97 +858,7 @@
   ],
   [
    "src/kodezart/config/app.py",
-   "AppConfig.deny_pattern_verdicts",
-   "M1",
-   "M5"
-  ],
-  [
-   "src/kodezart/config/app.py",
    "AppConfig.knowledge_mcp_auth_header",
-   "M1",
-   "M4"
-  ],
-  [
-   "src/kodezart/config/app.py",
-   "AppConfig.skills_mode",
-   "M1",
-   "M3"
-  ],
-  [
-   "src/kodezart/config/app.py",
-   "AppConfig.knowledge_mcp_transport",
-   "M1",
-   "M4"
-  ],
-  [
-   "src/kodezart/config/app.py",
-   "AppConfig.knowledge_mcp_token",
-   "M1",
-   "M3"
-  ],
-  [
-   "src/kodezart/config/app.py",
-   "AppConfig.knowledge_grant",
-   "M1",
-   "M3"
-  ],
-  [
-   "src/kodezart/config/app.py",
-   "AppConfig.tracker_mcp_server_name",
-   "M1",
-   "M4"
-  ],
-  [
-   "src/kodezart/config/app.py",
-   "AppConfig.knowledge_mcp_call_timeout_seconds",
-   "M1",
-   "M4"
-  ],
-  [
-   "src/kodezart/config/app.py",
-   "AppConfig.skills_allowlist",
-   "M1",
-   "M3"
-  ],
-  [
-   "src/kodezart/config/app.py",
-   "AppConfig.tracker_token",
-   "M1",
-   "M4"
-  ],
-  [
-   "src/kodezart/config/app.py",
-   "AppConfig.integration_workspace_dir",
-   "M1",
-   "M3"
-  ],
-  [
-   "src/kodezart/config/app.py",
-   "AppConfig.skills_selection",
-   "M1",
-   "M3"
-  ],
-  [
-   "src/kodezart/config/app.py",
-   "AppConfig.knowledge_mcp_env",
-   "M1",
-   "M4"
-  ],
-  [
-   "src/kodezart/config/app.py",
-   "AppConfig.knowledge_mcp_stderr_tail_limit",
-   "M1",
-   "M4"
-  ],
-  [
-   "src/kodezart/config/app.py",
-   "AppConfig.queue_max_depth_per_lane",
-   "M1",
-   "M7"
-  ],
-  [
-   "src/kodezart/config/app.py",
-   "AppConfig.knowledge_mcp_command",
    "M1",
    "M4"
   ],
@@ -940,19 +870,145 @@
   ],
   [
    "src/kodezart/config/app.py",
+   "AppConfig.knowledge_mcp_stderr_tail_limit",
+   "M1",
+   "M4"
+  ],
+  [
+   "src/kodezart/config/app.py",
+   "AppConfig.knowledge_mcp_token",
+   "M1",
+   "M3"
+  ],
+  [
+   "src/kodezart/config/app.py",
+   "AppConfig.knowledge_mcp_command",
+   "M1",
+   "M4"
+  ],
+  [
+   "src/kodezart/config/app.py",
+   "AppConfig.queue_max_depth_per_lane",
+   "M1",
+   "M7"
+  ],
+  [
+   "src/kodezart/config/app.py",
+   "AppConfig.git_base_url",
+   "M1",
+   "M7"
+  ],
+  [
+   "src/kodezart/config/app.py",
+   "AppConfig.integration_workspace_dir",
+   "M1",
+   "M3"
+  ],
+  [
+   "src/kodezart/config/app.py",
+   "AppConfig.queue_event_buffer_retention_seconds",
+   "M1",
+   "M7"
+  ],
+  [
+   "src/kodezart/config/app.py",
+   "AppConfig.knowledge_mcp_server_name",
+   "M1",
+   "M4"
+  ],
+  [
+   "src/kodezart/config/app.py",
+   "AppConfig.knowledge_mcp_sse_read_timeout_seconds",
+   "M1",
+   "M3"
+  ],
+  [
+   "src/kodezart/config/app.py",
+   "AppConfig.skills_allowlist",
+   "M1",
+   "M3"
+  ],
+  [
+   "src/kodezart/config/app.py",
+   "AppConfig.knowledge_mcp_env",
+   "M1",
+   "M4"
+  ],
+  [
+   "src/kodezart/config/app.py",
+   "AppConfig.knowledge_mcp_credential_env",
+   "M1",
+   "M4"
+  ],
+  [
+   "src/kodezart/config/app.py",
+   "AppConfig.knowledge_mcp_error_detail_limit",
+   "M1",
+   "M4"
+  ],
+  [
+   "src/kodezart/config/app.py",
+   "AppConfig.model",
+   "M1",
+   "M7"
+  ],
+  [
+   "src/kodezart/config/app.py",
+   "AppConfig.tracker_mcp_server_name",
+   "M1",
+   "M4"
+  ],
+  [
+   "src/kodezart/config/app.py",
+   "AppConfig.knowledge_mcp_transport",
+   "M1",
+   "M4"
+  ],
+  [
+   "src/kodezart/config/app.py",
    "AppConfig.knowledge_mcp_server_url",
    "M1",
    "M3"
   ],
   [
    "src/kodezart/config/app.py",
-   "AppConfig.knowledge_session_grants",
+   "AppConfig.log_level",
+   "M1",
+   "M7"
+  ],
+  [
+   "src/kodezart/config/app.py",
+   "AppConfig.knowledge_mcp_call_timeout_seconds",
+   "M1",
+   "M4"
+  ],
+  [
+   "src/kodezart/config/app.py",
+   "AppConfig.fallback_model",
    "M1",
    "M3"
   ],
   [
    "src/kodezart/config/app.py",
-   "AppConfig.fallback_model",
+   "AppConfig.deny_pattern_verdicts",
+   "M1",
+   "M5"
+  ],
+  [
+   "src/kodezart/config/app.py",
+   "AppConfig.queue_event_buffer_capacity",
+   "M1",
+   "M7"
+  ],
+  [
+   "src/kodezart/config/app.py",
+   "AppConfig.queue_max_concurrent_runs_per_lane",
+   "M1",
+   "M7"
+  ],
+  [
+   "src/kodezart/config/app.py",
+   "AppConfig.setting_sources",
    "M1",
    "M3"
   ],
@@ -964,87 +1020,9 @@
   ],
   [
    "src/kodezart/config/app.py",
-   "AppConfig.knowledge_mcp_credential_env",
-   "M1",
-   "M4"
-  ],
-  [
-   "src/kodezart/config/app.py",
-   "AppConfig.knowledge_mcp_args",
-   "M1",
-   "M4"
-  ],
-  [
-   "src/kodezart/config/app.py",
-   "AppConfig.queue_terminal_retention_seconds",
-   "M1",
-   "M7"
-  ],
-  [
-   "src/kodezart/config/app.py",
-   "AppConfig.deny_patterns",
-   "M1",
-   "M5"
-  ],
-  [
-   "src/kodezart/config/app.py",
-   "AppConfig.knowledge_mcp_error_detail_limit",
-   "M1",
-   "M4"
-  ],
-  [
-   "src/kodezart/config/app.py",
    "AppConfig.session_models",
    "M1",
    "M3"
-  ],
-  [
-   "src/kodezart/config/app.py",
-   "AppConfig.knowledge_mcp_timeout_seconds",
-   "M1",
-   "M4"
-  ],
-  [
-   "src/kodezart/config/app.py",
-   "AppConfig.setting_sources",
-   "M1",
-   "M3"
-  ],
-  [
-   "src/kodezart/config/app.py",
-   "AppConfig.queue_max_concurrent_runs_per_lane",
-   "M1",
-   "M7"
-  ],
-  [
-   "src/kodezart/config/app.py",
-   "AppConfig.queue_event_buffer_retention_seconds",
-   "M1",
-   "M7"
-  ],
-  [
-   "src/kodezart/config/app.py",
-   "AppConfig.queue_event_buffer_capacity",
-   "M1",
-   "M7"
-  ],
-  [
-   "src/kodezart/config/app.py",
-   "AppConfig.knowledge_mcp_sse_read_timeout_seconds",
-   "M1",
-   "M3"
-  ],
-  [
-   "src/kodezart/config/app.py",
-   "AppConfig.knowledge_mcp_server_name",
-   "M1",
-   "M4"
-  ],
-  [
-   "src/kodezart/config/app.py",
-   "AppConfig.knowledge_mcp_gateway_token",
-   "M1",
-   "M4"
   ],
   [
    "src/kodezart/config/app.py",
@@ -1054,15 +1032,69 @@
   ],
   [
    "src/kodezart/config/app.py",
-   "AppConfig.log_level",
+   "AppConfig.tracker_token",
+   "M1",
+   "M4"
+  ],
+  [
+   "src/kodezart/config/app.py",
+   "AppConfig.knowledge_grant",
+   "M1",
+   "M3"
+  ],
+  [
+   "src/kodezart/config/app.py",
+   "AppConfig.git_remote",
    "M1",
    "M7"
   ],
   [
-   "src/kodezart/core/protocols.py",
-   "TrackerPort.list_issue_assets",
+   "src/kodezart/config/app.py",
+   "AppConfig.knowledge_mcp_args",
+   "M1",
+   "M4"
+  ],
+  [
+   "src/kodezart/config/app.py",
+   "AppConfig.knowledge_mcp_timeout_seconds",
+   "M1",
+   "M4"
+  ],
+  [
+   "src/kodezart/config/app.py",
+   "AppConfig.skills_selection",
+   "M1",
+   "M3"
+  ],
+  [
+   "src/kodezart/config/app.py",
+   "AppConfig.deny_patterns",
+   "M1",
+   "M5"
+  ],
+  [
+   "src/kodezart/config/app.py",
+   "AppConfig.queue_terminal_retention_seconds",
    "M1",
    "M7"
+  ],
+  [
+   "src/kodezart/config/app.py",
+   "AppConfig.skills_mode",
+   "M1",
+   "M3"
+  ],
+  [
+   "src/kodezart/config/app.py",
+   "AppConfig.knowledge_mcp_gateway_token",
+   "M1",
+   "M4"
+  ],
+  [
+   "src/kodezart/config/app.py",
+   "AppConfig.knowledge_session_grants",
+   "M1",
+   "M3"
   ],
   [
    "src/kodezart/core/protocols.py",
@@ -1077,10 +1109,10 @@
    "M7"
   ],
   [
-   "src/kodezart/types/domain/agent.py",
-   "WorkflowCompleteEvent.pr_number",
+   "src/kodezart/core/protocols.py",
+   "TrackerPort.list_issue_assets",
    "M1",
-   "M5"
+   "M7"
   ],
   [
    "src/kodezart/types/domain/agent.py",
@@ -1095,6 +1127,12 @@
    "M5"
   ],
   [
+   "src/kodezart/types/domain/agent.py",
+   "WorkflowCompleteEvent.pr_number",
+   "M1",
+   "M5"
+  ],
+  [
    "src/kodezart/types/domain/operation.py",
    "OperationConfig.initiatives",
    "M1",
@@ -1105,6 +1143,13 @@
    "RemediationRequest.original_ticket",
    "M1",
    "M3"
+  ]
+ ],
+ "displaced": [
+  [
+   "docs/operation.example.toml",
+   "private_surface",
+   "M1"
   ]
  ]
 }

@@ -1,8 +1,8 @@
 {
  "milestone": "M6",
- "branch": "origin/v03/m6-audit",
- "base": "origin/v03/m5-deliver-terminate",
- "head": "302c4cf61621172c91d176007c22f0c869642cf1",
+ "branch": "1a9c8998d142619ee198cebf456fd1200f7aa87d",
+ "base": "a6a2a2c591bd8ba0e91f12f2de4b33be953993b4",
+ "head": "1a9c8998d142619ee198cebf456fd1200f7aa87d",
  "later_members_shown_here": [],
  "own_members_shown_earlier": [
   {

@@ -94,7 +94,6 @@
  "deleted": [],
  "renamed": [],
  "shared": [
-  "docs/operation.example.toml",
   "src/kodezart/core/protocols.py",
   "src/kodezart/domain/errors.py",
   "src/kodezart/types/domain/agent.py",
@@ -109,5 +108,6 @@
  "skipped": [],
  "created": [],
  "restricted": [],
- "preserved": []
+ "preserved": [],
+ "displaced": []
 }

@@ -2493,8 +2493,8 @@
    },
    "consumers_raw_count": 24,
    "kind": "removed",
-   "note": "consumers via body-tokens=['Events', 'Fields', 'create_only', 'ignored_by_target', 'not_reviewed', 'ship_with_flags', 'workflow_artifacts', 'workflow_ci', 'workflow_complete', 'workflow_consolidation', 'workflow_criteria', 'workflow_criteria_validation', 'workflow_iteration', 'workflow_pr', 'workflow_remediation', 'workflow_review', 'workflow_scope_base', 'workflow_ticket', 'workflow_ticket_draft', 'workflow_ticket_review', 'workflow_visibility']; 3 consumer(s) not in file map, ignored; consumers on divergent branches -> hygiene removal in the last cut",
-   "owner": "M7-final",
+   "note": "consumers via body-tokens=['Events', 'Fields', 'create_only', 'ignored_by_target', 'not_reviewed', 'ship_with_flags', 'workflow_artifacts', 'workflow_ci', 'workflow_complete', 'workflow_consolidation', 'workflow_criteria', 'workflow_criteria_validation', 'workflow_iteration', 'workflow_pr', 'workflow_remediation', 'workflow_review', 'workflow_scope_base', 'workflow_ticket', 'workflow_ticket_draft', 'workflow_ticket_review', 'workflow_visibility']; 3 consumer(s) not in file map, ignored; consumers on divergent branches -> hygiene removal in the last cut; owner relabelled M7-final -> M7 (M7-final is no view); owner M7 -> M1 (run 4): M1 owns H2:SSE Event Types, which renames the heading to (18)",
+   "owner": "M1",
    "owner_grep_only": "M1",
    "sym_kind": "md_h3"
   },
@@ -5023,8 +5023,8 @@
    },
    "consumers_raw_count": 6,
    "kind": "added",
-   "note": "consumers via name=['audit_scopes']",
-   "owner": "M1",
+   "note": "consumers via name=['audit_scopes']; owner M1 -> M4 (run 4): key follows OperationConfig.audit_scopes, added at M4",
+   "owner": "M4",
    "owner_grep_only": "M1",
    "sym_kind": "toml_key"
   },
@@ -5148,8 +5148,8 @@
    },
    "consumers_raw_count": 18,
    "kind": "removed",
-   "note": "consumers via name=['initiatives']; 1 consumer(s) not in file map, ignored; removal at deepest consumer (single chain)",
-   "owner": "M2",
+   "note": "consumers via name=['initiatives']; 1 consumer(s) not in file map, ignored; removal at deepest consumer (single chain); owner M2 -> M3 (run 4): removal follows OperationConfig.initiatives, removed at M3",
+   "owner": "M3",
    "owner_grep_only": "M1",
    "removal_exception": true,
    "sym_kind": "toml_key"
@@ -6911,8 +6911,8 @@
    },
    "consumers_raw_count": 10,
    "kind": "removed",
-   "note": "consumers via name=['private_surface']; 1 consumer(s) not in file map, ignored; removal at deepest consumer (single chain)",
-   "owner": "M6",
+   "note": "consumers via name=['private_surface']; 1 consumer(s) not in file map, ignored; removal at deepest consumer (single chain); owner M6 -> M1 (run 4): TOML evicts the scalar where [private_surface] arrives, at M1",
+   "owner": "M1",
    "owner_grep_only": "M1",
    "removal_exception": true,
    "sym_kind": "toml_key"
@@ -8093,6 +8093,34 @@
    "kind": "unchanged",
    "note": "unchanged between main and donor; stays as main has it",
    "owner": "M1",
+   "sym_kind": "toml_key"
+  },
+  "marker_prefixes.run_event": {
+   "consumers": {},
+   "kind": "added",
+   "note": "introduced 9e7b420a..b94a63ab",
+   "owner": "M4",
+   "sym_kind": "toml_key"
+  },
+  "marker_prefixes.run_alarm": {
+   "consumers": {},
+   "kind": "added",
+   "note": "introduced 9e7b420a..b94a63ab",
+   "owner": "M4",
+   "sym_kind": "toml_key"
+  },
+  "marker_prefixes.amendment": {
+   "consumers": {},
+   "kind": "added",
+   "note": "introduced 9e7b420a..b94a63ab",
+   "owner": "M4",
+   "sym_kind": "toml_key"
+  },
+  "marker_prefixes.audit": {
+   "consumers": {},
+   "kind": "added",
+   "note": "introduced 9e7b420a..b94a63ab",
+   "owner": "M4",
    "sym_kind": "toml_key"
   }
  },
@@ -14785,56 +14813,63 @@
    "kind": "added",
    "note": "added by M1 gap work 2026-09-14 (KOD-390/KOD-384)",
    "owner": "M1",
-   "sym_kind": "symbol"
+   "sym_kind": "import"
   },
   "import:from kodezart.domain.surface_lease import ( live_conflict, one_ownership, renewed_deadline, renews, retracts, surface_address, )": {
    "consumers": {},
    "kind": "added",
    "note": "added by M1 gap work 2026-09-14 (KOD-390/KOD-384)",
    "owner": "M1",
-   "sym_kind": "symbol"
+   "sym_kind": "import"
   },
   "import:from kodezart.types.domain.surface import ( DescriptionWriteAuthority, SurfaceAuthorship, SurfaceKind, SurfaceLease, WritableSurface, WriteRevalidation, require_body_authorship_surface, )": {
    "consumers": {},
    "kind": "added",
    "note": "added by M1 gap work 2026-09-14 (KOD-390/KOD-384)",
    "owner": "M1",
-   "sym_kind": "symbol"
+   "sym_kind": "import"
   },
   "LinearMcpTracker._read_planning_wire": {
    "consumers": {},
    "kind": "added",
    "note": "added by M1 gap work 2026-09-14 (KOD-390/KOD-384)",
    "owner": "M1",
-   "sym_kind": "symbol"
+   "sym_kind": "method"
   },
   "LinearMcpTracker.read_surface_authorship": {
    "consumers": {},
    "kind": "added",
    "note": "added by M1 gap work 2026-09-14 (KOD-390/KOD-384)",
    "owner": "M1",
-   "sym_kind": "symbol"
+   "sym_kind": "method"
   },
   "LinearMcpTracker._body_authorship": {
    "consumers": {},
    "kind": "added",
    "note": "added by M1 gap work 2026-09-14 (KOD-390/KOD-384)",
    "owner": "M1",
-   "sym_kind": "symbol"
+   "sym_kind": "method"
   },
   "LinearMcpTracker._require_machine_authored": {
    "consumers": {},
    "kind": "added",
    "note": "added by M1 gap work 2026-09-14 (KOD-390/KOD-384)",
    "owner": "M1",
-   "sym_kind": "symbol"
+   "sym_kind": "method"
   },
   "LinearMcpTracker._renewal_retractions": {
    "consumers": {},
    "kind": "added",
    "note": "added by M1 gap work 2026-09-14 (KOD-390/KOD-384)",
    "owner": "M1",
-   "sym_kind": "symbol"
+   "sym_kind": "method"
+  },
+  "import:from kodezart.domain.run_alarm_record import ( parse_run_alarm, render_run_alarm, require_alarm_holder, run_alarm_marker, )": {
+   "consumers": {},
+   "kind": "added",
+   "note": "introduced 9e7b420a..b94a63ab",
+   "owner": "M4",
+   "sym_kind": "import"
   }
  },
  "src/kodezart/adapters/linear/record_sink.py": {
@@ -19016,6 +19051,13 @@
    "note": "unchanged between main and donor; stays as main has it",
    "owner": "M1",
    "sym_kind": "function"
+  },
+  "import:from kodezart.services.lane_state_writer import TrackerLaneStateWriter": {
+   "consumers": {},
+   "kind": "added",
+   "note": "introduced 9e7b420a..b94a63ab",
+   "owner": "M4",
+   "sym_kind": "import"
   }
  },
  "src/kodezart/composition/gating.py": {
@@ -21556,8 +21598,8 @@
    },
    "consumers_raw_count": 14,
    "kind": "removed",
-   "note": "consumers via name=['git_base_url']; consumers on divergent branches -> hygiene removal in the last cut",
-   "owner": "M7-final",
+   "note": "consumers via name=['git_base_url']; consumers on divergent branches -> hygiene removal in the last cut; owner relabelled M7-final -> M7 (M7-final is no view)",
+   "owner": "M7",
    "owner_grep_only": "M1",
    "sym_kind": "class_attr"
   },
@@ -21598,8 +21640,8 @@
    },
    "consumers_raw_count": 10,
    "kind": "removed",
-   "note": "consumers via name=['git_remote']; consumers on divergent branches -> hygiene removal in the last cut",
-   "owner": "M7-final",
+   "note": "consumers via name=['git_remote']; consumers on divergent branches -> hygiene removal in the last cut; owner relabelled M7-final -> M7 (M7-final is no view)",
+   "owner": "M7",
    "owner_grep_only": "M1",
    "sym_kind": "class_attr"
   },
@@ -22077,8 +22119,8 @@
    },
    "consumers_raw_count": 33,
    "kind": "removed",
-   "note": "consumers via name=['model']; 4 raw grep hit(s) dropped as not import-visible; consumers on divergent branches -> hygiene removal in the last cut",
-   "owner": "M7-final",
+   "note": "consumers via name=['model']; 4 raw grep hit(s) dropped as not import-visible; consumers on divergent branches -> hygiene removal in the last cut; owner relabelled M7-final -> M7 (M7-final is no view)",
+   "owner": "M7",
    "owner_grep_only": "M1",
    "sym_kind": "class_attr"
   },
@@ -27199,14 +27241,119 @@
    "kind": "added",
    "note": "added by M1 gap work 2026-09-14 (KOD-390/KOD-384)",
    "owner": "M1",
-   "sym_kind": "symbol"
+   "sym_kind": "import"
   },
   "TrackerPort.read_surface_authorship": {
    "consumers": {},
    "kind": "added",
    "note": "added by M1 gap work 2026-09-14 (KOD-390/KOD-384)",
    "owner": "M1",
-   "sym_kind": "symbol"
+   "sym_kind": "method"
+  },
+  "import:from kodezart.types.domain.criteria import ( ExecutionCriterion, TrackerCriterion, TrackerCriterionSet, )": {
+   "consumers": {},
+   "kind": "added",
+   "note": "introduced 9e7b420a..b94a63ab",
+   "owner": "M4",
+   "sym_kind": "import"
+  },
+  "import:from kodezart.types.domain.criterion_lifecycle import CriterionCrossOff": {
+   "consumers": {},
+   "kind": "added",
+   "note": "introduced 9e7b420a..b94a63ab",
+   "owner": "M4",
+   "sym_kind": "import"
+  },
+  "import:from kodezart.types.domain.run_state import LaneBinding, LaneRunState": {
+   "consumers": {},
+   "kind": "added",
+   "note": "introduced 9e7b420a..b94a63ab",
+   "owner": "M4",
+   "sym_kind": "import"
+  },
+  "AfterPublish": {
+   "consumers": {},
+   "kind": "added",
+   "note": "introduced 9e7b420a..b94a63ab",
+   "owner": "M4",
+   "sym_kind": "assignment"
+  },
+  "LaneStateTracker": {
+   "consumers": {},
+   "kind": "added",
+   "note": "introduced 9e7b420a..b94a63ab",
+   "owner": "M4",
+   "sym_kind": "class"
+  },
+  "LaneStateTracker.upsert_comment": {
+   "consumers": {},
+   "kind": "added",
+   "note": "introduced 9e7b420a..b94a63ab",
+   "owner": "M4",
+   "sym_kind": "method"
+  },
+  "LaneStateTracker.post_run_event": {
+   "consumers": {},
+   "kind": "added",
+   "note": "introduced 9e7b420a..b94a63ab",
+   "owner": "M4",
+   "sym_kind": "method"
+  },
+  "LaneStateTracker.read_issue": {
+   "consumers": {},
+   "kind": "added",
+   "note": "introduced 9e7b420a..b94a63ab",
+   "owner": "M4",
+   "sym_kind": "method"
+  },
+  "LaneStateTracker.edit_description": {
+   "consumers": {},
+   "kind": "added",
+   "note": "introduced 9e7b420a..b94a63ab",
+   "owner": "M4",
+   "sym_kind": "method"
+  },
+  "LaneStateTracker.set_workflow_state": {
+   "consumers": {},
+   "kind": "added",
+   "note": "introduced 9e7b420a..b94a63ab",
+   "owner": "M4",
+   "sym_kind": "method"
+  },
+  "LaneStateTracker.reset_criterion_pending": {
+   "consumers": {},
+   "kind": "added",
+   "note": "introduced 9e7b420a..b94a63ab",
+   "owner": "M4",
+   "sym_kind": "method"
+  },
+  "LaneStateWriter": {
+   "consumers": {},
+   "kind": "added",
+   "note": "introduced 9e7b420a..b94a63ab",
+   "owner": "M4",
+   "sym_kind": "class"
+  },
+  "LaneStateWriter.require_writable": {
+   "consumers": {},
+   "kind": "added",
+   "note": "introduced 9e7b420a..b94a63ab",
+   "owner": "M4",
+   "sym_kind": "method"
+  },
+  "LaneStateWriter.record_commit": {
+   "consumers": {},
+   "kind": "added",
+   "note": "introduced 9e7b420a..b94a63ab",
+   "owner": "M4",
+   "sym_kind": "method"
+  },
+  "LaneStateWriter.write_cross_offs": {
+   "consumers": {},
+   "kind": "added",
+   "note": "introduced 9e7b420a..b94a63ab",
+   "owner": "M4",
+   "sym_kind": "method"
   }
  },
  "src/kodezart/core/retry.py": {
@@ -29779,28 +29926,42 @@
    "kind": "added",
    "note": "added by M1 gap work 2026-09-14 (KOD-390/KOD-384)",
    "owner": "M1",
-   "sym_kind": "symbol"
+   "sym_kind": "class"
   },
   "PrincipalAuthoredSurfaceError.__init__": {
    "consumers": {},
    "kind": "added",
    "note": "added by M1 gap work 2026-09-14 (KOD-390/KOD-384)",
    "owner": "M1",
-   "sym_kind": "symbol"
+   "sym_kind": "method"
   },
   "ApprovalLabelWriteError": {
    "consumers": {},
    "kind": "added",
    "note": "added by M1 gap work 2026-09-14 (KOD-390/KOD-384)",
    "owner": "M1",
-   "sym_kind": "symbol"
+   "sym_kind": "class"
   },
   "ApprovalLabelWriteError.__init__": {
    "consumers": {},
    "kind": "added",
    "note": "added by M1 gap work 2026-09-14 (KOD-390/KOD-384)",
    "owner": "M1",
-   "sym_kind": "symbol"
+   "sym_kind": "method"
+  },
+  "LaneRecordWriteError": {
+   "consumers": {},
+   "kind": "added",
+   "note": "introduced 9e7b420a..b94a63ab",
+   "owner": "M4",
+   "sym_kind": "class"
+  },
+  "LaneRecordWriteError.__init__": {
+   "consumers": {},
+   "kind": "added",
+   "note": "introduced 9e7b420a..b94a63ab",
+   "owner": "M4",
+   "sym_kind": "method"
   }
  },
  "src/kodezart/domain/fire_spec.py": {
@@ -30004,6 +30165,34 @@
    "owner": "M1",
    "owner_grep_only": "M1",
    "sym_kind": "function"
+  },
+  "_criterion_rows": {
+   "consumers": {},
+   "kind": "added",
+   "note": "introduced 9e7b420a..b94a63ab",
+   "owner": "M4",
+   "sym_kind": "function"
+  },
+  "_duplicated": {
+   "consumers": {},
+   "kind": "added",
+   "note": "introduced 9e7b420a..b94a63ab",
+   "owner": "M4",
+   "sym_kind": "function"
+  },
+  "duplicated_row_labels": {
+   "consumers": {},
+   "kind": "added",
+   "note": "introduced 9e7b420a..b94a63ab",
+   "owner": "M4",
+   "sym_kind": "function"
+  },
+  "criterion_ref": {
+   "consumers": {},
+   "kind": "added",
+   "note": "introduced 9e7b420a..b94a63ab",
+   "owner": "M4",
+   "sym_kind": "function"
   }
  },
  "src/kodezart/domain/git_url.py": {
@@ -30179,7 +30368,7 @@
    "kind": "added",
    "note": "introduced f575b2e8..9e7b420a",
    "owner": "M2",
-   "sym_kind": "symbol"
+   "sym_kind": "function"
   }
  },
  "src/kodezart/domain/outcome.py": {
@@ -32572,6 +32761,13 @@
    "kind": "unchanged",
    "note": "unchanged between main and donor; stays as main has it",
    "owner": "M1",
+   "sym_kind": "import"
+  },
+  "import:from kodezart.core.protocols import ( AfterPublish, AgentExecutor, ChangePersister, NativeWriteGuard, WorkspaceProvider, )": {
+   "consumers": {},
+   "kind": "added",
+   "note": "introduced 9e7b420a..b94a63ab",
+   "owner": "M4",
    "sym_kind": "import"
   }
  },
@@ -38644,6 +38840,13 @@
     "M6"
    ],
    "sym_kind": "import"
+  },
+  "NativeFireProgressEvent": {
+   "consumers": {},
+   "kind": "added",
+   "note": "PEP 695 type alias; introduced by 358a1db1 (tag-less subject -> M1)",
+   "owner": "M1",
+   "sym_kind": "assignment"
   }
  },
  "src/kodezart/types/domain/audit.py": {
@@ -40534,6 +40737,20 @@
     "M4"
    ],
    "sym_kind": "import"
+  },
+  "MandateJudgment": {
+   "consumers": {},
+   "kind": "added",
+   "note": "PEP 695 type alias; introduced by 358a1db1 (tag-less subject -> M1)",
+   "owner": "M1",
+   "sym_kind": "assignment"
+  },
+  "MandateObservation": {
+   "consumers": {},
+   "kind": "added",
+   "note": "PEP 695 type alias; introduced by 358a1db1 (tag-less subject -> M1)",
+   "owner": "M1",
+   "sym_kind": "assignment"
   }
  },
  "src/kodezart/types/domain/branch.py": {
@@ -45200,6 +45417,20 @@
     "M4"
    ],
    "sym_kind": "import"
+  },
+  "NativeExecutionPhase": {
+   "consumers": {},
+   "kind": "added",
+   "note": "PEP 695 type alias; introduced by 358a1db1 (tag-less subject -> M1)",
+   "owner": "M1",
+   "sym_kind": "assignment"
+  },
+  "ActiveNativeExecution": {
+   "consumers": {},
+   "kind": "added",
+   "note": "PEP 695 type alias; introduced by 358a1db1 (tag-less subject -> M1)",
+   "owner": "M1",
+   "sym_kind": "assignment"
   }
  },
  "src/kodezart/types/domain/operation.py": {
@@ -47051,7 +47282,7 @@
    "kind": "added",
    "note": "introduced a96fa312..f575b2e8",
    "owner": "M2",
-   "sym_kind": "symbol"
+   "sym_kind": "import"
   }
  },
  "src/kodezart/types/domain/organize.py": {
@@ -48269,77 +48500,77 @@
    "kind": "added",
    "note": "introduced a96fa312..f575b2e8",
    "owner": "M2",
-   "sym_kind": "symbol"
+   "sym_kind": "import"
   },
   "MandatePhaseRole": {
    "consumers": {},
    "kind": "added",
    "note": "introduced a96fa312..f575b2e8",
    "owner": "M2",
-   "sym_kind": "symbol"
+   "sym_kind": "class"
   },
   "MandatePhaseRole.model_config": {
    "consumers": {},
    "kind": "added",
    "note": "introduced a96fa312..f575b2e8",
    "owner": "M2",
-   "sym_kind": "symbol"
+   "sym_kind": "class_attr"
   },
   "MandatePhaseRole.author_prompt_key": {
    "consumers": {},
    "kind": "added",
    "note": "introduced a96fa312..f575b2e8",
    "owner": "M2",
-   "sym_kind": "symbol"
+   "sym_kind": "class_attr"
   },
   "MandatePhaseRole.marks_specification_body": {
    "consumers": {},
    "kind": "added",
    "note": "introduced a96fa312..f575b2e8",
    "owner": "M2",
-   "sym_kind": "symbol"
+   "sym_kind": "class_attr"
   },
   "MandatePhaseRole.marks_execution_stage": {
    "consumers": {},
    "kind": "added",
    "note": "introduced a96fa312..f575b2e8",
    "owner": "M2",
-   "sym_kind": "symbol"
+   "sym_kind": "class_attr"
   },
   "MANDATE_PHASE_ROLES": {
    "consumers": {},
    "kind": "added",
    "note": "introduced a96fa312..f575b2e8",
    "owner": "M2",
-   "sym_kind": "symbol"
+   "sym_kind": "assignment"
   },
   "phase_marker_source": {
    "consumers": {},
    "kind": "added",
    "note": "introduced a96fa312..f575b2e8",
    "owner": "M2",
-   "sym_kind": "symbol"
+   "sym_kind": "function"
   },
   "phase_successor": {
    "consumers": {},
    "kind": "added",
    "note": "introduced a96fa312..f575b2e8",
    "owner": "M2",
-   "sym_kind": "symbol"
+   "sym_kind": "function"
   },
   "ResolvedMandateSpec.role": {
    "consumers": {},
    "kind": "added",
    "note": "introduced a96fa312..f575b2e8",
    "owner": "M2",
-   "sym_kind": "symbol"
+   "sym_kind": "class_attr"
   },
   "ResolvedMandateSpec.marker_source": {
    "consumers": {},
    "kind": "added",
    "note": "introduced a96fa312..f575b2e8",
    "owner": "M2",
-   "sym_kind": "symbol"
+   "sym_kind": "class_attr"
   }
  },
  "src/kodezart/types/domain/outcome.py": {
@@ -51306,6 +51537,13 @@
    "note": "unchanged between main and donor; stays as main has it",
    "owner": "M1",
    "sym_kind": "import"
+  },
+  "AllowedTools": {
+   "consumers": {},
+   "kind": "added",
+   "note": "PEP 695 type alias; introduced by 358a1db1 (tag-less subject -> M1)",
+   "owner": "M1",
+   "sym_kind": "assignment"
   }
  },
  "src/kodezart/types/domain/tracker.py": {
@@ -61281,7 +61519,7 @@
   },
   "test_the_evaluate_dispatch_passes_an_empty_definition_set": {
    "consumers": {},
-   "kind": "unchanged",
+   "kind": "modified",
    "note": "unchanged between main and donor; stays as main has it",
    "owner": "M2",
    "sym_kind": "function"
@@ -61329,6 +61567,13 @@
    "kind": "unchanged",
    "note": "unchanged between main and donor; stays as main has it",
    "owner": "M2",
+   "sym_kind": "function"
+  },
+  "evaluative_sites": {
+   "consumers": {},
+   "kind": "added",
+   "note": "introduced 9e7b420a..b94a63ab",
+   "owner": "M4",
    "sym_kind": "function"
   }
  },
@@ -71841,8 +72086,8 @@
    },
    "consumers_raw_count": 8,
    "kind": "removed",
-   "note": "consumers via name=['make_passing_evaluation']; consumers on divergent branches -> hygiene removal in the last cut",
-   "owner": "M7-final",
+   "note": "consumers via name=['make_passing_evaluation']; consumers on divergent branches -> hygiene removal in the last cut; owner relabelled M7-final -> M7 (M7-final is no view)",
+   "owner": "M7",
    "owner_grep_only": "M3",
    "sym_kind": "function"
   },
@@ -71989,42 +72234,63 @@
    "kind": "added",
    "note": "added by M1 gap work 2026-09-14 (KOD-390/KOD-384)",
    "owner": "M1",
-   "sym_kind": "symbol"
+   "sym_kind": "import"
   },
   "import:from kodezart.types.domain.surface import ( DescriptionWriteAuthority, SurfaceAuthorship, SurfaceKind, SurfaceLease, WritableSurface, WriteRevalidation, require_body_authorship_surface, )": {
    "consumers": {},
    "kind": "added",
    "note": "added by M1 gap work 2026-09-14 (KOD-390/KOD-384)",
    "owner": "M1",
-   "sym_kind": "symbol"
+   "sym_kind": "import"
   },
   "FakeMcpIssue.created_by": {
    "consumers": {},
    "kind": "added",
    "note": "added by M1 gap work 2026-09-14 (KOD-390/KOD-384)",
    "owner": "M1",
-   "sym_kind": "symbol"
+   "sym_kind": "class_attr"
   },
   "FakeTrackerPort.read_surface_authorship": {
    "consumers": {},
    "kind": "added",
    "note": "added by M1 gap work 2026-09-14 (KOD-390/KOD-384)",
    "owner": "M1",
-   "sym_kind": "symbol"
+   "sym_kind": "method"
   },
   "FakeTrackerPort._body_authorship": {
    "consumers": {},
    "kind": "added",
    "note": "added by M1 gap work 2026-09-14 (KOD-390/KOD-384)",
    "owner": "M1",
-   "sym_kind": "symbol"
+   "sym_kind": "method"
   },
   "FakeTrackerPort._require_machine_authored": {
    "consumers": {},
    "kind": "added",
    "note": "added by M1 gap work 2026-09-14 (KOD-390/KOD-384)",
    "owner": "M1",
-   "sym_kind": "symbol"
+   "sym_kind": "method"
+  },
+  "import:from kodezart.core.protocols import ( AfterPublish, AgentExecutor, McpToolResult, NativeWriteGuard, PromptSetProvider, WorkflowEngine, )": {
+   "consumers": {},
+   "kind": "added",
+   "note": "introduced 9e7b420a..b94a63ab",
+   "owner": "M4",
+   "sym_kind": "import"
+  },
+  "import:from kodezart.domain.run_alarm_record import ( parse_run_alarm, render_run_alarm, require_alarm_holder, run_alarm_marker, )": {
+   "consumers": {},
+   "kind": "added",
+   "note": "introduced 9e7b420a..b94a63ab",
+   "owner": "M4",
+   "sym_kind": "import"
+  },
+  "_FakeCIObservation": {
+   "consumers": {},
+   "kind": "added",
+   "note": "PEP 695 type alias; introduced by 358a1db1 (tag-less subject -> M1)",
+   "owner": "M1",
+   "sym_kind": "assignment"
   }
  },
  "tests/integration/test_criteria_oracle.py": {
@@ -87203,63 +87469,63 @@
    "kind": "added",
    "note": "added by M1 gap work 2026-09-14 (KOD-390/KOD-384)",
    "owner": "M1",
-   "sym_kind": "symbol"
+   "sym_kind": "import"
   },
   "ISSUE_LABELS": {
    "consumers": {},
    "kind": "added",
    "note": "added by M1 gap work 2026-09-14 (KOD-390/KOD-384)",
    "owner": "M1",
-   "sym_kind": "symbol"
+   "sym_kind": "assignment"
   },
   "SCOPE_LABELS": {
    "consumers": {},
    "kind": "added",
    "note": "added by M1 gap work 2026-09-14 (KOD-390/KOD-384)",
    "owner": "M1",
-   "sym_kind": "symbol"
+   "sym_kind": "assignment"
   },
   "approval_classifications": {
    "consumers": {},
    "kind": "added",
    "note": "added by M1 gap work 2026-09-14 (KOD-390/KOD-384)",
    "owner": "M1",
-   "sym_kind": "symbol"
+   "sym_kind": "function"
   },
   "TrackerWorkspace": {
    "consumers": {},
    "kind": "added",
    "note": "added by M1 gap work 2026-09-14 (KOD-390/KOD-384)",
    "owner": "M1",
-   "sym_kind": "symbol"
+   "sym_kind": "class"
   },
   "TrackerWorkspace.server": {
    "consumers": {},
    "kind": "added",
    "note": "added by M1 gap work 2026-09-14 (KOD-390/KOD-384)",
    "owner": "M1",
-   "sym_kind": "symbol"
+   "sym_kind": "class_attr"
   },
   "TrackerWorkspace.clock": {
    "consumers": {},
    "kind": "added",
    "note": "added by M1 gap work 2026-09-14 (KOD-390/KOD-384)",
    "owner": "M1",
-   "sym_kind": "symbol"
+   "sym_kind": "class_attr"
   },
   "TrackerWorkspace.scope_labels": {
    "consumers": {},
    "kind": "added",
    "note": "added by M1 gap work 2026-09-14 (KOD-390/KOD-384)",
    "owner": "M1",
-   "sym_kind": "symbol"
+   "sym_kind": "class_attr"
   },
   "observed_writes": {
    "consumers": {},
    "kind": "added",
    "note": "added by M1 gap work 2026-09-14 (KOD-390/KOD-384)",
    "owner": "M1",
-   "sym_kind": "symbol"
+   "sym_kind": "function"
   }
  },
  "tests/tracker/test_linear_mcp_tracker.py": {

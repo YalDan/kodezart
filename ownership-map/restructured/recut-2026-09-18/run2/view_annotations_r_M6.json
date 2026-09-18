@@ -1,0 +1,53 @@
+{
+ "milestone": "M6",
+ "branch": "f832ea8296e304046c5a20f18e09a2022950d0fa",
+ "base": "416d1374fe7ac778799ee1d055a275fcb5673574",
+ "head": "f832ea8296e304046c5a20f18e09a2022950d0fa",
+ "later_members_shown_here": [],
+ "own_members_shown_earlier": [
+  {
+   "file": "src/kodezart/adapters/git/service.py",
+   "symbol": "SubprocessGitService.has_replace_refs",
+   "shown_at": "M1",
+   "shown_pr": 133,
+   "sym_kind": "method",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/agent.py",
+   "symbol": "import:from kodezart.types.domain.audit_detection_removal import DetectorRemovalJudgment",
+   "shown_at": "M1",
+   "shown_pr": 133,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/agent.py",
+   "symbol": "import:from kodezart.types.domain.audit_overclaim import AuditOverclaimJudgment",
+   "shown_at": "M1",
+   "shown_pr": 133,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/audit.py",
+   "symbol": "import:from kodezart.types.domain.scope import ScopeRef",
+   "shown_at": "M1",
+   "shown_pr": 133,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "tests/domain/test_criteria_feasibility.py",
+   "symbol": "_criterion",
+   "shown_at": "M4",
+   "shown_pr": 124,
+   "sym_kind": "function",
+   "kind": "modified"
+  }
+ ],
+ "counts": {
+  "later_members_shown_here": 0,
+  "own_members_shown_earlier": 5
+ }
+}

@@ -1,0 +1,262 @@
+{
+ "milestone": "M3",
+ "branch": "b4cf9e1da5a1a5643bbbbe7c9be75f1f055cbd44",
+ "base": "c5eadd27d0cd330d16fdd0b4b956ab7bd20ed2f3",
+ "head": "b4cf9e1da5a1a5643bbbbe7c9be75f1f055cbd44",
+ "later_members_shown_here": [
+  {
+   "file": "src/kodezart/chains/ralph_loop.py",
+   "symbol": "RalphLoop._evaluate_node",
+   "owner": "M2",
+   "owner_pr": 126,
+   "sym_kind": "method",
+   "kind": "modified"
+  },
+  {
+   "file": "src/kodezart/handlers/agent_handler.py",
+   "symbol": "AgentHandler.stream_workflow",
+   "owner": "M2",
+   "owner_pr": 126,
+   "sym_kind": "method",
+   "kind": "modified"
+  }
+ ],
+ "own_members_shown_earlier": [
+  {
+   "file": "src/kodezart/composition/engine.py",
+   "symbol": "import:from kodezart.types.domain.run_records import RunIdentity",
+   "shown_at": "M1",
+   "shown_pr": 133,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/composition/engine.py",
+   "symbol": "import:from kodezart.types.domain.scope import ScopeRef",
+   "shown_at": "M1",
+   "shown_pr": 133,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/composition/engine.py",
+   "symbol": "import:from kodezart.types.domain.session import AllowedTools, PermissionMode",
+   "shown_at": "M1",
+   "shown_pr": 133,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/composition/passes.py",
+   "symbol": "import:from kodezart.services.organize_tick import OrganizeTick",
+   "shown_at": "M1",
+   "shown_pr": 133,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/composition/tracker.py",
+   "symbol": "CREDENTIAL_FIELD",
+   "shown_at": "M1",
+   "shown_pr": 133,
+   "sym_kind": "assignment",
+   "kind": "modified"
+  },
+  {
+   "file": "src/kodezart/core/retry.py",
+   "symbol": "RetryFloor",
+   "shown_at": "M1",
+   "shown_pr": 133,
+   "sym_kind": "class",
+   "kind": "modified"
+  },
+  {
+   "file": "src/kodezart/domain/accept_gate.py",
+   "symbol": "flagged_items",
+   "shown_at": "M4",
+   "shown_pr": 124,
+   "sym_kind": "function",
+   "kind": "modified"
+  },
+  {
+   "file": "src/kodezart/domain/accept_gate.py",
+   "symbol": "gate_cleared",
+   "shown_at": "M4",
+   "shown_pr": 124,
+   "sym_kind": "function",
+   "kind": "modified"
+  },
+  {
+   "file": "src/kodezart/types/domain/agent.py",
+   "symbol": "import:from kodezart.types.domain.node_session import NodeInvocation",
+   "shown_at": "M1",
+   "shown_pr": 133,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/agent.py",
+   "symbol": "import:from kodezart.types.domain.organize import AdmissionJudgment",
+   "shown_at": "M1",
+   "shown_pr": 133,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/agent.py",
+   "symbol": "import:from kodezart.types.domain.organize_owner import OrganizeProposal",
+   "shown_at": "M1",
+   "shown_pr": 133,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/agent.py",
+   "symbol": "import:from kodezart.types.domain.run_event import RunEventKind",
+   "shown_at": "M1",
+   "shown_pr": 133,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/agent.py",
+   "symbol": "import:from kodezart.types.job_acceptance import ( AcceptanceHandle, AcceptedQueuePosition, JobLink, )",
+   "shown_at": "M1",
+   "shown_pr": 133,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/criteria.py",
+   "symbol": "TrackerCriterion",
+   "shown_at": "M4",
+   "shown_pr": 124,
+   "sym_kind": "class",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/criteria.py",
+   "symbol": "TrackerCriterion.id",
+   "shown_at": "M4",
+   "shown_pr": 124,
+   "sym_kind": "class_attr",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/criteria.py",
+   "symbol": "TrackerCriterion.model_config",
+   "shown_at": "M4",
+   "shown_pr": 124,
+   "sym_kind": "class_attr",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/criteria.py",
+   "symbol": "TrackerCriterion.text",
+   "shown_at": "M4",
+   "shown_pr": 124,
+   "sym_kind": "class_attr",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/native_execution.py",
+   "symbol": "import:from kodezart.types.domain.persist import PersistResult",
+   "shown_at": "M1",
+   "shown_pr": 133,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/operation.py",
+   "symbol": "import:from kodezart.types.domain.scope_address import ScopeRef",
+   "shown_at": "M1",
+   "shown_pr": 133,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/outcome.py",
+   "symbol": "WorkflowOutcome.handed_off_for_delivery",
+   "shown_at": "M1",
+   "shown_pr": 133,
+   "sym_kind": "class_attr",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/workflow.py",
+   "symbol": "import:from kodezart.types.domain.amendment import AmendmentReport",
+   "shown_at": "M1",
+   "shown_pr": 133,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/workflow.py",
+   "symbol": "import:from kodezart.types.domain.ralph_outcome import RalphOutcome",
+   "shown_at": "M1",
+   "shown_pr": 133,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "tests/integration/test_stacked_scope.py",
+   "symbol": "import:from tests.workflow_factory import make_authored_workflow",
+   "shown_at": "M1",
+   "shown_pr": 133,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "tests/probes/test_harness_capabilities.py",
+   "symbol": "UNGATED_PERMISSION_MODE",
+   "shown_at": "M1",
+   "shown_pr": 133,
+   "sym_kind": "assignment",
+   "kind": "modified"
+  },
+  {
+   "file": "tests/probes/test_harness_capabilities.py",
+   "symbol": "import:from kodezart.adapters.claude.permission_modes import map_permission_mode",
+   "shown_at": "M1",
+   "shown_pr": 133,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "tests/probes/test_harness_capabilities.py",
+   "symbol": "session_options",
+   "shown_at": "M1",
+   "shown_pr": 133,
+   "sym_kind": "function",
+   "kind": "modified"
+  },
+  {
+   "file": "tests/prompts/test_v5_fragments.py",
+   "symbol": "UTILITY_KEYS",
+   "shown_at": "M4",
+   "shown_pr": 124,
+   "sym_kind": "assignment",
+   "kind": "modified"
+  },
+  {
+   "file": "tests/services/test_tracker_lifecycle.py",
+   "symbol": "TestTheFailureArm",
+   "shown_at": "M4",
+   "shown_pr": 124,
+   "sym_kind": "class",
+   "kind": "modified"
+  },
+  {
+   "file": "tests/tracker/test_linear_tool_arguments.py",
+   "symbol": "LIVE_INPUT_SCHEMAS",
+   "shown_at": "M1",
+   "shown_pr": 133,
+   "sym_kind": "assignment",
+   "kind": "modified"
+  }
+ ],
+ "counts": {
+  "later_members_shown_here": 2,
+  "own_members_shown_earlier": 29
+ }
+}

@@ -45,7 +45,6 @@
  "deleted": [],
  "renamed": [],
  "shared": [
-  "docs/operation.example.toml",
   "src/kodezart/domain/errors.py",
   "src/kodezart/domain/organize.py",
   "src/kodezart/types/domain/operation.py",
@@ -63,5 +62,6 @@
  "skipped": [],
  "created": [],
  "restricted": [],
- "preserved": []
+ "preserved": [],
+ "displaced": []
 }

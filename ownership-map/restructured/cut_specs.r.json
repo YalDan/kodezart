@@ -262,8 +262,7 @@
     "H3:Request Body (`QueryRequest`)",
     "H3:Response",
     "H3:Response \u2014 `202 Accepted` (`FireAcceptedResponse`)",
-    "H3:Streaming Events (13)",
-    "H3:Workflow Events (15)"
+    "H3:Streaming Events (13)"
    ],
    "new_at_this_milestone": [
     "H2:Base URL",
@@ -273,9 +272,12 @@
     "H3:Native Amendment Events (1)",
     "H3:Native Delivery Events (1)",
     "H3:Request Body (`WorkflowRequest`)",
+    "H3:Workflow Events (15)",
     "H3:Workflow Events (18)"
    ],
-   "remove": [],
+   "remove": [
+    "H3:Workflow Events (15)"
+   ],
    "take_from_donor": [
     "H2:Base URL",
     "H2:GET /api/v1/jobs/{jobId}/stream",
@@ -486,6 +488,7 @@
    "file_map_owner": "M1",
    "keep_main": [
     "agent_identities",
+    "audit_scopes",
     "documents.checkpoint.container",
     "documents.checkpoint.id",
     "documents.checkpoint.name",
@@ -511,7 +514,6 @@
     "marker_prefixes.run_state",
     "operation_name",
     "principals",
-    "private_surface",
     "queue_states.approved",
     "queue_states.decision",
     "queue_states.done",
@@ -570,7 +572,6 @@
     "workspace"
    ],
    "new_at_this_milestone": [
-    "audit_scopes",
     "issue_labels.criterion",
     "issue_labels.decision",
     "marker_prefixes.base_spec",
@@ -584,6 +585,7 @@
     "marker_prefixes.work_ref",
     "organize_mandates",
     "organize_scopes",
+    "private_surface",
     "private_surface.description",
     "private_surface.hosts",
     "private_surface.workspaces.linear.app",
@@ -599,9 +601,10 @@
     "table:run_event_states",
     "table:scope_labels"
    ],
-   "remove": [],
+   "remove": [
+    "private_surface"
+   ],
    "take_from_donor": [
-    "audit_scopes",
     "issue_labels.criterion",
     "issue_labels.decision",
     "marker_prefixes.base_spec",
@@ -5254,6 +5257,7 @@
     "AuthoredWorkflowCompleteEvent",
     "CriterionResult",
     "CriterionResult.criterion_id",
+    "NativeFireProgressEvent",
     "NodeSessionStartedEvent.model_config",
     "RaiseSite",
     "ResultEvent",
@@ -5289,6 +5293,7 @@
     "AuthoredWorkflowCompleteEvent",
     "CriterionResult",
     "CriterionResult.criterion_id",
+    "NativeFireProgressEvent",
     "NodeSessionStartedEvent.model_config",
     "RaiseSite",
     "ResultEvent",
@@ -5449,6 +5454,8 @@
     "AuditMandateJudgment.finding",
     "AuditMandateJudgment.model_config",
     "AuditMandateJudgment.verdict",
+    "MandateJudgment",
+    "MandateObservation",
     "import:from kodezart.types.base import CamelCaseModel",
     "import:from pydantic import AwareDatetime, ConfigDict, Field, RootModel, model_validator",
     "import:from typing import Annotated, Generic, Literal, Self"
@@ -5464,6 +5471,8 @@
     "AuditMandateJudgment.finding",
     "AuditMandateJudgment.model_config",
     "AuditMandateJudgment.verdict",
+    "MandateJudgment",
+    "MandateObservation",
     "import:from kodezart.types.base import CamelCaseModel",
     "import:from pydantic import AwareDatetime, ConfigDict, Field, RootModel, model_validator",
     "import:from typing import Annotated, Generic, Literal, Self"
@@ -6055,11 +6064,13 @@
     "import:from typing import Annotated, Literal, Self"
    ],
    "new_at_this_milestone": [
+    "ActiveNativeExecution",
     "NativeAuthoritySnapshot",
     "NativeAuthoritySnapshot.base_ref",
     "NativeAuthoritySnapshot.criteria",
     "NativeAuthoritySnapshot.holder",
     "NativeAuthoritySnapshot.spec",
+    "NativeExecutionPhase",
     "import:from kodezart.types.base import CamelCaseModel",
     "import:from kodezart.types.domain.agent import ResultEvent, Ruling",
     "import:from kodezart.types.domain.amendment import ( AmendmentReport, CommitSha, NativeWriterOutput, NativeWriterStart, Nonblank, )",
@@ -6071,11 +6082,13 @@
    ],
    "remove": [],
    "take_from_donor": [
+    "ActiveNativeExecution",
     "NativeAuthoritySnapshot",
     "NativeAuthoritySnapshot.base_ref",
     "NativeAuthoritySnapshot.criteria",
     "NativeAuthoritySnapshot.holder",
     "NativeAuthoritySnapshot.spec",
+    "NativeExecutionPhase",
     "import:from kodezart.types.base import CamelCaseModel",
     "import:from kodezart.types.domain.agent import ResultEvent, Ruling",
     "import:from kodezart.types.domain.amendment import ( AmendmentReport, CommitSha, NativeWriterOutput, NativeWriterStart, Nonblank, )",
@@ -6783,6 +6796,7 @@
     "import:from urllib.parse import urlsplit"
    ],
    "new_at_this_milestone": [
+    "AllowedTools",
     "HttpKnowledge",
     "HttpKnowledge._authentication_is_coherent",
     "HttpKnowledge.auth_header",
@@ -6874,6 +6888,7 @@
     "import:from typing import Final, Self"
    ],
    "take_from_donor": [
+    "AllowedTools",
     "HttpKnowledge",
     "HttpKnowledge._authentication_is_coherent",
     "HttpKnowledge.auth_header",
@@ -9791,6 +9806,7 @@
     "FakeLinearMcpServer._label_page",
     "FakeLinearMcpServer._next_instant",
     "FakeLinearMcpServer._tool_create_initiative_label",
+    "FakeLinearMcpServer._tool_get_issue",
     "FakeLinearMcpServer._tool_get_user",
     "FakeLinearMcpServer._tool_list_comments",
     "FakeLinearMcpServer._tool_list_initiative_labels",
@@ -9806,6 +9822,7 @@
     "FakeMcpComment.updated_at",
     "FakeMcpComment.wire",
     "FakeMcpIssue",
+    "FakeMcpIssue.created_by",
     "FakeMcpIssue.entry",
     "FakeMcpIssue.previous_states",
     "FakeMcpIssue.project_id",
@@ -9825,11 +9842,13 @@
     "FakeTicketGenerator.run",
     "FakeTrackerPort",
     "FakeTrackerPort.__init__",
+    "FakeTrackerPort._body_authorship",
     "FakeTrackerPort._ensure_scope_label",
     "FakeTrackerPort._parse_alarm_comment",
     "FakeTrackerPort._read_criterion_family",
     "FakeTrackerPort._read_execution_approval",
     "FakeTrackerPort._require_graph_holder",
+    "FakeTrackerPort._require_machine_authored",
     "FakeTrackerPort._upsert_comment",
     "FakeTrackerPort.container_metadata",
     "FakeTrackerPort.create_criterion_if_absent",
@@ -9850,6 +9869,7 @@
     "FakeTrackerPort.read_planning_issue",
     "FakeTrackerPort.read_scope_labels",
     "FakeTrackerPort.read_split_children",
+    "FakeTrackerPort.read_surface_authorship",
     "FakeTrackerPort.release_surfaces",
     "FakeTrackerPort.renew_surfaces",
     "FakeTrackerPort.require_issue_classification_reads",
@@ -9872,6 +9892,7 @@
     "SequentialCIMonitor.__init__",
     "SequentialCIMonitor.wait_for_checks",
     "_CURRENT_USER",
+    "_FakeCIObservation",
     "executor_for",
     "import:from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping, Sequence",
     "import:from collections.abc import AsyncGenerator, Callable, Mapping, Sequence",
@@ -9883,6 +9904,7 @@
     "import:from kodezart.core.protocols import ( AgentExecutor, McpToolResult, PromptSetProvider, WorkflowEngine, )",
     "import:from kodezart.domain.criterion_amendment import require_criterion_source",
     "import:from kodezart.domain.criterion_creation import criterion_body, existing_criterion",
+    "import:from kodezart.domain.errors import ( ApprovalLabelWriteError, CriterionReadError, DuplicateIssueIdentityError, DuplicateWorkRefError, EscalationReadError, IssueLabelReadError, MergeConflictError, OrganizeWriteRefusalError, PrincipalAuthoredSurfaceError, PRStateReadError, RateLimitError, ScopeReadError, SurfaceLeaseError, SurfaceWriteAttributionError, TransientAPIError, WorkspaceError, )",
     "import:from kodezart.domain.errors import ( CriterionReadError, DuplicateIssueIdentityError, DuplicateWorkRefError, EscalationReadError, IssueLabelReadError, MergeConflictError, OrganizeWriteRefusalError, PRStateReadError, RateLimitError, ScopeReadError, SurfaceLeaseError, SurfaceWriteAttributionError, TransientAPIError, WorkspaceError, )",
     "import:from kodezart.domain.errors import ( DuplicateWorkRefError, MergeConflictError, RateLimitError, TransientAPIError, WorkspaceError, )",
     "import:from kodezart.domain.escalation_resolution import resolution_from_comments",
@@ -9910,6 +9932,7 @@
     "import:from kodezart.types.domain.self_writes import IssueMovementSnapshot, field_values",
     "import:from kodezart.types.domain.session import ( HttpKnowledge, KnowledgeGrant, PermissionMode, SessionType, )",
     "import:from kodezart.types.domain.session import KnowledgeGrant, SessionType",
+    "import:from kodezart.types.domain.surface import ( DescriptionWriteAuthority, SurfaceAuthorship, SurfaceKind, SurfaceLease, WritableSurface, WriteRevalidation, require_body_authorship_surface, )",
     "import:from kodezart.types.domain.surface import ( DescriptionWriteAuthority, SurfaceKind, SurfaceLease, WritableSurface, WriteRevalidation, )",
     "import:from kodezart.types.domain.tracker import ( INSTATABLE_MAPPING_KINDS, ClaimResult, ClaimStatus, EnsureAction, IssuePriority, IssueQuery, IssueRelation, IssueRelationKind, MappingKind, MappingOutcome, MappingRef, ReviewQuery, TrackerAsset, TrackerComment, TrackerIssue, TrackerIssueRevision, TrackerIssueStateChange, TrackerReview, WorkflowStateKind, )",
     "import:from kodezart.types.domain.tracker import ( INSTATABLE_MAPPING_KINDS, ClaimResult, ClaimStatus, EnsureAction, IssuePriority, IssueQuery, IssueRelation, IssueRelationKind, MappingKind, MappingOutcome, MappingRef, ReviewQuery, TrackerAsset, TrackerComment, TrackerIssue, TrackerReview, WorkflowStateKind, )",
@@ -9922,14 +9945,7 @@
     "make_generated_criteria",
     "make_passing_evaluation_of_fake_criteria",
     "make_tracker_issue",
-    "recorded_session",
-    "import:from kodezart.domain.errors import ( ApprovalLabelWriteError, CriterionReadError, DuplicateIssueIdentityError, DuplicateWorkRefError, EscalationReadError, IssueLabelReadError, MergeConflictError, OrganizeWriteRefusalError, PrincipalAuthoredSurfaceError, PRStateReadError, RateLimitError, ScopeReadError, SurfaceLeaseError, SurfaceWriteAttributionError, TransientAPIError, WorkspaceError, )",
-    "import:from kodezart.types.domain.surface import ( DescriptionWriteAuthority, SurfaceAuthorship, SurfaceKind, SurfaceLease, WritableSurface, WriteRevalidation, require_body_authorship_surface, )",
-    "FakeMcpIssue.created_by",
-    "FakeLinearMcpServer._tool_get_issue",
-    "FakeTrackerPort.read_surface_authorship",
-    "FakeTrackerPort._body_authorship",
-    "FakeTrackerPort._require_machine_authored"
+    "recorded_session"
    ],
    "remove": [
     "FakeContentScanner",
@@ -9977,6 +9993,7 @@
     "FakeLinearMcpServer._label_page",
     "FakeLinearMcpServer._next_instant",
     "FakeLinearMcpServer._tool_create_initiative_label",
+    "FakeLinearMcpServer._tool_get_issue",
     "FakeLinearMcpServer._tool_get_user",
     "FakeLinearMcpServer._tool_list_comments",
     "FakeLinearMcpServer._tool_list_initiative_labels",
@@ -9992,6 +10009,7 @@
     "FakeMcpComment.updated_at",
     "FakeMcpComment.wire",
     "FakeMcpIssue",
+    "FakeMcpIssue.created_by",
     "FakeMcpIssue.entry",
     "FakeMcpIssue.previous_states",
     "FakeMcpIssue.project_id",
@@ -10011,11 +10029,13 @@
     "FakeTicketGenerator.run",
     "FakeTrackerPort",
     "FakeTrackerPort.__init__",
+    "FakeTrackerPort._body_authorship",
     "FakeTrackerPort._ensure_scope_label",
     "FakeTrackerPort._parse_alarm_comment",
     "FakeTrackerPort._read_criterion_family",
     "FakeTrackerPort._read_execution_approval",
     "FakeTrackerPort._require_graph_holder",
+    "FakeTrackerPort._require_machine_authored",
     "FakeTrackerPort._upsert_comment",
     "FakeTrackerPort.container_metadata",
     "FakeTrackerPort.create_criterion_if_absent",
@@ -10036,6 +10056,7 @@
     "FakeTrackerPort.read_planning_issue",
     "FakeTrackerPort.read_scope_labels",
     "FakeTrackerPort.read_split_children",
+    "FakeTrackerPort.read_surface_authorship",
     "FakeTrackerPort.release_surfaces",
     "FakeTrackerPort.renew_surfaces",
     "FakeTrackerPort.require_issue_classification_reads",
@@ -10058,6 +10079,7 @@
     "SequentialCIMonitor.__init__",
     "SequentialCIMonitor.wait_for_checks",
     "_CURRENT_USER",
+    "_FakeCIObservation",
     "executor_for",
     "import:from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping, Sequence",
     "import:from contextvars import ContextVar",
@@ -10066,6 +10088,7 @@
     "import:from kodezart.core.protocols import ( AgentExecutor, McpToolResult, NativeWriteGuard, PromptSetProvider, WorkflowEngine, )",
     "import:from kodezart.domain.criterion_amendment import require_criterion_source",
     "import:from kodezart.domain.criterion_creation import criterion_body, existing_criterion",
+    "import:from kodezart.domain.errors import ( ApprovalLabelWriteError, CriterionReadError, DuplicateIssueIdentityError, DuplicateWorkRefError, EscalationReadError, IssueLabelReadError, MergeConflictError, OrganizeWriteRefusalError, PrincipalAuthoredSurfaceError, PRStateReadError, RateLimitError, ScopeReadError, SurfaceLeaseError, SurfaceWriteAttributionError, TransientAPIError, WorkspaceError, )",
     "import:from kodezart.domain.errors import ( CriterionReadError, DuplicateIssueIdentityError, DuplicateWorkRefError, EscalationReadError, IssueLabelReadError, MergeConflictError, OrganizeWriteRefusalError, PRStateReadError, RateLimitError, ScopeReadError, SurfaceLeaseError, SurfaceWriteAttributionError, TransientAPIError, WorkspaceError, )",
     "import:from kodezart.domain.escalation_resolution import resolution_from_comments",
     "import:from kodezart.domain.fire_spec import require_fire_entry, tracker_spec_from_issues",
@@ -10088,6 +10111,7 @@
     "import:from kodezart.types.domain.scope import ScopeContainer, ScopeKind, ScopeRef",
     "import:from kodezart.types.domain.self_writes import IssueMovementSnapshot, field_values",
     "import:from kodezart.types.domain.session import ( HttpKnowledge, KnowledgeGrant, PermissionMode, SessionType, )",
+    "import:from kodezart.types.domain.surface import ( DescriptionWriteAuthority, SurfaceAuthorship, SurfaceKind, SurfaceLease, WritableSurface, WriteRevalidation, require_body_authorship_surface, )",
     "import:from kodezart.types.domain.surface import ( DescriptionWriteAuthority, SurfaceKind, SurfaceLease, WritableSurface, WriteRevalidation, )",
     "import:from kodezart.types.domain.tracker import ( INSTATABLE_MAPPING_KINDS, ClaimResult, ClaimStatus, EnsureAction, IssuePriority, IssueQuery, IssueRelation, IssueRelationKind, MappingKind, MappingOutcome, MappingRef, ReviewQuery, TrackerAsset, TrackerComment, TrackerIssue, TrackerIssueRevision, TrackerIssueStateChange, TrackerReview, WorkflowStateKind, )",
     "import:from kodezart.types.domain.tracker_writes import DescriptionEditResult",
@@ -10097,14 +10121,7 @@
     "make_generated_criteria",
     "make_passing_evaluation_of_fake_criteria",
     "make_tracker_issue",
-    "recorded_session",
-    "import:from kodezart.domain.errors import ( ApprovalLabelWriteError, CriterionReadError, DuplicateIssueIdentityError, DuplicateWorkRefError, EscalationReadError, IssueLabelReadError, MergeConflictError, OrganizeWriteRefusalError, PrincipalAuthoredSurfaceError, PRStateReadError, RateLimitError, ScopeReadError, SurfaceLeaseError, SurfaceWriteAttributionError, TransientAPIError, WorkspaceError, )",
-    "import:from kodezart.types.domain.surface import ( DescriptionWriteAuthority, SurfaceAuthorship, SurfaceKind, SurfaceLease, WritableSurface, WriteRevalidation, require_body_authorship_surface, )",
-    "FakeMcpIssue.created_by",
-    "FakeLinearMcpServer._tool_get_issue",
-    "FakeTrackerPort.read_surface_authorship",
-    "FakeTrackerPort._body_authorship",
-    "FakeTrackerPort._require_machine_authored"
+    "recorded_session"
    ]
   },
   "tests/integration/test_stacked_scope.py": {
@@ -11701,8 +11718,7 @@
     "H3:Job Events (1)",
     "H3:Request Body (`QueryRequest`)",
     "H3:Response",
-    "H3:Streaming Events (13)",
-    "H3:Workflow Events (15)"
+    "H3:Streaming Events (13)"
    ],
    "new_at_this_milestone": [],
    "remove": [],
@@ -11874,7 +11890,6 @@
     "knowledge.run_logs",
     "operation_name",
     "principals",
-    "private_surface",
     "queue_states.approved",
     "queue_states.decision",
     "queue_states.done",
@@ -11916,12 +11931,8 @@
     "workflow_states.in_review",
     "workspace"
    ],
-   "new_at_this_milestone": [
-    "initiatives"
-   ],
-   "remove": [
-    "initiatives"
-   ],
+   "new_at_this_milestone": [],
+   "remove": [],
    "take_from_donor": [
     "audit_scopes",
     "issue_labels.criterion",
@@ -18682,7 +18693,6 @@
     "test_stop_rule_measures_against_best_so_far_not_the_previous_iteration",
     "test_stop_rule_oscillation_after_a_peak_stops_on_the_second_no_new_best",
     "test_the_digest_of_a_stacked_lane_uses_its_recorded_base",
-    "test_the_evaluate_dispatch_passes_an_empty_definition_set",
     "test_the_first_iteration_is_dispatched_with_the_recorded_base",
     "test_the_guard_costs_nothing_when_the_set_is_a_permutation",
     "test_the_stall_threshold_is_an_app_config_knob_with_no_literal_in_loop_code",
@@ -18704,7 +18714,8 @@
     "test_loop_re_evaluates_all_criteria_every_iteration",
     "test_loop_second_iteration_succeeds",
     "test_no_structured_output_raises_with_ralph_evaluator_raise_site",
-    "test_the_evaluation_prompt_states_each_criterion_verdict"
+    "test_the_evaluation_prompt_states_each_criterion_verdict",
+    "test_the_evaluate_dispatch_passes_an_empty_definition_set"
    ],
    "remove": [
     "import:from kodezart.types.domain.session import SessionType"
@@ -18725,7 +18736,8 @@
     "test_loop_re_evaluates_all_criteria_every_iteration",
     "test_loop_second_iteration_succeeds",
     "test_no_structured_output_raises_with_ralph_evaluator_raise_site",
-    "test_the_evaluation_prompt_states_each_criterion_verdict"
+    "test_the_evaluation_prompt_states_each_criterion_verdict",
+    "test_the_evaluate_dispatch_passes_an_empty_definition_set"
    ]
   },
   "tests/chains/test_remediation.py": {
@@ -23264,8 +23276,7 @@
     "H3:Job Events (1)",
     "H3:Request Body (`QueryRequest`)",
     "H3:Response",
-    "H3:Streaming Events (13)",
-    "H3:Workflow Events (15)"
+    "H3:Streaming Events (13)"
    ],
    "new_at_this_milestone": [
     "H3:Response \u2014 `202 Accepted` (`FireAcceptedResponse`)"
@@ -23433,7 +23444,6 @@
     "endpoints.escalation",
     "endpoints.host_runner",
     "endpoints.notion_connector",
-    "initiatives",
     "knowledge.constitution",
     "knowledge.house_rules",
     "knowledge.memories",
@@ -23442,7 +23452,6 @@
     "knowledge.run_logs",
     "operation_name",
     "principals",
-    "private_surface",
     "queue_states.approved",
     "queue_states.decision",
     "queue_states.done",
@@ -23484,8 +23493,12 @@
     "workflow_states.in_review",
     "workspace"
    ],
-   "new_at_this_milestone": [],
-   "remove": [],
+   "new_at_this_milestone": [
+    "initiatives"
+   ],
+   "remove": [
+    "initiatives"
+   ],
    "take_from_donor": [
     "audit_scopes",
     "issue_labels.criterion",
@@ -35156,8 +35169,7 @@
     "H3:Request Body (`QueryRequest`)",
     "H3:Response",
     "H3:Response \u2014 `202 Accepted` (`FireAcceptedResponse`)",
-    "H3:Streaming Events (13)",
-    "H3:Workflow Events (15)"
+    "H3:Streaming Events (13)"
    ],
    "new_at_this_milestone": [
     "H2:GET /api/v1/jobs/{jobId}",
@@ -35333,7 +35345,6 @@
     "knowledge.run_logs",
     "operation_name",
     "principals",
-    "private_surface",
     "queue_states.approved",
     "queue_states.decision",
     "queue_states.done",
@@ -35376,6 +35387,11 @@
     "workspace"
    ],
    "new_at_this_milestone": [
+    "audit_scopes",
+    "marker_prefixes.amendment",
+    "marker_prefixes.audit",
+    "marker_prefixes.run_alarm",
+    "marker_prefixes.run_event",
     "marker_prefixes.run_outcome",
     "marker_prefixes.run_state",
     "run_event_states.audit_refuted",
@@ -35442,7 +35458,11 @@
     "table:private_surface",
     "table:private_surface.workspaces",
     "table:run_event_states",
-    "table:scope_labels"
+    "table:scope_labels",
+    "marker_prefixes.run_event",
+    "marker_prefixes.run_alarm",
+    "marker_prefixes.amendment",
+    "marker_prefixes.audit"
    ]
   },
   "docs/parity_checklist.md": {
@@ -36107,7 +36127,9 @@
     "import:from typing import Final, assert_never",
     "import:import asyncio"
    ],
-   "new_at_this_milestone": [],
+   "new_at_this_milestone": [
+    "import:from kodezart.domain.run_alarm_record import ( parse_run_alarm, render_run_alarm, require_alarm_holder, run_alarm_marker, )"
+   ],
    "remove": [
     "LinearMcpTracker._append_claim_marker",
     "LinearMcpTracker._unexpired_claim_markers",
@@ -36361,7 +36383,8 @@
     "import:from urllib.parse import quote",
     "import:from uuid import uuid4",
     "is_long_lived_credential",
-    "refuse_combined_issue_write"
+    "refuse_combined_issue_write",
+    "import:from kodezart.domain.run_alarm_record import ( parse_run_alarm, render_run_alarm, require_alarm_holder, run_alarm_marker, )"
    ]
   },
   "src/kodezart/adapters/linear/record_sink.py": {
@@ -36898,7 +36921,9 @@
     "import:from langgraph.checkpoint.base import BaseCheckpointSaver",
     "rate_limit_delay_floor"
    ],
-   "new_at_this_milestone": [],
+   "new_at_this_milestone": [
+    "import:from kodezart.services.lane_state_writer import TrackerLaneStateWriter"
+   ],
    "remove": [
     "import:from kodezart.core.protocols import ( ArtifactPersister, BranchMerger, GitService, OutboundContentGate, PromptSetProvider, RefPublisher, RepoCache, WorkflowEngine, WorkspaceProvider, )",
     "import:from kodezart.domain.errors import RateLimitError"
@@ -36920,7 +36945,8 @@
     "import:from kodezart.core.protocols import ( ArtifactPersister, BranchMerger, FireCriteriaSource, GitService, OutboundContentGate, PromptSetProvider, RefPublisher, RepoCache, TrackerPort, WorkflowEngine, WorkspaceProvider, )",
     "import:from kodezart.domain.errors import RateLimitError, ScopedExecutionUnavailableError",
     "import:from kodezart.services.native_amendments import NativeAmendments",
-    "import:from kodezart.types.domain.operation import OperationConfig, RepoEntry"
+    "import:from kodezart.types.domain.operation import OperationConfig, RepoEntry",
+    "import:from kodezart.services.lane_state_writer import TrackerLaneStateWriter"
    ]
   },
   "src/kodezart/composition/gating.py": {
@@ -37762,7 +37788,22 @@
     "TrackerCommentReader.list_comments",
     "TrackerCriteriaReader",
     "TrackerCriteriaReader.read_criteria",
-    "import:from kodezart.types.domain.assertion_drift import GitSourceBlob"
+    "import:from kodezart.types.domain.assertion_drift import GitSourceBlob",
+    "import:from kodezart.types.domain.criteria import ( ExecutionCriterion, TrackerCriterion, TrackerCriterionSet, )",
+    "import:from kodezart.types.domain.criterion_lifecycle import CriterionCrossOff",
+    "import:from kodezart.types.domain.run_state import LaneBinding, LaneRunState",
+    "AfterPublish",
+    "LaneStateTracker",
+    "LaneStateTracker.upsert_comment",
+    "LaneStateTracker.post_run_event",
+    "LaneStateTracker.read_issue",
+    "LaneStateTracker.edit_description",
+    "LaneStateTracker.set_workflow_state",
+    "LaneStateTracker.reset_criterion_pending",
+    "LaneStateWriter",
+    "LaneStateWriter.require_writable",
+    "LaneStateWriter.record_commit",
+    "LaneStateWriter.write_cross_offs"
    ],
    "remove": [
     "ContentScanner",
@@ -37902,7 +37943,22 @@
     "import:from kodezart.types.domain.tracker import ( ClaimResult, IssuePriority, IssueQuery, MappingOutcome, MappingRef, ReviewQuery, TrackerAsset, TrackerComment, TrackerIssue, TrackerIssueRevision, TrackerIssueStateChange, TrackerReview, )",
     "import:from kodezart.types.domain.tracker_writes import DescriptionEditResult",
     "import:from kodezart.types.domain.workflow import RemediationRequest, WorkflowSubmission",
-    "import:from kodezart.types.domain.workspace import GitWorktreeIdentity, WorkspaceSnapshot"
+    "import:from kodezart.types.domain.workspace import GitWorktreeIdentity, WorkspaceSnapshot",
+    "import:from kodezart.types.domain.criteria import ( ExecutionCriterion, TrackerCriterion, TrackerCriterionSet, )",
+    "import:from kodezart.types.domain.criterion_lifecycle import CriterionCrossOff",
+    "import:from kodezart.types.domain.run_state import LaneBinding, LaneRunState",
+    "AfterPublish",
+    "LaneStateTracker",
+    "LaneStateTracker.upsert_comment",
+    "LaneStateTracker.post_run_event",
+    "LaneStateTracker.read_issue",
+    "LaneStateTracker.edit_description",
+    "LaneStateTracker.set_workflow_state",
+    "LaneStateTracker.reset_criterion_pending",
+    "LaneStateWriter",
+    "LaneStateWriter.require_writable",
+    "LaneStateWriter.record_commit",
+    "LaneStateWriter.write_cross_offs"
    ]
   },
   "src/kodezart/core/stream_drain.py": {
@@ -38153,7 +38209,9 @@
     "RulingRecordReadError",
     "RulingRecordReadError.__init__",
     "RunShapeReadError",
-    "WriteBackReadError"
+    "WriteBackReadError",
+    "LaneRecordWriteError",
+    "LaneRecordWriteError.__init__"
    ],
    "remove": [],
    "take_from_donor": [
@@ -38205,7 +38263,9 @@
     "UnionUnstableError",
     "WriteBackReadError",
     "import:from kodezart.types.domain.scope import ScopeRef",
-    "import:from kodezart.types.domain.surface import WritableSurface"
+    "import:from kodezart.types.domain.surface import WritableSurface",
+    "LaneRecordWriteError",
+    "LaneRecordWriteError.__init__"
    ]
   },
   "src/kodezart/domain/fire_spec.py": {
@@ -38224,7 +38284,11 @@
     "criterion_field_bodies",
     "import:from typing import Literal",
     "import:import re",
-    "replace_criterion_fields"
+    "replace_criterion_fields",
+    "_criterion_rows",
+    "_duplicated",
+    "duplicated_row_labels",
+    "criterion_ref"
    ],
    "remove": [],
    "take_from_donor": [
@@ -38242,7 +38306,11 @@
     "import:import re",
     "replace_criterion_fields",
     "require_fire_entry",
-    "tracker_spec_from_issues"
+    "tracker_spec_from_issues",
+    "_criterion_rows",
+    "_duplicated",
+    "duplicated_row_labels",
+    "criterion_ref"
    ]
   },
   "src/kodezart/domain/git_url.py": {
@@ -38491,7 +38559,9 @@
     "import:from kodezart.types.domain.subagents import ( NO_SUBAGENTS, UNCONFIGURED_SESSION_POLICY, AgentDefinition, SessionPolicy, )",
     "import:import sys"
    ],
-   "new_at_this_milestone": [],
+   "new_at_this_milestone": [
+    "import:from kodezart.core.protocols import ( AfterPublish, AgentExecutor, ChangePersister, NativeWriteGuard, WorkspaceProvider, )"
+   ],
    "remove": [
     "import:from kodezart.core.protocols import AgentExecutor, ChangePersister, WorkspaceProvider",
     "import:from kodezart.types.domain.agent import AgentEvent, ResultEvent",
@@ -38507,7 +38577,8 @@
     "import:from kodezart.services.native_execution import NativeExecution, NativeExecutionRequest",
     "import:from kodezart.types.domain.agent import ( AgentEvent, ResultEvent, )",
     "import:from kodezart.types.domain.run_records import RunIdentity",
-    "import:from kodezart.types.domain.session import AllowedTools, PermissionMode, SessionType"
+    "import:from kodezart.types.domain.session import AllowedTools, PermissionMode, SessionType",
+    "import:from kodezart.core.protocols import ( AfterPublish, AgentExecutor, ChangePersister, NativeWriteGuard, WorkspaceProvider, )"
    ]
   },
   "src/kodezart/services/base_resolver.py": {
@@ -42233,11 +42304,14 @@
     "test_the_three_stops_stay_distinct_and_none_shadows_another",
     "test_unknown_ids_trigger_retry"
    ],
-   "new_at_this_milestone": [],
+   "new_at_this_milestone": [
+    "evaluative_sites"
+   ],
    "remove": [],
    "take_from_donor": [
     "_run_kwargs",
-    "import:from kodezart.types.domain.session import PermissionMode, SessionType"
+    "import:from kodezart.types.domain.session import PermissionMode, SessionType",
+    "evaluative_sites"
    ]
   },
   "tests/chains/test_retry_floor_wiring.py": {
@@ -43405,7 +43479,9 @@
     "RefusingRecordSink.holds_record",
     "RefusingRecordSink.write_record",
     "as_validated",
-    "import:from kodezart.adapters.record_failures import record_failure_boundary"
+    "import:from kodezart.adapters.record_failures import record_failure_boundary",
+    "import:from kodezart.core.protocols import ( AfterPublish, AgentExecutor, McpToolResult, NativeWriteGuard, PromptSetProvider, WorkflowEngine, )",
+    "import:from kodezart.domain.run_alarm_record import ( parse_run_alarm, render_run_alarm, require_alarm_holder, run_alarm_marker, )"
    ],
    "remove": [
     "FakeContentScanner",
@@ -43586,7 +43662,9 @@
     "make_generated_criteria",
     "make_passing_evaluation_of_fake_criteria",
     "make_tracker_issue",
-    "recorded_session"
+    "recorded_session",
+    "import:from kodezart.core.protocols import ( AfterPublish, AgentExecutor, McpToolResult, NativeWriteGuard, PromptSetProvider, WorkflowEngine, )",
+    "import:from kodezart.domain.run_alarm_record import ( parse_run_alarm, render_run_alarm, require_alarm_holder, run_alarm_marker, )"
    ]
   },
   "tests/integration/test_live_criteria_probes.py": {
@@ -45940,8 +46018,7 @@
     "H3:Job Events (1)",
     "H3:Request Body (`QueryRequest`)",
     "H3:Response",
-    "H3:Streaming Events (13)",
-    "H3:Workflow Events (15)"
+    "H3:Streaming Events (13)"
    ],
    "new_at_this_milestone": [],
    "remove": [],
@@ -46105,7 +46182,6 @@
     "endpoints.escalation",
     "endpoints.host_runner",
     "endpoints.notion_connector",
-    "initiatives",
     "knowledge.constitution",
     "knowledge.house_rules",
     "knowledge.memories",
@@ -46114,7 +46190,6 @@
     "knowledge.run_logs",
     "operation_name",
     "principals",
-    "private_surface",
     "queue_states.approved",
     "queue_states.decision",
     "queue_states.done",
@@ -57376,8 +57451,7 @@
     "H3:Job Events (1)",
     "H3:Request Body (`QueryRequest`)",
     "H3:Response",
-    "H3:Streaming Events (13)",
-    "H3:Workflow Events (15)"
+    "H3:Streaming Events (13)"
    ],
    "new_at_this_milestone": [],
    "remove": [],
@@ -57541,7 +57615,6 @@
     "endpoints.escalation",
     "endpoints.host_runner",
     "endpoints.notion_connector",
-    "initiatives",
     "knowledge.constitution",
     "knowledge.house_rules",
     "knowledge.memories",
@@ -57591,12 +57664,8 @@
     "workflow_states.in_review",
     "workspace"
    ],
-   "new_at_this_milestone": [
-    "private_surface"
-   ],
-   "remove": [
-    "private_surface"
-   ],
+   "new_at_this_milestone": [],
+   "remove": [],
    "take_from_donor": [
     "audit_scopes",
     "issue_labels.criterion",
@@ -68928,8 +68997,7 @@
     "H3:Job Events (1)",
     "H3:Request Body (`QueryRequest`)",
     "H3:Response",
-    "H3:Streaming Events (13)",
-    "H3:Workflow Events (15)"
+    "H3:Streaming Events (13)"
    ],
    "new_at_this_milestone": [],
    "remove": [],
@@ -69093,7 +69161,6 @@
     "endpoints.escalation",
     "endpoints.host_runner",
     "endpoints.notion_connector",
-    "initiatives",
     "knowledge.constitution",
     "knowledge.house_rules",
     "knowledge.memories",
@@ -69102,7 +69169,6 @@
     "knowledge.run_logs",
     "operation_name",
     "principals",
-    "private_surface",
     "queue_states.approved",
     "queue_states.decision",
     "queue_states.done",
@@ -71021,8 +71087,6 @@
     "AppConfig.forge_api_retry_backoff_factor",
     "AppConfig.forge_api_timeout_seconds",
     "AppConfig.from_env",
-    "AppConfig.git_base_url",
-    "AppConfig.git_remote",
     "AppConfig.github_token",
     "AppConfig.grooming_pass_gate_signals",
     "AppConfig.grooming_pass_interval_seconds",
@@ -71031,7 +71095,6 @@
     "AppConfig.loop_plateau_window",
     "AppConfig.max_iterations",
     "AppConfig.max_reviews",
-    "AppConfig.model",
     "AppConfig.operation_config",
     "AppConfig.prompt_set",
     "AppConfig.prompt_set_overrides",
@@ -71053,7 +71116,10 @@
     "import:from typing import Self"
    ],
    "new_at_this_milestone": [
+    "AppConfig.git_base_url",
+    "AppConfig.git_remote",
     "AppConfig.log_level",
+    "AppConfig.model",
     "AppConfig.queue_event_buffer_capacity",
     "AppConfig.queue_event_buffer_retention_seconds",
     "AppConfig.queue_max_concurrent_runs_per_lane",
@@ -71083,8 +71149,10 @@
     "AppConfig.deny_pattern_verdicts",
     "AppConfig.deny_patterns",
     "AppConfig.fallback_model",
+    "AppConfig.git_base_url",
     "AppConfig.git_committer_email",
     "AppConfig.git_committer_name",
+    "AppConfig.git_remote",
     "AppConfig.integration_workspace_dir",
     "AppConfig.knowledge_grant",
     "AppConfig.knowledge_mcp_args",
@@ -71107,6 +71175,7 @@
     "AppConfig.knowledge_session_grants",
     "AppConfig.log_level",
     "AppConfig.log_pretty",
+    "AppConfig.model",
     "AppConfig.project_name",
     "AppConfig.queue_event_buffer_capacity",
     "AppConfig.queue_event_buffer_retention_seconds",
@@ -77103,7 +77172,6 @@
     "make_dispatched_criteria",
     "make_failing_evaluation",
     "make_minted_criteria",
-    "make_passing_evaluation",
     "make_passing_evaluation_over",
     "make_prompt_provider",
     "make_ticket_draft",
@@ -77116,7 +77184,8 @@
     "FakeTrackerPort.acquire_surfaces",
     "FakeTrackerPort.read_run_alarm",
     "FakeTrackerPort.record_run_alarm",
-    "FakeTrackerPort.upsert_comment"
+    "FakeTrackerPort.upsert_comment",
+    "make_passing_evaluation"
    ],
    "remove": [
     "FakeContentScanner",
@@ -77133,7 +77202,8 @@
     "import:from kodezart.types.domain.session import KnowledgeGrant, SessionType",
     "import:from kodezart.types.domain.tracker import ( INSTATABLE_MAPPING_KINDS, ClaimResult, ClaimStatus, EnsureAction, IssuePriority, IssueQuery, IssueRelation, IssueRelationKind, MappingKind, MappingOutcome, MappingRef, ReviewQuery, TrackerAsset, TrackerComment, TrackerIssue, TrackerReview, WorkflowStateKind, )",
     "import:from kodezart.types.domain.workflow import RemediationRequest",
-    "import:from kodezart.types.requests.agent import WorkflowRequest"
+    "import:from kodezart.types.requests.agent import WorkflowRequest",
+    "make_passing_evaluation"
    ],
    "take_from_donor": [
     "FAKE_CRITERION_IDS",

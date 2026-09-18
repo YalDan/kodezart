@@ -1,8 +1,8 @@
 {
  "milestone": "M5",
- "branch": "origin/v03/m5-deliver-terminate",
- "base": "origin/v03/m3-plan-walk",
- "head": "e453be0a356116a971049517941fefc1d15db38d",
+ "branch": "a6a2a2c591bd8ba0e91f12f2de4b33be953993b4",
+ "base": "3757ed9cdd1ecdc958124fb3a680fa76c6b20a4f",
+ "head": "a6a2a2c591bd8ba0e91f12f2de4b33be953993b4",
  "later_members_shown_here": [],
  "own_members_shown_earlier": [
   {

@@ -1,8 +1,8 @@
 {
  "milestone": "M4",
- "branch": "origin/v03/m4-criterion-lifecycle",
- "base": "origin/v03/m1-scope-ports",
- "head": "49b21d27cdb09da70f52326861e594ce529598ae",
+ "branch": "9950181ea5d7d1b3690be23c73229a7dced068f7",
+ "base": "f17b6ee51fede33e361c975e46c74bba1618840b",
+ "head": "9950181ea5d7d1b3690be23c73229a7dced068f7",
  "later_members_shown_here": [
   {
    "file": "src/kodezart/domain/accept_gate.py",
@@ -87,6 +87,14 @@
  ],
  "own_members_shown_earlier": [
   {
+   "file": "src/kodezart/adapters/linear/tracker.py",
+   "symbol": "import:from kodezart.domain.run_alarm_record import ( parse_run_alarm, render_run_alarm, require_alarm_holder, run_alarm_marker, )",
+   "shown_at": "M1",
+   "shown_pr": 133,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
    "file": "src/kodezart/adapters/mcp/stdio_tool_caller.py",
    "symbol": "StdioMcpToolCaller",
    "shown_at": "M1",
@@ -95,8 +103,40 @@
    "kind": "modified"
   },
   {
+   "file": "src/kodezart/composition/engine.py",
+   "symbol": "import:from kodezart.services.lane_state_writer import TrackerLaneStateWriter",
+   "shown_at": "M1",
+   "shown_pr": 133,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
    "file": "src/kodezart/core/protocols.py",
    "symbol": "import:from kodezart.types.domain.assertion_drift import GitSourceBlob",
+   "shown_at": "M1",
+   "shown_pr": 133,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/core/protocols.py",
+   "symbol": "import:from kodezart.types.domain.criteria import ( ExecutionCriterion, TrackerCriterion, TrackerCriterionSet, )",
+   "shown_at": "M1",
+   "shown_pr": 133,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/core/protocols.py",
+   "symbol": "import:from kodezart.types.domain.criterion_lifecycle import CriterionCrossOff",
+   "shown_at": "M1",
+   "shown_pr": 133,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/core/protocols.py",
+   "symbol": "import:from kodezart.types.domain.run_state import LaneBinding, LaneRunState",
    "shown_at": "M1",
    "shown_pr": 133,
    "sym_kind": "import",
@@ -113,6 +153,14 @@
   {
    "file": "src/kodezart/domain/fire_spec.py",
    "symbol": "import:import re",
+   "shown_at": "M1",
+   "shown_pr": 133,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/services/agent_service.py",
+   "symbol": "import:from kodezart.core.protocols import ( AfterPublish, AgentExecutor, ChangePersister, NativeWriteGuard, WorkspaceProvider, )",
    "shown_at": "M1",
    "shown_pr": 133,
    "sym_kind": "import",
@@ -447,6 +495,22 @@
    "kind": "added"
   },
   {
+   "file": "tests/fakes.py",
+   "symbol": "import:from kodezart.core.protocols import ( AfterPublish, AgentExecutor, McpToolResult, NativeWriteGuard, PromptSetProvider, WorkflowEngine, )",
+   "shown_at": "M1",
+   "shown_pr": 133,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "tests/fakes.py",
+   "symbol": "import:from kodezart.domain.run_alarm_record import ( parse_run_alarm, render_run_alarm, require_alarm_holder, run_alarm_marker, )",
+   "shown_at": "M1",
+   "shown_pr": 133,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
    "file": "tests/prompt_census.py",
    "symbol": "PROMPT_FUNCTION_NAMES",
    "shown_at": "M1",
@@ -465,6 +529,6 @@
  ],
  "counts": {
   "later_members_shown_here": 10,
-  "own_members_shown_earlier": 47
+  "own_members_shown_earlier": 55
  }
 }
