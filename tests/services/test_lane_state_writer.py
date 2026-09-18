@@ -31,7 +31,11 @@ from tests.fakes import FakeTrackerPort, PassThroughGate, make_tracker_issue
 from tests.lane_fixture import LaneGit, LaneRepo, lane_operation
 
 LANE = "LANE-1"
-REMOTE = "origin"
+#: The remote this lane's repository is on, named unlike the production
+#: default: under that default the value the writer must take from its
+#: configuration coincides with the one a hard-coded remote would use, and a
+#: record read off a remote nobody configured would read as this lane's.
+REMOTE = "fixture-remote"
 REPO_URL = "https://forge.example/acme/repo"
 
 
