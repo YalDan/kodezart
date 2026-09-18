@@ -25,9 +25,12 @@ from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.operation import (
     OperationConfig,
     OperationMemberAbsentError,
-    ScopeLabel,
 )
-from kodezart.types.domain.run_event import RUN_EVENT_PUBLISHERS, RunEventKind
+from kodezart.types.domain.run_event import (
+    RUN_EVENT_PUBLISHERS,
+    RunEventKind,
+    RunEventPublisher,
+)
 from kodezart.types.domain.run_state import LaneRunState
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.session import PermissionMode, ToolPreset
@@ -38,6 +41,7 @@ from tests.chains.test_native_fire import (
     STAGE_KEY,
     SUBJECT,
     NativeExecutor,
+    board,
     criterion_body,
     engine,
     native_evaluation,
@@ -45,7 +49,7 @@ from tests.chains.test_native_fire import (
     tracker,
 )
 from tests.domain.test_criterion_cross_off import callers_of
-from tests.fakes import FakeTrackerPort, make_tracker_issue
+from tests.fakes import make_tracker_issue
 from tests.lane_fixture import (
     LaneGit,
     LanePersister,
@@ -969,8 +973,8 @@ WIDE_CRITERIA = tuple(f"{SUBJECT}/check-{index}" for index in range(8))
 
 def wide_board(keys=WIDE_CRITERIA):
     """The subject with as many criterion sub-issues as *keys* names."""
-    return FakeTrackerPort(
-        issues=[
+    return board(
+        [
             make_tracker_issue(
                 SUBJECT,
                 issue_labels=frozenset({STAGE_KEY}),
@@ -985,14 +989,7 @@ def wide_board(keys=WIDE_CRITERIA):
                 )
                 for key in keys
             ),
-        ],
-        criteria_stage_label_key=STAGE_KEY,
-        marker_prefixes=native_operation().marker_prefixes,
-        scope_label_members={
-            ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT): frozenset(
-                {ScopeLabel.APPROVED}
-            )
-        },
+        ]
     )
 
 
@@ -1034,11 +1031,18 @@ async def test_a_long_criterion_set_over_many_iterations_posts_only_vocabulary_e
         for key in WIDE_CRITERIA
         if port.issues[key].state_kind is WorkflowStateKind.COMPLETED
     } == set(WIDE_CRITERIA[:5])
+    # The count the comment count is measured against: five moves, one per
+    # criterion the five iterations passed, and two comments throughout.
+    assert len(port.workflow_writes) == 5
     assert len(port.comments) == 2
     assert {comment.issue_key for comment in port.comments} == {SUBJECT}
     posted = await port.lane_run_events(issue_key=SUBJECT, lane_key=SUBJECT)
     assert [event.kind for event in posted] == [RunEventKind.FIRST_PUSH]
-    assert all(event.kind in RUN_EVENT_PUBLISHERS for event in posted)
+    # A lane's own stream carries only the kinds the lane publishes; a kind
+    # some other raiser owns would be somebody else's write on this log.
+    assert {RUN_EVENT_PUBLISHERS[event.kind] for event in posted} == {
+        RunEventPublisher.LANE
+    }
     assert len(posted) + len(lane.record_comments()) == len(port.comments)
 
 

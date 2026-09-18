@@ -113,6 +113,24 @@ def check_of(key: str) -> str:
     return f"the check {key} states"
 
 
+def board(issues, *, approved: bool = True) -> FakeTrackerPort:
+    """The subject's board around *issues*: markers, stage label, admission.
+
+    The board reads its markers under the same operation the engine writes
+    them under; a port with no prefixes could answer for no lane.
+    """
+    return FakeTrackerPort(
+        issues=issues,
+        criteria_stage_label_key=STAGE_KEY,
+        marker_prefixes=native_operation().marker_prefixes,
+        scope_label_members={
+            ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT): (
+                frozenset({ScopeLabel.APPROVED}) if approved else frozenset()
+            )
+        },
+    )
+
+
 def tracker(
     *,
     staged: bool = True,
@@ -160,18 +178,7 @@ def tracker(
             body=overrides.get(NESTED_DONE, criterion_body(NESTED_DONE)),
         ),
     ]
-    return FakeTrackerPort(
-        issues=issues,
-        criteria_stage_label_key=STAGE_KEY,
-        # The board reads its markers under the same operation the engine
-        # writes them under; a port with no prefixes could answer no lane.
-        marker_prefixes=native_operation().marker_prefixes,
-        scope_label_members={
-            ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT): (
-                frozenset({ScopeLabel.APPROVED}) if approved else frozenset()
-            )
-        },
-    )
+    return board(issues, approved=approved)
 
 
 def engine(
