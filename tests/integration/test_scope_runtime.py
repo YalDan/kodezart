@@ -1635,6 +1635,10 @@ async def test_kill_and_re_enter_dispatches_exactly_the_remaining_lanes(monkeypa
                 seen.append(event)
 
         task = asyncio.create_task(walk())
+        # The same bound over run one's own spin: the walk either reaches C or
+        # ends, and "neither" is a failure rather than a test that never
+        # returns.
+        deadline = asyncio.get_running_loop().time() + 60
         while not any(
             isinstance(event, ScopeLaneEvent)
             and event.lane_key == "C"
@@ -1642,6 +1646,9 @@ async def test_kill_and_re_enter_dispatches_exactly_the_remaining_lanes(monkeypa
             for event in seen
         ):
             assert not task.done(), "the walk ended before lane C was in flight"
+            assert asyncio.get_running_loop().time() < deadline, (
+                "the walk never reached lane C"
+            )
             await asyncio.sleep(0)
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
@@ -1683,10 +1690,13 @@ async def test_kill_and_re_enter_dispatches_exactly_the_remaining_lanes(monkeypa
             return sessions(**arguments)
 
         monkeypatch.setattr(second.executor, "stream", recording)
-        events = [
-            event
-            async for event in drive(second, job="second-job", origin=FORGE_ORIGIN)
-        ]
+        # Bounded: a walk that offered a lane forever would hang here instead
+        # of failing, and a hang is not an assertion. This run is four ticks.
+        async with asyncio.timeout(60):
+            events = [
+                event
+                async for event in drive(second, job="second-job", origin=FORGE_ORIGIN)
+            ]
 
         assert [
             event.lane_key
