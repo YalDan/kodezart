@@ -339,6 +339,31 @@ async def test_a_damaged_event_stream_refuses_the_write_instead_of_escaping(dama
     assert record_comments(port) == []
 
 
+class UnvalidatableBoard(FakeTrackerPort):
+    """A board whose listing holds something that is not a comment."""
+
+    async def list_comments(self, *, issue_key: str):
+        return [TrackerComment.model_validate({"body": "no identity at all"})]
+
+
+async def test_a_listing_that_is_not_comments_refuses_the_write():
+    """A validation failure on the read path carries no name a caller can act on.
+
+    It arrives after the push, like the stream's own faults, so it is this
+    write's refusal rather than a shape error about fields nobody asked for.
+    """
+    port, repo = (
+        UnvalidatableBoard(
+            issues=[make_tracker_issue(LANE)],
+            marker_prefixes=lane_operation().marker_prefixes,
+        ),
+        lane_repo(),
+    )
+    with pytest.raises(LaneRecordWriteError, match="comments could not be read"):
+        await make_commit(writer(port, repo), repo, 1)
+    assert port.comments == []
+
+
 async def test_an_event_of_another_kind_does_not_stand_in_for_the_first_push():
     """Only a first-push event says the lane has reached the remote.
 

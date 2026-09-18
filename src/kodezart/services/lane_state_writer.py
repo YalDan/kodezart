@@ -2,6 +2,8 @@
 
 from collections.abc import Sequence
 
+from pydantic import ValidationError
+
 from kodezart.core.logging import get_logger
 from kodezart.core.outbound_write import gated_exact
 from kodezart.core.owned_tasks import settle
@@ -112,7 +114,7 @@ class TrackerLaneStateWriter:
         changeset = await self._git.diff_summary(
             workspace_path, lane.base_ref, head_sha
         )
-        comments = await self._tracker.list_comments(issue_key=lane.lane_key)
+        comments = await self._board(lane)
         first_push = self._first_push(comments=comments, lane=lane)
         try:
             located = self._records.locate(
@@ -158,6 +160,22 @@ class TrackerLaneStateWriter:
                 )
             )
         return record
+
+    async def _board(self, lane: LaneBinding) -> Sequence[TrackerComment]:
+        """The lane issue's comments, read once for both facts this write needs.
+
+        A listing that does not validate as comments is this write's own
+        refusal. The transport's own failures travel as themselves, the way
+        they do from the two writes below, but a validation failure has no
+        name a caller could act on and would arrive after the push.
+        """
+        try:
+            return await self._tracker.list_comments(issue_key=lane.lane_key)
+        except ValidationError as exc:
+            raise LaneRecordWriteError(
+                lane_key=lane.lane_key,
+                reason=f"the lane's comments could not be read: {exc}",
+            ) from exc
 
     def _first_push(
         self, *, comments: Sequence[TrackerComment], lane: LaneBinding
