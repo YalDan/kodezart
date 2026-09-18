@@ -624,6 +624,77 @@ def test_next_record_appends_one_row_and_keeps_prior_associations():
     assert second.files_changed == 3
 
 
+#: A digest of the same shape as another text's: what a re-pin would put on a
+#: record whose subject the running lane read again.
+OTHER_DIGEST = "a" * 64
+
+
+def later_run(digest: str = DIGEST) -> LaneBinding:
+    """The next run's binding over the same lane, deliverable and base.
+
+    Its own run id, because a run the record already carries as delivering
+    another branch is the rebind the composer refuses before anything else.
+    """
+    return LaneBinding(
+        lane_key="lane:alpha",
+        body_digest=digest,
+        loop_branch="ordinary-name",
+        deliverable_branch="has-ralph-in-its-name",
+        base_ref="trunk",
+        repo_url="https://forge.example/repo",
+        repo_path=None,
+        run_id="run-later",
+        visibility=RepoVisibility.PRIVATE,
+    )
+
+
+def test_a_record_with_no_digest_is_pinned_by_its_next_write():
+    """Every record written before the pin existed has none.
+
+    That is the path production takes first, so a write that carried the
+    prior absence forward would leave those lanes uncompared forever and the
+    criterion's comparison would never start for them.
+    """
+    prior = LaneRunState.model_validate({**record_data(), "bodyDigest": None})
+    assert prior.body_digest is None
+
+    later = next_lane_record(
+        prior=prior,
+        lane=later_run(),
+        branch_url="https://forge.example/branch/ordinary-name",
+        head_sha="d" * 40,
+        pushed_head_sha="d" * 40,
+        changeset=changeset(),
+        subject="Third change",
+    )
+
+    assert later.body_digest == DIGEST
+
+
+def test_the_digest_a_prior_record_pinned_is_never_re_pinned():
+    """The pin belongs to the first write that had one.
+
+    A later write carries the running lane's own digest, and preferring it
+    would re-pin the record under a lane whose subject changed — the entry
+    guard refuses such a lane instead, and the two are only distinguishable
+    here, which is the case the rule exists for.
+    """
+    prior = LaneRunState.model_validate(record_data())
+    assert prior.body_digest == DIGEST
+
+    later = next_lane_record(
+        prior=prior,
+        lane=later_run(digest=OTHER_DIGEST),
+        branch_url="https://forge.example/branch/ordinary-name",
+        head_sha="d" * 40,
+        pushed_head_sha="d" * 40,
+        changeset=changeset(),
+        subject="Third change",
+    )
+
+    assert later.body_digest == DIGEST != OTHER_DIGEST
+
+
 def test_the_pull_request_the_prior_record_carries_survives_the_next_commit():
     prior = LaneRunState.model_validate(record_data())
     lane = LaneBinding(

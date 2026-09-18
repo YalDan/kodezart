@@ -19,14 +19,18 @@ _FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
 CriterionField = Literal["Check", "Do", "Evidence", "Class"]
 
 
-def subject_digest(*, spec: TrackerSpec) -> str:
-    """The sha256 hex of the captured subject text, as the record pins it.
+def body_digest(body: str) -> str:
+    """The sha256 hex of an issue body, as every reader of one pins it.
 
-    The one fact a lane's record keeps about the text it entered on, and
-    arithmetic over the bytes that were read: two processes that read the
-    same subject agree on it without either of them asking anything.
+    The one place in the source that turns a body into a digest: a lane's
+    record pins the subject it entered on, a revision stamps the body it
+    read, and an organize snapshot carries the body it judged. One rule, so
+    two readings of the same bytes cannot disagree by construction.
+
+    Arithmetic over the bytes that were read: two processes that read the
+    same body agree on it without either of them asking anything.
     """
-    return sha256(spec.body.encode("utf-8")).hexdigest()
+    return sha256(body.encode("utf-8")).hexdigest()
 
 
 def _without_comments(line: str, *, comment: bool) -> tuple[str, bool]:

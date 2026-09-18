@@ -14,7 +14,6 @@ from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
-from hashlib import sha256
 from typing import Final, assert_never
 from urllib.parse import quote
 from uuid import uuid4
@@ -88,7 +87,11 @@ from kodezart.domain.errors import (
     TransientAPIError,
 )
 from kodezart.domain.escalation_resolution import resolution_from_comments
-from kodezart.domain.fire_spec import require_fire_entry, tracker_spec_from_issues
+from kodezart.domain.fire_spec import (
+    body_digest,
+    require_fire_entry,
+    tracker_spec_from_issues,
+)
 from kodezart.domain.git_url import extract_owner_repo
 from kodezart.domain.organize_graph import (
     changed_peers,
@@ -1189,7 +1192,7 @@ class LinearMcpTracker:
         issue = await self.read_issue(issue_key=issue_key)
         return TrackerIssueRevision(
             issue=issue,
-            body_digest=sha256(issue.body.encode("utf-8")).hexdigest(),
+            body_digest=body_digest(issue.body),
         )
 
     async def scope_issues(self, *, ref: ScopeRef) -> Sequence[TrackerIssue]:

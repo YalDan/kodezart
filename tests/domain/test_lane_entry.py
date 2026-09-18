@@ -148,7 +148,11 @@ def test_each_row_of_the_entry_table(facts, expected) -> None:
 
 
 def test_a_record_written_before_the_pin_carries_no_digest_to_compare() -> None:
-    """A record with no digest is not compared, and is pinned by its next write."""
+    """A record with no digest hands the fire nothing to compare the text with.
+
+    That such a record is pinned by its next write is the composer's half, in
+    ``tests/domain/test_lane_record.py``.
+    """
     entry = decide(
         recorded=recorded(record(digest=None)),
         remote_loop_head=REMOTE_HEAD,

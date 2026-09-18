@@ -11,10 +11,10 @@ from kodezart.domain.criterion_cross_off import HELD_CRITERION_STATE
 from kodezart.domain.errors import (
     FireSpecEntryError,
     InvalidFireCriterionError,
-    SubjectAmendedError,
     TransientAPIError,
 )
-from kodezart.domain.fire_spec import criterion_check, subject_digest
+from kodezart.domain.fire_spec import criterion_check
+from kodezart.domain.lane_entry import require_unamended_subject
 from kodezart.domain.workflow_state import recorded_native_roster
 from kodezart.services.scope_membership import read_scope_members
 from kodezart.types.domain.criteria import (
@@ -24,7 +24,6 @@ from kodezart.types.domain.criteria import (
     TrackerCriterionSet,
 )
 from kodezart.types.domain.fire_spec import TrackerSpec
-from kodezart.types.domain.lane_entry import DeliverOnlyLane, ResumedLane
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.tracker import TrackerIssue, WorkflowStateKind
 from kodezart.types.domain.workflow import WorkflowState
@@ -224,7 +223,7 @@ async def revalidate_criteria(
         spec = await source.read_spec(issue_key=issue_key)
     if not isinstance(spec, TrackerSpec) or spec.subject != issue_key:
         raise ValueError("The native fire spec must match its addressed subject")
-    _require_unamended_subject(issue_key=issue_key, spec=spec, state=state)
+    require_unamended_subject(issue_key=issue_key, entry=state["lane_entry"], spec=spec)
     return {
         "fire_spec": spec,
         "criterion_set": await source.read_current(
@@ -235,33 +234,6 @@ async def revalidate_criteria(
             held=recorded_native_roster(state["criterion_set"]),
         ),
     }
-
-
-def _require_unamended_subject(
-    *, issue_key: str, spec: TrackerSpec, state: WorkflowState
-) -> None:
-    """Refuse a lane whose subject was edited since its record pinned it.
-
-    This is the fire's ONE read of the subject text compared against the one
-    fact the record keeps about it. A record with no digest — written before
-    the pin existed — is not compared and is pinned by its next write. The
-    text is never silently re-read into a resumed lane: the criteria it owes
-    were graded against what the digest names, so a difference is an
-    amendment and refuses here, before any session opens.
-    """
-    entry = state["lane_entry"]
-    recorded = (
-        entry.body_digest if isinstance(entry, (ResumedLane, DeliverOnlyLane)) else None
-    )
-    if recorded is None:
-        return
-    current = subject_digest(spec=spec)
-    if current != recorded:
-        raise SubjectAmendedError(
-            issue_key=issue_key,
-            recorded_digest=recorded,
-            current_digest=current,
-        )
 
 
 async def require_current_native_snapshot(

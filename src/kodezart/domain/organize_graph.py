@@ -1,9 +1,9 @@
 """Deterministic native identity and graph checks, without semantic planning."""
 
 from collections.abc import Sequence
-from hashlib import sha256
 
 from kodezart.domain.errors import OrganizeWriteRefusalError, ScopeCycleError
+from kodezart.domain.fire_spec import body_digest
 from kodezart.domain.topology import plan_topology
 from kodezart.types.domain.organize_graph import (
     BlockedByChange,
@@ -20,7 +20,7 @@ from kodezart.types.domain.tracker import IssueRelation, IssueRelationKind, Trac
 def graph_snapshot(issue: TrackerIssue) -> IssueGraphSnapshot:
     return IssueGraphSnapshot(
         issue_key=issue.issue_key,
-        body_digest=sha256(issue.body.encode()).hexdigest(),
+        body_digest=body_digest(issue.body),
         title=issue.title,
         state_kind=issue.state_kind,
         issue_labels=tuple(sorted(issue.issue_labels)),

@@ -3,8 +3,10 @@
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from kodezart.domain.errors import LaneEntryError
+from kodezart.domain.errors import LaneEntryError, SubjectAmendedError
+from kodezart.domain.fire_spec import body_digest
 from kodezart.types.domain.branch import BranchRole
+from kodezart.types.domain.fire_spec import TrackerSpec
 from kodezart.types.domain.lane_entry import (
     DeliverOnlyLane,
     LaneEntry,
@@ -150,3 +152,31 @@ def decide_lane_entry(
         head_sha=remote_loop_head,
         body_digest=record.body_digest,
     )
+
+
+def require_unamended_subject(
+    *, issue_key: str, entry: LaneEntry | None, spec: TrackerSpec
+) -> None:
+    """Refuse a lane whose subject was edited since its record pinned it.
+
+    The fire reads the subject text once, at its entry, and this is that
+    reading compared with the one fact the record keeps about it. A record
+    with no digest — written before the pin existed — is not compared and is
+    pinned by its next write. The text is never silently re-read into a
+    resumed lane: the criteria the lane owes were graded against what the
+    digest names, so a difference is an amendment and refuses here, before
+    any session opens.
+
+    Beside the entry rather than inside the fire: it is arithmetic over the
+    entry and the captured subject, and the entry is this module's own value.
+    """
+    recorded = recorded_entry(entry)
+    if recorded is None or recorded.body_digest is None:
+        return
+    current = body_digest(spec.body)
+    if current != recorded.body_digest:
+        raise SubjectAmendedError(
+            issue_key=issue_key,
+            recorded_digest=recorded.body_digest,
+            current_digest=current,
+        )

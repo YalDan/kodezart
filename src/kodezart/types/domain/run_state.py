@@ -86,8 +86,10 @@ class LaneRunState(CamelCaseModel):
     pr: LanePR | None = None
     #: The subject digest this lane was entered on, ``None`` on a record
     #: written before the pin existed. Never re-pinned by a later entry:
-    #: an entry whose text differs is an amendment, not a re-read.
-    body_digest: Annotated[str, Field(min_length=1)] | None = None
+    #: an entry whose text differs is an amendment, not a re-read. The shape
+    #: is the digest's own, so a record carrying a value from some other
+    #: algorithm refuses at the read rather than comparing unequal forever.
+    body_digest: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")] | None = None
     associations: list[BranchAssociation]
 
     @model_validator(mode="after")

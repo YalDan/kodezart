@@ -1,6 +1,7 @@
 """Real request composition, controller and native graphs with external doubles."""
 
 import asyncio
+import hashlib
 import json
 from dataclasses import dataclass
 
@@ -22,7 +23,7 @@ from kodezart.domain.errors import (
     GitSourceReadError,
     ScopePlanRefusalError,
 )
-from kodezart.domain.fire_spec import criterion_field_bodies, subject_digest
+from kodezart.domain.fire_spec import criterion_field_bodies
 from kodezart.domain.git_url import resolve_repo_url
 from kodezart.domain.lane_entry import recorded_branches
 from kodezart.handlers.agent_handler import AgentHandler
@@ -1497,17 +1498,41 @@ async def test_the_scoped_arm_holds_no_checkpointer_while_the_authored_arm_keeps
 # ---------------------------------------------------------------------------
 
 
-async def spec_of(port, key: str):
-    """The subject as the production reader captures it."""
-    return await TrackerCriteria(tracker=port).read_spec(issue_key=key)
+def subject_reads(port, monkeypatch) -> list[str]:
+    """Every read of a subject's own text the board answers, in order.
+
+    The criterion says the text is read ONCE at entry, and a re-read returns
+    the same bytes in every fixture here: only the count can tell the two
+    apart.
+    """
+    reads: list[str] = []
+    answering = port.read_fire_spec
+
+    async def counted(*, issue_key):
+        reads.append(issue_key)
+        return await answering(issue_key=issue_key)
+
+    monkeypatch.setattr(port, "read_fire_spec", counted)
+    return reads
 
 
-async def test_the_digest_is_pinned_at_the_first_record_write():
-    """What the record keeps about the subject is the digest of the text read."""
+async def test_the_digest_is_pinned_at_the_first_record_write(monkeypatch):
+    """What the record keeps about the subject is the sha256 of the text read.
+
+    Computed here rather than through the production function: an expectation
+    taken from the code under test is a tautology on the algorithm, and the
+    record's own field would accept a digest of any other one.
+    """
     repos = WalkRepos()
     port = board(lanes=("A",), checks=TWO_CHECKS)
+    reads = subject_reads(port, monkeypatch)
     _, record = await first_fire(port, repos)
-    assert record.body_digest == subject_digest(spec=await spec_of(port, "A"))
+
+    assert (
+        record.body_digest
+        == hashlib.sha256(port.issues["A"].body.encode("utf-8")).hexdigest()
+    )
+    assert reads == ["A"]
 
 
 async def test_a_subject_amended_between_runs_is_refused_by_digest_not_re_read(
@@ -1529,10 +1554,14 @@ async def test_a_subject_amended_between_runs_is_refused_by_digest_not_re_read(
     minted = mint_spy(monkeypatch)
 
     second = resumable(port=port, repos=repos, evaluations=echoes(passed=set(A_KEYS)))
+    reads = subject_reads(port, monkeypatch)
     await walk_reporting(
         second, kind="SubjectAmendedError", match="differs from the recorded"
     )
 
+    # Read once, at the entry, and compared there: a second process that
+    # re-read the text on its way past the comparison would read it again.
+    assert reads == ["A"]
     assert minted == []
     assert second.executor.execution_prompts == []
     assert second.executor.evaluation_prompts == []
@@ -1541,7 +1570,7 @@ async def test_a_subject_amended_between_runs_is_refused_by_digest_not_re_read(
     assert (
         after.body_digest
         == before.body_digest
-        != subject_digest(spec=await spec_of(port, "A"))
+        != hashlib.sha256(port.issues["A"].body.encode("utf-8")).hexdigest()
     )
 
 
