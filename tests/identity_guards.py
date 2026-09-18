@@ -1,6 +1,7 @@
 """Shared static checks for explicit identity construction and model addresses."""
 
 import ast
+from collections.abc import Iterator
 
 #: The model methods that make a value without naming its class.  A guard
 #: counting only the class call would miss every one of them, and the copy
@@ -141,12 +142,16 @@ def value_holders(sources: dict[str, str], *, identity: str) -> dict[str, ast.Mo
     """Every module that can hold one of *identity*'s values, as a fixed point.
 
     A module holds the value when it imports or declares the identity, or
-    reaches it as an attribute of a module it imports.  It also holds the
-    value when it imports a CARRIER — a function, method, class or field
-    whose own annotation mentions the identity, or mentions a carrier — since
-    a caller handed the value back holds it without ever naming its type.
-    Carriers and holders are grown together until neither changes, so the
-    scanned surface is derived from the tree and never listed here.
+    reaches the IDENTITY as an attribute of a module it imports.  It also
+    holds the value when it imports a CARRIER — a function, method, class or
+    field whose own annotation mentions the identity, or mentions a carrier —
+    since a caller handed the value back holds it without ever naming its
+    type.  Carriers and holders are grown together until neither changes, so
+    the scanned surface is derived from the tree and never listed here.
+
+    The attribute route reaches the identity only: a carrier reached as an
+    attribute of an imported module (``lane_records.LaneRecordReader``) is
+    matched by no import name, so such a module is not scanned.
     """
     trees = {path: ast.parse(source) for path, source in sources.items()}
     carried = {identity}
@@ -251,7 +256,7 @@ def _module_sites(tree: ast.Module, *, identity: str) -> list[tuple[str, str]]:
         name = ast.unparse(receiver)
         types = stated.get(name)
         if types is None:
-            return name in addressed and name not in constructors
+            return name in addressed
         return UNSTATED not in types and all(
             identity not in stated_type for stated_type in types
         )
@@ -306,6 +311,22 @@ def _names(node: ast.AST) -> str | None:
     return node.attr if isinstance(node, ast.Attribute) else None
 
 
+def _own_nodes(scope: ast.AST) -> Iterator[ast.AST]:
+    """Every node inside *scope*, entering no function, lambda or class of its own.
+
+    A nested definition is its own scope, so the names it states are its
+    names; read as the outer function's they would answer for a receiver the
+    outer function never annotated.
+    """
+    for child in ast.iter_child_nodes(scope):
+        if isinstance(
+            child, ast.FunctionDef | ast.AsyncFunctionDef | ast.Lambda | ast.ClassDef
+        ):
+            continue
+        yield child
+        yield from _own_nodes(child)
+
+
 def _stated_types(
     function: ast.FunctionDef | ast.AsyncFunctionDef,
     returns: dict[str, ast.expr],
@@ -337,8 +358,7 @@ def _stated_types(
         note(argument.arg, argument.annotation)
     body = [
         node
-        for statement in function.body
-        for node in ast.walk(statement)
+        for node in _own_nodes(function)
         if isinstance(node, ast.AnnAssign | ast.Assign)
     ]
     for node in body:

@@ -314,13 +314,13 @@ def test_one_site_builds_the_lane_run_state_and_one_site_parses_it():
     """The record has one writer, and the guard finds it without being told.
 
     What the guard covers: every module that imports or declares the record,
-    reaches it through a module it imports, or imports something whose own
-    annotations hand the value around — grown as a fixed point, so a reader
-    that never names the type is scanned too. Inside such a module it counts
-    the class call, a subclass of it, the parsing and constructing methods
-    however they are reached, an adapter or partial built around the class,
-    ``type(x)(...)`` and ``x.__class__(...)``, and a copy whose receiver its
-    own function does not state another type for.
+    reaches the record's own name through a module it imports, or imports
+    something whose own annotations hand the value around — grown as a fixed
+    point, so a reader that never names the type is scanned too. Inside such
+    a module it counts the class call, a subclass of it, the parsing and
+    constructing methods however they are reached, an adapter or partial
+    built around the class, ``type(x)(...)`` and ``x.__class__(...)``, and a
+    copy whose receiver its own function does not state another type for.
 
     What it does not see, and what review has to read from the code: a class
     or a method reached by runtime reflection — ``globals()[name]``,
@@ -328,6 +328,15 @@ def test_one_site_builds_the_lane_run_state_and_one_site_parses_it():
     a value rebuilt field by field into some other model that renders the
     same bytes; and a module that holds the value only by receiving it as an
     unannotated argument from a holder.
+
+    A receiver whose stated type is a base class of the record
+    (``CamelCaseModel``, ``BaseModel``) or a type parameter of its function
+    is excused by that statement and its copy is not seen: the statement is
+    the receiver's own, and reading it as the record would excuse nothing
+    the house rule of annotating with the concrete type does not already
+    close. A carrier reached as an attribute of an imported module, rather
+    than imported by name, is likewise not seen: the attribute route reaches
+    the record's own name only.
     """
     assert model_value_sites(source_tree(), identity=RECORD) == {
         "build": ("domain/lane_record.py::next_lane_record",),
@@ -437,6 +446,43 @@ IMPORTS = (
             "    return comment.model_copy(update={'head_sha': sha})\n",
             True,
         ),
+        (
+            # The receiver's own annotated assignment states its type, and
+            # nothing else here does: the source it is read from states none.
+            "def _read(): ...\n"
+            "\n"
+            "def _poll(sha):\n"
+            "    comment: TrackerComment = _read()\n"
+            "    return comment.model_copy(update={'body': sha})\n",
+            False,
+        ),
+        (
+            # A field's annotation on the class states the type of a ``self``
+            # receiver, which is where the tree keeps a held value.
+            "class Sources:\n"
+            "    _comment: TrackerComment\n"
+            "\n"
+            "    def _poll(self, sha):\n"
+            "        return self._comment.model_copy(update={'body': sha})\n",
+            False,
+        ),
+        (
+            # A nested function's own binding of the same word is its own.
+            "def _read() -> TrackerComment: ...\n"
+            "\n"
+            "def _other(): ...\n"
+            "\n"
+            "def _poll(sha):\n"
+            "    comment = _read()\n"
+            "\n"
+            "    def _again():\n"
+            "        comment = _other()\n"
+            "        return comment.body\n"
+            "\n"
+            "    _again()\n"
+            "    return comment.model_copy(update={'body': sha})\n",
+            False,
+        ),
     ],
 )
 def test_a_receiver_is_excused_only_by_what_its_own_function_states(body, reported):
@@ -445,7 +491,9 @@ def test_a_receiver_is_excused_only_by_what_its_own_function_states(body, report
     Read across the module, a common local name would be excused wherever any
     other function annotated that word with something else. Read as "any of
     its types is something else", a name holding the record on one line and
-    another value on the next would be excused by the second.
+    another value on the next would be excused by the second. A nested
+    function is not the same function: what it states about a word it binds
+    itself says nothing about the outer receiver of that name.
     """
     sources = source_tree()
     sources["services/second_writer.py"] = IMPORTS + body
@@ -467,6 +515,56 @@ def test_a_module_holding_the_record_only_through_its_reader_is_scanned():
         "async def _poll(reader: LaneRecordReader, sha):\n"
         "    _, record = await reader.read(issue_key='i', lane_key='l')\n"
         "    return record.model_copy(update={'head_sha': sha})\n"
+    )
+    sites = model_value_sites(sources, identity=RECORD)
+    assert "services/second_writer.py::_poll" in sites["build"]
+
+
+@pytest.mark.parametrize(
+    ("declaration", "carrier", "body"),
+    [
+        (
+            f"from kodezart.types.domain.run_state import {RECORD}\n"
+            "\n"
+            f"def read_polled() -> '{RECORD}': ...\n",
+            "read_polled",
+            "def _poll(sha):\n"
+            "    return read_polled().model_copy(update={'head_sha': sha})\n",
+        ),
+        (
+            "from kodezart.types.domain import run_state\n"
+            "\n"
+            f"def read_polled() -> run_state.{RECORD}: ...\n",
+            "read_polled",
+            "def _poll(sha):\n"
+            "    return read_polled().model_copy(update={'head_sha': sha})\n",
+        ),
+        (
+            "from dataclasses import dataclass\n"
+            f"from kodezart.types.domain.run_state import {RECORD}\n"
+            "\n"
+            "@dataclass(frozen=True)\n"
+            "class PolledSources:\n"
+            f"    record: {RECORD}\n",
+            "PolledSources",
+            "def _poll(sources: PolledSources, sha):\n"
+            "    return sources.record.model_copy(update={'head_sha': sha})\n",
+        ),
+    ],
+)
+def test_a_carrier_is_found_however_its_own_annotation_names_the_record(
+    declaration, carrier, body
+):
+    """How a carrier spells the record is not how far the value travels.
+
+    A return type written as a string, one reached through the module the
+    record lives in, and a class field are the same statement about what the
+    name hands back, so each makes the module importing it a holder.
+    """
+    sources = source_tree()
+    sources["services/second_sources.py"] = declaration
+    sources["services/second_writer.py"] = (
+        f"from kodezart.services.second_sources import {carrier}\n\n{body}"
     )
     sites = model_value_sites(sources, identity=RECORD)
     assert "services/second_writer.py::_poll" in sites["build"]
