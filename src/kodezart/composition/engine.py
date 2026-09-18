@@ -48,7 +48,11 @@ from kodezart.services.lane_state_writer import TrackerLaneStateWriter
 from kodezart.services.native_amendments import NativeAmendments
 from kodezart.types.domain.agent import AgentEvent
 from kodezart.types.domain.branch import BaseSpec
-from kodezart.types.domain.operation import OperationConfig, RepoEntry
+from kodezart.types.domain.operation import (
+    OperationConfig,
+    OperationMemberAbsentError,
+    RepoEntry,
+)
 from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.scope import ScopeRef
 from kodezart.types.domain.session import AllowedTools, PermissionMode
@@ -376,7 +380,15 @@ def build_workflow_engine(
         if criteria is None:
             raise ValueError("Scope execution requires a native criterion source")
         if operation is None:
-            raise ValueError("Scope execution requires the operation config")
+            # The marker every lane's record is read and written under comes
+            # from here, so this is the typed absence refusal the rest of
+            # composition makes rather than a bare ValueError.
+            raise OperationMemberAbsentError(
+                missing="marker prefixes for a lane run-state record",
+                stops=(
+                    "no lane's entry can be read and no lane can record its own state"
+                ),
+            )
         # The scoped arm's own engines, with no saver anywhere: the lane's
         # state is its tracker record, so nothing here writes a checkpoint
         # and nothing reads one (KOD-840).

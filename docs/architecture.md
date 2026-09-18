@@ -212,6 +212,32 @@ duplicate, malformed or misaddressed records raise `LaneRecordReadError`;
 transport failure never becomes an empty record. Every call reads again, so a
 fresh client needs no process cache, repository, trajectory or forge connection.
 
+`LaneEntryReader` gathers the facts one lane's entry is decided from and
+nothing else: the record, through that reader, and — only when a record exists
+— the remote head of the branch the record names. `decide_lane_entry` then
+decides from those facts alone. No record with an open criterion gap mints the
+lane's two names and cuts its loop branch from the base that resolves now; no
+record with an empty gap is nothing to do. A record with an open gap resumes on
+the recorded LOOP and DELIVERABLE branches at the REMOTE head, whether or not a
+pull request is recorded; a record whose gap is empty and that carries no pull
+request is a deliver-only entry, which a later slice selects; a record carrying
+a pull request with an empty gap is nothing to do.
+
+Every damaged or mismatched fact is a typed refusal of that one lane, made
+before any session and with nothing minted: an unreadable, duplicated or
+malformed record stays `LaneRecordReadError` and is never read as "no record";
+associations that settle no single deliverable or no single base, a recorded
+branch the remote no longer holds, and a recorded base that is not the base
+resolving now each raise `LaneEntryError`. A record head behind the remote head
+is NOT a refusal — the remote is the truth about what the branch contains and
+the record about which branch — and the difference is logged with both shas.
+The subject text is read once, at the fire's entry, and compared with the
+digest the record pinned: a difference raises `SubjectAmendedError` before any
+session, and a record with no digest is not compared and is pinned by its next
+write. Nothing here is remembered in process: every fact is read again before
+every fire, so a killed process changes nothing about the next decision
+(KOD-684, KOD-433, KOD-840).
+
 `TrackerLaneStateWriter` is the write side of that same record, and of the
 criterion cross-off beside it. It has three calls. `record_commit` runs inside the
 persisting phase of a native execution, between the push and the completion of

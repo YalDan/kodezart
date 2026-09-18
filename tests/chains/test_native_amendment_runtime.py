@@ -19,6 +19,7 @@ from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.operation import (
     LifecycleStage,
     OperationConfig,
+    OperationMemberAbsentError,
     RepoEntry,
 )
 from kodezart.types.domain.session import PermissionMode, ToolPreset
@@ -136,9 +137,14 @@ async def test_native_builder_retains_reports_and_requires_the_actual_owner(
         assert executor.calls == []
         # And a scope tracker with no operation at all composes nothing: the
         # record every lane's entry reads has no configured marker to read it
-        # under, so the deployment is refused rather than running blind.
-        with pytest.raises(ValueError, match="requires the operation config"):
+        # under, so the deployment is refused rather than running blind — as
+        # the typed absence refusal, naming the member and what it stops.
+        with pytest.raises(OperationMemberAbsentError) as absent:
             await make_runtime(repository, executor, no_operation=True)
+        assert absent.value.missing == "marker prefixes for a lane run-state record"
+        assert absent.value.stops == (
+            "no lane's entry can be read and no lane can record its own state"
+        )
         return
     events = await run()
     reports = [event for event in events if isinstance(event, NativeAmendmentEvent)]
