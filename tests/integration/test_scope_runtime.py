@@ -25,11 +25,11 @@ from kodezart.domain.fire_spec import criterion_field_bodies, subject_digest
 from kodezart.domain.git_url import resolve_repo_url
 from kodezart.domain.lane_entry import recorded_branches
 from kodezart.handlers.agent_handler import AgentHandler
+from kodezart.services import scope_runtime
 from kodezart.services.agent_service import AgentService
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.services.scope_runtime import _lane_namespace
 from kodezart.types.domain.agent import (
-    ErrorEvent,
     ResultEvent,
     SystemEvent,
     WorkflowCompleteEvent,
@@ -439,12 +439,14 @@ async def test_one_lanes_failure_is_reported_and_the_walk_continues(
 ):
     """Three ready lanes, the second one's own work raises (KOD-841).
 
-    The other two fire, the failing lane is named once on the observation
-    with its error's type and message, it is never offered again, and the
-    walk ends without an engine error. A failure of the SCOPE's own ready
-    read is a different fault and still ends the run, which
+    The other two fire, the failing lane is named on the observation right
+    after its tick and on every later one, with its error's type and its own
+    message, and it is never offered again. That ``drive()`` runs to its end
+    at all IS the "no engine error" clause: the walk raises nothing, and a
+    contained failure travels on the observation instead. A failure of the
+    SCOPE's own ready read is a different fault and still ends the run, which
     ``test_tracker_outage_between_lanes_cannot_reuse_the_previous_ready_set``
-    pins.
+    and ``test_a_failed_ready_read_in_a_lanes_turn_ends_the_run`` pin.
     """
     lanes = ("A", "B", "C")
     port = board(lanes=lanes)
@@ -489,7 +491,10 @@ async def test_one_lanes_failure_is_reported_and_the_walk_continues(
         port.issues["B/check"] = port.issues["B/check"].model_copy(
             update={"body": "**Evidence:** — and no Check field at all"}
         )
-    events = [event async for event in drive(harness)]
+    # Bounded: a lane offered again after it failed would walk forever, and a
+    # hang is not a failing assertion. Four ticks take milliseconds here.
+    async with asyncio.timeout(30):
+        events = [event async for event in drive(harness)]
     observations = [
         event.observation for event in events if isinstance(event, ScopeWalkEvent)
     ]
@@ -500,6 +505,16 @@ async def test_one_lanes_failure_is_reported_and_the_walk_continues(
         and isinstance(event.event, WorkflowIterationEvent)
     ]
     assert iterations == ["A", "C"]
+    # A is selected at tick 1, B at tick 2 and fails, C at tick 3, and tick 4
+    # closes the walk: the failure is on the observation of the tick right
+    # after it and on every later one, not only on the terminal one.
+    assert [
+        observation.tick for observation in observations if observation.failed_lanes
+    ] == [3, 4]
+    assert all(
+        [item.issue_key for item in observation.failed_lanes] == ["B"]
+        for observation in observations[2:]
+    )
     # A lane that raised before its graph launched was never dispatched; one
     # that raised inside it was launched exactly once and not offered again.
     assert list(observations[-1].dispatched).count("B") == (
@@ -518,8 +533,16 @@ async def test_one_lanes_failure_is_reported_and_the_walk_continues(
             "fire": "InvalidFireCriterionError",
         }[failure]
     )
-    assert reported[0].error.error
-    assert not [event for event in events if isinstance(event, ErrorEvent)]
+    # The message the lane's own refusal was raised with, not merely some text:
+    # a report carrying another lane's reason, or a fixed one, reads the same
+    # against a truthiness check.
+    assert {
+        "base": "the lane's base cannot be resolved",
+        "record": "lane record None on 'B' for 'B' could not be read: "
+        "the tracker comment read failed or was incomplete",
+        "fire": "criterion 'B/check' of fire subject 'B' cannot be consumed: "
+        "one nonempty Check field is required",
+    }[failure] in reported[0].error.error
     fired = {
         key
         for key in lanes
@@ -529,6 +552,38 @@ async def test_one_lanes_failure_is_reported_and_the_walk_continues(
         )
     }
     assert fired == {"A", "C"}
+
+
+@pytest.mark.parametrize("site", ["readmission", "launch"])
+async def test_a_failed_ready_read_in_a_lanes_turn_ends_the_run(monkeypatch, site):
+    """The scope's own ready read is the walk's fault wherever it lands.
+
+    A lane's turn makes two of the walk's three ready reads: one after base
+    resolution and one before the graph launches. Both are the SCOPE's read,
+    so an outage at either ends the run rather than being recorded against
+    the lane that happened to be in flight and resting it — and the lane it
+    was about never opens a session.
+    """
+    harness = runtime(port=board(lanes=("A", "B")), lanes=("A", "B"))
+    fresh = scope_runtime.read_scope_ready
+    reads = 0
+
+    async def failing(*, ref, tracker):
+        nonlocal reads
+        reads += 1
+        # 1 is the tick's own read, 2 the readmission after base resolution,
+        # 3 the one before the launch.
+        if reads == {"readmission": 2, "launch": 3}[site]:
+            raise TrackerUnavailableError("the scope ready read failed")
+        return await fresh(ref=ref, tracker=tracker)
+
+    monkeypatch.setattr(scope_runtime, "read_scope_ready", failing)
+    events = []
+    with pytest.raises(TrackerUnavailableError, match="the scope ready read failed"):
+        async for event in drive(harness):
+            events.append(event)
+    assert lane_failures(events) == ()
+    assert harness.executor.execution_prompts == []
 
 
 async def test_tracker_outage_between_lanes_cannot_reuse_the_previous_ready_set(

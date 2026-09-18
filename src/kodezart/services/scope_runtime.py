@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
 
+from langchain_core.runnables import RunnableConfig
 from pydantic import TypeAdapter
 
 from kodezart.chains.native_delivery import NativeLaneWorkflow
@@ -28,7 +29,7 @@ from kodezart.types.domain.native_delivery import (
 from kodezart.types.domain.operation import RepoEntry, RunKind
 from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
-from kodezart.types.domain.scope_ready import ScopeReadySet
+from kodezart.types.domain.scope_ready import ScopeReadyLane, ScopeReadySet
 from kodezart.types.domain.scope_runtime import (
     LaneFailure,
     ScopeLaneEvent,
@@ -88,8 +89,10 @@ class ScopeWorkflowEngine:
         reported on the next observation, and the job no longer ends as an
         engine error for it, so a consumer that alarms on the job's outcome
         alone would miss one and the terminal report reads ``failed_lanes``.
-        The scope's own ready read stays OUTSIDE this boundary — a scope read
-        failure is a scope failure and still ends the run.
+        Every one of the walk's three ready reads stays OUTSIDE this boundary,
+        which is why a lane's turn is several boundaries and not one: a scope
+        read failure is a scope failure and still ends the run, wherever in a
+        lane's turn the read that fails happens to fall.
 
         The lane is not offered again in this invocation: the fault is a fact
         about the lane at this instant, and reselecting it would spend the
@@ -101,6 +104,31 @@ class ScopeWorkflowEngine:
             rested.append(key)
             await self._log.aexception("scope_lane_failed", lane=key)
             failed.append(LaneFailure(issue_key=key, error=build_error_event(exc)))
+
+    async def _readmitted(
+        self, *, scope: ScopeRef, selected: ScopeReadyLane
+    ) -> ScopeReadyLane | None:
+        """The candidate as the board holds it NOW, or ``None`` when it moved.
+
+        Every await a lane's turn makes can yield to a board that changes, so
+        admission is asked again rather than inherited from the tick that
+        selected the lane: the same lane, with the same gap, or nothing.
+
+        This read is the SCOPE's own and is made OUTSIDE the lane boundary,
+        wherever in a lane's turn it falls: an outage here says nothing about
+        the lane in flight, so it ends the run instead of being recorded as
+        that lane's fault and resting it.
+        """
+        refreshed = await read_scope_ready(ref=scope, tracker=self._tracker)
+        current = next(
+            (
+                row
+                for row in refreshed.ready
+                if row.issue.issue_key == selected.issue.issue_key
+            ),
+            None,
+        )
+        return current if current == selected else None
 
     async def run(
         self,
@@ -189,29 +217,33 @@ class ScopeWorkflowEngine:
             )
             if selected is None:
                 return
-            async with self._lane_boundary(
-                selected.issue.issue_key, failed=failed, rested=rested
-            ):
-                key = selected.issue.issue_key
-                lane_key = _lane_namespace(cache_key, key)
+            key = selected.issue.issue_key
+            lane_key = _lane_namespace(cache_key, key)
+            resolved: tuple[str, BaseSpec] | None = None
+            async with self._lane_boundary(key, failed=failed, rested=rested):
                 path = repo_path or await self._cache.ensure_available(url, lane_key)
-                spec = await self._resolver.resolve(
-                    issue_key=key,
-                    repo_path=path,
-                    integration_workspace=str(
-                        Path(self._integration_workspace_dir) / lane_key
+                resolved = (
+                    path,
+                    await self._resolver.resolve(
+                        issue_key=key,
+                        repo_path=path,
+                        integration_workspace=str(
+                            Path(self._integration_workspace_dir) / lane_key
+                        ),
+                        trunk=repo.trunk,
+                        now=datetime.now(tz=UTC),
                     ),
-                    trunk=repo.trunk,
-                    now=datetime.now(tz=UTC),
                 )
-                # Base resolution and cache I/O can yield to tracker changes. Do not
-                # run the candidate merely because an earlier tick admitted it.
-                refreshed = await read_scope_ready(ref=scope, tracker=self._tracker)
-                current = next(
-                    (row for row in refreshed.ready if row.issue.issue_key == key), None
-                )
-                if current is None or current != selected:
-                    continue
+            if resolved is None:
+                continue
+            path, spec = resolved
+            # Base resolution and cache I/O can yield to tracker changes. Do not
+            # run the candidate merely because an earlier tick admitted it.
+            current = await self._readmitted(scope=scope, selected=selected)
+            if current is None:
+                continue
+            launch: tuple[NativeDeliveryState, RunnableConfig] | None = None
+            async with self._lane_boundary(key, failed=failed, rested=rested):
                 if await probe.open_delivery_exists(repo_url=url, issue_key=key):
                     continue
                 # The lane's own record, and the remote head of the branch it
@@ -244,17 +276,23 @@ class ScopeWorkflowEngine:
                         kind=RunKind.FIRE, name=key, started_at=datetime.now(tz=UTC)
                     ),
                 )
-                initial = lane.prepare(fire_state)
-                # Probe and record reads can yield to changed approval,
-                # membership or blockers. Admission must still hold at graph launch.
-                launch_ready = await read_scope_ready(ref=scope, tracker=self._tracker)
-                if current not in launch_ready.ready:
-                    continue
-                dispatched.append(key)
+                launch = (lane.prepare(fire_state), config)
+            # Either this lane's own preparation failed, and the boundary above
+            # has already reported and rested it, or the facts left it nothing
+            # to do. Both end its turn.
+            if launch is None:
+                continue
+            initial, launch_config = launch
+            # Probe and record reads can yield to changed approval,
+            # membership or blockers. Admission must still hold at graph launch.
+            if await self._readmitted(scope=scope, selected=selected) is None:
+                continue
+            dispatched.append(key)
+            async with self._lane_boundary(key, failed=failed, rested=rested):
                 final: NativeDeliveryState | None = None
                 async for namespace, mode, payload in lane.graph.astream(
                     initial,
-                    config=config,
+                    config=launch_config,
                     stream_mode=["custom", "values"],
                     subgraphs=True,
                 ):
