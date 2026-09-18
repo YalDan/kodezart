@@ -31,6 +31,7 @@ from kodezart.core.protocols import QualityGate
 from kodezart.domain.errors import (
     FireSpecEntryError,
     InvalidFireCriterionError,
+    LaneEntryError,
     ScopedExecutionUnavailableError,
 )
 from kodezart.domain.thread_id import workflow_thread_id
@@ -199,6 +200,7 @@ def engine(
     git=None,
     source=None,
     forge=None,
+    workspace=None,
     lane_operation=None,
     writes_lane_state: bool = True,
     owns_workspace: bool = True,
@@ -206,7 +208,9 @@ def engine(
     """The fire engine, wired the way composition wires it, plus the stage.
 
     The Git, source and persister doubles default to today's no-commit ones;
-    a test about what a commit leaves behind supplies its own repository.
+    a test about what a commit leaves behind supplies its own repository, and
+    a test about WHICH tree a lane opened supplies the workspace provider so
+    it can read the acquisitions back.
     *writes_lane_state* and *owns_workspace* are the two collaborators a test
     withholds on purpose: a native loop without either is the wiring the
     execute node refuses at, before it opens a session.
@@ -216,7 +220,7 @@ def engine(
         if git is not None
         else FakeGitService(remote_branch_shas={"main": "b" * 40})
     )
-    workspace = FakeWorkspaceProvider(git=git)
+    workspace = FakeWorkspaceProvider(git=git) if workspace is None else workspace
     service = AgentService(
         git_base_url="https://github.com",
         executor=executor or FakeAgentExecutor(events=[]),
@@ -434,8 +438,14 @@ async def test_a_native_fire_opens_no_branch_name_session() -> None:
     call — the schema is what a branch-name session is asked for.
     """
     executor = NativeExecutor([native_evaluation(), native_evaluation()])
+    git = FakeGitService(remote_branch_shas={"main": "b" * 40})
+    workspace = FakeWorkspaceProvider(git=git)
     fire = engine(
-        criteria=TrackerCriteria(tracker=tracker()), executor=executor, real_loop=True
+        criteria=TrackerCriteria(tracker=tracker()),
+        executor=executor,
+        real_loop=True,
+        git=git,
+        workspace=workspace,
     )
 
     events = await drive(fire, scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
@@ -445,9 +455,49 @@ async def test_a_native_fire_opens_no_branch_name_session() -> None:
         rf"kodezart/{re.escape(SUBJECT)}-[0-9a-f]{{8}}", terminal.feature_branch
     )
     assert terminal.ralph_branch.startswith(f"{terminal.feature_branch}-ralph-")
+    # The recorder is live before the absence is read off it: these are the
+    # sessions this fire DID open, so "no branch-name call" is a statement
+    # about what was asked and not about an empty list.
+    assert any("criteriaResults" in properties for properties in executor.schema_calls)
+    assert executor.evaluations == []
     assert not any("slug" in properties for properties in executor.schema_calls)
     # The authored arm still asks for one, so the absence is this arm's.
     assert "slug" in BRANCH_NAME_SCHEMA["properties"]
+    # And a new lane cuts the branch it just named, from the base that
+    # resolved: work_base_ref is the base on this path, never the loop branch,
+    # so the first tree of a new lane is the only one that is created.
+    first = workspace.acquisitions[0]
+    assert first["branch_name"] == terminal.ralph_branch
+    assert first["ref"] == "main"
+    assert first["create_branch"] is True
+
+
+async def test_a_key_that_cannot_be_a_ref_refuses_before_any_git_call() -> None:
+    """The typed refusal happens at the fire's entry, not at a git error.
+
+    The domain function refuses the key; this drives the whole fire with one,
+    so the refusal is shown where it matters: ``prepare`` raises before the
+    graph is streamed, and the two collaborators a lane would touch first —
+    the repository and the workspace it would be cut in — were never asked.
+    """
+    unusable = "fire subject"
+    executor = NativeExecutor([native_evaluation()])
+    git = FakeGitService(remote_branch_shas={"main": "b" * 40})
+    workspace = FakeWorkspaceProvider(git=git)
+    fire = engine(
+        criteria=TrackerCriteria(tracker=tracker()),
+        executor=executor,
+        real_loop=True,
+        git=git,
+        workspace=workspace,
+    )
+
+    with pytest.raises(LaneEntryError, match="cannot stand inside a branch ref"):
+        await drive(fire, scope=ScopeRef(kind=ScopeKind.ISSUE, key=unusable))
+
+    assert git.calls == []
+    assert workspace.acquisitions == []
+    assert executor.schema_calls == []
 
 
 def test_an_unwired_deployment_composes_no_native_arm_at_all() -> None:

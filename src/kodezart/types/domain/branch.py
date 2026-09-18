@@ -14,7 +14,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from kodezart.types.base import CamelCaseModel
 
@@ -158,12 +158,25 @@ def trunk_base(branch: str) -> BaseSpec:
 #: What an issue key has to look like to stand inside a ref path.
 #:
 #: One or more ``/``-separated segments, each of them alphanumerics joined by
-#: single ``-``, ``_`` or ``.`` characters.  That admits every key shape the
-#: tracker mints, including a key whose own identity is a path, and refuses
-#: everything ``git check-ref-format`` refuses for a branch: whitespace, the
-#: glob and revision characters, ``..``, an empty or separator-edged segment.
+#: single ``-``, ``_`` or ``.`` characters and not ending in ``.lock``.  That
+#: admits every key shape the tracker mints, including a key whose own
+#: identity is a path.
+#:
+#: It is an allowlist, so what it admits are shapes ``git check-ref-format
+#: --branch`` accepts: whitespace, the glob and revision characters, control
+#: characters, ``..``, ``@{`` and an empty or separator-edged segment are all
+#: outside it.  Git's other component rule — no component ending in ``.lock``
+#: — is the field validator below, because this pattern is applied by an
+#: engine without look-around.
+#:
+#: What neither sees is anything outside the name itself: a ref this one
+#: would nest under or contain (git's own directory/file conflict, which
+#: ``check-ref-format`` does not check either) and a case-insensitive
+#: collision on the filesystem.  Those refuse at the git call, not here.
 LANE_KEY_SEGMENT = r"[A-Za-z0-9]+(?:[-_.][A-Za-z0-9]+)*"
 LANE_KEY_PATTERN = rf"^{LANE_KEY_SEGMENT}(?:/{LANE_KEY_SEGMENT})*$"
+#: The suffix git refuses on any component of a ref.
+LOCK_SUFFIX = ".lock"
 
 
 class LaneBranchName(BaseModel):
@@ -178,6 +191,19 @@ class LaneBranchName(BaseModel):
 
     issue_key: str = Field(pattern=LANE_KEY_PATTERN)
     short_id: str = Field(pattern=r"^[0-9a-f]{8}$")
+
+    @field_validator("issue_key")
+    @classmethod
+    def _no_component_ends_in_lock(cls, value: str) -> str:
+        """Git refuses a ref component ending in ``.lock``, at any depth.
+
+        Its own rule rather than one more branch of the pattern above: the
+        engine that applies a field pattern has no look-around, and a pattern
+        spelling this out without one would say less about what it refuses.
+        """
+        if any(part.endswith(LOCK_SUFFIX) for part in value.split("/")):
+            raise ValueError(f"no component of a ref may end in {LOCK_SUFFIX}")
+        return value
 
     def __str__(self) -> str:
         return f"kodezart/{self.issue_key}-{self.short_id}"
