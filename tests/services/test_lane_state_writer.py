@@ -9,7 +9,8 @@ from kodezart.domain.errors import (
     StaleCommentWriteError,
     TransientAPIError,
 )
-from kodezart.domain.run_event_stream import LaneRunEvent
+from kodezart.domain.lane_record import RUN_STATE_PURPOSE
+from kodezart.domain.run_event_stream import RUN_EVENT_PURPOSE, LaneRunEvent
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.services.lane_state_writer import TrackerLaneStateWriter
 from kodezart.types.domain.branch import BranchRole
@@ -406,7 +407,15 @@ async def test_the_posted_event_carries_the_marker_and_the_codec_fields_alone():
     }
 
 
-async def test_an_operation_with_no_event_purpose_refuses_before_any_read():
+@pytest.mark.parametrize("missing", [RUN_STATE_PURPOSE, RUN_EVENT_PURPOSE])
+async def test_an_operation_missing_a_record_purpose_refuses_before_any_read(missing):
+    """Both purposes this write needs are resolved together, or neither is.
+
+    The record marker and the event prefix are written in the same act, so
+    an operation missing either one is a refusal the caller is owed before
+    the push; resolving only the first would leave the second absence to be
+    found after a commit had reached the remote.
+    """
     port, repo = board(), lane_repo()
     git = LaneGit(repo)
     lane_state = TrackerLaneStateWriter(
@@ -414,7 +423,11 @@ async def test_an_operation_with_no_event_purpose_refuses_before_any_read():
         operation=OperationConfig(
             operation_name="lane-fixture",
             workspace="fixture",
-            marker_prefixes={"run_state": "lane-fixture-record"},
+            marker_prefixes={
+                purpose: prefix
+                for purpose, prefix in lane_operation().marker_prefixes.items()
+                if purpose != missing
+            },
             issue_labels={"decision": "decision"},
         ),
         git=git,
@@ -422,9 +435,9 @@ async def test_an_operation_with_no_event_purpose_refuses_before_any_read():
         forge=None,
         gate=PassThroughGate(),
     )
-    with pytest.raises(OperationMemberAbsentError, match="run_event"):
+    with pytest.raises(OperationMemberAbsentError, match=missing):
         lane_state.require_writable(lane=binding())
-    with pytest.raises(OperationMemberAbsentError, match="run_event"):
+    with pytest.raises(OperationMemberAbsentError, match=missing):
         await make_commit(lane_state, repo, 1)
     assert git.calls == []
     assert port.comments == []

@@ -5,7 +5,8 @@ import json
 import pytest
 
 from kodezart.chains.criteria import TrackerCriteria
-from kodezart.domain.lane_record import render_lane_record
+from kodezart.domain.amendment import NativeWriteRefusalError
+from kodezart.domain.lane_record import RUN_STATE_PURPOSE, render_lane_record
 from kodezart.domain.run_event_stream import RUN_EVENT_PURPOSE
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.types.domain.agent import ResultEvent
@@ -33,10 +34,31 @@ from tests.lane_fixture import (
 
 BRANCH = "ralph/fire-subject"
 FEATURE = "feature/fire-subject"
+#: The run whose surface this lane records against, and the prompt cache it
+#: happens to reuse: two seats of the context, so a record naming the wrong
+#: one names a value no reader of this lane's record can follow.
 JOB = "actual-parent-job"
+CACHE = "actual-parent-cache"
 REPO_URL = "https://github.com/owner/repo"
 #: A local bare repository: an origin a forge API cannot be asked about.
 FORGE_LESS_ORIGIN = "file:///srv/lanes/repo.git"
+
+
+class CountingCriteria(TrackerCriteria):
+    """The criteria reader, counting what a node asks it to read.
+
+    A refusal owed at a node's entry is only visible against a reader that
+    can say it was never asked: without the count, the same refusal raised
+    after a board read would read exactly the same.
+    """
+
+    def __init__(self, *, tracker):
+        super().__init__(tracker=tracker)
+        self.current_reads = 0
+
+    async def read_current(self, *, spec):
+        self.current_reads += 1
+        return await super().read_current(spec=spec)
 
 
 class Lane:
@@ -53,12 +75,13 @@ class Lane:
         publishes=None,
         work_base_ref="main",
         repo_url=REPO_URL,
+        writes_lane_state=True,
     ):
         self.work_base_ref = work_base_ref
         self.repo_url = repo_url
         self.repo = LaneRepo(branch=BRANCH)
         self.port = tracker() if port is None else port
-        self.criteria = TrackerCriteria(tracker=self.port)
+        self.criteria = CountingCriteria(tracker=self.port)
         self.executor = NativeExecutor(evaluations)
         self.persister = LanePersister(self.repo, publishes=publishes)
         self.fire = engine(
@@ -71,12 +94,16 @@ class Lane:
             source=LaneSource(self.repo),
             forge=forge,
             lane_operation=lane_operation,
+            writes_lane_state=writes_lane_state,
         )
         self.loop = self.fire.implementation._quality_gate
 
     async def run(self, events=None):
         spec = await self.criteria.read_spec(issue_key=SUBJECT)
         current = await self.criteria.read_current(spec=spec)
+        # The two reads above are this fixture's own way in; what the node
+        # asks the reader for starts here at zero.
+        self.criteria.current_reads = 0
         seen = [] if events is None else events
         async for event in self.loop.run(
             prompt="Implement the current Checks.",
@@ -90,7 +117,7 @@ class Lane:
             allowed_tools=ToolPreset.IMPLEMENTATION,
             acceptance_criteria=list(current.criteria),
             tracker_spec=spec,
-            cache_key=JOB,
+            cache_key=CACHE,
             surface_holder=JOB,
             repo_visibility=RepoVisibility.PUBLIC,
         ):
@@ -181,7 +208,16 @@ async def test_a_round_built_on_earlier_work_records_the_runs_own_base():
     ]
 
 
-async def test_an_operation_with_no_event_purpose_refuses_before_the_session():
+@pytest.mark.parametrize("missing", [RUN_STATE_PURPOSE, RUN_EVENT_PURPOSE])
+async def test_an_operation_missing_a_record_purpose_refuses_before_the_session(
+    missing,
+):
+    """Either purpose the record write needs is settled at the node's entry.
+
+    Both are knowable from the operation alone, so either absence costs no
+    session, no criteria read and no commit; resolved one at a time, the
+    second would be found after a push and after a comment.
+    """
     port = tracker()
     lane = Lane(
         evaluations=[native_evaluation()],
@@ -192,19 +228,40 @@ async def test_an_operation_with_no_event_purpose_refuses_before_the_session():
             marker_prefixes={
                 purpose: prefix
                 for purpose, prefix in native_operation().marker_prefixes.items()
-                if purpose != RUN_EVENT_PURPOSE
+                if purpose != missing
             },
             issue_labels={"decision": "decision"},
         ),
     )
 
-    with pytest.raises(OperationMemberAbsentError, match=RUN_EVENT_PURPOSE):
+    with pytest.raises(OperationMemberAbsentError, match=missing):
         await lane.run()
 
+    assert lane.criteria.current_reads == 0
     assert lane.executor.execution_prompts == []
     assert lane.persister.calls == []
     assert lane.repo.shas == []
     assert port.comments == []
+
+
+async def test_a_native_iteration_with_no_record_writer_refuses_before_any_read():
+    """A native loop that cannot record its commit refuses at the node's entry.
+
+    The writer's absence is knowable from the wiring, so the refusal names
+    the collaborator it lacks and the criteria reader is never asked: raised
+    after that read, it would cost a board round trip to say what the node
+    knew before it started.
+    """
+    lane = Lane(evaluations=[native_evaluation()], writes_lane_state=False)
+
+    with pytest.raises(NativeWriteRefusalError, match="lane state writer"):
+        await lane.run()
+
+    assert lane.criteria.current_reads == 0
+    assert lane.executor.execution_prompts == []
+    assert lane.persister.calls == []
+    assert lane.repo.shas == []
+    assert lane.port.comments == []
 
 
 async def test_a_second_commit_edits_the_record_and_posts_no_second_event():

@@ -185,11 +185,14 @@ def engine(
     source=None,
     forge=None,
     lane_operation=None,
+    writes_lane_state: bool = True,
 ) -> RalphWorkflowEngine:
     """The fire engine, wired the way composition wires it, plus the stage.
 
     The Git, source and persister doubles default to today's no-commit ones;
     a test about what a commit leaves behind supplies its own repository.
+    *writes_lane_state* is the one collaborator a test withholds on purpose:
+    a native loop with no record writer is the wiring the node refuses at.
     """
     git = (
         git
@@ -237,7 +240,7 @@ def engine(
                     forge=forge,
                     gate=gate,
                 )
-                if criteria is not None
+                if criteria is not None and writes_lane_state
                 else None
             ),
             service=service,
