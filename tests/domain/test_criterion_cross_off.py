@@ -187,6 +187,7 @@ def test_a_cross_off_carries_the_attempts_sha_and_the_session_it_was_graded_in()
         results=[result(), result(passed=False)],
         graded_sha=GRADED_SHA,
         observation=observation,
+        demonstrated=True,
     )
 
     assert [cross_off.state for cross_off in crossed] == [

@@ -248,6 +248,7 @@ def engine(
                 else None
             ),
             service=service,
+            workspace=workspace,
             max_iterations=max_iterations,
             criteria_reader=criteria,
             plateau_window=2,

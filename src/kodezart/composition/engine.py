@@ -241,6 +241,7 @@ def build_workflow_engine(
             else None
         ),
         criteria_reader=criteria,
+        workspace=workspace,
         service=agent_service,
         max_iterations=config.max_iterations,
         plateau_window=config.loop_plateau_window,

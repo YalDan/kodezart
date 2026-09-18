@@ -1084,6 +1084,7 @@ def test_the_re_derivation_class_and_cross_off_state_members_are_exactly_these()
         ("passed", "passed"),
         ("failed", "failed"),
         ("lapsed", "lapsed"),
+        ("undemonstrated", "undemonstrated"),
     ]
     assert PATH_BOUND_CLASSES == {
         RederivationClass.expensive,

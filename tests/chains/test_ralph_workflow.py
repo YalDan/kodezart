@@ -4916,7 +4916,9 @@ KEYED_DISPATCH_COUNTS = {
     "audit_sessions.py": 1,
     "agent_content_scanner.py": 1,
     "change_persister.py": 1,
-    "ralph_loop.py": 2,
+    # Implementation, and an evaluation per arm: the native one dispatches
+    # into a workspace the node owns so it can read what was graded.
+    "ralph_loop.py": 3,
     "fire_specification.py": 3,
     "fire_review.py": 1,
     "authored_publication.py": 1,

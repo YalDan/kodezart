@@ -1844,9 +1844,34 @@ def test_the_evaluate_dispatch_passes_an_empty_definition_set() -> None:
     ``tests/chains/test_dispatch_definitions.py``; this is its assertion
     on the module the criterion names.
     """
-    block = dispatch_block(chain_source("ralph_loop.py"), "ACCEPTANCE_CRITERIA_SCHEMA")
+    source = chain_source("ralph_loop.py")
+    block = dispatch_block(source, "ACCEPTANCE_CRITERIA_SCHEMA")
     assert "agents=NO_SUBAGENTS" in block
     assert "self._prompts.definitions()" not in block
+    # The module dispatches this schema once per arm — one into a workspace
+    # the node owns — so every such site is read, not only the first.
+    sites = evaluative_sites(source, "ACCEPTANCE_CRITERIA_SCHEMA")
+    assert len(sites) > 1
+    assert all("agents=NO_SUBAGENTS" in site for site in sites)
+    assert not any("self._prompts.definitions()" in site for site in sites)
+
+
+def evaluative_sites(source: str, schema_name: str) -> list[str]:
+    """Every dispatch in *source* whose output format names *schema_name*.
+
+    Derived by walking the schema's own occurrences rather than taking the
+    first, so an arm added beside an existing one is read too. Blind to a
+    dispatch that names its schema indirectly, which the module does not do
+    and which the first assertion above would still catch at the one site it
+    reads.
+    """
+    needle = f'"schema": {schema_name}'
+    sites: list[str] = []
+    cursor = 0
+    while (end := source.find(needle, cursor)) >= 0:
+        sites.append(source[source.rindex("self._service.stream", 0, end) : end])
+        cursor = end + len(needle)
+    return sites
 
 
 # ---------------------------------------------------------------------------

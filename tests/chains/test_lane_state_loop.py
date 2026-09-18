@@ -6,6 +6,7 @@ import pytest
 
 from kodezart.chains.criteria import TrackerCriteria
 from kodezart.domain.amendment import NativeWriteRefusalError
+from kodezart.domain.criterion_cross_off import UNDEMONSTRATED_REASON
 from kodezart.domain.criterion_evidence import parse_criterion_evidence
 from kodezart.domain.issue_tree import SubtreeClosure
 from kodezart.domain.lane_record import RUN_STATE_PURPOSE, render_lane_record
@@ -14,6 +15,7 @@ from kodezart.services.lane_records import LaneRecordReader
 from kodezart.types.domain.accept import AcceptVerdict
 from kodezart.types.domain.agent import ResultEvent, WorkflowIterationEvent
 from kodezart.types.domain.branch import BranchRole, trunk_base
+from kodezart.types.domain.criterion_lifecycle import CrossOffState
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.operation import OperationConfig, OperationMemberAbsentError
 from kodezart.types.domain.run_event import RunEventKind
@@ -83,10 +85,14 @@ class Lane:
         work_base_ref="main",
         repo_url=REPO_URL,
         writes_lane_state=True,
+        source=LaneSource,
+        has_changes=False,
     ):
         self.work_base_ref = work_base_ref
         self.repo_url = repo_url
         self.repo = LaneRepo(branch=BRANCH)
+        self.git = LaneGit(self.repo)
+        self.git.has_changes_result = has_changes
         self.port = tracker() if port is None else port
         self.criteria = CountingCriteria(tracker=self.port)
         self.executor = NativeExecutor(evaluations)
@@ -97,8 +103,8 @@ class Lane:
             real_loop=True,
             max_iterations=max_iterations,
             persister=self.persister,
-            git=LaneGit(self.repo),
-            source=LaneSource(self.repo),
+            git=self.git,
+            source=source(self.repo),
             forge=forge,
             lane_operation=lane_operation,
             writes_lane_state=writes_lane_state,
@@ -555,3 +561,92 @@ async def test_cross_offs_appear_on_the_tracker_between_iterations():
         parse_criterion_evidence(lane.port.issues[key].body).graded_sha
         for key in OWED_KEYS
     } == {await LaneSource(lane.repo).resolve_commit(cwd="/w", ref=BRANCH)}
+
+
+class DriftedHead(LaneSource):
+    """A workspace whose head is not the sha the verdict would be stamped with."""
+
+    async def resolve_commit(self, *, cwd, ref):
+        if ref == "HEAD":
+            return "0" * 40
+        return await super().resolve_commit(cwd=cwd, ref=ref)
+
+
+def recording(lane) -> list[tuple[CrossOffState, ...]]:
+    """Every whole verdict handed to the lane's writer, as its states."""
+    states: list[tuple[CrossOffState, ...]] = []
+    writer = lane.loop._lane_state
+    written = writer.write_cross_offs
+
+    async def observed(*, lane, dispatched, cross_offs):
+        states.append(tuple(cross_off.state for cross_off in cross_offs))
+        await written(lane=lane, dispatched=dispatched, cross_offs=cross_offs)
+
+    writer.write_cross_offs = observed
+    return states
+
+
+@pytest.mark.parametrize(
+    "workspace",
+    [
+        pytest.param({"has_changes": True}, id="uncommitted-change"),
+        pytest.param({"source": DriftedHead}, id="head-elsewhere"),
+    ],
+)
+async def test_a_workspace_that_is_not_the_graded_sha_yields_no_cross_off(workspace):
+    """A verdict is only the branch's when the tree it read was the branch's.
+
+    An uncommitted change in the grading workspace, or a head that is not the
+    sha the verdict would be stamped with, means what the evaluator read was
+    somebody's working copy. Nothing is written to any sub-issue, every result
+    carries the fixed reason in place of a verdict, the iteration is rejected,
+    and the writer is handed the fourth state for each criterion.
+    """
+    lane = Lane(evaluations=[native_evaluation()], **workspace)
+    before = {
+        key: (issue.state_name, issue.body) for key, issue in lane.port.issues.items()
+    }
+    states = recording(lane)
+
+    events = await lane.run()
+
+    iterations = [e for e in events if isinstance(e, WorkflowIterationEvent)]
+    assert [event.verdict for event in iterations] == [AcceptVerdict.rejected]
+    assert {
+        result.reasoning for result in iterations[-1].evaluation.criteria_results
+    } == {UNDEMONSTRATED_REASON}
+    assert states == [tuple(CrossOffState.undemonstrated for _ in OWED_KEYS)]
+    assert {
+        key: (issue.state_name, issue.body) for key, issue in lane.port.issues.items()
+    } == before
+    assert lane.port.workflow_writes == []
+    assert lane.port.issue_writes == []
+
+
+async def test_a_clean_workspace_at_the_graded_sha_is_what_a_cross_off_needs():
+    """The same lane, demonstrated: the fourth state is not the only outcome."""
+    lane = Lane(evaluations=[native_evaluation()])
+    states = recording(lane)
+
+    await lane.run()
+
+    assert states == [tuple(CrossOffState.passed for _ in OWED_KEYS)]
+    assert completed(lane.port) == set(OWED_KEYS)
+
+
+async def test_the_evaluation_is_graded_in_a_workspace_the_loop_owns():
+    """The tree a verdict is about is acquired at its sha and then released.
+
+    The sha, not the branch name: a workspace acquired at the branch would
+    follow the branch, and the two facts read off it afterwards would then be
+    read from whatever the branch had become.
+    """
+    lane = Lane(evaluations=[native_evaluation()])
+    provider = lane.loop._workspace
+
+    await lane.run()
+
+    acquired = [call[2] for call in provider.calls if call[0] == "acquire"]
+    assert lane.repo.head in acquired
+    assert BRANCH not in acquired
+    assert [call[0] for call in provider.calls].count("release") == len(acquired)

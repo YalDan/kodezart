@@ -31,11 +31,18 @@ class RederivationClass(StrEnum):
 
 
 class CrossOffState(StrEnum):
-    """The satisfaction one cross-off records. Never collapsed to a boolean."""
+    """The satisfaction one cross-off records. Never collapsed to a boolean.
+
+    ``undemonstrated`` is not a fail: a fail is a reading of the tree the
+    sha names, and this is the state of having no such reading at all —
+    the grading workspace held changes the sha does not, or its head was
+    not that sha, so what was observed was somebody's working copy.
+    """
 
     passed = "passed"
     failed = "failed"
     lapsed = "lapsed"
+    undemonstrated = "undemonstrated"
 
 
 #: The classes whose criteria name the path prefixes their grading exercised.

@@ -26,6 +26,7 @@ from kodezart.core.protocols import (
     LaneStateWriter,
     PromptSetProvider,
     RepoCache,
+    WorkspaceProvider,
 )
 from kodezart.core.redispatch import until_permutation
 from kodezart.core.retry import DelayFloor, RetryFloor, should_retry
@@ -36,6 +37,7 @@ from kodezart.domain.criteria_grading import grade_iteration
 from kodezart.domain.criterion_cross_off import (
     cross_offs_for,
     evaluation_observation,
+    undemonstrated_output,
 )
 from kodezart.domain.errors import GitSourceReadError
 from kodezart.domain.fan_in import fan_in_report, require_permutation
@@ -47,6 +49,7 @@ from kodezart.domain.prompt_variables import (
 from kodezart.domain.thread_id import ralph_thread_id
 from kodezart.domain.trajectory import fold_trajectory
 from kodezart.services.native_amendments import NativeAmendments
+from kodezart.services.owned_workspace import owned_workspace
 from kodezart.types.domain.accept import AcceptVerdict
 from kodezart.types.domain.agent import (
     ACCEPTANCE_CRITERIA_SCHEMA,
@@ -114,12 +117,14 @@ class RalphLoop:
         amendments: NativeAmendments | None = None,
         source: GitSourceReader | None = None,
         lane_state: LaneStateWriter | None = None,
+        workspace: WorkspaceProvider | None = None,
     ) -> None:
         self._service = service
         self._criteria_reader = criteria_reader
         self._amendments = amendments
         self._source = source
         self._lane_state = lane_state
+        self._workspace = workspace
         self._max_iterations = max_iterations
         self._plateau_window = plateau_window
         self._fan_in_max_attempts = fan_in_max_attempts
@@ -250,10 +255,7 @@ class RalphLoop:
                     if repo_path is not None
                     else await self._cache.ensure_available(repo_url or "", cache_key)
                 )
-                if (
-                    await self._native_ref(cwd=cwd, branch=ralph_branch)
-                    != outcome.head_sha
-                ):
+                if await self._resolve(cwd=cwd, ref=ralph_branch) != outcome.head_sha:
                     raise NativeWriteRefusalError("The evaluated native branch changed")
                 if outcome.event.branch != ralph_branch:
                     raise NativeWriteRefusalError(
@@ -501,8 +503,13 @@ class RalphLoop:
                 ctx.cache_key,
             )
         )
+        if ctx.tracker_spec is not None:
+            # The tree a native verdict is about is this node's own, so the
+            # provider it comes from is settled before the first read: a loop
+            # that cannot own that tree refuses without opening a session.
+            self._evaluation_workspace()
         native_ref = (
-            await self._native_ref(cwd=cwd, branch=ctx.ralph_branch)
+            await self._resolve(cwd=cwd, ref=ctx.ralph_branch)
             if ctx.tracker_spec is not None
             else None
         )
@@ -524,9 +531,13 @@ class RalphLoop:
         # retried closure: the Evidence row points back at the grading that
         # produced the verdict, and on a re-dispatch that is the last one.
         graded_in: str | None = None
+        # Whether the tree the standing grade was read from was the one the
+        # graded sha names. The authored arm has no sha to stand for, so its
+        # readings are of the ref it asked for and nothing else is claimed.
+        demonstrated = True
 
         async def evaluate() -> IterationGrade:
-            nonlocal dispatched, graded_in
+            nonlocal dispatched, graded_in, demonstrated
             criteria: list[ExecutionCriterion] = ctx.acceptance_criteria
             if ctx.tracker_spec is not None:
                 snapshot = await current_native_criteria(
@@ -564,35 +575,70 @@ class RalphLoop:
                     ),
                     emit=writer,
                 )
-            result_event, rate_limit_rejected = await drain(
-                self._service.stream(
-                    prompt=eval_prompt,
-                    repo_path=ctx.repo_path,
-                    repo_url=ctx.repo_url,
-                    branch=evaluation_ref,
-                    permission_mode=EVAL_PERMISSION_MODE,
-                    allowed_tools=ToolPreset.EVALUATION,
-                    skills=self._prompts.session_skills(
-                        PromptKey.EVALUATION, self._skills
+            skills = self._prompts.session_skills(PromptKey.EVALUATION, self._skills)
+            policy = self._prompts.session_policy(PromptKey.EVALUATION)
+            observe = None if observer is None else observer.observe
+            if native_ref is None:
+                result_event, rate_limit_rejected = await drain(
+                    self._service.stream(
+                        prompt=eval_prompt,
+                        repo_path=ctx.repo_path,
+                        repo_url=ctx.repo_url,
+                        branch=evaluation_ref,
+                        permission_mode=EVAL_PERMISSION_MODE,
+                        allowed_tools=ToolPreset.EVALUATION,
+                        skills=skills,
+                        session_type=SessionType.TICKET_FIRE,
+                        run_identity=ctx.run_identity,
+                        # Evaluative: no lens is dispatched from here. Asking a
+                        # template not to fan out is a request; an empty
+                        # definition list is a guarantee.
+                        agents=NO_SUBAGENTS,
+                        session_policy=policy,
+                        output_format={
+                            "type": "json_schema",
+                            "schema": ACCEPTANCE_CRITERIA_SCHEMA,
+                        },
+                        cache_key=ctx.cache_key,
                     ),
-                    session_type=SessionType.TICKET_FIRE,
-                    run_identity=ctx.run_identity,
-                    # Evaluative: no lens is dispatched from here. Asking a
-                    # template not to fan out is a request; an empty
-                    # definition list is a guarantee.
-                    agents=NO_SUBAGENTS,
-                    session_policy=self._prompts.session_policy(
-                        PromptKey.EVALUATION,
-                    ),
-                    output_format={
-                        "type": "json_schema",
-                        "schema": ACCEPTANCE_CRITERIA_SCHEMA,
-                    },
+                    site="ralph_evaluator",
+                    observe=observe,
+                )
+            else:
+                # The loop owns the tree the verdict will be stamped for, so
+                # the two facts that make the stamp true are read off that
+                # tree before it is released: a workspace holding changes the
+                # sha does not, or standing at another head, was graded as
+                # somebody's working copy and not as the branch.
+                async with owned_workspace(
+                    self._evaluation_workspace(),
+                    ref=native_ref,
+                    repo_path=cwd,
                     cache_key=ctx.cache_key,
-                ),
-                site="ralph_evaluator",
-                observe=None if observer is None else observer.observe,
-            )
+                ) as graded_in_path:
+                    result_event, rate_limit_rejected = await drain(
+                        self._service.stream_in_workspace(
+                            prompt=eval_prompt,
+                            workspace_path=graded_in_path,
+                            permission_mode=EVAL_PERMISSION_MODE,
+                            allowed_tools=ToolPreset.EVALUATION,
+                            skills=skills,
+                            session_type=SessionType.TICKET_FIRE,
+                            run_identity=ctx.run_identity,
+                            agents=NO_SUBAGENTS,
+                            session_policy=policy,
+                            output_format={
+                                "type": "json_schema",
+                                "schema": ACCEPTANCE_CRITERIA_SCHEMA,
+                            },
+                        ),
+                        site="ralph_evaluator",
+                        observe=observe,
+                    )
+                    demonstrated = not await self._git.has_changes(graded_in_path) and (
+                        await self._resolve(cwd=graded_in_path, ref="HEAD")
+                        == native_ref
+                    )
             if observer is not None:
                 observer.require_valid()
 
@@ -611,13 +657,20 @@ class RalphLoop:
             graded_in = result_event.session_id
             if (
                 native_ref is not None
-                and await self._native_ref(cwd=cwd, branch=ctx.ralph_branch)
-                != native_ref
+                and await self._resolve(cwd=cwd, ref=ctx.ralph_branch) != native_ref
             ):
                 raise NativeWriteRefusalError(
                     "The native branch changed during evaluation"
                 )
             dispatched = tuple(criteria)
+            if not demonstrated:
+                await self._log.awarning(
+                    "evaluation_undemonstrated",
+                    site="ralph_evaluator",
+                    iteration=state["iteration"],
+                    graded_sha=native_ref,
+                )
+                output = undemonstrated_output(output)
             return grade_iteration(criteria, output)
 
         grade, unresolved, attempts = await until_permutation(
@@ -680,6 +733,7 @@ class RalphLoop:
                 dispatched=dispatched,
                 graded_sha=native_ref,
                 graded_in=graded_in,
+                demonstrated=demonstrated,
                 iteration=state["iteration"],
             )
         writer(event)
@@ -715,6 +769,7 @@ class RalphLoop:
         dispatched: Sequence[ExecutionCriterion],
         graded_sha: str,
         graded_in: str | None,
+        demonstrated: bool,
         iteration: int,
     ) -> None:
         """Put this attempt's verdict on the criteria it was graded against.
@@ -743,20 +798,35 @@ class RalphLoop:
                 observation=evaluation_observation(
                     session_id=graded_in, iteration=iteration
                 ),
+                demonstrated=demonstrated,
             ),
         )
 
-    async def _native_ref(self, *, cwd: str, branch: str) -> str:
+    async def _resolve(self, *, cwd: str, ref: str) -> str:
+        """The complete sha *ref* names in *cwd*, or this loop's own refusal.
+
+        Called for the branch the iteration is graded on and for the head of
+        the workspace it was graded in, because both answers are the same
+        question asked of two trees.
+        """
         if self._source is None:
             raise NativeWriteRefusalError(
                 "Native execution requires its Git source reader"
             )
         try:
-            return await self._source.resolve_commit(cwd=cwd, ref=branch)
+            return await self._source.resolve_commit(cwd=cwd, ref=ref)
         except GitSourceReadError as exc:
             raise NativeWriteRefusalError(
                 "The evaluated native ref cannot be read"
             ) from exc
+
+    def _evaluation_workspace(self) -> WorkspaceProvider:
+        """The provider the tree an evaluation is graded in is acquired from."""
+        if self._workspace is None:
+            raise NativeWriteRefusalError(
+                "Native evaluation requires its workspace provider"
+            )
+        return self._workspace
 
     def _route_after_execute(self, state: RalphLoopState) -> str:
         if state.get("amendment_blocked", False):

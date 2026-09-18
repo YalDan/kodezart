@@ -689,7 +689,12 @@ def graded(
 
 
 async def tick(
-    lane_state, *, sha: str, keys: Sequence[str] = CRITERIA, failed: Sequence[str] = ()
+    lane_state,
+    *,
+    sha: str,
+    keys: Sequence[str] = CRITERIA,
+    failed: Sequence[str] = (),
+    demonstrated: bool = True,
 ) -> None:
     """One attempt's whole verdict, written the way the evaluator writes it."""
     await lane_state.write_cross_offs(
@@ -699,6 +704,7 @@ async def tick(
             results=graded(keys, failed=failed),
             graded_sha=sha,
             observation=evaluation_observation(session_id="eval-session", iteration=1),
+            demonstrated=demonstrated,
         ),
     )
 
@@ -752,6 +758,7 @@ async def test_a_verdict_that_does_not_answer_the_dispatched_roster_writes_nothi
                 results=graded(CRITERIA[:2]),
                 graded_sha="4" * 40,
                 observation="evaluator session eval-session, iteration 1",
+                demonstrated=True,
             ),
         )
 
