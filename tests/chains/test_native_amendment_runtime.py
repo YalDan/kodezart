@@ -16,9 +16,14 @@ from kodezart.domain.thread_id import ralph_thread_id
 from kodezart.types.domain.agent import NativeAmendmentEvent, WorkflowIterationEvent
 from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.gating import RepoVisibility
-from kodezart.types.domain.operation import OperationConfig, RepoEntry
+from kodezart.types.domain.operation import (
+    LifecycleStage,
+    OperationConfig,
+    RepoEntry,
+)
 from kodezart.types.domain.session import PermissionMode, ToolPreset
 from kodezart.types.domain.ticket_review import TicketReviewMode
+from kodezart.types.domain.tracker import WorkflowStateKind
 from tests.chains.test_native_fire import SUBJECT, native_evaluation
 from tests.fakes import (
     SUPPRESS_ALL_SKILLS,
@@ -83,7 +88,7 @@ async def make_runtime(repository, executor, *, configured=True, max_iterations=
         github_api=None,
         checkpointer=saver,
     )
-    return router.arm_for(None).fire, spec, current, saver, workspace
+    return router.arm_for(None).fire, spec, current, saver, workspace, port
 
 
 @pytest.mark.parametrize("configured", [True, False])
@@ -92,7 +97,7 @@ async def test_native_builder_retains_reports_and_requires_the_actual_owner(
     configured,
 ):
     executor = Executor()
-    fire, spec, current, _, _ = await make_runtime(
+    fire, spec, current, _, _, _ = await make_runtime(
         repository, executor, configured=configured
     )
     loop = fire.implementation._quality_gate
@@ -192,7 +197,7 @@ async def test_actual_consumer_refuses_ending_upheld_and_retains_real_observatio
             payload.update(observed)
 
     executor = Executor(mutate=answers)
-    fire, spec, current, _, workspace = await make_runtime(
+    fire, spec, current, _, workspace, _ = await make_runtime(
         repository, executor, max_iterations=2 if prior_evaluation else 1
     )
 
@@ -243,7 +248,7 @@ async def test_upheld_retry_can_later_evaluate_and_complete_normally(repository)
             payload.update(native_evaluation())
 
     executor = Executor(mutate=answers)
-    fire, spec, current, _, workspace = await make_runtime(repository, executor)
+    fire, spec, current, _, workspace, _ = await make_runtime(repository, executor)
     last = None
     reports = []
     try:
@@ -287,7 +292,7 @@ async def test_amended_done_criterion_enters_the_actual_fresh_grading_roster(
         subject={"kind": "criterion", "id": DIRECT_DONE},
         mutate=answers,
     )
-    fire, spec, current, _, workspace = await make_runtime(
+    fire, spec, current, _, workspace, _ = await make_runtime(
         repository, executor, max_iterations=1
     )
     current_checks.update({c.id: c.text for c in current.criteria})
@@ -303,5 +308,56 @@ async def test_amended_done_criterion_enters_the_actual_fresh_grading_roster(
         assert all(r.passed for r in results)
         assert iteration.trajectory.records[-1].passed_count == 4
         assert iteration.commit_sha
+    finally:
+        await cleanup(workspace)
+
+
+async def test_an_amendment_refused_loop_leaves_only_its_own_cross_offs(repository):
+    """The fourth loop exit, and the only one with no step after it at all.
+
+    Iteration 1 grades the roster and crosses off what it passed; the writer
+    of iteration 2 then claims a departure the independent judgment does not
+    reproduce, so the round ends upheld. The consumer refuses on that report
+    rather than handing the round on, so consolidation, the post-merge review
+    and the terminal never run: the board this exit leaves is exactly what
+    the loop's own evaluator step wrote, and there is no later step that
+    could add to it. The write-count fixtures of the loop's own module
+    measure at an iteration event, which is why this exit needs its own.
+    """
+    observed = native_evaluation()
+    observed["criteriaResults"][0]["passed"] = False
+    writer_calls = 0
+
+    async def answers(title, payload, kwargs):
+        nonlocal writer_calls
+        if title == "NativeWriterOutput":
+            writer_calls += 1
+            if writer_calls == 1:
+                payload["claims"] = []
+        elif title == "AcceptanceCriteriaOutput":
+            payload.clear()
+            payload.update(observed)
+
+    executor = Executor(mutate=answers)
+    fire, spec, current, _, workspace, port = await make_runtime(
+        repository, executor, max_iterations=2
+    )
+    try:
+        with pytest.raises(NativeAmendmentRefusalError):
+            async for _ in consumer_graph(fire, repository, spec, current).astream(
+                {}, stream_mode="custom"
+            ):
+                pass
+
+        passed = [
+            row["criterionId"] for row in observed["criteriaResults"] if row["passed"]
+        ]
+        assert port.workflow_writes == [(key, LifecycleStage.DONE) for key in passed]
+        assert [key for key, _, _ in port.issue_writes] == passed
+        assert {
+            key
+            for key, issue in port.issues.items()
+            if issue.state_kind is WorkflowStateKind.COMPLETED
+        } >= set(passed)
     finally:
         await cleanup(workspace)

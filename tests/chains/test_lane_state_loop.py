@@ -552,9 +552,7 @@ def graded(passed, keys=OWED_KEYS) -> dict:
 
 def closure(port) -> SubtreeClosure:
     """The rollup a walker reads a subject's finished state from."""
-    return SubtreeClosure(
-        facts=dict(port.issues), ref=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT)
-    )
+    return SubtreeClosure(facts=dict(port.issues), ref=SCOPE_OF_SUBJECT)
 
 
 def completed(port) -> set[str]:
@@ -834,8 +832,34 @@ async def test_the_evaluation_is_graded_in_a_workspace_the_loop_owns():
 
 
 def written(port) -> tuple[int, int]:
-    """How much this board has been written: state moves and body edits."""
+    """How much this board has been written: state moves and body edits.
+
+    State moves and body edits only. A move BACK out of the finished state
+    is neither — the double ledgers it nowhere — so what this count covers
+    is what a tick writes, and the completed-set assertion beside it is what
+    covers a move-back.
+    """
     return len(port.workflow_writes), len(port.issue_writes)
+
+
+def at_loop_exit(lane, seen: list[tuple[int, int]]):
+    """Record how much the board holds at the instant the loop's stream ends.
+
+    The measurement point the Check asks for: an exit that emitted no
+    iteration event has nothing for a per-event snapshot to read, and the
+    steps after the loop run either way.
+    """
+    run = lane.loop.run
+
+    def observed(**arguments):
+        async def stream():
+            async for event in run(**arguments):
+                yield event
+            seen.append(written(lane.port))
+
+        return stream()
+
+    lane.loop.run = observed
 
 
 @pytest.mark.parametrize(
@@ -858,7 +882,7 @@ def written(port) -> tuple[int, int]:
                 "max_iterations": 3,
             },
             set(),
-            id="never-accepted-over-three-iterations",
+            id="plateaued",
         ),
     ],
 )
@@ -866,13 +890,17 @@ async def test_no_step_after_the_loop_writes_a_cross_off(fixture, crossed_off):
     """Whatever the loop ends as, the cross-offs are all it left behind.
 
     The whole fire is driven, so consolidation, the post-merge review and the
-    terminal step all run after the loop's last iteration event. What the
-    board has been written is counted at that event and again at the end, and
-    the two are equal: the terminal aggregates and reports and is the first
-    writer of nothing.
+    terminal step all run after the loop. What the board has been written is
+    counted when the loop's own stream ends and again at the end of the fire,
+    and the two are equal: the terminal aggregates and reports and is the
+    first writer of nothing. The per-event snapshot is the same observation
+    asked one step earlier, and applies to the exits that emitted an
+    iteration event.
     """
     lane = Lane(**fixture)
     at_last_iteration: list[tuple[int, int]] = []
+    at_exit: list[tuple[int, int]] = []
+    at_loop_exit(lane, at_exit)
 
     async for event in lane.fire.run(
         prompt="Implement the requested behavior",
@@ -888,8 +916,9 @@ async def test_no_step_after_the_loop_writes_a_cross_off(fixture, crossed_off):
         if isinstance(event, WorkflowIterationEvent):
             at_last_iteration.append(written(lane.port))
 
-    assert at_last_iteration
-    assert written(lane.port) == at_last_iteration[-1]
+    assert at_exit == [written(lane.port)]
+    if at_last_iteration:
+        assert written(lane.port) == at_last_iteration[-1]
     # Not vacuous: the accepted fixture did write cross-offs, and they were
     # already there when its last iteration event went out.
     assert completed(lane.port) == crossed_off
@@ -915,6 +944,7 @@ def test_the_evaluator_step_is_the_only_caller_of_write_cross_offs():
     }
     member = LaneStateWriter.write_cross_offs.__name__
     private = RalphLoop._cross_off.__name__
+    node = RalphLoop._evaluate_node.__name__
 
     assert {
         path: found
@@ -929,7 +959,7 @@ def test_the_evaluator_step_is_the_only_caller_of_write_cross_offs():
             (path, callers_of(tree, name=private)) for path, tree in sources.items()
         )
         if found
-    } == {LOOP: [f"{RalphLoop.__name__}._evaluate_node"]}
+    } == {LOOP: [f"{RalphLoop.__name__}.{node}"]}
 
 
 #: A criterion set long enough that a per-criterion comment would be visible
