@@ -465,6 +465,34 @@ def test_a_local_binding_elsewhere_does_not_answer_for_a_forwarded_parameter():
     assert sorted(purposes - set(declared)) == ["invented"]
 
 
+def test_a_module_binding_the_same_name_does_not_answer_for_a_forwarded_parameter():
+    """The seat outranks the module's own binding of the word, not only a local one.
+
+    A module is free to bind ``purpose`` at its top level and still forward a
+    parameter of that name; resolved from the module's bindings first, the
+    forwarder reads as that declared purpose and its own call sites are never
+    scanned, so the invented purpose passed at one of them is never reported.
+    """
+    sources = source_tree()
+    sources["adapters/module_name.py"] = (
+        "from kodezart.domain.comment_markers import configured_marker_prefix\n"
+        "purpose = 'claim'\n"
+        "\n"
+        "def declared(prefixes):\n"
+        "    return configured_marker_prefix(prefixes, purpose=purpose)\n"
+        "\n"
+        "def _fwd(prefixes, purpose):\n"
+        "    return configured_marker_prefix(prefixes, purpose=purpose)\n"
+        "\n"
+        "def invented_pattern(prefixes):\n"
+        "    return _fwd(prefixes, 'invented')\n"
+    )
+    purposes, unresolved = written_purposes(sources)
+    declared = tomllib.loads(EXAMPLE.read_text())["marker_prefixes"]
+    assert unresolved == ()
+    assert sorted(purposes - set(declared)) == ["invented"]
+
+
 def test_a_purpose_bound_inside_one_function_does_not_answer_for_another():
     """Each function's own bindings resolve its own names, and no others.
 

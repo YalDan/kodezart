@@ -340,6 +340,56 @@ async def test_a_damaged_event_stream_refuses_the_write_instead_of_escaping(dama
     assert record_comments(port) == []
 
 
+class CountingBoard(FakeTrackerPort):
+    """A board counting the listings a write takes before it writes anything.
+
+    Its own upsert lists the board again to find the comment it edits, so
+    the listings that belong to the write itself are the ones it takes
+    first: those are the readings its record and its first-push fact are
+    composed from.
+    """
+
+    def __init__(self, **rest):
+        super().__init__(**rest)
+        self.listings = 0
+        self.counting = True
+
+    def count_the_next_write(self) -> None:
+        """Start again, for the reads of the write that comes next."""
+        self.listings, self.counting = 0, True
+
+    async def list_comments(self, *, issue_key: str):
+        if self.counting:
+            self.listings += 1
+        return await super().list_comments(issue_key=issue_key)
+
+    async def upsert_comment(self, **rest):
+        self.counting = False
+        return await super().upsert_comment(**rest)
+
+
+async def test_each_commit_reads_the_lanes_board_once_for_both_facts_it_needs():
+    """The prior record and the state of the event stream are one reading.
+
+    Listed twice, the write would pay a second round trip on every commit of
+    the lane's life, and the record it composes would be built over a board
+    the first-push fact was not read from.
+    """
+    port = CountingBoard(
+        issues=[make_tracker_issue(LANE)],
+        marker_prefixes=lane_operation().marker_prefixes,
+    )
+    repo = lane_repo()
+    lane_state = writer(port, repo)
+
+    await make_commit(lane_state, repo, 1)
+    assert port.listings == 1
+
+    port.count_the_next_write()
+    await make_commit(lane_state, repo, 2)
+    assert port.listings == 1
+
+
 class UnvalidatableBoard(FakeTrackerPort):
     """A board whose listing holds something that is not a comment."""
 
