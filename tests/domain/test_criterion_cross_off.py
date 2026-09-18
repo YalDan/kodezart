@@ -226,6 +226,55 @@ def stage_moves(tree: ast.Module, *, method: str, stage: str) -> list[str]:
     )
 
 
+#: The stage as the source spells it, and one function moving an issue to it.
+DONE = f"LifecycleStage.{LifecycleStage.DONE.name}"
+MOVE = (
+    "async def _move(tracker, key):\n"
+    "{bound}"
+    f"    await tracker.{LaneStateTracker.set_workflow_state.__name__}("
+    "issue_key=key, stage={alias})\n"
+)
+
+
+@pytest.mark.parametrize(
+    "module",
+    [
+        pytest.param(
+            MOVE.format(bound=f"    done = {DONE}\n", alias="done"),
+            id="a-name-bound-inside-the-function",
+        ),
+        pytest.param(
+            f"FINISHED = {DONE}\n" + MOVE.format(bound="", alias="FINISHED"),
+            id="a-module-level-name",
+        ),
+        pytest.param(
+            f"FINISHED: LifecycleStage = {DONE}\n"
+            + MOVE.format(bound="", alias="FINISHED"),
+            id="an-annotated-module-level-name",
+        ),
+        pytest.param(
+            MOVE.format(bound="", alias="LATER") + f"\nTHEN = {DONE}\nLATER = THEN\n",
+            id="a-name-bound-after-its-use",
+        ),
+    ],
+)
+def test_a_move_to_done_made_under_an_alias_is_reported(module):
+    """The guard reads the stage through the names a module binds it to.
+
+    Without this the guard is answered by binding the member to a word
+    first: a second writer that moves a criterion into the finished state
+    under any of these forms would be invisible to the single-writer
+    assertion below.
+    """
+    moves = stage_moves(
+        ast.parse(module),
+        method=LaneStateTracker.set_workflow_state.__name__,
+        stage=LifecycleStage.DONE.name,
+    )
+
+    assert moves == ["_move"]
+
+
 def test_exactly_one_function_applies_evidence_and_moves_a_criterion_to_done():
     """One function per half of a tick, and nothing else writes either half.
 
@@ -327,6 +376,14 @@ def test_a_cross_off_carries_the_attempts_sha_and_the_session_it_was_graded_in()
             {"body": f"{body()}\n**Evidence:** what an earlier run recorded"},
             id="evidence-duplicated",
         ),
+        pytest.param(
+            {"body": f"{body()}\n**Do:** a second build it names"},
+            id="do-duplicated",
+        ),
+        pytest.param(
+            {"body": f"{body()}\n**Class:** one\n**Class:** another"},
+            id="class-duplicated",
+        ),
     ],
 )
 def test_a_sub_issue_the_verdict_no_longer_addresses_refuses_the_tick(issue):
@@ -352,14 +409,32 @@ def test_a_sub_issue_the_verdict_no_longer_addresses_refuses_the_tick(issue):
         (WorkflowStateKind.COMPLETED, "Done"),
     ],
 )
-def test_an_unstarted_or_completed_criterion_carrying_its_check_is_tickable(state):
+@pytest.mark.parametrize(
+    "written",
+    [
+        pytest.param(body(), id="with-an-evidence-row"),
+        pytest.param(
+            f"**Check:** {CHECK}\n**Do:** the build it names",
+            id="without-an-evidence-row",
+        ),
+    ],
+)
+def test_an_unstarted_or_completed_criterion_carrying_its_check_is_tickable(
+    state, written
+):
+    """A sub-issue nothing has recorded Evidence on yet is tickable too.
+
+    The tick appends the row it finds absent, so the condition the write
+    depends on is that no template field is written twice, not that the
+    Evidence row is already there.
+    """
     kind, name = state
     require_tickable(
         issue=make_tracker_issue(
             KEY,
             parent_key="lane",
             issue_labels=frozenset({"criterion"}),
-            body=body(),
+            body=written,
             state_kind=kind,
             state_name=name,
         ),

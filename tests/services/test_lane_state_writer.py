@@ -935,21 +935,27 @@ async def test_a_sub_issue_that_moves_mid_attempt_is_read_again_before_its_write
     assert port.workflow_writes == [(CRITERIA[0], LifecycleStage.DONE)]
 
 
-async def test_a_tick_on_a_sub_issue_carrying_two_evidence_rows_writes_nothing():
-    """The row the stamp sets has to be one row, and that is knowable first.
+@pytest.mark.parametrize(
+    "second",
+    [
+        pytest.param("**Check:** a second Check row", id="check"),
+        pytest.param("**Do:** a second build it names", id="do"),
+        pytest.param("**Evidence:** an older row", id="evidence"),
+        pytest.param("**Class:** one\n**Class:** another", id="class"),
+    ],
+)
+async def test_a_tick_on_a_sub_issue_carrying_a_field_twice_writes_nothing(second):
+    """The rows the stamp edits have to be one each, and that is knowable first.
 
-    A body a person edited, or one rendered before the codec, can carry two
-    Evidence rows. The field-scoped edit names no single row to set, so the
-    fresh read refuses such a sub-issue the way it refuses every other body
-    this verdict no longer addresses — before a byte of it is written, and
-    not as an untyped failure after the grading session has already run.
+    A body a person edited, or one rendered before the codec, can carry a
+    template field twice. The field-scoped edit refuses such a body whichever
+    row is doubled, so the fresh read asks the codec's own question the way
+    it asks every other one this verdict depends on — before a byte is
+    written, and not as an untyped failure after the grading session has
+    already run.
     """
     ambiguous = CRITERIA[0]
-    port = criteria_board(
-        bodies={
-            ambiguous: f"{criterion_body(ambiguous)}\n**Evidence:** an older row",
-        }
-    )
+    port = criteria_board(bodies={ambiguous: f"{criterion_body(ambiguous)}\n{second}"})
     lane_state = writer(port, lane_repo())
     before = board_shape(port)
 
@@ -960,6 +966,33 @@ async def test_a_tick_on_a_sub_issue_carrying_two_evidence_rows_writes_nothing()
     assert board_shape(port) == before
     assert port.issue_writes == []
     assert port.workflow_writes == []
+
+
+async def test_a_tick_on_a_sub_issue_with_no_evidence_row_writes_one():
+    """A criterion nothing has recorded Evidence on is finished like any other.
+
+    Entry requires a Check and nothing else, so a roster member can carry no
+    Evidence row at all; the stamp appends the row it finds absent, and every
+    byte the body already held stays where it was.
+    """
+    blank = CRITERIA[1]
+    seed = f"**Check:** {check_of(blank)}\n**Do:** the build {blank} names"
+    port = criteria_board(bodies={blank: seed})
+    lane_state = writer(port, lane_repo())
+
+    await tick(lane_state, sha="b" * 40)
+
+    written = port.issues[blank]
+    assert written.state_kind is WorkflowStateKind.COMPLETED
+    assert parse_criterion_evidence(written.body) == CriterionEvidence(
+        graded_sha="b" * 40,
+        test=evaluation_observation(session_id="eval-session", iteration=1),
+    )
+    assert written.body.startswith(seed)
+    assert without_evidence(written.body) == f"{without_evidence(seed)}\n"
+    assert all(
+        port.issues[key].state_kind is WorkflowStateKind.COMPLETED for key in CRITERIA
+    )
 
 
 def owning_closure(port: FakeTrackerPort) -> SubtreeClosure:

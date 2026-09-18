@@ -80,14 +80,11 @@ def criterion_field_bodies(body: str, *, field: CriterionField) -> tuple[str, ..
     return tuple(checks)
 
 
-def replace_criterion_fields(
-    body: str, *, replacements: Mapping[CriterionField, str]
-) -> str:
-    """Replace addressed visible fields while preserving all other body bytes.
+def _criterion_rows(body: str) -> tuple[tuple[str, int], ...]:
+    """Every visible template row in *body*, as its label and where it begins.
 
-    The same fence/comment rules as the reader identify rows. Ambiguous rows
-    refuse; absent fields are appended. The caller archives the original body
-    before retiring evidence, and no authored criterion artifact uses this edit.
+    The reader's own fence and comment rules decide what is visible, so a
+    row label inside a fenced block or behind an HTML comment is no row.
     """
     rows: list[tuple[str, int]] = []
     fence: tuple[str, int] | None = None
@@ -114,8 +111,34 @@ def replace_criterion_fields(
                 if row is not None:
                     rows.append((row[1], offset))
         offset += len(original)
+    return tuple(rows)
+
+
+def duplicated_row_labels(body: str) -> tuple[str, ...]:
+    """The template row labels *body* carries more than one row for.
+
+    One rule with two readers. The edit below addresses a field by its
+    single row and cannot say which of two it means; a writer that is about
+    to make that edit asks the same question first, so such a body refuses
+    before the write instead of raising out of this codec once the work it
+    would record has already been done.
+    """
+    names = [name for name, _ in _criterion_rows(body)]
+    return tuple(sorted({name for name in names if names.count(name) > 1}))
+
+
+def replace_criterion_fields(
+    body: str, *, replacements: Mapping[CriterionField, str]
+) -> str:
+    """Replace addressed visible fields while preserving all other body bytes.
+
+    The same fence/comment rules as the reader identify rows. Ambiguous rows
+    refuse; absent fields are appended. The caller archives the original body
+    before retiring evidence, and no authored criterion artifact uses this edit.
+    """
+    rows = _criterion_rows(body)
     names = [name for name, _ in rows]
-    if len(names) != len(set(names)):
+    if duplicated_row_labels(body):
         raise ValueError("criterion amendment requires unambiguous template rows")
     result = body
     for index in range(len(rows) - 1, -1, -1):

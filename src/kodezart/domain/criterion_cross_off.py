@@ -11,7 +11,11 @@ from collections.abc import Sequence
 from typing import Final
 
 from kodezart.domain.errors import StaleWriteError
-from kodezart.domain.fire_spec import criterion_field_bodies, criterion_ref
+from kodezart.domain.fire_spec import (
+    criterion_field_bodies,
+    criterion_ref,
+    duplicated_row_labels,
+)
 from kodezart.types.domain.agent import AcceptanceCriteriaOutput, CriterionResult
 from kodezart.types.domain.criteria import TrackerCriterion
 from kodezart.types.domain.criterion_evidence import CriterionEvidence
@@ -79,8 +83,9 @@ def evaluation_observation(*, session_id: str, iteration: int) -> str:
 def tick_anchor(criterion: TrackerCriterion) -> str:
     """What a tick asserts about the sub-issue it addresses, as one line."""
     return (
-        f"the unstarted or completed criterion {criterion.id} "
-        f"carrying the Check {criterion.text!r} and one Evidence row"
+        f"the unstarted or completed criterion {criterion.id} carrying the "
+        f"Check {criterion.text!r}, at most one Evidence row and no template "
+        f"field written twice"
     )
 
 
@@ -93,10 +98,12 @@ def require_tickable(*, issue: TrackerIssue, criterion: TrackerCriterion) -> Non
     the description surface's own stale-write error, because the tick's
     first act is a compare-and-set on that body.
 
-    Every condition is one the write itself depends on, the Evidence row
-    among them: the row is set field-scoped, so a body carrying two of them
-    names no single row to set and the edit would raise out of the codec
-    after the grading session had already run.
+    Every condition is one the write itself depends on, the body's rows
+    among them: the Evidence row is set field-scoped, and a body carrying a
+    template field twice names no single row for that edit to set, so it is
+    the codec's own rule that is asked here rather than one row of it. A
+    body with no Evidence row is tickable — the edit appends the row it
+    finds absent.
 
     What this cannot see: a criterion someone moved INTO the finished state
     during the fire reads exactly like one the fire itself finished, because
@@ -109,7 +116,7 @@ def require_tickable(*, issue: TrackerIssue, criterion: TrackerCriterion) -> Non
         "criterion" not in issue.issue_labels
         or issue.state_kind not in TICKABLE_STATES
         or criterion_field_bodies(issue.body, field="Check") != (criterion.text,)
-        or len(criterion_field_bodies(issue.body, field="Evidence")) > 1
+        or duplicated_row_labels(issue.body)
     ):
         raise StaleWriteError(target=criterion.id, expected=tick_anchor(criterion))
 
