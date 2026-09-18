@@ -1517,12 +1517,7 @@ class LaneStateTracker(TrackerCommentReader, Protocol):
     async def read_issue(self, *, issue_key: str) -> TrackerIssue: ...
 
     async def edit_description(
-        self,
-        *,
-        target: str,
-        expected: str,
-        replacement: str,
-        authorization: DescriptionWriteAuthority | None = None,
+        self, *, target: str, expected: str, replacement: str
     ) -> DescriptionEditResult: ...
 
     async def set_workflow_state(

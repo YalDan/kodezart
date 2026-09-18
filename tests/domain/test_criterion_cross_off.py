@@ -22,7 +22,7 @@ from kodezart.types.domain.criterion_lifecycle import CriterionCrossOff, CrossOf
 from kodezart.types.domain.operation import LifecycleStage
 from kodezart.types.domain.tracker import WorkflowStateKind
 from tests.fakes import make_tracker_issue
-from tests.identity_guards import construction_sites
+from tests.identity_guards import model_value_sites
 
 SOURCE_ROOT = Path(__file__).parents[2] / "src" / "kodezart"
 OWNER = SOURCE_ROOT / "domain" / "criterion_cross_off.py"
@@ -54,24 +54,84 @@ def sources() -> dict[Path, str]:
     return {path: path.read_text() for path in sorted(SOURCE_ROOT.rglob("*.py"))}
 
 
-@pytest.mark.parametrize("identity", ["CriterionCrossOff", "CriterionEvidence"])
-def test_exactly_one_site_constructs_a_cross_off_and_its_evidence(identity):
+def source_tree() -> dict[str, str]:
+    """The same tree, keyed the way the value guard's report names a module."""
+    return {
+        path.relative_to(SOURCE_ROOT).as_posix(): source
+        for path, source in sources().items()
+    }
+
+
+#: The one function that mints a cross-off and the evidence inside it, and
+#: the one that reads such an evidence value back out of a body.
+BUILD_SITE = "domain/criterion_cross_off.py::cross_offs_for"
+PARSE_SITE = "domain/criterion_evidence.py::parse_criterion_evidence"
+
+
+@pytest.mark.parametrize(
+    "identity,expected",
+    [
+        pytest.param(
+            "CriterionCrossOff",
+            {"build": (BUILD_SITE,), "parse": ()},
+            id="the-cross-off",
+        ),
+        pytest.param(
+            "CriterionEvidence",
+            {"build": (BUILD_SITE,), "parse": (PARSE_SITE,)},
+            id="its-evidence",
+        ),
+    ],
+)
+def test_exactly_one_site_constructs_a_cross_off_and_its_evidence(identity, expected):
     """The state and the sha are one value, built in one place.
 
     A second construction site is a second sha, and a second sha is the
-    drift the single-writer rule exists to make impossible. The guard
-    counts every form the value could be built by, including a copy or a
-    parse, over the whole tree rather than a listed part of it.
-    """
-    sites = [
-        (path, line)
-        for path, source in sources().items()
-        for line in construction_sites(source, identity=identity)
-    ]
+    drift the single-writer rule exists to make impossible.
 
-    assert [path for path, _ in sites] == [OWNER], sites
-    second = f"{OWNER.read_text()}\n{identity}(criterion='second')\n"
-    assert len(construction_sites(second, identity=identity)) == 2
+    What the guard covers: every module that imports or declares the value,
+    reaches its name through a module it imports, or imports something whose
+    own annotation carries it; inside such a module the class call, a
+    subclass of it, the constructing and parsing methods however they are
+    reached, an adapter or partial built around the class, ``type(x)(...)``,
+    ``x.__class__(...)`` and a copy whose receiver its own function states no
+    other type for. The cross-off is built and never parsed: the board
+    carries the evidence row, not the verdict that produced it.
+
+    What it does not see, and what review has to read from the code: a class
+    or a method reached by runtime reflection, and a value rebuilt field by
+    field into another model that renders the same bytes.
+    """
+    assert model_value_sites(source_tree(), identity=identity) == expected
+
+
+@pytest.mark.parametrize(
+    "form",
+    [
+        "CriterionEvidence(graded_sha=sha, test='second')",
+        "CriterionEvidence.model_validate({'gradedSha': sha})",
+        "CriterionEvidence.model_validate_json('{}')",
+        "CriterionEvidence.model_construct(graded_sha=sha)",
+        "evidence.model_copy(update={'graded_sha': sha})",
+        "TypeAdapter(CriterionEvidence).validate_python({})",
+        "partial(CriterionEvidence.model_validate)",
+        "type(evidence)(graded_sha=sha, test='second')",
+        "evidence.__class__(graded_sha=sha, test='second')",
+    ],
+)
+def test_a_second_evidence_site_in_any_construction_form_is_reported(form):
+    """A copy that re-mints the sha is the second sha, in the shape it takes."""
+    tree = source_tree()
+    tree["services/second_writer.py"] = (
+        "from kodezart.types.domain.criterion_evidence import CriterionEvidence\n"
+        "\n"
+        "def _restamp(evidence, sha):\n"
+        f"    return {form}\n"
+    )
+
+    sites = model_value_sites(tree, identity="CriterionEvidence")
+
+    assert "services/second_writer.py::_restamp" in sites["build"] + sites["parse"]
 
 
 def qualified_names(tree: ast.Module) -> dict[int, str]:
@@ -109,9 +169,50 @@ def callers_of(tree: ast.Module, *, name: str) -> list[str]:
     )
 
 
+def stage_names(tree: ast.Module, *, stage: str) -> set[str]:
+    """Every name in *tree* that resolves to the *stage* member.
+
+    The member reached as an attribute is the spelling the code uses; a
+    name assigned from it is the same value under another word, and a guard
+    reading only the attribute would be answered by binding it first.
+    Grown to a fixed point, because an alias can precede its source.
+    """
+    names: set[str] = set()
+
+    def resolves(node: ast.expr) -> bool:
+        return ast.unparse(node).endswith(f".{stage}") or (
+            isinstance(node, ast.Name) and node.id in names
+        )
+
+    changed = True
+    while changed:
+        previous = set(names)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign) and resolves(node.value):
+                names.update(
+                    target.id for target in node.targets if isinstance(target, ast.Name)
+                )
+            elif (
+                isinstance(node, ast.AnnAssign)
+                and node.value is not None
+                and isinstance(node.target, ast.Name)
+                and resolves(node.value)
+            ):
+                names.add(node.target.id)
+        changed = names != previous
+    return names
+
+
 def stage_moves(tree: ast.Module, *, method: str, stage: str) -> list[str]:
     """Every definition in *tree* that moves an issue to the *stage* member."""
     where = qualified_names(tree)
+    named = stage_names(tree, stage=stage)
+
+    def is_stage(node: ast.expr) -> bool:
+        return ast.unparse(node).endswith(f".{stage}") or (
+            isinstance(node, ast.Name) and node.id in named
+        )
+
     return sorted(
         {
             where[id(node)]
@@ -119,8 +220,7 @@ def stage_moves(tree: ast.Module, *, method: str, stage: str) -> list[str]:
             if isinstance(node, ast.Call)
             and called_name(node) == method
             and any(
-                word.arg == "stage" and ast.unparse(word.value).endswith(f".{stage}")
-                for word in node.keywords
+                word.arg == "stage" and is_stage(word.value) for word in node.keywords
             )
         }
     )
@@ -138,15 +238,19 @@ def test_exactly_one_function_applies_evidence_and_moves_a_criterion_to_done():
     parsed, looking for calls named after the two halves as the code itself
     names them — ``apply_evidence.__name__`` and the lifecycle member's own
     name — so renaming either one moves the guard with it rather than
-    leaving it scanning a name nobody calls.
+    leaving it scanning a name nobody calls. The stage is resolved through
+    the names a module binds it to as well as through the attribute, so a
+    move made under a local or module-level alias is seen.
 
     What it does not see, and what review has to read from the code: a call
     reached by reflection (``getattr(module, name)``), a second function
-    that composes the Evidence row itself instead of calling the codec, and
-    a transition issued through ``restore_workflow_state``, which names a
-    backend state rather than a lifecycle stage. The first two are covered
-    from the other side by the construction-site guard above, since neither
-    can produce a cross-off without building one.
+    that composes the Evidence row itself instead of calling the codec, a
+    transition issued through ``restore_workflow_state``, which names a
+    backend state rather than a lifecycle stage, and a stage reached
+    through a function call or as an attribute of an object rather than
+    bound to a name. The first two are covered from the other side by the
+    construction-site guard above, since neither can produce a cross-off
+    without building one.
     """
     trees = {path: ast.parse(source) for path, source in sources().items()}
     applying = {
@@ -219,6 +323,10 @@ def test_a_cross_off_carries_the_attempts_sha_and_the_session_it_was_graded_in()
         ),
         pytest.param({"body": body(check="an amended Check")}, id="check-amended"),
         pytest.param({"body": "**Do:** a body that states no Check"}, id="check-lost"),
+        pytest.param(
+            {"body": f"{body()}\n**Evidence:** what an earlier run recorded"},
+            id="evidence-duplicated",
+        ),
     ],
 )
 def test_a_sub_issue_the_verdict_no_longer_addresses_refuses_the_tick(issue):

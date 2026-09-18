@@ -257,11 +257,13 @@ class LaneRecordReadError(Exception):
 
 
 class LaneRecordWriteError(Exception):
-    """A lane's branch record cannot be written from the observed commit.
+    """One of the lane's own tracker writes cannot be made as asked.
 
-    Raised before the write whenever the facts the record would state are
-    not the facts the workspace holds, so a record is never composed from
-    an unread prior or from a head the receipt did not name.
+    Raised before the write whenever the facts it would state are not the
+    facts the observation holds: a record is never composed from an unread
+    prior or from a head the receipt did not name, and a verdict that
+    answers some other roster than the one it was dispatched against
+    reaches no criterion sub-issue at all.
     """
 
     def __init__(self, *, lane_key: str, reason: str) -> None:

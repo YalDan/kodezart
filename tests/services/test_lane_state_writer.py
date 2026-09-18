@@ -864,6 +864,33 @@ async def test_a_tick_on_a_sub_issue_that_moved_after_dispatch_writes_nothing(dr
     assert port.workflow_writes == []
 
 
+async def test_a_tick_on_a_sub_issue_carrying_two_evidence_rows_writes_nothing():
+    """The row the stamp sets has to be one row, and that is knowable first.
+
+    A body a person edited, or one rendered before the codec, can carry two
+    Evidence rows. The field-scoped edit names no single row to set, so the
+    fresh read refuses such a sub-issue the way it refuses every other body
+    this verdict no longer addresses — before a byte of it is written, and
+    not as an untyped failure after the grading session has already run.
+    """
+    ambiguous = CRITERIA[0]
+    port = criteria_board(
+        bodies={
+            ambiguous: f"{criterion_body(ambiguous)}\n**Evidence:** an older row",
+        }
+    )
+    lane_state = writer(port, lane_repo())
+    before = board_shape(port)
+
+    with pytest.raises(StaleWriteError) as caught:
+        await tick(lane_state, sha="9" * 40)
+
+    assert caught.value.target == ambiguous
+    assert board_shape(port) == before
+    assert port.issue_writes == []
+    assert port.workflow_writes == []
+
+
 def refutations(port: FakeTrackerPort) -> list[LaneRunEvent]:
     """The refutation events this lane's stream holds, in order."""
     return [

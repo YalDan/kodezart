@@ -80,7 +80,7 @@ def tick_anchor(criterion: TrackerCriterion) -> str:
     """What a tick asserts about the sub-issue it addresses, as one line."""
     return (
         f"the unstarted or completed criterion {criterion.id} "
-        f"carrying the Check {criterion.text!r}"
+        f"carrying the Check {criterion.text!r} and one Evidence row"
     )
 
 
@@ -92,11 +92,17 @@ def require_tickable(*, issue: TrackerIssue, criterion: TrackerCriterion) -> Non
     between the grading and this write takes no part of it. The refusal is
     the description surface's own stale-write error, because the tick's
     first act is a compare-and-set on that body.
+
+    Every condition is one the write itself depends on, the Evidence row
+    among them: the row is set field-scoped, so a body carrying two of them
+    names no single row to set and the edit would raise out of the codec
+    after the grading session had already run.
     """
     if (
         "criterion" not in issue.issue_labels
         or issue.state_kind not in TICKABLE_STATES
         or criterion_field_bodies(issue.body, field="Check") != (criterion.text,)
+        or len(criterion_field_bodies(issue.body, field="Evidence")) > 1
     ):
         raise StaleWriteError(target=criterion.id, expected=tick_anchor(criterion))
 
