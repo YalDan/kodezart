@@ -154,6 +154,11 @@ class FireImplementation:
             criterion_set = await current_native_criteria(
                 spec=spec,
                 reader=self._criteria_reader,
+                held=(
+                    criterion_set
+                    if isinstance(criterion_set, TrackerCriterionSet)
+                    else None
+                ),
             )
         criteria = validated_criteria({**state, "criterion_set": criterion_set})
 

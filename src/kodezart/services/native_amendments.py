@@ -378,7 +378,9 @@ class _NativeWriterGuard:
                 raise NativeWriteRefusalError(
                     "Current Checks or native criterion facts changed during writing"
                 ) from exc
-        current = await owner._criteria.read_current(spec=self._spec)
+        current = await owner._criteria.read_current(
+            spec=self._spec, held=self._criteria
+        )
         if current != self._criteria:
             raise NativeWriteRefusalError(
                 "Current Checks changed during native writing"
@@ -636,7 +638,9 @@ class _WriterActions:
             current if i.issue_key == previous.issue_key else i
             for i in guard._criterion_issues or ()
         )
-        guard._criteria = await guard._owner._criteria.read_current(spec=guard._spec)
+        guard._criteria = await guard._owner._criteria.read_current(
+            spec=guard._spec, held=guard._criteria
+        )
         await self.require_current()
         return current
 

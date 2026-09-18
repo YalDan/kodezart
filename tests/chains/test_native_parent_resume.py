@@ -352,8 +352,12 @@ async def test_completed_loop_replay_uses_actual_evaluation_and_current_ref(
         port.issues[DIRECT_OWED] = TrackerIssue.model_validate(
             {
                 **prior.model_dump(),
-                "state_name": "Done",
-                "state_kind": WorkflowStateKind.COMPLETED,
+                # Neither Todo nor Done: the board took this criterion out of
+                # the run's obligation. Done is the state the run's own
+                # evaluation step moves a criterion of its roster to, and such
+                # a criterion stays inside the set it was judged against.
+                "state_name": "In Progress",
+                "state_kind": WorkflowStateKind.STARTED,
             }
         )
     elif change == "outage":

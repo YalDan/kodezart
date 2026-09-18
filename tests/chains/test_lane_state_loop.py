@@ -56,9 +56,9 @@ class CountingCriteria(TrackerCriteria):
         super().__init__(tracker=tracker)
         self.current_reads = 0
 
-    async def read_current(self, *, spec):
+    async def read_current(self, *, spec, held=None):
         self.current_reads += 1
-        return await super().read_current(spec=spec)
+        return await super().read_current(spec=spec, held=held)
 
 
 class Lane:

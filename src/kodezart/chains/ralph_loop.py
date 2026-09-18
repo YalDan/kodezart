@@ -12,7 +12,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import RetryPolicy
 from pydantic import TypeAdapter, ValidationError
 
-from kodezart.chains.criteria import current_native_criteria
+from kodezart.chains.criteria import current_native_criteria, held_roster
 from kodezart.core.constants import EVAL_PERMISSION_MODE
 from kodezart.core.errors import soft_failure
 from kodezart.core.logging import BoundLogger, get_logger
@@ -224,7 +224,9 @@ class RalphLoop:
                     ) from exc
         if tracker_spec is not None:
             current = await current_native_criteria(
-                spec=tracker_spec, reader=self._criteria_reader
+                spec=tracker_spec,
+                reader=self._criteria_reader,
+                held=held_roster(acceptance_criteria),
             )
             if isinstance(outcome, (PendingRalphOutcome, EvaluatedRalphOutcome)):
                 raise NativeWriteRefusalError(
@@ -319,6 +321,7 @@ class RalphLoop:
             else await current_native_criteria(
                 spec=ctx.tracker_spec,
                 reader=self._criteria_reader,
+                held=held_roster(ctx.acceptance_criteria),
             )
         )
         writer = get_stream_writer()
@@ -496,6 +499,7 @@ class RalphLoop:
                 snapshot = await current_native_criteria(
                     spec=ctx.tracker_spec,
                     reader=self._criteria_reader,
+                    held=held_roster(ctx.acceptance_criteria),
                 )
                 criteria = list(snapshot.criteria)
             eval_prompt = self._prompts.template_for(PromptKey.EVALUATION).render(

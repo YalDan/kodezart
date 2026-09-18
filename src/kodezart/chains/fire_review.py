@@ -40,6 +40,7 @@ from kodezart.types.domain.agent import (
 )
 from kodezart.types.domain.criteria import (
     FanInReport,
+    TrackerCriterionSet,
 )
 from kodezart.types.domain.fire_spec import TrackerSpec
 from kodezart.types.domain.grading import IterationGrade
@@ -111,6 +112,11 @@ class FireReview:
                 criterion_set = await current_native_criteria(
                     spec=spec,
                     reader=self._criteria_reader,
+                    held=(
+                        criterion_set
+                        if isinstance(criterion_set, TrackerCriterionSet)
+                        else None
+                    ),
                 )
             criteria = validated_criteria({**state, "criterion_set": criterion_set})
             prompt = self._prompts.template_for(PromptKey.POST_MERGE_REVIEW).render(

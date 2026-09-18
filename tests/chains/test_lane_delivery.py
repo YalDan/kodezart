@@ -445,7 +445,7 @@ async def test_n_plus_one_lanes_share_the_configured_watch_bound(bound):
         states.append(state)
 
     class CurrentCriteria:
-        async def read_current(self, *, spec):
+        async def read_current(self, *, spec, held=None):
             return snapshots[spec.subject]
 
     owner._criteria_reader = CurrentCriteria()

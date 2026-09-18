@@ -1735,8 +1735,15 @@ class FireCriteriaReader(Protocol):
     data only; transport failures refuse instead of returning cached Checks.
     """
 
-    async def read_current(self, *, spec: TrackerSpec) -> TrackerCriterionSet:
-        """Return one complete current Check snapshot or a typed refusal."""
+    async def read_current(
+        self, *, spec: TrackerSpec, held: TrackerCriterionSet | None = None
+    ) -> TrackerCriterionSet:
+        """Return one complete current Check snapshot or a typed refusal.
+
+        *held* is the roster the caller entered with. A criterion of that
+        roster the caller has since finished stays in the snapshot; one
+        finished before the caller entered is in no roster and stays out.
+        """
         ...
 
 

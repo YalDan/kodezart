@@ -157,7 +157,11 @@ class FireRemediation:
             "remediation_entry": entry,
             "ralph_branch": generate_ralph_branch_name(state["feature_branch"]),
             "acceptance_criteria": [],
-            "criterion_set": None,
+            # The round keeps the roster the fire entered with on the native
+            # arm: a round opening after every criterion was crossed off would
+            # otherwise re-enter revalidation with nothing held and refuse
+            # itself for having no Todo criteria left.
+            "criterion_set": state["criterion_set"] if native else None,
             "criteria_validation": None,
             "criteria_regeneration_rounds": 0,
             "accept_verdict": AcceptVerdict.rejected,

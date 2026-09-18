@@ -11,7 +11,10 @@ import pytest
 from langgraph.checkpoint.memory import InMemorySaver
 from pydantic import ValidationError
 
-from kodezart.chains.criteria import TrackerCriteria
+from kodezart.chains.criteria import (
+    TrackerCriteria,
+    require_current_native_snapshot,
+)
 from kodezart.chains.fire_consolidation import FireConsolidation
 from kodezart.chains.fire_implementation import FireImplementation
 from kodezart.chains.fire_remediation import FireRemediation
@@ -843,7 +846,15 @@ def change_tracker(port, change):
     if change == "missing-check":
         update = {"body": "**Do:** the Check disappeared"}
     elif change == "state":
-        update = {"state_kind": WorkflowStateKind.COMPLETED, "state_name": "Done"}
+        # A state that is neither Todo nor Done: the board took this
+        # criterion out of the fire's obligation without it being finished.
+        # Done is no longer such a state for a criterion the fire holds in
+        # its roster, and it is the fire's own evaluation step that moves
+        # one there.
+        update = {
+            "state_kind": WorkflowStateKind.STARTED,
+            "state_name": "In Progress",
+        }
     port.issues[NESTED_OWED] = issue.model_copy(update=update)
     port.issues[SUBJECT] = port.issues[SUBJECT].model_copy(
         update={"body": "later subject text must not replace frozen subject"}
@@ -1198,3 +1209,190 @@ async def test_native_remediation_receives_the_final_inner_evaluation_snapshot()
     assert len(executor.remediation_prompts) == 1
     assert "changed live Check with  spaces" in executor.remediation_prompts[0]
     assert check_of(NESTED_OWED) not in executor.remediation_prompts[0]
+
+
+# ---------------------------------------------------------------------------
+# The fire's current set keeps the roster criteria the fire itself finished.
+# ---------------------------------------------------------------------------
+
+
+def moved(port, key, *, kind, name):
+    """Put one criterion sub-issue in another workflow state on the board."""
+    port.issues[key] = port.issues[key].model_copy(
+        update={"state_kind": kind, "state_name": name}
+    )
+
+
+def finished(port, key):
+    """The board after the fire's own evaluation step finished *key*."""
+    moved(port, key, kind=WorkflowStateKind.COMPLETED, name="Done")
+
+
+def snapshot_state(spec, recorded):
+    """The graph state a delivery barrier reads its judged roster from."""
+    return {"fire_spec": spec, "criterion_set": recorded}
+
+
+async def entry_roster(port):
+    """The subject's spec and the roster a fire entering it takes on."""
+    source = TrackerCriteria(tracker=port)
+    spec = await source.read_spec(issue_key=SUBJECT)
+    return source, spec, await source.read_current(spec=spec)
+
+
+async def test_a_held_criterion_the_fire_finished_stays_in_its_current_set():
+    """Finishing owed work does not shrink what the fire is judged against.
+
+    The criterion left Todo because this fire's own evaluation moved it, so
+    the set it is compared against still holds it, with the Check text it
+    was graded on. Read without the roster the same board answers the
+    smaller set, so the roster is what carries it and not the state.
+    """
+    port = tracker()
+    source, spec, roster = await entry_roster(port)
+    finished(port, DIRECT_OWED)
+
+    current = await source.read_current(spec=spec, held=roster)
+
+    assert current == roster
+    assert {criterion.id: criterion.text for criterion in current.criteria} == {
+        key: check_of(key) for key in OWED_KEYS
+    }
+    entry_shaped = await source.read_current(spec=spec)
+    assert {criterion.id for criterion in entry_shaped.criteria} == {
+        key for key in OWED_KEYS if key != DIRECT_OWED
+    }
+
+
+async def test_a_criterion_finished_before_entry_stays_outside_a_held_set():
+    """A roster is the only way into the set, and it is fixed at entry.
+
+    Two criteria of this subtree were Done before the fire arrived. They are
+    in no roster, so no later barrier re-owes them, and the fire that
+    finishes every criterion it did take on is still judged against exactly
+    those.
+    """
+    port = tracker()
+    source, spec, roster = await entry_roster(port)
+    assert {criterion.id for criterion in roster.criteria} == set(OWED_KEYS)
+    for key in OWED_KEYS:
+        finished(port, key)
+
+    current = await source.read_current(spec=spec, held=roster)
+
+    assert current == roster
+    assert DIRECT_DONE not in {criterion.id for criterion in current.criteria}
+    assert NESTED_DONE not in {criterion.id for criterion in current.criteria}
+
+
+async def test_a_new_todo_criterion_still_changes_the_set():
+    """The roster admits finished work, never a new obligation."""
+    port = tracker()
+    source, spec, roster = await entry_roster(port)
+    finished(port, DIRECT_OWED)
+    added = "fire/owed-added"
+    port.issues[added] = make_tracker_issue(
+        added,
+        parent_key=SUBJECT,
+        issue_labels=frozenset({"criterion"}),
+        body=criterion_body(added),
+    )
+
+    current = await source.read_current(spec=spec, held=roster)
+
+    assert {criterion.id for criterion in current.criteria} == {*OWED_KEYS, added}
+    with pytest.raises(FireSpecEntryError, match="evaluated snapshot"):
+        await require_current_native_snapshot(
+            snapshot_state(spec, roster), reader=source
+        )
+
+
+@pytest.mark.parametrize(
+    "kind,name",
+    [
+        (WorkflowStateKind.STARTED, "In Progress"),
+        (WorkflowStateKind.CANCELED, "Canceled"),
+        (WorkflowStateKind.BACKLOG, "Backlog"),
+    ],
+)
+async def test_a_held_criterion_that_left_todo_and_done_still_changes_the_set(
+    kind, name
+):
+    """Only Todo and the fire's own Done keep a roster criterion inside.
+
+    A criterion the board started, cancelled or sent back to the backlog is
+    an obligation nobody holds this fire to any more, so the set shrinks and
+    the barrier refuses rather than delivering against a judged roster that
+    no longer stands.
+    """
+    port = tracker()
+    source, spec, roster = await entry_roster(port)
+    moved(port, NESTED_OWED, kind=kind, name=name)
+
+    current = await source.read_current(spec=spec, held=roster)
+
+    assert {criterion.id for criterion in current.criteria} == {
+        key for key in OWED_KEYS if key != NESTED_OWED
+    }
+    with pytest.raises(FireSpecEntryError, match="evaluated snapshot"):
+        await require_current_native_snapshot(
+            snapshot_state(spec, roster), reader=source
+        )
+
+
+async def test_delivery_proceeds_when_every_held_criterion_is_done():
+    """A lane that finished all its work passes its own delivery barrier.
+
+    This is the barrier the cross-off would otherwise close against itself:
+    every criterion the lane owed is Done, so the entry-shaped read finds no
+    Todo criterion at all and refuses outright, while the barrier reading
+    the lane's roster finds exactly what it was judged against.
+    """
+    port = tracker()
+    source, spec, roster = await entry_roster(port)
+    for key in OWED_KEYS:
+        finished(port, key)
+
+    await require_current_native_snapshot(snapshot_state(spec, roster), reader=source)
+
+    with pytest.raises(FireSpecEntryError, match="no Todo criteria"):
+        await source.read_current(spec=spec)
+
+
+async def test_a_native_remediation_round_keeps_its_roster():
+    """A remediation round entered after the work finished still revalidates.
+
+    The round re-enters the pre-loop step, which reads the board afresh. It
+    carries the roster the run holds, so a subtree whose criteria are all
+    finished revalidates against them instead of refusing for having no Todo
+    criterion left.
+    """
+    port = CountingTracker()
+    executor = NativeExecutor(
+        [
+            native_evaluation(failed=True),
+            native_evaluation(),
+            native_evaluation(),
+        ],
+        on_remediation=lambda: [finished(port, key) for key in OWED_KEYS],
+    )
+    fire = engine(
+        criteria=TrackerCriteria(tracker=port),
+        executor=executor,
+        real_loop=True,
+        remediation_rounds=1,
+    )
+
+    events = await drive(fire, scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
+
+    iterations = [e for e in events if isinstance(e, WorkflowIterationEvent)]
+    assert len(iterations) == 2
+    assert iterations[0].verdict is AcceptVerdict.rejected
+    assert iterations[1].verdict is AcceptVerdict.accepted
+    assert len(executor.remediation_prompts) == 1
+    assert {
+        result.criterion_id for result in iterations[1].evaluation.criteria_results
+    } == set(OWED_KEYS)
+    assert all(
+        port.issues[key].state_kind is WorkflowStateKind.COMPLETED for key in OWED_KEYS
+    )

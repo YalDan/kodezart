@@ -1,5 +1,7 @@
 """Capture native subjects and read current obligations at fire barriers."""
 
+from collections.abc import Sequence
+
 from langchain_core.runnables import RunnableConfig
 
 from kodezart.core.errors import TrackerAccessDeniedError, TrackerUnavailableError
@@ -14,6 +16,7 @@ from kodezart.domain.fire_spec import criterion_check
 from kodezart.services.scope_membership import read_scope_members
 from kodezart.types.domain.criteria import (
     CriterionId,
+    ExecutionCriterion,
     TrackerCriterion,
     TrackerCriterionSet,
 )
@@ -30,6 +33,27 @@ from kodezart.types.domain.workflow import WorkflowState
 #: the hook for an obligation the board does not hold it to.
 OWED_CRITERION_STATE = WorkflowStateKind.UNSTARTED
 
+#: The state a criterion this fire itself finished sits in at head.
+#:
+#: The fire's own evaluation step is what moved it, so it is still inside
+#: the obligation the fire took on: dropping it would make finishing work
+#: indistinguishable from the board cancelling it.
+HELD_CRITERION_STATE = WorkflowStateKind.COMPLETED
+
+
+def held_roster(criteria: Sequence[ExecutionCriterion]) -> TrackerCriterionSet | None:
+    """The tracker roster a caller already holds, as a set or as nothing.
+
+    A caller carries its roster as execution criteria, which on the authored
+    arm are of another kind entirely; a caller holding none of this arm's
+    criteria holds no roster, and that is the entry-shaped read rather than
+    an empty one.
+    """
+    held = [
+        criterion for criterion in criteria if isinstance(criterion, TrackerCriterion)
+    ]
+    return TrackerCriterionSet(criteria=held) if held else None
+
 
 class TrackerCriteria:
     """A fire's criteria, read from the tracker at each execution barrier.
@@ -44,6 +68,13 @@ class TrackerCriteria:
     reading only the direct family would be narrower than the obligation
     it defends — the shape the 2026-09-09 subtree ruling closed on the
     plan-time refusal, closed here on the fire's own entry.
+
+    Plus, at every barrier after the first, the criteria the fire ITSELF
+    finished: the roster it entered with, named by the caller as *held*.
+    A fire that crosses off its own work would otherwise read a smaller
+    set at its next barrier than the one it was judged against, and its
+    own delivery would refuse it.  A criterion finished BEFORE the fire
+    entered is in no roster, so it stays outside both readings.
     """
 
     def __init__(self, *, tracker: TrackerPort) -> None:
@@ -67,7 +98,9 @@ class TrackerCriteria:
         current = await self.read_current(spec=spec)
         return {criterion.id: criterion.text for criterion in current.criteria}
 
-    async def _read_owed_criteria(self, spec: TrackerSpec) -> dict[str, str]:
+    async def _read_owed_criteria(
+        self, spec: TrackerSpec, held: frozenset[str]
+    ) -> dict[str, str]:
         """Refresh current criterion Checks without recapturing the subject."""
         issue_key = spec.subject
         subtree = await read_scope_members(
@@ -90,12 +123,14 @@ class TrackerCriteria:
             key: criterion_check(criterion=issue, issue_key=issue_key)
             for key, issue in sorted(criteria.items())
             if issue.state_kind is OWED_CRITERION_STATE
+            or (issue.state_kind is HELD_CRITERION_STATE and key in held)
         }
         await self._log.ainfo(
             "fire_criteria_read",
             subject=issue_key,
             read_at_version=spec.read_at_version,
             named=len(spec.criteria),
+            held=sorted(held),
             owed=sorted(owed),
         )
         return owed
@@ -116,10 +151,22 @@ class TrackerCriteria:
                 reason="the tracker subject spec could not be read",
             ) from exc
 
-    async def read_current(self, *, spec: TrackerSpec) -> TrackerCriterionSet:
-        """Refresh obligations without replacing the captured subject text."""
+    async def read_current(
+        self, *, spec: TrackerSpec, held: TrackerCriterionSet | None = None
+    ) -> TrackerCriterionSet:
+        """Refresh obligations without replacing the captured subject text.
+
+        *held* is the roster the caller entered with; its finished criteria
+        stay in this reading, and the comparison a barrier then makes is by
+        identity and Check text rather than by state.
+        """
+        keys = (
+            frozenset()
+            if held is None
+            else frozenset(criterion.id for criterion in held.criteria)
+        )
         try:
-            owed = await self._read_owed_criteria(spec)
+            owed = await self._read_owed_criteria(spec, keys)
         except (
             ConnectionError,
             TimeoutError,
@@ -145,15 +192,23 @@ class TrackerCriteria:
 
 
 async def current_native_criteria(
-    *, spec: TrackerSpec, reader: FireCriteriaReader | None
+    *,
+    spec: TrackerSpec,
+    reader: FireCriteriaReader | None,
+    held: TrackerCriterionSet | None,
 ) -> TrackerCriterionSet:
-    """Require live authority at the consuming node, including on replay."""
+    """Require live authority at the consuming node, including on replay.
+
+    *held* has no default here on purpose: a barrier that left it out would
+    read the entry-shaped Todo-only set and refuse a fire whose own work is
+    the reason a criterion left Todo, so every call site states its roster.
+    """
     if reader is None:
         raise FireSpecEntryError(
             issue_key=spec.subject,
             reason="the current tracker criteria reader is not configured",
         )
-    return await reader.read_current(spec=spec)
+    return await reader.read_current(spec=spec, held=held)
 
 
 async def revalidate_criteria(
@@ -172,9 +227,16 @@ async def revalidate_criteria(
         spec = await source.read_spec(issue_key=issue_key)
     if not isinstance(spec, TrackerSpec) or spec.subject != issue_key:
         raise ValueError("The native fire spec must match its addressed subject")
+    recorded = state["criterion_set"]
     return {
         "fire_spec": spec,
-        "criterion_set": await source.read_current(spec=spec),
+        "criterion_set": await source.read_current(
+            spec=spec,
+            # A first entry carries no roster and reads the Todo set; a
+            # remediation re-entry or a replayed checkpoint carries the one
+            # this run was already judged against.
+            held=recorded if isinstance(recorded, TrackerCriterionSet) else None,
+        ),
     }
 
 
@@ -185,8 +247,12 @@ async def require_current_native_snapshot(
     spec = state["fire_spec"]
     if not isinstance(spec, TrackerSpec):
         return
-    current = await current_native_criteria(spec=spec, reader=reader)
     recorded = state["criterion_set"]
+    current = await current_native_criteria(
+        spec=spec,
+        reader=reader,
+        held=recorded if isinstance(recorded, TrackerCriterionSet) else None,
+    )
     if not isinstance(recorded, TrackerCriterionSet) or current != recorded:
         raise FireSpecEntryError(
             issue_key=spec.subject,

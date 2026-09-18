@@ -10,7 +10,7 @@ remember to route through, because there is no second path.
 
 from collections.abc import AsyncIterator
 
-from kodezart.chains.criteria import current_native_criteria
+from kodezart.chains.criteria import current_native_criteria, held_roster
 from kodezart.core.constants import EVAL_PERMISSION_MODE
 from kodezart.core.errors import soft_failure
 from kodezart.core.logging import BoundLogger, get_logger
@@ -84,6 +84,7 @@ class RemediationChain:
             current = await current_native_criteria(
                 spec=spec,
                 reader=self._criteria_reader,
+                held=held_roster(request.criteria),
             )
             prompt += "\n\n" + tracker_checks_section(current)
         result_event, rate_limit_rejected = await drain(
