@@ -21,8 +21,12 @@ from kodezart.types.domain.agent import ResultEvent, WorkflowIterationEvent
 from kodezart.types.domain.branch import BranchRole, trunk_base
 from kodezart.types.domain.criterion_lifecycle import CrossOffState
 from kodezart.types.domain.gating import RepoVisibility
-from kodezart.types.domain.operation import OperationConfig, OperationMemberAbsentError
-from kodezart.types.domain.run_event import RunEventKind
+from kodezart.types.domain.operation import (
+    OperationConfig,
+    OperationMemberAbsentError,
+    ScopeLabel,
+)
+from kodezart.types.domain.run_event import RUN_EVENT_PUBLISHERS, RunEventKind
 from kodezart.types.domain.run_state import LaneRunState
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.session import PermissionMode, ToolPreset
@@ -30,14 +34,17 @@ from kodezart.types.domain.tracker import WorkflowStateKind
 from tests.chains.test_native_fire import (
     DIRECT_OWED,
     OWED_KEYS,
+    STAGE_KEY,
     SUBJECT,
     NativeExecutor,
+    criterion_body,
     engine,
     native_evaluation,
     native_operation,
     tracker,
 )
 from tests.domain.test_criterion_cross_off import callers_of
+from tests.fakes import FakeTrackerPort, make_tracker_issue
 from tests.lane_fixture import (
     LaneGit,
     LanePersister,
@@ -759,3 +766,83 @@ def test_the_evaluator_step_is_the_only_caller_of_write_cross_offs():
         )
         if found
     } == {LOOP: [f"{RalphLoop.__name__}._evaluate_node"]}
+
+
+#: A criterion set long enough that a per-criterion comment would be visible
+#: against the two the lane posts for itself.
+WIDE_CRITERIA = tuple(f"{SUBJECT}/check-{index}" for index in range(8))
+
+
+def wide_board(keys=WIDE_CRITERIA):
+    """The subject with as many criterion sub-issues as *keys* names."""
+    return FakeTrackerPort(
+        issues=[
+            make_tracker_issue(
+                SUBJECT,
+                issue_labels=frozenset({STAGE_KEY}),
+                body="the subject's own text",
+            ),
+            *(
+                make_tracker_issue(
+                    key,
+                    parent_key=SUBJECT,
+                    issue_labels=frozenset({"criterion"}),
+                    body=criterion_body(key),
+                )
+                for key in keys
+            ),
+        ],
+        criteria_stage_label_key=STAGE_KEY,
+        marker_prefixes=native_operation().marker_prefixes,
+        scope_label_members={
+            ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT): frozenset(
+                {ScopeLabel.APPROVED}
+            )
+        },
+    )
+
+
+def wide_evaluation(passing) -> dict:
+    """One echo per criterion of the long set, passing exactly *passing*."""
+    return {
+        "criteriaResults": [
+            {
+                "criterionId": key,
+                "criterion": "an evaluator echo",
+                "passed": key in passing,
+                "reasoning": "Observed the selected check.",
+            }
+            for key in WIDE_CRITERIA
+        ]
+    }
+
+
+async def test_a_long_criterion_set_over_many_iterations_posts_only_vocabulary_events():
+    """Five iterations move five criteria and add no comment between them.
+
+    The lane's own two comments are the record it rewrites in place and the
+    one event it posts. A per-criterion state move is not an event, so eight
+    criteria over five iterations leave the comment count where the first
+    push left it, and no criterion sub-issue is commented on at all.
+    """
+    port = wide_board()
+    lane = Lane(
+        port=port,
+        evaluations=[wide_evaluation(WIDE_CRITERIA[: index + 1]) for index in range(5)],
+        max_iterations=5,
+    )
+
+    events = await lane.run()
+
+    assert len([e for e in events if isinstance(e, WorkflowIterationEvent)]) == 5
+    assert {
+        key
+        for key in WIDE_CRITERIA
+        if port.issues[key].state_kind is WorkflowStateKind.COMPLETED
+    } == set(WIDE_CRITERIA[:5])
+    assert len(port.comments) == 2
+    assert {comment.issue_key for comment in port.comments} == {SUBJECT}
+    posted = await port.lane_run_events(issue_key=SUBJECT, lane_key=SUBJECT)
+    assert [event.kind for event in posted] == [RunEventKind.FIRST_PUSH]
+    assert all(event.kind in RUN_EVENT_PUBLISHERS for event in posted)
+    assert len(posted) + len(lane.record_comments()) == len(port.comments)
