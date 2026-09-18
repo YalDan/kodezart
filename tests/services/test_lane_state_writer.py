@@ -137,6 +137,30 @@ def record_comments(port: FakeTrackerPort) -> list:
 PR = LanePR(url="https://forge.example/acme/repo/pull/17", number=17, state="open")
 
 
+def comment_upserts(port: FakeTrackerPort) -> list[str]:
+    """Every comment write this board is asked to make, by its marker.
+
+    A write that leaves the same bytes on the same comment is invisible in
+    the board's own comment list, so "writes nothing" is counted at the call
+    and not inferred from what the board holds afterwards.
+    """
+    calls: list[str] = []
+    writing = port.upsert_comment
+
+    async def counted(*, target, marker, body, holder=None, expected=None):
+        calls.append(marker)
+        return await writing(
+            target=target,
+            marker=marker,
+            body=body,
+            holder=holder,
+            expected=expected,
+        )
+
+    port.upsert_comment = counted
+    return calls
+
+
 async def test_the_pull_request_is_set_in_place_and_a_repeat_writes_nothing():
     """Where a delivery is retained is the record, edited where it stands.
 
@@ -148,10 +172,12 @@ async def test_the_pull_request_is_set_in_place_and_a_repeat_writes_nothing():
     """
     port, repo = board(), lane_repo()
     lane_state = writer(port, repo)
+    upserts = comment_upserts(port)
 
     with pytest.raises(LaneRecordWriteError, match="no record of this lane"):
         await lane_state.record_pull_request(lane_key=LANE, pr=PR)
     assert port.comments == []
+    assert upserts == []
 
     committed = await make_commit(lane_state, repo, 1)
     recorded = record_comments(port)[0]
@@ -175,8 +201,12 @@ async def test_the_pull_request_is_set_in_place_and_a_repeat_writes_nothing():
     assert carried.model_copy(update={"pr": None}) == committed
 
     unchanged = [(comment.comment_key, comment.body) for comment in port.comments]
+    written = list(upserts)
     again = await lane_state.record_pull_request(lane_key=LANE, pr=PR)
     assert again == carried
+    # Not a write that happened to leave the same bytes: no write was made.
+    # The body is what an edit of the same comment would produce either way.
+    assert upserts == written
     assert [
         (comment.comment_key, comment.body) for comment in port.comments
     ] == unchanged
