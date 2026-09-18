@@ -212,10 +212,11 @@ duplicate, malformed or misaddressed records raise `LaneRecordReadError`;
 transport failure never becomes an empty record. Every call reads again, so a
 fresh client needs no process cache, repository, trajectory or forge connection.
 
-`TrackerLaneStateWriter` is the write side of that same record. Its one call,
-`record_commit`, runs inside the persisting phase of a native execution, between
-the push and the completion of the phase, so a commit and what it is recorded as
-are one operation: a record write that fails takes the phase with it. It reads
+`TrackerLaneStateWriter` is the write side of that same record, and of the
+criterion cross-off beside it. It has two calls. `record_commit` runs inside the
+persisting phase of a native execution, between the push and the completion of
+the phase, so a commit and what it is recorded as are one operation: a record
+write that fails takes the phase with it. It reads
 the workspace head, the remote branch tip and the base..head changeset, parses
 the prior record before composing the next one, and edits the marker comment in
 place under `marker_prefixes.run_state`. That edit is unleased — the lane is the
@@ -223,6 +224,31 @@ record's single writer, and the comment's own preconditions (one comment per
 marker, machine authorship, the expected prior body) are what protect it. The
 first push also posts one `first_push` event under `marker_prefixes.run_event`;
 later commits post nothing, so the lane's comment count stops growing after it.
+
+`write_cross_offs` is the second call. `RalphLoop._evaluate_node` makes it once
+per iteration, after the grade and before the iteration event is emitted, so a
+consumer that sees the event for iteration n can read the tracker and find that
+iteration's cross-offs already on it. It is handed the roster the attempt was
+dispatched against and the whole grade of it, one for one and in order. For a
+criterion the attempt passed, the sha it was graded at goes on that sub-issue's
+Evidence row and the sub-issue then moves to the configured `done` stage, in
+that order — the body edit under its own compare-and-set precondition, the
+transition only after it. For a criterion the attempt failed that this fire had
+already finished, the refuting grading goes on the Evidence row, the sub-issue
+moves back to the team's unstarted state and one `criterion_refuted` event is
+posted under `marker_prefixes.run_event`. Nothing else is written: no parent's
+state, and no comment per criterion. The owning issue's finished state is the
+tracker's own rollup over its criterion sub-issues, which `SubtreeClosure`
+reads, so the scope walker sees a lane close with no further write.
+
+A native evaluation is graded in a workspace the loop owns, acquired at the sha
+the verdict will be stamped with. Before that workspace is released the loop
+reads whether it holds uncommitted changes and what its head is; a verdict from
+a workspace that held changes, or stood at another head, was read from a working
+copy rather than from the branch, so every result of the attempt is regraded as
+not passed with one fixed reason and each cross-off carries
+`CrossOffState.undemonstrated` instead of a pass or a fail. Nothing reaches the
+tracker for such an attempt.
 
 `render_lane_record` places one readable JSON value under that marker, followed
 by fixed re-entry guidance. The record preserves three-state remote head facts,

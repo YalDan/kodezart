@@ -25,6 +25,7 @@ from kodezart.domain.errors import (
 from kodezart.domain.fire_spec import criterion_field_bodies
 from kodezart.handlers.agent_handler import AgentHandler
 from kodezart.services.agent_service import AgentService
+from kodezart.services.lane_records import LaneRecordReader
 from kodezart.services.scope_runtime import _lane_checkpoint_key
 from kodezart.types.domain.agent import (
     NodeSessionStartedEvent,
@@ -35,12 +36,15 @@ from kodezart.types.domain.agent import (
 )
 from kodezart.types.domain.branch import WorkRef, WorkRefRole, trunk_base
 from kodezart.types.domain.consolidation import (
+    ChangesetDigest,
     ConsolidationOutcome,
     ConsolidationStatus,
 )
 from kodezart.types.domain.job import JobState
 from kodezart.types.domain.native_delivery import LaneDeliveryEvent
 from kodezart.types.domain.operation import LifecycleStage, RepoEntry, ScopeLabel
+from kodezart.types.domain.persist import PersistResult, PersistSource
+from kodezart.types.domain.run_event import RunEventKind
 from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.scope_runtime import ScopeLaneEvent, ScopeWalkEvent
@@ -70,6 +74,7 @@ from tests.fakes import (
     make_prompt_provider,
     make_tracker_issue,
 )
+from tests.lane_fixture import TRUNK_BRANCHES, TRUNK_SHA, LaneRepo
 
 ORIGIN = "file:///scope-repository.git"
 SCOPE = ScopeRef(kind=ScopeKind.PROJECT, key="scoped-project")
@@ -99,6 +104,9 @@ def board(*, lanes=("A",), blocked=None, approved=True):
         issues=rows,
         scope_memberships={SCOPE: tuple(lanes)},
         criteria_stage_label_key=STAGED,
+        # The board reads its markers under the operation the engine writes
+        # them under; a port with no prefixes could answer for no lane.
+        marker_prefixes=native_operation().marker_prefixes,
         scope_label_members={
             ScopeRef(kind=ScopeKind.ISSUE, key=key): frozenset({ScopeLabel.APPROVED})
             for key in lanes
@@ -147,7 +155,16 @@ def runtime(
     trunk="trunk",
     origin=ORIGIN,
     forge=None,
+    persister=None,
+    git=None,
+    source=None,
 ):
+    """The composed engine over external doubles.
+
+    *persister*, *git* and *source* default to today's no-commit doubles; a
+    test about what a walk leaves on the board supplies repositories that
+    actually commit, so every recorded fact comes from an observation of one.
+    """
     port = port or board(lanes=lanes)
     executor = ObservedNativeExecutor(
         evaluations
@@ -157,12 +174,16 @@ def runtime(
             for _ in range(2)
         ]
     )
-    workspace = FakeWorkspaceProvider()
+    git = git if git is not None else RemoteGit()
+    # The workspace reports its identity through the same Git double the rest
+    # of the fixture reads, so a prepared tree and the head it was cut at are
+    # one repository's answer rather than two doubles'.
+    workspace = FakeWorkspaceProvider(git=git)
     service = AgentService(
         git_base_url="https://github.com",
         executor=executor,
         workspace=workspace,
-        persister=FakeChangePersister(),
+        persister=persister if persister is not None else FakeChangePersister(),
     )
     artifacts = FakeArtifactPersister()
     saver = saver or InMemorySaver()
@@ -170,7 +191,8 @@ def runtime(
     # The production builder, native owner and graph remain actual consumers.
     with pytest.MonkeyPatch.context() as external:
         external.setattr(
-            "kodezart.composition.engine.SubprocessGitSourceReader", NativeSourceReader
+            "kodezart.composition.engine.SubprocessGitSourceReader",
+            NativeSourceReader if source is None else (lambda: source),
         )
         engine = build_workflow_engine(
             operation=native_operation(),
@@ -183,7 +205,7 @@ def runtime(
             ),
             repositories=(RepoEntry(url=origin, trunk=trunk),),
             agent_service=service,
-            git=RemoteGit(),
+            git=git,
             cache=FakeRepoCache(),
             workspace=workspace,
             merger=FakeBranchMerger(
@@ -832,3 +854,215 @@ async def test_nested_fire_resume_reuses_branch_and_original_attributed_run(amen
     final = await lane_of(fresh).graph.aget_state(checkpoint_config())
     assert final.next == () and final.values["feature_branch"] == branch
     assert final.values["fire_spec"].body == "Exact native subject A  with spaces\n"
+
+
+# ---------------------------------------------------------------------------
+# KOD-832 clause 4 — a scoped walk leaves every criterion finished with the
+# head sha and a record.
+# ---------------------------------------------------------------------------
+
+
+class WalkRepos:
+    """One repository per lane branch, and which lane last committed.
+
+    A walk dispatches its lanes one at a time, so the branch the last commit
+    landed on is the lane every unaddressed read belongs to. Push status is
+    still answered per branch: a double that answered every branch alike
+    would report one lane's push from a branch nobody pushed.
+    """
+
+    def __init__(self, *, remote: str = "origin") -> None:
+        self.remote = remote
+        self.branches: dict[str, LaneRepo] = {}
+        #: The refs a delivery published, which a later lane resolves a base
+        #: from: they carry no commits of this walk and hold one sha each.
+        self.delivered: dict[str, str] = {}
+        # Before the first commit of the walk the trees are the trunk's, which
+        # is what the repository this walk was cut from holds.
+        self.committing = LaneRepo(branch="trunk", remote=remote)
+
+    def of(self, branch: str) -> LaneRepo:
+        repo = self.branches.setdefault(
+            branch, LaneRepo(branch=branch, remote=self.remote)
+        )
+        self.committing = repo
+        return repo
+
+    @property
+    def current(self) -> LaneRepo:
+        return self.committing
+
+
+class WalkGit(FakeGitService):
+    """The git reads of a whole walk, answered from its repositories."""
+
+    def __init__(self, repos: WalkRepos) -> None:
+        super().__init__()
+        self.repos = repos
+
+    async def current_sha(self, cwd: str) -> str:
+        self.calls.append(("current_sha", cwd))
+        return self.repos.current.head
+
+    async def remote_branch_sha(self, cwd, remote, branch):
+        self.calls.append(("remote_branch_sha", cwd, remote, branch))
+        if branch in TRUNK_BRANCHES:
+            return TRUNK_SHA
+        if remote != self.repos.remote:
+            return None
+        repo = self.repos.branches.get(branch)
+        if repo is not None:
+            return repo.pushed
+        return self.repos.delivered.get(branch)
+
+    async def is_ancestor(self, cwd, ancestor_ref, descendant_ref):
+        self.calls.append(("is_ancestor", cwd, ancestor_ref, descendant_ref))
+        shas = [TRUNK_SHA, *self.repos.current.shas]
+        return (
+            ancestor_ref in shas
+            and descendant_ref in shas
+            and shas.index(ancestor_ref) <= shas.index(descendant_ref)
+        )
+
+    async def diff_summary(self, cwd, base_ref, head_ref):
+        self.calls.append(("diff_summary", cwd, base_ref, head_ref))
+        repo = self.repos.current
+        made = repo.shas.index(head_ref) + 1 if head_ref in repo.shas else 0
+        return ChangesetDigest(
+            file_paths=[f"lane-{index}.py" for index in range(made)],
+            commit_subjects=[f"feat: commit {index + 1}" for index in range(made)],
+            commit_count=made,
+        )
+
+
+class WalkSource(NativeSourceReader):
+    """Resolves each lane's refs, and HEAD, against its own repository."""
+
+    def __init__(self, repos: WalkRepos) -> None:
+        self.repos = repos
+
+    async def resolve_commit(self, *, cwd, ref):
+        if ref in TRUNK_BRANCHES:
+            return TRUNK_SHA
+        if ref in self.repos.branches:
+            return self.repos.branches[ref].head
+        if any(ref in repo.shas for repo in self.repos.branches.values()):
+            return ref
+        return self.repos.current.head
+
+
+class WalkPersister(FakeChangePersister):
+    """Commits and pushes the branch each lane of the walk is on."""
+
+    def __init__(self, repos: WalkRepos) -> None:
+        super().__init__()
+        self.repos = repos
+
+    async def persist(
+        self, *, workspace_path, branch, before_commit=None, before_publish=None, **rest
+    ):
+        if before_commit is not None:
+            await before_commit()
+        self.calls.append({"workspace_path": workspace_path, "branch": branch})
+        repo = self.repos.of(branch)
+        sha = repo.commit()
+        if before_publish is not None:
+            await before_publish(sha)
+        repo.publish()
+        return PersistResult(
+            commit_sha=sha,
+            branch=branch,
+            message=f"feat: {branch} commit {len(repo.shas)}\n\nthe body of it",
+            source=PersistSource.WORKING_TREE_COMMIT,
+        )
+
+
+async def lane_record(port, key: str):
+    """The record this walk left on one lane's issue, read back fresh."""
+    _, record = await LaneRecordReader(tracker=port, operation=native_operation()).read(
+        issue_key=key, lane_key=key
+    )
+    return record
+
+
+def deliverable_of(repos: WalkRepos, key: str) -> WorkRef:
+    """The ref a delivery records, published on the remote as a delivery does."""
+    branch, sha = f"recorded-{key}", "a" * 40
+    repos.delivered[branch] = sha
+    return WorkRef(
+        issue_id=key,
+        role=WorkRefRole.DELIVERABLE,
+        branch=branch,
+        pushed_head_sha=sha,
+        recorded_at=FIXTURE_EPOCH,
+    )
+
+
+async def test_a_scoped_walk_finishes_every_criterion_at_its_head_with_a_record():
+    """The whole walk, in process: two lanes, one blocked on the other.
+
+    Read off the board as the walk runs and again at the end. Each lane's
+    criterion is finished with the sha its own branch head carries, and each
+    lane's issue holds a record naming that head and the push of it, written
+    by the commit that made it. Neither subject is written by anything, the
+    walk's last observation owes nothing, and each lane posted its first push
+    exactly once.
+    """
+    repos = WalkRepos()
+    port = board(lanes=("A", "B"), blocked={"B": ("A",)})
+    harness = runtime(
+        port=port,
+        lanes=("A", "B"),
+        persister=WalkPersister(repos),
+        git=WalkGit(repos),
+        source=WalkSource(repos),
+    )
+    mid_walk: dict[str, tuple[str, str, str | None]] = {}
+
+    events = []
+    async for event in drive(harness):
+        events.append(event)
+        if not isinstance(event, ScopeLaneEvent):
+            continue
+        if isinstance(event.event, WorkflowIterationEvent):
+            lane = event.lane_key
+            if lane not in mid_walk:
+                record = await lane_record(port, lane)
+                mid_walk[lane] = (
+                    port.issues[f"{lane}/check"].state_name,
+                    record.head_sha,
+                    record.pushed_head_sha,
+                )
+        if isinstance(event.event, LaneDeliveryEvent):
+            port.recorded_work_refs[event.lane_key] = [
+                deliverable_of(repos, event.lane_key)
+            ]
+
+    heads = {branch: repo.head for branch, repo in repos.branches.items()}
+    assert len(heads) == 2
+    for state_name, head, pushed in mid_walk.values():
+        assert state_name == LifecycleStage.DONE.value
+        assert (head, pushed) in {(sha, sha) for sha in heads.values()}
+    assert set(mid_walk) == {"A", "B"}
+
+    for lane in ("A", "B"):
+        criterion = port.issues[f"{lane}/check"]
+        record = await lane_record(port, lane)
+        assert criterion.state_kind is WorkflowStateKind.COMPLETED
+        assert parse_criterion_evidence(criterion.body).graded_sha == record.head_sha
+        assert record.head_sha == record.pushed_head_sha == heads[record.branch]
+        assert [
+            event.kind
+            for event in await port.lane_run_events(issue_key=lane, lane_key=lane)
+        ] == [RunEventKind.FIRST_PUSH]
+        assert port.issues[lane].state_kind is WorkflowStateKind.UNSTARTED
+
+    assert port.workflow_writes == [
+        ("A/check", LifecycleStage.DONE),
+        ("B/check", LifecycleStage.DONE),
+    ]
+    observations = [
+        event.observation for event in events if isinstance(event, ScopeWalkEvent)
+    ]
+    assert observations[-1].unresolved_criteria == ()
+    assert observations[-1].dispatched == ("A", "B")
