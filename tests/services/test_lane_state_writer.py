@@ -1189,6 +1189,31 @@ async def test_a_regression_on_a_sub_issue_that_drifted_takes_nothing_back(
     assert refutations(port) == []
 
 
+async def test_one_grading_broken_twice_is_still_one_refutation():
+    """The event is keyed to the grading, so the same grading posts it once.
+
+    The criterion is broken at a head, finished again at that same head, and
+    broken at it once more: three verdicts about one grading. The second
+    break enters the act again — the criterion is finished, so there is
+    something to take back — and the stream already holds the refutation
+    that names this lane, this criterion and this sha, so nothing is added
+    to it. The sub-issue is taken back either way.
+    """
+    port = criteria_board()
+    lane_state = writer(port, lane_repo())
+    broken = CRITERIA[0]
+
+    await tick(lane_state, sha="1" * 40)
+    await tick(lane_state, sha="2" * 40, failed=[broken])
+    await tick(lane_state, sha="2" * 40)
+    assert port.issues[broken].state_kind is WorkflowStateKind.COMPLETED
+
+    await tick(lane_state, sha="2" * 40, failed=[broken])
+
+    assert port.issues[broken].state_kind is WorkflowStateKind.UNSTARTED
+    assert [event.graded_sha for event in refutations(port)] == ["2" * 40]
+
+
 async def test_a_criterion_this_fire_never_finished_is_not_taken_back():
     """A criterion that never passed is still owed, and no event says otherwise."""
     port = criteria_board()
