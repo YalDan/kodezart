@@ -251,7 +251,7 @@ ids clears them on `terminal` from either frame.
 | `workflow_pr`                  | `prUrl`, `prNumber`, `featureBranch`, `baseBranch`, `delivered` |
 | `workflow_ci`                  | `ciStatus`, `summary`, `ref`                    |
 | `workflow_complete`            | `featureBranch`, `ralphBranch`, `totalIterations`, `accepted`, `outcome`, `merged`, `finalCommitSha`, `ciStatus`, `mergeError` |
-| `scope_walk`                   | `observation`: scope, tick, ready/dispatched/skipped lane keys, unresolved criterion keys, unapproved lane keys and exclusions |
+| `scope_walk`                   | `observation`: scope, tick, ready/dispatched/skipped/failed lane keys, unresolved criterion keys, unapproved lane keys and exclusions |
 | `scope_lane`                   | `laneKey`, `event`: the complete typed inner event, including its discriminator |
 
 An addressed scope request uses one queue job. Each fresh walk reports current

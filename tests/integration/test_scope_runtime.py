@@ -18,10 +18,9 @@ from kodezart.core.checkpointer import make_checkpointer
 from kodezart.core.errors import TrackerUnavailableError
 from kodezart.domain.criterion_evidence import parse_criterion_evidence
 from kodezart.domain.errors import (
-    FireSpecEntryError,
+    BaseResolutionError,
     GitSourceReadError,
     ScopePlanRefusalError,
-    ScopeReadError,
 )
 from kodezart.domain.fire_spec import criterion_field_bodies
 from kodezart.handlers.agent_handler import AgentHandler
@@ -29,6 +28,7 @@ from kodezart.services.agent_service import AgentService
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.services.scope_runtime import _lane_checkpoint_key
 from kodezart.types.domain.agent import (
+    ErrorEvent,
     NodeSessionStartedEvent,
     ResultEvent,
     SystemEvent,
@@ -247,6 +247,28 @@ def drive(harness, *, job="scope-job", scope=SCOPE, origin=ORIGIN, path=None):
     )
 
 
+def lane_failures(events):
+    """Every lane failure the walk contained, as its last observation names them."""
+    observations = [
+        event.observation for event in events if isinstance(event, ScopeWalkEvent)
+    ]
+    return observations[-1].failed_lanes if observations else ()
+
+
+async def walk_reporting(harness, *, kind, match="", **rest):
+    """Drive a walk one lane of which fails, and read that failure off it.
+
+    A lane's own refusal no longer ends the run (KOD-841): it is contained at
+    the walk's lane boundary and named on the observation, so a test about
+    that refusal asserts its type and message there instead of catching it.
+    """
+    events = [event async for event in drive(harness, **rest)]
+    failures = lane_failures(events)
+    assert [failure.error.error_kind for failure in failures] == [kind]
+    assert match in failures[0].error.error
+    return events
+
+
 async def test_request_queue_constructor_reaches_real_native_graph_without_child_jobs():
     harness = runtime(
         port=board(lanes=("A", "B"), blocked={"B": ("A",)}), lanes=("A", "B")
@@ -393,8 +415,7 @@ async def test_completed_checkpoint_is_revalidated_before_it_can_be_replayed():
     _ = [event async for event in drive(harness)]
     owed_again(harness.port, check="materially changed Check")
     fresh = runtime(port=harness.port, saver=harness.saver)
-    with pytest.raises(FireSpecEntryError, match="evaluated snapshot"):
-        _ = [event async for event in drive(fresh)]
+    await walk_reporting(fresh, kind="FireSpecEntryError", match="evaluated snapshot")
     assert fresh.executor.schema_calls == []
 
 
@@ -423,9 +444,90 @@ async def test_recorded_branch_without_checkpoint_refuses_instead_of_reminting()
         )
     ]
     harness = runtime(port=port)
-    with pytest.raises(ScopeReadError, match="cross-job reentry"):
-        _ = [event async for event in drive(harness)]
+    await walk_reporting(harness, kind="ScopeReadError", match="cross-job reentry")
     assert harness.executor.schema_calls == []
+
+
+@pytest.mark.parametrize("failure", ["base", "fire"])
+async def test_one_lanes_failure_is_reported_and_the_walk_continues(
+    monkeypatch, failure
+):
+    """Three ready lanes, the second one's own work raises (KOD-841).
+
+    The other two fire, the failing lane is named once on the observation
+    with its error's type and message, it is never offered again, and the
+    walk ends without an engine error. A failure of the SCOPE's own ready
+    read is a different fault and still ends the run, which
+    ``test_tracker_outage_between_lanes_cannot_reuse_the_previous_ready_set``
+    pins.
+    """
+    lanes = ("A", "B", "C")
+    port = board(lanes=lanes)
+    harness = runtime(
+        port=port,
+        lanes=lanes,
+        # Only the two lanes that reach a grading have one scripted: an echo
+        # left over for the failing lane would be spent on the next lane and
+        # grade it against another lane's Check.
+        evaluations=[
+            native_evaluation(checks={f"{key}/check": f"{key} live Check  bytes"})
+            for key in ("A", "C")
+            for _ in range(2)
+        ],
+    )
+    if failure == "base":
+        resolver = harness.engine._scoped_arm._resolver
+        resolve = resolver.resolve
+
+        async def refuse_one(*, issue_key, **rest):
+            if issue_key == "B":
+                raise BaseResolutionError(
+                    "the lane's base cannot be resolved", issue_id=issue_key
+                )
+            return await resolve(issue_key=issue_key, **rest)
+
+        monkeypatch.setattr(resolver, "resolve", refuse_one)
+    else:
+        # A criterion carrying no Check at all: the lane's own entry refuses
+        # it, before any session, the way a malformed obligation does.
+        port.issues["B/check"] = port.issues["B/check"].model_copy(
+            update={"body": "**Evidence:** — and no Check field at all"}
+        )
+    events = [event async for event in drive(harness)]
+    observations = [
+        event.observation for event in events if isinstance(event, ScopeWalkEvent)
+    ]
+    iterations = [
+        event.lane_key
+        for event in events
+        if isinstance(event, ScopeLaneEvent)
+        and isinstance(event.event, WorkflowIterationEvent)
+    ]
+    assert iterations == ["A", "C"]
+    # A lane that raised before its graph launched was never dispatched; one
+    # that raised inside it was launched exactly once and not offered again.
+    assert list(observations[-1].dispatched).count("B") == (
+        0 if failure == "base" else 1
+    )
+    assert [key for key in observations[-1].dispatched if key != "B"] == ["A", "C"]
+    reported = observations[-1].failed_lanes
+    # Exactly one entry: the lane was tried once and rested, not retried on
+    # every remaining tick.
+    assert [item.issue_key for item in reported] == ["B"]
+    assert reported[0].error.error_kind == (
+        "BaseResolutionError" if failure == "base" else "InvalidFireCriterionError"
+    )
+    assert reported[0].error.error
+    assert not [event for event in events if isinstance(event, ErrorEvent)]
+    fired = {
+        key
+        for key in lanes
+        if any(
+            f"Exact native subject {key}" in prompt
+            for prompt in harness.executor.execution_prompts
+        )
+    }
+    assert fired == {"A", "C"}
 
 
 async def test_tracker_outage_between_lanes_cannot_reuse_the_previous_ready_set(
@@ -456,8 +558,7 @@ async def test_changed_resolved_base_refuses_the_same_job_checkpoint():
     _ = [event async for event in drive(harness)]
     owed_again(harness.port)
     fresh = runtime(port=harness.port, saver=harness.saver, trunk="other-trunk")
-    with pytest.raises(ScopeReadError, match="different scope request"):
-        _ = [event async for event in drive(fresh)]
+    await walk_reporting(fresh, kind="ScopeReadError", match="different scope request")
     assert fresh.executor.schema_calls == []
 
 
@@ -527,10 +628,9 @@ def checkpoint_config():
 async def pause_before_delivery(harness):
     lane = lane_of(harness)
     lane.graph.interrupt_before_nodes = ["deliver"]
-    events = []
-    with pytest.raises(ScopeReadError, match="no final delivery phase"):
-        async for event in drive(harness):
-            events.append(event)
+    events = await walk_reporting(
+        harness, kind="ScopeReadError", match="no final delivery phase"
+    )
     snapshot = await lane.graph.aget_state(checkpoint_config())
     assert snapshot.next == ("deliver",)
     assert not any(
@@ -631,8 +731,15 @@ async def test_fresh_engine_paused_resume_requires_current_native_obligations(
             return False
 
         monkeypatch.setattr(probe, "open_delivery_exists", no_open_delivery)
-    with pytest.raises(FireSpecEntryError):
-        _ = [event async for event in drive(fresh)]
+    if change == "outage":
+        # The lane's own refusal is contained, and the tick after it reads the
+        # scope again through the same outage: a SCOPE read failure is not one
+        # lane's fault and still ends the run.
+        with pytest.raises(TrackerUnavailableError):
+            _ = [event async for event in drive(fresh)]
+    else:
+        reported = await walk_reporting(fresh, kind="FireSpecEntryError")
+        assert "current tracker criteria" in lane_failures(reported)[0].error.error
     assert fresh.executor.schema_calls == []
     assert (await lane_of(fresh).graph.aget_state(checkpoint_config())).next == (
         "deliver",
@@ -808,16 +915,14 @@ async def test_same_job_checkpoint_refuses_incompatible_request_identity(change)
     )
     harness.port.scope_memberships[scope] = ("A",)
     fresh = runtime(port=harness.port, saver=harness.saver, origin=origin)
-    with pytest.raises(ScopeReadError, match="different scope request"):
-        _ = [
-            event
-            async for event in drive(
-                fresh,
-                origin=origin,
-                scope=scope,
-                path="/tmp/another-repo" if change == "path" else None,
-            )
-        ]
+    await walk_reporting(
+        fresh,
+        kind="ScopeReadError",
+        match="different scope request",
+        origin=origin,
+        scope=scope,
+        path="/tmp/another-repo" if change == "path" else None,
+    )
     assert fresh.executor.schema_calls == []
 
 
@@ -826,10 +931,9 @@ async def test_nested_fire_resume_reuses_branch_and_original_attributed_run(amen
     harness = runtime()
     lane = lane_of(harness)
     lane.fire.native_graph.interrupt_before_nodes = ["review_against_ticket"]
-    before = []
-    with pytest.raises(ScopeReadError, match="no final delivery phase"):
-        async for event in drive(harness):
-            before.append(event)
+    await walk_reporting(
+        harness, kind="ScopeReadError", match="no final delivery phase"
+    )
     paused = await lane.graph.aget_state(checkpoint_config(), subgraphs=True)
     child = paused.tasks[0].state
     assert child.next == ("review_against_ticket",)

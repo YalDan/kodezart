@@ -2,16 +2,17 @@
 
 import pytest
 
-from kodezart.domain.errors import FireSpecEntryError, ScopeReadError
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from tests.integration.test_scope_runtime import (
     ORIGIN,
     SCOPE,
     board,
     drive,
+    lane_failures,
     lane_of,
     owed_again,
     runtime,
+    walk_reporting,
 )
 
 
@@ -23,8 +24,9 @@ async def test_paused_resume_rechecks_readiness_after_awaited_delivery_probe(
     lane_of(harness).fire.native_graph.interrupt_before_nodes = [
         "review_against_ticket"
     ]
-    with pytest.raises(ScopeReadError, match="no final delivery phase"):
-        _ = [event async for event in drive(harness)]
+    await walk_reporting(
+        harness, kind="ScopeReadError", match="no final delivery phase"
+    )
     port = harness.port
     # The loop ran before this pause and crossed its criterion off, so the
     # lane is closed and no walk offers it again; what the resume is about is
@@ -56,12 +58,10 @@ async def test_paused_resume_rechecks_readiness_after_awaited_delivery_probe(
         return False
 
     monkeypatch.setattr(probe, "open_delivery_exists", change_during_probe)
-    try:
-        _ = [event async for event in drive(fresh)]
-    except (ScopeReadError, FireSpecEntryError):
-        if change == "unchanged":
-            raise
+    events = [event async for event in drive(fresh)]
     if change == "unchanged":
         assert len(fresh.executor.evaluation_prompts) == 1
+        # Nothing changed, so nothing about this lane was refused either.
+        assert not lane_failures(events)
     else:
         assert not fresh.executor.evaluation_prompts

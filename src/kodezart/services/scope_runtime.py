@@ -2,6 +2,7 @@
 
 import json
 from collections.abc import AsyncIterator, Callable, Sequence
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
@@ -11,6 +12,8 @@ from pydantic import TypeAdapter, ValidationError
 from kodezart.chains.criteria import require_current_native_snapshot
 from kodezart.chains.native_delivery import NativeLaneWorkflow
 from kodezart.chains.scope_walker import read_scope_ready
+from kodezart.core.error_egress import build_error_event
+from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import DeliveryProbe, RepoCache, TrackerPort
 from kodezart.domain.errors import ScopedExecutionUnavailableError, ScopeReadError
 from kodezart.domain.git_url import resolve_repo_url
@@ -28,6 +31,7 @@ from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.scope_ready import ScopeReadySet
 from kodezart.types.domain.scope_runtime import (
+    LaneFailure,
     ScopeLaneEvent,
     ScopeLaneProgress,
     ScopeWalkEvent,
@@ -73,6 +77,33 @@ class ScopeWorkflowEngine:
         self._repositories = repositories
         self._git_base_url = git_base_url
         self._integration_workspace_dir = integration_workspace_dir
+        self._log: BoundLogger = get_logger(__name__)
+
+    @asynccontextmanager
+    async def _lane_boundary(
+        self, key: str, *, failed: list[LaneFailure], rested: list[str]
+    ) -> AsyncIterator[None]:
+        """One lane's own work, whose failure is the lane's and not the walk's.
+
+        Catches ``Exception`` and not ``BaseException``, so cancellation and
+        generator close still end the run. A programming error raised inside
+        one lane is contained here too: it is logged with its traceback and
+        reported on the next observation, and the job no longer ends as an
+        engine error for it, so a consumer that alarms on the job's outcome
+        alone would miss one and the terminal report reads ``failed_lanes``.
+        The scope's own ready read stays OUTSIDE this boundary — a scope read
+        failure is a scope failure and still ends the run.
+
+        The lane is not offered again in this invocation: the fault is a fact
+        about the lane at this instant, and reselecting it would spend the
+        whole invocation on the same refusal.
+        """
+        try:
+            yield
+        except Exception as exc:
+            rested.append(key)
+            await self._log.aexception("scope_lane_failed", lane=key)
+            failed.append(LaneFailure(issue_key=key, error=build_error_event(exc)))
 
     async def run(
         self,
@@ -123,6 +154,8 @@ class ScopeWorkflowEngine:
         _ = prompt, run_identity, base_spec, implied_base
         dispatched: list[str] = []
         skipped: list[str] = []
+        rested: list[str] = []
+        failed: list[LaneFailure] = []
         tick = 0
         while True:
             tick += 1
@@ -140,6 +173,8 @@ class ScopeWorkflowEngine:
             for candidate in ready.ready:
                 if candidate.issue.issue_key in dispatched:
                     continue
+                if candidate.issue.issue_key in rested:
+                    continue
                 if await probe.open_delivery_exists(
                     repo_url=url, issue_key=candidate.issue.issue_key
                 ):
@@ -152,151 +187,164 @@ class ScopeWorkflowEngine:
                     continue
                 selected = candidate
                 break
-            yield _observation(scope, tick, ready, dispatched, skipped, exclusions)
+            yield _observation(
+                scope, tick, ready, dispatched, skipped, failed, exclusions
+            )
             if selected is None:
                 return
-            key = selected.issue.issue_key
-            lane_key = _lane_checkpoint_key(cache_key, key)
-            path = repo_path or await self._cache.ensure_available(url, lane_key)
-            spec = await self._resolver.resolve(
-                issue_key=key,
-                repo_path=path,
-                integration_workspace=str(
-                    Path(self._integration_workspace_dir) / lane_key
-                ),
-                trunk=repo.trunk,
-                now=datetime.now(tz=UTC),
-            )
-            # Base resolution and cache I/O can yield to tracker changes. Do not
-            # run the candidate merely because an earlier tick admitted it.
-            refreshed = await read_scope_ready(ref=scope, tracker=self._tracker)
-            current = next(
-                (row for row in refreshed.ready if row.issue.issue_key == key), None
-            )
-            if current is None or current != selected:
-                continue
-            if await probe.open_delivery_exists(repo_url=url, issue_key=key):
-                continue
-            fire_state, config = lane.fire.prepare(
-                prompt=current.issue.body or current.issue.title,
-                issue_key=key,
-                scope=ScopeRef(kind=ScopeKind.ISSUE, key=key),
-                repo_path=path,
-                repo_url=url,
-                base_spec=spec,
-                implied_base=spec,
-                permission_mode=permission_mode,
-                allowed_tools=allowed_tools,
-                cache_key=lane_key,
-                surface_holder=cache_key,
-                run_identity=RunIdentity(
-                    kind=RunKind.FIRE, name=key, started_at=datetime.now(tz=UTC)
-                ),
-            )
-            context = ExecutionContext.from_configurable(config)
-            address = {
-                "job": cache_key,
-                "surface_holder": context.surface_holder,
-                "scope": scope.model_dump_json(),
-                "issue": key,
-                "repo_url": context.repo_url,
-                "repo_path": context.repo_path,
-                "base": spec.model_dump_json(),
-            }
-            # LangGraph retains only scalar configuration metadata. JSON text
-            # survives the real checkpoint serializer without another store.
-            address_json = json.dumps(address, sort_keys=True, separators=(",", ":"))
-            assert context.run_identity is not None
-            config["metadata"] = {
-                _REQUEST_METADATA: address_json,
-                _RUN_METADATA: context.run_identity.model_dump_json(),
-            }
-            initial: NativeDeliveryState | None = lane.prepare(fire_state)
-            if lane.fire.checkpointer is not None:
-                saved = await lane.graph.aget_state(config)
-                if saved.values:
-                    if (saved.metadata or {}).get(_REQUEST_METADATA) != address_json:
-                        raise ScopeReadError(
-                            "native checkpoint belongs to a different scope request",
-                            ref=scope,
-                        )
-                    saved_state = _NATIVE_STATE.validate_python(saved.values)
-                    if (
-                        saved_state["issue_key"] != key
-                        or saved_state["repo_url"] != context.repo_url
-                    ):
-                        raise ScopeReadError(
-                            "native checkpoint state differs from its request identity",
-                            ref=scope,
-                        )
-                    original_run_json = (saved.metadata or {}).get(_RUN_METADATA)
-                    if not isinstance(original_run_json, str):
-                        raise ScopeReadError(
-                            "native checkpoint has no serialized run identity",
-                            ref=scope,
-                        )
-                    try:
-                        original_run = RunIdentity.model_validate_json(
-                            original_run_json
-                        )
-                    except ValidationError as exc:
-                        raise ScopeReadError(
-                            "native checkpoint has an invalid run identity",
-                            ref=scope,
-                        ) from exc
-                    if (
-                        original_run.kind is not RunKind.FIRE
-                        or original_run.name != key
-                    ):
-                        raise ScopeReadError(
-                            "native checkpoint run identity differs from its lane",
-                            ref=scope,
-                        )
-                    config["configurable"]["run_identity"] = original_run.model_dump()
-                    config["metadata"][_RUN_METADATA] = original_run_json
-                    # Even a fully completed checkpoint must not replay a cached
-                    # acceptance without asking today's criterion authority.
-                    await require_current_native_snapshot(
-                        saved_state, reader=lane.fire.criteria
-                    )
-                    initial = None
-            if initial is not None:
-                refs = await self._tracker.work_refs(issue_key=key)
-                if any(ref.role is WorkRefRole.DELIVERABLE for ref in refs):
-                    raise ScopeReadError(
-                        "recorded branch requires validated cross-job reentry; "
-                        "refusing to mint",
-                        ref=scope,
-                    )
-            # Probe, checkpoint and work-ref reads can yield to changed approval,
-            # membership or blockers. Admission must still hold at graph launch.
-            launch_ready = await read_scope_ready(ref=scope, tracker=self._tracker)
-            if current not in launch_ready.ready:
-                continue
-            dispatched.append(key)
-            final: NativeDeliveryState | None = None
-            async for namespace, mode, payload in lane.graph.astream(
-                initial,
-                config=config,
-                stream_mode=["custom", "values"],
-                subgraphs=True,
+            async with self._lane_boundary(
+                selected.issue.issue_key, failed=failed, rested=rested
             ):
-                if mode == "values" and not namespace:
-                    final = _NATIVE_STATE.validate_python(payload)
-                elif mode == "custom":
-                    if not isinstance(payload, AgentEvent):
-                        raise TypeError("Native lane emitted a non-AgentEvent")
-                    if not isinstance(payload, WorkflowCompleteEvent):
-                        yield ScopeLaneEvent(
-                            lane_key=key,
-                            event=_NATIVE_PROGRESS.validate_python(payload),
-                        )
-            if final is None or isinstance(final["delivery"], PendingLaneDelivery):
-                raise ScopeReadError(
-                    "native lane has no final delivery phase", ref=scope
+                key = selected.issue.issue_key
+                lane_key = _lane_checkpoint_key(cache_key, key)
+                path = repo_path or await self._cache.ensure_available(url, lane_key)
+                spec = await self._resolver.resolve(
+                    issue_key=key,
+                    repo_path=path,
+                    integration_workspace=str(
+                        Path(self._integration_workspace_dir) / lane_key
+                    ),
+                    trunk=repo.trunk,
+                    now=datetime.now(tz=UTC),
                 )
-            if isinstance(final["delivery"], SkippedLaneDelivery):
-                skipped.append(key)
+                # Base resolution and cache I/O can yield to tracker changes. Do not
+                # run the candidate merely because an earlier tick admitted it.
+                refreshed = await read_scope_ready(ref=scope, tracker=self._tracker)
+                current = next(
+                    (row for row in refreshed.ready if row.issue.issue_key == key), None
+                )
+                if current is None or current != selected:
+                    continue
+                if await probe.open_delivery_exists(repo_url=url, issue_key=key):
+                    continue
+                fire_state, config = lane.fire.prepare(
+                    prompt=current.issue.body or current.issue.title,
+                    issue_key=key,
+                    scope=ScopeRef(kind=ScopeKind.ISSUE, key=key),
+                    repo_path=path,
+                    repo_url=url,
+                    base_spec=spec,
+                    implied_base=spec,
+                    permission_mode=permission_mode,
+                    allowed_tools=allowed_tools,
+                    cache_key=lane_key,
+                    surface_holder=cache_key,
+                    run_identity=RunIdentity(
+                        kind=RunKind.FIRE, name=key, started_at=datetime.now(tz=UTC)
+                    ),
+                )
+                context = ExecutionContext.from_configurable(config)
+                address = {
+                    "job": cache_key,
+                    "surface_holder": context.surface_holder,
+                    "scope": scope.model_dump_json(),
+                    "issue": key,
+                    "repo_url": context.repo_url,
+                    "repo_path": context.repo_path,
+                    "base": spec.model_dump_json(),
+                }
+                # LangGraph retains only scalar configuration metadata. JSON text
+                # survives the real checkpoint serializer without another store.
+                address_json = json.dumps(
+                    address, sort_keys=True, separators=(",", ":")
+                )
+                assert context.run_identity is not None
+                config["metadata"] = {
+                    _REQUEST_METADATA: address_json,
+                    _RUN_METADATA: context.run_identity.model_dump_json(),
+                }
+                initial: NativeDeliveryState | None = lane.prepare(fire_state)
+                if lane.fire.checkpointer is not None:
+                    saved = await lane.graph.aget_state(config)
+                    if saved.values:
+                        if (saved.metadata or {}).get(
+                            _REQUEST_METADATA
+                        ) != address_json:
+                            raise ScopeReadError(
+                                "native checkpoint belongs to a different "
+                                "scope request",
+                                ref=scope,
+                            )
+                        saved_state = _NATIVE_STATE.validate_python(saved.values)
+                        if (
+                            saved_state["issue_key"] != key
+                            or saved_state["repo_url"] != context.repo_url
+                        ):
+                            raise ScopeReadError(
+                                "native checkpoint state differs from its "
+                                "request identity",
+                                ref=scope,
+                            )
+                        original_run_json = (saved.metadata or {}).get(_RUN_METADATA)
+                        if not isinstance(original_run_json, str):
+                            raise ScopeReadError(
+                                "native checkpoint has no serialized run identity",
+                                ref=scope,
+                            )
+                        try:
+                            original_run = RunIdentity.model_validate_json(
+                                original_run_json
+                            )
+                        except ValidationError as exc:
+                            raise ScopeReadError(
+                                "native checkpoint has an invalid run identity",
+                                ref=scope,
+                            ) from exc
+                        if (
+                            original_run.kind is not RunKind.FIRE
+                            or original_run.name != key
+                        ):
+                            raise ScopeReadError(
+                                "native checkpoint run identity differs from its lane",
+                                ref=scope,
+                            )
+                        config["configurable"]["run_identity"] = (
+                            original_run.model_dump()
+                        )
+                        config["metadata"][_RUN_METADATA] = original_run_json
+                        # Even a fully completed checkpoint must not replay a cached
+                        # acceptance without asking today's criterion authority.
+                        await require_current_native_snapshot(
+                            saved_state, reader=lane.fire.criteria
+                        )
+                        initial = None
+                if initial is not None:
+                    refs = await self._tracker.work_refs(issue_key=key)
+                    if any(ref.role is WorkRefRole.DELIVERABLE for ref in refs):
+                        raise ScopeReadError(
+                            "recorded branch requires validated cross-job reentry; "
+                            "refusing to mint",
+                            ref=scope,
+                        )
+                # Probe, checkpoint and work-ref reads can yield to changed approval,
+                # membership or blockers. Admission must still hold at graph launch.
+                launch_ready = await read_scope_ready(ref=scope, tracker=self._tracker)
+                if current not in launch_ready.ready:
+                    continue
+                dispatched.append(key)
+                final: NativeDeliveryState | None = None
+                async for namespace, mode, payload in lane.graph.astream(
+                    initial,
+                    config=config,
+                    stream_mode=["custom", "values"],
+                    subgraphs=True,
+                ):
+                    if mode == "values" and not namespace:
+                        final = _NATIVE_STATE.validate_python(payload)
+                    elif mode == "custom":
+                        if not isinstance(payload, AgentEvent):
+                            raise TypeError("Native lane emitted a non-AgentEvent")
+                        if not isinstance(payload, WorkflowCompleteEvent):
+                            yield ScopeLaneEvent(
+                                lane_key=key,
+                                event=_NATIVE_PROGRESS.validate_python(payload),
+                            )
+                if final is None or isinstance(final["delivery"], PendingLaneDelivery):
+                    raise ScopeReadError(
+                        "native lane has no final delivery phase", ref=scope
+                    )
+                if isinstance(final["delivery"], SkippedLaneDelivery):
+                    skipped.append(key)
 
 
 def _lane_checkpoint_key(job_id: str, lane_key: str) -> str:
@@ -310,6 +358,7 @@ def _observation(
     ready: ScopeReadySet,
     dispatched: list[str],
     skipped: list[str],
+    failed: list[LaneFailure],
     exclusions: list[IssueExclusion],
 ) -> ScopeWalkEvent:
     return ScopeWalkEvent(
@@ -319,6 +368,7 @@ def _observation(
             ready=tuple(row.issue.issue_key for row in ready.ready),
             dispatched=tuple(dispatched),
             skipped_lanes=tuple(skipped),
+            failed_lanes=tuple(failed),
             unresolved_criteria=tuple(
                 row.issue_key
                 for row in ready.criteria
