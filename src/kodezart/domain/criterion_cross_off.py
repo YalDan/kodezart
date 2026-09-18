@@ -97,6 +97,13 @@ def require_tickable(*, issue: TrackerIssue, criterion: TrackerCriterion) -> Non
     among them: the row is set field-scoped, so a body carrying two of them
     names no single row to set and the edit would raise out of the codec
     after the grading session had already run.
+
+    What this cannot see: a criterion someone moved INTO the finished state
+    during the fire reads exactly like one the fire itself finished, because
+    the roster carries no state and the Evidence row carries no run. Such a
+    criterion is re-graded and, on a fail, taken back. Nothing but the
+    evaluation step moves a criterion to that state, so this is a protocol
+    violation on the board rather than a case to decide here.
     """
     if (
         "criterion" not in issue.issue_labels

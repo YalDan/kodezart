@@ -38,6 +38,13 @@ class LaneRunEvent(CamelCaseModel):
     that rather than a missing value: an event addressed to the lane as a
     whole is keyed to nothing, and a reader that substituted the lane key
     there would report a lane-wide event as one about a member.
+
+    ``graded_sha`` is the commit a grading was read at, and it is part of
+    the event's identity: two gradings of one criterion at two heads are
+    two events, and an event keyed without it would read the second as a
+    repeat of the first. ``None`` is again a state — an event that is not
+    about a grading has no commit to name — so an older comment written
+    before this field parses as one of those.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -45,6 +52,7 @@ class LaneRunEvent(CamelCaseModel):
     kind: RunEventKind
     lane_key: str = Field(min_length=1, pattern=r"\S")
     subject_key: Annotated[str, Field(min_length=1, pattern=r"\S")] | None = None
+    graded_sha: Annotated[str, Field(min_length=1, pattern=r"\S")] | None = None
 
 
 def render_run_event(*, event: LaneRunEvent, marker_prefixes: Mapping[str, str]) -> str:

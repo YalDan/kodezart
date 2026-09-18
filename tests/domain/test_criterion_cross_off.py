@@ -231,8 +231,8 @@ def test_exactly_one_function_applies_evidence_and_moves_a_criterion_to_done():
 
     The Evidence row is written by one function because a tick and the
     refutation that takes it back both say what the last grading of that
-    criterion read; the move into the finished state is written by another,
-    because only a tick makes it.
+    criterion read (KOD-690); the move into the finished state is written by
+    another, because only a tick makes it.
 
     What the guard covers: every ``.py`` file under ``src/kodezart/``,
     parsed, looking for calls named after the two halves as the code itself

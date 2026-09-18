@@ -341,37 +341,45 @@ class TrackerLaneStateWriter:
         """Take back a criterion this fire finished and then broke, once.
 
         A criterion the fresh read finds unfinished is no regression: it was
-        never this fire's claim to take back, and a fire that had finished one
-        and already taken it back finds it unfinished too. The state the board
-        holds is therefore the whole condition, and a repeated verdict at the
-        same head writes nothing a second time.
+        never this fire's claim to take back. Such a criterion is never a
+        regression however it got there — a person may have moved it, and the
+        roster carries no state to tell one from the other — so the state the
+        board holds is the whole condition.
 
-        What the refutation is made of, in order: the refuting grading on the
-        Evidence row, the move back out of the finished state, and one posted
-        event keyed to the criterion. The owning issue reopens by the tracker's
-        own rollup over its criteria and is written by nobody.
+        The whole act is ordered so that a failure anywhere inside it leaves
+        the criterion finished, which is the arm this method re-enters: the
+        next failing verdict at the same head then performs exactly the steps
+        that did not land, because the stamp is decided by its content, the
+        post is deduplicated by the grading the event names, and the move back
+        is idempotent. So: the board and its stream are read BEFORE anything
+        is written, so a stream that will not parse refuses while the
+        sub-issue still reads as the pass it was; then the refuting grading
+        goes on the Evidence row; then the event; then the move back out of
+        the finished state. The owning issue reopens by the tracker's own
+        rollup over its criteria and is written by nobody.
         """
         issue = await self._tracker.read_issue(issue_key=criterion.id)
         if issue.state_kind is not HELD_CRITERION_STATE:
             return
         require_tickable(issue=issue, criterion=criterion)
-        await self._stamp(
-            lane=lane, criterion=criterion, issue=issue, cross_off=cross_off
-        )
         event = LaneRunEvent(
             kind=RunEventKind.CRITERION_REFUTED,
             lane_key=lane.lane_key,
             subject_key=criterion.id,
+            graded_sha=cross_off.evidence.graded_sha,
         )
         posted = event in self._events(comments=await self._board(lane), lane=lane)
-        stamped = await self._tracker.read_issue(issue_key=criterion.id)
-        await settle(
-            self._tracker.reset_criterion_pending(expected=stamped, holder=None)
+        await self._stamp(
+            lane=lane, criterion=criterion, issue=issue, cross_off=cross_off
         )
         if not posted:
             await settle(
                 self._tracker.post_run_event(issue_key=lane.lane_key, event=event)
             )
+        stamped = await self._tracker.read_issue(issue_key=criterion.id)
+        await settle(
+            self._tracker.reset_criterion_pending(expected=stamped, holder=None)
+        )
 
     async def _stamp(
         self,
