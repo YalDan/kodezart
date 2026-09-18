@@ -501,8 +501,8 @@ async def test_a_lane_killed_between_its_push_and_its_record_write_reads_one_beh
     assert [row.sha for row in record.commits] == [record.head_sha]
 
 
-def graded(passed) -> dict:
-    """One evaluator echo per owed criterion, passing exactly *passed*."""
+def graded(passed, keys=OWED_KEYS) -> dict:
+    """One evaluator echo per criterion of *keys*, passing exactly *passed*."""
     return {
         "criteriaResults": [
             {
@@ -511,7 +511,7 @@ def graded(passed) -> dict:
                 "passed": key in passed,
                 "reasoning": "Observed the selected check.",
             }
-            for key in OWED_KEYS
+            for key in keys
         ]
     }
 
@@ -531,13 +531,30 @@ def completed(port) -> set[str]:
     }
 
 
+def states(port) -> dict[str, WorkflowStateKind]:
+    """Every issue on the board by the state a cross-off could move it to."""
+    return {key: issue.state_kind for key, issue in port.issues.items()}
+
+
+def added_criterion(port, key: str) -> None:
+    """Put one more Todo criterion under the subject, mid-run."""
+    port.issues[key] = make_tracker_issue(
+        key,
+        parent_key=SUBJECT,
+        issue_labels=frozenset({"criterion"}),
+        body=criterion_body(key),
+    )
+
+
 async def test_cross_offs_appear_on_the_tracker_between_iterations():
     """The board carries iteration n's cross-offs while the loop still runs.
 
     Read off the fake tracker at the instant the iteration event arrives,
     never off what the loop returns: a consumer that sees the event can go to
     the board and find exactly the criteria that iteration passed already
-    moved, with the rest still owed and the subject untouched.
+    moved, with the rest still owed and the subject untouched. The changed
+    keys are taken over the WHOLE board rather than over the owed roster, so
+    a state moved anywhere else would show up here as well.
     """
     first = {DIRECT_OWED}
     lane = Lane(
@@ -548,13 +565,16 @@ async def test_cross_offs_appear_on_the_tracker_between_iterations():
         lane.port.issues[SUBJECT].state_name,
         lane.port.issues[SUBJECT].body,
     )
-    observed: dict[int, tuple[set[str], bool, tuple[str, str]]] = {}
+    before_states = states(lane.port)
+    observed: dict[int, tuple[set[str], set[str], bool, tuple[str, str]]] = {}
     events: list[object] = []
 
     async for event in lane.loop.run(**await lane.arguments()):
         events.append(event)
         if isinstance(event, WorkflowIterationEvent):
+            moved = states(lane.port)
             observed[event.iteration] = (
+                {key for key, kind in moved.items() if kind != before_states[key]},
                 completed(lane.port),
                 closure(lane.port).is_closed(SUBJECT),
                 (
@@ -563,8 +583,8 @@ async def test_cross_offs_appear_on_the_tracker_between_iterations():
                 ),
             )
 
-    assert observed[1] == (first, False, subject_before)
-    assert observed[2] == (set(OWED_KEYS), True, subject_before)
+    assert observed[1] == (first, first, False, subject_before)
+    assert observed[2] == (set(OWED_KEYS), set(OWED_KEYS), True, subject_before)
     assert [
         event.verdict for event in events if isinstance(event, WorkflowIterationEvent)
     ] == [
@@ -578,6 +598,71 @@ async def test_cross_offs_appear_on_the_tracker_between_iterations():
         parse_criterion_evidence(lane.port.issues[key].body).graded_sha
         for key in OWED_KEYS
     } == {await LaneSource(lane.repo).resolve_commit(cwd="/w", ref=BRANCH)}
+
+
+#: A criterion the subtree gains after the fire entered it.
+ADDED_OWED = "fire/owed-added"
+
+
+async def test_a_criterion_added_between_iterations_is_graded_and_crossed_off():
+    """What this loop itself grades stays inside the set it is judged against.
+
+    The obligation can grow mid-run — an amendment write-back puts a
+    criterion back in Todo, or the board gains one — and the next iteration
+    owes it. Once this loop's own evaluation has graded it and the cross-off
+    has moved it out of Todo, the roster has to hold it, or the check after
+    the loop would read a set short of exactly the criterion the loop
+    finished and refuse a lane with all its work done.
+    """
+    lane = Lane(
+        evaluations=[
+            graded({DIRECT_OWED}),
+            graded({*OWED_KEYS, ADDED_OWED}, keys=(*OWED_KEYS, ADDED_OWED)),
+        ],
+        max_iterations=2,
+    )
+    lane.executor.on_evaluation = lambda count: (
+        added_criterion(lane.port, ADDED_OWED) if count == 1 else None
+    )
+
+    events = await lane.run()
+
+    iterations = [e for e in events if isinstance(e, WorkflowIterationEvent)]
+    assert [event.verdict for event in iterations] == [
+        AcceptVerdict.rejected,
+        AcceptVerdict.accepted,
+    ]
+    assert {
+        result.criterion_id for result in iterations[-1].evaluation.criteria_results
+    } == {*OWED_KEYS, ADDED_OWED}
+    finished = {*OWED_KEYS, ADDED_OWED}
+    assert {
+        key
+        for key in finished
+        if lane.port.issues[key].state_kind is WorkflowStateKind.COMPLETED
+    } == finished
+    assert {
+        parse_criterion_evidence(lane.port.issues[key].body).graded_sha
+        for key in finished
+    } == {lane.repo.head}
+
+
+async def test_a_criterion_added_after_the_last_evaluation_refuses_the_lane():
+    """A set that changed since the last grading is what the check is for.
+
+    The criterion appears after the only evaluation of the run, so no
+    grading of this loop's ever covered it. The cross-offs that evaluation
+    did produce stand on the board, and the check after the loop refuses
+    rather than letting a judgment stand over a roster it never read.
+    """
+    lane = Lane(evaluations=[graded(OWED_KEYS)])
+    lane.executor.on_evaluation = lambda _: added_criterion(lane.port, ADDED_OWED)
+
+    with pytest.raises(NativeWriteRefusalError, match="Current Checks differ"):
+        await lane.run()
+
+    assert completed(lane.port) == set(OWED_KEYS)
+    assert lane.port.issues[ADDED_OWED].state_kind is WorkflowStateKind.UNSTARTED
 
 
 class DriftedHead(LaneSource):
