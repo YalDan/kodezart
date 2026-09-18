@@ -4148,5 +4148,40 @@
   "owner": "M4",
   "reason": "introduced 9e7b420a..b94a63ab by a M4 commit",
   "split": null
+ },
+ "src/kodezart/domain/lane_entry.py": {
+  "owner": "M4",
+  "reason": "introduced b94a63ab..9d425ec4 by a M4 commit",
+  "split": null
+ },
+ "src/kodezart/services/lane_entry.py": {
+  "owner": "M4",
+  "reason": "introduced b94a63ab..9d425ec4 by a M4 commit",
+  "split": null
+ },
+ "src/kodezart/types/domain/lane_entry.py": {
+  "owner": "M4",
+  "reason": "introduced b94a63ab..9d425ec4 by a M4 commit",
+  "split": null
+ },
+ "tests/domain/test_lane_branch_name.py": {
+  "owner": "M1",
+  "reason": "introduced b94a63ab..9d425ec4 by a M1 commit",
+  "split": null
+ },
+ "tests/domain/test_lane_entry.py": {
+  "owner": "M4",
+  "reason": "introduced b94a63ab..9d425ec4 by a M4 commit",
+  "split": null
+ },
+ "tests/services/test_lane_entry.py": {
+  "owner": "M4",
+  "reason": "introduced b94a63ab..9d425ec4 by a M4 commit",
+  "split": null
+ },
+ "tests/services/test_scope_runtime_static.py": {
+  "owner": "M3",
+  "reason": "introduced b94a63ab..9d425ec4 by a M3 commit",
+  "split": null
  }
 }

@@ -108,3 +108,38 @@ These are known and accepted, not defects to chase:
   introduced the member;
 - the recomposition of the views differs from the union on 40 paths. The
   differences are placement and comments only, not content.
+
+## Re-cut 2026-09-18 23:10 UTC from union 9d425ec4 (run 6)
+
+Slice 2a landed on the union (`b94a63ab` → `9d425ec4`); the maps were extended once for that
+range (`extend_maps.py b94a63ab 9d425ec4` with all three environment values: 7 new files mapped,
+13 symbols added, 16 re-marked) and the seven views were re-cut and published on the first run:
+
+| View | Head | Parent | PR |
+| --- | --- | --- | --- |
+| M1 | `4518c363` | `e1544ed7` (restructure) | #133 |
+| M4 | `ac85209e` | M1 | #124 |
+| M3 | `4a5146e7` | M4 | #125 |
+| M2 | `bf0c7de3` | M3 | #126 |
+| M5 | `91ce3b78` | M3 | #127 |
+| M6 | `3a23e284` | M5 | #128 |
+| M7 | `e5b1493e` | M5 | #129 |
+
+Independent refutation (workflow `wf_recut_views_2a.js`, cut agent + refuter): donor mismatches 0,
+ownership violations 0, off-path members 0, parse failures 0, own-model failures 0, coverage
+unmapped 0 / whole-missing 0 (split-symbol misses 74, the known prose/config placement drift),
+recomposition: the one known conflict in `src/kodezart/types/domain/operation.py`; with the union
+text the leaves merge and the result loads with the union's loader, differing from the union on 41
+paths in placement and comments only.
+
+The refuter returned REJECT on an "alias gap": `CIWatchResult` (a `type` alias in the M5-owned
+`types/domain/check_observation.py`) is imported by `core/protocols.py` and `tests/fakes.py` at the
+M1/M4/M3/M2 heads, where that file is absent. The accepted run 4 has the identical import lines at
+its M1 head `f17b6ee5` with the same file absent: this is the recorded limit "an import block is
+replaced whole the first time a view touches it", not a defect of the cut, and the gate the earlier
+runs applied is the seven-alias own-model oracle (aliases owned on the path must be defined in the
+view), which this cut passes. The cut was accepted on that basis. Two notes for the maps: the
+alias `McpToolResult` in `core/protocols.py` is absent from `ownership_symbols.r.json` (unchanged
+since the base; present in every view), and `annotate_r.py`'s head table must be repointed per run
+(`annotate_r_newheads6.py`). Per-run reports under `recut-2026-09-18/run6/`; the accepted run's
+maps, `heads.txt`, PR bodies and `publish_result.json` are the ones at the top of this directory.

@@ -11855,5 +11855,68 @@
   "kind": "test_py",
   "first_seen": "union-b94a63ab",
   "imports": []
+ },
+ {
+  "path": "src/kodezart/domain/lane_entry.py",
+  "status": "A",
+  "added": 182,
+  "deleted": 0,
+  "kind": "src_py",
+  "first_seen": "union-9d425ec4",
+  "imports": []
+ },
+ {
+  "path": "src/kodezart/services/lane_entry.py",
+  "status": "A",
+  "added": 77,
+  "deleted": 0,
+  "kind": "src_py",
+  "first_seen": "union-9d425ec4",
+  "imports": []
+ },
+ {
+  "path": "src/kodezart/types/domain/lane_entry.py",
+  "status": "A",
+  "added": 53,
+  "deleted": 0,
+  "kind": "src_py",
+  "first_seen": "union-9d425ec4",
+  "imports": []
+ },
+ {
+  "path": "tests/domain/test_lane_branch_name.py",
+  "status": "A",
+  "added": 82,
+  "deleted": 0,
+  "kind": "test_py",
+  "first_seen": "union-9d425ec4",
+  "imports": []
+ },
+ {
+  "path": "tests/domain/test_lane_entry.py",
+  "status": "A",
+  "added": 304,
+  "deleted": 0,
+  "kind": "test_py",
+  "first_seen": "union-9d425ec4",
+  "imports": []
+ },
+ {
+  "path": "tests/services/test_lane_entry.py",
+  "status": "A",
+  "added": 156,
+  "deleted": 0,
+  "kind": "test_py",
+  "first_seen": "union-9d425ec4",
+  "imports": []
+ },
+ {
+  "path": "tests/services/test_scope_runtime_static.py",
+  "status": "A",
+  "added": 153,
+  "deleted": 0,
+  "kind": "test_py",
+  "first_seen": "union-9d425ec4",
+  "imports": []
  }
 ]

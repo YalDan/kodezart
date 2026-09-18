@@ -1,0 +1,30 @@
+{
+ "M1": {
+  "checked": 244,
+  "failures": []
+ },
+ "M2": {
+  "checked": 38,
+  "failures": []
+ },
+ "M3": {
+  "checked": 135,
+  "failures": []
+ },
+ "M4": {
+  "checked": 164,
+  "failures": []
+ },
+ "M5": {
+  "checked": 74,
+  "failures": []
+ },
+ "M6": {
+  "checked": 84,
+  "failures": []
+ },
+ "M7": {
+  "checked": 41,
+  "failures": []
+ }
+}

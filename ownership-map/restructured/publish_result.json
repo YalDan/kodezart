@@ -1,19 +1,90 @@
 {
- "published_at": "2026-09-18",
- "union": "b94a63ab3f70970d2a73b8a9fdc9177af7a68b2e",
+ "published_at": "2026-09-18 23:10 UTC",
+ "union": "9d425ec4b2697fa8032e1f92287fb03b82d8603a",
  "restructured_base": "e1544ed749b994b2863b16b6318c61863fa4aa3e",
+ "maps_extended_from": "b94a63ab3f70970d2a73b8a9fdc9177af7a68b2e",
  "views": [
-  {"milestone": "M1", "branch": "v03/m1-scope-ports", "stale_head": "854cbbe1c08f686cc51e640a878eb2221877fdd5", "head": "f17b6ee51fede33e361c975e46c74bba1618840b", "pr": 133, "body_updated": true, "pr_head_confirmed": true},
-  {"milestone": "M4", "branch": "v03/m4-criterion-lifecycle", "stale_head": "49b21d27cdb09da70f52326861e594ce529598ae", "head": "9950181ea5d7d1b3690be23c73229a7dced068f7", "pr": 124, "body_updated": true, "pr_head_confirmed": true},
-  {"milestone": "M3", "branch": "v03/m3-plan-walk", "stale_head": "512ba38b47ccb5aaaffb25ee1a49568353679dab", "head": "3757ed9cdd1ecdc958124fb3a680fa76c6b20a4f", "pr": 125, "body_updated": true, "pr_head_confirmed": true},
-  {"milestone": "M2", "branch": "v03/m2-organize", "stale_head": "a94e4d7f86b8ad0e8cf3af834b8ac5ab9d05b83e", "head": "763464589ac7aea1c6aea92f4e2c358df3143ce5", "pr": 126, "body_updated": true, "pr_head_confirmed": true},
-  {"milestone": "M5", "branch": "v03/m5-deliver-terminate", "stale_head": "e453be0a356116a971049517941fefc1d15db38d", "head": "a6a2a2c591bd8ba0e91f12f2de4b33be953993b4", "pr": 127, "body_updated": true, "pr_head_confirmed": true},
-  {"milestone": "M6", "branch": "v03/m6-audit", "stale_head": "302c4cf61621172c91d176007c22f0c869642cf1", "head": "1a9c8998d142619ee198cebf456fd1200f7aa87d", "pr": 128, "body_updated": true, "pr_head_confirmed": true},
-  {"milestone": "M7", "branch": "v03/m7-run-supervisor", "stale_head": "1fd96f015725220841a62b827b4588b54e2f9f82", "head": "2d037d54626063ae192675958878108bdb33b2a3", "pr": 129, "body_updated": true, "pr_head_confirmed": true}
+  {
+   "milestone": "M1",
+   "branch": "v03/m1-scope-ports",
+   "stale_head": "f17b6ee51fede33e361c975e46c74bba1618840b",
+   "head": "4518c36328078972b320648f317c35eede0161fe",
+   "pr": 133,
+   "body_updated": true,
+   "pr_head_confirmed": true
+  },
+  {
+   "milestone": "M4",
+   "branch": "v03/m4-criterion-lifecycle",
+   "stale_head": "9950181ea5d7d1b3690be23c73229a7dced068f7",
+   "head": "ac85209e62a96a55c3af4b202ffc68b6493d0ed2",
+   "pr": 124,
+   "body_updated": true,
+   "pr_head_confirmed": true
+  },
+  {
+   "milestone": "M3",
+   "branch": "v03/m3-plan-walk",
+   "stale_head": "3757ed9cdd1ecdc958124fb3a680fa76c6b20a4f",
+   "head": "4a5146e71388f3351bbf0ea6c782c54e0e45b153",
+   "pr": 125,
+   "body_updated": true,
+   "pr_head_confirmed": true
+  },
+  {
+   "milestone": "M2",
+   "branch": "v03/m2-organize",
+   "stale_head": "763464589ac7aea1c6aea92f4e2c358df3143ce5",
+   "head": "bf0c7de30bcda5f2183c9cf7f29a56cc32450be2",
+   "pr": 126,
+   "body_updated": true,
+   "pr_head_confirmed": true
+  },
+  {
+   "milestone": "M5",
+   "branch": "v03/m5-deliver-terminate",
+   "stale_head": "a6a2a2c591bd8ba0e91f12f2de4b33be953993b4",
+   "head": "91ce3b78a21a40b9b2fc079f0459b34e7ebda722",
+   "pr": 127,
+   "body_updated": true,
+   "pr_head_confirmed": true
+  },
+  {
+   "milestone": "M6",
+   "branch": "v03/m6-audit",
+   "stale_head": "1a9c8998d142619ee198cebf456fd1200f7aa87d",
+   "head": "3a23e284023e31b72a5b6e7f21161252ba6d297d",
+   "pr": 128,
+   "body_updated": true,
+   "pr_head_confirmed": true
+  },
+  {
+   "milestone": "M7",
+   "branch": "v03/m7-run-supervisor",
+   "stale_head": "2d037d54626063ae192675958878108bdb33b2a3",
+   "head": "e5b1493e21503ecebaed85f0f762218df1a2eecc",
+   "pr": 129,
+   "body_updated": true,
+   "pr_head_confirmed": true
+  }
  ],
+ "verification": {
+  "run": "first run of this cut (workflow wf_0f0a9149-854, cut agent + independent refuter)",
+  "donor_mismatches": 0,
+  "ownership_violations": 0,
+  "off_path_members_present": 0,
+  "parse_failures": 0,
+  "own_model_failures": 0,
+  "unmapped_paths": 0,
+  "whole_missing": 0,
+  "coverage_split_symbols_missing": 74,
+  "recomposition": "one conflict in src/kodezart/types/domain/operation.py (adjacent insertion OrganizeScopeBinding vs check_chain_failures); with the union text the M7 merge is clean, 41 paths differ from the union in placement/comments only, the recomposed tree loads",
+  "refuter_verdict": "REJECT on alias_gaps=8 (CIWatchResult imported by core/protocols.py and tests/fakes.py at heads where check_observation.py is absent)",
+  "orchestrator_decision": "ACCEPT: the same import lines with the same absent module exist at the accepted run-4 M1 head f17b6ee5 (protocols.py 2 lines, fakes.py 3 lines, check_observation.py absent) \u2014 the recorded limit that import blocks of shared files are taken whole on first touch; the alias gate as phrased in the refuter prompt was stricter than the accepted baseline (the seven-alias own-model oracle), which this cut passes"
+ },
  "notes": [
-  "All seven pushes used --force-with-lease against the stale head read before the push; every lease held, no plain --force was used.",
-  "Bodies generated by make_body_r.py with UNION repointed to b94a63ab (BASE0 already e1544ed7); URLs, tracker-discussion pointers and the initiative link stripped; review-surface sentence added.",
-  "syntax_check_r.json was missing for run 4 and was regenerated (syncheck_all.py): M1 243, M4 158, M3 134, M2 38, M5 74, M6 84, M7 41 files, 0 failures, matching the cutter's syncheck numbers."
+  "All seven pushes used --force-with-lease against the stale head read before the push; every lease held.",
+  "Bodies generated by make_body_r6.py (make_body_r.py repointed to 9d425ec4 with the verification paragraph corrected); no URLs or tracker prose.",
+  "Refuter's extra finding: the PEP 695 alias McpToolResult in core/protocols.py is absent from ownership_symbols.r.json (unchanged since base, present in all views)."
  ]
 }

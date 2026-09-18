@@ -1700,7 +1700,8 @@
     "LinearMcpTracker.read_surface_authorship",
     "LinearMcpTracker._body_authorship",
     "LinearMcpTracker._require_machine_authored",
-    "LinearMcpTracker._renewal_retractions"
+    "LinearMcpTracker._renewal_retractions",
+    "import:from kodezart.domain.fire_spec import ( body_digest, require_fire_entry, tracker_spec_from_issues, )"
    ],
    "remove": [
     "LinearMcpTracker._append_claim_marker",
@@ -1963,7 +1964,8 @@
     "LinearMcpTracker.read_surface_authorship",
     "LinearMcpTracker._body_authorship",
     "LinearMcpTracker._require_machine_authored",
-    "LinearMcpTracker._renewal_retractions"
+    "LinearMcpTracker._renewal_retractions",
+    "import:from kodezart.domain.fire_spec import ( body_digest, require_fire_entry, tracker_spec_from_issues, )"
    ]
   },
   "src/kodezart/adapters/mcp/result_decoding.py": {
@@ -3978,7 +3980,11 @@
     "PrincipalAuthoredSurfaceError",
     "PrincipalAuthoredSurfaceError.__init__",
     "ApprovalLabelWriteError",
-    "ApprovalLabelWriteError.__init__"
+    "ApprovalLabelWriteError.__init__",
+    "LaneEntryError",
+    "LaneEntryError.__init__",
+    "SubjectAmendedError",
+    "SubjectAmendedError.__init__"
    ],
    "remove": [],
    "take_from_donor": [
@@ -4029,7 +4035,11 @@
     "PrincipalAuthoredSurfaceError",
     "PrincipalAuthoredSurfaceError.__init__",
     "ApprovalLabelWriteError",
-    "ApprovalLabelWriteError.__init__"
+    "ApprovalLabelWriteError.__init__",
+    "LaneEntryError",
+    "LaneEntryError.__init__",
+    "SubjectAmendedError",
+    "SubjectAmendedError.__init__"
    ]
   },
   "src/kodezart/domain/fire_spec.py": {
@@ -4055,7 +4065,9 @@
     "import:from kodezart.types.domain.operation import OperationMemberAbsentError",
     "import:from kodezart.types.domain.tracker import TrackerIssue",
     "require_fire_entry",
-    "tracker_spec_from_issues"
+    "tracker_spec_from_issues",
+    "import:from hashlib import sha256",
+    "body_digest"
    ],
    "remove": [],
    "take_from_donor": [
@@ -4065,7 +4077,9 @@
     "import:from kodezart.types.domain.operation import OperationMemberAbsentError",
     "import:from kodezart.types.domain.tracker import TrackerIssue",
     "require_fire_entry",
-    "tracker_spec_from_issues"
+    "tracker_spec_from_issues",
+    "import:from hashlib import sha256",
+    "body_digest"
    ]
   },
   "src/kodezart/domain/git_url.py": {
@@ -36922,7 +36936,8 @@
     "rate_limit_delay_floor"
    ],
    "new_at_this_milestone": [
-    "import:from kodezart.services.lane_state_writer import TrackerLaneStateWriter"
+    "import:from kodezart.services.lane_state_writer import TrackerLaneStateWriter",
+    "import:from kodezart.types.domain.operation import ( OperationConfig, OperationMemberAbsentError, RepoEntry, )"
    ],
    "remove": [
     "import:from kodezart.core.protocols import ( ArtifactPersister, BranchMerger, GitService, OutboundContentGate, PromptSetProvider, RefPublisher, RepoCache, WorkflowEngine, WorkspaceProvider, )",
@@ -36946,7 +36961,8 @@
     "import:from kodezart.domain.errors import RateLimitError, ScopedExecutionUnavailableError",
     "import:from kodezart.services.native_amendments import NativeAmendments",
     "import:from kodezart.types.domain.operation import OperationConfig, RepoEntry",
-    "import:from kodezart.services.lane_state_writer import TrackerLaneStateWriter"
+    "import:from kodezart.services.lane_state_writer import TrackerLaneStateWriter",
+    "import:from kodezart.types.domain.operation import ( OperationConfig, OperationMemberAbsentError, RepoEntry, )"
    ]
   },
   "src/kodezart/composition/gating.py": {
@@ -37803,7 +37819,9 @@
     "LaneStateWriter",
     "LaneStateWriter.require_writable",
     "LaneStateWriter.record_commit",
-    "LaneStateWriter.write_cross_offs"
+    "LaneStateWriter.write_cross_offs",
+    "import:from kodezart.types.domain.run_state import LaneBinding, LanePR, LaneRunState",
+    "LaneStateWriter.record_pull_request"
    ],
    "remove": [
     "ContentScanner",
@@ -37958,7 +37976,9 @@
     "LaneStateWriter",
     "LaneStateWriter.require_writable",
     "LaneStateWriter.record_commit",
-    "LaneStateWriter.write_cross_offs"
+    "LaneStateWriter.write_cross_offs",
+    "import:from kodezart.types.domain.run_state import LaneBinding, LanePR, LaneRunState",
+    "LaneStateWriter.record_pull_request"
    ]
   },
   "src/kodezart/core/stream_drain.py": {
@@ -41243,7 +41263,11 @@
     "import:from langchain_core.runnables import RunnableConfig",
     "import:from typing import NotRequired, Self, TypedDict"
    ],
-   "new_at_this_milestone": [],
+   "new_at_this_milestone": [
+    "import:from kodezart.types.domain.lane_entry import LaneEntry",
+    "RalphLoopContext.resumed_head_sha",
+    "WorkflowState.lane_entry"
+   ],
    "remove": [
     "import:from kodezart.types.domain.remediation import RemediationEntry",
     "import:from pydantic import ConfigDict, Field"
@@ -41266,7 +41290,10 @@
     "import:from kodezart.types.domain.remediation import RemediationEntry, RemediationPlan",
     "import:from kodezart.types.domain.scope import ScopeRef",
     "import:from kodezart.types.domain.session import AllowedTools, PermissionMode",
-    "import:from pydantic import ConfigDict, Field, model_validator"
+    "import:from pydantic import ConfigDict, Field, model_validator",
+    "import:from kodezart.types.domain.lane_entry import LaneEntry",
+    "RalphLoopContext.resumed_head_sha",
+    "WorkflowState.lane_entry"
    ]
   },
   "src/kodezart/types/domain/workspace.py": {

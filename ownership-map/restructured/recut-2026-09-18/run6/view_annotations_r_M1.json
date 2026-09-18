@@ -1,0 +1,781 @@
+{
+ "milestone": "M1",
+ "branch": "4518c36328078972b320648f317c35eede0161fe",
+ "base": "origin/v03/restructure",
+ "head": "4518c36328078972b320648f317c35eede0161fe",
+ "later_members_shown_here": [
+  {
+   "file": "src/kodezart/adapters/git/service.py",
+   "symbol": "SubprocessGitService.has_replace_refs",
+   "owner": "M6",
+   "owner_pr": 128,
+   "sym_kind": "method",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/adapters/git/service.py",
+   "symbol": "SubprocessGitService.merge_scratch_head",
+   "owner": "M5",
+   "owner_pr": 127,
+   "sym_kind": "method",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/adapters/linear/tracker.py",
+   "symbol": "import:from kodezart.domain.run_alarm_record import ( parse_run_alarm, render_run_alarm, require_alarm_holder, run_alarm_marker, )",
+   "owner": "M4",
+   "owner_pr": 124,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/adapters/mcp/stdio_tool_caller.py",
+   "symbol": "StdioMcpToolCaller",
+   "owner": "M4",
+   "owner_pr": 124,
+   "sym_kind": "class",
+   "kind": "modified"
+  },
+  {
+   "file": "src/kodezart/composition/engine.py",
+   "symbol": "import:from kodezart.services.lane_state_writer import TrackerLaneStateWriter",
+   "owner": "M4",
+   "owner_pr": 124,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/composition/engine.py",
+   "symbol": "import:from kodezart.types.domain.operation import ( OperationConfig, OperationMemberAbsentError, RepoEntry, )",
+   "owner": "M4",
+   "owner_pr": 124,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/composition/engine.py",
+   "symbol": "import:from kodezart.types.domain.run_records import RunIdentity",
+   "owner": "M3",
+   "owner_pr": 125,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/composition/engine.py",
+   "symbol": "import:from kodezart.types.domain.scope import ScopeRef",
+   "owner": "M3",
+   "owner_pr": 125,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/composition/engine.py",
+   "symbol": "import:from kodezart.types.domain.session import AllowedTools, PermissionMode",
+   "owner": "M3",
+   "owner_pr": 125,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/composition/passes.py",
+   "symbol": "import:from kodezart.services.organize_tick import OrganizeTick",
+   "owner": "M3",
+   "owner_pr": 125,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/composition/tracker.py",
+   "symbol": "CREDENTIAL_FIELD",
+   "owner": "M3",
+   "owner_pr": 125,
+   "sym_kind": "assignment",
+   "kind": "modified"
+  },
+  {
+   "file": "src/kodezart/core/protocols.py",
+   "symbol": "import:from kodezart.types.domain.assertion_drift import GitSourceBlob",
+   "owner": "M4",
+   "owner_pr": 124,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/core/protocols.py",
+   "symbol": "import:from kodezart.types.domain.check_chain import CheckChainResult",
+   "owner": "M5",
+   "owner_pr": 127,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/core/protocols.py",
+   "symbol": "import:from kodezart.types.domain.criteria import ( ExecutionCriterion, TrackerCriterion, TrackerCriterionSet, )",
+   "owner": "M4",
+   "owner_pr": 124,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/core/protocols.py",
+   "symbol": "import:from kodezart.types.domain.criterion_lifecycle import CriterionCrossOff",
+   "owner": "M4",
+   "owner_pr": 124,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/core/protocols.py",
+   "symbol": "import:from kodezart.types.domain.run_state import LaneBinding, LanePR, LaneRunState",
+   "owner": "M4",
+   "owner_pr": 124,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/core/retry.py",
+   "symbol": "RetryFloor",
+   "owner": "M3",
+   "owner_pr": 125,
+   "sym_kind": "class",
+   "kind": "modified"
+  },
+  {
+   "file": "src/kodezart/domain/errors.py",
+   "symbol": "import:from kodezart.types.domain.organize_owner import OrganizeReport",
+   "owner": "M2",
+   "owner_pr": 126,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/domain/fire_spec.py",
+   "symbol": "import:from typing import Literal",
+   "owner": "M4",
+   "owner_pr": 124,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/domain/fire_spec.py",
+   "symbol": "import:import re",
+   "owner": "M4",
+   "owner_pr": 124,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/domain/organize.py",
+   "symbol": "import:from collections.abc import Sequence",
+   "owner": "M2",
+   "owner_pr": 126,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/services/agent_service.py",
+   "symbol": "import:from kodezart.core.protocols import ( AfterPublish, AgentExecutor, ChangePersister, NativeWriteGuard, WorkspaceProvider, )",
+   "owner": "M4",
+   "owner_pr": 124,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/agent.py",
+   "symbol": "import:from kodezart.types.domain.amendment import ( AmendmentJudgment, AmendmentReport, NativeWriterOutput, RepeatedUpheld, )",
+   "owner": "M4",
+   "owner_pr": 124,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/agent.py",
+   "symbol": "import:from kodezart.types.domain.amendment_write import AmendmentTextOutput",
+   "owner": "M4",
+   "owner_pr": 124,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/agent.py",
+   "symbol": "import:from kodezart.types.domain.assertion_drift import ProtectedTestRef",
+   "owner": "M4",
+   "owner_pr": 124,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/agent.py",
+   "symbol": "import:from kodezart.types.domain.audit import ( AuditClaimJudgment, AuditMandateJudgment, )",
+   "owner": "M4",
+   "owner_pr": 124,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/agent.py",
+   "symbol": "import:from kodezart.types.domain.audit_detection_removal import DetectorRemovalJudgment",
+   "owner": "M6",
+   "owner_pr": 128,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/agent.py",
+   "symbol": "import:from kodezart.types.domain.audit_overclaim import AuditOverclaimJudgment",
+   "owner": "M6",
+   "owner_pr": 128,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/agent.py",
+   "symbol": "import:from kodezart.types.domain.node_session import NodeInvocation",
+   "owner": "M3",
+   "owner_pr": 125,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/agent.py",
+   "symbol": "import:from kodezart.types.domain.organize import AdmissionJudgment",
+   "owner": "M3",
+   "owner_pr": 125,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/agent.py",
+   "symbol": "import:from kodezart.types.domain.organize_owner import OrganizeProposal",
+   "owner": "M3",
+   "owner_pr": 125,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/agent.py",
+   "symbol": "import:from kodezart.types.domain.ruling_id import RulingId as RulingId",
+   "owner": "M4",
+   "owner_pr": 124,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/agent.py",
+   "symbol": "import:from kodezart.types.domain.run_event import RunEventKind",
+   "owner": "M3",
+   "owner_pr": 125,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/agent.py",
+   "symbol": "import:from kodezart.types.domain.write_back import WriteBackFinding",
+   "owner": "M4",
+   "owner_pr": 124,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/agent.py",
+   "symbol": "import:from kodezart.types.job_acceptance import ( AcceptanceHandle, AcceptedQueuePosition, JobLink, )",
+   "owner": "M3",
+   "owner_pr": 125,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/audit.py",
+   "symbol": "import:from enum import StrEnum",
+   "owner": "M4",
+   "owner_pr": 124,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/audit.py",
+   "symbol": "import:from kodezart.types.domain.organize import DefectRole, SpecFinding",
+   "owner": "M4",
+   "owner_pr": 124,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/audit.py",
+   "symbol": "import:from kodezart.types.domain.scope import ScopeRef",
+   "owner": "M6",
+   "owner_pr": 128,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/audit.py",
+   "symbol": "import:from kodezart.types.domain.surface import WritableSurface",
+   "owner": "M4",
+   "owner_pr": 124,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/audit.py",
+   "symbol": "import:from typing_extensions import TypeVar",
+   "owner": "M4",
+   "owner_pr": 124,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/branch.py",
+   "symbol": "BranchAssociation",
+   "owner": "M4",
+   "owner_pr": 124,
+   "sym_kind": "class",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/branch.py",
+   "symbol": "BranchAssociation.branch",
+   "owner": "M4",
+   "owner_pr": 124,
+   "sym_kind": "class_attr",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/branch.py",
+   "symbol": "BranchAssociation.derived_from",
+   "owner": "M5",
+   "owner_pr": 127,
+   "sym_kind": "class_attr",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/branch.py",
+   "symbol": "BranchAssociation.model_config",
+   "owner": "M4",
+   "owner_pr": 124,
+   "sym_kind": "class_attr",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/branch.py",
+   "symbol": "BranchAssociation.role",
+   "owner": "M4",
+   "owner_pr": 124,
+   "sym_kind": "class_attr",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/branch.py",
+   "symbol": "BranchAssociation.run_id",
+   "owner": "M4",
+   "owner_pr": 124,
+   "sym_kind": "class_attr",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/branch.py",
+   "symbol": "BranchRole",
+   "owner": "M4",
+   "owner_pr": 124,
+   "sym_kind": "class",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/branch.py",
+   "symbol": "BranchRole.DELIVERABLE",
+   "owner": "M4",
+   "owner_pr": 124,
+   "sym_kind": "class_attr",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/branch.py",
+   "symbol": "BranchRole.LOOP",
+   "owner": "M4",
+   "owner_pr": 124,
+   "sym_kind": "class_attr",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/branch.py",
+   "symbol": "import:from typing import Annotated",
+   "owner": "M4",
+   "owner_pr": 124,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/fire_spec.py",
+   "symbol": "import:from kodezart.types.domain.agent import TicketDraftOutput",
+   "owner": "M4",
+   "owner_pr": 124,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/fire_spec.py",
+   "symbol": "import:from kodezart.types.domain.criterion_ref import CriterionRef as CriterionRef",
+   "owner": "M4",
+   "owner_pr": 124,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/fire_spec.py",
+   "symbol": "import:from typing import Annotated, NewType",
+   "owner": "M4",
+   "owner_pr": 124,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/native_execution.py",
+   "symbol": "import:from kodezart.types.domain.persist import PersistResult",
+   "owner": "M3",
+   "owner_pr": 125,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/native_execution.py",
+   "symbol": "import:from kodezart.types.domain.run_records import RunIdentity",
+   "owner": "M4",
+   "owner_pr": 124,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/native_execution.py",
+   "symbol": "import:from kodezart.types.domain.workspace import WorkspaceSnapshot",
+   "owner": "M4",
+   "owner_pr": 124,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/native_execution.py",
+   "symbol": "import:from typing import Annotated, Literal, Self",
+   "owner": "M4",
+   "owner_pr": 124,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/operation.py",
+   "symbol": "import:from kodezart.types.domain.organize import ( MANDATE_PHASE_ROLES, MandateSpec, OrganizeLabelNamespace, ResolvedMandateSpec, phase_marker_source, split_label_key, )",
+   "owner": "M2",
+   "owner_pr": 126,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/operation.py",
+   "symbol": "import:from kodezart.types.domain.scope_address import ScopeRef",
+   "owner": "M3",
+   "owner_pr": 125,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/organize.py",
+   "symbol": "import:from collections.abc import Mapping",
+   "owner": "M2",
+   "owner_pr": 126,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/outcome.py",
+   "symbol": "WorkflowOutcome.handed_off_for_delivery",
+   "owner": "M3",
+   "owner_pr": 125,
+   "sym_kind": "class_attr",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/run_records.py",
+   "symbol": "FireRecordFacts",
+   "owner": "M4",
+   "owner_pr": 124,
+   "sym_kind": "class",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/run_records.py",
+   "symbol": "FireRecordFacts.base_branch",
+   "owner": "M4",
+   "owner_pr": 124,
+   "sym_kind": "class_attr",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/run_records.py",
+   "symbol": "FireRecordFacts.iterations",
+   "owner": "M4",
+   "owner_pr": 124,
+   "sym_kind": "class_attr",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/run_records.py",
+   "symbol": "FireRecordFacts.pr_url",
+   "owner": "M4",
+   "owner_pr": 124,
+   "sym_kind": "class_attr",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/run_records.py",
+   "symbol": "FireRecordFacts.repo_url",
+   "owner": "M4",
+   "owner_pr": 124,
+   "sym_kind": "class_attr",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/run_records.py",
+   "symbol": "RunRecord.fire_facts",
+   "owner": "M4",
+   "owner_pr": 124,
+   "sym_kind": "class_attr",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/run_records.py",
+   "symbol": "RunRecord.recorded_at",
+   "owner": "M4",
+   "owner_pr": 124,
+   "sym_kind": "class_attr",
+   "kind": "modified"
+  },
+  {
+   "file": "src/kodezart/types/domain/run_records.py",
+   "symbol": "RunRecord.workflow_outcome",
+   "owner": "M4",
+   "owner_pr": 124,
+   "sym_kind": "class_attr",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/run_records.py",
+   "symbol": "RunRecordFailure",
+   "owner": "M4",
+   "owner_pr": 124,
+   "sym_kind": "class",
+   "kind": "modified"
+  },
+  {
+   "file": "src/kodezart/types/domain/run_records.py",
+   "symbol": "RunRecordFailure.IDENTITY_CONFLICT",
+   "owner": "M4",
+   "owner_pr": 124,
+   "sym_kind": "class_attr",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/run_records.py",
+   "symbol": "RunRecordFailure.MAPPING_INVALID",
+   "owner": "M4",
+   "owner_pr": 124,
+   "sym_kind": "class_attr",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/run_records.py",
+   "symbol": "RunRecordResult",
+   "owner": "M4",
+   "owner_pr": 124,
+   "sym_kind": "class",
+   "kind": "modified"
+  },
+  {
+   "file": "src/kodezart/types/domain/workflow.py",
+   "symbol": "import:from kodezart.types.domain.amendment import AmendmentReport",
+   "owner": "M3",
+   "owner_pr": 125,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/workflow.py",
+   "symbol": "import:from kodezart.types.domain.delivery import CheckRedClass",
+   "owner": "M5",
+   "owner_pr": 127,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/workflow.py",
+   "symbol": "import:from kodezart.types.domain.lane_entry import LaneEntry",
+   "owner": "M4",
+   "owner_pr": 124,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/workflow.py",
+   "symbol": "import:from kodezart.types.domain.ralph_outcome import RalphOutcome",
+   "owner": "M3",
+   "owner_pr": 125,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/workflow.py",
+   "symbol": "import:from kodezart.types.domain.run_records import RunIdentity",
+   "owner": "M2",
+   "owner_pr": 126,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "tests/adapters/test_judgment_scanner.py",
+   "symbol": "ScriptedAuditExecutor.stream",
+   "owner": "M4",
+   "owner_pr": 124,
+   "sym_kind": "method",
+   "kind": "modified"
+  },
+  {
+   "file": "tests/chains/test_ralph_loop.py",
+   "symbol": "import:from kodezart.chains.authored_delivery import AuthoredDeliveryCoordinator",
+   "owner": "M2",
+   "owner_pr": 126,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "tests/chains/test_ralph_loop.py",
+   "symbol": "import:from kodezart.types.domain.run_records import RunIdentity",
+   "owner": "M2",
+   "owner_pr": 126,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "tests/chains/test_retry_floor_wiring.py",
+   "symbol": "_module_source",
+   "owner": "M2",
+   "owner_pr": 126,
+   "sym_kind": "function",
+   "kind": "modified"
+  },
+  {
+   "file": "tests/core/test_knowledge_connection.py",
+   "symbol": "GATEWAY",
+   "owner": "M4",
+   "owner_pr": 124,
+   "sym_kind": "assignment",
+   "kind": "added"
+  },
+  {
+   "file": "tests/domain/test_operation_optionality.py",
+   "symbol": "COLLECTION_FIELDS",
+   "owner": "M4",
+   "owner_pr": 124,
+   "sym_kind": "assignment",
+   "kind": "modified"
+  },
+  {
+   "file": "tests/fakes.py",
+   "symbol": "import:from kodezart.adapters.record_failures import record_failure_boundary",
+   "owner": "M4",
+   "owner_pr": 124,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "tests/fakes.py",
+   "symbol": "import:from kodezart.core.protocols import ( AfterPublish, AgentExecutor, McpToolResult, NativeWriteGuard, PromptSetProvider, WorkflowEngine, )",
+   "owner": "M4",
+   "owner_pr": 124,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "tests/fakes.py",
+   "symbol": "import:from kodezart.domain.git_url import extract_owner_repo",
+   "owner": "M5",
+   "owner_pr": 127,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "tests/fakes.py",
+   "symbol": "import:from kodezart.domain.run_alarm_record import ( parse_run_alarm, render_run_alarm, require_alarm_holder, run_alarm_marker, )",
+   "owner": "M4",
+   "owner_pr": 124,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "tests/fakes.py",
+   "symbol": "import:from urllib.parse import quote, urlsplit",
+   "owner": "M5",
+   "owner_pr": 127,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "tests/integration/test_stacked_scope.py",
+   "symbol": "import:from tests.workflow_factory import make_authored_workflow",
+   "owner": "M3",
+   "owner_pr": 125,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "tests/probes/test_harness_capabilities.py",
+   "symbol": "UNGATED_PERMISSION_MODE",
+   "owner": "M3",
+   "owner_pr": 125,
+   "sym_kind": "assignment",
+   "kind": "modified"
+  },
+  {
+   "file": "tests/probes/test_harness_capabilities.py",
+   "symbol": "import:from kodezart.adapters.claude.permission_modes import map_permission_mode",
+   "owner": "M3",
+   "owner_pr": 125,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "tests/probes/test_harness_capabilities.py",
+   "symbol": "session_options",
+   "owner": "M3",
+   "owner_pr": 125,
+   "sym_kind": "function",
+   "kind": "modified"
+  },
+  {
+   "file": "tests/prompt_census.py",
+   "symbol": "PROMPT_FUNCTION_NAMES",
+   "owner": "M4",
+   "owner_pr": 124,
+   "sym_kind": "assignment",
+   "kind": "added"
+  },
+  {
+   "file": "tests/services/test_session_grant_threading.py",
+   "symbol": "_knowledge_http",
+   "owner": "M4",
+   "owner_pr": 124,
+   "sym_kind": "function",
+   "kind": "added"
+  },
+  {
+   "file": "tests/tracker/test_linear_tool_arguments.py",
+   "symbol": "LIVE_INPUT_SCHEMAS",
+   "owner": "M3",
+   "owner_pr": 125,
+   "sym_kind": "assignment",
+   "kind": "modified"
+  }
+ ],
+ "own_members_shown_earlier": [],
+ "counts": {
+  "later_members_shown_here": 96,
+  "own_members_shown_earlier": 0
+ }
+}

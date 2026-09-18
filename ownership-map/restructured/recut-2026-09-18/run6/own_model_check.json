@@ -1,0 +1,219 @@
+{
+ "M1": {
+  "tomllib_parses": true,
+  "toml_top_level_keys": 20,
+  "model_fields": 20,
+  "extra_keys": [],
+  "own_model_accepts_own_config": true,
+  "has_initiatives_key": true,
+  "model_has_initiatives": true,
+  "has_audit_scopes_key": false,
+  "model_has_audit_scopes": false,
+  "private_surface_is_table": true,
+  "marker4_present": [],
+  "marker4_absent": [
+   "amendment",
+   "audit",
+   "run_alarm",
+   "run_event"
+  ],
+  "api_md_workflow_events_15": false,
+  "api_md_workflow_events_18": true,
+  "aliases": {
+   "src/kodezart/types/domain/session.py::AllowedTools": "TypeAlias",
+   "src/kodezart/types/domain/native_execution.py::NativeExecutionPhase": "TypeAlias",
+   "src/kodezart/types/domain/native_execution.py::ActiveNativeExecution": "TypeAlias",
+   "src/kodezart/types/domain/audit.py::MandateJudgment": "TypeAlias",
+   "src/kodezart/types/domain/audit.py::MandateObservation": "TypeAlias",
+   "src/kodezart/types/domain/agent.py::NativeFireProgressEvent": "TypeAlias",
+   "tests/fakes.py::_FakeCIObservation": "TypeAlias"
+  },
+  "aliases_all_defined": true
+ },
+ "M4": {
+  "tomllib_parses": true,
+  "toml_top_level_keys": 21,
+  "model_fields": 21,
+  "extra_keys": [],
+  "own_model_accepts_own_config": true,
+  "has_initiatives_key": true,
+  "model_has_initiatives": true,
+  "has_audit_scopes_key": true,
+  "model_has_audit_scopes": true,
+  "private_surface_is_table": true,
+  "marker4_present": [
+   "amendment",
+   "audit",
+   "run_alarm",
+   "run_event"
+  ],
+  "marker4_absent": [],
+  "api_md_workflow_events_15": false,
+  "api_md_workflow_events_18": true,
+  "aliases": {
+   "src/kodezart/types/domain/session.py::AllowedTools": "TypeAlias",
+   "src/kodezart/types/domain/native_execution.py::NativeExecutionPhase": "TypeAlias",
+   "src/kodezart/types/domain/native_execution.py::ActiveNativeExecution": "TypeAlias",
+   "src/kodezart/types/domain/audit.py::MandateJudgment": "TypeAlias",
+   "src/kodezart/types/domain/audit.py::MandateObservation": "TypeAlias",
+   "src/kodezart/types/domain/agent.py::NativeFireProgressEvent": "TypeAlias",
+   "tests/fakes.py::_FakeCIObservation": "TypeAlias"
+  },
+  "aliases_all_defined": true
+ },
+ "M3": {
+  "tomllib_parses": true,
+  "toml_top_level_keys": 20,
+  "model_fields": 20,
+  "extra_keys": [],
+  "own_model_accepts_own_config": true,
+  "has_initiatives_key": false,
+  "model_has_initiatives": false,
+  "has_audit_scopes_key": true,
+  "model_has_audit_scopes": true,
+  "private_surface_is_table": true,
+  "marker4_present": [
+   "amendment",
+   "audit",
+   "run_alarm",
+   "run_event"
+  ],
+  "marker4_absent": [],
+  "api_md_workflow_events_15": false,
+  "api_md_workflow_events_18": true,
+  "aliases": {
+   "src/kodezart/types/domain/session.py::AllowedTools": "TypeAlias",
+   "src/kodezart/types/domain/native_execution.py::NativeExecutionPhase": "TypeAlias",
+   "src/kodezart/types/domain/native_execution.py::ActiveNativeExecution": "TypeAlias",
+   "src/kodezart/types/domain/audit.py::MandateJudgment": "TypeAlias",
+   "src/kodezart/types/domain/audit.py::MandateObservation": "TypeAlias",
+   "src/kodezart/types/domain/agent.py::NativeFireProgressEvent": "TypeAlias",
+   "tests/fakes.py::_FakeCIObservation": "TypeAlias"
+  },
+  "aliases_all_defined": true
+ },
+ "M2": {
+  "tomllib_parses": true,
+  "toml_top_level_keys": 20,
+  "model_fields": 20,
+  "extra_keys": [],
+  "own_model_accepts_own_config": true,
+  "has_initiatives_key": false,
+  "model_has_initiatives": false,
+  "has_audit_scopes_key": true,
+  "model_has_audit_scopes": true,
+  "private_surface_is_table": true,
+  "marker4_present": [
+   "amendment",
+   "audit",
+   "run_alarm",
+   "run_event"
+  ],
+  "marker4_absent": [],
+  "api_md_workflow_events_15": false,
+  "api_md_workflow_events_18": true,
+  "aliases": {
+   "src/kodezart/types/domain/session.py::AllowedTools": "TypeAlias",
+   "src/kodezart/types/domain/native_execution.py::NativeExecutionPhase": "TypeAlias",
+   "src/kodezart/types/domain/native_execution.py::ActiveNativeExecution": "TypeAlias",
+   "src/kodezart/types/domain/audit.py::MandateJudgment": "TypeAlias",
+   "src/kodezart/types/domain/audit.py::MandateObservation": "TypeAlias",
+   "src/kodezart/types/domain/agent.py::NativeFireProgressEvent": "TypeAlias",
+   "tests/fakes.py::_FakeCIObservation": "TypeAlias"
+  },
+  "aliases_all_defined": true
+ },
+ "M5": {
+  "tomllib_parses": true,
+  "toml_top_level_keys": 20,
+  "model_fields": 20,
+  "extra_keys": [],
+  "own_model_accepts_own_config": true,
+  "has_initiatives_key": false,
+  "model_has_initiatives": false,
+  "has_audit_scopes_key": true,
+  "model_has_audit_scopes": true,
+  "private_surface_is_table": true,
+  "marker4_present": [
+   "amendment",
+   "audit",
+   "run_alarm",
+   "run_event"
+  ],
+  "marker4_absent": [],
+  "api_md_workflow_events_15": false,
+  "api_md_workflow_events_18": true,
+  "aliases": {
+   "src/kodezart/types/domain/session.py::AllowedTools": "TypeAlias",
+   "src/kodezart/types/domain/native_execution.py::NativeExecutionPhase": "TypeAlias",
+   "src/kodezart/types/domain/native_execution.py::ActiveNativeExecution": "TypeAlias",
+   "src/kodezart/types/domain/audit.py::MandateJudgment": "TypeAlias",
+   "src/kodezart/types/domain/audit.py::MandateObservation": "TypeAlias",
+   "src/kodezart/types/domain/agent.py::NativeFireProgressEvent": "TypeAlias",
+   "tests/fakes.py::_FakeCIObservation": "TypeAlias"
+  },
+  "aliases_all_defined": true
+ },
+ "M6": {
+  "tomllib_parses": true,
+  "toml_top_level_keys": 20,
+  "model_fields": 20,
+  "extra_keys": [],
+  "own_model_accepts_own_config": true,
+  "has_initiatives_key": false,
+  "model_has_initiatives": false,
+  "has_audit_scopes_key": true,
+  "model_has_audit_scopes": true,
+  "private_surface_is_table": true,
+  "marker4_present": [
+   "amendment",
+   "audit",
+   "run_alarm",
+   "run_event"
+  ],
+  "marker4_absent": [],
+  "api_md_workflow_events_15": false,
+  "api_md_workflow_events_18": true,
+  "aliases": {
+   "src/kodezart/types/domain/session.py::AllowedTools": "TypeAlias",
+   "src/kodezart/types/domain/native_execution.py::NativeExecutionPhase": "TypeAlias",
+   "src/kodezart/types/domain/native_execution.py::ActiveNativeExecution": "TypeAlias",
+   "src/kodezart/types/domain/audit.py::MandateJudgment": "TypeAlias",
+   "src/kodezart/types/domain/audit.py::MandateObservation": "TypeAlias",
+   "src/kodezart/types/domain/agent.py::NativeFireProgressEvent": "TypeAlias",
+   "tests/fakes.py::_FakeCIObservation": "TypeAlias"
+  },
+  "aliases_all_defined": true
+ },
+ "M7": {
+  "tomllib_parses": true,
+  "toml_top_level_keys": 20,
+  "model_fields": 20,
+  "extra_keys": [],
+  "own_model_accepts_own_config": true,
+  "has_initiatives_key": false,
+  "model_has_initiatives": false,
+  "has_audit_scopes_key": true,
+  "model_has_audit_scopes": true,
+  "private_surface_is_table": true,
+  "marker4_present": [
+   "amendment",
+   "audit",
+   "run_alarm",
+   "run_event"
+  ],
+  "marker4_absent": [],
+  "api_md_workflow_events_15": false,
+  "api_md_workflow_events_18": true,
+  "aliases": {
+   "src/kodezart/types/domain/session.py::AllowedTools": "TypeAlias",
+   "src/kodezart/types/domain/native_execution.py::NativeExecutionPhase": "TypeAlias",
+   "src/kodezart/types/domain/native_execution.py::ActiveNativeExecution": "TypeAlias",
+   "src/kodezart/types/domain/audit.py::MandateJudgment": "TypeAlias",
+   "src/kodezart/types/domain/audit.py::MandateObservation": "TypeAlias",
+   "src/kodezart/types/domain/agent.py::NativeFireProgressEvent": "TypeAlias",
+   "tests/fakes.py::_FakeCIObservation": "TypeAlias"
+  },
+  "aliases_all_defined": true
+ }
+}

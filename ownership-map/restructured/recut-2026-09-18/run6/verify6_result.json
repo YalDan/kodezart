@@ -1,0 +1,255 @@
+{
+ "donor_mismatches": 0,
+ "donor_mismatch_list": [],
+ "ownership_violations": 0,
+ "ownership_violation_list": [],
+ "off_path_members_present": 1388,
+ "offpath_list": [
+  "M1:src/kodezart/composition/engine.py:OriginRoutedWorkflowEngine owner=M3",
+  "M1:src/kodezart/composition/engine.py:OriginRoutedWorkflowEngine.__init__ owner=M3",
+  "M1:src/kodezart/composition/engine.py:OriginRoutedWorkflowEngine.run owner=M3",
+  "M1:src/kodezart/composition/jobs.py:build_job_service owner=M3",
+  "M1:src/kodezart/composition/passes.py:delivery_probe_for owner=M3",
+  "M1:src/kodezart/composition/passes.py:build_gate owner=M3",
+  "M1:src/kodezart/composition/passes.py:build_prompt_passes owner=M3",
+  "M1:src/kodezart/composition/passes.py:fire_report owner=M3",
+  "M1:src/kodezart/composition/passes.py:build_dispatch_passes owner=M3",
+  "M1:src/kodezart/config/app.py:AppConfig.log_level owner=M7",
+  "M1:src/kodezart/config/app.py:AppConfig.api_v1_prefix owner=M3",
+  "M1:src/kodezart/config/app.py:AppConfig.integration_workspace_dir owner=M3",
+  "M1:src/kodezart/config/app.py:AppConfig.git_base_url owner=M7",
+  "M1:src/kodezart/config/app.py:AppConfig.git_remote owner=M7",
+  "M1:src/kodezart/config/app.py:AppConfig.model owner=M7",
+  "M1:src/kodezart/config/app.py:AppConfig.fallback_model owner=M3",
+  "M1:src/kodezart/config/app.py:AppConfig.session_models owner=M3",
+  "M1:src/kodezart/config/app.py:AppConfig.claude_output_style owner=M3",
+  "M1:src/kodezart/config/app.py:AppConfig.tracker_mcp_server_name owner=M4",
+  "M1:src/kodezart/config/app.py:AppConfig.tracker_token owner=M4"
+ ],
+ "unknown_symbols_in_split_files": 7,
+ "unknown_symbol_list": [
+  "M1:src/kodezart/core/protocols.py:McpToolResult",
+  "M4:src/kodezart/core/protocols.py:McpToolResult",
+  "M3:src/kodezart/core/protocols.py:McpToolResult",
+  "M2:src/kodezart/core/protocols.py:McpToolResult",
+  "M5:src/kodezart/core/protocols.py:McpToolResult",
+  "M6:src/kodezart/core/protocols.py:McpToolResult",
+  "M7:src/kodezart/core/protocols.py:McpToolResult"
+ ],
+ "parse_failures": 0,
+ "parse_fail_list": [],
+ "own_model_failures": 0,
+ "own_model_fail_list": [],
+ "own_model_detail": {
+  "M1": {
+   "keys": 20,
+   "fields": 20,
+   "required": [
+    "operation_name",
+    "workspace"
+   ],
+   "extra_keys": [],
+   "missing_required": [],
+   "bases": [
+    "OperationModel"
+   ]
+  },
+  "M4": {
+   "keys": 21,
+   "fields": 21,
+   "required": [
+    "operation_name",
+    "workspace"
+   ],
+   "extra_keys": [],
+   "missing_required": [],
+   "bases": [
+    "OperationModel"
+   ]
+  },
+  "M3": {
+   "keys": 20,
+   "fields": 20,
+   "required": [
+    "operation_name",
+    "workspace"
+   ],
+   "extra_keys": [],
+   "missing_required": [],
+   "bases": [
+    "OperationModel"
+   ]
+  },
+  "M2": {
+   "keys": 20,
+   "fields": 20,
+   "required": [
+    "operation_name",
+    "workspace"
+   ],
+   "extra_keys": [],
+   "missing_required": [],
+   "bases": [
+    "OperationModel"
+   ]
+  },
+  "M5": {
+   "keys": 20,
+   "fields": 20,
+   "required": [
+    "operation_name",
+    "workspace"
+   ],
+   "extra_keys": [],
+   "missing_required": [],
+   "bases": [
+    "OperationModel"
+   ]
+  },
+  "M6": {
+   "keys": 20,
+   "fields": 20,
+   "required": [
+    "operation_name",
+    "workspace"
+   ],
+   "extra_keys": [],
+   "missing_required": [],
+   "bases": [
+    "OperationModel"
+   ]
+  },
+  "M7": {
+   "keys": 20,
+   "fields": 20,
+   "required": [
+    "operation_name",
+    "workspace"
+   ],
+   "extra_keys": [],
+   "missing_required": [],
+   "bases": [
+    "OperationModel"
+   ]
+  }
+ },
+ "alias_universe": [
+  "ActiveNativeExecution",
+  "AllowedTools",
+  "AnyCallFailure",
+  "AuditPublication",
+  "AuditScopeReport",
+  "CIWatchResult",
+  "CallTool",
+  "CommentValues",
+  "FieldValues",
+  "FireReport",
+  "GatePosture",
+  "LaneEntry",
+  "MandateJudgment",
+  "MandateObservation",
+  "McpToolResult",
+  "NativeDeliveryPhase",
+  "NativeExecutionPhase",
+  "NativeFireProgressEvent",
+  "PrivateHost",
+  "PrivateWorkspace",
+  "PushFlag",
+  "RalphOutcome",
+  "ReadContainerApproval",
+  "ReadIssueApproval",
+  "RunReport",
+  "ScanCategory",
+  "ScopeLaneProgress",
+  "StageHalt",
+  "WriteRevalidation",
+  "_FakeCIObservation",
+  "_MemoKey"
+ ],
+ "alias_gaps": 8,
+ "alias_gap_list": [
+  "M1:src/kodezart/core/protocols.py imports CIWatchResult from missing module kodezart.types.domain.check_observation",
+  "M1:tests/fakes.py imports CIWatchResult from missing module kodezart.types.domain.check_observation",
+  "M4:src/kodezart/core/protocols.py imports CIWatchResult from missing module kodezart.types.domain.check_observation",
+  "M4:tests/fakes.py imports CIWatchResult from missing module kodezart.types.domain.check_observation",
+  "M3:src/kodezart/core/protocols.py imports CIWatchResult from missing module kodezart.types.domain.check_observation",
+  "M3:tests/fakes.py imports CIWatchResult from missing module kodezart.types.domain.check_observation",
+  "M2:src/kodezart/core/protocols.py imports CIWatchResult from missing module kodezart.types.domain.check_observation",
+  "M2:tests/fakes.py imports CIWatchResult from missing module kodezart.types.domain.check_observation"
+ ],
+ "unmapped_paths_changed_vs_base": 0,
+ "unmapped_changed": [],
+ "unmapped_paths_literal_whole_tree": 163,
+ "map_entries_not_changed_vs_base": 0,
+ "map_not_changed": [],
+ "whole_missing": 0,
+ "whole_missing_list": [],
+ "stray_unmapped_edits": 14,
+ "stray_list": [
+  "M1:src/kodezart/adapters/pattern_outbound_gate.py (unmapped file missing vs base)",
+  "M1:src/kodezart/types/domain/linear_mcp.py (unmapped file missing vs base)",
+  "M4:src/kodezart/adapters/pattern_outbound_gate.py (unmapped file missing vs base)",
+  "M4:src/kodezart/types/domain/linear_mcp.py (unmapped file missing vs base)",
+  "M3:src/kodezart/adapters/pattern_outbound_gate.py (unmapped file missing vs base)",
+  "M3:src/kodezart/types/domain/linear_mcp.py (unmapped file missing vs base)",
+  "M2:src/kodezart/adapters/pattern_outbound_gate.py (unmapped file missing vs base)",
+  "M2:src/kodezart/types/domain/linear_mcp.py (unmapped file missing vs base)",
+  "M5:src/kodezart/adapters/pattern_outbound_gate.py (unmapped file missing vs base)",
+  "M5:src/kodezart/types/domain/linear_mcp.py (unmapped file missing vs base)",
+  "M6:src/kodezart/adapters/pattern_outbound_gate.py (unmapped file missing vs base)",
+  "M6:src/kodezart/types/domain/linear_mcp.py (unmapped file missing vs base)",
+  "M7:src/kodezart/adapters/pattern_outbound_gate.py (unmapped file missing vs base)",
+  "M7:src/kodezart/types/domain/linear_mcp.py (unmapped file missing vs base)"
+ ],
+ "per_view": [
+  {
+   "milestone": "M1",
+   "head_sha": "4518c36328078972b320648f317c35eede0161fe",
+   "files_changed_vs_parent": 268,
+   "checked_whole_files": 226,
+   "mismatches": []
+  },
+  {
+   "milestone": "M4",
+   "head_sha": "ac85209e62a96a55c3af4b202ffc68b6493d0ed2",
+   "files_changed_vs_parent": 174,
+   "checked_whole_files": 380,
+   "mismatches": []
+  },
+  {
+   "milestone": "M3",
+   "head_sha": "4a5146e71388f3351bbf0ea6c782c54e0e45b153",
+   "files_changed_vs_parent": 143,
+   "checked_whole_files": 504,
+   "mismatches": []
+  },
+  {
+   "milestone": "M2",
+   "head_sha": "bf0c7de30bcda5f2183c9cf7f29a56cc32450be2",
+   "files_changed_vs_parent": 50,
+   "checked_whole_files": 545,
+   "mismatches": []
+  },
+  {
+   "milestone": "M5",
+   "head_sha": "91ce3b78a21a40b9b2fc079f0459b34e7ebda722",
+   "files_changed_vs_parent": 79,
+   "checked_whole_files": 573,
+   "mismatches": []
+  },
+  {
+   "milestone": "M6",
+   "head_sha": "3a23e284023e31b72a5b6e7f21161252ba6d297d",
+   "files_changed_vs_parent": 97,
+   "checked_whole_files": 663,
+   "mismatches": []
+  },
+  {
+   "milestone": "M7",
+   "head_sha": "e5b1493e21503ecebaed85f0f762218df1a2eecc",
+   "files_changed_vs_parent": 41,
+   "checked_whole_files": 610,
+   "mismatches": []
+  }
+ ]
+}

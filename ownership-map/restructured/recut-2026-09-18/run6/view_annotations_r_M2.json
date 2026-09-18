@@ -1,0 +1,93 @@
+{
+ "milestone": "M2",
+ "branch": "bf0c7de30bcda5f2183c9cf7f29a56cc32450be2",
+ "base": "4a5146e71388f3351bbf0ea6c782c54e0e45b153",
+ "head": "bf0c7de30bcda5f2183c9cf7f29a56cc32450be2",
+ "later_members_shown_here": [],
+ "own_members_shown_earlier": [
+  {
+   "file": "src/kodezart/chains/ralph_loop.py",
+   "symbol": "RalphLoop._evaluate_node",
+   "shown_at": "M3",
+   "shown_pr": 125,
+   "sym_kind": "method",
+   "kind": "modified"
+  },
+  {
+   "file": "src/kodezart/domain/errors.py",
+   "symbol": "import:from kodezart.types.domain.organize_owner import OrganizeReport",
+   "shown_at": "M1",
+   "shown_pr": 133,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/domain/organize.py",
+   "symbol": "import:from collections.abc import Sequence",
+   "shown_at": "M1",
+   "shown_pr": 133,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/handlers/agent_handler.py",
+   "symbol": "AgentHandler.stream_workflow",
+   "shown_at": "M3",
+   "shown_pr": 125,
+   "sym_kind": "method",
+   "kind": "modified"
+  },
+  {
+   "file": "src/kodezart/types/domain/operation.py",
+   "symbol": "import:from kodezart.types.domain.organize import ( MANDATE_PHASE_ROLES, MandateSpec, OrganizeLabelNamespace, ResolvedMandateSpec, phase_marker_source, split_label_key, )",
+   "shown_at": "M1",
+   "shown_pr": 133,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/organize.py",
+   "symbol": "import:from collections.abc import Mapping",
+   "shown_at": "M1",
+   "shown_pr": 133,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "src/kodezart/types/domain/workflow.py",
+   "symbol": "import:from kodezart.types.domain.run_records import RunIdentity",
+   "shown_at": "M1",
+   "shown_pr": 133,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "tests/chains/test_ralph_loop.py",
+   "symbol": "import:from kodezart.chains.authored_delivery import AuthoredDeliveryCoordinator",
+   "shown_at": "M1",
+   "shown_pr": 133,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "tests/chains/test_ralph_loop.py",
+   "symbol": "import:from kodezart.types.domain.run_records import RunIdentity",
+   "shown_at": "M1",
+   "shown_pr": 133,
+   "sym_kind": "import",
+   "kind": "added"
+  },
+  {
+   "file": "tests/chains/test_retry_floor_wiring.py",
+   "symbol": "_module_source",
+   "shown_at": "M1",
+   "shown_pr": 133,
+   "sym_kind": "function",
+   "kind": "modified"
+  }
+ ],
+ "counts": {
+  "later_members_shown_here": 0,
+  "own_members_shown_earlier": 10
+ }
+}

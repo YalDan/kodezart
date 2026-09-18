@@ -14870,6 +14870,13 @@
    "note": "introduced 9e7b420a..b94a63ab",
    "owner": "M4",
    "sym_kind": "import"
+  },
+  "import:from kodezart.domain.fire_spec import ( body_digest, require_fire_entry, tracker_spec_from_issues, )": {
+   "consumers": {},
+   "kind": "added",
+   "note": "introduced b94a63ab..9d425ec4",
+   "owner": "M1",
+   "sym_kind": "import"
   }
  },
  "src/kodezart/adapters/linear/record_sink.py": {
@@ -19056,6 +19063,13 @@
    "consumers": {},
    "kind": "added",
    "note": "introduced 9e7b420a..b94a63ab",
+   "owner": "M4",
+   "sym_kind": "import"
+  },
+  "import:from kodezart.types.domain.operation import ( OperationConfig, OperationMemberAbsentError, RepoEntry, )": {
+   "consumers": {},
+   "kind": "added",
+   "note": "introduced b94a63ab..9d425ec4",
    "owner": "M4",
    "sym_kind": "import"
   }
@@ -27354,6 +27368,20 @@
    "note": "introduced 9e7b420a..b94a63ab",
    "owner": "M4",
    "sym_kind": "method"
+  },
+  "import:from kodezart.types.domain.run_state import LaneBinding, LanePR, LaneRunState": {
+   "consumers": {},
+   "kind": "added",
+   "note": "introduced b94a63ab..9d425ec4",
+   "owner": "M4",
+   "sym_kind": "import"
+  },
+  "LaneStateWriter.record_pull_request": {
+   "consumers": {},
+   "kind": "added",
+   "note": "introduced b94a63ab..9d425ec4",
+   "owner": "M4",
+   "sym_kind": "method"
   }
  },
  "src/kodezart/core/retry.py": {
@@ -29962,6 +29990,34 @@
    "note": "introduced 9e7b420a..b94a63ab",
    "owner": "M4",
    "sym_kind": "method"
+  },
+  "LaneEntryError": {
+   "consumers": {},
+   "kind": "added",
+   "note": "introduced b94a63ab..9d425ec4",
+   "owner": "M1",
+   "sym_kind": "class"
+  },
+  "LaneEntryError.__init__": {
+   "consumers": {},
+   "kind": "added",
+   "note": "introduced b94a63ab..9d425ec4",
+   "owner": "M1",
+   "sym_kind": "method"
+  },
+  "SubjectAmendedError": {
+   "consumers": {},
+   "kind": "added",
+   "note": "introduced b94a63ab..9d425ec4",
+   "owner": "M1",
+   "sym_kind": "class"
+  },
+  "SubjectAmendedError.__init__": {
+   "consumers": {},
+   "kind": "added",
+   "note": "introduced b94a63ab..9d425ec4",
+   "owner": "M1",
+   "sym_kind": "method"
   }
  },
  "src/kodezart/domain/fire_spec.py": {
@@ -30192,6 +30248,20 @@
    "kind": "added",
    "note": "introduced 9e7b420a..b94a63ab",
    "owner": "M4",
+   "sym_kind": "function"
+  },
+  "import:from hashlib import sha256": {
+   "consumers": {},
+   "kind": "added",
+   "note": "introduced b94a63ab..9d425ec4",
+   "owner": "M1",
+   "sym_kind": "import"
+  },
+  "body_digest": {
+   "consumers": {},
+   "kind": "added",
+   "note": "introduced b94a63ab..9d425ec4",
+   "owner": "M1",
    "sym_kind": "function"
   }
  },
@@ -54458,6 +54528,27 @@
    "note": "unchanged between main and donor; stays as main has it",
    "owner": "M3",
    "sym_kind": "import"
+  },
+  "import:from kodezart.types.domain.lane_entry import LaneEntry": {
+   "consumers": {},
+   "kind": "added",
+   "note": "introduced b94a63ab..9d425ec4",
+   "owner": "M4",
+   "sym_kind": "import"
+  },
+  "RalphLoopContext.resumed_head_sha": {
+   "consumers": {},
+   "kind": "added",
+   "note": "introduced b94a63ab..9d425ec4",
+   "owner": "M4",
+   "sym_kind": "class_attr"
+  },
+  "WorkflowState.lane_entry": {
+   "consumers": {},
+   "kind": "added",
+   "note": "introduced b94a63ab..9d425ec4",
+   "owner": "M4",
+   "sym_kind": "class_attr"
   }
  },
  "src/kodezart/types/domain/workspace.py": {
