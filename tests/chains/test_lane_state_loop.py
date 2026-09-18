@@ -822,6 +822,27 @@ def recording(lane) -> list[tuple[CrossOffState, ...]]:
 CACHE_PATH = "/tmp/fake-cache"
 
 
+def releases(lane) -> list[int]:
+    """How many git calls this lane had made at each workspace release.
+
+    The double hands the same path back after a release and keeps answering
+    for it, so nothing in it distinguishes a read taken while the tree was
+    owned from one taken after it was given up. The moment is what does:
+    a read recorded after the last release is a read of a tree the loop no
+    longer holds.
+    """
+    at_release: list[int] = []
+    provider = lane.loop._workspace
+    released = provider.release
+
+    async def observed(workspace_path: str) -> None:
+        at_release.append(len(lane.git.calls))
+        await released(workspace_path)
+
+    provider.release = observed
+    return at_release
+
+
 @pytest.mark.parametrize(
     "left_behind",
     [
@@ -847,6 +868,7 @@ async def test_a_workspace_that_is_not_the_graded_sha_yields_no_cross_off(left_b
     }
     states = recording(lane)
     at_session: list[int] = []
+    at_release = releases(lane)
 
     def session_over(count: int) -> None:
         at_session.append(len(lane.git.calls))
@@ -883,9 +905,16 @@ async def test_a_workspace_that_is_not_the_graded_sha_yields_no_cross_off(left_b
     ]
     assert dirt_reads == [index for index in dirt_reads if index >= at_session[0]]
     assert len(dirt_reads) == 1
-    assert [index for index in head_reads if index >= at_session[0]]
+    post_session_heads = [index for index in head_reads if index >= at_session[0]]
+    assert post_session_heads
     assert ("has_changes", CACHE_PATH) not in lane.git.calls
     assert ("current_sha", CACHE_PATH) not in lane.git.calls
+    # And both are read while the loop still owns that tree: the evaluator's
+    # workspace is the last one released, and a fact read after that release
+    # is a fact about a tree this loop had already given up.
+    assert at_release
+    assert dirt_reads[0] < at_release[-1]
+    assert post_session_heads[0] < at_release[-1]
 
 
 async def test_an_undemonstrated_grading_says_so_in_the_lanes_log():
