@@ -173,6 +173,18 @@ class RecordingLaneState:
         return None
 
 
+class PrivateRepository:
+    """A visibility resolver that answers PRIVATE for every repository.
+
+    The run's resolved visibility is then something other than the UNKNOWN
+    every un-resolved run lands on, so a delivery write that names the
+    resolved value is told apart from one that names the default.
+    """
+
+    async def resolve_visibility(self, *, repo_url: str) -> RepoVisibility:
+        return RepoVisibility.PRIVATE
+
+
 def composed(*, red=False, rounds=0, saver=None, evaluations=None, forge_present=True):
     tracker = CountingTracker()
     executor = NativeExecutor(
@@ -185,6 +197,7 @@ def composed(*, red=False, rounds=0, saver=None, evaluations=None, forge_present
         remediation_rounds=rounds,
         checkpointer=saver,
     )
+    fire.specification._visibility_resolver = PrivateRepository()
     merger = FakeBranchMerger(
         consolidation_outcomes=[
             ConsolidationOutcome(
@@ -261,7 +274,9 @@ async def test_actual_native_graph_delivers_and_only_work_defect_reenters_fire(
         # The delivering step put that pull request on the lane's record, once
         # per delivery, under the lane the result names and under the
         # visibility this run resolved — the same one the commit write of that
-        # record body was gated under (KOD-843).
+        # record body was gated under (KOD-843). The run resolved PRIVATE, so
+        # a delivery write gated under the UNKNOWN default would not match.
+        assert final["repo_visibility"] is RepoVisibility.PRIVATE
         assert lane_state.pull_requests == [
             (result.lane_key, result.pr, final["repo_visibility"])
             for _ in range(2 if red and rounds else 1)

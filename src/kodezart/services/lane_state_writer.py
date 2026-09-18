@@ -147,10 +147,7 @@ class TrackerLaneStateWriter:
                 comments=comments, issue_key=lane.lane_key, lane_key=lane.lane_key
             )
         except LaneRecordReadError as exc:
-            raise LaneRecordWriteError(
-                lane_key=lane.lane_key,
-                reason=f"the recorded lane state could not be read: {exc.reason}",
-            ) from exc
+            raise self._unreadable(lane_key=lane.lane_key, exc=exc) from exc
         prior_comment, prior = located if located is not None else (None, None)
         record = next_lane_record(
             prior=prior,
@@ -214,10 +211,7 @@ class TrackerLaneStateWriter:
         try:
             located = await self._records.find(issue_key=lane_key, lane_key=lane_key)
         except LaneRecordReadError as exc:
-            raise LaneRecordWriteError(
-                lane_key=lane_key,
-                reason=f"the recorded lane state could not be read: {exc.reason}",
-            ) from exc
+            raise self._unreadable(lane_key=lane_key, exc=exc) from exc
         if located is None:
             raise LaneRecordWriteError(
                 lane_key=lane_key,
@@ -310,6 +304,19 @@ class TrackerLaneStateWriter:
                 prefixes=self._prefixes, purpose=RUN_STATE_PURPOSE, lane=lane_key
             ),
             configured_marker_prefix(self._prefixes, purpose=RUN_EVENT_PURPOSE),
+        )
+
+    @staticmethod
+    def _unreadable(*, lane_key: str, exc: LaneRecordReadError) -> LaneRecordWriteError:
+        """The write refusal a damaged or duplicated record turns into.
+
+        Every write of a lane's record reads the prior record first and
+        refuses the same way when that read fails, so the conversion is
+        composed once and each writer raises what it returns.
+        """
+        return LaneRecordWriteError(
+            lane_key=lane_key,
+            reason=f"the recorded lane state could not be read: {exc.reason}",
         )
 
     def _branch_url(self, lane: LaneBinding) -> str:
