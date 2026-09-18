@@ -7,6 +7,8 @@ subject's whole subtree, and nothing carried alongside that read stands in
 for it.
 """
 
+import inspect
+
 import pytest
 from langgraph.checkpoint.memory import InMemorySaver
 from pydantic import ValidationError
@@ -649,6 +651,13 @@ class NativeSourceReader:
         raise AssertionError("A no-claim writer must not search semantic citations")
 
 
+#: The session every scripted agent answer reports itself as having run in.
+#:
+#: What a cross-off's Evidence row points back to is derived from it, so a
+#: reader of that row can be asserted against the session the double named.
+NATIVE_SESSION = "native-session"
+
+
 class NativeExecutor(FakeAgentExecutor):
     """Only the agent boundary is scripted; all execution consumers are real."""
 
@@ -675,7 +684,12 @@ class NativeExecutor(FakeAgentExecutor):
             self.evaluation_workspaces.append(kwargs.get("cwd"))
             output = self.evaluations.pop(0)
             if self.on_evaluation is not None:
-                self.on_evaluation(len(self.evaluation_prompts))
+                # Awaited when the hook is one: what a board does between two
+                # evaluations it does through the port, the way a write-back
+                # does, and those calls are coroutines.
+                answered = self.on_evaluation(len(self.evaluation_prompts))
+                if inspect.isawaitable(answered):
+                    await answered
         elif "instructions" in properties:
             self.remediation_prompts.append(kwargs["prompt"])
             if self.on_remediation is not None:
@@ -700,7 +714,7 @@ class NativeExecutor(FakeAgentExecutor):
             duration_api_ms=1,
             is_error=False,
             num_turns=1,
-            session_id="native-session",
+            session_id=NATIVE_SESSION,
             structured_output=output,
         )
 
@@ -1064,7 +1078,8 @@ async def test_native_inner_checkpoint_resume_requires_current_checks(barrier, c
         "verdict": AcceptVerdict.rejected,
         "pending_failures": [],
         "iteration_records": [],
-        # The loop's own initial state, which every node may read.
+        # _execute_node reads state["outcome"] for the roster it holds, so a
+        # hand-built state carries the loop's own initial value for it.
         "outcome": PendingRalphOutcome(),
     }
     async for _ in graph.astream(initial, config=config, interrupt_before=[barrier]):

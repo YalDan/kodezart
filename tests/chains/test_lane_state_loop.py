@@ -11,7 +11,10 @@ from kodezart.chains.criteria import TrackerCriteria
 from kodezart.chains.ralph_loop import RalphLoop
 from kodezart.core.protocols import LaneStateWriter
 from kodezart.domain.amendment import NativeWriteRefusalError
-from kodezart.domain.criterion_cross_off import UNDEMONSTRATED_REASON
+from kodezart.domain.criterion_cross_off import (
+    UNDEMONSTRATED_REASON,
+    evaluation_observation,
+)
 from kodezart.domain.criterion_evidence import parse_criterion_evidence
 from kodezart.domain.issue_tree import SubtreeClosure
 from kodezart.domain.lane_record import RUN_STATE_PURPOSE, render_lane_record
@@ -36,7 +39,9 @@ from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.session import PermissionMode, ToolPreset
 from kodezart.types.domain.tracker import WorkflowStateKind
 from tests.chains.test_native_fire import (
+    DIRECT_DONE,
     DIRECT_OWED,
+    NATIVE_SESSION,
     OWED_KEYS,
     STAGE_KEY,
     SUBJECT,
@@ -603,12 +608,17 @@ async def test_cross_offs_appear_on_the_tracker_between_iterations():
     )
     before_states = states(lane.port)
     observed: dict[int, tuple[set[str], set[str], bool, tuple[str, str]]] = {}
+    pointers: dict[int, set[str]] = {}
     events: list[object] = []
 
     async for event in lane.loop.run(**await lane.arguments()):
         events.append(event)
         if isinstance(event, WorkflowIterationEvent):
             moved = states(lane.port)
+            pointers[event.iteration] = {
+                parse_criterion_evidence(lane.port.issues[key].body).test
+                for key in completed(lane.port)
+            }
             observed[event.iteration] = (
                 {key for key, kind in moved.items() if kind != before_states[key]},
                 completed(lane.port),
@@ -634,6 +644,15 @@ async def test_cross_offs_appear_on_the_tracker_between_iterations():
         parse_criterion_evidence(lane.port.issues[key].body).graded_sha
         for key in OWED_KEYS
     } == {await LaneSource(lane.repo).resolve_commit(cwd="/w", ref=BRANCH)}
+    # And the grading it came from: the session the evaluator ran in and the
+    # iteration that ran it, read at the instant each iteration's event went
+    # out, so a row pointing at no session or at another one is not this one.
+    assert pointers[1] == {
+        evaluation_observation(session_id=NATIVE_SESSION, iteration=1)
+    }
+    assert pointers[2] == {
+        evaluation_observation(session_id=NATIVE_SESSION, iteration=2)
+    }
 
 
 #: A criterion the subtree gains after the fire entered it.
@@ -681,6 +700,90 @@ async def test_a_criterion_added_between_iterations_is_graded_and_crossed_off():
         parse_criterion_evidence(lane.port.issues[key].body).graded_sha
         for key in finished
     } == {lane.repo.head}
+
+
+async def test_a_criterion_crossed_off_mid_run_is_still_graded_by_later_iterations():
+    """The roster the EVALUATION reads is the one the loop is judged against.
+
+    A criterion the subtree gained mid-run is graded, crossed off, and then
+    has to stay in every later iteration's dispatch: read with the entry
+    roster alone it would be Done and outside the set, so nothing would
+    re-grade it and a regression of it after its cross-off would be absorbed
+    while the lane still delivered. Three iterations are what shows it —
+    the added criterion is finished on the second and has to be graded again
+    on the third.
+    """
+    everything = (*OWED_KEYS, ADDED_OWED)
+    lane = Lane(
+        evaluations=[
+            graded({DIRECT_OWED}),
+            graded({ADDED_OWED}, keys=everything),
+            graded(everything, keys=everything),
+        ],
+        max_iterations=3,
+    )
+    lane.executor.on_evaluation = lambda count: (
+        added_criterion(lane.port, ADDED_OWED) if count == 1 else None
+    )
+
+    events = await lane.run()
+
+    iterations = [e for e in events if isinstance(e, WorkflowIterationEvent)]
+    assert len(iterations) == 3
+    assert {
+        result.criterion_id for result in iterations[-1].evaluation.criteria_results
+    } == set(everything)
+    assert iterations[-1].fan_in is None
+    assert [event.verdict for event in iterations] == [
+        AcceptVerdict.rejected,
+        AcceptVerdict.rejected,
+        AcceptVerdict.accepted,
+    ]
+    assert {
+        key
+        for key in everything
+        if lane.port.issues[key].state_kind is WorkflowStateKind.COMPLETED
+    } == set(everything)
+
+
+async def test_a_criterion_reset_to_todo_mid_run_is_graded_and_finished():
+    """The amendment case: a criterion outside the entry roster, put back.
+
+    A criterion finished before the fire entered is in no roster, so nothing
+    this loop does touches it — until a write-back moves it back to Todo,
+    which puts it into the next barrier's own reading of what is owed. The
+    loop grades it, finishes it at the head it graded, and the check after
+    the loop accepts the lane it finished.
+    """
+    lane = Lane(
+        evaluations=[
+            graded({DIRECT_OWED}),
+            graded({*OWED_KEYS, DIRECT_DONE}, keys=(*OWED_KEYS, DIRECT_DONE)),
+        ],
+        max_iterations=2,
+    )
+
+    async def reopen(count: int) -> None:
+        """What a write-back does to a criterion it amended: put it back."""
+        if count == 1:
+            await lane.port.reset_criterion_pending(
+                expected=lane.port.issues[DIRECT_DONE], holder=None
+            )
+
+    lane.executor.on_evaluation = reopen
+
+    seen = await lane.run()
+
+    iterations = [e for e in seen if isinstance(e, WorkflowIterationEvent)]
+    assert [event.verdict for event in iterations] == [
+        AcceptVerdict.rejected,
+        AcceptVerdict.accepted,
+    ]
+    assert lane.port.issues[DIRECT_DONE].state_kind is WorkflowStateKind.COMPLETED
+    assert (
+        parse_criterion_evidence(lane.port.issues[DIRECT_DONE].body).graded_sha
+        == lane.repo.head
+    )
 
 
 async def test_a_criterion_added_after_the_last_evaluation_refuses_the_lane():
