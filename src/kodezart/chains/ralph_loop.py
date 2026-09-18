@@ -1,7 +1,7 @@
 """Ralph quality-gating loop — execute + evaluate until accepted or exhausted."""
 
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from uuid import uuid4
 
 from langchain_core.runnables import RunnableConfig
@@ -33,6 +33,10 @@ from kodezart.core.stream_drain import drain
 from kodezart.domain.accept_gate import gate_cleared
 from kodezart.domain.amendment import NativeWriteRefusalError, repeated_upheld
 from kodezart.domain.criteria_grading import grade_iteration
+from kodezart.domain.criterion_cross_off import (
+    cross_offs_for,
+    evaluation_observation,
+)
 from kodezart.domain.errors import GitSourceReadError
 from kodezart.domain.fan_in import fan_in_report, require_permutation
 from kodezart.domain.prompt_variables import (
@@ -53,7 +57,11 @@ from kodezart.types.domain.agent import (
     WorkflowIterationEvent,
 )
 from kodezart.types.domain.branch import BaseSpec
-from kodezart.types.domain.criteria import ExecutionCriterion, FanInReport
+from kodezart.types.domain.criteria import (
+    ExecutionCriterion,
+    FanInReport,
+    TrackerCriterionSet,
+)
 from kodezart.types.domain.fire_spec import TrackerSpec
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.grading import IterationGrade
@@ -226,7 +234,7 @@ class RalphLoop:
             current = await current_native_criteria(
                 spec=tracker_spec,
                 reader=self._criteria_reader,
-                held=held_roster(acceptance_criteria),
+                held=self._held(criteria=acceptance_criteria, outcome=outcome),
             )
             if isinstance(outcome, (PendingRalphOutcome, EvaluatedRalphOutcome)):
                 raise NativeWriteRefusalError(
@@ -321,7 +329,9 @@ class RalphLoop:
             else await current_native_criteria(
                 spec=ctx.tracker_spec,
                 reader=self._criteria_reader,
-                held=held_roster(ctx.acceptance_criteria),
+                held=self._held(
+                    criteria=ctx.acceptance_criteria, outcome=state["outcome"]
+                ),
             )
         )
         writer = get_stream_writer()
@@ -418,6 +428,25 @@ class RalphLoop:
                 )
         return update
 
+    def _held(
+        self, *, criteria: Sequence[ExecutionCriterion], outcome: RalphOutcome
+    ) -> TrackerCriterionSet | None:
+        """Everything this fire took on: its entry roster and what it graded.
+
+        The obligation can grow mid-run: the amendment write-back puts an
+        amended criterion back in Todo and the next iteration owes it. Such
+        a criterion is part of what this fire took on, so once the fire's own
+        evaluation finishes it, the roster that keeps it inside the set has
+        to hold it too. Nothing is ever removed from the roster this way —
+        it only admits a criterion this loop itself graded.
+        """
+        graded: Sequence[ExecutionCriterion] = (
+            outcome.criteria
+            if isinstance(outcome, (EvaluatedRalphOutcome, NativeEvaluatedRalphOutcome))
+            else ()
+        )
+        return held_roster([*criteria, *graded])
+
     def _lane_binding(self, ctx: RalphLoopContext) -> LaneBinding:
         """The lane this node commits for, as the record write needs it."""
         if ctx.tracker_spec is None or ctx.surface_holder is None:
@@ -491,15 +520,21 @@ class RalphLoop:
         evaluation_attempt = 0
 
         dispatched = tuple(ctx.acceptance_criteria)
+        # The session the standing grade came from, carried out of the
+        # retried closure: the Evidence row points back at the grading that
+        # produced the verdict, and on a re-dispatch that is the last one.
+        graded_in: str | None = None
 
         async def evaluate() -> IterationGrade:
-            nonlocal dispatched
+            nonlocal dispatched, graded_in
             criteria: list[ExecutionCriterion] = ctx.acceptance_criteria
             if ctx.tracker_spec is not None:
                 snapshot = await current_native_criteria(
                     spec=ctx.tracker_spec,
                     reader=self._criteria_reader,
-                    held=held_roster(ctx.acceptance_criteria),
+                    held=self._held(
+                        criteria=ctx.acceptance_criteria, outcome=state["outcome"]
+                    ),
                 )
                 criteria = list(snapshot.criteria)
             eval_prompt = self._prompts.template_for(PromptKey.EVALUATION).render(
@@ -573,6 +608,7 @@ class RalphLoop:
             output = AcceptanceCriteriaOutput.model_validate(
                 result_event.structured_output,
             )
+            graded_in = result_event.session_id
             if (
                 native_ref is not None
                 and await self._native_ref(cwd=cwd, branch=ctx.ralph_branch)
@@ -633,6 +669,19 @@ class RalphLoop:
             trajectory=trajectory,
             fan_in=fan_in,
         )
+        if native_ref is not None:
+            # Before the event, so a consumer that sees iteration n can read
+            # the board and find iteration n's cross-offs already on it. The
+            # cadence is the evaluator's: this is the step that judged, and
+            # nothing after the loop writes a cross-off.
+            await self._cross_off(
+                ctx=ctx,
+                grade=grade,
+                dispatched=dispatched,
+                graded_sha=native_ref,
+                graded_in=graded_in,
+                iteration=state["iteration"],
+            )
         writer(event)
         if (
             trajectory.plateaued
@@ -657,6 +706,45 @@ class RalphLoop:
                 )
             ),
         }
+
+    async def _cross_off(
+        self,
+        *,
+        ctx: RalphLoopContext,
+        grade: IterationGrade,
+        dispatched: Sequence[ExecutionCriterion],
+        graded_sha: str,
+        graded_in: str | None,
+        iteration: int,
+    ) -> None:
+        """Put this attempt's verdict on the criteria it was graded against.
+
+        The whole roster the attempt dispatched is handed over with the
+        whole grade, because a verdict is a reading of the roster and a
+        partial one is no reading of it. A grade with no session behind it
+        is not one this loop produced, so it is refused rather than stamped
+        with a pointer that leads nowhere.
+        """
+        if self._lane_state is None:
+            raise NativeWriteRefusalError(
+                "Native evaluation requires the lane state writer"
+            )
+        roster = held_roster(dispatched)
+        if roster is None or graded_in is None:
+            raise NativeWriteRefusalError(
+                "The native evaluation graded no tracker criterion in a session"
+            )
+        await self._lane_state.write_cross_offs(
+            lane=self._lane_binding(ctx),
+            dispatched=roster.criteria,
+            cross_offs=cross_offs_for(
+                results=grade.results,
+                graded_sha=graded_sha,
+                observation=evaluation_observation(
+                    session_id=graded_in, iteration=iteration
+                ),
+            ),
+        )
 
     async def _native_ref(self, *, cwd: str, branch: str) -> str:
         if self._source is None:

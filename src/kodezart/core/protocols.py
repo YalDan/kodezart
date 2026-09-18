@@ -1564,7 +1564,8 @@ class LaneStateWriter(Protocol):
         *cross_offs* answers *dispatched* one for one, in order: a verdict
         is a reading of the roster it was graded against, and a partial
         one is no reading of it. A criterion this attempt passed gets its
-        graded sha on its Evidence row and is moved to Done in that order;
+        graded sha on its Evidence row and is then moved to
+        ``LifecycleStage.DONE``, in that order;
         nothing else is written anywhere, least of all a parent's state.
         """
         ...

@@ -51,6 +51,7 @@ from kodezart.types.domain.fire_spec import TrackerSpec
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.operation import OperationConfig, ScopeLabel
 from kodezart.types.domain.outcome import WorkflowOutcome
+from kodezart.types.domain.ralph_outcome import PendingRalphOutcome
 from kodezart.types.domain.remediation import RemediationPlan
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.session import PermissionMode
@@ -1038,6 +1039,8 @@ async def test_native_inner_checkpoint_resume_requires_current_checks(barrier, c
         "verdict": AcceptVerdict.rejected,
         "pending_failures": [],
         "iteration_records": [],
+        # The loop's own initial state, which every node may read.
+        "outcome": PendingRalphOutcome(),
     }
     async for _ in graph.astream(initial, config=config, interrupt_before=[barrier]):
         pass

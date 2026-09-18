@@ -16,11 +16,13 @@ from kodezart.config.job_queue import JobQueueSettings
 from kodezart.config.write_back import WriteBackSettings
 from kodezart.core.checkpointer import make_checkpointer
 from kodezart.core.errors import TrackerUnavailableError
+from kodezart.domain.criterion_evidence import parse_criterion_evidence
 from kodezart.domain.errors import (
     FireSpecEntryError,
     ScopePlanRefusalError,
     ScopeReadError,
 )
+from kodezart.domain.fire_spec import criterion_field_bodies
 from kodezart.handlers.agent_handler import AgentHandler
 from kodezart.services.agent_service import AgentService
 from kodezart.services.scope_runtime import _lane_checkpoint_key
@@ -38,7 +40,7 @@ from kodezart.types.domain.consolidation import (
 )
 from kodezart.types.domain.job import JobState
 from kodezart.types.domain.native_delivery import LaneDeliveryEvent
-from kodezart.types.domain.operation import RepoEntry, ScopeLabel
+from kodezart.types.domain.operation import LifecycleStage, RepoEntry, ScopeLabel
 from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.scope_runtime import ScopeLaneEvent, ScopeWalkEvent
@@ -220,7 +222,9 @@ def drive(harness, *, job="scope-job", scope=SCOPE, origin=ORIGIN, path=None):
 
 
 async def test_request_queue_constructor_reaches_real_native_graph_without_child_jobs():
-    harness = runtime(port=board(lanes=("A", "B"), blocked={"B": ("A",)}))
+    harness = runtime(
+        port=board(lanes=("A", "B"), blocked={"B": ("A",)}), lanes=("A", "B")
+    )
     queue = build_job_queue(settings=JobQueueSettings(), workflow_engine=harness.engine)
     handler = AgentHandler(harness.service, SUPPRESS_ALL_SKILLS, queue=queue)
     await queue.start()
@@ -233,14 +237,32 @@ async def test_request_queue_constructor_reaches_real_native_graph_without_child
             ),
             lane="scope-requests",
         )
+        payloads = []
         async with asyncio.timeout(15):
-            payloads = [item async for item in handler.attach_job(job_id=record.job_id)]
+            async for item in handler.attach_job(job_id=record.job_id):
+                payloads.append(item)
+                if (
+                    item["type"] == "scope_lane"
+                    and item["laneKey"] == "A"
+                    and item["event"]["type"] == "lane_delivery"
+                ):
+                    # A delivered, so the deliverable ref a delivery records
+                    # exists; B resolves its base from the blocker it names.
+                    harness.port.recorded_work_refs["A"] = [
+                        WorkRef(
+                            issue_id="A",
+                            role=WorkRefRole.DELIVERABLE,
+                            branch="recorded-A",
+                            pushed_head_sha="a" * 40,
+                            recorded_at=FIXTURE_EPOCH,
+                        )
+                    ]
         assert not [item for item in payloads if item["type"] == "error"]
         nested = [item for item in payloads if item["type"] == "scope_lane"]
         iterations = [
             item for item in nested if item["event"]["type"] == "workflow_iteration"
         ]
-        assert [item["laneKey"] for item in iterations] == ["A"]
+        assert [item["laneKey"] for item in iterations] == ["A", "B"]
         assert (
             iterations[0]["event"]["evaluation"]["criteriaResults"][0]["criterionId"]
             == "A/check"
@@ -248,15 +270,20 @@ async def test_request_queue_constructor_reaches_real_native_graph_without_child
         observations = [
             item["observation"] for item in payloads if item["type"] == "scope_walk"
         ]
-        assert observations[-1]["dispatched"] == ["A"]
-        assert set(observations[-1]["unresolvedCriteria"]) == {"A/check", "B/check"}
+        assert observations[-1]["dispatched"] == ["A", "B"]
+        assert observations[-1]["unresolvedCriteria"] == []
         assert "workflow_complete" not in {item["type"] for item in payloads}
         finished = await queue.get(job_id=record.job_id)
         assert finished.state is JobState.TERMINAL
         assert finished.outcome is None
         assert list(queue._records) == [record.job_id]
         assert harness.port.claim_writes == []
-        assert harness.port.issue_writes == []
+        # The only bodies the walk wrote are the two Evidence rows its own
+        # evaluations stamped; no child job and no claim was written at all.
+        assert {key for key, _, _ in harness.port.issue_writes} == {
+            "A/check",
+            "B/check",
+        }
         assert harness.artifacts.persist_calls == []
         assert (
             "Exact native subject A  with spaces"
@@ -338,9 +365,7 @@ async def test_existing_plan_barrier_prevents_any_lane_effect():
 async def test_completed_checkpoint_is_revalidated_before_it_can_be_replayed():
     harness = runtime()
     _ = [event async for event in drive(harness)]
-    harness.port.issues["A/check"] = harness.port.issues["A/check"].model_copy(
-        update={"body": "**Check:** materially changed Check\n**Evidence:** —"}
-    )
+    owed_again(harness.port, check="materially changed Check")
     fresh = runtime(port=harness.port, saver=harness.saver)
     with pytest.raises(FireSpecEntryError, match="evaluated snapshot"):
         _ = [event async for event in drive(fresh)]
@@ -350,6 +375,7 @@ async def test_completed_checkpoint_is_revalidated_before_it_can_be_replayed():
 async def test_same_job_checkpoint_replay_does_not_mint_another_branch():
     harness = runtime()
     _ = [event async for event in drive(harness)]
+    owed_again(harness.port)
     fresh = runtime(port=harness.port, saver=harness.saver)
     events = [event async for event in drive(fresh)]
     assert fresh.executor.schema_calls == []
@@ -402,6 +428,7 @@ async def test_tracker_outage_between_lanes_cannot_reuse_the_previous_ready_set(
 async def test_changed_resolved_base_refuses_the_same_job_checkpoint():
     harness = runtime()
     _ = [event async for event in drive(harness)]
+    owed_again(harness.port)
     fresh = runtime(port=harness.port, saver=harness.saver, trunk="other-trunk")
     with pytest.raises(ScopeReadError, match="different scope request"):
         _ = [event async for event in drive(fresh)]
@@ -411,6 +438,7 @@ async def test_changed_resolved_base_refuses_the_same_job_checkpoint():
 async def test_distinct_queue_jobs_never_alias_a_lane_checkpoint():
     harness = runtime()
     _ = [event async for event in drive(harness, job="first-job")]
+    owed_again(harness.port)
     fresh = runtime(port=harness.port, saver=harness.saver)
     _ = [event async for event in drive(fresh, job="second-job")]
     assert fresh.executor.execution_prompts
@@ -437,6 +465,31 @@ async def test_approval_removed_during_preparation_prevents_any_native_node(
     assert events[-1].observation.unresolved_criteria == ("A/check",)
 
 
+def owed_again(port, *, lane="A", check=None):
+    """Put a lane's criterion back in Todo, the way the product does.
+
+    A lane whose every criterion its run crossed off is closed by the
+    tracker's rollup, and the walker offers no closed lane. What re-opens one
+    in production is the amendment write-back: the criterion returns to the
+    unstarted state with its Evidence cleared, carrying the amended Check
+    when the amendment changed the text.
+    """
+    key = f"{lane}/check"
+    issue = port.issues[key]
+    current = (
+        check
+        if check is not None
+        else criterion_field_bodies(issue.body, field="Check")[0]
+    )
+    port.issues[key] = issue.model_copy(
+        update={
+            "state_kind": WorkflowStateKind.UNSTARTED,
+            "state_name": "Todo",
+            "body": f"**Check:** {current}\n**Evidence:** —",
+        }
+    )
+
+
 def lane_of(harness):
     return harness.engine._scoped_arm._lane_for(ORIGIN)
 
@@ -458,6 +511,11 @@ async def pause_before_delivery(harness):
         isinstance(event, ScopeLaneEvent) and isinstance(event.event, LaneDeliveryEvent)
         for event in events
     )
+    # The loop ran before this pause and crossed its criterion off, so the
+    # lane is closed and no walk would offer it again. What the resume this
+    # fixture sets up is about is the checkpoint, so the lane is made owed
+    # again the way the product makes one owed again.
+    owed_again(harness.port)
     return snapshot, events
 
 
@@ -565,9 +623,9 @@ async def test_current_closed_blocker_unlocks_next_lane_using_its_actual_work_re
             event.event, LaneDeliveryEvent
         ):
             if event.lane_key == "A":
-                port.issues["A/check"] = port.issues["A/check"].model_copy(
-                    update={"state_kind": WorkflowStateKind.COMPLETED}
-                )
+                # A's criterion is already Done: its own evaluation step
+                # crossed it off, so nothing here has to close the blocker.
+                assert port.issues["A/check"].state_kind is WorkflowStateKind.COMPLETED
                 port.recorded_work_refs["A"] = [
                     WorkRef(
                         issue_id="A",
@@ -586,8 +644,12 @@ async def test_current_closed_blocker_unlocks_next_lane_using_its_actual_work_re
     assert iterations == ["A", "B"]
     assert port.issues["A"].state_kind is WorkflowStateKind.UNSTARTED
     final = events[-1].observation
-    assert final.unresolved_criteria == ("B/check",)
-    assert port.workflow_writes == []
+    assert final.unresolved_criteria == ()
+    # Exactly the two criterion sub-issues moved, and neither subject did.
+    assert port.workflow_writes == [
+        ("A/check", LifecycleStage.DONE),
+        ("B/check", LifecycleStage.DONE),
+    ]
     b_checkpoint = await lane_of(harness).graph.aget_state(
         {"configurable": {"thread_id": _lane_checkpoint_key("scope-job", "B")}}
     )
@@ -644,7 +706,8 @@ async def test_actual_http_sse_preserves_nested_progress_and_delivery_discrimina
         assert delivery["delivery"]["phase"] == "skipped"
         observation = events[-1]["observation"]
         assert observation["skippedLanes"] == ["A"]
-        assert observation["unresolvedCriteria"] == ["A/check"]
+        assert observation["unresolvedCriteria"] == []
+        assert harness.port.issues["A/check"].state_kind is WorkflowStateKind.COMPLETED
         assert all(event["type"] != "workflow_complete" for event in events)
         status = (await app.client.get(f"/api/v1/jobs/{job_id}")).json()
         assert status["state"] == "terminal" and status["outcome"] is None
@@ -695,8 +758,12 @@ async def test_actual_scope_composition_retains_completed_native_delivery_record
         lane = harness.engine._scoped_arm._lane_for(origin)
         final = await lane.graph.aget_state(checkpoint_config())
         assert final.values["delivery"] == phase
-        assert events[-1].observation.unresolved_criteria == ("A/check",)
-        assert harness.port.workflow_writes == []
+        assert events[-1].observation.unresolved_criteria == ()
+        assert harness.port.workflow_writes == [("A/check", LifecycleStage.DONE)]
+        assert (
+            parse_criterion_evidence(harness.port.issues["A/check"].body).graded_sha
+            == "b" * 40
+        )
     finally:
         await forge.close()
 
@@ -705,6 +772,7 @@ async def test_actual_scope_composition_retains_completed_native_delivery_record
 async def test_same_job_checkpoint_refuses_incompatible_request_identity(change):
     harness = runtime()
     _ = [event async for event in drive(harness)]
+    owed_again(harness.port)
     origin = "file:///another-repository.git" if change == "repository" else ORIGIN
     scope = (
         ScopeRef(kind=ScopeKind.PROJECT, key="another-scope")
@@ -742,10 +810,10 @@ async def test_nested_fire_resume_reuses_branch_and_original_attributed_run(amen
     original_identity = RunIdentity.model_validate_json(
         paused.metadata["scope_lane_run_identity"]
     )
-    if amended:
-        harness.port.issues["A/check"] = harness.port.issues["A/check"].model_copy(
-            update={"body": "**Check:** amended before resumed review\n**Evidence:** —"}
-        )
+    # The loop crossed its criterion off before this pause, so the lane is
+    # made owed again the way the product does it — carrying the amended
+    # Check where the amendment is what this case is about.
+    owed_again(harness.port, check="amended before resumed review" if amended else None)
     harness.port.issues["A"] = harness.port.issues["A"].model_copy(
         update={"body": "A later subject body must not replace the frozen subject"}
     )

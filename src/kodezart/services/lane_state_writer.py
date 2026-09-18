@@ -294,7 +294,7 @@ class TrackerLaneStateWriter:
         criterion: TrackerCriterion,
         cross_off: CriterionCrossOff,
     ) -> None:
-        """Move one criterion to Done with the sha it was graded at.
+        """Finish one criterion at the sha it was graded at.
 
         The sub-issue is read back through the port here and not remembered
         from the dispatch, so what the write asserts about it is what it

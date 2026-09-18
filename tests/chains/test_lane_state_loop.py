@@ -6,17 +6,24 @@ import pytest
 
 from kodezart.chains.criteria import TrackerCriteria
 from kodezart.domain.amendment import NativeWriteRefusalError
+from kodezart.domain.criterion_evidence import parse_criterion_evidence
+from kodezart.domain.issue_tree import SubtreeClosure
 from kodezart.domain.lane_record import RUN_STATE_PURPOSE, render_lane_record
 from kodezart.domain.run_event_stream import RUN_EVENT_PURPOSE
 from kodezart.services.lane_records import LaneRecordReader
-from kodezart.types.domain.agent import ResultEvent
+from kodezart.types.domain.accept import AcceptVerdict
+from kodezart.types.domain.agent import ResultEvent, WorkflowIterationEvent
 from kodezart.types.domain.branch import BranchRole, trunk_base
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.operation import OperationConfig, OperationMemberAbsentError
 from kodezart.types.domain.run_event import RunEventKind
 from kodezart.types.domain.run_state import LaneRunState
+from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.session import PermissionMode, ToolPreset
+from kodezart.types.domain.tracker import WorkflowStateKind
 from tests.chains.test_native_fire import (
+    DIRECT_OWED,
+    OWED_KEYS,
     SUBJECT,
     NativeExecutor,
     engine,
@@ -98,29 +105,35 @@ class Lane:
         )
         self.loop = self.fire.implementation._quality_gate
 
-    async def run(self, events=None):
+    async def arguments(self):
+        """Everything the loop is dispatched with, for one run of this lane.
+
+        The two reads here are this fixture's own way in; what the node asks
+        the reader for starts at zero afterwards.
+        """
         spec = await self.criteria.read_spec(issue_key=SUBJECT)
-        current = await self.criteria.read_current(spec=spec)
-        # The two reads above are this fixture's own way in; what the node
-        # asks the reader for starts here at zero.
+        entry = await self.criteria.read_current(spec=spec)
         self.criteria.current_reads = 0
+        return {
+            "prompt": "Implement the current Checks.",
+            "repo_path": None,
+            "repo_url": self.repo_url,
+            "feature_branch": FEATURE,
+            "ralph_branch": BRANCH,
+            "base_spec": trunk_base("main"),
+            "work_base_ref": self.work_base_ref,
+            "permission_mode": PermissionMode.UNATTENDED,
+            "allowed_tools": ToolPreset.IMPLEMENTATION,
+            "acceptance_criteria": list(entry.criteria),
+            "tracker_spec": spec,
+            "cache_key": CACHE,
+            "surface_holder": JOB,
+            "repo_visibility": RepoVisibility.PUBLIC,
+        }
+
+    async def run(self, events=None):
         seen = [] if events is None else events
-        async for event in self.loop.run(
-            prompt="Implement the current Checks.",
-            repo_path=None,
-            repo_url=self.repo_url,
-            feature_branch=FEATURE,
-            ralph_branch=BRANCH,
-            base_spec=trunk_base("main"),
-            work_base_ref=self.work_base_ref,
-            permission_mode=PermissionMode.UNATTENDED,
-            allowed_tools=ToolPreset.IMPLEMENTATION,
-            acceptance_criteria=list(current.criteria),
-            tracker_spec=spec,
-            cache_key=CACHE,
-            surface_holder=JOB,
-            repo_visibility=RepoVisibility.PUBLIC,
-        ):
+        async for event in self.loop.run(**await self.arguments()):
             seen.append(event)
         return seen
 
@@ -463,3 +476,82 @@ async def test_a_lane_killed_between_its_push_and_its_record_write_reads_one_beh
     assert record.head_sha != at_kill[0]
     assert record.pushed_head_sha == record.head_sha
     assert [row.sha for row in record.commits] == [record.head_sha]
+
+
+def graded(passed) -> dict:
+    """One evaluator echo per owed criterion, passing exactly *passed*."""
+    return {
+        "criteriaResults": [
+            {
+                "criterionId": key,
+                "criterion": "an evaluator echo",
+                "passed": key in passed,
+                "reasoning": "Observed the selected check.",
+            }
+            for key in OWED_KEYS
+        ]
+    }
+
+
+def closure(port) -> SubtreeClosure:
+    """The rollup a walker reads a subject's finished state from."""
+    return SubtreeClosure(
+        facts=dict(port.issues), ref=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT)
+    )
+
+
+def completed(port) -> set[str]:
+    return {
+        key
+        for key in OWED_KEYS
+        if port.issues[key].state_kind is WorkflowStateKind.COMPLETED
+    }
+
+
+async def test_cross_offs_appear_on_the_tracker_between_iterations():
+    """The board carries iteration n's cross-offs while the loop still runs.
+
+    Read off the fake tracker at the instant the iteration event arrives,
+    never off what the loop returns: a consumer that sees the event can go to
+    the board and find exactly the criteria that iteration passed already
+    moved, with the rest still owed and the subject untouched.
+    """
+    first = {DIRECT_OWED}
+    lane = Lane(
+        evaluations=[graded(first), graded(OWED_KEYS)],
+        max_iterations=2,
+    )
+    subject_before = (
+        lane.port.issues[SUBJECT].state_name,
+        lane.port.issues[SUBJECT].body,
+    )
+    observed: dict[int, tuple[set[str], bool, tuple[str, str]]] = {}
+    events: list[object] = []
+
+    async for event in lane.loop.run(**await lane.arguments()):
+        events.append(event)
+        if isinstance(event, WorkflowIterationEvent):
+            observed[event.iteration] = (
+                completed(lane.port),
+                closure(lane.port).is_closed(SUBJECT),
+                (
+                    lane.port.issues[SUBJECT].state_name,
+                    lane.port.issues[SUBJECT].body,
+                ),
+            )
+
+    assert observed[1] == (first, False, subject_before)
+    assert observed[2] == (set(OWED_KEYS), True, subject_before)
+    assert [
+        event.verdict for event in events if isinstance(event, WorkflowIterationEvent)
+    ] == [
+        AcceptVerdict.rejected,
+        AcceptVerdict.accepted,
+    ]
+    assert SUBJECT not in {key for key, _ in lane.port.workflow_writes}
+    assert SUBJECT not in {key for key, _, _ in lane.port.issue_writes}
+    # Every cross-off carries the sha the evaluator's workspace was graded at.
+    assert {
+        parse_criterion_evidence(lane.port.issues[key].body).graded_sha
+        for key in OWED_KEYS
+    } == {await LaneSource(lane.repo).resolve_commit(cwd="/w", ref=BRANCH)}

@@ -175,7 +175,14 @@ async def build(
     gate=None,
     repo_url=REPO_URL,
     frozen_spec=None,
+    held=None,
 ):
+    """*held* is the roster a run this fixture reconstructs already holds.
+
+    A run that crossed its own criteria off leaves nothing Todo, so a
+    fixture rebuilding that run's wiring reads its obligations the way the
+    run's own barriers do: against the roster it entered with.
+    """
     repo, base = repository
     git_service = SubprocessGitService(remote="origin")
     workspace = Workspaces(git_service, FakeRepoCache(str(repo)))
@@ -223,7 +230,7 @@ async def build(
     )
     guard = owner.for_writer(
         spec=spec,
-        criteria=await criteria.read_current(spec=spec),
+        criteria=await criteria.read_current(spec=spec, held=held),
         base_ref=base,
         repo_url=repo_url,
         holder="actual-parent-job",

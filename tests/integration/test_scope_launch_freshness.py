@@ -10,6 +10,7 @@ from tests.integration.test_scope_runtime import (
     board,
     drive,
     lane_of,
+    owed_again,
     runtime,
 )
 
@@ -25,6 +26,10 @@ async def test_paused_resume_rechecks_readiness_after_awaited_delivery_probe(
     with pytest.raises(ScopeReadError, match="no final delivery phase"):
         _ = [event async for event in drive(harness)]
     port = harness.port
+    # The loop ran before this pause and crossed its criterion off, so the
+    # lane is closed and no walk offers it again; what the resume is about is
+    # readiness, so the lane is made owed again the way the product does it.
+    owed_again(port)
     fresh = runtime(port=port, saver=harness.saver)
     probe = fresh.engine._scoped_arm._probe_for(ORIGIN)
     count = 0

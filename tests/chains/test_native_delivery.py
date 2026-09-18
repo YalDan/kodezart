@@ -9,6 +9,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 from kodezart.chains.criteria import TrackerCriteria
 from kodezart.composition.delivery import build_native_lane_workflow
 from kodezart.config.app import AppConfig
+from kodezart.domain.criterion_evidence import parse_criterion_evidence
 from kodezart.domain.errors import (
     FireSpecEntryError,
     ForgeAPIError,
@@ -27,10 +28,13 @@ from kodezart.types.domain.native_delivery import (
     PendingLaneDelivery,
     SkippedLaneDelivery,
 )
+from kodezart.types.domain.operation import LifecycleStage
 from kodezart.types.domain.outcome import WorkflowOutcome
 from tests.adapters.test_ci_watch_evidence import check
 from tests.adapters.test_github_api import _make_client
 from tests.chains.test_native_fire import (
+    OWED_KEYS,
+    SUBJECT,
     CountingTracker,
     NativeExecutor,
     change_tracker,
@@ -238,7 +242,20 @@ async def test_actual_native_graph_delivers_and_only_work_defect_reenters_fire(
         assert len(
             [event for event in events if isinstance(event, WorkflowCompleteEvent)]
         ) == (2 if red and rounds else 1)
-        assert tracker.issue_writes == tracker.workflow_writes == []
+        # Every write the graph made names a criterion sub-issue of this
+        # lane: the evaluator crossed each one off at the sha it graded, and
+        # nothing wrote the subject that owns them.
+        assert {key for key, _, _ in tracker.issue_writes} == set(OWED_KEYS)
+        assert tracker.workflow_writes == [
+            (key, LifecycleStage.DONE) for key in sorted(OWED_KEYS)
+        ]
+        assert {
+            parse_criterion_evidence(tracker.issues[key].body).graded_sha
+            for key in OWED_KEYS
+        } == {"b" * 40}
+        assert SUBJECT not in {key for key, _, _ in tracker.issue_writes} | {
+            key for key, _ in tracker.workflow_writes
+        }
         assert final["fire_spec"].subject == result.issue_id
         assert final["criterion_set"].criteria
         assert (

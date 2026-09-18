@@ -36,8 +36,8 @@ from tests.services.test_native_amendments import (
 __all__ = ["repository"]
 
 
-async def actual_fire(repository, executor, port, saver):
-    service, _, workspace, _ = await build(repository, executor, port=port)
+async def actual_fire(repository, executor, port, saver, *, held=None):
+    service, _, workspace, _ = await build(repository, executor, port=port, held=held)
     source = TrackerCriteria(tracker=port)
     router = build_workflow_engine(
         config=AppConfig(
@@ -333,8 +333,14 @@ async def test_completed_loop_replay_uses_actual_evaluation_and_current_ref(
     assert saved.values["total_iterations"] == 0
     monkeypatch.undo()
     resumed_executor = Executor(claim=False, mutate=answers)
+    # The loop crossed its criteria off, so the replay's wiring reads this
+    # run's obligations against the roster the run itself holds.
     fresh, fresh_workspace = await actual_fire(
-        repository, resumed_executor, port, saver
+        repository,
+        resumed_executor,
+        port,
+        saver,
+        held=saved.values["criterion_set"],
     )
     before_remote = await git(
         repository[0], "ls-remote", "origin", "refs/heads/native-loop"
