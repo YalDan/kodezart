@@ -1,5 +1,7 @@
 """The lane writes its own state: one record, rewritten where it stands."""
 
+from collections.abc import Sequence
+
 from kodezart.core.logging import get_logger
 from kodezart.core.outbound_write import gated_exact
 from kodezart.core.owned_tasks import settle
@@ -20,13 +22,18 @@ from kodezart.domain.lane_record import (
     lane_record_body,
     next_lane_record,
 )
-from kodezart.domain.run_event_stream import RUN_EVENT_PURPOSE, LaneRunEvent
+from kodezart.domain.run_event_stream import (
+    RUN_EVENT_PURPOSE,
+    LaneRunEvent,
+    lane_run_events,
+)
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.types.domain.gating import ContentClass, OutboundDestination
 from kodezart.types.domain.operation import OperationConfig
 from kodezart.types.domain.persist import PersistResult
 from kodezart.types.domain.run_event import RunEventKind
 from kodezart.types.domain.run_state import LaneBinding, LaneRunState
+from kodezart.types.domain.tracker import TrackerComment
 
 
 class TrackerLaneStateWriter:
@@ -34,7 +41,9 @@ class TrackerLaneStateWriter:
 
     The record's facts are read from the workspace the commit was made in,
     so the writer never reports a head, a push or a count it did not
-    observe, and a record it cannot read first is never overwritten.
+    observe, and a record it cannot read first is never overwritten. The
+    board is read once per commit: what this lane has already recorded and
+    what its event stream already holds are two readings of one listing.
 
     The record goes through the outbound gate and is refused if a byte of
     it changes; the first-push event does not, because its body is rendered
@@ -103,15 +112,11 @@ class TrackerLaneStateWriter:
         changeset = await self._git.diff_summary(
             workspace_path, lane.base_ref, head_sha
         )
-        first_push = not any(
-            event.kind is RunEventKind.FIRST_PUSH
-            for event in await self._tracker.lane_run_events(
-                issue_key=lane.lane_key, lane_key=lane.lane_key
-            )
-        )
+        comments = await self._tracker.list_comments(issue_key=lane.lane_key)
+        first_push = self._first_push(comments=comments, lane=lane)
         try:
-            located = await self._records.find(
-                issue_key=lane.lane_key, lane_key=lane.lane_key
+            located = self._records.locate(
+                comments=comments, issue_key=lane.lane_key, lane_key=lane.lane_key
             )
         except LaneRecordReadError as exc:
             raise LaneRecordWriteError(
@@ -154,12 +159,36 @@ class TrackerLaneStateWriter:
             )
         return record
 
+    def _first_push(
+        self, *, comments: Sequence[TrackerComment], lane: LaneBinding
+    ) -> bool:
+        """Whether this lane's stream is still without its first-push event.
+
+        Read from the stream and not from the absence of a record: a record
+        already written would report the event as posted when the post had
+        failed. A stream that will not parse is this write's own refusal —
+        it is read after the push, where a raw parse failure would leave a
+        pushed commit and an untyped error for the caller to make sense of.
+        """
+        try:
+            events = lane_run_events(
+                comments=comments,
+                lane_key=lane.lane_key,
+                marker_prefixes=self._prefixes,
+            )
+        except ValueError as exc:
+            raise LaneRecordWriteError(
+                lane_key=lane.lane_key,
+                reason=f"the lane's event stream could not be read: {exc}",
+            ) from exc
+        return not any(event.kind is RunEventKind.FIRST_PUSH for event in events)
+
     def _markers(self, lane: LaneBinding) -> tuple[str, str]:
         """This lane's record marker and the prefix its event stream is under.
 
         Both are resolved together because both are written in the same act:
-        resolving only the one the first write needs would push the other
-        operation's absence past a push and past a comment.
+        resolving only the one the first write needs would leave the other
+        purpose's absence to be found after a push and after a comment.
         """
         return (
             compose_comment_marker(

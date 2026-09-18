@@ -1,5 +1,7 @@
 """Read lane facts from one current, addressed tracker comment."""
 
+from collections.abc import Sequence
+
 from pydantic import ValidationError
 
 from kodezart.core.errors import (
@@ -63,20 +65,7 @@ class LaneRecordReader:
         a writer composing the next record can tell "no record yet" from
         "the record is there and unreadable".
         """
-        marker = compose_comment_marker(
-            prefixes=self._prefixes, purpose=RUN_STATE_PURPOSE, lane=lane_key
-        )
-
-        def refusal(reason: str) -> LaneRecordReadError:
-            return LaneRecordReadError(
-                issue_key=issue_key,
-                lane_key=lane_key,
-                record_ref=record_ref,
-                reason=reason,
-            )
-
-        if not issue_key or record_ref == "":
-            raise refusal("issue and supplied comment references must be nonempty")
+        self._addressed(issue_key=issue_key, lane_key=lane_key, record_ref=record_ref)
         try:
             comments = await self._tracker.list_comments(issue_key=issue_key)
         except (
@@ -86,7 +75,46 @@ class LaneRecordReader:
             TransientAPIError,
             ValidationError,
         ) as exc:
-            raise refusal("the tracker comment read failed or was incomplete") from exc
+            raise self._refusal(
+                "the tracker comment read failed or was incomplete",
+                issue_key=issue_key,
+                lane_key=lane_key,
+                record_ref=record_ref,
+            ) from exc
+        return self.locate(
+            comments=comments,
+            issue_key=issue_key,
+            lane_key=lane_key,
+            record_ref=record_ref,
+        )
+
+    def locate(
+        self,
+        *,
+        comments: Sequence[TrackerComment],
+        issue_key: str,
+        lane_key: str,
+        record_ref: str | None = None,
+    ) -> tuple[TrackerComment, LaneRunState] | None:
+        """The same answer, over a listing its caller has already read.
+
+        A caller that needs a second fact from the same comments — what the
+        lane's event stream holds, say — reads the board once and asks here
+        for the record in it. Two listings would be two snapshots, and the
+        two facts would then describe boards that no longer agree.
+        """
+        marker = self._addressed(
+            issue_key=issue_key, lane_key=lane_key, record_ref=record_ref
+        )
+
+        def refusal(reason: str) -> LaneRecordReadError:
+            return self._refusal(
+                reason,
+                issue_key=issue_key,
+                lane_key=lane_key,
+                record_ref=record_ref,
+            )
+
         if any(comment.issue_key != issue_key for comment in comments):
             raise refusal("the listing contains a comment from another issue")
         try:
@@ -110,3 +138,33 @@ class LaneRecordReader:
         except ValueError as exc:
             raise refusal(f"the recorded body is invalid: {exc}") from exc
         return comment, record
+
+    def _addressed(
+        self, *, issue_key: str, lane_key: str, record_ref: str | None
+    ) -> str:
+        """The marker this lane's record is under, once the address is usable.
+
+        Resolved from configuration and the address alone, so both faults it
+        can carry are raised before a caller spends a listing on them.
+        """
+        marker = compose_comment_marker(
+            prefixes=self._prefixes, purpose=RUN_STATE_PURPOSE, lane=lane_key
+        )
+        if not issue_key or record_ref == "":
+            raise self._refusal(
+                "issue and supplied comment references must be nonempty",
+                issue_key=issue_key,
+                lane_key=lane_key,
+                record_ref=record_ref,
+            )
+        return marker
+
+    def _refusal(
+        self, reason: str, *, issue_key: str, lane_key: str, record_ref: str | None
+    ) -> LaneRecordReadError:
+        return LaneRecordReadError(
+            issue_key=issue_key,
+            lane_key=lane_key,
+            record_ref=record_ref,
+            reason=reason,
+        )

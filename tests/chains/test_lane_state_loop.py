@@ -35,6 +35,8 @@ BRANCH = "ralph/fire-subject"
 FEATURE = "feature/fire-subject"
 JOB = "actual-parent-job"
 REPO_URL = "https://github.com/owner/repo"
+#: A local bare repository: an origin a forge API cannot be asked about.
+FORGE_LESS_ORIGIN = "file:///srv/lanes/repo.git"
 
 
 class Lane:
@@ -50,8 +52,10 @@ class Lane:
         port=None,
         publishes=None,
         work_base_ref="main",
+        repo_url=REPO_URL,
     ):
         self.work_base_ref = work_base_ref
+        self.repo_url = repo_url
         self.repo = LaneRepo()
         self.port = tracker() if port is None else port
         self.criteria = TrackerCriteria(tracker=self.port)
@@ -77,7 +81,7 @@ class Lane:
         async for event in self.loop.run(
             prompt="Implement the current Checks.",
             repo_path=None,
-            repo_url=REPO_URL,
+            repo_url=self.repo_url,
             feature_branch=FEATURE,
             ralph_branch=BRANCH,
             base_spec=trunk_base("main"),
@@ -137,10 +141,20 @@ async def test_first_push_leaves_the_record_and_the_first_push_event():
     ]
 
 
-async def test_the_recorded_branch_url_is_the_forges_own_branch_page():
-    lane = Lane(evaluations=[native_evaluation()], forge=lane_forge())
+async def test_a_forge_less_origin_is_recorded_at_the_address_it_is_reachable_at():
+    """A forge in the wiring is not a forge behind this origin.
+
+    A local bare repository has no branch page, and an address composed for
+    it would read as one: the record carries the origin instead, and the
+    forge that is wired is asked nothing about a repository it cannot hold.
+    """
+    lane = Lane(
+        evaluations=[native_evaluation()],
+        forge=lane_forge(),
+        repo_url=FORGE_LESS_ORIGIN,
+    )
     await lane.run()
-    assert (await lane.record()).branch_url == f"{REPO_URL}/tree/{BRANCH}"
+    assert (await lane.record()).branch_url == FORGE_LESS_ORIGIN
 
 
 async def test_a_round_built_on_earlier_work_records_the_runs_own_base():

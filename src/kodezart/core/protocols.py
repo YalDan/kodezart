@@ -1506,10 +1506,6 @@ class LaneStateTracker(TrackerCommentReader, Protocol):
         self, *, issue_key: str, event: LaneRunEvent
     ) -> LaneRunEvent: ...
 
-    async def lane_run_events(
-        self, *, issue_key: str, lane_key: str
-    ) -> Sequence[LaneRunEvent]: ...
-
 
 @runtime_checkable
 class LaneStateWriter(Protocol):

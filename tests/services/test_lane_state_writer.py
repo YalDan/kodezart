@@ -304,6 +304,58 @@ async def test_an_event_lost_after_the_record_is_posted_by_the_next_commit():
     assert await port.lane_run_events(issue_key=LANE, lane_key=LANE) == events
 
 
+@pytest.mark.parametrize(
+    "damage",
+    [
+        lambda body: body.replace(RunEventKind.LANE_DISPATCHED.value, "invented"),
+        lambda body: body.removesuffix("\n```"),
+    ],
+)
+async def test_a_damaged_event_stream_refuses_the_write_instead_of_escaping(damage):
+    """The stream is read on the write path, so its faults are this write's.
+
+    A parse failure here lands after the push, on every later commit of the
+    lane's life; as the read error it is, it would reach the caller as a
+    fault about nothing it can name, with a pushed commit behind it.
+    """
+    port, repo = board(), LaneRepo()
+    await port.post_run_event(
+        issue_key=LANE,
+        event=LaneRunEvent(kind=RunEventKind.LANE_DISPATCHED, lane_key=LANE),
+    )
+    stored = event_comments(port)[0]
+    port.comments[port.comments.index(stored)] = stored.model_copy(
+        update={"body": damage(stored.body)}
+    )
+
+    with pytest.raises(LaneRecordWriteError, match="event stream could not be read"):
+        await make_commit(writer(port, repo), repo, 1)
+
+    assert record_comments(port) == []
+
+
+async def test_an_event_of_another_kind_does_not_stand_in_for_the_first_push():
+    """Only a first-push event says the lane has reached the remote.
+
+    A lane is dispatched, and its nodes open sessions, before it ever
+    pushes: read as "any event at all", those would answer for the one
+    event this write exists to post, and the lane would never announce it.
+    """
+    port, repo = board(), LaneRepo()
+    await port.post_run_event(
+        issue_key=LANE,
+        event=LaneRunEvent(kind=RunEventKind.LANE_DISPATCHED, lane_key=LANE),
+    )
+
+    await make_commit(writer(port, repo), repo, 1)
+
+    events = await port.lane_run_events(issue_key=LANE, lane_key=LANE)
+    assert [event.kind for event in events] == [
+        RunEventKind.LANE_DISPATCHED,
+        RunEventKind.FIRST_PUSH,
+    ]
+
+
 async def test_the_posted_event_carries_the_marker_and_the_codec_fields_alone():
     port, repo = board(), LaneRepo()
     await make_commit(writer(port, repo), repo, 1)
