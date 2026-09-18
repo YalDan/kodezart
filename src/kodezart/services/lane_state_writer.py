@@ -17,6 +17,8 @@ from kodezart.domain.comment_markers import (
     compose_comment_marker,
     configured_marker_prefix,
 )
+from kodezart.domain.criterion_cross_off import require_tickable
+from kodezart.domain.criterion_evidence import apply_evidence
 from kodezart.domain.errors import LaneRecordReadError, LaneRecordWriteError
 from kodezart.domain.git_url import is_forge_less_origin
 from kodezart.domain.lane_record import (
@@ -30,8 +32,13 @@ from kodezart.domain.run_event_stream import (
     lane_run_events,
 )
 from kodezart.services.lane_records import LaneRecordReader
+from kodezart.types.domain.criteria import TrackerCriterion
+from kodezart.types.domain.criterion_lifecycle import (
+    CriterionCrossOff,
+    CrossOffState,
+)
 from kodezart.types.domain.gating import ContentClass, OutboundDestination
-from kodezart.types.domain.operation import OperationConfig
+from kodezart.types.domain.operation import LifecycleStage, OperationConfig
 from kodezart.types.domain.persist import PersistResult
 from kodezart.types.domain.run_event import RunEventKind
 from kodezart.types.domain.run_state import LaneBinding, LaneRunState
@@ -39,7 +46,13 @@ from kodezart.types.domain.tracker import TrackerComment
 
 
 class TrackerLaneStateWriter:
-    """Write the lane's run-state record in the same act as its commit.
+    """Write what a lane's own work leaves on its board: the record and the ticks.
+
+    The two writes are the lane's two acts. The record is written in the
+    same act as a commit; a criterion's state and its graded sha are
+    written in the same act as the verdict that produced them, at the one
+    site below, so no second copy of a sha exists anywhere to drift from
+    the one on the sub-issue.
 
     The record's facts are read from the workspace the commit was made in,
     so the writer never reports a head, a push or a count it did not
@@ -238,13 +251,88 @@ class TrackerLaneStateWriter:
             )
         return address
 
-    async def _gate_exact(self, *, body: str, lane: LaneBinding) -> str:
+    async def write_cross_offs(
+        self,
+        *,
+        lane: LaneBinding,
+        dispatched: Sequence[TrackerCriterion],
+        cross_offs: Sequence[CriterionCrossOff],
+    ) -> None:
+        """Write this attempt's verdict onto the criterion sub-issues it graded.
+
+        The verdict answers the roster it was dispatched against, one for
+        one and in order; anything else is a reading of some other roster
+        and is refused before a single sub-issue is touched. A criterion
+        this attempt did not pass is written nowhere: the sub-issue keeps
+        whatever an earlier attempt left on it, and the unwritten verdict
+        is on the iteration event and in this line.
+        """
+        addressed = tuple(str(cross_off.criterion) for cross_off in cross_offs)
+        if addressed != tuple(str(criterion.id) for criterion in dispatched):
+            raise LaneRecordWriteError(
+                lane_key=lane.lane_key,
+                reason="the cross-offs do not answer the dispatched criteria",
+            )
+        for criterion, cross_off in zip(dispatched, cross_offs, strict=True):
+            if cross_off.state is CrossOffState.passed:
+                await self._write_one(
+                    lane=lane, criterion=criterion, cross_off=cross_off
+                )
+            else:
+                await self._log.ainfo(
+                    "criterion_not_crossed_off",
+                    lane=lane.lane_key,
+                    criterion=cross_off.criterion,
+                    state=cross_off.state.value,
+                    graded_sha=cross_off.evidence.graded_sha,
+                )
+
+    async def _write_one(
+        self,
+        *,
+        lane: LaneBinding,
+        criterion: TrackerCriterion,
+        cross_off: CriterionCrossOff,
+    ) -> None:
+        """Move one criterion to Done with the sha it was graded at.
+
+        The sub-issue is read back through the port here and not remembered
+        from the dispatch, so what the write asserts about it is what it
+        holds now. The body edit goes first under its own compare-and-set
+        precondition and the transition only after: the port's own order,
+        so a transition can never ride on a body write that never landed.
+        """
+        issue = await self._tracker.read_issue(issue_key=criterion.id)
+        require_tickable(issue=issue, criterion=criterion)
+        body = await self._gate_exact(
+            body=apply_evidence(body=issue.body, evidence=cross_off.evidence),
+            lane=lane,
+            destination=OutboundDestination.TRACKER_DESCRIPTION,
+        )
+        await settle(
+            self._tracker.edit_description(
+                target=criterion.id, expected=issue.body, replacement=body
+            )
+        )
+        await settle(
+            self._tracker.set_workflow_state(
+                issue_key=criterion.id, stage=LifecycleStage.DONE
+            )
+        )
+
+    async def _gate_exact(
+        self,
+        *,
+        body: str,
+        lane: LaneBinding,
+        destination: OutboundDestination = OutboundDestination.TRACKER_COMMENT,
+    ) -> str:
         return await gated_exact(
             gate=self._gate,
             log=self._log,
             content=body,
             visibility=lane.visibility,
-            destination=OutboundDestination.TRACKER_COMMENT,
+            destination=destination,
             content_class=ContentClass.DERIVED,
             refusal=lambda: LaneRecordWriteError(
                 lane_key=lane.lane_key,

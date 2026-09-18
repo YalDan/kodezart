@@ -1,19 +1,28 @@
 """The lane's record is one comment the committing act keeps current."""
 
 import json
+from collections.abc import Sequence
 
 import pytest
 
+from kodezart.domain.criterion_cross_off import (
+    cross_offs_for,
+    evaluation_observation,
+)
+from kodezart.domain.criterion_evidence import parse_criterion_evidence
 from kodezart.domain.errors import (
     LaneRecordWriteError,
     StaleCommentWriteError,
     TransientAPIError,
 )
+from kodezart.domain.fire_spec import replace_criterion_fields
 from kodezart.domain.lane_record import RUN_STATE_PURPOSE
 from kodezart.domain.run_event_stream import RUN_EVENT_PURPOSE, LaneRunEvent
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.services.lane_state_writer import TrackerLaneStateWriter
+from kodezart.types.domain.agent import CriterionResult
 from kodezart.types.domain.branch import BranchRole
+from kodezart.types.domain.criteria import CriterionId, TrackerCriterion
 from kodezart.types.domain.gating import (
     ContentClass,
     GateDecision,
@@ -22,11 +31,15 @@ from kodezart.types.domain.gating import (
     RepoVisibility,
     WriterShape,
 )
-from kodezart.types.domain.operation import OperationConfig, OperationMemberAbsentError
+from kodezart.types.domain.operation import (
+    LifecycleStage,
+    OperationConfig,
+    OperationMemberAbsentError,
+)
 from kodezart.types.domain.persist import PersistResult, PersistSource
 from kodezart.types.domain.run_event import RunEventKind
 from kodezart.types.domain.run_state import LaneBinding
-from kodezart.types.domain.tracker import TrackerComment
+from kodezart.types.domain.tracker import TrackerComment, WorkflowStateKind
 from tests.fakes import FakeTrackerPort, PassThroughGate, make_tracker_issue
 from tests.lane_fixture import LaneGit, LaneRepo, lane_operation
 
@@ -616,3 +629,130 @@ async def test_pushed_head_behind_head_is_kept_as_its_own_value():
     assert stored.pushed_head_sha == pushed.head_sha
     assert stored.pushed_head_sha != stored.head_sha
     assert record.pushed_head_sha != record.head_sha
+
+
+# ---------------------------------------------------------------------------
+# The tick: one criterion's state and the sha it was graded at, in one act.
+# ---------------------------------------------------------------------------
+
+CRITERIA = (f"{LANE}/first", f"{LANE}/second", f"{LANE}/third")
+
+
+def check_of(key: str) -> str:
+    return f"the check {key} states"
+
+
+def criterion_body(key: str) -> str:
+    return f"**Check:** {check_of(key)}\n**Do:** the build {key} names\n**Evidence:** —"
+
+
+def criteria_board(*, bodies: dict[str, str] | None = None) -> FakeTrackerPort:
+    """The lane, its criterion sub-issues, and one issue that is not a criterion."""
+    overrides = bodies or {}
+    return FakeTrackerPort(
+        issues=[
+            make_tracker_issue(LANE, body="the lane's own text"),
+            make_tracker_issue(f"{LANE}/child", parent_key=LANE, body="a plain child"),
+            *(
+                make_tracker_issue(
+                    key,
+                    parent_key=LANE,
+                    issue_labels=frozenset({"criterion"}),
+                    body=overrides.get(key, criterion_body(key)),
+                )
+                for key in CRITERIA
+            ),
+        ],
+        marker_prefixes=lane_operation().marker_prefixes,
+    )
+
+
+def dispatched(keys: Sequence[str] = CRITERIA) -> tuple[TrackerCriterion, ...]:
+    return tuple(
+        TrackerCriterion(id=CriterionId(key), text=check_of(key)) for key in keys
+    )
+
+
+def graded(
+    keys: Sequence[str] = CRITERIA, *, failed: Sequence[str] = ()
+) -> tuple[CriterionResult, ...]:
+    return tuple(
+        CriterionResult(
+            criterion_id=CriterionId(key),
+            criterion=check_of(key),
+            passed=key not in failed,
+            reasoning="Observed the selected check.",
+        )
+        for key in keys
+    )
+
+
+async def tick(
+    lane_state, *, sha: str, keys: Sequence[str] = CRITERIA, failed: Sequence[str] = ()
+) -> None:
+    """One attempt's whole verdict, written the way the evaluator writes it."""
+    await lane_state.write_cross_offs(
+        lane=binding(),
+        dispatched=dispatched(keys),
+        cross_offs=cross_offs_for(
+            results=graded(keys, failed=failed),
+            graded_sha=sha,
+            observation=evaluation_observation(session_id="eval-session", iteration=1),
+        ),
+    )
+
+
+def without_evidence(body: str) -> str:
+    """The body with its Evidence field blanked: every other byte of it."""
+    return replace_criterion_fields(body, replacements={"Evidence": ""})
+
+
+async def test_a_full_lane_of_ticks_leaves_state_and_full_sha_on_every_sub_issue():
+    """Three heads, three whole-lane verdicts, one value carrying both halves.
+
+    After every round each addressed sub-issue is Done and its Evidence row
+    carries that round's complete forty-hex sha; consecutive bodies of one
+    sub-issue differ inside that row and nowhere else, so nothing but the
+    state and the graded sha moved.
+    """
+    port = criteria_board()
+    lane_state = writer(port, lane_repo())
+    heads = [format(index, "040x") for index in (1, 2, 3)]
+    bodies: dict[str, list[str]] = {key: [] for key in CRITERIA}
+
+    for sha in heads:
+        await tick(lane_state, sha=sha)
+        for key in CRITERIA:
+            issue = port.issues[key]
+            assert issue.state_kind is WorkflowStateKind.COMPLETED
+            assert parse_criterion_evidence(issue.body).graded_sha == sha
+            assert len(parse_criterion_evidence(issue.body).graded_sha) == 40
+            bodies[key].append(issue.body)
+
+    for key, written in bodies.items():
+        assert len(written) == 3
+        assert len(set(written)) == 3
+        assert len({without_evidence(body) for body in written}) == 1
+        assert without_evidence(written[0]) == without_evidence(criterion_body(key))
+    # The first round moved every sub-issue; the two re-grades restamped the
+    # sha without moving a state that was already Done.
+    assert port.workflow_writes == [(key, LifecycleStage.DONE) for key in CRITERIA]
+
+
+async def test_a_verdict_that_does_not_answer_the_dispatched_roster_writes_nothing():
+    port = criteria_board()
+    lane_state = writer(port, lane_repo())
+
+    with pytest.raises(LaneRecordWriteError, match="dispatched criteria"):
+        await lane_state.write_cross_offs(
+            lane=binding(),
+            dispatched=dispatched(),
+            cross_offs=cross_offs_for(
+                results=graded(CRITERIA[:2]),
+                graded_sha="4" * 40,
+                observation="evaluator session eval-session, iteration 1",
+            ),
+        )
+
+    assert port.issue_writes == []
+    assert port.workflow_writes == []

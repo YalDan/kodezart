@@ -145,9 +145,20 @@ def tracker_spec_from_issues(
     return TrackerSpec(
         subject=IssueRef(subject.issue_key),
         body=subject.body,
-        criteria=tuple(CriterionRef(criterion.issue_key) for criterion in criteria),
+        criteria=tuple(criterion_ref(criterion.issue_key) for criterion in criteria),
         read_at_version=subject.updated_at.isoformat(),
     )
+
+
+def criterion_ref(key: str) -> CriterionRef:
+    """Address one native criterion by the key the tracker reports for it.
+
+    The only place the source mints this identity. Identity and provenance
+    are the same value on this arm — the criterion sub-issue's own key — so
+    every later reading of one criterion addresses it through here rather
+    than minting a second identity that could disagree.
+    """
+    return CriterionRef(key)
 
 
 def criterion_check(*, criterion: TrackerIssue, issue_key: str) -> str:

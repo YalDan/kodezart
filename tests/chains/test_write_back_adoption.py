@@ -810,12 +810,14 @@ UNVERIFIED_WRITES = frozenset(
 
 
 LANE_STATE = "services/lane_state_writer.py"
-#: The lane's own writes about the commit it has just made.  Every fact
-#: they carry is DERIVED — the head sha the workspace was read at, the
-#: remote tip, the changeset counts, the commit subject — and all of it is
-#: written in the persisting phase, before that commit is evaluated, so no
-#: judgement stands behind these bytes and a second session re-reading the
-#: same git observations would add none (KOD-806).
+#: The lane's own writes about the commit it has just made and about the
+#: verdict just reached on it.  Every fact they carry is DERIVED — the head
+#: sha the workspace was read at, the remote tip, the changeset counts, the
+#: commit subject, a criterion's pass and the sha it was graded at — and no
+#: second session re-reading the same git observations would add anything
+#: to them.  The judgement behind a tick is the evaluation session that
+#: produced the verdict, and it is the one the Evidence row points back at;
+#: re-judging a sha string is not a second judgement (KOD-806).
 LANE_STATE_WRITES = frozenset(
     {
         CallSite(
@@ -827,6 +829,16 @@ LANE_STATE_WRITES = frozenset(
             module=LANE_STATE,
             function="TrackerLaneStateWriter.record_commit",
             method="post_run_event",
+        ),
+        CallSite(
+            module=LANE_STATE,
+            function="TrackerLaneStateWriter._write_one",
+            method="edit_description",
+        ),
+        CallSite(
+            module=LANE_STATE,
+            function="TrackerLaneStateWriter._write_one",
+            method="set_workflow_state",
         ),
     }
 )

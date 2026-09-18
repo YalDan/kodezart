@@ -19,7 +19,12 @@ from kodezart.types.domain.consolidation import (
     ChangesetDigest,
     ConsolidationOutcome,
 )
-from kodezart.types.domain.criteria import ExecutionCriterion, TrackerCriterionSet
+from kodezart.types.domain.criteria import (
+    ExecutionCriterion,
+    TrackerCriterion,
+    TrackerCriterionSet,
+)
+from kodezart.types.domain.criterion_lifecycle import CriterionCrossOff
 from kodezart.types.domain.dispatch import DispatchReport, PassSignal
 from kodezart.types.domain.escalation import EscalationResolution
 from kodezart.types.domain.fire_spec import TrackerSpec
@@ -1506,6 +1511,21 @@ class LaneStateTracker(TrackerCommentReader, Protocol):
         self, *, issue_key: str, event: LaneRunEvent
     ) -> LaneRunEvent: ...
 
+    async def read_issue(self, *, issue_key: str) -> TrackerIssue: ...
+
+    async def edit_description(
+        self,
+        *,
+        target: str,
+        expected: str,
+        replacement: str,
+        authorization: DescriptionWriteAuthority | None = None,
+    ) -> DescriptionEditResult: ...
+
+    async def set_workflow_state(
+        self, *, issue_key: str, stage: LifecycleStage
+    ) -> TrackerIssue: ...
+
 
 @runtime_checkable
 class LaneStateWriter(Protocol):
@@ -1529,6 +1549,23 @@ class LaneStateWriter(Protocol):
 
         The record is the whole answer to "where is this lane now", so it
         is rewritten in place under its own marker and never appended to.
+        """
+        ...
+
+    async def write_cross_offs(
+        self,
+        *,
+        lane: LaneBinding,
+        dispatched: Sequence[TrackerCriterion],
+        cross_offs: Sequence[CriterionCrossOff],
+    ) -> None:
+        """Write the whole attempt's verdict onto the criterion sub-issues.
+
+        *cross_offs* answers *dispatched* one for one, in order: a verdict
+        is a reading of the roster it was graded against, and a partial
+        one is no reading of it. A criterion this attempt passed gets its
+        graded sha on its Evidence row and is moved to Done in that order;
+        nothing else is written anywhere, least of all a parent's state.
         """
         ...
 
