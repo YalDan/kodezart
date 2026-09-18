@@ -23,10 +23,20 @@ name none of the four things a checkpoint is read or addressed through.
   not seen.
 * It says nothing about WRITES. That the scoped run leaves the configured
   saver empty is asserted by the composition test named above.
+
+The detector has two controls. The scanned packages' own sibling — a chain
+module the walker imports, found through the code and not picked — shows it
+alive over real source. The per-shape controls are one-line sources written
+here, because a control for one of the detector's arms cannot come from the
+scanned surface: the surface is expected to name nothing, and until this file
+carried them, three of the four names and the whole string-literal arm could
+be removed with every assertion still passing.
 """
 
 import ast
 from pathlib import Path
+
+import pytest
 
 #: How a checkpoint is read, and how one is addressed.
 FORBIDDEN = frozenset({"aget_state", "get_state", "checkpointer", "thread_id"})
@@ -65,29 +75,62 @@ def path_of(module: str) -> Path:
 
 
 def named_sites(path: Path) -> list[str]:
-    """Every place *path* names one of the forbidden things.
+    """Every place *path* names one of the forbidden things."""
+    return sites_in(ast.parse(path.read_text(encoding="utf-8")), label=path.name)
+
+
+def sites_in(tree: ast.AST, *, label: str) -> list[str]:
+    """Every place *tree* names one of the forbidden things.
 
     A string literal equal to one of them counts, because that is how a
     checkpoint is addressed: ``config["configurable"]["thread_id"] = ...``
     names the thing as a constant and as nothing else.
+
+    Over a tree rather than a path, so the detector can be asked about a source
+    written for the purpose: a control cannot be drawn from the surface it is
+    the control for.
     """
-    source = path.read_text(encoding="utf-8")
-    tree = ast.parse(source)
     sites: list[str] = []
     for node in ast.walk(tree):
         if isinstance(node, ast.Attribute) and node.attr in FORBIDDEN:
-            sites.append(f"{path.name}:{node.lineno}: .{node.attr}")
+            sites.append(f"{label}:{node.lineno}: .{node.attr}")
         elif isinstance(node, ast.Name) and node.id in FORBIDDEN:
-            sites.append(f"{path.name}:{node.lineno}: {node.id}")
+            sites.append(f"{label}:{node.lineno}: {node.id}")
         elif isinstance(node, ast.keyword) and node.arg in FORBIDDEN:
-            sites.append(f"{path.name}:{node.lineno}: {node.arg}=")
+            sites.append(f"{label}:{node.lineno}: {node.arg}=")
         elif (
             isinstance(node, ast.Constant)
             and isinstance(node.value, str)
             and node.value in FORBIDDEN
         ):
-            sites.append(f'{path.name}:{node.lineno}: "{node.value}"')
+            sites.append(f'{label}:{node.lineno}: "{node.value}"')
     return sites
+
+
+#: One control per shape the detector claims to see, and one forbidden name per
+#: control. Hand-written one-line sources, and deliberately so: a control drawn
+#: from the scanned surface would say nothing about a detector arm the surface
+#: happens not to exercise, which is how the string-constant arm and three of
+#: the four names came to have no control at all. The set below is compared with
+#: ``FORBIDDEN`` itself, so a name added there or dropped from it needs its own
+#: line here.
+CONTROLS = (
+    ("aget_state", "x.aget_state"),
+    ("get_state", "get_state(config)"),
+    ("checkpointer", "build(checkpointer=saver)"),
+    ("thread_id", 'config["configurable"]["thread_id"] = key'),
+)
+
+
+@pytest.mark.parametrize(("name", "source"), CONTROLS, ids=[n for n, _ in CONTROLS])
+def test_the_detector_sees_each_shape_a_checkpoint_is_named_by(name, source) -> None:
+    sites = sites_in(ast.parse(source), label="control")
+    assert len(sites) == 1 and name in sites[0], sites
+
+
+def test_every_forbidden_name_is_controlled() -> None:
+    """A name the scan carries with no control is a name it could stop seeing."""
+    assert {name for name, _ in CONTROLS} == FORBIDDEN
 
 
 def test_the_walker_names_no_checkpoint_read() -> None:

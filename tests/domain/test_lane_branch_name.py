@@ -46,12 +46,14 @@ def test_the_name_is_the_issue_key_and_a_short_id() -> None:
         str(LaneBranchName(issue_key="fire/subject", short_id="deadbeef"))
         == "kodezart/fire/subject-deadbeef"
     )
-    # What git refuses is a component ENDING in .lock, so a key that merely
-    # carries those letters is a key, not a refusal.
-    assert (
-        str(LaneBranchName(issue_key="KOD.locked/841", short_id="0a1b2c3d"))
-        == "kodezart/KOD.locked/841-0a1b2c3d"
-    )
+    # What git refuses is a component ending in the four characters ".lock", so
+    # a key that merely carries those letters is a key, not a refusal — and so
+    # is one whose component ends in the bare letters with no dot before them.
+    for admitted in ("KOD.locked/841", "KOD-block", "KOD/padlock"):
+        assert (
+            str(LaneBranchName(issue_key=admitted, short_id="0a1b2c3d"))
+            == f"kodezart/{admitted}-0a1b2c3d"
+        )
 
 
 @pytest.mark.parametrize("key", UNUSABLE_KEYS)
